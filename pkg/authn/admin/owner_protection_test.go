@@ -9,10 +9,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 )
 
-// TestAnAccountOwningAnOrganizationIsRefusedWithItsOwnCode holds the HTTP face
-// of the owner protection: a dedicated 409 problem type, not the generic
-// conflict, with the organization's identifier in the detail so the console can
-// name the organization the operator has to hand on or delete.
+// TestAnAccountOwningAnOrganizationIsRefusedWithItsOwnCode checks that an owner-protected account is refused 409 account-organization-owner with the organization named in the detail.
 func TestAnAccountOwningAnOrganizationIsRefusedWithItsOwnCode(t *testing.T) {
 	cases := []struct {
 		name   string

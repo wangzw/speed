@@ -10,10 +10,7 @@ import (
 )
 
 // TestAnInvitationViewWritesNullForAnAbsentTime holds the view's shape: a time
-// an invitation does not have yet is absent, not the zero instant. The
-// management face reads null and leaves the column empty; a fabricated
-// 0001-01-01T00:00:00Z reads as a real moment to every client. last_sent_at is
-// not one of the absent times: issuance writes it, so it is always a moment.
+// an invitation does not have yet is absent, not the zero instant.
 func TestAnInvitationViewWritesNullForAnAbsentTime(t *testing.T) {
 	issuedAt := time.Date(2031, 3, 4, 12, 0, 0, 0, time.UTC)
 	view := invitationViewOf(Invitation{
@@ -64,11 +61,8 @@ func TestAnAcceptedInvitationViewWritesTheAcceptanceTime(t *testing.T) {
 	}
 }
 
-// TestTheDomainInvitationKeepsAbsentTimesAbsent holds the seam the views are
-// built from: the row's NULL columns reach the value type as absent, not as the
-// zero time a caller would have to tell apart by convention. The value is read
-// through its JSON form, which is the contract's shape, so the case holds the
-// whole path from the row to the answer.
+// TestTheDomainInvitationKeepsAbsentTimesAbsent checks that a row's NULL times
+// reach the value type and the view as absent.
 func TestTheDomainInvitationKeepsAbsentTimesAbsent(t *testing.T) {
 	sentAt := time.Date(2031, 3, 4, 12, 0, 0, 0, time.UTC)
 	inv := toInvitation(invitationRow{

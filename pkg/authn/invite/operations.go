@@ -9,18 +9,11 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The fragment's info section: the title this module's fragment carries and the
-// version of the fragment's shape. Both are the ones the hand-written fragment
-// published before the declarations generated it.
 const (
 	fragmentTitle   = "authn invite"
 	fragmentVersion = "1.0.0"
 )
 
-// The routes as the fragment writes them: relative to the module's API root,
-// which is the mounter's base less the part this capability owns. The mounter
-// registration resolves the same declaration against its base, so the path is
-// written once.
 const (
 	invitationsPath = "/:tenant/invitations"
 	invitationPath  = "/:tenant/invitations/:id"
@@ -64,15 +57,9 @@ type AuthnInviteIssued struct {
 	EmailDelivery string                `json:"email_delivery" required:"true" enum:"sent,failed,not_configured" description:"How the acceptance notice ended: sent when the carrier accepted it, failed when delivery failed or its outcome is unknown, and not_configured when the assembly delivers no mail. A failed notice does not undo the invitation, and the token beside it is still the one-time link; a sent notice carries no token in this answer."`
 }
 
-// AuthnInviteLink is what an invitation link shows the person holding it: the
-// organization it names, the inviter under the display name they are recognized
-// by, the invited address in a masked form and the deadline. The full address,
-// the issuer's account identifier and the token never reach it. A pending link
-// carries the organization's name and display name, the inviter, the masked
-// address and the deadline; an accepted one carries the two organization names
-// so the client can offer the organization the caller now belongs to. The
-// display name is free text an organization need not have chosen, so a client
-// shows it when it is there and falls back to the name, which is always there.
+// AuthnInviteLink is what an invitation link shows its holder: the
+// organization, the inviter's display name, the masked invited address and the
+// deadline. It never carries the full address, the issuer's identifier or the token.
 type AuthnInviteLink struct {
 	_ struct{} `description:"What an invitation link shows the person holding it: the organization, the inviter's display name, the masked invited address and the deadline, limited to the state the link is in."`
 
@@ -94,10 +81,9 @@ type AuthnInviteView struct {
 	Invitation *AuthnInviteLink `json:"invitation,omitempty" description:"The link's summary, present for a pending invitation and for an accepted one, absent for an expired or a revoked invitation."`
 }
 
-// AuthnInviteEligibility is the answer of the eligibility read: the state a
-// token points to and whether the signed-in account holds the invited address as
-// a proven email identifier. It never carries the address, the inviter or the
-// organization, and it answers for the calling account alone.
+// AuthnInviteEligibility is the answer of the eligibility read: the invitation's
+// state and whether the caller has proved the invited address. It carries no
+// address, inviter or organization.
 type AuthnInviteEligibility struct {
 	_ struct{} `description:"The answer of the eligibility read: the invitation's state and whether the signed-in account has proved the invited address."`
 
@@ -126,10 +112,6 @@ type AuthnInviteAccept struct {
 	Role      string `json:"role,omitempty" description:"The role the acceptance bound to the account in the tenant. Absent when the invitation carried no role, never null."`
 }
 
-// issueInput is the request of an issuance: the tenant from the path and the
-// address and optional deadline from the JSON body. ExpiresAt is a pointer so
-// that an absent member and the zero instant are told apart before the domain
-// call reads both as "use the configured lifetime".
 type issueInput struct {
 	_ struct{} `description:"The issue request: the invited address, which is normalized before it is stored, and an optional deadline."`
 
@@ -139,8 +121,6 @@ type issueInput struct {
 	Role      string     `json:"role" description:"The role to grant beside the membership. Omitted grants no role. The role must exist in the tenant, the caller must hold authz.tenant.role.manage, every permission the role carries must be within the caller's held set, and it may not be platform-admin."`
 }
 
-// listInput is the request of a page read: the tenant from the path and the
-// cursor, page cap and status from the query.
 type listInput struct {
 	Tenant string `path:"tenant" description:"The tenant's name the invitation belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; the authn.membership.manage decision is made in that tenant."`
 	Limit  int    `query:"limit" description:"Maximum number of invitations to return. Omitted or 0 serves 100; a value above 1000 is capped at 1000. A negative or non-integer value is refused with 400."`
@@ -148,37 +128,24 @@ type listInput struct {
 	Status string `query:"status" enum:"pending,expired,accepted,revoked" description:"Narrow the page to one view: pending is a pending invitation whose deadline has not passed, expired is a pending invitation whose deadline has passed, and accepted and revoked are the terminal stored states. Omitted lists every state. A value outside this set is refused with 400. Expiry is derived from the deadline, not stored."`
 }
 
-// revokeInput is the request of a revocation: the tenant and the invitation's
-// identifier, both path parameters.
 type revokeInput struct {
 	Tenant string `path:"tenant" description:"The tenant's name the invitation belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; the authn.membership.manage decision is made in that tenant."`
 	ID     string `path:"id" description:"The invitation's opaque identifier, which also serves as the decision's target."`
 }
 
-// resendInput is the request of a resend: the tenant and the invitation's
-// identifier, both path parameters. The invitation keeps its identity; only its
-// token and its send record change.
 type resendInput struct {
 	Tenant string `path:"tenant" description:"The tenant's name the invitation belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; the authn.membership.manage decision is made in that tenant."`
 	ID     string `path:"id" description:"The invitation's opaque identifier, which also serves as the decision's target."`
 }
 
-// acceptViewInput is the request of the acceptance read: the token, which is
-// the whole credential on the public route.
 type acceptViewInput struct {
 	Token string `path:"token" description:"The acceptance token, prefixed spd_inv_, which identifies the invitation and is the whole credential on this public route."`
 }
 
-// eligibilityInput is the request of the eligibility read: the token from the
-// path; the caller is the signed-in account the gateway identifies.
 type eligibilityInput struct {
 	Token string `path:"token" description:"The acceptance token, prefixed spd_inv_, which identifies the invitation. The route is guarded, so only a signed-in caller reaches it and the answer is about that caller alone."`
 }
 
-// acceptInput is the request of an acceptance: the token from the path and a
-// body the acceptance no longer reads. The account-opening fields stay in the
-// shape so an older client keeps working; acceptance writes a membership for the
-// authenticated caller and never opens an account.
 type acceptInput struct {
 	_ struct{} `description:"The acceptance request; only the token is read."`
 
@@ -188,26 +155,17 @@ type acceptInput struct {
 	Password    string `json:"password" description:"Ignored: acceptance never opens an account. Kept so an older client keeps working."`
 }
 
-// challengeHeader declares the header every 401 on a management route carries:
-// the gateway writes the endpoint's challenge when it refuses the request first,
-// and a handler that answers 401 itself returns it in the fault's headers.
 var challengeHeader = speedhttp.Header{
 	Name:        "WWW-Authenticate",
 	Description: "The capability's challenge: the Bearer and Cookie schemes, never Basic.",
 }
 
-// unauthorized is the declaration of a 401 that carries the capability's
-// challenge.
 func unauthorized(description string) speedhttp.Response {
 	response := speedhttp.ProblemResponse(http.StatusUnauthorized, description)
 	response.Headers = []speedhttp.Header{challengeHeader}
 	return response
 }
 
-// throttledResponse is the platform-standard 429 of a spent send or probe
-// budget. The handler's fault supplies the value; the declaration publishes the
-// header on the contract, and the entry point refuses a header it did not
-// declare.
 func throttledResponse() speedhttp.Response {
 	response := speedhttp.ProblemResponse(http.StatusTooManyRequests,
 		"A send or acceptance-probe budget is spent ("+typePrefix+mount.CodeThrottled+"); Retry-After names the seconds until the window opens again")
@@ -219,13 +177,10 @@ func throttledResponse() speedhttp.Response {
 	return response
 }
 
-// managementFailures are the answers every management route shares: the gateway
-// refuses a request that carries no usable credential before the handler runs.
 var managementFailures = []speedhttp.Response{
 	unauthorized("No usable credential"),
 }
 
-// The answers the management routes share beyond the credential check.
 const (
 	descriptionForbiddenTenant = "The caller may not manage memberships in the tenant (" + typePrefix + mount.CodeForbidden + ")"
 	descriptionContactRequired = "The acting account holds an email address it has not proved (" + typePrefix + mount.CodeContactRequired + ")"
@@ -233,9 +188,6 @@ const (
 	descriptionNotJSON         = "The request body is not application/json"
 )
 
-// issueOperation declares the route that issues an invitation. The handler
-// receives the tenant and the body through its input and returns the issued
-// view, so the entry point writes the declared 201.
 var issueOperation = speedhttp.NewOperation[issueInput, AuthnInviteIssued](
 	"authn.invite.issue",
 	http.MethodPost,
@@ -292,8 +244,6 @@ var issueOperation = speedhttp.NewOperation[issueInput, AuthnInviteIssued](
 	),
 )
 
-// listOperation declares the route that reads one page of a tenant's
-// invitations.
 var listOperation = speedhttp.NewOperation[listInput, AuthnInvitePage](
 	"authn.invite.list",
 	http.MethodGet,
@@ -326,10 +276,7 @@ var listOperation = speedhttp.NewOperation[listInput, AuthnInvitePage](
 	),
 )
 
-// revokeOperation declares the route that revokes a pending invitation. The
-// handler builds the answer because a missing invitation is a bare 404, which a
-// simple operation's error path cannot write: it writes a problem document for
-// every failure.
+// The handler builds the answer: an unknown invitation is a bare 404.
 var revokeOperation = speedhttp.NewReplyOperation[revokeInput](
 	"authn.invite.revoke",
 	http.MethodDelete,
@@ -359,9 +306,7 @@ var revokeOperation = speedhttp.NewReplyOperation[revokeInput](
 	),
 )
 
-// resendOperation declares the route that sends a pending invitation again. The
-// handler builds the answer because an unknown invitation is a bare 404, which a
-// simple operation's error path cannot write.
+// The handler builds the answer: an unknown invitation is a bare 404.
 var resendOperation = speedhttp.NewReplyOperation[resendInput](
 	"authn.invite.resend",
 	http.MethodPost,
@@ -402,9 +347,7 @@ var resendOperation = speedhttp.NewReplyOperation[resendInput](
 	),
 )
 
-// acceptViewOperation declares the route that reads the invitation a token
-// points to. The route is public and the token is the whole credential. An
-// unknown token is a bare 404, so the handler builds its answer.
+// The handler builds the answer: an unknown token is a bare 404.
 var acceptViewOperation = speedhttp.NewReplyOperation[acceptViewInput](
 	"authn.invite.acceptView",
 	http.MethodGet,
@@ -436,11 +379,7 @@ var acceptViewOperation = speedhttp.NewReplyOperation[acceptViewInput](
 	speedhttp.Public(),
 )
 
-// eligibilityOperation declares the route that answers, for the signed-in
-// caller alone, whether an invitation could be accepted by this account. It is
-// guarded rather than public: the public read stays open so an anonymous
-// visitor can see the landing page, while the proof question names an account.
-// An unknown token is a bare 404, so the handler builds its answer.
+// The handler builds the answer: an unknown token is a bare 404.
 var eligibilityOperation = speedhttp.NewReplyOperation[eligibilityInput](
 	"authn.invite.eligibility",
 	http.MethodGet,
@@ -469,13 +408,7 @@ var eligibilityOperation = speedhttp.NewReplyOperation[eligibilityInput](
 	},
 )
 
-// acceptOperation declares the route that redeems an invitation. The route is
-// optional: a request with no credential reaches the handler with no identity
-// and is refused with 401. A caller that is not a user account is 403
-// invitation-target-invalid. The token is not proof of the invited address, so a
-// caller who has not proved it is 403 and is shown the proof step; the route
-// never opens an account. An unknown token is a bare 404, so the handler builds
-// its answer.
+// The handler builds the answer: an unknown token is a bare 404.
 var acceptOperation = speedhttp.NewReplyOperation[acceptInput](
 	"authn.invite.accept",
 	http.MethodPost,
@@ -529,10 +462,6 @@ var acceptOperation = speedhttp.NewReplyOperation[acceptInput](
 	speedhttp.Optional(),
 )
 
-// operations is this module's declaration of the API it serves. The fragment is
-// generated from it; the routes are mounted from the same declarations.
-// tenantOperations is the management surface, decided in the tenant's own
-// policy domain.
 var tenantOperations = speedhttp.Operations{
 	issueOperation,
 	listOperation,
@@ -540,9 +469,6 @@ var tenantOperations = speedhttp.Operations{
 	resendOperation,
 }
 
-// publicOperations is the acceptance surface: the read is public, the write is
-// optional because it needs an identity but carries no decision to make, and
-// the eligibility read is guarded because it answers about the caller alone.
 var publicOperations = speedhttp.Operations{
 	acceptViewOperation,
 	acceptOperation,

@@ -10,7 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// requireNullField asserts that one field of a decoded JSON object is null.
 func requireNullField(t *testing.T, object map[string]json.RawMessage, name string) {
 	t.Helper()
 	raw, present := object[name]
@@ -23,8 +22,6 @@ func requireNullField(t *testing.T, object map[string]json.RawMessage, name stri
 	}
 }
 
-// requireUTCInstant asserts that one field of a decoded JSON object is a
-// quoted string and that its wire text ends in Z.
 func requireUTCInstant(t *testing.T, object map[string]json.RawMessage, name string) {
 	t.Helper()
 	raw, present := object[name]
@@ -37,9 +34,7 @@ func requireUTCInstant(t *testing.T, object map[string]json.RawMessage, name str
 	}
 }
 
-// TestTheProfileInstantsAreWrittenInUTC holds the wire rule for the instants
-// the profile carries: a value stored in a non-UTC zone leaves as UTC with a
-// trailing Z.
+// TestTheProfileInstantsAreWrittenInUTC checks that an instant stored in a non-UTC zone leaves as UTC ending in Z.
 func TestTheProfileInstantsAreWrittenInUTC(t *testing.T) {
 	at := time.Date(2027, 3, 4, 5, 6, 7, 0, time.FixedZone("UTC+8", 8*60*60))
 	r := newRig(t)
@@ -89,10 +84,7 @@ func TestTheProfileInstantsAreWrittenInUTC(t *testing.T) {
 	requireUTCInstant(t, links[0], "last_login_at")
 }
 
-// TestTheOptionalInstantsAreNullWhenAbsent holds the wire rule for the profile
-// instants a record may lack: the account's creation instant, a binding's
-// creation instant and the verified-since instant are null rather than the
-// empty string.
+// TestTheOptionalInstantsAreNullWhenAbsent checks that a missing instant is null rather than the empty string.
 func TestTheOptionalInstantsAreNullWhenAbsent(t *testing.T) {
 	r := newRig(t)
 	r.accounts.links[meAccount] = []authn.ExternalBinding{{ID: "link-1", Provider: "idp-1"}}

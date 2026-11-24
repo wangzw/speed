@@ -6,10 +6,8 @@ import (
 	"testing"
 )
 
-// TestAResendVoidsTheOldTokenOnEveryAcceptanceFace holds that a resend's old
-// token is dead everywhere it is presented: the acceptance write and the
-// eligibility read both answer the bare 404, while the new token redeems the
-// invitation and writes the membership.
+// TestAResendVoidsTheOldTokenOnEveryAcceptanceFace checks that a replaced token
+// is a bare 404 on both acceptance reads while the new one redeems.
 func TestAResendVoidsTheOldTokenOnEveryAcceptanceFace(t *testing.T) {
 	h := newHarness(t)
 	h.proveEmail("acct-alice", "alice@example.com")
@@ -20,7 +18,6 @@ func TestAResendVoidsTheOldTokenOnEveryAcceptanceFace(t *testing.T) {
 	}
 	h.acceptAsHTTP("acct-alice", "alice@example.com")
 
-	// The replaced token on the acceptance write.
 	w := h.request(http.MethodPost, "/api/v1/auth/invitations/"+first.Token, map[string]string{})
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("accepting with the replaced token answered %d, want 404: %s", w.Code, w.Body.String())
@@ -32,7 +29,6 @@ func TestAResendVoidsTheOldTokenOnEveryAcceptanceFace(t *testing.T) {
 		t.Errorf("a replaced token wrote %d membership(s), want none", h.members.count)
 	}
 
-	// The replaced token on the eligibility read.
 	w = h.request(http.MethodGet, eligibilityPathPrefix+first.Token+"/eligibility", nil)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("the eligibility read of the replaced token answered %d, want 404: %s", w.Code, w.Body.String())
@@ -41,7 +37,6 @@ func TestAResendVoidsTheOldTokenOnEveryAcceptanceFace(t *testing.T) {
 		t.Errorf("the 404 carries the body %q, want none", w.Body.String())
 	}
 
-	// The new token is the one that redeems.
 	w = h.request(http.MethodPost, "/api/v1/auth/invitations/"+resent.Token, map[string]string{})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("accepting with the new token answered %d, want 201: %s", w.Code, w.Body.String())
@@ -54,13 +49,8 @@ func TestAResendVoidsTheOldTokenOnEveryAcceptanceFace(t *testing.T) {
 	}
 }
 
-// TestTheEligibilityReadCountsDistinctTokensAgainstOneClientBound holds the
-// coarse client tier on the guarded read: one client address spends a fixed
-// number of eligibility probes per window whatever tokens it walks. Two tokens
-// are presented because one token cannot separate the client counter from the
-// token counter: the second token still has its own token allowance and is
-// refused by the client bound alone. The refusal is the standard 429 with
-// Retry-After.
+// TestTheEligibilityReadCountsDistinctTokensAgainstOneClientBound checks that one
+// client's bound throttles the guarded read across distinct tokens.
 func TestTheEligibilityReadCountsDistinctTokensAgainstOneClientBound(t *testing.T) {
 	h := newHarness(t)
 	h.store.set(probeTokenPath, 100)
@@ -82,12 +72,8 @@ func TestTheEligibilityReadCountsDistinctTokensAgainstOneClientBound(t *testing.
 	}
 }
 
-// TestTheEligibilityAndPublicReadsShareTheClientProbeBudget holds that the two
-// acceptance reads count against one client counter whichever token each
-// presents: the guarded read cannot be used to get a second allowance beside the
-// public one. A public read of one token and an eligibility read of another from
-// the same client spend two units of a two-unit bound, and the next read is
-// refused whether it is the public one or the eligibility one.
+// TestTheEligibilityAndPublicReadsShareTheClientProbeBudget checks that the
+// public and eligibility reads share one client counter.
 func TestTheEligibilityAndPublicReadsShareTheClientProbeBudget(t *testing.T) {
 	h := newHarness(t)
 	h.store.set(probeTokenPath, 100)

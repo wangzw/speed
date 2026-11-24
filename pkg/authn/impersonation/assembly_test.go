@@ -19,8 +19,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The stand-in modules an assembly drives: the capabilities another module
-// delivers exclusively in a real command.
 const (
 	dbModule      = "stand-in.db"
 	accountModule = "stand-in.account"
@@ -31,8 +29,6 @@ const (
 	auditModule   = "stand-in.audit"
 )
 
-// standIn is a module that declares the tokens names and delivers instance from
-// its New.
 func standIn(name string, instance any, tokens ...core.Token) core.Module {
 	provides := make([]core.Provision, len(tokens))
 	for i, tk := range tokens {
@@ -45,7 +41,7 @@ func standIn(name string, instance any, tokens ...core.Token) core.Module {
 	}
 }
 
-// TestTheDescriptorNamesWhatItDeliversAndRequires holds the descriptor's shape.
+// TestTheDescriptorNamesWhatItDeliversAndRequires checks the descriptor's shape.
 func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "authn.impersonation" {
@@ -79,7 +75,7 @@ func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 	}
 }
 
-// TestPrepareStatesEnabledAndNothingElse holds the stance.
+// TestPrepareStatesEnabledAndNothingElse checks that Prepare states enabled and nothing else.
 func TestPrepareStatesEnabledAndNothingElse(t *testing.T) {
 	got, err := Module().Prepare(t.Context(), core.New())
 	if err != nil {
@@ -90,7 +86,7 @@ func TestPrepareStatesEnabledAndNothingElse(t *testing.T) {
 	}
 }
 
-// TestImportingThePackageRegistersTheModuleWithTheProcess holds the init.
+// TestImportingThePackageRegistersTheModuleWithTheProcess checks the package registers the module.
 func TestImportingThePackageRegistersTheModuleWithTheProcess(t *testing.T) {
 	got, ok := core.ProcessRegistry.Lookup(ModuleName)
 	if !ok {
@@ -101,17 +97,11 @@ func TestImportingThePackageRegistersTheModuleWithTheProcess(t *testing.T) {
 	}
 }
 
-// assembly is one drive of a real registry through the module's descriptor.
 type assembly struct {
-	// guard is the scope guard; nil leaves the admission layer out, which must
-	// fail the drive with a missing provider.
-	guard authn.ScopeGuard
-	// migrate builds the module's table before the drive; false leaves it absent
-	// so that Start's probe fails.
+	guard   authn.ScopeGuard
 	migrate bool
 }
 
-// drive advances the assembly to Start and returns what the drive returned.
 func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core.Registry) error) error {
 	t.Helper()
 
@@ -160,7 +150,7 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 	})
 }
 
-// TestARealRegistryDeliversImpersonation holds the descriptor end to end.
+// TestARealRegistryDeliversImpersonation checks that a real registry delivers the capability.
 func TestARealRegistryDeliversImpersonation(t *testing.T) {
 	var delivered authn.Impersonation
 	err := assembly{
@@ -188,7 +178,7 @@ func TestTheDriveFailsWithoutAScopeGuard(t *testing.T) {
 	}
 }
 
-// TestTheDriveFailsWithoutTheTable holds Start's probe.
+// TestTheDriveFailsWithoutTheTable checks that a missing record table is ErrNotMigrated.
 func TestTheDriveFailsWithoutTheTable(t *testing.T) {
 	err := assembly{guard: fakeScopeGuard{covers: map[string]bool{}}}.drive(t, func(context.Context, *core.Registry) error { return nil })
 	if !errors.Is(err, authn.ErrNotMigrated) {

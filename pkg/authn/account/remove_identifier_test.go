@@ -8,7 +8,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// identifierOfKind reads the one identifier of a kind the account holds.
 func identifierOfKind(t *testing.T, h *harness, id authn.AccountID, kind authn.IdentifierKind) authn.Identifier {
 	t.Helper()
 	list, err := h.p.Identifiers(context.Background(), id)
@@ -24,13 +23,7 @@ func identifierOfKind(t *testing.T, h *harness, id authn.AccountID, kind authn.I
 	return authn.Identifier{}
 }
 
-// TestRemovingTheLastLoginNameOfAPasswordAccountIsRefused holds the two login
-// name rules. A username cannot be removed at all, whether or not the account
-// has another login name. An account holding a password credential and no
-// username, a row a write around this surface can leave, cannot lose its last
-// chosen email address either: that removal answers authn.ErrIdentifierRequired.
-// In both cases the transaction rolls back, the identifier stays held and no
-// removal event is published.
+// Removing the last login name of a password account is refused under both login-name rules.
 func TestRemovingTheLastLoginNameOfAPasswordAccountIsRefused(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -59,8 +52,6 @@ func TestRemovingTheLastLoginNameOfAPasswordAccountIsRefused(t *testing.T) {
 			t.Errorf("the refused removal published %d event(s)", got-before)
 		}
 
-		// The last-login-name rule only reaches a row with no username, which a
-		// write around this surface can leave.
 		emailOnly, err := h.p.Create(ctx, authn.CreateAccount{
 			Username:         "onemail",
 			Email:            "only@example.com",
@@ -85,10 +76,7 @@ func TestRemovingTheLastLoginNameOfAPasswordAccountIsRefused(t *testing.T) {
 	})
 }
 
-// TestRemovingTheUsernameIsAlwaysRefusedAndAnEmailGoesWhileItRemains holds that
-// a username is not a login way the holder may drop: removing it is refused even
-// when another login name remains, while the chosen email address may still be
-// removed because the username keeps the account with a login name.
+// A username is never removable, while the chosen email may go as long as the username keeps a login name.
 func TestRemovingTheUsernameIsAlwaysRefusedAndAnEmailGoesWhileItRemains(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -112,10 +100,7 @@ func TestRemovingTheUsernameIsAlwaysRefusedAndAnEmailGoesWhileItRemains(t *testi
 	})
 }
 
-// TestAnAccountWithoutAPasswordCannotLoseItsUsername holds that a passwordless
-// account's only identifier is its username, which is not removable: the refusal
-// is ErrUsernameImmutable, the transaction rolls back and no removal event is
-// published.
+// A passwordless account's username is its only identifier, so removing it is ErrUsernameImmutable, rolls back and publishes no event.
 func TestAnAccountWithoutAPasswordCannotLoseItsUsername(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -137,9 +122,7 @@ func TestAnAccountWithoutAPasswordCannotLoseItsUsername(t *testing.T) {
 	})
 }
 
-// TestAPasswordlessAccountKeepsItsUsernameAndItsLastWayIn holds rule 2C from
-// the refusal side: a username is never removed, and once a chosen phone number
-// is the account's last way in, removing it is refused too.
+// A passwordless account keeps its username, and a chosen phone that is its last way in cannot be removed either.
 func TestAPasswordlessAccountKeepsItsUsernameAndItsLastWayIn(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -181,11 +164,7 @@ func TestAPasswordlessAccountKeepsItsUsernameAndItsLastWayIn(t *testing.T) {
 	})
 }
 
-// TestAnUnverifiedPhoneDoesNotKeepTheAccountReachable holds that a phone number
-// counts as a way in only once its ownership was proved and its holder chose it:
-// a number written with an unproved way, and the same number proved in place,
-// leave the account with no way to log in that is not a factor until it is
-// chosen. The username is not removable either way.
+// A phone counts as a way in only once proved and chosen; an unproved one, even proved in place, leaves no login way until chosen.
 func TestAnUnverifiedPhoneDoesNotKeepTheAccountReachable(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -223,12 +202,7 @@ func TestAnUnverifiedPhoneDoesNotKeepTheAccountReachable(t *testing.T) {
 	})
 }
 
-// TestHasLoginWayOtherThanPasskeyCountsTheThreeWays holds the account module's
-// answer the administrator's reset guard reads: a password credential, a proved
-// phone number chosen as a sign-in way and an external identity each count, while
-// none of them does not. A login name without a password is not a way in, and
-// neither is a phone number whose ownership was not proved or which its holder
-// did not choose.
+// HasLoginWayOtherThanPasskey counts a password, a proved chosen phone and an external identity, and none of them does not.
 func TestHasLoginWayOtherThanPasskeyCountsTheThreeWays(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -307,9 +281,7 @@ func TestHasLoginWayOtherThanPasskeyCountsTheThreeWays(t *testing.T) {
 	})
 }
 
-// TestRemovingAPhoneNeverHitsTheLoginNameRule holds that the rule is about
-// username and email addresses: a phone number is removed even when the account
-// holds a password credential and nothing else that serves as a login name.
+// A phone number is removed even when the account has a password credential and nothing else serves as a login name.
 func TestRemovingAPhoneNeverHitsTheLoginNameRule(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -322,8 +294,6 @@ func TestRemovingAPhoneNeverHitsTheLoginNameRule(t *testing.T) {
 			t.Errorf("removing the phone number gave %v, want nil", err)
 		}
 
-		// A password account with no login name, which an account written around
-		// this rule can hold, still loses its phone number.
 		if err := h.handle.Exec("DELETE FROM "+tableIdentifiers+" WHERE account_id = ? AND kind IN ?",
 			id.String(), []string{string(authn.IdentifierUsername), string(authn.IdentifierEmail)}).Error; err != nil {
 			t.Fatalf("clearing the login names: %v", err)

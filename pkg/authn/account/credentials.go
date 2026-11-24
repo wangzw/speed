@@ -14,9 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/password"
 )
 
-// hasCredential reports whether the account holds a password credential. It is
-// the row's presence: an entry this module cannot read still means the account
-// signs in with a password.
 func hasCredential(tx *gorm.DB, id string) (bool, error) {
 	var n int64
 	if err := tx.Raw("SELECT COUNT(*) FROM "+tableCredentials+" WHERE account_id = ?", id).Scan(&n).Error; err != nil {
@@ -25,9 +22,6 @@ func hasCredential(tx *gorm.DB, id string) (bool, error) {
 	return n > 0, nil
 }
 
-// storedEntry is the credential an account has, read and bounded: ok is false when
-// the account has none or when what it has cannot be read, which no check can use
-// and which is reported without the entry's text.
 func (p *product) storedEntry(tx *gorm.DB, id string) (entry password.Entry, ok bool, err error) {
 	var rows []struct{ PHC string }
 	if err = tx.Raw("SELECT phc FROM "+tableCredentials+" WHERE account_id = ?", id).Scan(&rows).Error; err != nil {
@@ -44,18 +38,14 @@ func (p *product) storedEntry(tx *gorm.DB, id string) (entry password.Entry, ok 
 	return entry, true, nil
 }
 
-// writeCredential writes the credential of an account, replacing the one there.
-// It is a raw statement: a hash is not an encrypted column, and a write of it
-// leaves no audit row whose detail could name it.
+// writeCredential writes the credential raw: the model path would put the hash
+// into a statement-level audit row.
 func (p *product) writeCredential(tx *gorm.DB, id, phc string, mustChange bool) error {
 	return tx.Exec("INSERT INTO "+tableCredentials+" (account_id, phc, changed_at, must_change) VALUES (?, ?, ?, ?)"+
 		" ON CONFLICT (account_id) DO UPDATE SET phc = EXCLUDED.phc, changed_at = EXCLUDED.changed_at,"+
 		" must_change = EXCLUDED.must_change", id, phc, p.at(), mustChange).Error
 }
 
-// attribution resolves the event attribution of a password write and holds it to
-// the closed sets the payload carries. An empty By is inferred from whether the
-// call carries the current password, and an empty Channel is the non-reset case.
 func attribution(opt authn.SetPasswordOptions) (by, channel string, err error) {
 	by = opt.By
 	if by == "" {
@@ -74,19 +64,12 @@ func attribution(opt authn.SetPasswordOptions) (by, channel string, err error) {
 	default:
 		return "", "", fmt.Errorf("%w: the channel of a password change is email or sms", authn.ErrInvalidArgument)
 	}
-	// A channel is the reset path's own field: the payload carries it only when
-	// the write came from a reset, and a reset always names the channel it used.
 	if (by == byReset) != (opt.Channel != "") {
 		return "", "", fmt.Errorf("%w: a reset names its channel and only a reset carries one", authn.ErrInvalidArgument)
 	}
 	return by, opt.Channel, nil
 }
 
-// requireInTx holds a password write to the state its caller requires, inside the
-// write transaction: the account still enabled, a credential row already there,
-// and an identifier row that still belongs to the account. Any of them
-// unsatisfied is authn.ErrAccountUnavailable. The requirement is read under the
-// account's lock, so a status change or a removal committed before it is seen.
 func (p *product) requireInTx(tx *gorm.DB, row accountRow, opt authn.SetPasswordOptions) error {
 	if opt.RequireActive && statusOf(row.Status) != authn.StatusActive {
 		return fmt.Errorf("%w: the account is not enabled", authn.ErrAccountUnavailable)
@@ -113,20 +96,6 @@ func (p *product) requireInTx(tx *gorm.DB, row accountRow, opt authn.SetPassword
 	return nil
 }
 
-// Set writes a password.
-//
-// The password is normalized and judged by the policy: no fewer characters than
-// the setting asks, at most 128 bytes, not an identifier of the account, and not
-// the one the account has, each of which is authn.ErrPasswordPolicy, and an
-// account with no username and no email address to log in with is
-// authn.ErrIdentifierRequired. That refusal reaches only a row the write
-// surfaces did not create: every user account they open carries a username, so
-// the check stands against a row written around them rather than against an
-// account a person can reach. A call that carries the current password checks it
-// first, and a wrong one is authn.ErrInvalidCredentials and counts against the
-// account like a failed login does. No session is revoked here: the caller
-// does that once the change is made, which is why this module does not depend on
-// the session module.
 func (p *product) Set(ctx context.Context, id authn.AccountID, plaintext string, opt authn.SetPasswordOptions) error {
 	by, channel, err := attribution(opt)
 	if err != nil {
@@ -209,12 +178,6 @@ func (p *product) Set(ctx context.Context, id authn.AccountID, plaintext string,
 	return nil
 }
 
-// confirm checks the current password a self-service change carries, against the
-// credential the account has. A wrong one, and an account with no credential to
-// confirm against, are authn.ErrInvalidCredentials; a wrong one is a failed attempt
-// of the account, and the account-level back-off holds this check as it holds a
-// login, silently. It reports whether the new password is the one that was
-// confirmed.
 func (p *product) confirm(ctx context.Context, id authn.AccountID, entry password.Entry, has bool, current, newer string) (bool, error) {
 	wait, err := p.Check(ctx, authn.ScopeAccount, id.String())
 	if err != nil {
@@ -224,8 +187,6 @@ func (p *product) confirm(ctx context.Context, id authn.AccountID, entry passwor
 	held := false
 	switch {
 	case !has || tooLong:
-		// Nothing to confirm against, or nothing that could match: the check
-		// derives against the decoy so that the two cost the same.
 		decoy, derr := p.decoy.For(p.decoyParams())
 		if derr != nil {
 			return false, fmt.Errorf("%w: making the decoy entry: %w", authn.ErrUnavailable, derr)
@@ -249,12 +210,6 @@ func (p *product) confirm(ctx context.Context, id authn.AccountID, entry passwor
 	return candidate == newer, nil
 }
 
-// ImportHash writes a PHC or legacy entry as the account's password credential. A
-// legacy entry is converted without loss, the salt and the key being the same
-// bytes under another wrapper, and a form that cannot be read, or is out of the
-// bounds, is refused as unreadable. The strength of what is imported is not
-// judged: it was written elsewhere and is as strong as it is, and the first check
-// that holds writes it again at the current cost if it is weaker.
 func (p *product) ImportHash(ctx context.Context, id authn.AccountID, encoded string, mustChange bool) error {
 	phc, err := p.importable(encoded)
 	if err != nil {
@@ -288,8 +243,6 @@ func (p *product) ImportHash(ctx context.Context, id authn.AccountID, encoded st
 	return nil
 }
 
-// Clear deletes the account's password credential, so that it has none and has to
-// set one again. An account with none is already clear, and the call is nil.
 func (p *product) Clear(ctx context.Context, id authn.AccountID) error {
 	err := p.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		if _, err := p.lock(tx, id); err != nil {
@@ -300,20 +253,8 @@ func (p *product) Clear(ctx context.Context, id authn.AccountID) error {
 	return failed("clearing a password", err)
 }
 
-// secretTouchEvery is how often at most the time a secret was last used is
-// written, so that a client that presents its secret on every call does not make
-// a write of every one.
 const secretTouchEvery = time.Minute
 
-// VerifyServiceSecret checks a service account's client credential.
-//
-// The row is found by the SHA-256 of the secret and has to be neither revoked nor
-// expired, and its account has to equal the client identifier, which is compared
-// in constant time, and be an enabled service account. The secret is 256 random
-// bits and is not derived from: a dictionary cannot be run against it, so there is
-// no derivation to be made to run in numbers. Every refusal is
-// authn.ErrInvalidCredentials. It returns the account, the secret's identifier and
-// the expiry, where the zero time means it does not expire.
 func (p *product) VerifyServiceSecret(ctx context.Context, clientID, secret string) (authn.AccountID, string, time.Time, error) {
 	refused := func() (authn.AccountID, string, time.Time, error) {
 		return "", "", time.Time{}, fmt.Errorf("%w", authn.ErrInvalidCredentials)

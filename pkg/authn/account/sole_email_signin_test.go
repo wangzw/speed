@@ -8,9 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestAVerifiedRegistrationAddressBecomesALoginWay holds the password-signup
-// path: the reserved address is no login name before its holder proves it, and
-// the proof, on the account's only address, makes it one in the same transaction.
+// The reserved address is no login name until its holder proves it, and proving the account's only address makes it one in the same transaction.
 func TestAVerifiedRegistrationAddressBecomesALoginWay(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -36,9 +34,7 @@ func TestAVerifiedRegistrationAddressBecomesALoginWay(t *testing.T) {
 	})
 }
 
-// TestOnlyASoleEmailIsChosenAsALoginWayAtItsFirstProof holds both sides of the
-// rule: an account's only address is chosen when it is proved, while an address
-// among several leaves the choice to its holder.
+// An account's only address is chosen as a login way at its first proof, while an address among several leaves the choice to its holder.
 func TestOnlyASoleEmailIsChosenAsALoginWayAtItsFirstProof(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -77,9 +73,7 @@ func TestOnlyASoleEmailIsChosenAsALoginWayAtItsFirstProof(t *testing.T) {
 	})
 }
 
-// TestAnImportKeepsTheSignInAxisOfItsSourceRecord holds the import path outside
-// the rule: a source record that did not choose its proved address keeps it
-// unchosen, while the same address on an account that is not an import is chosen.
+// An import keeps its proved address unchosen when the source did not choose it, while the same address on a non-import is chosen.
 func TestAnImportKeepsTheSignInAxisOfItsSourceRecord(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -108,10 +102,7 @@ func TestAnImportKeepsTheSignInAxisOfItsSourceRecord(t *testing.T) {
 	})
 }
 
-// TestCreateChoosesASoleProvedEmailAsALoginWay holds the channels that prove an
-// address at creation: each makes the account's only address a login way, while
-// the unproved channels, an invitation's included, leave both axes for the
-// holder.
+// Each proving channel makes the account's only address a login way at creation, while unproved channels, an invitation's included, leave both axes to the holder.
 func TestCreateChoosesASoleProvedEmailAsALoginWay(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()

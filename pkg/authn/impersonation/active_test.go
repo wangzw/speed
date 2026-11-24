@@ -13,9 +13,8 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// TestActiveHoldsForAHealthyRecord holds the valid side: a record whose end has
-// not passed, whose session is alive, whose actor and target are enabled and
-// whose target is a member is active, and nothing is written.
+// TestActiveHoldsForAHealthyRecord checks that a record with an unexpired end, a
+// live session, enabled actor and target and a member target is active and unwritten.
 func TestActiveHoldsForAHealthyRecord(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -36,10 +35,8 @@ func TestActiveHoldsForAHealthyRecord(t *testing.T) {
 	})
 }
 
-// TestActiveLapsesForEachReason holds the closed set of lapse causes one by one:
-// each makes Active false, writes the end reason back with no initiator, and
-// publishes the ended event except for an expiry, which has no owner. The event
-// carries the cause category the design fixes for the end reason.
+// TestActiveLapsesForEachReason checks that each lapse cause makes Active false,
+// writes its reason back with no initiator, and publishes the ended event except for an expiry.
 func TestActiveLapsesForEachReason(t *testing.T) {
 	for _, c := range []struct {
 		name        string
@@ -104,9 +101,7 @@ func TestActiveLapsesForEachReason(t *testing.T) {
 	}
 }
 
-// TestActiveIsFalseForAnEndedRecord holds the first step the design fixes: a
-// record that has already ended reads as false at once, however it was ended and
-// even before its end time arrives. Nothing is written back.
+// TestActiveIsFalseForAnEndedRecord checks that an already ended record reads as false at once and is not written again.
 func TestActiveIsFalseForAnEndedRecord(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -121,8 +116,6 @@ func TestActiveIsFalseForAnEndedRecord(t *testing.T) {
 		endedAt, _, _ := r.stored(g.ID)
 		events := len(r.bus.ofType(authn.EventImpersonationEnded))
 
-		// The record's end time is still in the future, so only the ended check
-		// can make Active false here.
 		got, active, err := r.p.Active(ctx, g.ID)
 		if err != nil {
 			t.Fatalf("Active: %v", err)
@@ -139,9 +132,7 @@ func TestActiveIsFalseForAnEndedRecord(t *testing.T) {
 	})
 }
 
-// TestActiveIsFalseWhenTheEndArrivesExactly holds the boundary of the second
-// step: an end time equal to the current instant is not in the future, so the
-// record has lapsed.
+// TestActiveIsFalseWhenTheEndArrivesExactly checks that an end time equal to the current instant has lapsed.
 func TestActiveIsFalseWhenTheEndArrivesExactly(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -149,7 +140,7 @@ func TestActiveIsFalseWhenTheEndArrivesExactly(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Start: %v", err)
 		}
-		// The record ends 30 minutes from base; move the clock to exactly then.
+
 		r.clock.advance(30 * time.Minute)
 		_, active, err := r.p.Active(ctx, g.ID)
 		if err != nil {
@@ -164,9 +155,7 @@ func TestActiveIsFalseWhenTheEndArrivesExactly(t *testing.T) {
 	})
 }
 
-// TestALapseIsWrittenOnceAndOnlyOnce holds the conditional update as the arbiter:
-// a second read of the same lapsed record writes nothing and publishes nothing,
-// and the date the end was first written stands.
+// TestALapseIsWrittenOnceAndOnlyOnce checks that a second read of the same lapsed record writes nothing and leaves the first end date.
 func TestALapseIsWrittenOnceAndOnlyOnce(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -194,9 +183,7 @@ func TestALapseIsWrittenOnceAndOnlyOnce(t *testing.T) {
 	})
 }
 
-// TestASessionCanStartAgainAfterALapse holds the reason the lapse is written
-// back: once the record has ended, the same session may begin another one, which
-// the partial unique index would otherwise refuse.
+// TestASessionCanStartAgainAfterALapse checks that the same session can start another record once the first has lapsed.
 func TestASessionCanStartAgainAfterALapse(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -222,10 +209,8 @@ func TestASessionCanStartAgainAfterALapse(t *testing.T) {
 	})
 }
 
-// TestStartEndsALapsedRecordInItsOwnTransaction holds the other writer of a
-// lapse: a start whose session already carries a lapsed but unended record ends
-// that record in its own transaction before inserting the new one, so the
-// partial unique index does not refuse the start.
+// TestStartEndsALapsedRecordInItsOwnTransaction checks that a start ends its
+// session's lapsed unended record in its own transaction before inserting the new one.
 func TestStartEndsALapsedRecordInItsOwnTransaction(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -233,7 +218,7 @@ func TestStartEndsALapsedRecordInItsOwnTransaction(t *testing.T) {
 		if err != nil {
 			t.Fatalf("the first Start: %v", err)
 		}
-		// Let the first lapse, without reading Active: nothing has ended it yet.
+
 		r.clock.advance(31 * time.Minute)
 
 		second, err := r.p.Start(ctx, adminIdentity(t, authntest.WithAuthTime(r.clock.read())), request())
@@ -260,8 +245,7 @@ func TestStartEndsALapsedRecordInItsOwnTransaction(t *testing.T) {
 	})
 }
 
-// TestActiveReturnsFalseForAnUnknownRecord holds the first step: a record that is
-// not there is false at once and is never written.
+// TestActiveReturnsFalseForAnUnknownRecord checks that a record that is not there reads as false and is never written.
 func TestActiveReturnsFalseForAnUnknownRecord(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		_, active, err := r.p.Active(context.Background(), "no-such-record")
@@ -274,8 +258,7 @@ func TestActiveReturnsFalseForAnUnknownRecord(t *testing.T) {
 	})
 }
 
-// TestActiveReturnsAnErrorWhenADependencyFails holds the failure direction: a
-// dependency that cannot answer is an error and never a valid record.
+// TestActiveReturnsAnErrorWhenADependencyFails checks that a dependency that cannot answer is an error and never a valid record.
 func TestActiveReturnsAnErrorWhenADependencyFails(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -294,9 +277,8 @@ func TestActiveReturnsAnErrorWhenADependencyFails(t *testing.T) {
 	})
 }
 
-// TestTheLapseCauseFollowsTheFixedOrder holds the adjacent pairs of the closed
-// order: when several conditions fail at once, the first in the order names the
-// end reason written back and the event's cause.
+// TestTheLapseCauseFollowsTheFixedOrder checks that when several conditions fail
+// at once, the first in the closed order names the written reason and event cause.
 func TestTheLapseCauseFollowsTheFixedOrder(t *testing.T) {
 	for _, c := range []struct {
 		name        string
@@ -370,10 +352,8 @@ func TestTheLapseCauseFollowsTheFixedOrder(t *testing.T) {
 	}
 }
 
-// TestActiveReturnsAnErrorForEveryFailedDependencyRead holds the failure
-// direction of each read the judgement makes: a dependency that cannot answer
-// is its own error, is never taken for a lapse, and writes nothing. Each case
-// then clears the failure and shows the record was never ended by the read.
+// TestActiveReturnsAnErrorForEveryFailedDependencyRead checks that each failed
+// dependency read is its own error, is never a lapse, and writes nothing.
 func TestActiveReturnsAnErrorForEveryFailedDependencyRead(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -425,10 +405,7 @@ func TestActiveReturnsAnErrorForEveryFailedDependencyRead(t *testing.T) {
 	}
 }
 
-// TestTheJudgeReadsTheRecordsOwnSession holds that each path asks the session
-// store about the record's bound session and no other identifier. The session
-// store answers only for that identifier, so a read of any other one would be
-// ErrSessionNotFound and would end the record.
+// TestTheJudgeReadsTheRecordsOwnSession checks that each path asks the session store about the record's bound session and no other identifier.
 func TestTheJudgeReadsTheRecordsOwnSession(t *testing.T) {
 	t.Run("Active", func(t *testing.T) {
 		onEachDialect(t, func(t *testing.T, r *rig) {
@@ -502,9 +479,8 @@ func TestTheJudgeReadsTheRecordsOwnSession(t *testing.T) {
 	})
 }
 
-// TestActiveJudgesThroughTheCheckTTLCache holds the read the verification hot
-// path is defined to make: inside the check-ttl window Active answers from the
-// cache, and after the window it reads the store and writes the lapse back.
+// TestActiveJudgesThroughTheCheckTTLCache checks that Active answers from the
+// check-ttl cache inside the window and reads the store and writes the lapse after it.
 func TestActiveJudgesThroughTheCheckTTLCache(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -536,10 +512,8 @@ func TestActiveJudgesThroughTheCheckTTLCache(t *testing.T) {
 	})
 }
 
-// TestActiveSettlesOnceWhenTwoReplicasJudgeTheSameLapsedRecord holds the
-// conditional update as the arbiter under a race on the hot path: both replicas
-// read the same lapsed record, and the loser still reports it as ended and does
-// not count or publish again.
+// TestActiveSettlesOnceWhenTwoReplicasJudgeTheSameLapsedRecord checks that two
+// replicas racing on one lapsed record settle it once: the loser counts and publishes nothing.
 func TestActiveSettlesOnceWhenTwoReplicasJudgeTheSameLapsedRecord(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -600,10 +574,7 @@ func TestActiveSettlesOnceWhenTwoReplicasJudgeTheSameLapsedRecord(t *testing.T) 
 	})
 }
 
-// TestASettleWriteBackFailureIsAnError holds the branch a database that reads
-// but cannot write leaves: the judgement lapsed the record and the conditional
-// update failed, so Active and List fail, Revoke fails, and nothing is written
-// or announced.
+// TestASettleWriteBackFailureIsAnError checks that a failed write-back fails Active, List and Revoke and writes or announces nothing.
 func TestASettleWriteBackFailureIsAnError(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, dialect string) {
 		r := newRig(t, h)

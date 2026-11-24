@@ -8,10 +8,8 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestGetReadsOneRecordAndReportsAMissingOne holds the read the administration
-// routes use to learn a record's tenant and target before asking the Decider: an
-// existing record is returned, and one that is not there is
-// authn.ErrNotImpersonating.
+// TestGetReadsOneRecordAndReportsAMissingOne checks that Get returns an existing
+// record's tenant and target and reports a missing one as ErrNotImpersonating.
 func TestGetReadsOneRecordAndReportsAMissingOne(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -32,9 +30,8 @@ func TestGetReadsOneRecordAndReportsAMissingOne(t *testing.T) {
 	})
 }
 
-// TestGetReturnsAnEndedRecord holds that Get is not the validity question: a
-// record that has ended is still returned, so a route can read it and revoke it
-// idempotently.
+// TestGetReturnsAnEndedRecord checks that Get returns an ended record rather than
+// judging its validity.
 func TestGetReturnsAnEndedRecord(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -55,9 +52,8 @@ func TestGetReturnsAnEndedRecord(t *testing.T) {
 	})
 }
 
-// TestListConfinesToTheQueriedTenant holds that GrantQuery.Tenant selects in the
-// store: a page holds only the queried tenant's records, so a tenant's records
-// are not filtered out of a page the other tenants filled.
+// TestListConfinesToTheQueriedTenant checks that GrantQuery.Tenant selects in the
+// store, so a page holds only the queried tenant's records.
 func TestListConfinesToTheQueriedTenant(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()

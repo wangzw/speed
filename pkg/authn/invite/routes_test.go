@@ -21,8 +21,6 @@ import (
 
 const pathAdmin = "/api/v1/tenants/tenant-a/invitations"
 
-// request sends one request through the Mounter with the body given. The caller
-// sets the identity first with Mounter.As or Mounter.AsAnonymous.
 func (h *harness) request(method, path string, body any) *httptest.ResponseRecorder {
 	h.t.Helper()
 	var reader io.Reader
@@ -51,14 +49,7 @@ func (h *harness) rowCount() int64 {
 	return n
 }
 
-// TestTheAcceptanceRoutesKeepTheirDeclaredAccessLevels holds the registration
-// split the design depends on: the acceptance read is Public so an anonymous
-// visitor reaches the landing page even with a stale credential, the acceptance
-// write is Optional so a caller who has one carries an identity, and the
-// eligibility read is Guarded because its answer is about an account. A read
-// turned Optional would answer 401 to an expired cookie and break the landing
-// page; an eligibility read turned Optional would let the handler answer an
-// anonymous caller it has nothing to say about.
+// TestTheAcceptanceRoutesKeepTheirDeclaredAccessLevels checks that the acceptance read is Public, the write Optional and the eligibility read Guarded.
 func TestTheAcceptanceRoutesKeepTheirDeclaredAccessLevels(t *testing.T) {
 	h := newHarness(t)
 	cases := []struct {
@@ -82,6 +73,7 @@ func TestTheAcceptanceRoutesKeepTheirDeclaredAccessLevels(t *testing.T) {
 	}
 }
 
+// TestIssueRouteAnswers201AndAuditsBeforeTheAction checks that the issue route answers 201 and audits before the action.
 func TestIssueRouteAnswers201AndAuditsBeforeTheAction(t *testing.T) {
 	h := newHarness(t)
 	h.asAdmin()
@@ -113,6 +105,7 @@ func TestIssueRouteAnswers201AndAuditsBeforeTheAction(t *testing.T) {
 	}
 }
 
+// TestIssueRouteWithoutAnIdentityIs401 checks that the issue route answers 401 without an identity.
 func TestIssueRouteWithoutAnIdentityIs401(t *testing.T) {
 	h := newHarness(t)
 	h.mounter.AsAnonymous()
@@ -129,6 +122,7 @@ func TestIssueRouteWithoutAnIdentityIs401(t *testing.T) {
 	}
 }
 
+// TestIssueRouteRefusedByTheDeciderWritesNothing checks that an issue refused by the Decider writes nothing.
 func TestIssueRouteRefusedByTheDeciderWritesNothing(t *testing.T) {
 	h := newHarness(t)
 	h.decider.allow = false
@@ -146,6 +140,7 @@ func TestIssueRouteRefusedByTheDeciderWritesNothing(t *testing.T) {
 	}
 }
 
+// TestIssueRouteWithoutADeciderIs403 checks that the issue route answers 403 without a Decider.
 func TestIssueRouteWithoutADeciderIs403(t *testing.T) {
 	h := newHarness(t)
 	h.p.decider = nil
@@ -159,6 +154,7 @@ func TestIssueRouteWithoutADeciderIs403(t *testing.T) {
 	}
 }
 
+// TestIssueRouteWithAFailedAuditDoesNotAct checks that a failed audit stops the issue route from acting.
 func TestIssueRouteWithAFailedAuditDoesNotAct(t *testing.T) {
 	h := newHarness(t)
 	h.audit.fails(errors.New("the audit store is down"))
@@ -173,6 +169,7 @@ func TestIssueRouteWithAFailedAuditDoesNotAct(t *testing.T) {
 	}
 }
 
+// TestIssueRouteRefusesAMalformedAddress checks that the issue route refuses a malformed address.
 func TestIssueRouteRefusesAMalformedAddress(t *testing.T) {
 	h := newHarness(t)
 	h.asAdmin()
@@ -185,11 +182,7 @@ func TestIssueRouteRefusesAMalformedAddress(t *testing.T) {
 	}
 }
 
-// TestIssueRouteAnswersAnUnreadableBodyAsBadRequest holds the problem type of
-// the binding refusal. The route answers several 400s, and the declaration
-// keeps one response per status, so the type a request refused before the
-// handler runs must be the one on that response rather than the last 400 the
-// operation names.
+// TestIssueRouteAnswersAnUnreadableBodyAsBadRequest checks the problem type of the binding refusal.
 func TestIssueRouteAnswersAnUnreadableBodyAsBadRequest(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -223,6 +216,7 @@ func TestIssueRouteAnswersAnUnreadableBodyAsBadRequest(t *testing.T) {
 	}
 }
 
+// TestListAndRevokeRoutes checks that listing writes no audit row and that revoking answers 204 and marks the row revoked.
 func TestListAndRevokeRoutes(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue("tenant-a", "alice@example.com")
@@ -245,6 +239,7 @@ func TestListAndRevokeRoutes(t *testing.T) {
 	}
 }
 
+// TestRevokingAnAcceptedRouteAnswers409 checks that revoking an accepted invitation answers 409.
 func TestRevokingAnAcceptedRouteAnswers409(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue("tenant-a", "alice@example.com")
@@ -261,18 +256,17 @@ func TestRevokingAnAcceptedRouteAnswers409(t *testing.T) {
 	}
 }
 
+// TestAcceptFaceReadIsPublicAndWriteNeedsAnIdentity checks that an anonymous read is 200, an anonymous accept 401 and an authenticated accept 201.
 func TestAcceptFaceReadIsPublicAndWriteNeedsAnIdentity(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue("tenant-a", "alice@example.com")
 
-	// The GET carries no identity: the route is public.
 	h.mounter.AsAnonymous()
 	w := h.request(http.MethodGet, "/api/v1/auth/invitations/"+issued.Token, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("accept view status = %d, want 200: %s", w.Code, w.Body.String())
 	}
 
-	// The POST does not: the token alone is no credential.
 	w = h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, map[string]string{})
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("anonymous accept status = %d, want 401: %s", w.Code, w.Body.String())
@@ -281,7 +275,6 @@ func TestAcceptFaceReadIsPublicAndWriteNeedsAnIdentity(t *testing.T) {
 		t.Errorf("an anonymous acceptance wrote %d membership(s)", h.members.count)
 	}
 
-	// A signed-in holder of the invited address redeems it.
 	h.acceptAsHTTP("acct-alice", "alice@example.com")
 	w = h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, map[string]string{})
 	if w.Code != http.StatusCreated {
@@ -290,26 +283,19 @@ func TestAcceptFaceReadIsPublicAndWriteNeedsAnIdentity(t *testing.T) {
 	if h.members.count != 1 {
 		t.Errorf("memberships written = %d, want one", h.members.count)
 	}
-	// A second acceptance of the same token is refused.
+
 	w = h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, map[string]string{})
 	if w.Code != http.StatusConflict {
 		t.Fatalf("second accept status = %d, want 409", w.Code)
 	}
 }
 
-// TestTheAcceptViewShowsTheMaskedLinkAndThenTheOrganization holds the three
-// shapes of the public read: a pending link names the organization and the
-// inviter by their display names and the address in the server's masked form,
-// never the full address or the issuer's account identifier; an accepted link
-// names the organization and shows neither the address nor the inviter; and an
-// expired or revoked link answers its state alone.
+// TestTheAcceptViewShowsTheMaskedLinkAndThenTheOrganization checks the public read's shape: a pending link names the organization and inviter and masks the address; accepted and dead links show less.
 func TestTheAcceptViewShowsTheMaskedLinkAndThenTheOrganization(t *testing.T) {
 	h := newHarness(t)
 	h.tenantDescs.byID["tenant-a"] = authn.TenantDescription{Name: "acme", DisplayName: "Acme Org"}
 	h.accounts.named(adminID, "Demo Operator")
 
-	// A status request against a token, decoded into the members the public read
-	// may publish.
 	read := func(token string) (string, map[string]any, string) {
 		t.Helper()
 		w := h.request(http.MethodGet, "/api/v1/auth/invitations/"+token, nil)
@@ -355,7 +341,6 @@ func TestTheAcceptViewShowsTheMaskedLinkAndThenTheOrganization(t *testing.T) {
 		}
 	}
 
-	// Accepted: the organization's name and display name, no address or inviter.
 	h.acceptAsHTTP("acct-alice", "alice@example.com")
 	w := h.request(http.MethodPost, "/api/v1/auth/invitations/"+pending.Token, map[string]string{})
 	if w.Code != http.StatusCreated {
@@ -381,7 +366,6 @@ func TestTheAcceptViewShowsTheMaskedLinkAndThenTheOrganization(t *testing.T) {
 		t.Errorf("the accepted read carries the invited address: %s", raw)
 	}
 
-	// Revoked and expired: the state alone.
 	for _, held := range []struct {
 		name  string
 		setup func(Issued)
@@ -425,11 +409,7 @@ func TestTheAcceptViewShowsTheMaskedLinkAndThenTheOrganization(t *testing.T) {
 	}
 }
 
-// TestTheAcceptViewCarriesTheTenantNameWhenTheDisplayNameIsEmpty covers an
-// organization that never chose a display name, such as a seeded one: the
-// pending link still names it, because the name is what the landing page falls
-// back to. Without the name the invitee's page would say they were invited to
-// join "".
+// TestTheAcceptViewCarriesTheTenantNameWhenTheDisplayNameIsEmpty checks that a pending link still names a tenant that chose no display name.
 func TestTheAcceptViewCarriesTheTenantNameWhenTheDisplayNameIsEmpty(t *testing.T) {
 	h := newHarness(t)
 	h.tenantDescs.byID["tenant-a"] = authn.TenantDescription{Name: "acme"}
@@ -461,10 +441,7 @@ func TestTheAcceptViewCarriesTheTenantNameWhenTheDisplayNameIsEmpty(t *testing.T
 	}
 }
 
-// TestAnUnprovedCallerOnAcceptanceAnswers403OfItsOwn holds the answer the client
-// turns into the proof step: a caller with another proven address is told the
-// invited address is unproved, the invitation stays pending, and no membership
-// is written.
+// TestAnUnprovedCallerOnAcceptanceAnswers403OfItsOwn checks that a caller with another proven address gets 403 invitation-email-unproved and the invitation stays pending.
 func TestAnUnprovedCallerOnAcceptanceAnswers403OfItsOwn(t *testing.T) {
 	h := newHarness(t)
 	h.acceptAsHTTP("acct-alice", "alice@example.com")
@@ -489,15 +466,11 @@ func TestAnUnprovedCallerOnAcceptanceAnswers403OfItsOwn(t *testing.T) {
 	}
 }
 
-// TestASuspendedMemberOnAcceptanceAnswers409OfItsOwn holds that a suspended
-// membership is not silently reactivated: the acceptance answers the dedicated
-// conflict, writes nothing, and revokes the invitation.
+// TestASuspendedMemberOnAcceptanceAnswers409OfItsOwn checks that a suspended membership answers 409 membership-inactive and revokes the invitation.
 func TestASuspendedMemberOnAcceptanceAnswers409OfItsOwn(t *testing.T) {
 	h := newHarness(t)
 	h.acceptAsHTTP("acct-alice", "alice@example.com")
 	issued := h.issue("tenant-a", "alice@example.com")
-	// The suspension lands after issuance: an address that is already a member
-	// cannot be invited, and this case is about acceptance meeting one.
 	h.members.hold(authn.Membership{Account: "acct-alice", Tenant: "tenant-a", Active: false})
 
 	w := h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, map[string]string{})
@@ -519,10 +492,7 @@ func TestASuspendedMemberOnAcceptanceAnswers409OfItsOwn(t *testing.T) {
 	}
 }
 
-// TestAFailingMembershipStoreOnAcceptanceAnswers503 holds the acceptance face's
-// mapping of a dependency failure: the invitation is back to pending and the
-// caller is told the dependency could not answer rather than that the token is
-// a conflict.
+// TestAFailingMembershipStoreOnAcceptanceAnswers503 checks that a membership store failure answers 503 and returns the invitation to pending.
 func TestAFailingMembershipStoreOnAcceptanceAnswers503(t *testing.T) {
 	h := newHarness(t)
 	h.acceptAsHTTP("acct-zoe", "zoe@example.com")
@@ -538,12 +508,7 @@ func TestAFailingMembershipStoreOnAcceptanceAnswers503(t *testing.T) {
 	}
 }
 
-// TestAcceptanceWithoutItsRequiredCapabilitiesFailsClosed holds the assembly
-// rule at the HTTP layer: every acceptance writes through the transaction-aware
-// membership writer, and an invitation that carries a role needs the policy to
-// re-judge it and the binder to write it. With one absent the request answers
-// 503 and the invitation stays pending, so an assembly that gains the capability
-// leaves the same token redeemable.
+// TestAcceptanceWithoutItsRequiredCapabilitiesFailsClosed checks that a missing membership writer, role policy or binder answers 503.
 func TestAcceptanceWithoutItsRequiredCapabilitiesFailsClosed(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -586,13 +551,8 @@ func TestAcceptanceWithoutItsRequiredCapabilitiesFailsClosed(t *testing.T) {
 	}
 }
 
-// TestTerminalInvitationsOnAcceptanceAnswerInvitationTerminal holds the
-// acceptance face's terminal refusal: a token whose invitation is already
-// accepted, revoked or expired answers 409 invitation-terminal, the code a
-// client reads as "this link no longer grants anything".
+// TestTerminalInvitationsOnAcceptanceAnswerInvitationTerminal checks that an accepted, revoked or expired token answers 409 invitation-terminal.
 func TestTerminalInvitationsOnAcceptanceAnswerInvitationTerminal(t *testing.T) {
-	// redeem sends one acceptance through the route as the proven holder of the
-	// invited address.
 	redeem := func(h *harness, token string) *httptest.ResponseRecorder {
 		h.t.Helper()
 		h.acceptAsHTTP("acct-alice", "alice@example.com")
@@ -641,10 +601,7 @@ func TestTerminalInvitationsOnAcceptanceAnswerInvitationTerminal(t *testing.T) {
 	}
 }
 
-// TestADisabledTenantOnAcceptanceAnswers409OfItsOwn holds the refusal direction
-// the design gives a suspended organization: the acceptance answers 409
-// invitation-tenant-inactive, not the terminal conflict, and the invitation
-// stays pending, so enabling the tenant makes the same token redeemable again.
+// TestADisabledTenantOnAcceptanceAnswers409OfItsOwn checks that a disabled tenant answers 409 invitation-tenant-inactive and leaves the invitation pending.
 func TestADisabledTenantOnAcceptanceAnswers409OfItsOwn(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue(tenant, "alice@example.com")
@@ -663,9 +620,7 @@ func TestADisabledTenantOnAcceptanceAnswers409OfItsOwn(t *testing.T) {
 	}
 }
 
-// TestAnUnknownObjectIsAnsweredWithABare404 holds the answer the fragment
-// declares for both faces: a missing invitation is a 404 with no problem
-// document, not the problem shape the other refusals use.
+// TestAnUnknownObjectIsAnsweredWithABare404 checks that a missing invitation is a bare 404 on both faces.
 func TestAnUnknownObjectIsAnsweredWithABare404(t *testing.T) {
 	h := newHarness(t)
 	h.asAdmin()
@@ -687,9 +642,7 @@ func TestAnUnknownObjectIsAnsweredWithABare404(t *testing.T) {
 	}
 }
 
-// TestABodyOfAnotherMediaTypeIs415 holds the answer the entry point writes when
-// the request body is not the declared media type. The hand-written fragment
-// omitted it, although the handler it described has always answered it.
+// TestABodyOfAnotherMediaTypeIs415 checks that a body of another media type is a 415.
 func TestABodyOfAnotherMediaTypeIs415(t *testing.T) {
 	h := newHarness(t)
 	h.asAdmin()
@@ -705,10 +658,7 @@ func TestABodyOfAnotherMediaTypeIs415(t *testing.T) {
 	}
 }
 
-// TestAcceptRefusesAnEmptyBody holds the one request the entry point would
-// otherwise read as the input's zero value: the route has always required a
-// body, and a body of "{}" is still a body. A declared length of zero is the
-// request that carries none.
+// TestAcceptRefusesAnEmptyBody checks that the route requires a body and accepts a body of {}.
 func TestAcceptRefusesAnEmptyBody(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue("tenant-a", "alice@example.com")
@@ -725,10 +675,7 @@ func TestAcceptRefusesAnEmptyBody(t *testing.T) {
 	}
 }
 
-// TestAcceptBindsAnUnknownLengthBody holds the request the declared-length check
-// must not refuse: a chunked body, or an HTTP/2 one without Content-Length, that
-// carries valid JSON. Its length is unknown until the body is read, and the
-// binder reads it like any other body.
+// TestAcceptBindsAnUnknownLengthBody checks that a chunked body with valid JSON is accepted.
 func TestAcceptBindsAnUnknownLengthBody(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue("tenant-a", "alice@example.com")
@@ -748,10 +695,7 @@ func TestAcceptBindsAnUnknownLengthBody(t *testing.T) {
 	}
 }
 
-// TestRoutesMountUnderAConfiguredBasePath holds the mount translation against a
-// configured base path: the declaration is fixed before any configuration
-// exists, so the relative path is derived from the default base, and a
-// configured base moves every route without moving the contract.
+// TestRoutesMountUnderAConfiguredBasePath checks that every route mounts under a configured base path.
 func TestRoutesMountUnderAConfiguredBasePath(t *testing.T) {
 	h := newHarness(t)
 	configured := mounttest.New(t, mounttest.WithBase("/identity"))
@@ -782,9 +726,7 @@ func TestRoutesMountUnderAConfiguredBasePath(t *testing.T) {
 	}
 }
 
-// TestAcceptTakesADeclaredLengthEmptyObjectBody holds the other side of the
-// empty-body refusal: a body of "{}" with a declared length is a body and is
-// accepted, as it has always been.
+// TestAcceptTakesADeclaredLengthEmptyObjectBody checks that a declared-length body of {} is accepted.
 func TestAcceptTakesADeclaredLengthEmptyObjectBody(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue("tenant-a", "alice@example.com")
@@ -799,9 +741,7 @@ func TestAcceptTakesADeclaredLengthEmptyObjectBody(t *testing.T) {
 	}
 }
 
-// TestAManagementHandlerAnswersItsOwn401WithTheChallenge holds the fault a
-// handler returns where the gateway is not in front of it: the 401 carries the
-// capability's challenge, which is the header the declaration puts on every 401.
+// TestAManagementHandlerAnswersItsOwn401WithTheChallenge checks that a handler under no gateway writes a 401 with the capability's challenge.
 func TestAManagementHandlerAnswersItsOwn401WithTheChallenge(t *testing.T) {
 	h := newHarness(t)
 	_, err := h.p.handleIssue(context.Background(), issueInput{
@@ -821,11 +761,7 @@ func TestAManagementHandlerAnswersItsOwn401WithTheChallenge(t *testing.T) {
 	}
 }
 
-// TestManagementRoutesAdmitAnImpersonatingIdentity holds that the management
-// face is a tenant-domain capability: an impersonating identity reaches the
-// handler, which does not answer impersonation-restricted, and the same
-// membership.manage decision is asked in the path's tenant through the effective
-// account.
+// TestManagementRoutesAdmitAnImpersonatingIdentity checks that an impersonating identity reaches the management face and is decided through the effective account.
 func TestManagementRoutesAdmitAnImpersonatingIdentity(t *testing.T) {
 	h := newHarness(t)
 	h.mounter.As(
@@ -851,10 +787,7 @@ func TestManagementRoutesAdmitAnImpersonatingIdentity(t *testing.T) {
 	}
 }
 
-// TestManagementRoutesAreImpersonable holds the registration split: the
-// management routes (tenant-scoped) are registered Impersonable, and the public
-// acceptance routes are not. Acceptance is reached by the token alone, so it has
-// no identity to impersonate.
+// TestManagementRoutesAreImpersonable checks that the tenant-scoped routes are Impersonable and the acceptance routes are not.
 func TestManagementRoutesAreImpersonable(t *testing.T) {
 	h := newHarness(t)
 	seen := 0

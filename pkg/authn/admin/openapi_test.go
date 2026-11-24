@@ -11,10 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/internal/routecontract"
 )
 
-// TestTheResetsDeclareTheUnseasonedRefusal holds the fragment's 403 of the two
-// reset operations. The design gives an administrator with no seasoned non-SMS
-// factor its own 403 rather than the step-up 401, so the declared operations a
-// generated client is built from carry it.
+// TestTheResetsDeclareTheUnseasonedRefusal holds the fragment's 403 of the two reset operations.
 func TestTheResetsDeclareTheUnseasonedRefusal(t *testing.T) {
 	var doc struct {
 		Paths map[string]map[string]struct {
@@ -44,8 +41,7 @@ func TestTheResetsDeclareTheUnseasonedRefusal(t *testing.T) {
 	}
 }
 
-// TestTheAccountCreateDeclaresItsIdentifierConflict holds the fragment's 409 of
-// POST /auth/accounts: the identifier is already held.
+// TestTheAccountCreateDeclaresItsIdentifierConflict holds the fragment's 409 of POST /auth/accounts: the identifier is already held.
 func TestTheAccountCreateDeclaresItsIdentifierConflict(t *testing.T) {
 	var doc struct {
 		Paths map[string]map[string]struct {
@@ -70,23 +66,9 @@ func TestTheAccountCreateDeclaresItsIdentifierConflict(t *testing.T) {
 	}
 }
 
-// TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters holds the one thing
-// the OpenAPI fragment and the registrations have to agree on: the fragment is
-// the only source a generated client is built from, and the design leaves the
-// two free to drift with no failure signal at run time. The check drives the
-// module's own Init, through the real route-mounting module, and compares what
-// it registered there with what it declared. Given the accepted sets of the
-// three paged routes, it also holds each one's declared query parameters to what
-// its handler reads.
-//
-// The fragment declares the whole management surface, and Init mounts one group
-// of it per capability it takes up there, so the assembly carries every group's
-// capability: with one absent the module mounts less than it declares, and that
-// is a legal assembly rather than a disagreement.
+// TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters checks that the OpenAPI fragment and the registered routes agree.
 func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 	stubs, config := routefixture.Assembly(t, Module())
-	// The SSO provider group has a configuration gate beside its capability;
-	// the check compares the whole declared surface, so the fixture enables it.
 	config = routecontract.Config(config, map[string]any{
 		"authn": map[string]any{
 			"admin": map[string]any{"sso": map[string]any{"enabled": true}},

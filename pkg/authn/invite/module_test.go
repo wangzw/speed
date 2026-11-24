@@ -14,9 +14,10 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The instance a host builds has to satisfy the capability the module claims.
 var _ Invites = (*product)(nil)
 
+// TestTheDescriptorNamesWhatItRequiresAndDelivers checks the module's name and
+// its two exclusive provisions, the Invites capability and the revoker.
 func TestTheDescriptorNamesWhatItRequiresAndDelivers(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "authn.invite" {
@@ -71,11 +72,8 @@ func TestTheDescriptorNamesWhatItRequiresAndDelivers(t *testing.T) {
 	}
 }
 
-// TestTheDescriptorRequiresTheTenantDescriptionResolver holds the dependency:
-// the issuance refuses the system tenant and the public link names the
-// organization through this one read, so an assembly without it cannot serve
-// the module's contract. The roster's catalog delivers it exclusively, so it is
-// a required capability rather than one taken up optionally.
+// TestTheDescriptorRequiresTheTenantDescriptionResolver checks that the tenant
+// description resolver is a required dependency.
 func TestTheDescriptorRequiresTheTenantDescriptionResolver(t *testing.T) {
 	found := false
 	for _, r := range Module().Requires {
@@ -93,6 +91,8 @@ func TestTheDescriptorRequiresTheTenantDescriptionResolver(t *testing.T) {
 	}
 }
 
+// TestTheLifetimeSettingHasADomain checks that the declared lifetime default
+// is inside the setting’s domain and values outside it are refused.
 func TestTheLifetimeSettingHasADomain(t *testing.T) {
 	if !ttlInDomain(DefaultTTL) {
 		t.Errorf("the declared default %s is outside the domain", DefaultTTL)
@@ -104,6 +104,8 @@ func TestTheLifetimeSettingHasADomain(t *testing.T) {
 	}
 }
 
+// TestTheHostVisibleValuesAreFrozen checks the token prefix, membership source,
+// verification channel and configuration key a host reads.
 func TestTheHostVisibleValuesAreFrozen(t *testing.T) {
 	if tokenPrefix != "spd_inv_" {
 		t.Errorf("the token prefix is %q, want spd_inv_", tokenPrefix)
@@ -119,6 +121,8 @@ func TestTheHostVisibleValuesAreFrozen(t *testing.T) {
 	}
 }
 
+// TestStatusValidAndString checks that every known status is valid and an
+// out-of-set value is not, and that String names the status or unknown.
 func TestStatusValidAndString(t *testing.T) {
 	for _, s := range []InvitationStatus{InvitationPending, InvitationAccepted, InvitationRevoked} {
 		if !s.Valid() {
@@ -136,6 +140,7 @@ func TestStatusValidAndString(t *testing.T) {
 	}
 }
 
+// TestNormalizeEmailBounds checks the bounds of email normalization.
 func TestNormalizeEmailBounds(t *testing.T) {
 	long := make([]byte, 0, emailMaxBytes+1)
 	for i := 0; i < emailMaxBytes; i++ {
@@ -153,6 +158,8 @@ func TestNormalizeEmailBounds(t *testing.T) {
 	}
 }
 
+// TestTheSettingsSchemaDeclaresTheOneKey checks the settings schema's
+// namespace and that it declares the TTL key.
 func TestTheSettingsSchemaDeclaresTheOneKey(t *testing.T) {
 	s := settingsSchema()
 	if s.Namespace != ConfigNamespace {

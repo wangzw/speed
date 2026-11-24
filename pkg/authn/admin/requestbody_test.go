@@ -8,15 +8,7 @@ import (
 	"testing"
 )
 
-// TestTheDeclaredRequestBodiesAreTheOnesTheInputsCarry holds the request-body
-// half of the contract: the fragment's requestBody, which a generated client
-// sends, and the body-tagged fields of the declared input, which the entry point
-// binds. Presence and shape are both checked in both directions: an operation
-// whose declaration carries no body must have an input with no body fields, and
-// one that declares a body must publish exactly the JSON fields its input holds.
-//
-// The fragment is generated from the declarations, so a drift here means a
-// hand-written fragment or an input the generator reads differently.
+// TestTheDeclaredRequestBodiesAreTheOnesTheInputsCarry checks that the fragment's request bodies and the inputs' body-tagged fields agree.
 func TestTheDeclaredRequestBodiesAreTheOnesTheInputsCarry(t *testing.T) {
 	fragment := fragmentBodies(t)
 	compared := 0
@@ -53,22 +45,16 @@ func TestTheDeclaredRequestBodiesAreTheOnesTheInputsCarry(t *testing.T) {
 	}
 }
 
-// operationKey addresses one operation the fragment declares.
 type operationKey struct {
 	method string
 	path   string
 }
 
-// ginPath rewrites an OpenAPI path's parameters into the form the declarations
-// write, so the two are comparable.
 func ginPath(path string) string {
 	path = strings.ReplaceAll(path, "{", ":")
 	return strings.ReplaceAll(path, "}", "")
 }
 
-// fragmentBodies returns, for every operation the embedded fragment declares, the
-// property set of its requestBody's JSON schema, and whether it carries one at
-// all. A schema referenced by $ref is resolved against the fragment's components.
 func fragmentBodies(t *testing.T) map[operationKey]map[string]bool {
 	t.Helper()
 
@@ -128,8 +114,6 @@ func fragmentBodies(t *testing.T) map[operationKey]map[string]bool {
 	return out
 }
 
-// jsonFieldNames returns the JSON member names an input type binds, or an empty
-// set for an input with no body fields.
 func jsonFieldNames(input reflect.Type) map[string]bool {
 	names := map[string]bool{}
 	if input == nil {
@@ -148,7 +132,6 @@ func jsonFieldNames(input reflect.Type) map[string]bool {
 	return names
 }
 
-// sameStringSet reports whether two sets hold the same members.
 func sameStringSet(a, b map[string]bool) bool {
 	if len(a) != len(b) {
 		return false
@@ -161,7 +144,6 @@ func sameStringSet(a, b map[string]bool) bool {
 	return true
 }
 
-// sortedSet returns the set's members, ascending, for a failure message.
 func sortedSet(set map[string]bool) []string {
 	out := make([]string, 0, len(set))
 	for name := range set {

@@ -10,9 +10,7 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// TestTheTenantViewsNameTheTenantName holds the value every management view
-// answers for a tenant: the name the request surface uses, never the internal
-// identifier.
+// TestTheTenantViewsNameTheTenantName checks that the member, provider and impersonation views carry the tenant's name.
 func TestTheTenantViewsNameTheTenantName(t *testing.T) {
 	member := memberViewOf(authn.Membership{Account: "acct-1", Tenant: "t1"}, "", "", nil, "acme")
 	if member.Tenant != "acme" {
@@ -28,15 +26,13 @@ func TestTheTenantViewsNameTheTenantName(t *testing.T) {
 	}
 }
 
-// mappingNames answers one identifier's name.
 type mappingNames map[string]string
 
 func (m mappingNames) TenantNameOf(_ context.Context, id string) (string, error) {
 	return m[id], nil
 }
 
-// TestTheProtectionDetailsNameTheName holds the 409 details of the account
-// floor and the organization-owner rule to the name, never the identifier.
+// TestTheProtectionDetailsNameTheName holds the 409 details of the account floor and the organization-owner rule to the name, never the identifier.
 func TestTheProtectionDetailsNameTheName(t *testing.T) {
 	p := &product{tenantNames: mappingNames{"t1": "acme"}}
 	for name, err := range map[string]error{

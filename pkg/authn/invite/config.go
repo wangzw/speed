@@ -8,9 +8,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The items this module accepts, relative to its namespace, and the full path a
-// failure names. They are settings, not configuration: the limits are read at
-// each decision, so a deployment can widen or tighten them without a restart.
 const (
 	ttlItem = "ttl"
 	ttlKey  = ConfigNamespace + "." + ttlItem
@@ -34,18 +31,12 @@ const (
 	probeClientPath = ConfigNamespace + "." + probeClientItem
 )
 
-// DefaultTTL is the lifetime an invitation has when none is configured. The
-// design fixes the key but not the number, so this is this module's declared
-// default.
+// DefaultTTL is the lifetime an invitation has when no other lifetime is
+// configured.
 const DefaultTTL = 168 * time.Hour
 
-// The declared defaults of the send and probe budgets. An issuance is one
-// message the deployment pays for, so the address budget is deliberately small;
-// the issuer budget leaves an operator room to invite a team; the deployment
-// budget is the ceiling a mistaken or hostile operator cannot pass. A probe is
-// one request against a token nobody has proved themselves for, so the token
-// budget is small and the client bound is the coarse backstop a source needs
-// before it has identified itself.
+// DefaultIssueWindow and the other Default* constants are the declared limits
+// on issuance and probes.
 const (
 	DefaultIssueWindow       = time.Hour
 	DefaultIssueAddressLimit = 5
@@ -57,22 +48,16 @@ const (
 	DefaultProbeClientLimit = 30
 )
 
-// The domain of the configured lifetime: below an hour an invitation is a
-// nuisance, and past a quarter the value stops meaning anything.
 const (
 	minTTL = time.Hour
 	maxTTL = 2160 * time.Hour
 )
 
 // maxWindow is the longest counting window whose double still fits a
-// time.Duration. A budget key is created with an expiry of two windows, and the
-// primitives read an expiry of zero or less as "no expiry at all".
+// time.Duration; a budget key expires after two windows.
 const maxWindow = time.Duration(math.MaxInt64) / 2
 
-// options carries the settings this module owns and their declared defaults.
 type options struct {
-	// TTL is how long an invitation lives from the moment it is issued, when
-	// the issue call states no deadline of its own.
 	TTL time.Duration `config:"ttl"`
 
 	IssueWindow       time.Duration `config:"issue-window"`
@@ -85,8 +70,6 @@ type options struct {
 	ProbeClientLimit int           `config:"probe-client-limit"`
 }
 
-// defaults is the prototype the settings module reads the declared defaults off.
-// It never receives a value.
 var defaults = options{
 	TTL: DefaultTTL,
 
@@ -100,32 +83,20 @@ var defaults = options{
 	ProbeClientLimit: DefaultProbeClientLimit,
 }
 
-// ttlInDomain is the domain of the lifetime setting. A read is judged against it
-// as well as a write, since a row written before the domain was declared, or
-// written around the store, is served as it is.
 func ttlInDomain(d time.Duration) bool { return d >= minTTL && d <= maxTTL }
 
-// windowInDomain is the domain of a counting window: a window that is not
-// positive leaves the bucket index undefined, and one past maxWindow overflows
-// the doubled expiry.
 func windowInDomain(d time.Duration) bool { return d >= time.Second && d <= maxWindow }
 
-// limitInDomain is the domain of a budget: a limit of zero would refuse every
-// request, since the increment happens before the decision, so the layer refuses
-// to act on one. A budget an operator wants off is widened, not zeroed.
+// limitInDomain refuses a limit below one: the increment happens before the
+// comparison, so a zero limit would refuse every request.
 func limitInDomain(n int) bool { return n >= 1 }
 
-// configSchema declares this module's config section. The section holds no
-// input item: the lifetime that used to live here is a setting now, but the
-// section stays declared so that a source still writing one of its keys is
-// refused by that key's full path rather than by its parent.
+// configSchema declares an empty section so a source writing one of its keys is
+// refused by the key's full path.
 func configSchema() config.Schema {
 	return config.Schema{Namespace: ConfigNamespace}
 }
 
-// settingsSchema declares this module's runtime parameters. The namespace is this
-// module's own name: two modules declaring one path is a startup failure even when
-// only one of them runs.
 func settingsSchema() settings.Schema {
 	return settings.Schema{
 		Namespace: ConfigNamespace,

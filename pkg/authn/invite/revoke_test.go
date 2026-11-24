@@ -11,9 +11,8 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestRevokeRefusesTerminalInvitationsAndIsIdempotent holds the revocation
-// rules: expired and accepted rows are refused, an already revoked row succeeds
-// again without changing its revocation time.
+// TestRevokeRefusesTerminalInvitationsAndIsIdempotent checks that expired and
+// accepted rows are refused and an already revoked one succeeds without moving its time.
 func TestRevokeRefusesTerminalInvitationsAndIsIdempotent(t *testing.T) {
 	t.Run("pending writes the revocation instant", func(t *testing.T) {
 		h := newHarness(t)
@@ -102,9 +101,8 @@ func TestTheRevokeRouteAnswers409ForAnExpiredInvitation(t *testing.T) {
 	}
 }
 
-// TestTheRevokeRouteIsIdempotentForAnAlreadyRevokedInvitation holds the already
-// revoked case on the HTTP face: the second call is a success again and does not
-// move the recorded time.
+// TestTheRevokeRouteIsIdempotentForAnAlreadyRevokedInvitation checks that a
+// repeated revoke over HTTP is a second 204 and keeps the recorded time.
 func TestTheRevokeRouteIsIdempotentForAnAlreadyRevokedInvitation(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue(tenant, "alice@example.com")
@@ -128,9 +126,8 @@ func TestTheRevokeRouteIsIdempotentForAnAlreadyRevokedInvitation(t *testing.T) {
 	}
 }
 
-// TestRevokeTenantInvitationsWritesRevokedAt holds the organization deletion
-// path: every pending row is revoked with its revocation time and terminal rows
-// are untouched.
+// TestRevokeTenantInvitationsWritesRevokedAt checks that every pending row is
+// revoked with its time and terminal rows are untouched.
 func TestRevokeTenantInvitationsWritesRevokedAt(t *testing.T) {
 	h := newHarness(t)
 	pending := h.issue(tenant, "pending@example.com")
@@ -150,9 +147,8 @@ func TestRevokeTenantInvitationsWritesRevokedAt(t *testing.T) {
 	}
 }
 
-// TestAFailedAcceptanceIsNotARevocation holds that a failed acceptance write is
-// a rolled-back transaction rather than a revocation: the invitation stays
-// pending, nothing was accepted, and revoked_at stays absent.
+// TestAFailedAcceptanceIsNotARevocation checks that a failed acceptance leaves
+// the invitation pending with no revocation.
 func TestAFailedAcceptanceIsNotARevocation(t *testing.T) {
 	h := newHarness(t)
 	h.members.err = authn.ErrBindingConflict
@@ -169,9 +165,8 @@ func TestAFailedAcceptanceIsNotARevocation(t *testing.T) {
 	}
 }
 
-// TestASuspendedMembershipRevokesWithRevokedAt holds the acceptance path where
-// the caller's membership is suspended: the invitation is revoked and the
-// revocation is recorded.
+// TestASuspendedMembershipRevokesWithRevokedAt checks that an acceptance over a
+// suspended membership revokes the invitation with its time.
 func TestASuspendedMembershipRevokesWithRevokedAt(t *testing.T) {
 	h := newHarness(t)
 	h.members.hold(authn.Membership{Tenant: tenant, Account: "acct-alice", Active: false})

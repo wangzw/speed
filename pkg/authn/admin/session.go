@@ -7,10 +7,6 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// sessionViewOf builds one session as the management routes show it: no
-// credential and nothing a caller could use to take the session over. Current
-// marks the row whose session is the caller's own, the same flag the
-// self-service list carries.
 func sessionViewOf(s authn.SessionInfo, current authn.SessionID) AuthnAdminSession {
 	return AuthnAdminSession{
 		ID:              string(s.ID),
@@ -26,8 +22,6 @@ func sessionViewOf(s authn.SessionInfo, current authn.SessionID) AuthnAdminSessi
 	}
 }
 
-// handleAccountSessions answers GET /admin/accounts/:id/sessions. The action is
-// session.read.
 func (m *product) handleAccountSessions(ctx context.Context, in accountIDInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
@@ -57,12 +51,6 @@ func (m *product) handleAccountSessions(ctx context.Context, in accountIDInput, 
 	return speedhttp.JSONReply(200, AuthnAdminSessionList{Sessions: views}), nil
 }
 
-// handleRevokeAccountSessions answers POST
-// /admin/accounts/:id/revoke-sessions: it revokes the account's unrevoked
-// browser and token sessions, writing one audit row per session before the
-// action. The set is read under the statement's own condition, so a session past
-// its deadline is named like any other and no revocation happens without a row
-// to account for it. The action is session.revoke.
 func (m *product) handleRevokeAccountSessions(ctx context.Context, in accountIDInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
@@ -84,10 +72,6 @@ func (m *product) handleRevokeAccountSessions(ctx context.Context, in accountIDI
 	}); err != nil {
 		return nil, err
 	}
-	// The audit row of a revocation names the session it revoked, and the row is
-	// written before the action, so the set is read first — under the condition
-	// the statement itself uses, so the rows and the revocation name one set. An
-	// account with nothing in that set has nothing revoked and nothing written.
 	targets, err := m.sessions.RevocableSessions(ctx, accountID)
 	if err != nil {
 		return nil, m.unavailable("listing an account's revocable sessions", err)
@@ -109,10 +93,6 @@ func (m *product) handleRevokeAccountSessions(ctx context.Context, in accountIDI
 	return speedhttp.JSONReply(200, AuthnAdminRevoked{Revoked: len(revoked)}), nil
 }
 
-// handleSessionRevoke answers DELETE /admin/sessions/:id: it reads the session
-// to learn the account it belongs to, then revokes it. The action is
-// session.revoke and the object the Decision carries is the session, the
-// TargetAccount the account it belongs to.
 func (m *product) handleSessionRevoke(ctx context.Context, in sessionRevokeInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, err := m.caller(ctx)
 	if err != nil {

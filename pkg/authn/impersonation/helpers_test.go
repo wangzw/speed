@@ -29,13 +29,10 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// base is the instant the cases that need a fixed time start from.
 var base = time.Date(2026, time.March, 14, 12, 0, 0, 0, time.UTC)
 
-// sqliteDialect is the engine every case of this build runs on.
 const sqliteDialect = "sqlite"
 
-// fakeClock is a clock a case moves.
 type fakeClock struct {
 	mu  sync.Mutex
 	now time.Time
@@ -55,7 +52,6 @@ func (c *fakeClock) advance(d time.Duration) {
 	c.now = c.now.Add(d)
 }
 
-// logBuffer collects what the module logs, as text lines.
 type logBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -77,7 +73,6 @@ func (b *logBuffer) String() string {
 	return b.buf.String()
 }
 
-// fakeAccounts is the account store as far as this module reads it.
 type fakeAccounts struct {
 	authn.Accounts
 	mu       sync.Mutex
@@ -89,8 +84,6 @@ type fakeAccounts struct {
 
 func newAccounts() *fakeAccounts { return &fakeAccounts{accounts: map[authn.AccountID]authn.Account{}} }
 
-// failFor makes the read of one account fail, so that a case can fail the
-// target's read while the actor's still answers.
 func (a *fakeAccounts) failFor(id authn.AccountID, err error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -100,14 +93,12 @@ func (a *fakeAccounts) failFor(id authn.AccountID, err error) {
 	a.errs[id] = err
 }
 
-// readCount is how many account reads the store has answered.
 func (a *fakeAccounts) readCount() int {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.reads
 }
 
-// resetReads clears the read count, so that a case can count one call alone.
 func (a *fakeAccounts) resetReads() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -121,8 +112,6 @@ func (a *fakeAccounts) put(id authn.AccountID, acct authn.Account) {
 	a.accounts[id] = acct
 }
 
-// remove drops an account, so that Get answers ErrAccountNotFound as a deleted
-// account's row would.
 func (a *fakeAccounts) remove(id authn.AccountID) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -146,7 +135,6 @@ func (a *fakeAccounts) Get(_ context.Context, id authn.AccountID) (authn.Account
 	return acct, nil
 }
 
-// fakeMemberships is the membership store as far as this module reads it.
 type fakeMemberships struct {
 	authn.Memberships
 	mu      sync.Mutex
@@ -175,22 +163,18 @@ func (f *fakeMemberships) IsMember(_ context.Context, id authn.AccountID, tenant
 	return f.members[memberKey(id, tenant)], nil
 }
 
-// readCount is how many membership reads the store has answered.
 func (f *fakeMemberships) readCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.reads
 }
 
-// resetReads clears the read count, so that a case can count one call alone.
 func (f *fakeMemberships) resetReads() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.reads = 0
 }
 
-// fakeMFA is the multi-factor composition as far as this module reads it: the
-// seasoned answer alone.
 type fakeMFA struct {
 	authn.MFA
 	seasoned bool
@@ -204,15 +188,13 @@ func (f *fakeMFA) Seasoned(_ context.Context, _ authn.AccountID) (bool, error) {
 	return f.seasoned, nil
 }
 
-// fakeSessions is the session store as far as this module reads it: the status of
-// a session, the marker it sets, and the cookie it writes.
 type fakeSessions struct {
 	authn.Sessions
 	mu        sync.Mutex
 	session   authn.SessionStatus
 	statusErr error
-	// onStatus, when set, runs after a status read and before it returns, so a
-	// case can park concurrent readers at the same point.
+	// onStatus runs after a status read, outside the lock, so a case can park
+	// concurrent readers at the same point.
 	onStatus func()
 
 	setErr    error
@@ -238,15 +220,12 @@ func (s *fakeSessions) Status(_ context.Context, _ authn.SessionID) (authn.Sessi
 	return s.readStatus()
 }
 
-// StatusFresh reads the same store as Status: this fake holds no cache, so the
-// two answer alike. A case that needs the cache's staleness serves Status from
-// cachingSessions instead.
+// StatusFresh reads the same store as Status: this fake holds no cache. A case
+// that needs the cache's staleness serves Status from cachingSessions instead.
 func (s *fakeSessions) StatusFresh(_ context.Context, _ authn.SessionID) (authn.SessionStatus, error) {
 	return s.readStatus()
 }
 
-// readStatus takes the store's answer under the lock and hands it back, running
-// the case's hook outside the lock.
 func (s *fakeSessions) readStatus() (authn.SessionStatus, error) {
 	s.mu.Lock()
 	status, err := s.session, s.statusErr
@@ -279,9 +258,8 @@ func (s *fakeSessions) SetCookie(_ http.ResponseWriter, in authn.Issued) {
 }
 
 // cachingSessions serves Status from a per-session entry until check-ttl runs
-// out, as the session module does, and reads the store for StatusFresh. A case
-// uses it to show that a path does not judge through the cache: it warms an
-// entry with Status, changes the store, and expects the path to see the change.
+// out, as the session module does, and reads the store for StatusFresh; a case
+// uses it to show that a path does not judge through the cache.
 type cachingSessions struct {
 	*fakeSessions
 	mu      sync.Mutex
@@ -290,7 +268,6 @@ type cachingSessions struct {
 	entries map[authn.SessionID]cachedStatus
 }
 
-// cachedStatus is one cached answer and the instant it stops being served.
 type cachedStatus struct {
 	status  authn.SessionStatus
 	expires time.Time
@@ -318,15 +295,13 @@ func (c *cachingSessions) Status(ctx context.Context, id authn.SessionID) (authn
 	return status, nil
 }
 
-// StatusFresh is the store's answer, as the session module's is.
 func (c *cachingSessions) StatusFresh(ctx context.Context, id authn.SessionID) (authn.SessionStatus, error) {
 	return c.fakeSessions.StatusFresh(ctx, id)
 }
 
-// perSessionSessions answers only for the sessions a case names. Any other
-// identifier is ErrSessionNotFound, as the store answers for a session that is
-// not there, so a record judged on the wrong session is caught rather than
-// answered from a single shared status.
+// perSessionSessions answers only for the sessions a case names and
+// ErrSessionNotFound for any other, so a record judged on the wrong session is
+// caught rather than answered from a single shared status.
 type perSessionSessions struct {
 	authn.Sessions
 	mu    sync.Mutex
@@ -334,7 +309,6 @@ type perSessionSessions struct {
 	asked []authn.SessionID
 }
 
-// newPerSessionSessions builds a store in which each named session is alive.
 func newPerSessionSessions(ids ...authn.SessionID) *perSessionSessions {
 	s := &perSessionSessions{alive: map[authn.SessionID]bool{}}
 	for _, id := range ids {
@@ -343,7 +317,6 @@ func newPerSessionSessions(ids ...authn.SessionID) *perSessionSessions {
 	return s
 }
 
-// setActive changes whether one named session is alive.
 func (s *perSessionSessions) setActive(id authn.SessionID, active bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -358,7 +331,6 @@ func (s *perSessionSessions) StatusFresh(_ context.Context, id authn.SessionID) 
 	return s.answer(id)
 }
 
-// askedIDs is every identifier a read named, in the order it was read.
 func (s *perSessionSessions) askedIDs() []authn.SessionID {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -380,8 +352,6 @@ func (s *perSessionSessions) answer(id authn.SessionID) (authn.SessionStatus, er
 	}, nil
 }
 
-// replica builds a second product over the same dependencies: another replica of
-// the module over one store, for a case that races two of them.
 func (r *rig) replica() *product {
 	p := build(r.h, r.accounts, r.verification, r.memberships, r.mfa, r.sessions, r.audit, r.guard, r.mounter)
 	p.tenantNames = identityNames{}
@@ -394,7 +364,6 @@ func (r *rig) replica() *product {
 	return p
 }
 
-// recordingAudit keeps the rows it was asked to write, and can be told to fail.
 type recordingAudit struct {
 	mu     sync.Mutex
 	rows   []audit.Entry
@@ -420,7 +389,6 @@ func (a *recordingAudit) entries() []audit.Entry {
 	return append([]audit.Entry(nil), a.rows...)
 }
 
-// fakeDecider answers a decision a case scripts.
 type fakeDecider struct {
 	mu    sync.Mutex
 	allow bool
@@ -440,7 +408,6 @@ func (d *fakeDecider) Decide(_ context.Context, dec authn.Decision) (bool, error
 	return allow, err
 }
 
-// fakeTokens signs a token a case reads back.
 type fakeTokens struct {
 	authn.Tokens
 	mu      sync.Mutex
@@ -463,8 +430,6 @@ func (f *fakeTokens) Issue(_ context.Context, in authn.IssueToken) (authn.Access
 	return authn.AccessToken{Value: "imp-token", ExpiresAt: expires}, nil
 }
 
-// recordingBus keeps what was published and delivers it to the handlers
-// subscribed, as a process-local bus does.
 type recordingBus struct {
 	mu        sync.Mutex
 	handlers  map[string][]event.Handler
@@ -499,8 +464,6 @@ func (b *recordingBus) ofType(typ string) []event.Event {
 	return out
 }
 
-// endedPayload decodes the ended event a case expects, failing when there is not
-// exactly one.
 func (r *rig) endedPayload() authn.ImpersonationEnded {
 	r.t.Helper()
 	events := r.bus.ofType(authn.EventImpersonationEnded)
@@ -514,8 +477,6 @@ func (r *rig) endedPayload() authn.ImpersonationEnded {
 	return p
 }
 
-// startedPayload decodes the started event a case expects, failing when there is
-// not exactly one.
 func (r *rig) startedPayload() authn.ImpersonationStarted {
 	r.t.Helper()
 	events := r.bus.ofType(authn.EventImpersonationStarted)
@@ -529,7 +490,6 @@ func (r *rig) startedPayload() authn.ImpersonationStarted {
 	return p
 }
 
-// fakeStore is the settings store, holding the values a case wrote.
 type fakeStore struct {
 	settings.Store
 	mu     sync.Mutex
@@ -577,14 +537,12 @@ func (s *fakeStore) Get(_ settings.Layer, key string, target any) error {
 	return nil
 }
 
-// fakeScopeGuard declares which endpoints the admission layer guards.
 type fakeScopeGuard struct {
 	covers map[string]bool
 }
 
 func (g fakeScopeGuard) Covers(endpoint string) bool { return g.covers[endpoint] }
 
-// rig is the module over a real database with every dependency a case drives.
 type rig struct {
 	t            *testing.T
 	p            *product
@@ -606,7 +564,6 @@ type rig struct {
 	metrics      *sdkmetric.ManualReader
 }
 
-// The identifiers and defaults a case starts from.
 const (
 	actorID   = authn.AccountID("acct-admin")
 	targetID  = authn.AccountID("acct-user")
@@ -616,9 +573,6 @@ const (
 	sessionID = authn.SessionID("0190a6f2-3b6c-7c2e-8a4d-5e6f7a8b9c0d")
 )
 
-// newRig builds the module over the handle, with every dependency present and a
-// healthy account, membership, session and factor. A case that wants one absent
-// or failing sets it on the rig.
 func newRig(t *testing.T, h *gorm.DB) *rig {
 	t.Helper()
 	accounts := newAccounts()
@@ -662,7 +616,6 @@ func newRig(t *testing.T, h *gorm.DB) *rig {
 	return r
 }
 
-// counter reads the value of the sessions counter for the outcome given.
 func (r *rig) counter(outcome string) int64 {
 	r.t.Helper()
 	var rm metricdata.ResourceMetrics
@@ -689,12 +642,8 @@ func (r *rig) counter(outcome string) int64 {
 	return total
 }
 
-// withAudit swaps in an audit implementation, for a case that drives a real one
-// or one that fails.
 func (r *rig) withAudit(a audit.Audit) { r.p.audit = a }
 
-// adminOpts are the options of the administrator's own identity: a fresh local
-// multi-factor authentication with a one-time code beside it, on their session.
 func adminOpts(opts ...authntest.Option) []authntest.Option {
 	return append([]authntest.Option{
 		authntest.WithAccount(actorID),
@@ -706,7 +655,6 @@ func adminOpts(opts ...authntest.Option) []authntest.Option {
 	}, opts...)
 }
 
-// adminIdentity is the identity the options above build.
 func adminIdentity(t *testing.T, opts ...authntest.Option) authn.Identity {
 	t.Helper()
 	ctx := authntest.Context(t, context.Background(), adminOpts(opts...)...)
@@ -717,8 +665,6 @@ func adminIdentity(t *testing.T, opts ...authntest.Option) authn.Identity {
 	return id
 }
 
-// impersonatingIdentity is the identity of an administrator acting as the target
-// inside a tenant, as a verifying backend would stamp it.
 func impersonatingIdentity(t *testing.T, backend string) authn.Identity {
 	t.Helper()
 	ctx := authntest.Context(t, context.Background(), impersonatingOpts(backend)...)
@@ -729,12 +675,10 @@ func impersonatingIdentity(t *testing.T, backend string) authn.Identity {
 	return id
 }
 
-// request is a well-formed start request against the target in tenant A.
 func request() authn.ImpersonationRequest {
 	return authn.ImpersonationRequest{Target: targetID, Tenant: tenantA, Reason: "a support call"}
 }
 
-// recordCount reads how many rows of the record table a case has.
 func (r *rig) recordCount() int {
 	r.t.Helper()
 	var n int64
@@ -744,7 +688,6 @@ func (r *rig) recordCount() int {
 	return int(n)
 }
 
-// stored reads one record's end columns from the table.
 func (r *rig) stored(id string) (endedAt *time.Time, endedBy *string, endReason *string) {
 	r.t.Helper()
 	var rows []struct {
@@ -761,8 +704,8 @@ func (r *rig) stored(id string) (endedAt *time.Time, endedBy *string, endReason 
 	return rows[0].EndedAt, rows[0].EndedBy, rows[0].EndReason
 }
 
-// reasonText renders a stored end reason for a failure message. The column is
-// scanned as a pointer, and %v on it prints the address rather than the value.
+// reasonText renders a stored end reason for a failure message: the column is a
+// pointer, and %v on it prints the address rather than the value.
 func reasonText(p *string) string {
 	if p == nil {
 		return "<nil>"
@@ -770,7 +713,6 @@ func reasonText(p *string) string {
 	return *p
 }
 
-// applyMigrations builds the module's table from the files it ships.
 func applyMigrations(t *testing.T, h *gorm.DB, dialect string) {
 	t.Helper()
 	entries, err := fs.ReadDir(migrationsFS, dialect)
@@ -793,18 +735,13 @@ func applyMigrations(t *testing.T, h *gorm.DB, dialect string) {
 	}
 }
 
-// dialect is one engine a case iterates: its name, and how to reach a database of
-// the case's own on it.
 type dialect struct {
 	name string
 	open func(t *testing.T) *gorm.DB
 }
 
-// dialects lists the engines a case iterates, SQLite first.
-//
-// Only the engines whose fixture needs nothing installed belong here. The
-// integration build appends the ones that reach a server, so an untagged run
-// cannot name a dialect whose opener would fail for want of one.
+// dialects lists only the engines whose fixture needs nothing installed; the
+// integration build appends the ones that reach a server.
 var dialects = []dialect{{
 	name: sqliteDialect,
 	open: func(t *testing.T) *gorm.DB {
@@ -812,10 +749,6 @@ var dialects = []dialect{{
 	},
 }}
 
-// openDialect delivers the database of the dialect with the module's table built.
-//
-// A dialect no engine of this build answers to is a programming error, since
-// dialects never names one.
 func openDialect(t *testing.T, dialect string) *gorm.DB {
 	t.Helper()
 	for _, d := range dialects {
@@ -829,7 +762,6 @@ func openDialect(t *testing.T, dialect string) *gorm.DB {
 	return nil
 }
 
-// forEachDialect runs a case on every engine this build's cases run on.
 func forEachDialect(t *testing.T, run func(t *testing.T, h *gorm.DB, dialect string)) {
 	t.Helper()
 	for _, d := range dialects {
@@ -839,7 +771,6 @@ func forEachDialect(t *testing.T, run func(t *testing.T, h *gorm.DB, dialect str
 	}
 }
 
-// onEachDialect is forEachDialect with the rig built.
 func onEachDialect(t *testing.T, run func(t *testing.T, r *rig)) {
 	t.Helper()
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
@@ -847,12 +778,10 @@ func onEachDialect(t *testing.T, run func(t *testing.T, r *rig)) {
 	})
 }
 
-// errFromStore is a dependency failure a case injects.
 var errFromStore = errors.New("stand-in store failure")
 
-// blockEndWrites makes the conditional end update fail, as a database that reads
-// but cannot write would. The trigger is written for SQLite; another dialect
-// skips the case.
+// blockEndWrites makes the conditional end update fail; the trigger is written
+// for SQLite, and another dialect skips the case.
 func (r *rig) blockEndWrites(t *testing.T, dialect string) {
 	t.Helper()
 	if dialect != sqliteDialect {
@@ -865,17 +794,11 @@ func (r *rig) blockEndWrites(t *testing.T, dialect string) {
 	}
 }
 
-// withinASecond reports whether two instants name the same second, which is the
-// tolerance a stored time is compared with after a round trip.
 func withinASecond(a, b time.Time) bool {
 	d := a.Sub(b)
 	return d <= time.Second && d >= -time.Second
 }
 
-// fakeSignupVerification reports the self-registration state a case scripts and
-// counts how often it was read. state answers every account; states overrides it
-// for the accounts a case names, so that a case can give the initiator and the
-// target different states and tell which one was read.
 type fakeSignupVerification struct {
 	mu     sync.Mutex
 	state  authn.SignupStatus
@@ -885,8 +808,6 @@ type fakeSignupVerification struct {
 	asked  []authn.AccountID
 }
 
-// setState gives one account its own answer, for a case that must tell the
-// initiator's state from the target's.
 func (v *fakeSignupVerification) setState(id authn.AccountID, state authn.SignupStatus) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -896,7 +817,6 @@ func (v *fakeSignupVerification) setState(id authn.AccountID, state authn.Signup
 	v.states[id] = state
 }
 
-// SignupStateOf answers the scripted state, or the scripted failure.
 func (v *fakeSignupVerification) SignupStateOf(_ context.Context, id authn.AccountID) (authn.SignupStatus, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -908,36 +828,28 @@ func (v *fakeSignupVerification) SignupStateOf(_ context.Context, id authn.Accou
 	return v.state, v.err
 }
 
-// askedIDs is every account whose state the fake was asked for, in order.
 func (v *fakeSignupVerification) askedIDs() []authn.AccountID {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	return append([]authn.AccountID(nil), v.asked...)
 }
 
-// PendingAccountByContact is never reached by this module's starts.
 func (v *fakeSignupVerification) PendingAccountByContact(context.Context, string, string) (string, bool, error) {
 	return "", false, errors.New("impersonation: the pending-contact read is not part of a start")
 }
 
-// readCount is how many state reads the fake answered.
 func (v *fakeSignupVerification) readCount() int {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	return v.reads
 }
 
-// identityNames stands in for the roster's id-to-name seam over an assembly
-// whose fixture identifiers double as their names.
 type identityNames struct{}
 
 func (identityNames) TenantNameOf(_ context.Context, id string) (string, error) {
 	return id, nil
 }
 
-// identityDirectory stands in for the roster's name-to-identifier seam over an
-// assembly whose fixture names double as their identifiers. A case that needs
-// the two apart replaces it with a mapping of its own.
 type identityDirectory struct{}
 
 func (identityDirectory) TenantIDOf(_ context.Context, name string) (string, bool, error) {

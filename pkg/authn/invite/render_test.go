@@ -15,8 +15,6 @@ import (
 	"github.com/vislake/speed/pkg/mail"
 )
 
-// renderedMail is a mail.Sender that keeps every message it was handed, so a
-// case can read the body the invitation email actually rendered.
 type renderedMail struct {
 	messages []mail.Message
 }
@@ -30,9 +28,6 @@ func (s *renderedMail) Send(_ context.Context, message mail.Message) (mail.Recei
 	return mail.Receipt{ProviderID: "rendered"}, nil
 }
 
-// renderingNotifier assembles the real authn.invitemail module over the mail
-// seam, so a notice is rendered into the message a recipient would read rather
-// than into a recorded notice.
 func renderingNotifier(t *testing.T, sender mail.Sender) authn.InviteNotifier {
 	t.Helper()
 	const body = `{"authn":{"invitemail":{"accept-base-url":"https://app.example.com"}}}`
@@ -67,12 +62,8 @@ func renderingNotifier(t *testing.T, sender mail.Sender) authn.InviteNotifier {
 	return notifier
 }
 
-// TestTheRenderedInvitationEmailCarriesTheNameNeverTheIdentifier holds the
-// outbound rule at the rendering level: the body the recipient actually reads
-// names the tenant by its name, and the internal identifier the path guard
-// left in the issue request reaches neither the subject nor either body. The
-// fixture's identifier and name differ, so a rendered message carrying either
-// one is distinguishable.
+// TestTheRenderedInvitationEmailCarriesTheNameNeverTheIdentifier checks that the
+// rendered email names the tenant, never the identifier.
 func TestTheRenderedInvitationEmailCarriesTheNameNeverTheIdentifier(t *testing.T) {
 	h := newHarness(t)
 	sender := &renderedMail{}
@@ -101,11 +92,8 @@ func TestTheRenderedInvitationEmailCarriesTheNameNeverTheIdentifier(t *testing.T
 	}
 }
 
-// TestTheRenderedInvitationEmailNamesTheInviterAndTheDeadlineInUTC holds the two
-// pieces the issue path contributes to the rendered message: the inviter is
-// named by the display name they are recognized by, never by the account
-// identifier, and the deadline is the readable UTC form the catalog renders
-// rather than the RFC 3339 instant.
+// TestTheRenderedInvitationEmailNamesTheInviterAndTheDeadlineInUTC checks that
+// the rendered email names the inviter and renders the deadline in UTC.
 func TestTheRenderedInvitationEmailNamesTheInviterAndTheDeadlineInUTC(t *testing.T) {
 	h := newHarness(t)
 	sender := &renderedMail{}

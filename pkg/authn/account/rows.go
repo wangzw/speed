@@ -6,8 +6,8 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// The tables this module owns. A migration file, a model below and a raw
-// statement name each of them, and a change to one is a change to all three.
+// A migration file, the model's TableName and a raw statement all name each table;
+// a change to one is a change to all three.
 const (
 	tableAccounts    = "authn_accounts"
 	tableIdentifiers = "authn_identifiers"
@@ -19,21 +19,11 @@ const (
 	tableThrottles   = "authn_throttles"
 )
 
-// tables is every table this module owns, in the order Start looks for them.
 var tables = []string{
 	tableAccounts, tableIdentifiers, tablePending, tableExternals, tableMemberships,
 	tableCredentials, tableServiceKeys, tableThrottles,
 }
 
-// The models below are the model path of the database module, which is what the
-// statement-level audit capture sees. The two time columns the path would fill
-// itself, from a clock of the machine's own zone, are switched off: every time
-// is written explicitly, in UTC, through internal/clock.
-
-// accountRow is one row of authn_accounts. A deleted account is a tombstone: the
-// identifier, the kind, the status, the creation time and the deletion time hold
-// something, and every other column that is not the validity instant or the time
-// of the last write is empty.
 type accountRow struct {
 	ID               string     `gorm:"column:id;primaryKey"`
 	Kind             string     `gorm:"column:kind"`
@@ -54,10 +44,6 @@ type accountRow struct {
 
 func (accountRow) TableName() string { return tableAccounts }
 
-// pendingContactRow is one row of authn_pending_contacts: a contact an account
-// reserved. verified_at is empty while the reservation is an unproved target a
-// registration wrote, and set once the address is proved or an administrator
-// writes it. A reservation is not an identifier and is read by no login path.
 type pendingContactRow struct {
 	ID         string     `gorm:"column:id;primaryKey"`
 	AccountID  string     `gorm:"column:account_id"`
@@ -70,7 +56,6 @@ type pendingContactRow struct {
 
 func (pendingContactRow) TableName() string { return tablePending }
 
-// identifierRow is one row of authn_identifiers.
 type identifierRow struct {
 	ID             string    `gorm:"column:id;primaryKey"`
 	AccountID      string    `gorm:"column:account_id"`
@@ -86,7 +71,6 @@ type identifierRow struct {
 
 func (identifierRow) TableName() string { return tableIdentifiers }
 
-// externalRow is one row of authn_external_identities.
 type externalRow struct {
 	ID            string     `gorm:"column:id;primaryKey"`
 	AccountID     string     `gorm:"column:account_id"`
@@ -100,8 +84,8 @@ type externalRow struct {
 
 func (externalRow) TableName() string { return tableExternals }
 
-// membershipRow is one row of authn_memberships. The primary key is the tenant
-// and the account, and no statement on this table leaves the tenant out.
+// membershipRow is one row of authn_memberships. No statement on this table leaves
+// the tenant out.
 type membershipRow struct {
 	TenantID  string    `gorm:"column:tenant_id;primaryKey"`
 	AccountID string    `gorm:"column:account_id;primaryKey"`
@@ -114,8 +98,6 @@ type membershipRow struct {
 
 func (membershipRow) TableName() string { return tableMemberships }
 
-// secretRow is one row of authn_service_secrets. Only the SHA-256 of the secret
-// is kept.
 type secretRow struct {
 	ID         string     `gorm:"column:id;primaryKey"`
 	AccountID  string     `gorm:"column:account_id"`
@@ -129,22 +111,17 @@ type secretRow struct {
 
 func (secretRow) TableName() string { return tableServiceKeys }
 
-// The status column's numbers, which are authn.AccountStatus's.
 const (
 	statusDisabled int16 = 0
 	statusActive   int16 = 1
 	statusDeleted  int16 = 2
 )
 
-// The status column of a membership: the zero value is suspended.
 const (
 	membershipSuspended int16 = 0
 	membershipActive    int16 = 1
 )
 
-// statusOf is the account status a row states, held to the three the column is
-// allowed. A row the column's check admits reaches here and nothing else does;
-// one written around the check reads as disabled, the zero value.
 func statusOf(n int16) authn.AccountStatus {
 	if n < statusDisabled || n > statusDeleted {
 		return authn.StatusDisabled
@@ -152,19 +129,12 @@ func statusOf(n int16) authn.AccountStatus {
 	return authn.AccountStatus(n)
 }
 
-// The signup_state column's numbers, which are authn.SignupState's.
 const (
 	signupNone     int16 = 0
 	signupPending  int16 = 1
 	signupVerified int16 = 2
 )
 
-// signupStateOf is the stored self-registration state a row carries, held to
-// the three the column allows. The state a request reads is computed from the
-// identifiers and reservations; this column still decides which unattended
-// self-registrations the unverified-account sweep deletes. One written around
-// the check reads as none, the zero value, so that a broken row is not taken
-// for a registration that proved an address.
 func signupStateOf(n int16) authn.SignupState {
 	if n < signupNone || n > signupVerified {
 		return authn.SignupNone

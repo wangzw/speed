@@ -7,16 +7,7 @@ import (
 	"testing"
 )
 
-// TestTheDeclaredQueryParametersAreTheOnesTheInputsCarry holds the two facts a
-// query-parameter contract is made of: the fragment's parameters, which a
-// generated client sends, and the query-tagged fields of the declared inputs,
-// which the entry point binds. A name that appears in one and not the other is
-// either a parameter the process ignores or a read no client can drive.
-//
-// The check is package-scoped: the union of the module's declared query names
-// against the union its inputs carry. The fragment is generated from the same
-// declarations, so a drift here can only mean a hand-written fragment or an
-// input the generator reads differently, and both are defects.
+// TestTheDeclaredQueryParametersAreTheOnesTheInputsCarry checks that the fragment's query parameters and the inputs' query-tagged fields agree.
 func TestTheDeclaredQueryParametersAreTheOnesTheInputsCarry(t *testing.T) {
 	declared := declaredQueryParams(t)
 	carried := inputQueryParams()
@@ -37,8 +28,6 @@ func TestTheDeclaredQueryParametersAreTheOnesTheInputsCarry(t *testing.T) {
 	}
 }
 
-// declaredQueryParams returns the query-parameter names the embedded fragment
-// declares, across every operation, ascending and unique.
 func declaredQueryParams(t *testing.T) []string {
 	t.Helper()
 
@@ -70,8 +59,6 @@ func declaredQueryParams(t *testing.T) []string {
 	return sortedUnique(names)
 }
 
-// inputQueryParams returns the query-parameter names the declared operations'
-// inputs carry, ascending and unique.
 func inputQueryParams() []string {
 	names := map[string]bool{}
 	for _, declared := range operations {
@@ -93,7 +80,6 @@ func inputQueryParams() []string {
 	return sortedUnique(names)
 }
 
-// missingFrom returns the names of want that are absent from have, ascending.
 func missingFrom(want, have []string) []string {
 	set := make(map[string]bool, len(have))
 	for _, name := range have {
@@ -108,7 +94,6 @@ func missingFrom(want, have []string) []string {
 	return out
 }
 
-// sortedUnique returns the set's members, ascending.
 func sortedUnique(set map[string]bool) []string {
 	out := make([]string, 0, len(set))
 	for name := range set {

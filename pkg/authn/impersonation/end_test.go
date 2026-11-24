@@ -12,10 +12,8 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// TestEndEndsTheRecordOnTheSession holds the explicit end: the reason explicit,
-// the initiator the caller's key, a best-effort audit row, the ended outcome
-// counted, the ended event published with the cause category, and no carrier
-// touched.
+// TestEndEndsTheRecordOnTheSession checks that an explicit end writes the reason,
+// the initiator and one audit row, counts and publishes, and leaves the carrier alone.
 func TestEndEndsTheRecordOnTheSession(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -60,10 +58,7 @@ func TestEndEndsTheRecordOnTheSession(t *testing.T) {
 	})
 }
 
-// TestEndFromTheImpersonatingIdentity holds the path the delete route takes: the
-// caller is the impersonating identity, whose session is the actor's, and the
-// record is found on it. The initiator is the administrator's key, not the
-// target's account.
+// TestEndFromTheImpersonatingIdentity checks that an impersonating identity ends the record on its own session.
 func TestEndFromTheImpersonatingIdentity(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -80,8 +75,7 @@ func TestEndFromTheImpersonatingIdentity(t *testing.T) {
 	})
 }
 
-// TestEndIsNotImpersonatingWithoutARecord holds the sentinel for a session with
-// no unended record.
+// TestEndIsNotImpersonatingWithoutARecord checks that a session with no unended record gets ErrNotImpersonating.
 func TestEndIsNotImpersonatingWithoutARecord(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		err := r.p.End(context.Background(), adminIdentity(t), "")
@@ -91,8 +85,7 @@ func TestEndIsNotImpersonatingWithoutARecord(t *testing.T) {
 	})
 }
 
-// TestEndToleratesAFailedAudit holds the safe direction: a failed audit write is
-// logged and never stops the end.
+// TestEndToleratesAFailedAudit checks that a failed audit write is logged and never stops the end.
 func TestEndToleratesAFailedAudit(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -112,8 +105,7 @@ func TestEndToleratesAFailedAudit(t *testing.T) {
 	})
 }
 
-// TestRevokeEndsByIdForceAndIsIdempotent holds Revoke: the reason revoked, the
-// initiator the revoker's key, one event, and a second call a no-op.
+// TestRevokeEndsByIdForceAndIsIdempotent checks that a revoke writes its reason and initiator, publishes once, and is a no-op the second time.
 func TestRevokeEndsByIdForceAndIsIdempotent(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -150,7 +142,6 @@ func TestRevokeEndsByIdForceAndIsIdempotent(t *testing.T) {
 			t.Errorf("the ended payload's cause is %q, want revoked", payload.EndedBy)
 		}
 
-		// Idempotent: a second revoke changes nothing and publishes nothing.
 		if err := r.p.Revoke(ctx, g.ID, by, "again"); err != nil {
 			t.Fatalf("the second Revoke = %v, want nil", err)
 		}
@@ -163,11 +154,7 @@ func TestRevokeEndsByIdForceAndIsIdempotent(t *testing.T) {
 	})
 }
 
-// TestRevokeOfALapsedRecordEndsItByItsOwnReason holds the judgement before the
-// write: a record that is expired, or whose bound session is gone, is not
-// stamped revoked. It ends with its own reason and no initiator, the revoke
-// writes no revoke audit row, and the only ended event is the one the lapse
-// owns, which an expiry does not publish.
+// TestRevokeOfALapsedRecordEndsItByItsOwnReason checks that an expired record or one whose session is gone is ended by its own reason.
 func TestRevokeOfALapsedRecordEndsItByItsOwnReason(t *testing.T) {
 	for _, c := range []struct {
 		name      string
@@ -219,8 +206,7 @@ func TestRevokeOfALapsedRecordEndsItByItsOwnReason(t *testing.T) {
 	}
 }
 
-// TestRevokeOfAnUnknownRecordIsNotImpersonating holds the sentinel, and that a
-// revoke by the stateless token path leaves no initiator.
+// TestRevokeOfAnUnknownRecordIsNotImpersonating checks that revoking a record that is not there is ErrNotImpersonating.
 func TestRevokeOfAnUnknownRecordIsNotImpersonating(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		err := r.p.Revoke(context.Background(), "no-such-record", authn.Identity{}, authn.EndRevoked)
@@ -230,8 +216,7 @@ func TestRevokeOfAnUnknownRecordIsNotImpersonating(t *testing.T) {
 	})
 }
 
-// TestRevokeByTheStatelessTokenLeavesNoInitiator holds the shape the token
-// module's revocation uses: a zero identity, so ended_by is left empty.
+// TestRevokeByTheStatelessTokenLeavesNoInitiator checks that a revoke by a zero identity leaves ended_by empty.
 func TestRevokeByTheStatelessTokenLeavesNoInitiator(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -248,10 +233,7 @@ func TestRevokeByTheStatelessTokenLeavesNoInitiator(t *testing.T) {
 	})
 }
 
-// TestListPagesByCursorAndFilters holds List: records come in identifier order,
-// a page is bounded by the cursor, and the actor and target filters select. The
-// third record carries another actor and another target, so that dropping either
-// filter changes the result.
+// TestListPagesByCursorAndFilters checks that List returns records in identifier order, pages by cursor and applies the actor and target filters.
 func TestListPagesByCursorAndFilters(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -299,9 +281,7 @@ func TestListPagesByCursorAndFilters(t *testing.T) {
 	})
 }
 
-// TestListReturnsNoCursorWhenThePageIsExactlyFull holds the page boundary: a
-// result of exactly the limit is the whole page and has no next page, so the
-// cursor is empty.
+// TestListReturnsNoCursorWhenThePageIsExactlyFull checks that a result of exactly the limit carries no next cursor.
 func TestListReturnsNoCursorWhenThePageIsExactlyFull(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -321,11 +301,7 @@ func TestListReturnsNoCursorWhenThePageIsExactlyFull(t *testing.T) {
 	})
 }
 
-// TestListSettlesTheLapsedRecordsOnItsPage holds the judgement before the
-// return: an unended record on the page that has lapsed is written back with its
-// own reason and the page carries the record as persisted. The reason follows
-// the closed order, so a record that has both expired and lost its session ends
-// expired. A second list writes nothing more.
+// TestListSettlesTheLapsedRecordsOnItsPage checks that List writes each lapsed record on the page back with its own reason.
 func TestListSettlesTheLapsedRecordsOnItsPage(t *testing.T) {
 	for _, c := range []struct {
 		name      string
@@ -388,8 +364,6 @@ func TestListSettlesTheLapsedRecordsOnItsPage(t *testing.T) {
 					t.Errorf("the ended counter reads %d, want 1", got)
 				}
 
-				// The record is settled, so a second page judges nothing and owns
-				// nothing.
 				if _, _, err := r.p.List(ctx, authn.GrantQuery{}); err != nil {
 					t.Fatalf("the second List: %v", err)
 				}
@@ -407,8 +381,7 @@ func TestListSettlesTheLapsedRecordsOnItsPage(t *testing.T) {
 	}
 }
 
-// TestListLeavesAValidRecordAlone holds the other side: a record still in force
-// is returned as the store holds it, with nothing written, counted or published.
+// TestListLeavesAValidRecordAlone checks that a record still in force is returned as stored, with nothing written, counted or published.
 func TestListLeavesAValidRecordAlone(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -440,16 +413,7 @@ func TestListLeavesAValidRecordAlone(t *testing.T) {
 	})
 }
 
-// TestListDoesNotJudgeThroughTheCheckTTLCache holds that a page is judged from
-// the store and not from the answer the verification hot path has cached. Active
-// warms the fake's check-ttl entry while the record is valid; the record then
-// lapses and the page is listed anyway. A judgement served from the cached entry
-// would call the record in force.
-//
-// The session subcase is what tells the store from the cache: a record that has
-// only expired is decided before the session is read, and the clock that expires
-// it also expires the cache entry. The expired subcase is a regression check and
-// carries no discriminating power of its own.
+// TestListDoesNotJudgeThroughTheCheckTTLCache checks that a page is judged from the store and not from the cached verification answer.
 func TestListDoesNotJudgeThroughTheCheckTTLCache(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -466,7 +430,7 @@ func TestListDoesNotJudgeThroughTheCheckTTLCache(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Start: %v", err)
 				}
-				// The check-ttl entry the verification hot path would serve.
+
 				r.p.sessions = newCachingSessions(r.sessions, time.Minute, r.clock.read)
 
 				if _, active, aerr := r.p.Active(ctx, g.ID); aerr != nil || !active {
@@ -493,10 +457,8 @@ func TestListDoesNotJudgeThroughTheCheckTTLCache(t *testing.T) {
 	}
 }
 
-// TestListSettlesOnceWhenTwoReplicasJudgeTheSameRecord holds the conditional
-// update as the arbiter under a race: two replicas list the same lapsed record
-// and both reach the update, and the one whose update changes the row owns the
-// event and the count. The bound session has ended, so the winner publishes.
+// TestListSettlesOnceWhenTwoReplicasJudgeTheSameRecord checks that two replicas
+// listing one lapsed record settle it once: only the winning update publishes and counts.
 func TestListSettlesOnceWhenTwoReplicasJudgeTheSameRecord(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -560,11 +522,7 @@ func TestListSettlesOnceWhenTwoReplicasJudgeTheSameRecord(t *testing.T) {
 	})
 }
 
-// TestEndIsWrittenOnceAndOnlyOnce holds the conditional update as the arbiter
-// under a race: two ends that both read the record unended reach the update
-// together, and the loser writes nothing. A rendezvous in the clock parks each
-// end between its read and its write, so both updates run against the row and
-// the disagreement is exercised rather than raced for.
+// TestEndIsWrittenOnceAndOnlyOnce checks that two concurrent ends of one record write one audit row, one event and one count.
 func TestEndIsWrittenOnceAndOnlyOnce(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -618,8 +576,7 @@ func TestEndIsWrittenOnceAndOnlyOnce(t *testing.T) {
 	})
 }
 
-// TestListSettlesEveryLapsedRowOfAPage holds the whole page: every unended
-// record on it is judged and written back, not only the first or the last one.
+// TestListSettlesEveryLapsedRowOfAPage checks that every unended record on a page is judged and written back, not only the first or last.
 func TestListSettlesEveryLapsedRowOfAPage(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -655,9 +612,7 @@ func TestListSettlesEveryLapsedRowOfAPage(t *testing.T) {
 	})
 }
 
-// TestListJudgesEachRowsOwnMembership holds the page-level judge per row: two
-// targets in one tenant, one still a member and one removed, are judged apart
-// whichever order the page reads them in.
+// TestListJudgesEachRowsOwnMembership checks that a page judges each row's own membership whichever order the rows are read in.
 func TestListJudgesEachRowsOwnMembership(t *testing.T) {
 	for _, c := range []struct {
 		name      string
@@ -705,9 +660,8 @@ func TestListJudgesEachRowsOwnMembership(t *testing.T) {
 	}
 }
 
-// TestAPageReadsSharedAnswersOnce holds the page-level judge's other side: rows
-// that share an actor, a target and a tenant are judged from one read of each,
-// while the bound session is read per record.
+// TestAPageReadsSharedAnswersOnce checks that rows sharing an actor, target and
+// tenant are judged from one read of each, while the bound session is read per record.
 func TestAPageReadsSharedAnswersOnce(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -738,9 +692,7 @@ func TestAPageReadsSharedAnswersOnce(t *testing.T) {
 	})
 }
 
-// TestTheJudgeDoesNotOutliveTheListCall holds that each call judges from the
-// state of its own moment: a page read after the membership was removed ends
-// the record, which a judge held across calls would not see.
+// TestTheJudgeDoesNotOutliveTheListCall checks that each call judges from its own moment rather than from a judge held across calls.
 func TestTheJudgeDoesNotOutliveTheListCall(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -763,9 +715,8 @@ func TestTheJudgeDoesNotOutliveTheListCall(t *testing.T) {
 	})
 }
 
-// TestListLeavesEndedRecordsOutOfTheJudgement holds that a page's already ended
-// records are not judged again, so a dependency that cannot answer leaves the
-// page intact rather than failing it, and Revoke of one is a no-op.
+// TestListLeavesEndedRecordsOutOfTheJudgement checks that already ended records
+// are not judged again, so a failed dependency read leaves the page intact and Revoke is a no-op.
 func TestListLeavesEndedRecordsOutOfTheJudgement(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -818,9 +769,7 @@ func TestListLeavesEndedRecordsOutOfTheJudgement(t *testing.T) {
 	}
 }
 
-// TestListReturnsUnavailableWhenADependencyFails holds the failure direction of
-// the management page: a dependency that cannot answer fails the whole page and
-// leaves the record unended.
+// TestListReturnsUnavailableWhenADependencyFails checks that a failed dependency read fails the whole page and leaves the record unended.
 func TestListReturnsUnavailableWhenADependencyFails(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -857,9 +806,8 @@ func TestListReturnsUnavailableWhenADependencyFails(t *testing.T) {
 	}
 }
 
-// TestListKeepsTheRowsItAlreadySettledWhenALaterRowFails holds the page's
-// partial progress: a row settled before a later row's dependency fails stays
-// settled, is not announced twice, and the retry completes the page.
+// TestListKeepsTheRowsItAlreadySettledWhenALaterRowFails checks that a row settled
+// before a later row fails stays settled, is announced once, and the retry completes the page.
 func TestListKeepsTheRowsItAlreadySettledWhenALaterRowFails(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -910,10 +858,8 @@ func TestListKeepsTheRowsItAlreadySettledWhenALaterRowFails(t *testing.T) {
 	})
 }
 
-// TestAPageReportsTheEndAnotherCallerWrote holds the loser's re-read: the
-// judgement read the record unended and the conditional update then lost, so
-// the record returned is the one that landed, with the other caller's reason
-// and initiator, and nothing is counted or published again.
+// TestAPageReportsTheEndAnotherCallerWrote checks that a caller whose conditional
+// update lost reports the end that landed and counts and publishes nothing.
 func TestAPageReportsTheEndAnotherCallerWrote(t *testing.T) {
 	overwrite := func(t *testing.T, r *rig, id string) {
 		t.Helper()
@@ -986,9 +932,8 @@ func TestAPageReportsTheEndAnotherCallerWrote(t *testing.T) {
 	})
 }
 
-// TestRevokeReturnsUnavailableWhenADependencyFails holds the failure direction
-// of the management revoke: a dependency that cannot answer is ErrUnavailable,
-// and the record stays unended with no audit row and no event.
+// TestRevokeReturnsUnavailableWhenADependencyFails checks that a failed dependency
+// read is ErrUnavailable and leaves the record unended with no audit row or event.
 func TestRevokeReturnsUnavailableWhenADependencyFails(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -1028,10 +973,8 @@ func TestRevokeReturnsUnavailableWhenADependencyFails(t *testing.T) {
 	}
 }
 
-// TestRevokeDoesNotJudgeThroughTheCheckTTLCache holds the management read the
-// design fixes: the revoke judges the bound session from the store, so a cache
-// entry that still says the session is alive cannot turn a dead one into a
-// revoked record.
+// TestRevokeDoesNotJudgeThroughTheCheckTTLCache checks that Revoke judges the bound
+// session from the store, so a cached live answer cannot hide a dead session.
 func TestRevokeDoesNotJudgeThroughTheCheckTTLCache(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -1069,10 +1012,7 @@ func TestRevokeDoesNotJudgeThroughTheCheckTTLCache(t *testing.T) {
 	})
 }
 
-// TestRevokeIsWrittenOnceAndOnlyOnce holds the conditional update as the arbiter
-// under a race on Revoke: both calls read the record unended and reach the
-// update together, and only the winner writes the audit row, publishes and
-// counts.
+// TestRevokeIsWrittenOnceAndOnlyOnce checks that two concurrent revokes write one audit row, one event and one count.
 func TestRevokeIsWrittenOnceAndOnlyOnce(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -1130,9 +1070,7 @@ func TestRevokeIsWrittenOnceAndOnlyOnce(t *testing.T) {
 	})
 }
 
-// TestTheEndIsWrittenAtTheInstantItIsJudged holds the date of every write path:
-// the end column is the instant the path read, not the record's own end time and
-// not an offset from it.
+// TestTheEndIsWrittenAtTheInstantItIsJudged checks that every write path stamps the end with the instant it judged.
 func TestTheEndIsWrittenAtTheInstantItIsJudged(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -1205,7 +1143,6 @@ func TestTheEndIsWrittenAtTheInstantItIsJudged(t *testing.T) {
 	}
 }
 
-// insertRecord writes a record directly, the way another replica would.
 func (r *rig) insertRecord(id string, actor, target authn.AccountID, tenant string) {
 	r.t.Helper()
 	err := r.h.Exec("INSERT INTO "+grantTable+

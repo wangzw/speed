@@ -9,25 +9,12 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// guardedIn is the group's registration primitive: every route of the group is
-// guarded and published under the group's scope, so a group's level is written
-// once rather than beside each route.
 func guardedIn(m mount.Mounter, scope speedhttp.Scope) func(speedhttp.Declared, string, gin.HandlerFunc, ...mount.Option) {
 	return func(operation speedhttp.Declared, rel string, h gin.HandlerFunc, opts ...mount.Option) {
 		mount.Declared(m, operation, rel, h, append(opts, mount.InScope(scope))...)
 	}
 }
 
-// mountRoutes registers every management route whose group has its capability.
-// All are guarded by the gateway. The groups whose action is decided in the
-// tenant domain register their routes Impersonable, so an impersonating identity
-// reaches the handler and is decided by the effective account's permissions in
-// that tenant; the platform-domain groups are not registered and the gateway
-// refuses an impersonating identity there with a 401, the handler checking the
-// same domain again. The account and membership groups are always mounted; each
-// other group follows the capability it needs, and the SSO provider group
-// follows its configuration item as well: a register that is present with the
-// item off is a deployment that does not offer the management surface.
 func (m *product) mountRoutes() {
 	m.mountAccountRoutes()
 	m.mountMembershipRoutes()
@@ -62,8 +49,6 @@ func (m *product) mountRoutes() {
 	}
 }
 
-// mountAccountRoutes registers the account group, which is always mounted: the
-// account read and write surfaces are required.
 func (m *product) mountAccountRoutes() {
 	g := guardedIn(m.mounter, speedhttp.ScopeSystem)
 	g(accountListOperation, mountRel(accountListOperation.Path),
@@ -94,8 +79,6 @@ func (m *product) mountAccountRoutes() {
 	}
 }
 
-// mountSessionRoutes registers the session group, mounted with the session
-// store.
 func (m *product) mountSessionRoutes() {
 	g := guardedIn(m.mounter, speedhttp.ScopeSystem)
 	g(accountSessionsOperation, mountRel(accountSessionsOperation.Path), accountSessionsOperation.Handle(m.handleAccountSessions))
@@ -103,8 +86,6 @@ func (m *product) mountSessionRoutes() {
 	g(sessionRevokeOperation, mountRel(sessionRevokeOperation.Path), sessionRevokeOperation.Handle(m.handleSessionRevoke))
 }
 
-// mountSecretRoutes registers the service-secret group, mounted with the token
-// module.
 func (m *product) mountSecretRoutes() {
 	g := guardedIn(m.mounter, speedhttp.ScopeSystem)
 	g(secretListOperation, mountRel(secretListOperation.Path), secretListOperation.Handle(m.handleSecretList))
@@ -113,9 +94,6 @@ func (m *product) mountSecretRoutes() {
 	g(secretRevokeOperation, mountRel(secretRevokeOperation.Path), secretRevokeOperation.Handle(m.handleSecretRevoke))
 }
 
-// mountMembershipRoutes registers the membership group, which is always mounted:
-// the membership reads are required. The group's action is decided in the path's
-// tenant, so its routes are registered Impersonable.
 func (m *product) mountMembershipRoutes() {
 	g := guardedIn(m.mounter, speedhttp.ScopeTenants)
 	g(memberListOperation, mountRel(memberListOperation.Path), memberListOperation.Handle(m.handleMemberList), mount.Impersonable())
@@ -127,9 +105,6 @@ func (m *product) mountMembershipRoutes() {
 	m.groups = append(m.groups, "memberships")
 }
 
-// mountSSORoutes registers the SSO provider group, mounted with the SSO module
-// when authn.admin.sso.enabled is true. The group's action is decided in the
-// tenant the path names, so its routes are registered Impersonable.
 func (m *product) mountSSORoutes() {
 	g := guardedIn(m.mounter, speedhttp.ScopeTenants)
 	g(providerListOperation, mountRel(providerListOperation.Path), providerListOperation.Handle(m.handleProviderList), mount.Impersonable())
@@ -146,25 +121,12 @@ func (m *product) mountSSORoutes() {
 	g(reverifyDomainsOperation, mountRel(reverifyDomainsOperation.Path), reverifyDomainsOperation.Handle(m.handleReverifyDomains), mount.Impersonable())
 }
 
-// mountImpersonationRoutes registers the impersonation record group, mounted
-// with an impersonation capability that answers the extended shape the routes
-// read a record through. The two actions are decided in the platform domain, so
-// the group is published in the system scope and is not registered
-// Impersonable: the record surface is not a capability a target account holds.
-// The tenant in the path is the data the records are confined to, not the level
-// the route is served at.
 func (m *product) mountImpersonationRoutes() {
 	g := guardedIn(m.mounter, speedhttp.ScopeSystem)
 	g(impersonationListOperation, mountRel(impersonationListOperation.Path), impersonationListOperation.Handle(m.handleImpersonationList))
 	g(impersonationRevokeOperation, mountRel(impersonationRevokeOperation.Path), impersonationRevokeOperation.Handle(m.handleImpersonationRevoke))
 }
 
-// closedQuery refuses a query parameter outside the accepted set before the
-// bound handler reads the request. The account list's query set is closed by
-// contract — a misspelled filter is refused rather than silently ignored — and
-// the entry point's binder reads only the names the declaration carries, so
-// this guard is the module's own check of the same set. It is a route wrapper,
-// not a handler: the handler still receives only its declared input.
 func closedQuery(accepted map[string]bool, next gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		for key := range c.Request.URL.Query() {
@@ -177,18 +139,6 @@ func closedQuery(accepted map[string]bool, next gin.HandlerFunc) gin.HandlerFunc
 	}
 }
 
-// mountRel turns a declared route into the relative path the mounter joins to
-// its base. The declaration writes the route against the module's API root, and
-// the fragment is a static declaration fixed before configuration, so the mounter
-// path is derived from the scope's default base rather than the configured one: a
-// configured base moves the routes without moving the contract, which is the
-// split the Spec already accepts. The scope follows from the declaration: a
-// route whose first segment is the tenant parameter is the tenant-domain
-// surface, every other route is the platform-domain one — including an
-// impersonation route, whose leading /tenants segment names the data the records
-// are confined to rather than the policy domain. A declared route that is not
-// under its base is a declaration defect, not something to mount at a guessed
-// path.
 func mountRel(declared string) string {
 	spec, scope := adminSpec, speedhttp.ScopeSystem
 	if strings.HasPrefix(declared, "/:tenant/") {

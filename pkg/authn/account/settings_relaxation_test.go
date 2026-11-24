@@ -24,9 +24,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The switches this module owns, as the settings paths a deployment writes.
-// They are written out here rather than read from a constant so that the cases
-// name the keys the design lists.
 const (
 	testSignupKey         = "authn.account.signup"
 	testPasswordSignupKey = "authn.account.password-signup"
@@ -34,11 +31,7 @@ const (
 	testSignupHourlyKey   = "authn.account.signup-global-hourly"
 )
 
-// TestRelaxingAnAccountSwitchWritesAWarnAndAnAuditRecord holds the visibility of
-// moving either switch to its relaxing value: the write publishes a change, the
-// module's subscription answers it with one Warn naming the key and never the
-// value, and one best-effort audit record with the relaxed action. A change back
-// to the strict value writes nothing.
+// Moving either switch to its relaxing value publishes a change answered by one Warn naming the key and one best-effort relaxed audit record.
 func TestRelaxingAnAccountSwitchWritesAWarnAndAnAuditRecord(t *testing.T) {
 	for _, c := range []struct {
 		key, relaxing, strict string
@@ -93,10 +86,7 @@ func TestRelaxingAnAccountSwitchWritesAWarnAndAnAuditRecord(t *testing.T) {
 	}
 }
 
-// TestRelaxingARegistrationBudgetWritesAWarnAndAnAuditRecord holds the two
-// registration budgets. A larger hourly budget relaxes the deployment's limit.
-// The per-address budget is not monotone: zero turns it off, so a positive value
-// moved to zero is to-zero and a positive value raised is an increase.
+// Relaxing either registration budget writes a Warn and an audit record.
 func TestRelaxingARegistrationBudgetWritesAWarnAndAnAuditRecord(t *testing.T) {
 	for _, c := range []struct {
 		name          string
@@ -137,9 +127,7 @@ func TestRelaxingARegistrationBudgetWritesAWarnAndAnAuditRecord(t *testing.T) {
 	}
 }
 
-// TestTighteningARegistrationBudgetWritesNothing holds the other direction of the
-// same two budgets, the per-address one included: a positive value lowered and a
-// budget that is off being switched on both check more, so neither is reported.
+// Tightening either budget, including the per-address one, writes nothing.
 func TestTighteningARegistrationBudgetWritesNothing(t *testing.T) {
 	for _, c := range []struct {
 		name          string
@@ -170,10 +158,7 @@ func TestTighteningARegistrationBudgetWritesNothing(t *testing.T) {
 	}
 }
 
-// TestATenantLayerWriteIsNotARelaxation holds that a write at a tenant layer is
-// not reported: both switches are read from the global layer alone, so a tenant
-// row leaves the effective value unchanged and must not manufacture a
-// relaxation warning or an audit row.
+// A write at a tenant layer is not a relaxation, since both switches are read from the global layer alone.
 func TestATenantLayerWriteIsNotARelaxation(t *testing.T) {
 	store, bus := deliveredSettings(t)
 	h := newHarness(t, db.SQLite)
@@ -194,9 +179,7 @@ func TestATenantLayerWriteIsNotARelaxation(t *testing.T) {
 	}
 }
 
-// TestAConfigurationCarryingARemovedAccountSwitchFailsStartup holds the move out
-// of configuration: a configuration file that still carries either switch is an
-// unknown key and refuses the startup, naming the key.
+// A configuration file still carrying either removed switch is an unknown key and refuses startup, naming the key.
 func TestAConfigurationCarryingARemovedAccountSwitchFailsStartup(t *testing.T) {
 	for _, c := range []struct {
 		key, value string
@@ -219,9 +202,7 @@ func TestAConfigurationCarryingARemovedAccountSwitchFailsStartup(t *testing.T) {
 	}
 }
 
-// TestTheRemovedAutoLinkSettingHasNoDeclaration holds the other move out: the
-// settings store refuses a write to a key no module declares, so a deployment
-// cannot bring the retired switch back through a settings write.
+// The settings store refuses a write to the retired auto-link key no module declares.
 func TestTheRemovedAutoLinkSettingHasNoDeclaration(t *testing.T) {
 	store, _ := deliveredSettings(t)
 	write := settings.Write{
@@ -232,15 +213,11 @@ func TestTheRemovedAutoLinkSettingHasNoDeclaration(t *testing.T) {
 	}
 }
 
-// deliverChange hands a settings.changed event carrying change to the module's
-// subscription, as a bus delivery would.
 func deliverChange(t *testing.T, h *harness, change settings.Change) {
 	t.Helper()
 	deliverChangeAt(t, h, "", change)
 }
 
-// deliverChangeAt hands a settings.changed event carrying change and the tenant
-// it belongs to to the module's subscription, as a bus delivery would.
 func deliverChangeAt(t *testing.T, h *harness, tenant string, change settings.Change) {
 	t.Helper()
 	if err := h.p.onSettingsChanged(context.Background(), event.Event{
@@ -252,9 +229,6 @@ func deliverChangeAt(t *testing.T, h *harness, tenant string, change settings.Ch
 	}
 }
 
-// loadAccountConfiguration runs the real loader over a JSON primary source,
-// returning what loading it answered. Unlike the authntest reader it does not
-// stop the case on a refusal: the refusal is what the case asserts.
 func loadAccountConfiguration(t *testing.T, body string) error {
 	t.Helper()
 	locator := filepath.Join(t.TempDir(), "config.json")
@@ -273,8 +247,6 @@ func loadAccountConfiguration(t *testing.T, body string) error {
 	return err
 }
 
-// writeDeliveredSetting writes one value into a store the settings module
-// delivered. A failure is fatal: the case exists to hold the key is declared.
 func writeDeliveredSetting(t *testing.T, store settings.Store, key string, value any) {
 	t.Helper()
 	write := settings.Write{Layer: settings.Global(), Key: key, Value: value, Actor: "test"}
@@ -283,9 +255,6 @@ func writeDeliveredSetting(t *testing.T, store settings.Store, key string, value
 	}
 }
 
-// deliveredBus is the event bus of the settings assembly: it keeps what the
-// store publishes, so a case can hand the change to the module's subscription
-// with the payload the store itself built.
 type deliveredBus struct {
 	mu        sync.Mutex
 	published []event.Event
@@ -300,7 +269,6 @@ func (b *deliveredBus) Publish(_ context.Context, evt event.Event) error {
 
 func (b *deliveredBus) Subscribe(string, string, event.Handler) {}
 
-// lastChange decodes the payload of the most recent settings.changed event.
 func (b *deliveredBus) lastChange(t *testing.T) settings.Change {
 	t.Helper()
 	b.mu.Lock()
@@ -319,11 +287,6 @@ func (b *deliveredBus) lastChange(t *testing.T) settings.Change {
 	return settings.Change{}
 }
 
-// deliveredSettings runs this module's declaration through the settings module
-// that builds the key table from it, over a SQLite database the database module
-// opened, and returns the store it delivers and the bus it publishes on. This
-// module is registered for its declaration alone, the way the key table reads
-// every registered module's: it does not take part in the drive.
 func deliveredSettings(t *testing.T) (settings.Store, *deliveredBus) {
 	t.Helper()
 	database := dbtest.SQLite(t, filepath.Join(t.TempDir(), "settings.db"), nil)
@@ -367,8 +330,6 @@ func deliveredSettings(t *testing.T) (settings.Store, *deliveredBus) {
 	return store, bus
 }
 
-// applySettingsMigrations runs the settings module's own SQLite migrations, read
-// out of the declaration it registers.
 func applySettingsMigrations(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	var tree fs.FS
@@ -400,14 +361,10 @@ func applySettingsMigrations(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// deliveredConfig is the configuration reader of an assembly that configures
-// nothing, which leaves every declared default in place.
 type deliveredConfig struct{}
 
 func (deliveredConfig) Decode(string, any) error { return nil }
 
-// deliveredLogger is the logging capability of an assembly whose records nobody
-// reads.
 type deliveredLogger struct{}
 
 func (deliveredLogger) Named(string) *slog.Logger { return slog.New(slog.DiscardHandler) }

@@ -22,9 +22,7 @@ func decodeProfile(t *testing.T, rec *httptest.ResponseRecorder) AuthnProfilePro
 	return v
 }
 
-// TestGetReturnsTheCallersOwnProfile holds the read face: the profile is built
-// from the account the identity names, with the identifiers, the external
-// bindings and the three preferences read out of the attribute set.
+// TestGetReturnsTheCallersOwnProfile checks that the profile is built from the identity's account with its identifiers, links and preferences.
 func TestGetReturnsTheCallersOwnProfile(t *testing.T) {
 	r := newRig(t)
 	created := time.Date(2026, time.March, 4, 5, 6, 7, 0, time.UTC)
@@ -80,8 +78,7 @@ func TestGetReturnsTheCallersOwnProfile(t *testing.T) {
 	}
 }
 
-// TestGetCarriesNoSubjectInALink holds the view's shape: the provider's own name
-// for the person reaches no answer.
+// TestGetCarriesNoSubjectInALink checks that a binding's provider subject reaches no answer.
 func TestGetCarriesNoSubjectInALink(t *testing.T) {
 	r := newRig(t)
 	r.accounts.links[meAccount] = []authn.ExternalBinding{{
@@ -93,8 +90,7 @@ func TestGetCarriesNoSubjectInALink(t *testing.T) {
 	}
 }
 
-// TestGetZeroCreatedAtIsNull holds the instant rule: a zero time is written as
-// null, never as the zero instant or the empty string.
+// TestGetZeroCreatedAtIsNull checks that a zero creation time is written as null.
 func TestGetZeroCreatedAtIsNull(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodGet, "/api/v1/auth/me", nil, me()...)
@@ -104,8 +100,7 @@ func TestGetZeroCreatedAtIsNull(t *testing.T) {
 	}
 }
 
-// TestGetIsReachableWhileImpersonating holds that an impersonating identity
-// reads the impersonated account.
+// TestGetIsReachableWhileImpersonating checks that an impersonating identity reads the impersonated account.
 func TestGetIsReachableWhileImpersonating(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodGet, "/api/v1/auth/me", nil, impersonating()...)
@@ -118,8 +113,7 @@ func TestGetIsReachableWhileImpersonating(t *testing.T) {
 	}
 }
 
-// TestGetWithoutAnIdentityIs401 holds the read face's refusal: a request that
-// reaches the handler with no identity is the gateway's own 401.
+// TestGetWithoutAnIdentityIs401 checks that a request with no identity is refused 401.
 func TestGetWithoutAnIdentityIs401(t *testing.T) {
 	r := newRig(t)
 	if rec := r.doAnonymous(http.MethodGet, "/api/v1/auth/me", nil); rec.Code != http.StatusUnauthorized {
@@ -130,10 +124,7 @@ func TestGetWithoutAnIdentityIs401(t *testing.T) {
 	}
 }
 
-// TestTheHandlersOwn401CarriesTheCapabilityChallenge holds the header a 401 of
-// the read handler itself carries: the endpoint's Bearer and Cookie challenge,
-// in the header the declared 401 response declares. RFC 9110 requires a 401 to
-// carry one, and the declared header is what lets the handler's fault write it.
+// TestTheHandlersOwn401CarriesTheCapabilityChallenge checks that a handler-written 401 carries the Bearer and Cookie challenge.
 func TestTheHandlersOwn401CarriesTheCapabilityChallenge(t *testing.T) {
 	const want = `Bearer realm="main", Cookie realm="main"`
 	cases := []struct {
@@ -171,8 +162,7 @@ func TestTheHandlersOwn401CarriesTheCapabilityChallenge(t *testing.T) {
 	}
 }
 
-// TestGetOfAGoneAccountIs401 holds the mapping: the identity's own account gone
-// is the 401 a read of it gets, not a 404.
+// TestGetOfAGoneAccountIs401 checks that the identity's own account gone is a 401, not a 404.
 func TestGetOfAGoneAccountIs401(t *testing.T) {
 	r := newRig(t)
 	r.accounts.getErr = authn.ErrAccountNotFound
@@ -181,8 +171,7 @@ func TestGetOfAGoneAccountIs401(t *testing.T) {
 	}
 }
 
-// TestGetDependencyFailureIs503 holds the fail-closed default: a failure no
-// sentinel names is a 503.
+// TestGetDependencyFailureIs503 checks that a failure no sentinel names is a 503.
 func TestGetDependencyFailureIs503(t *testing.T) {
 	cases := map[string]func(*rig){
 		"the account read":       func(r *rig) { r.accounts.getErr = errors.New("boom") },
@@ -200,11 +189,7 @@ func TestGetDependencyFailureIs503(t *testing.T) {
 	}
 }
 
-// TestGetVerificationShowsEachState holds the three states the read face
-// publishes and the field each one carries: none with no address and no
-// instant, pending with the contact awaiting verification, verified with the
-// address the account module reports and the instant the account first reached
-// it.
+// TestGetVerificationShowsEachState checks the state, address and instant published for none, pending and verified.
 func TestGetVerificationShowsEachState(t *testing.T) {
 	since := time.Date(2026, time.April, 5, 6, 7, 8, 0, time.UTC)
 	for _, c := range []struct {
@@ -255,10 +240,7 @@ func TestGetVerificationShowsEachState(t *testing.T) {
 	}
 }
 
-// TestGetPendingContactIsNotAnIdentifier holds the boundary between the two
-// read surfaces: the address awaiting verification is reported only by
-// verification.email and never appears among the identifiers, which carry
-// proved facts alone.
+// TestGetPendingContactIsNotAnIdentifier checks that the address awaiting verification appears only in verification.email.
 func TestGetPendingContactIsNotAnIdentifier(t *testing.T) {
 	r := newRig(t)
 	r.accounts.identifiers[meAccount] = []authn.Identifier{{
@@ -281,9 +263,7 @@ func TestGetPendingContactIsNotAnIdentifier(t *testing.T) {
 	}
 }
 
-// TestGetIdentifierProvenFollowsTheVerificationChannel holds the derivation of
-// proven over the closed set of channels: the three proofs read true and the
-// four assertions, an invitation's included, read false.
+// TestGetIdentifierProvenFollowsTheVerificationChannel checks that the three proofs read true and the four assertions false.
 func TestGetIdentifierProvenFollowsTheVerificationChannel(t *testing.T) {
 	channels := []struct {
 		via    string
@@ -319,9 +299,7 @@ func TestGetIdentifierProvenFollowsTheVerificationChannel(t *testing.T) {
 	}
 }
 
-// TestGetIdentifierCarriesTheTwoAxesAndTheDefaultContact holds that the profile
-// exposes the stored flags as they are, independently of how ownership was
-// established.
+// TestGetIdentifierCarriesTheTwoAxesAndTheDefaultContact checks that the stored contact, sign-in and default flags pass through.
 func TestGetIdentifierCarriesTheTwoAxesAndTheDefaultContact(t *testing.T) {
 	r := newRig(t)
 	r.accounts.identifiers[meAccount] = []authn.Identifier{
@@ -354,8 +332,7 @@ func TestGetIdentifierCarriesTheTwoAxesAndTheDefaultContact(t *testing.T) {
 	}
 }
 
-// TestGetSignupStateReadFailureIs503 holds the read failure's direction: a
-// state that cannot be read is answered as unavailable and never as none.
+// TestGetSignupStateReadFailureIs503 checks that a state that cannot be read is a 503, never none.
 func TestGetSignupStateReadFailureIs503(t *testing.T) {
 	r := newRig(t)
 	r.verification.err = authn.ErrUnavailable

@@ -38,9 +38,6 @@ const (
 
 var expiresAt = time.Date(2026, 11, 12, 17, 30, 0, 0, time.UTC)
 
-// recordingSender is a mail.Sender that keeps what it was handed and fails on
-// demand. An empty name answers "recording"; a case that needs a carrier with a
-// different selection name (the log carrier) sets it.
 type recordingSender struct {
 	mu       sync.Mutex
 	messages []mail.Message
@@ -73,7 +70,6 @@ func (s *recordingSender) sent() []mail.Message {
 	return append([]mail.Message(nil), s.messages...)
 }
 
-// standIn is a module that delivers instance from its New.
 func standIn(name string, instance any, exclusive bool, tokens ...core.Token) core.Module {
 	provides := make([]core.Provision, len(tokens))
 	for i, token := range tokens {
@@ -86,9 +82,6 @@ func standIn(name string, instance any, exclusive bool, tokens ...core.Token) co
 	}
 }
 
-// driveInviteMail builds an assembly of this module, the i18n engine, the
-// configuration reader and the mail stand-in, and answers the notifier it
-// delivered.
 func driveInviteMail(t *testing.T, body string, sender mail.Sender) (authn.InviteNotifier, error) {
 	t.Helper()
 	reader := authntest.ConfigReaderAll(t, body, Module(), catalog.Module())
@@ -114,10 +107,7 @@ func driveInviteMail(t *testing.T, body string, sender mail.Sender) (authn.Invit
 	return got, err
 }
 
-// TestTheDescriptorNamesWhatItDeliversAndRequires holds the shape a command
-// tree relies on: the module is authn.invitemail, it delivers the invitation
-// notifier exclusively, it requires the mail sending capability, and it
-// declares both its configuration section and its catalog.
+// TestTheDescriptorNamesWhatItDeliversAndRequires checks the descriptor's name, provisions, requirements and resources.
 func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "authn.invitemail" {
@@ -153,9 +143,7 @@ func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 	}
 }
 
-// TestAnEmptyBaseURLReportsNotConfigured holds the deployment that carries the
-// module but sends no mail: construction succeeds, the carrier is handed
-// nothing, and the outcome is not_configured rather than a failure.
+// TestAnEmptyBaseURLReportsNotConfigured checks that an empty base URL sends no mail and reports not_configured.
 func TestAnEmptyBaseURLReportsNotConfigured(t *testing.T) {
 	sender := &recordingSender{}
 	notifier, err := driveInviteMail(t, "{}", sender)
@@ -176,11 +164,7 @@ func TestAnEmptyBaseURLReportsNotConfigured(t *testing.T) {
 	}
 }
 
-// TestTheLogCarrierIsNotAnInvitationDelivery holds the carrier that reaches no
-// recipient: a notice handed to the log carrier would only be written to the
-// process log, so the issue answer must report not_configured and carry the
-// token for the issuer to pass on. The notice is not rendered at all, so the
-// link never enters the log.
+// TestTheLogCarrierIsNotAnInvitationDelivery checks that the log carrier reports not_configured and is handed no message.
 func TestTheLogCarrierIsNotAnInvitationDelivery(t *testing.T) {
 	sender := &recordingSender{name: maillog.CarrierName}
 	notifier, err := driveInviteMail(t, configuredBody, sender)
@@ -201,10 +185,7 @@ func TestTheLogCarrierIsNotAnInvitationDelivery(t *testing.T) {
 	}
 }
 
-// TestTheConfiguredBaseURLIsTheSiteRoot holds the link the notice carries: the
-// configured origin plus the public acceptance landing the demo host serves at
-// /invitations/:token. A trailing slash on the configuration is normalized, so
-// the link never carries a doubled slash.
+// TestTheConfiguredBaseURLIsTheSiteRoot checks the notice links to the configured origin plus the acceptance landing.
 func TestTheConfiguredBaseURLIsTheSiteRoot(t *testing.T) {
 	sender := &recordingSender{}
 	notifier, err := driveInviteMail(t, configuredBody, sender)
@@ -231,8 +212,7 @@ func TestTheConfiguredBaseURLIsTheSiteRoot(t *testing.T) {
 	}
 }
 
-// TestConfigRejectsARelativeOrNonHTTPURL holds the startup domain: only an
-// absolute http or https URL can have the landing path joined to it.
+// TestConfigRejectsARelativeOrNonHTTPURL checks that a non-absolute or non-HTTP origin is refused as invalid config.
 func TestConfigRejectsARelativeOrNonHTTPURL(t *testing.T) {
 	for _, value := range []string{
 		"app.example.com",
@@ -261,7 +241,7 @@ func TestConfigRejectsARelativeOrNonHTTPURL(t *testing.T) {
 	}
 }
 
-// TestConfigNormalizesATrailingSlash holds the canonical form the join needs.
+// TestConfigNormalizesATrailingSlash checks that a trailing slash is normalized away.
 func TestConfigNormalizesATrailingSlash(t *testing.T) {
 	for value, want := range map[string]string{
 		"https://app.example.com":      "https://app.example.com",
@@ -281,9 +261,7 @@ func TestConfigNormalizesATrailingSlash(t *testing.T) {
 	}
 }
 
-// TestStartupRefusesAConfigItCannotJoinLinksWith holds the same validation at
-// the descriptor's Prepare stage: a relative URL stops the construction instead
-// of reaching the first invitation.
+// TestStartupRefusesAConfigItCannotJoinLinksWith checks that an invalid origin stops the descriptor's Prepare.
 func TestStartupRefusesAConfigItCannotJoinLinksWith(t *testing.T) {
 	for _, value := range []string{"app.example.com", "/invitations", "ftp://app.example.com"} {
 		t.Run(value, func(t *testing.T) {
@@ -302,10 +280,7 @@ func TestStartupRefusesAConfigItCannotJoinLinksWith(t *testing.T) {
 	}
 }
 
-// TestNoCarrierStandsTheModuleDown holds the documented deployment that switches
-// the mail capability off: mail.carrier "none" leaves no sending provider in
-// the run, so this module has to stand itself down with the capability instead
-// of failing the assembly over a dependency no module delivers.
+// TestNoCarrierStandsTheModuleDown checks that mail.carrier none disables the module instead of failing the assembly.
 func TestNoCarrierStandsTheModuleDown(t *testing.T) {
 	reader := authntest.ConfigReaderAll(t, `{"mail":{"carrier":"none"}}`, Module(), catalog.Module(), maillog.Module())
 	reg := core.New()
@@ -335,31 +310,20 @@ func TestNoCarrierStandsTheModuleDown(t *testing.T) {
 	}
 }
 
-// The inviter's display name a notice is rendered with.
 const inviter = "Demo Operator"
 
-// The deadline each language renders for expiresAt: the catalog's layout, in
-// UTC, not the RFC 3339 instant the message used to interpolate.
 var renderedExpiry = map[string]string{
 	"en-US": "Nov 12, 2026 17:30 UTC",
 	"zh-CN": "2026年11月12日 17:30 UTC",
 }
 
-// TestTheNoticeRendersInBothLanguages holds the whole send: the message reaches
-// the carrier addressed to the invitee, its subject and both bodies are the
-// catalog's text interpolated with the tenant, the inviter and the acceptance
-// link, the deadline is a readable UTC date and time rather than an RFC 3339
-// instant, and the two languages differ so a case that always answered one
-// could not pass.
+// TestTheNoticeRendersInBothLanguages checks each language carries the tenant, inviter, link and a readable UTC deadline.
 func TestTheNoticeRendersInBothLanguages(t *testing.T) {
 	sender := &recordingSender{}
 	notifier, err := driveInviteMail(t, configuredBody, sender)
 	if err != nil {
 		t.Fatalf("assembling the module: %v", err)
 	}
-	// The request carries a time zone of its own; the notice must still render
-	// the deadline in UTC, because a recipient may have no account and no time
-	// zone and the mail is not a page.
 	ctx := i18n.WithTimeZone(t.Context(), "Asia/Tokyo")
 	for _, locale := range []string{"zh-CN", "en-US"} {
 		delivery, err := notifier.Notify(ctx, authn.InviteNotice{
@@ -420,11 +384,7 @@ func TestTheNoticeRendersInBothLanguages(t *testing.T) {
 	}
 }
 
-// TestTheHTMLBodyEscapesTheInterpolatedText holds the injection boundary: a
-// display name and a tenant name are free text a person typed, so the HTML
-// body carries them escaped while the plain-text body and the subject carry
-// them as written. The catalog's own markup is untouched; only the values
-// interpolated into it change.
+// TestTheHTMLBodyEscapesTheInterpolatedText checks that the HTML body escapes free text while text and subject do not.
 func TestTheHTMLBodyEscapesTheInterpolatedText(t *testing.T) {
 	const (
 		markedInviter = `Mallory <b>&amp;</b>`
@@ -465,9 +425,7 @@ func TestTheHTMLBodyEscapesTheInterpolatedText(t *testing.T) {
 	}
 }
 
-// TestANoticeWithoutAnInviterUsesTheImpersonalBody holds the host-issued case:
-// an invitation with no account behind it names no inviter, so the notice
-// renders the impersonal body with no dangling placeholder or verb.
+// TestANoticeWithoutAnInviterUsesTheImpersonalBody checks that a missing inviter renders the impersonal body.
 func TestANoticeWithoutAnInviterUsesTheImpersonalBody(t *testing.T) {
 	sender := &recordingSender{}
 	notifier, err := driveInviteMail(t, configuredBody, sender)
@@ -494,9 +452,7 @@ func TestANoticeWithoutAnInviterUsesTheImpersonalBody(t *testing.T) {
 	}
 }
 
-// TestANoticeWithoutADeadlineOmitsTheSentence holds the defensive case the seam
-// documents: a caller that does not know the deadline gets no invented instant
-// and no dangling time segment.
+// TestANoticeWithoutADeadlineOmitsTheSentence checks that a missing deadline writes no instant and no dangling segment.
 func TestANoticeWithoutADeadlineOmitsTheSentence(t *testing.T) {
 	sender := &recordingSender{}
 	notifier, err := driveInviteMail(t, configuredBody, sender)
@@ -516,8 +472,7 @@ func TestANoticeWithoutADeadlineOmitsTheSentence(t *testing.T) {
 	}
 }
 
-// TestTheCarrierFailureIsReportedAsFailed holds the failure half of the seam:
-// a refusal is failed with the carrier's error, and the error carries no token.
+// TestTheCarrierFailureIsReportedAsFailed checks that a carrier refusal returns InviteFailed with its error and no token.
 func TestTheCarrierFailureIsReportedAsFailed(t *testing.T) {
 	sender := &recordingSender{err: fmt.Errorf("a carrier detail: %w", mail.ErrRejected)}
 	notifier, err := driveInviteMail(t, configuredBody, sender)
@@ -541,9 +496,7 @@ func TestTheCarrierFailureIsReportedAsFailed(t *testing.T) {
 	}
 }
 
-// TestAnUnknownLocaleFallsBack holds the fallback order: a language the catalog
-// does not carry, an English region it does not carry, a Chinese region it does
-// not carry, and no locale at all each render a message rather than the key.
+// TestAnUnknownLocaleFallsBack checks the fallback to the primary subtag's catalog and then to English.
 func TestAnUnknownLocaleFallsBack(t *testing.T) {
 	cases := []struct {
 		locale string
@@ -583,9 +536,7 @@ func TestAnUnknownLocaleFallsBack(t *testing.T) {
 	}
 }
 
-// TestTheNoticeLeavesNoTokenAddressOrBodyInTheLog holds the seam's promise: the
-// one outcome line names the carrier's receipt and the duration, and carries
-// neither the acceptance token nor the recipient.
+// TestTheNoticeLeavesNoTokenAddressOrBodyInTheLog checks that neither outcome line carries the token, address or tenant.
 func TestTheNoticeLeavesNoTokenAddressOrBodyInTheLog(t *testing.T) {
 	var out bytes.Buffer
 	ctx := log.WithLogger(context.Background(),
@@ -633,9 +584,7 @@ func TestTheNoticeLeavesNoTokenAddressOrBodyInTheLog(t *testing.T) {
 	}
 }
 
-// TestTheCatalogCarriesTheSameLeavesInBothLanguages holds the compiled-in
-// catalog: zh-CN and en-US carry exactly the same keys, every message is
-// non-empty, and both bodies interpolate the tenant, the link and the deadline.
+// TestTheCatalogCarriesTheSameLeavesInBothLanguages checks that both catalogs carry the same non-empty keys with placeholders.
 func TestTheCatalogCarriesTheSameLeavesInBothLanguages(t *testing.T) {
 	zh := readCatalog(t, "zh-CN")
 	en := readCatalog(t, "en-US")

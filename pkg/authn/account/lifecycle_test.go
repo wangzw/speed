@@ -10,8 +10,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// Disabling an account moves valid_after to the next whole second and calls the
-// disabled hook, which is what makes every session of before void.
+// Disabling moves valid_after to the next whole second and calls the disabled hook, voiding every earlier session.
 func TestDisablingMovesValidAfterAndCallsTheDisabledHook(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -38,8 +37,7 @@ func TestDisablingMovesValidAfterAndCallsTheDisabledHook(t *testing.T) {
 	})
 }
 
-// Enabling does not roll valid_after back: a session of before the disable stays
-// void.
+// Enabling does not roll valid_after back, so a session from before the disable stays void.
 func TestEnablingDoesNotRollValidAfterBack(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -68,8 +66,7 @@ func TestEnablingDoesNotRollValidAfterBack(t *testing.T) {
 	})
 }
 
-// Enabling calls the enabled hook, so a module that wound something down on the
-// disable winds it back up.
+// Enabling calls the enabled hook.
 func TestEnablingCallsTheEnabledHook(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -87,9 +84,7 @@ func TestEnablingCallsTheEnabledHook(t *testing.T) {
 	})
 }
 
-// A call that enables an account already active changes nothing and still runs
-// the enabled hook, which is how a call told the cleanup was incomplete is
-// repeated.
+// Enabling an account already active changes nothing and still runs the enabled hook, which is how an incomplete cleanup is repeated.
 func TestSetStatusToActiveOnAnActiveAccountRunsTheEnabledHook(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -107,8 +102,7 @@ func TestSetStatusToActiveOnAnActiveAccountRunsTheEnabledHook(t *testing.T) {
 	})
 }
 
-// A failing enabled hook leaves the account enabled and the call is
-// ErrCleanupIncomplete; repeating the call finishes the cleanup.
+// A failing enabled hook leaves the account enabled and answers ErrCleanupIncomplete, and repeating the call finishes the cleanup.
 func TestAFailingEnabledHookLeavesTheStateInForce(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -135,8 +129,7 @@ func TestAFailingEnabledHookLeavesTheStateInForce(t *testing.T) {
 	})
 }
 
-// A status a same call repeats changes nothing but still runs the cleanup, which
-// is how a call told the cleanup was incomplete is repeated.
+// Repeating a status the account already holds changes nothing but runs the cleanup again.
 func TestSetStatusToTheStatusAlreadyHeldRunsTheCleanupAgain(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -164,8 +157,7 @@ func TestSetStatusToTheStatusAlreadyHeldRunsTheCleanupAgain(t *testing.T) {
 	})
 }
 
-// Delete erases every row that names the account, keeps the tombstone, moves
-// valid_after on, and calls the deleted hook.
+// Delete erases every row naming the account, keeps the tombstone, moves valid_after on, and calls the deleted hook.
 func TestDeleteScrubsEveryTableAndLeavesOnlyTheTombstone(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -202,7 +194,7 @@ func TestDeleteScrubsEveryTableAndLeavesOnlyTheTombstone(t *testing.T) {
 				t.Errorf("%s still holds %d row(s) for the account", table, n)
 			}
 		}
-		// The service account's secret names the service account, not the user.
+
 		if n := h.count(tableServiceKeys, "account_id = ?", service.String()); n != 1 {
 			t.Errorf("the service account's secret is %d rows, want one left alone", n)
 		}
@@ -212,8 +204,7 @@ func TestDeleteScrubsEveryTableAndLeavesOnlyTheTombstone(t *testing.T) {
 	})
 }
 
-// A hook that fails leaves the new state in force and the call is
-// ErrCleanupIncomplete; repeating the call finishes the cleanup idempotently.
+// A failing hook leaves the new state in force and answers ErrCleanupIncomplete, and repeating the call finishes the cleanup idempotently.
 func TestAFailingHookLeavesTheStateInForceAndCompletesOnRetry(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -225,8 +216,6 @@ func TestAFailingHookLeavesTheStateInForceAndCompletesOnRetry(t *testing.T) {
 		if !errors.Is(err, authn.ErrCleanupIncomplete) {
 			t.Fatalf("a failing hook gave %v, want ErrCleanupIncomplete", err)
 		}
-		// The state is in force: a session issued before is void by valid_after and
-		// status even though the hook never finished.
 		var row accountRow
 		if err := h.handle.Where("id = ?", id.String()).Take(&row).Error; err != nil {
 			t.Fatalf("reading back: %v", err)
@@ -262,8 +251,7 @@ func TestTheCleanupCounterNamesAFailingHook(t *testing.T) {
 	})
 }
 
-// A status change and a deletion stage their events in the same transaction, so
-// that they are published once it commits and never if it rolls back.
+// A status change and a deletion stage their events in the same transaction, so they publish on commit and never on rollback.
 func TestAChangeStagesItsEventsInTheSameTransaction(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -287,8 +275,7 @@ func TestAChangeStagesItsEventsInTheSameTransaction(t *testing.T) {
 	})
 }
 
-// Deletion stages a membership change for every tenant the account belonged to,
-// each carrying its tenant in the envelope.
+// Deletion stages a membership change for every tenant the account belonged to, each carrying its tenant.
 func TestDeletionStagesAMembershipChangeForEveryTenant(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -299,7 +286,7 @@ func TestDeletionStagesAMembershipChangeForEveryTenant(t *testing.T) {
 				t.Fatalf("joining %s: %v", tenant, err)
 			}
 		}
-		// Forget the joins' own events, so that only the deletion's are read.
+
 		if err := h.handle.Exec("DELETE FROM test_staged").Error; err != nil {
 			t.Fatalf("clearing the staged rows: %v", err)
 		}
@@ -318,8 +305,7 @@ func TestDeletionStagesAMembershipChangeForEveryTenant(t *testing.T) {
 	})
 }
 
-// A staging failure fails the write, and the write's own tables are rolled back
-// with it: the event and the change stand or fall together.
+// A staging failure fails the write and rolls its own tables back: the event and the change stand or fall together.
 func TestAStagingFailureRollsTheWriteBack(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -355,8 +341,7 @@ func TestABusThatRefusesAnEventDoesNotFailTheWrite(t *testing.T) {
 	})
 }
 
-// Revoking a service secret writes the revocation, calls the revoked hook, and
-// reports an incomplete cleanup the same way a status change does.
+// Revoking a service secret writes the revocation, calls the revoked hook, and reports an incomplete cleanup.
 func TestRevokingASecretCallsTheHookAndReportsIncompleteCleanup(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -393,8 +378,6 @@ func slicesContains(rows []stagedRow, eventType string) bool {
 	return false
 }
 
-// service creates an enabled service account with no identifiers beyond a
-// username, which is enough for a service secret.
 func (h *harness) service(name string) authn.AccountID {
 	h.t.Helper()
 	created, err := h.p.Create(context.Background(), authn.CreateAccount{
@@ -403,8 +386,6 @@ func (h *harness) service(name string) authn.AccountID {
 	if err != nil {
 		h.t.Fatalf("creating the service account: %v", err)
 	}
-	// The creation's own hook call has its own case; a case that reads the hook
-	// is about the transition it drives.
 	h.hook.reset()
 	return created.ID
 }

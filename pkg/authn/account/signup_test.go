@@ -13,21 +13,17 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// openSelfRegistration turns the password-signup switch on for a harness, which
-// registration reads as its authority.
 func (h *harness) openSelfRegistration() {
 	h.t.Helper()
 	h.withSettings().set(passwordSignupPath, signupOpen)
 }
 
-// register is one self-registration through the product.
 func (h *harness) register(username, email, password string) (authn.Account, error) {
 	return h.p.Register(context.Background(), authn.RegisterAccount{
 		Username: username, Email: email, Password: password,
 	})
 }
 
-// mustRegister registers and fails the case when it does not succeed.
 func (h *harness) mustRegister(username, email, password string) authn.Account {
 	h.t.Helper()
 	account, err := h.register(username, email, password)
@@ -37,7 +33,6 @@ func (h *harness) mustRegister(username, email, password string) authn.Account {
 	return account
 }
 
-// signupRow reads the registration columns of one account.
 func (h *harness) signupRow(id authn.AccountID) (state int16, verifiedAt *time.Time) {
 	h.t.Helper()
 	var rows []struct {
@@ -54,7 +49,6 @@ func (h *harness) signupRow(id authn.AccountID) (state int16, verifiedAt *time.T
 	return rows[0].SignupState, rows[0].SignupVerifiedAt
 }
 
-// identifierIDOf finds one identifier of an account by its normalized value.
 func (h *harness) identifierIDOf(id authn.AccountID, value string) string {
 	h.t.Helper()
 	list, err := h.p.Identifiers(context.Background(), id)
@@ -70,14 +64,12 @@ func (h *harness) identifierIDOf(id authn.AccountID, value string) string {
 	return ""
 }
 
-// Registers only while the switch is open, reads the switch as its authority,
-// and never asks the caller to state the registration state.
+// Register runs only while the switch is open, reading it as its authority, and never asks the caller for the state.
 func TestRegisterReadsTheSwitchAsItsAuthority(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
 		in := authn.RegisterAccount{Username: "alice", Email: "alice@example.com", Password: "password123"}
 
-		// No settings store at all reads as the declared default, which is closed.
 		if _, err := h.p.Register(ctx, in); !errors.Is(err, authn.ErrSignupClosed) {
 			t.Fatalf("registration without a settings store gave %v, want ErrSignupClosed", err)
 		}
@@ -126,9 +118,7 @@ func TestRegisterReadsTheSwitchAsItsAuthority(t *testing.T) {
 	})
 }
 
-// A registration that fails at any step leaves no row behind: the injected
-// failure is the last insert of the transaction, so a half-written account would
-// show up if the transaction were not one.
+// A registration that fails at its last insert leaves no row, so a half-written account would show.
 func TestRegisterIsOneTransaction(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		h.openSelfRegistration()
@@ -152,8 +142,7 @@ func TestRegisterIsOneTransaction(t *testing.T) {
 	})
 }
 
-// A username that is taken is refused before a derivation, counted against the
-// signup-username back-off, and leaves no row of the attempt.
+// A taken username is refused before a derivation, counted against the signup-username back-off, and leaves no row.
 func TestRegisterRefusesATakenUsernameWithoutHalfRows(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		h.openSelfRegistration()
@@ -197,9 +186,7 @@ func TestRegisterHoldsThePasswordToThePolicy(t *testing.T) {
 	})
 }
 
-// A contact is reserved once: the first registration owns the address and a
-// second registration naming it, in any case, is ErrContactTaken. The losing
-// registration leaves no account, identifier, credential or reservation behind.
+// A contact is reserved once: the first registration owns it and a second naming it, in any case, is ErrContactTaken.
 func TestAContactIsReservedOnceAcrossAccounts(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		h.openSelfRegistration()
@@ -222,8 +209,7 @@ func TestAContactIsReservedOnceAcrossAccounts(t *testing.T) {
 	})
 }
 
-// An address an account already holds as a proved identifier is still reserved,
-// so a registration naming it is ErrContactTaken and opens nothing.
+// An address an account holds as a proved identifier stays reserved, so a registration naming it is ErrContactTaken.
 func TestRegisterRefusesAnAddressAnAccountAlreadyHolds(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		h.openSelfRegistration()
@@ -237,8 +223,7 @@ func TestRegisterRefusesAnAddressAnAccountAlreadyHolds(t *testing.T) {
 	})
 }
 
-// Create writes the contact reservation in the same transaction, so an address
-// another account reserved is ErrContactTaken and no account is written.
+// Create writes the contact reservation in the same transaction, so an address another account reserved is ErrContactTaken.
 func TestCreateRefusesAContactAnotherAccountHolds(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		h.user("holder", "")
@@ -255,8 +240,7 @@ func TestCreateRefusesAContactAnotherAccountHolds(t *testing.T) {
 	})
 }
 
-// An unproved reservation is an occupation like a proved one: Create naming an
-// address a pending registration reserved is ErrContactTaken and writes nothing.
+// An unproved reservation occupies an address like a proved one, so Create naming it is ErrContactTaken.
 func TestCreateRefusesAnUnprovedReservation(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		h.openSelfRegistration()
@@ -274,8 +258,7 @@ func TestCreateRefusesAnUnprovedReservation(t *testing.T) {
 	})
 }
 
-// Removing an email identifier releases its contact: the reservation is deleted,
-// so another account may register the address.
+// Removing an email identifier deletes its reservation, releasing the address.
 func TestRemovingAnEmailReleasesItsContact(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -300,9 +283,7 @@ func TestRemovingAnEmailReleasesItsContact(t *testing.T) {
 	})
 }
 
-// A second email written without proof does not change the account's verified
-// state, and proving it later brings that row up to email-code without adding a
-// second row.
+// A second email written without proof leaves the verified state unchanged, and proving it later brings that row up to email-code without a second row.
 func TestASecondEmailIsProvedInPlace(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -342,9 +323,7 @@ func TestASecondEmailIsProvedInPlace(t *testing.T) {
 	})
 }
 
-// PendingAccountByContact reads an unproved reservation whichever stored signup
-// state the account carries: the reservation, not the column, is what makes the
-// contact pending.
+// PendingAccountByContact judges by the unproved reservation, not the stored signup state.
 func TestPendingAccountByContactDoesNotReadTheStoredSignupState(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -366,10 +345,7 @@ func TestPendingAccountByContactDoesNotReadTheStoredSignupState(t *testing.T) {
 	})
 }
 
-// A proving email address ends the pending state, keeps the contact row with its
-// proof instant, and records the instant once. A phone number and an unproven email change
-// neither. Removing the last proved address returns the account to pending and
-// keeps the instant, and no pending contact is made up.
+// Proving an email ends the pending state, keeps the contact row with its proof instant, and records the instant once.
 func TestTheRegistrationStateMovesWithProvedEmailAddresses(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -384,8 +360,6 @@ func TestTheRegistrationStateMovesWithProvedEmailAddresses(t *testing.T) {
 			t.Errorf("the fresh registration reads %+v, want pending on alice@example.com and no instant", status)
 		}
 
-		// An unproven email is written as an identifier but changes neither the
-		// state nor the pending contact.
 		if err = h.p.AddIdentifier(ctx, account.ID, authn.IdentifierEmail, "admin@example.com",
 			authn.Verification{Via: authn.VerifiedViaAdmin}); err != nil {
 			t.Fatalf("adding an admin email: %v", err)
@@ -423,8 +397,6 @@ func TestTheRegistrationStateMovesWithProvedEmailAddresses(t *testing.T) {
 			t.Errorf("the proved address left %d proved reservation(s), want the row kept and stamped", n)
 		}
 
-		// A second proved address does not move the instant and is not the one
-		// reported, because the earlier address was verified first.
 		h.clock.advance(time.Hour)
 		if err = h.p.AddIdentifier(ctx, account.ID, authn.IdentifierEmail, "later@example.com",
 			authn.Verification{Via: authn.VerifiedViaEmailCode}); err != nil {
@@ -438,7 +410,6 @@ func TestTheRegistrationStateMovesWithProvedEmailAddresses(t *testing.T) {
 			t.Errorf("a second proved address reads %+v, want the first address and the first instant", status)
 		}
 
-		// A phone number proved by SMS changes neither the state nor the instant.
 		if err = h.p.AddIdentifier(ctx, account.ID, authn.IdentifierPhone, "+8613800000000",
 			authn.Verification{Via: authn.VerifiedViaSMSCode}); err != nil {
 			t.Fatalf("adding a phone: %v", err)
@@ -451,9 +422,6 @@ func TestTheRegistrationStateMovesWithProvedEmailAddresses(t *testing.T) {
 			t.Errorf("a proved phone moved the state to %+v, want verified and the same instant", status)
 		}
 
-		// Removing the last proved address leaves the unproved admin address as
-		// the one to verify: the state is pending on it, the instant is kept and
-		// no pending contact is made up.
 		for _, address := range []string{"later@example.com", "alice@example.com"} {
 			if err = h.p.RemoveIdentifier(ctx, account.ID, h.identifierIDOf(account.ID, address)); err != nil {
 				t.Fatalf("removing %s: %v", address, err)
@@ -471,7 +439,6 @@ func TestTheRegistrationStateMovesWithProvedEmailAddresses(t *testing.T) {
 			t.Errorf("removing the last proved address rebuilt %d unproved reservation(s), want none", n)
 		}
 
-		// A phone is never the thing that returns the account to verified.
 		if err = h.p.AddIdentifier(ctx, account.ID, authn.IdentifierPhone, "+8613800000001",
 			authn.Verification{Via: authn.VerifiedViaSMSCode}); err != nil {
 			t.Fatalf("replacing the phone: %v", err)
@@ -482,8 +449,7 @@ func TestTheRegistrationStateMovesWithProvedEmailAddresses(t *testing.T) {
 	})
 }
 
-// When two proved addresses were verified at the same instant, the identifier
-// that sorts first is reported.
+// Two addresses verified at the same instant report the identifier that sorts first.
 func TestTheVerifiedAddressBreaksATieByIdentifier(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -521,8 +487,7 @@ func TestTheVerifiedAddressBreaksATieByIdentifier(t *testing.T) {
 	})
 }
 
-// The reverse lookup answers an owner only when exactly one pending account
-// lists the contact, normalizes what it was asked for, and reads no identifier.
+// The reverse lookup answers only when exactly one pending account lists the contact, and normalizes what it was asked for.
 func TestPendingAccountByContactReturnsOnlyAnUnambiguousOwner(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -538,8 +503,6 @@ func TestPendingAccountByContactReturnsOnlyAnUnambiguousOwner(t *testing.T) {
 			t.Fatalf("the pending contact gave (%q, %v, %v), want the account that lists it", got, ok, err)
 		}
 
-		// A second registration of the address is refused, so the owner stays
-		// the one account that reserved it.
 		if _, err = h.register("second", "alice@example.com", "password123"); !errors.Is(err, authn.ErrContactTaken) {
 			t.Fatalf("a second registration of the reserved address gave %v, want ErrContactTaken", err)
 		}
@@ -557,8 +520,7 @@ func TestPendingAccountByContactReturnsOnlyAnUnambiguousOwner(t *testing.T) {
 	})
 }
 
-// A deleted account holds no pending row at all, so the reverse lookup finds no
-// owner for its address.
+// A deleted account holds no pending row, so the reverse lookup finds no owner for its address.
 func TestPendingAccountByContactIgnoresDeletedAccounts(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -576,8 +538,7 @@ func TestPendingAccountByContactIgnoresDeletedAccounts(t *testing.T) {
 	})
 }
 
-// The signup-username back-off is read before the uniqueness check and answered
-// as ErrThrottled, and a success clears it.
+// The signup-username back-off is read before the uniqueness check and answered as ErrThrottled, and a success clears it.
 func TestRegisterIsHeldBackByTheSignupUsernameBackOff(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		h.openSelfRegistration()
@@ -601,8 +562,7 @@ func TestRegisterIsHeldBackByTheSignupUsernameBackOff(t *testing.T) {
 	})
 }
 
-// A full self-registration width is ErrBusy and does not take a password login's
-// place.
+// A full self-registration width is ErrBusy and takes no password login's place.
 func TestRegisterDerivesUnderAWidthOfItsOwn(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		h.openSelfRegistration()
@@ -622,8 +582,7 @@ func TestRegisterDerivesUnderAWidthOfItsOwn(t *testing.T) {
 	})
 }
 
-// SignupStateOf reads an account that does not exist as ErrAccountNotFound, and
-// a read that fails as ErrUnavailable rather than as SignupNone.
+// SignupStateOf answers a missing account as ErrAccountNotFound and a failed read as ErrUnavailable, not SignupNone.
 func TestSignupStateOfReportsAMissingAccount(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		if _, err := h.p.SignupStateOf(context.Background(), "00000000-0000-7000-8000-000000000000"); !errors.Is(err, authn.ErrAccountNotFound) {
@@ -639,9 +598,7 @@ func TestSignupStateOfReportsAMissingAccount(t *testing.T) {
 	})
 }
 
-// An account an administrator creates with an email address reads pending until
-// the holder proves that address, and proving it turns the account verified
-// without a second identifier.
+// An administrator-created email reads pending until the holder proves it, and the proof verifies the account without a second identifier.
 func TestAnAdministratorCreatedEmailMustBeProved(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -683,16 +640,13 @@ func TestAnAdministratorCreatedEmailMustBeProved(t *testing.T) {
 		if len(via) != 1 || via[0] != authn.VerifiedViaEmailCode {
 			t.Errorf("the identifier was verified via %v, want email-code", via)
 		}
-		// The account was never a self-registration, so the state column stays
-		// where Create put it while the instant Since reads is written.
 		if state, at := h.signupRow(account.ID); state != signupNone || at == nil || !at.Equal(provedAt) {
 			t.Errorf("proving wrote signup_state %d and verified_at %v, want 0 and %v", state, at, provedAt)
 		}
 	})
 }
 
-// An account with no email address at all reads none: there is nothing to
-// verify, so nothing to gate.
+// An account with no email address reads none: there is nothing to verify.
 func TestAnAccountWithoutAnEmailReadsNone(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -710,9 +664,7 @@ func TestAnAccountWithoutAnEmailReadsNone(t *testing.T) {
 	})
 }
 
-// Proving the account's own unproved address brings its identifier up to proved
-// in place, and doing it again changes nothing. A way that does not prove never
-// takes the proof away, and another account's address is the contact conflict.
+// Proving the account's own unproved address brings its identifier up to proved once, and again changes nothing.
 func TestProvingTheAccountsOwnEmailIsIdempotent(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -765,8 +717,7 @@ func TestProvingTheAccountsOwnEmailIsIdempotent(t *testing.T) {
 	})
 }
 
-// Removing the last proved address of an account that holds no other email
-// leaves it with nothing to verify, which reads none rather than pending.
+// Removing the last proved address leaves nothing to verify, which reads none rather than pending.
 func TestRemovingTheLastEmailReadsNone(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -789,7 +740,6 @@ func TestRemovingTheLastEmailReadsNone(t *testing.T) {
 	})
 }
 
-// identifierRows reads the identifier table rows of one account.
 func (h *harness) identifierRows(id authn.AccountID) []identifierRow {
 	h.t.Helper()
 	var rows []identifierRow
@@ -799,8 +749,7 @@ func (h *harness) identifierRows(id authn.AccountID) []identifierRow {
 	return rows
 }
 
-// Create writes signup_state 0 whatever the account, and the way a username came
-// about is the caller's to state, with admin as the zero value.
+// Create writes signup_state 0, and the caller states how the username came about, admin being the zero value.
 func TestCreateWritesNoRegistration(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -852,9 +801,7 @@ func TestCreateWritesNoRegistration(t *testing.T) {
 	})
 }
 
-// The sweep deletes only a self-registration that never proved an address and
-// has been idle past the ttl. A verified one, a host-created one and a recent
-// one stay.
+// The sweep deletes only a self-registration that never proved an address and has been idle past the ttl.
 func TestTheUnverifiedSweepDeletesOnlyAnIdlePendingAccount(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -895,15 +842,14 @@ func TestTheUnverifiedSweepDeletesOnlyAnIdlePendingAccount(t *testing.T) {
 				t.Errorf("the sweep deleted account %s, want it kept", kept)
 			}
 		}
-		// The reservation went with the account, so the address is free again.
+
 		if _, err = h.register("reuser", "idle@example.com", "password123"); err != nil {
 			t.Fatalf("a registration of the swept address gave %v, want it released", err)
 		}
 	})
 }
 
-// Registration publishes the account's creation under the way it came about:
-// via signup, which is the value the anonymous route reports.
+// Registration publishes the account's creation via signup, the value the anonymous route reports.
 func TestRegisterPublishesAnAccountCreatedEventWithSignup(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		h.openSelfRegistration()
@@ -915,8 +861,7 @@ func TestRegisterPublishesAnAccountCreatedEventWithSignup(t *testing.T) {
 	})
 }
 
-// A username or an address that cannot be normalized is refused before the
-// back-off and before any row is written.
+// A username or address that cannot be normalized is refused before the back-off and before any row is written.
 func TestRegisterRefusesIdentifiersThatCannotBeNormalized(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		h.openSelfRegistration()
@@ -936,10 +881,7 @@ func TestRegisterRefusesIdentifiersThatCannotBeNormalized(t *testing.T) {
 	})
 }
 
-// The proving email channel a pending account can reach besides its own code is
-// a provider's claim: it moves the account to verified and consumes its pending
-// contact. An invitation is not a proof of the invited address, so it leaves the
-// registration pending and the contact awaiting verification.
+// A provider claim through AddIdentifier moves a pending account to verified and consumes its pending contact.
 func TestAddIdentifierProvesAPendingRegistration(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -973,9 +915,7 @@ func TestAddIdentifierProvesAPendingRegistration(t *testing.T) {
 	})
 }
 
-// A proved phone consumes a pending contact with the same number and changes no
-// registration state. No path of this slice writes a phone contact yet, so the
-// fixture is written into the table directly.
+// A proved phone consumes a pending contact with the same number and changes no registration state.
 func TestAProvedPhoneConsumesAPendingPhoneContact(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -1002,8 +942,7 @@ func TestAProvedPhoneConsumesAPendingPhoneContact(t *testing.T) {
 	})
 }
 
-// The reverse lookup reports only an unproved reservation: a verified account's
-// contact row stays, with verified_at set, and is not an owner to answer with.
+// The reverse lookup reports only an unproved reservation, not a verified account's contact row.
 func TestPendingAccountByContactIgnoresAVerifiedAccount(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -1022,11 +961,7 @@ func TestPendingAccountByContactIgnoresAVerifiedAccount(t *testing.T) {
 	})
 }
 
-// The unverified sweep keeps an account that proved an address through a
-// provider claim, and one whose row says pending while a proving email identifier
-// exists: the identifier is judged, not the column alone. An invitation is not a
-// proof, so an account whose only email channel is one is swept like any other
-// unproved registration.
+// The sweep keeps an account that proved an address through a provider claim, and one whose row says pending while a proving email identifier exists.
 func TestTheUnverifiedSweepKeepsAProvedAccount(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -1069,9 +1004,7 @@ func TestTheUnverifiedSweepKeepsAProvedAccount(t *testing.T) {
 	})
 }
 
-// The deletion the sweep runs re-judges its conditions inside its transaction: an
-// account that proved an address or logged in after the batch was read is
-// skipped, not deleted.
+// The deletion the sweep runs re-judges its conditions in its transaction, so an account that proved an address or logged in is skipped.
 func TestTheUnverifiedDeletionSkipsAnAccountThatChangedState(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -1083,9 +1016,6 @@ func TestTheUnverifiedDeletionSkipsAnAccountThatChangedState(t *testing.T) {
 
 		h.clock.advance(defaults.UnverifiedTTL + time.Hour)
 		horizon := h.clock.read().Add(-defaults.UnverifiedTTL)
-		// All four were selected as candidates, and each changed state before the
-		// deletion: one proved its address, one logged in, and two rows state
-		// pending while a proof or the instant of one is there.
 		if err := h.p.AddIdentifier(ctx, proved.ID, authn.IdentifierEmail, "proved@example.com",
 			authn.Verification{Via: authn.VerifiedViaEmailCode}); err != nil {
 			t.Fatalf("proving the address: %v", err)
@@ -1122,15 +1052,11 @@ func TestTheUnverifiedDeletionSkipsAnAccountThatChangedState(t *testing.T) {
 	})
 }
 
-// A successful registration clears the failures the name had collected: the
-// count is present before it and gone after it, so a success that forgot to clear
-// it is visible.
+// A successful registration clears the failures the name had collected.
 func TestASuccessfulRegistrationClearsTheUsernameBackOff(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
 		h.openSelfRegistration()
-		// The name is taken while the attempts are made, which is what counts
-		// them; deleting that account frees the name and leaves the count.
 		taken := h.user("later", "")
 		for i := range defaults.ThrottleFreeAttempts + 1 {
 			if _, err := h.register("later", "spare@example.com", "password123"); !errors.Is(err, authn.ErrAccountExists) {
@@ -1151,9 +1077,7 @@ func TestASuccessfulRegistrationClearsTheUsernameBackOff(t *testing.T) {
 	})
 }
 
-// A back-off that begins on a registration reports the same scope to the event
-// and the counter, and that scope is the registration one: the two closed sets
-// the design names carry signup-username together.
+// A back-off that begins on a registration reports the registration scope to the event and the counter.
 func TestTheSignupBackOffReportsItsScope(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		h.openSelfRegistration()
@@ -1181,9 +1105,7 @@ func TestTheSignupBackOffReportsItsScope(t *testing.T) {
 	})
 }
 
-// The signup migration upgrades a database that already has the earlier
-// declaration: the row that was there reads as no registration, and the pending
-// contact table is there afterwards.
+// The signup migration upgrades a database that already has the earlier declaration: its row reads as no registration, and the pending contact table exists afterwards.
 func TestTheSignupMigrationUpgradesAnExistingDatabase(t *testing.T) {
 	for _, dialect := range dialectsUnderTest {
 		t.Run(string(dialect), func(t *testing.T) {
@@ -1212,8 +1134,6 @@ func TestTheSignupMigrationUpgradesAnExistingDatabase(t *testing.T) {
 			if len(rows) != 1 || rows[0].SignupState != signupNone || rows[0].SignupVerifiedAt != nil {
 				t.Errorf("the row that was there reads %+v, want signup_state 0 and no instant", rows)
 			}
-			// The verification read is served over the current reservation table,
-			// so the later migration comes on before it is asked.
 			applyMigrationFile(t, handle, dialect, "0003_contact_claim.sql")
 			cfg, err := configDefaults.resolve()
 			if err != nil {
@@ -1232,9 +1152,7 @@ func TestTheSignupMigrationUpgradesAnExistingDatabase(t *testing.T) {
 	}
 }
 
-// The contact-claim migration turns the pending table into the reservation
-// table: the row that was there is kept with an empty verified_at, a contact is
-// unique across accounts, and one account may reserve several addresses.
+// The contact-claim migration turns the pending table into the reservation table, keeping its row with an empty verified_at.
 func TestTheContactClaimMigrationUpgradesAnExistingDatabase(t *testing.T) {
 	for _, dialect := range dialectsUnderTest {
 		t.Run(string(dialect), func(t *testing.T) {
@@ -1296,9 +1214,7 @@ func TestTheUnverifiedSweepCanBeTurnedOff(t *testing.T) {
 	})
 }
 
-// TestRegisterNamesAnAccountWithoutADisplayNameAfterItsUsername holds the
-// fallback of the password-registration path: a registration that named no
-// display name is named after the username it chose.
+// A registration that named no display name is named after the username it chose.
 func TestRegisterNamesAnAccountWithoutADisplayNameAfterItsUsername(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		h.openSelfRegistration()

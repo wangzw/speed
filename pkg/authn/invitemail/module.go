@@ -1,22 +1,5 @@
-// Package invitemail is the optional email channel of the invitation
-// capability: it adapts the root package's InviteNotifier to a mail carrier.
-//
-// It renders an invitation notice — the tenant the invitation grants, the
-// acceptance link and the invitation's deadline — into the
-// authn.invitemail messages, one subject and a plain-text and an HTML body, and
-// hands the finished message to the top-level mail capability's Sender. It
-// holds no invitation state: the invitation module issues the invitation,
-// decides the deadline and hands over the token once, and this module only
-// turns one Notify call into one mail.Message. It is registered as
-// authn.invitemail and delivers InviteNotifier exclusively, so a command tree
-// names it or supplies its own notifier.
-//
-// The link is the configured accept-base-url plus the public acceptance landing
-// /invitations/<token>, the path the demo host serves the invitation page on.
-// The token is the whole credential of acceptance: it, the recipient and the
-// message bodies reach no log line, no error text and no metric. Each send is
-// logged once with its outcome, the carrier's receipt and its duration, so a
-// failed or silently dropped delivery can be traced without exposing the link.
+// Package invitemail adapts the invitation notifier to the mail capability and
+// renders the invitation notice.
 package invitemail
 
 import (
@@ -37,40 +20,18 @@ import (
 	maillog "github.com/vislake/speed/pkg/mail/log"
 )
 
-// ModuleName is this module's name in the registry, and the name its
-// configuration namespace takes.
+// ModuleName is this module's name in the registry and its configuration namespace.
 const ModuleName = "authn.invitemail"
 
 // ConfigNamespace is where this module's input items are mounted.
 const ConfigNamespace = ModuleName
 
-// acceptancePath is the public landing an invitation link points at: the host
-// serves the acceptance page at /invitations/:token, and the notice joins that
-// path to the configured origin. The token is escaped as one path segment, so a
-// token never changes the shape of the route.
 const acceptancePath = "/invitations/"
 
-// init registers this module with the process registry, so a host that imports
-// the package can take it into a command by name.
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// Module is this module's descriptor.
-//
-// It requires the mail capability's Sender: a run that names it hands a mail
-// carrier into the same command, and without one there is nothing to deliver
-// through. The capability is not exclusive here — the mail carrier's own module
-// owns that claim, so a command names exactly one carrier and this module reads
-// it. The i18n Localizer is declared so this module is constructed after the
-// one delivering it, and taken up in New, where an absent one is reported with
-// the key the module cannot render.
-//
-// It declares one configuration item, accept-base-url, read in Prepare so an
-// origin the code cannot join a link to stops the startup. Before that, Prepare
-// reads mail.carrier: a run that selects none switches the mail capability off,
-// and this module stands itself down with the same reason rather than failing
-// the assembly over a sending seam no module delivers. An empty base URL is a
-// legal deployment that carries the module but sends no mail: Prepare leaves it
-// enabled, and Notify reports InviteNotConfigured without reaching the carrier.
+// Module is this module's descriptor: it requires the mail sender and the
+// localizer and provides the invitation notifier exclusively.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -123,8 +84,6 @@ func Module() core.Module {
 	}
 }
 
-// readerOf takes up the configuration reader the host supplied before the
-// assembly began.
 func readerOf(reg *core.Registry) (config.Reader, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
@@ -134,8 +93,6 @@ func readerOf(reg *core.Registry) (config.Reader, error) {
 	return reader, nil
 }
 
-// product is the module's instance: the configured origin, the mail seam and
-// the catalog behind it.
 type product struct {
 	baseURL   string
 	sender    mail.Sender
@@ -144,12 +101,6 @@ type product struct {
 
 var _ authn.InviteNotifier = (*product)(nil)
 
-// newProduct checks that every message the module renders is carried by every
-// locale its catalog declares, then returns the notifier. The check runs at
-// startup because a missing message is a defect of this package and not a fact
-// about a request: without it the first notice in that language would reach the
-// carrier as the key itself. A localizer that does not carry the catalog is
-// named with the locale and key it lacks, never with a value from the notice.
 func newProduct(cfg resolved, sender mail.Sender, localizer i18n.Localizer) (*product, error) {
 	locales, err := catalogLocales()
 	if err != nil {
@@ -165,22 +116,6 @@ func newProduct(cfg resolved, sender mail.Sender, localizer i18n.Localizer) (*pr
 	return &product{baseURL: cfg.acceptBaseURL, sender: sender, localizer: localizer}, nil
 }
 
-// Notify renders one invitation notice and hands it to the mail capability.
-//
-// An unconfigured channel reports InviteNotConfigured with no error and reaches
-// no carrier. So does the log carrier: it writes a message to the process log
-// and reaches no recipient, so for an invitation it is not a delivery channel.
-// The issue answer therefore hands the issuer the acceptance token, as
-// InviteNotConfigured asks it to, instead of withholding the link behind a log
-// line only the deployment can read. Other mail (a verification code) keeps
-// that carrier's own behaviour; this module holds the rule for invitations
-// alone.
-//
-// A configured channel renders in the language the notice names, falling back
-// through the catalog, and reports InviteSent or InviteFailed. The carrier's
-// error is returned as it stands: whether the message was throttled, rejected
-// or left in an unknown state is the caller's to collapse, and this module adds
-// nothing a client could tell the three apart by.
 func (p *product) Notify(ctx context.Context, notice authn.InviteNotice) (authn.InviteDelivery, error) {
 	if p.baseURL == "" || p.sender.Name() == maillog.CarrierName {
 		return authn.InviteNotConfigured, nil
@@ -214,31 +149,10 @@ func (p *product) Notify(ctx context.Context, notice authn.InviteNotice) (authn.
 	return authn.InviteSent, nil
 }
 
-// acceptURL joins the configured origin to the public acceptance path and one
-// token. The origin was normalized without a trailing slash in resolve, so the
-// join never writes a doubled slash.
 func (p *product) acceptURL(token string) string {
 	return p.baseURL + acceptancePath + url.PathEscape(token)
 }
 
-// render draws the messages for one notice in the language it names. A locale
-// the catalog does not carry falls back by primary subtag and then to English,
-// so a request for a language the deployment does not translate still reaches
-// the recipient with a usable link rather than the message key. The error it
-// answers names the subject key and the locale, never the token or the link.
-//
-// The body names the inviter when the notice carries a display name and falls
-// back to the impersonal form when it does not. The deadline is rendered by the
-// message's own time segment: the notice is not a page, and the recipient may
-// have no account and no time zone, so the layout says UTC and Translate renders
-// with no zone, which reads as UTC. The request's time zone is never consulted,
-// and a notice whose caller does not know the deadline omits the sentence.
-//
-// The HTML body and the HTML deadline line interpolate HTML-escaped values: the
-// tenant name and the inviter's display name are free text a person typed, and
-// the acceptance link is built from configuration and a token, so none of them
-// may reach the markup as markup. The plain-text body and the subject carry the
-// same values as written, because neither is parsed as HTML.
 func (p *product) render(notice authn.InviteNotice, acceptURL string) (string, string, string, error) {
 	args := i18n.Args{
 		"tenant":     i18n.String(notice.Tenant),
@@ -279,10 +193,6 @@ func (p *product) render(notice authn.InviteNotice, acceptURL string) (string, s
 	return "", "", "", fmt.Errorf("%s: no catalog carries %q for %q", ModuleName, subjectKey, notice.Locale)
 }
 
-// localesFor lists the locales to try for a request, most specific first: the
-// requested tag as written, the catalog's language when only its primary subtag
-// matches, and English as the last resort. An empty request names no language
-// and falls to English.
 func localesFor(requested string) []i18n.Locale {
 	var out []i18n.Locale
 	seen := map[i18n.Locale]bool{}
@@ -299,8 +209,6 @@ func localesFor(requested string) []i18n.Locale {
 	return out
 }
 
-// catalogLocale is the locale the module's catalog carries for a primary
-// subtag, or the empty locale when it carries none.
 func catalogLocale(tag string) i18n.Locale {
 	folded := strings.ReplaceAll(strings.ToLower(tag), "_", "-")
 	primary, _, _ := strings.Cut(folded, "-")
@@ -314,9 +222,6 @@ func catalogLocale(tag string) i18n.Locale {
 	}
 }
 
-// outcomeOf names the carrier answer the mail capability classified, so a
-// failure log says whether the carrier throttled, rejected or left the send
-// unknown. The token, the recipient and the message bodies never reach the log.
 func outcomeOf(err error) string {
 	switch {
 	case errors.Is(err, mail.ErrThrottled):

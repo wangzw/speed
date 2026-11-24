@@ -14,9 +14,7 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// TestTheIssueRouteReportsTheEmailDelivery holds the issue answer to carrying
-// the outcome of the notice. With no notifier in the assembly the honest answer
-// is not_configured, and the invitation is still issued.
+// TestTheIssueRouteReportsTheEmailDelivery checks that the issue answer carries the notice outcome, here not_configured.
 func TestTheIssueRouteReportsTheEmailDelivery(t *testing.T) {
 	h := newHarness(t)
 	h.asAdmin()
@@ -39,9 +37,6 @@ func TestTheIssueRouteReportsTheEmailDelivery(t *testing.T) {
 	}
 }
 
-// issuedAnswer is the part of the issue answer a delivery case reads. raw is the
-// answer as it was written, kept so a case can assert that the token field is
-// absent rather than merely empty.
 type issuedAnswer struct {
 	Invitation    AuthnInviteInvitation `json:"invitation"`
 	Token         string                `json:"token"`
@@ -64,29 +59,20 @@ func (h *harness) issueOverRoute(email string) issuedAnswer {
 	return answered
 }
 
-// fakeNames stands in for the roster's id-to-name seam with a name that
-// differs from the identifier, so a case can tell which of the two reached the
-// notice.
 type fakeNames map[string]string
 
 func (m fakeNames) TenantNameOf(_ context.Context, id string) (string, error) {
 	return m[id], nil
 }
 
-// errNameUnavailable is the failure a case scripts for the name seam.
 var errNameUnavailable = errors.New("the roster could not answer")
 
-// failingNames is the name seam in its outage direction: no name is known,
-// and the identifier must not stand in for one.
 type failingNames struct{}
 
 func (failingNames) TenantNameOf(context.Context, string) (string, error) {
 	return "", errNameUnavailable
 }
 
-// fakeNotifier is the notifier seam a case scripts. It records every notice and
-// the deadline the call carried, so a case can assert the answer waited on a
-// bounded call rather than on the notifier's own time.
 type fakeNotifier struct {
 	mu       sync.Mutex
 	delivery authn.InviteDelivery
@@ -123,7 +109,6 @@ func (n *fakeNotifier) count() int {
 	return len(n.notices)
 }
 
-// deliverAuditRows narrows the recorded audit rows to the delivery action.
 func (h *harness) deliverAuditRows() []auditEntryLike {
 	h.t.Helper()
 	var rows []auditEntryLike
@@ -135,23 +120,17 @@ func (h *harness) deliverAuditRows() []auditEntryLike {
 	return rows
 }
 
-// auditEntryLike is the part of an audit row a delivery case inspects.
 type auditEntryLike struct {
 	Object  string
 	Outcome string
 	Detail  map[string]string
 }
 
-// TestASentNoticeReportsSentAndAuditsNothing holds the successful delivery:
-// the notice carries the invitation's tenant name, normalized address and
-// token, the answer reports sent, and a send is not a failure, so it writes no
-// delivery audit row.
+// TestASentNoticeReportsSentAndAuditsNothing checks that a sent notice reports sent, withholds the token from the answer, and writes no delivery audit row.
 func TestASentNoticeReportsSentAndAuditsNothing(t *testing.T) {
 	h := newHarness(t)
 	notifier := &fakeNotifier{delivery: authn.InviteSent}
 	h.p.notifier = notifier
-	// The fixture's identifier and name differ, so a notice that carried the
-	// identifier could not pass for one that carried the name.
 	h.p.tenantNames = fakeNames{"tenant-a": "acme"}
 
 	answered := h.issueOverRoute("Alice@Example.com")
@@ -186,8 +165,6 @@ func TestASentNoticeReportsSentAndAuditsNothing(t *testing.T) {
 	if !notifier.bounded {
 		t.Fatal("the notifier was called without a deadline")
 	}
-	// The bound is five seconds from the call. The lower bound only has to show
-	// the deadline was not already spent.
 	if left := time.Until(notifier.deadline); left <= 0 || left > notifyTimeout {
 		t.Errorf("the notice's deadline leaves %s, want at most %s", left, notifyTimeout)
 	}
@@ -196,10 +173,7 @@ func TestASentNoticeReportsSentAndAuditsNothing(t *testing.T) {
 	}
 }
 
-// TestAFailedNoticeReportsFailedAndStillAnswers201 holds the delivery failure:
-// the invitation is issued all the same, the answer is still 201 with its
-// one-time token, the outcome is failed, and the failure leaves a best-effort
-// audit row linked to the issue.
+// TestAFailedNoticeReportsFailedAndStillAnswers201 checks that a failed notice still answers 201 with its token and writes one failed delivery audit row.
 func TestAFailedNoticeReportsFailedAndStillAnswers201(t *testing.T) {
 	h := newHarness(t)
 	notifier := &fakeNotifier{delivery: authn.InviteFailed, err: errors.New("the carrier refused the message")}
@@ -240,9 +214,7 @@ func TestAFailedNoticeReportsFailedAndStillAnswers201(t *testing.T) {
 	}
 }
 
-// TestAnUnconfiguredNoticeIsNotAFailure holds the notifier's own not_configured
-// answer: nothing was attempted, so the answer reports it and no audit row is
-// written.
+// TestAnUnconfiguredNoticeIsNotAFailure checks that not_configured is reported as such and writes no audit row.
 func TestAnUnconfiguredNoticeIsNotAFailure(t *testing.T) {
 	h := newHarness(t)
 	h.p.notifier = &fakeNotifier{delivery: authn.InviteNotConfigured}
@@ -259,9 +231,7 @@ func TestAnUnconfiguredNoticeIsNotAFailure(t *testing.T) {
 	}
 }
 
-// TestANotifierPanicIsAFailedNotice holds the defective notifier: a panic is a
-// failed delivery, so the answer is still 201 rather than the request ending in
-// the entry point's 500.
+// TestANotifierPanicIsAFailedNotice checks that a notifier panic is a failed delivery, not the entry point's 500.
 func TestANotifierPanicIsAFailedNotice(t *testing.T) {
 	h := newHarness(t)
 	h.p.notifier = &fakeNotifier{panics: true}
@@ -275,9 +245,7 @@ func TestANotifierPanicIsAFailedNotice(t *testing.T) {
 	}
 }
 
-// TestAnUnknownDeliveryOutcomeIsAFailedNotice holds the closed set: a notifier
-// that returns a value outside it and no error is not a send, so it is a
-// failure rather than being written into the answer.
+// TestAnUnknownDeliveryOutcomeIsAFailedNotice checks that a delivery value outside the set is reported as failed.
 func TestAnUnknownDeliveryOutcomeIsAFailedNotice(t *testing.T) {
 	h := newHarness(t)
 	h.p.notifier = &fakeNotifier{delivery: authn.InviteDelivery(9)}
@@ -288,9 +256,7 @@ func TestAnUnknownDeliveryOutcomeIsAFailedNotice(t *testing.T) {
 	}
 }
 
-// TestARefusedIssueCallsNoNotifier holds the order: a request the issue refuses
-// never reaches the notifier, so no notice describes an invitation that was not
-// issued.
+// TestARefusedIssueCallsNoNotifier checks that a refused issue never calls the notifier.
 func TestARefusedIssueCallsNoNotifier(t *testing.T) {
 	h := newHarness(t)
 	notifier := &fakeNotifier{delivery: authn.InviteSent}
@@ -306,11 +272,7 @@ func TestARefusedIssueCallsNoNotifier(t *testing.T) {
 	}
 }
 
-// TestTheNoticeNamesTheTenantByNameNeverTheIdentifier holds the outbound rule
-// on the invitation notice: the recipient reads the name, and the internal
-// identifier the issue path was handed by its path guard never reaches the
-// notice. The fixture's two values differ, so a notice carrying either one is
-// distinguishable.
+// TestTheNoticeNamesTheTenantByNameNeverTheIdentifier checks that the notice and its log carry the tenant name, never the internal identifier.
 func TestTheNoticeNamesTheTenantByNameNeverTheIdentifier(t *testing.T) {
 	h := newHarness(t)
 	notifier := &fakeNotifier{delivery: authn.InviteSent}
@@ -333,9 +295,7 @@ func TestTheNoticeNamesTheTenantByNameNeverTheIdentifier(t *testing.T) {
 	}
 }
 
-// TestANoticeWithNoNameResolverNamesNoTenant holds the absent seam: an
-// assembly without the resolver renders no tenant rather than falling back to
-// the identifier, which is internal.
+// TestANoticeWithNoNameResolverNamesNoTenant checks that an absent name resolver names no tenant rather than falling back to the identifier.
 func TestANoticeWithNoNameResolverNamesNoTenant(t *testing.T) {
 	h := newHarness(t)
 	notifier := &fakeNotifier{delivery: authn.InviteSent}
@@ -352,18 +312,13 @@ func TestANoticeWithNoNameResolverNamesNoTenant(t *testing.T) {
 	}
 }
 
-// TestANoticeWithAFailingNameResolverNamesNoTenant holds the resolver's outage
-// direction: a name that cannot be read is no name, and the identifier must
-// not stand in for it.
+// TestANoticeWithAFailingNameResolverNamesNoTenant checks that an unreadable name is no name, not the identifier.
 func TestANoticeWithAFailingNameResolverNamesNoTenant(t *testing.T) {
 	h := newHarness(t)
 	notifier := &fakeNotifier{delivery: authn.InviteSent}
 	h.p.notifier = notifier
 	h.p.tenantNames = failingNames{}
 
-	// The issue route resolves the name for its own audit row too, so the
-	// notice is driven directly: this case is about the notice's own answer to a
-	// seam that cannot read a name.
 	issued := h.issue("tenant-a", "alice@example.com")
 	if got := h.p.deliverInvite(context.Background(), issued, newActionID()); got != authn.InviteSent {
 		t.Fatalf("delivery = %s, want sent", got)
@@ -377,9 +332,7 @@ func TestANoticeWithAFailingNameResolverNamesNoTenant(t *testing.T) {
 	}
 }
 
-// TestTheNoticeCarriesTheRequestLocale holds the language the notice is
-// rendered in to the request's own: the locale the request context carries
-// reaches the notice unchanged.
+// TestTheNoticeCarriesTheRequestLocale checks that the request's locale reaches the notice.
 func TestTheNoticeCarriesTheRequestLocale(t *testing.T) {
 	h := newHarness(t)
 	notifier := &fakeNotifier{delivery: authn.InviteSent}

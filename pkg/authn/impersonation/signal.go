@@ -12,23 +12,20 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// The names the module reports under. The metric name and its attribute are read
-// by dashboards and are not renamed.
+// The metric name and its attribute are read by dashboards and must not be
+// renamed.
 const (
 	meterName          = "authn"
 	sessionsInstrument = "authn.impersonation.sessions"
 	outcomeAttribute   = "outcome"
 )
 
-// The outcomes of the sessions counter, the closed set a dashboard reads.
 const (
 	outcomeStarted = "started"
 	outcomeDenied  = "denied"
 	outcomeEnded   = "ended"
 )
 
-// The seam-level audit actions this module writes, and their outcomes, the
-// closed sets the events design states.
 const (
 	actionStart  = "authn.impersonation.start"
 	actionEnd    = "authn.impersonation.end"
@@ -39,9 +36,8 @@ const (
 	outcomeSuccess = "success"
 )
 
-// The keys of an audit row's detail, which are among the closed set the events
-// design lists. The session identifier is written as sid and never as session,
-// which the journal owns on an impersonating row.
+// The audit detail keys. The session is written as sid, never session, which the
+// journal owns on an impersonating row.
 const (
 	detailTenant     = "tenant"
 	detailTTLSeconds = "ttl_seconds"
@@ -50,12 +46,10 @@ const (
 	detailBy         = "by"
 )
 
-// meters holds the instruments this module reports through.
 type meters struct {
 	sessions metric.Int64Counter
 }
 
-// newMeters builds the instruments on the provider.
 func newMeters(provider metric.MeterProvider) (*meters, error) {
 	counter, err := provider.Meter(meterName).Int64Counter(sessionsInstrument,
 		metric.WithUnit("{session}"),
@@ -66,8 +60,6 @@ func newMeters(provider metric.MeterProvider) (*meters, error) {
 	return &meters{sessions: counter}, nil
 }
 
-// recordSession counts one impersonation event. When the assembly carries no
-// meter provider the counter is nil and nothing is recorded.
 func (m *product) recordSession(ctx context.Context, outcome string) {
 	if m.meters == nil || m.meters.sessions == nil {
 		return
@@ -76,9 +68,6 @@ func (m *product) recordSession(ctx context.Context, outcome string) {
 		metric.WithAttributes(attribute.String(outcomeAttribute, outcome)))
 }
 
-// writeAudit writes one best-effort seam-level audit row: a failure is an Error
-// and never changes the outcome of the action. The mandatory row of a start is
-// written where it is decided and is not through here.
 func (m *product) writeAudit(ctx context.Context, e audit.Entry) {
 	if m.audit == nil {
 		return
@@ -89,9 +78,6 @@ func (m *product) writeAudit(ctx context.Context, e audit.Entry) {
 	}
 }
 
-// publish hands an event to the bus when there is one. A failure to publish is a
-// Warn and never changes the outcome: an event is a hint and the authority is
-// the record.
 func (m *product) publish(ctx context.Context, eventType, tenant string, payload any) {
 	if m.bus == nil {
 		return
@@ -102,9 +88,6 @@ func (m *product) publish(ctx context.Context, eventType, tenant string, payload
 	}
 }
 
-// publishEnded publishes the ended event of a record, with the cause category its
-// end_reason maps to. An expiry publishes nothing: it has no owner to compute a
-// signal from, and whoever needs the expiry computes it from the started event.
 func (m *product) publishEnded(ctx context.Context, g authn.ImpersonationGrant) {
 	if endedBy, ok := endedByCategory(g.EndReason); ok {
 		m.publish(ctx, authn.EventImpersonationEnded, g.Tenant, authn.ImpersonationEnded{
@@ -114,10 +97,6 @@ func (m *product) publishEnded(ctx context.Context, g authn.ImpersonationGrant) 
 	}
 }
 
-// endedByCategory maps an end_reason to the ended_by value the ended event
-// carries. The value is a category of the cause and not an account: a lapse has
-// no initiator to name. An expiry has no category, so its second result is
-// false and no event is published.
 func endedByCategory(endReason string) (string, bool) {
 	switch endReason {
 	case authn.EndExplicit:
@@ -131,7 +110,6 @@ func endedByCategory(endReason string) (string, bool) {
 	case authn.EndMembershipRemoved:
 		return "membership-removed", true
 	default:
-		// expired and start-failed publish nothing.
 		return "", false
 	}
 }

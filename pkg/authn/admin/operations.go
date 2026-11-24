@@ -10,21 +10,12 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The fragment's info section: the title this module's fragment carries and the
-// version of the fragment's shape.
 const (
 	fragmentTitle   = "authn admin"
 	fragmentVersion = "1.0.0"
 )
 
-// The routes as the fragment writes them: relative to the module's API root.
-// The mounter registration resolves the same declaration against its base, so
-// each path is written once.
 const (
-	// System scope: the platform-domain account and session surfaces, and the
-	// platform's tenant-addressed impersonation-record group. The tenant in an
-	// impersonation path is the data the records are confined to, not the policy
-	// domain the decision is made in.
 	pathAccounts        = "/auth/accounts"
 	pathAccount         = "/auth/accounts/:id"
 	pathIdentities      = pathAccount + "/identifiers"
@@ -42,10 +33,6 @@ const (
 	pathImpersonations  = "/tenants/:tenant/impersonations"
 	pathImpersonation   = pathImpersonations + "/:id"
 
-	// Tenant-prefixed scope: the tenant is the first segment, so the level and
-	// the tenant a route acts on are both on the request line. The membership,
-	// SSO provider and domain routes are decided in that tenant's own policy
-	// domain.
 	pathMembers         = "/:tenant/members"
 	pathMember          = pathMembers + "/:account"
 	pathMemberExempt    = pathMember + "/sso-exempt"
@@ -58,11 +45,6 @@ const (
 	pathMetadataRefresh = pathProvider + "/metadata/refresh"
 )
 
-// The inputs of the module's operations. Each carries the request's parameters
-// and, where the operation takes one, the body fields the entry point binds.
-// The descriptions are the contract's: the fragment publishes them.
-
-// accountListInput is the account list's closed query set.
 type accountListInput struct {
 	Status            string `query:"status" description:"Filters by account status: disabled, active or deleted. Absent or empty selects every status except deleted; deleted selects the tombstones. Any other value is 400."`
 	Kind              string `query:"kind" description:"Filters by account kind: user or service. Absent or empty selects both; any other value is 400."`
@@ -73,8 +55,6 @@ type accountListInput struct {
 	Limit             int    `query:"limit" description:"The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400."`
 }
 
-// accountCreateInput is the create's body: a user account names the username it
-// is opened with; a service account is not held to that.
 type accountCreateInput struct {
 	_                struct{}          `description:"The account to create: a user account or a service account, with the login identifiers an administrator states."`
 	Kind             string            `json:"kind" required:"true" enum:"user,service" description:"user for a human account, service for a non-interactive API client."`
@@ -89,12 +69,10 @@ type accountCreateInput struct {
 	MFARequired      bool              `json:"mfa_required" description:"True when the account must register a factor before it can sign in."`
 }
 
-// accountIDInput is the input of a route that addresses one account.
 type accountIDInput struct {
 	ID string `path:"id" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
 }
 
-// accountPatchInput is a partial update: each field left out is left as it is.
 type accountPatchInput struct {
 	_           struct{}          `description:"A partial change to one account: a member left out is left as it is."`
 	ID          string            `path:"id" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
@@ -103,14 +81,12 @@ type accountPatchInput struct {
 	Protected   *bool             `json:"protected" description:"Absent leaves the protected flag as it is"`
 }
 
-// accountStatusInput changes an account's status.
 type accountStatusInput struct {
 	_      struct{} `description:"An account's new status."`
 	ID     string   `path:"id" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
 	Status string   `json:"status" required:"true" enum:"active,disabled" description:"The deleted state is reached only through the delete route"`
 }
 
-// identifierAddInput adds one identifier to an account.
 type identifierAddInput struct {
 	_           struct{} `description:"A login identifier to add to one account, with how the administrator states it was established."`
 	ID          string   `path:"id" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
@@ -119,28 +95,23 @@ type identifierAddInput struct {
 	VerifiedVia string   `json:"verified_via" enum:",admin" description:"How the administrator states the identifier was established: admin records an assertion, not proof of ownership"`
 }
 
-// identifierRemoveInput removes one identifier by the identifier row's own
-// identifier.
 type identifierRemoveInput struct {
 	ID         string `path:"id" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
 	Identifier string `path:"identifier" description:"The identifier's own identifier, as the profile surface reports it; not the identifier's value."`
 }
 
-// passwordResetInput sets an administrator's temporary password.
 type passwordResetInput struct {
 	_        struct{} `description:"An administrator's temporary password for one account."`
 	ID       string   `path:"id" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
 	Password string   `json:"password" required:"true" description:"The temporary password, handed out once and never echoed, logged or audited"`
 }
 
-// mfaFlagInput sets whether an account must register a factor.
 type mfaFlagInput struct {
 	_        struct{} `description:"Whether one account must register a factor before it can sign in."`
 	ID       string   `path:"id" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
 	Required bool     `json:"required" required:"true" description:"True when the account must register a factor before it can sign in."`
 }
 
-// secretCreateInput mints a service secret for a service account.
 type secretCreateInput struct {
 	_         struct{}   `description:"A service secret to mint: its label and, optionally, its expiry."`
 	ID        string     `path:"id" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
@@ -148,13 +119,11 @@ type secretCreateInput struct {
 	ExpiresAt *time.Time `json:"expires_at" description:"Absent mints a secret with no expiry"`
 }
 
-// secretRevokeInput revokes a service secret by its identifier.
 type secretRevokeInput struct {
 	ID     string `path:"id" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
 	Secret string `path:"secret" description:"The service secret's identifier, not the secret value."`
 }
 
-// memberListInput is a tenant's member page.
 type memberListInput struct {
 	Tenant string `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404."`
 	Query  string `query:"query" description:"Narrows the page to the members whose account display name or login identifiers begin with this text; absent or empty selects every member. The display name is matched as a byte prefix of the stored value, and an identifier after the query is lower-cased, the form usernames and email addresses are stored in."`
@@ -163,7 +132,6 @@ type memberListInput struct {
 	After  string `query:"after" description:"The next_cursor of the previous page, or empty for the first page. The cursor is the account identifier of the last matching membership on that page."`
 }
 
-// memberWriteInput writes one account's membership in one tenant.
 type memberWriteInput struct {
 	_         struct{} `description:"A membership write: whether the account is an active member of the tenant and whether the tenant's SSO requirement exempts it."`
 	Tenant    string   `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404."`
@@ -173,13 +141,11 @@ type memberWriteInput struct {
 	SSOExempt bool     `json:"sso_exempt" description:"True exempts the member from the tenant's enforced SSO requirement."`
 }
 
-// memberAddressInput addresses one membership.
 type memberAddressInput struct {
 	Tenant  string `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404."`
 	Account string `path:"account" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
 }
 
-// memberExemptInput sets a member's SSO exemption.
 type memberExemptInput struct {
 	_         struct{} `description:"A member's exemption from the tenant's enforced SSO requirement."`
 	Tenant    string   `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404."`
@@ -187,13 +153,10 @@ type memberExemptInput struct {
 	SSOExempt bool     `json:"sso_exempt" required:"true" description:"True exempts the member; false clears the exemption."`
 }
 
-// tenantInput addresses one tenant.
 type tenantInput struct {
 	Tenant string `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404."`
 }
 
-// providerCreateInput creates a provider in a tenant. The path and the body must
-// agree on the tenant.
 type providerCreateInput struct {
 	_                 struct{}                   `description:"An identity provider as an administrator creates or updates it: the protocol, the provisioning mode and the protocol's own configuration."`
 	Tenant            string                     `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404."`
@@ -212,7 +175,6 @@ type providerCreateInput struct {
 	ClientSecret      *string                    `json:"client_secret" description:"Absent writes no client secret on a create and keeps the stored one on an update"`
 }
 
-// providerUpdateInput replaces a provider. The tenant is immutable.
 type providerUpdateInput struct {
 	_                 struct{}                   `description:"An identity provider as an administrator creates or updates it: the protocol, the provisioning mode and the protocol's own configuration."`
 	Tenant            string                     `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404."`
@@ -232,13 +194,11 @@ type providerUpdateInput struct {
 	ClientSecret      *string                    `json:"client_secret" description:"Absent writes no client secret on a create and keeps the stored one on an update"`
 }
 
-// providerIDInput addresses one provider.
 type providerIDInput struct {
 	Tenant string `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404."`
 	ID     string `path:"id" description:"The provider's identifier."`
 }
 
-// domainClaimInput claims a domain for a provider.
 type domainClaimInput struct {
 	_      struct{} `description:"A domain to claim for one identity provider."`
 	Tenant string   `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404."`
@@ -246,35 +206,26 @@ type domainClaimInput struct {
 	Domain string   `json:"domain" required:"true" description:"The domain to claim, for example example.com; it is trimmed and lower-cased before it is stored."`
 }
 
-// domainAddressInput addresses one claimed domain of one provider.
 type domainAddressInput struct {
 	Tenant string `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404."`
 	ID     string `path:"id" description:"The provider's identifier."`
 	Domain string `path:"domain" description:"The claimed domain name."`
 }
 
-// sessionRevokeInput addresses one session by its identifier. The identifier is
-// a session's, not an account's, so it does not carry the account shape's
-// description.
 type sessionRevokeInput struct {
 	ID string `path:"id" description:"The session's identifier."`
 }
 
-// impersonationListInput is a tenant's impersonation-record page.
 type impersonationListInput struct {
 	Tenant string `path:"tenant" description:"The tenant whose records the page holds, as the tenant name; it scopes the read and fills the decision's tenant."`
 	Limit  int    `query:"limit" description:"The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400."`
 	After  string `query:"after" description:"The next_cursor of the previous page, or empty for the first page; the cursor is the identifier of the last record on that page."`
 }
 
-// impersonationIDInput addresses one impersonation record.
 type impersonationIDInput struct {
 	Tenant string `path:"tenant" description:"The tenant's name. The platform name layer resolves it to the internal identifier before the handler runs; a name no tenant carries is a 404."`
 	ID     string `path:"id" description:"The impersonation record's identifier."`
 }
-
-// The types the reply answers declare their JSON bodies with. The simple form's
-// success body is its Out type, so it needs none of these.
 
 var (
 	accountEnvelopeType  = reflect.TypeOf(AuthnAdminAccountEnvelope{})
@@ -288,30 +239,21 @@ var (
 	verifyTokenType      = reflect.TypeOf(AuthnAdminVerifyToken{})
 )
 
-// challengeHeader declares the header every 401 on this module's routes carries:
-// the gateway writes the endpoint's challenge when it refuses a request first,
-// and a handler that answers 401 itself returns it in the fault's headers.
 var challengeHeader = speedhttp.Header{
 	Name:        "WWW-Authenticate",
 	Description: "The capability's challenge: the Bearer and Cookie schemes, never Basic.",
 }
 
-// unauthorized is the declaration of a 401 that carries the capability's
-// challenge.
 func unauthorized(description string) speedhttp.Response {
 	response := speedhttp.ProblemResponse(http.StatusUnauthorized, description)
 	response.Headers = []speedhttp.Header{challengeHeader}
 	return response
 }
 
-// commonFailures is the answer every route on this module's mounter shares: the
-// gateway refuses a request that carries no usable credential before the
-// handler runs.
 func commonFailures() []speedhttp.Response {
 	return []speedhttp.Response{unauthorized("No usable credential")}
 }
 
-// jsonResponse is a success answer carrying a JSON body of one shape.
 func jsonResponse(status int, description string, structure reflect.Type) speedhttp.Response {
 	return speedhttp.Response{
 		Status:      status,
@@ -320,18 +262,10 @@ func jsonResponse(status int, description string, structure reflect.Type) speedh
 	}
 }
 
-// problemResponse is an error answer carrying one of this capability's problem
-// codes. The type is what the entry point writes when it refuses the request
-// itself with that status — a body it could not bind — so a request refused
-// before the handler runs is answered in the same vocabulary as one the handler
-// refuses.
 func problemResponse(status int, code, description string) speedhttp.Response {
 	return speedhttp.ProblemResponseOf(status, description, typePrefix+code)
 }
 
-// The account group.
-
-// accountListOperation declares GET /admin/accounts, one page at a time.
 var accountListOperation = speedhttp.NewOperation[accountListInput, AuthnAdminAccountList](
 	"authn.admin.accounts.list",
 	http.MethodGet,
@@ -347,7 +281,6 @@ var accountListOperation = speedhttp.NewOperation[accountListInput, AuthnAdminAc
 	),
 )
 
-// accountCreateOperation declares POST /admin/accounts.
 var accountCreateOperation = speedhttp.NewOperation[accountCreateInput, AuthnAdminAccountEnvelope](
 	"authn.admin.accounts.create",
 	http.MethodPost,
@@ -372,8 +305,6 @@ var accountCreateOperation = speedhttp.NewOperation[accountCreateInput, AuthnAdm
 	),
 )
 
-// accountGetOperation declares GET /admin/accounts/:id. It is a reply operation
-// because a missing account is a bare 404, which the simple form cannot write.
 var accountGetOperation = speedhttp.NewReplyOperation[accountIDInput](
 	"authn.admin.accounts.get",
 	http.MethodGet,
@@ -389,7 +320,6 @@ var accountGetOperation = speedhttp.NewReplyOperation[accountIDInput](
 	),
 )
 
-// accountPatchOperation declares PATCH /admin/accounts/:id.
 var accountPatchOperation = speedhttp.NewReplyOperation[accountPatchInput](
 	"authn.admin.accounts.patch",
 	http.MethodPatch,
@@ -412,7 +342,6 @@ var accountPatchOperation = speedhttp.NewReplyOperation[accountPatchInput](
 	),
 )
 
-// accountDeleteOperation declares DELETE /admin/accounts/:id.
 var accountDeleteOperation = speedhttp.NewReplyOperation[accountIDInput](
 	"authn.admin.accounts.delete",
 	http.MethodDelete,
@@ -422,10 +351,6 @@ var accountDeleteOperation = speedhttp.NewReplyOperation[accountIDInput](
 	nil,
 	speedhttp.Failures(commonFailures(),
 		speedhttp.ProblemResponse(http.StatusForbidden, "The caller is impersonating or may not delete the account"),
-		// One 409 answer, two refusals: the fragment holds one response per
-		// status, so both have to be named here or the second would replace the
-		// first and disappear from the contract. The codes are the ones the
-		// handler writes in the problem's type.
 		speedhttp.ProblemResponse(http.StatusConflict,
 			"The account cannot be deleted: it is the only tenant administrator of an active business tenant "+
 				"(account-last-tenant-admin; the detail names that tenant), or it owns an active business "+
@@ -437,7 +362,6 @@ var accountDeleteOperation = speedhttp.NewReplyOperation[accountIDInput](
 	),
 )
 
-// accountStatusOperation declares POST /admin/accounts/:id/status.
 var accountStatusOperation = speedhttp.NewReplyOperation[accountStatusInput](
 	"authn.admin.accounts.status",
 	http.MethodPost,
@@ -462,7 +386,6 @@ var accountStatusOperation = speedhttp.NewReplyOperation[accountStatusInput](
 	),
 )
 
-// identifierAddOperation declares POST /admin/accounts/:id/identifiers.
 var identifierAddOperation = speedhttp.NewReplyOperation[identifierAddInput](
 	"authn.admin.accounts.addIdentifier",
 	http.MethodPost,
@@ -487,8 +410,6 @@ var identifierAddOperation = speedhttp.NewReplyOperation[identifierAddInput](
 	),
 )
 
-// identifierRemoveOperation declares DELETE
-// /admin/accounts/:id/identifiers/:identifier.
 var identifierRemoveOperation = speedhttp.NewReplyOperation[identifierRemoveInput](
 	"authn.admin.accounts.removeIdentifier",
 	http.MethodDelete,
@@ -508,7 +429,6 @@ var identifierRemoveOperation = speedhttp.NewReplyOperation[identifierRemoveInpu
 	),
 )
 
-// passwordResetOperation declares POST /admin/accounts/:id/password.
 var passwordResetOperation = speedhttp.NewReplyOperation[passwordResetInput](
 	"authn.admin.accounts.resetPassword",
 	http.MethodPost,
@@ -534,7 +454,6 @@ var passwordResetOperation = speedhttp.NewReplyOperation[passwordResetInput](
 	),
 )
 
-// factorListOperation declares GET /admin/accounts/:id/factors.
 var factorListOperation = speedhttp.NewReplyOperation[accountIDInput](
 	"authn.admin.accounts.factors",
 	http.MethodGet,
@@ -550,7 +469,6 @@ var factorListOperation = speedhttp.NewReplyOperation[accountIDInput](
 	),
 )
 
-// mfaFlagOperation declares POST /admin/accounts/:id/mfa-required.
 var mfaFlagOperation = speedhttp.NewReplyOperation[mfaFlagInput](
 	"authn.admin.accounts.setMFARequired",
 	http.MethodPost,
@@ -573,7 +491,6 @@ var mfaFlagOperation = speedhttp.NewReplyOperation[mfaFlagInput](
 	),
 )
 
-// mfaResetOperation declares POST /admin/accounts/:id/mfa-reset.
 var mfaResetOperation = speedhttp.NewReplyOperation[accountIDInput](
 	"authn.admin.accounts.resetMFA",
 	http.MethodPost,
@@ -591,9 +508,6 @@ var mfaResetOperation = speedhttp.NewReplyOperation[accountIDInput](
 	),
 )
 
-// The session group.
-
-// accountSessionsOperation declares GET /admin/accounts/:id/sessions.
 var accountSessionsOperation = speedhttp.NewReplyOperation[accountIDInput](
 	"authn.admin.accounts.sessions",
 	http.MethodGet,
@@ -609,7 +523,6 @@ var accountSessionsOperation = speedhttp.NewReplyOperation[accountIDInput](
 	),
 )
 
-// revokeSessionsOperation declares POST /admin/accounts/:id/revoke-sessions.
 var revokeSessionsOperation = speedhttp.NewReplyOperation[accountIDInput](
 	"authn.admin.accounts.revokeSessions",
 	http.MethodPost,
@@ -625,7 +538,6 @@ var revokeSessionsOperation = speedhttp.NewReplyOperation[accountIDInput](
 	),
 )
 
-// sessionRevokeOperation declares DELETE /admin/sessions/:id.
 var sessionRevokeOperation = speedhttp.NewReplyOperation[sessionRevokeInput](
 	"authn.admin.sessions.revoke",
 	http.MethodDelete,
@@ -641,9 +553,6 @@ var sessionRevokeOperation = speedhttp.NewReplyOperation[sessionRevokeInput](
 	),
 )
 
-// The service-secret group.
-
-// secretListOperation declares GET /admin/accounts/:id/secrets.
 var secretListOperation = speedhttp.NewReplyOperation[accountIDInput](
 	"authn.admin.accounts.secrets.list",
 	http.MethodGet,
@@ -659,7 +568,6 @@ var secretListOperation = speedhttp.NewReplyOperation[accountIDInput](
 	),
 )
 
-// secretCreateOperation declares POST /admin/accounts/:id/secrets.
 var secretCreateOperation = speedhttp.NewReplyOperation[secretCreateInput](
 	"authn.admin.accounts.secrets.create",
 	http.MethodPost,
@@ -682,7 +590,6 @@ var secretCreateOperation = speedhttp.NewReplyOperation[secretCreateInput](
 	),
 )
 
-// secretRevokeOperation declares DELETE /admin/accounts/:id/secrets/:secret.
 var secretRevokeOperation = speedhttp.NewReplyOperation[secretRevokeInput](
 	"authn.admin.accounts.secrets.revoke",
 	http.MethodDelete,
@@ -698,9 +605,6 @@ var secretRevokeOperation = speedhttp.NewReplyOperation[secretRevokeInput](
 	),
 )
 
-// The membership group.
-
-// memberListOperation declares GET /admin/tenants/:tenant/members.
 var memberListOperation = speedhttp.NewOperation[memberListInput, AuthnAdminMemberList](
 	"authn.admin.members.list",
 	http.MethodGet,
@@ -716,7 +620,6 @@ var memberListOperation = speedhttp.NewOperation[memberListInput, AuthnAdminMemb
 	),
 )
 
-// memberWriteOperation declares PUT /admin/tenants/:tenant/members/:account.
 var memberWriteOperation = speedhttp.NewReplyOperation[memberWriteInput](
 	"authn.admin.members.put",
 	http.MethodPut,
@@ -740,10 +643,6 @@ var memberWriteOperation = speedhttp.NewReplyOperation[memberWriteInput](
 	),
 )
 
-// memberRemoveOperation declares DELETE /admin/tenants/:tenant/members/:account.
-// It is a reply operation because the capability's failures are answered as a
-// bare 404 and as 400/409 problem documents, which the simple form cannot
-// write.
 var memberRemoveOperation = speedhttp.NewReplyOperation[memberAddressInput](
 	"authn.admin.members.remove",
 	http.MethodDelete,
@@ -761,8 +660,6 @@ var memberRemoveOperation = speedhttp.NewReplyOperation[memberAddressInput](
 	),
 )
 
-// memberExemptOperation declares PUT
-// /admin/tenants/:tenant/members/:account/sso-exempt.
 var memberExemptOperation = speedhttp.NewReplyOperation[memberExemptInput](
 	"authn.admin.members.ssoExempt",
 	http.MethodPut,
@@ -785,9 +682,6 @@ var memberExemptOperation = speedhttp.NewReplyOperation[memberExemptInput](
 	),
 )
 
-// The SSO provider group.
-
-// providerListOperation declares GET /admin/tenants/:tenant/sso/providers.
 var providerListOperation = speedhttp.NewOperation[tenantInput, AuthnAdminProviderList](
 	"authn.admin.sso.providers.list",
 	http.MethodGet,
@@ -802,7 +696,6 @@ var providerListOperation = speedhttp.NewOperation[tenantInput, AuthnAdminProvid
 	),
 )
 
-// providerCreateOperation declares POST /admin/tenants/:tenant/sso/providers.
 var providerCreateOperation = speedhttp.NewReplyOperation[providerCreateInput](
 	"authn.admin.sso.providers.create",
 	http.MethodPost,
@@ -824,7 +717,6 @@ var providerCreateOperation = speedhttp.NewReplyOperation[providerCreateInput](
 	),
 )
 
-// providerGetOperation declares GET /admin/sso/providers/:id.
 var providerGetOperation = speedhttp.NewReplyOperation[providerIDInput](
 	"authn.admin.sso.providers.get",
 	http.MethodGet,
@@ -840,7 +732,6 @@ var providerGetOperation = speedhttp.NewReplyOperation[providerIDInput](
 	),
 )
 
-// providerUpdateOperation declares PUT /admin/sso/providers/:id.
 var providerUpdateOperation = speedhttp.NewReplyOperation[providerUpdateInput](
 	"authn.admin.sso.providers.update",
 	http.MethodPut,
@@ -863,7 +754,6 @@ var providerUpdateOperation = speedhttp.NewReplyOperation[providerUpdateInput](
 	),
 )
 
-// providerDeleteOperation declares DELETE /admin/sso/providers/:id.
 var providerDeleteOperation = speedhttp.NewReplyOperation[providerIDInput](
 	"authn.admin.sso.providers.delete",
 	http.MethodDelete,
@@ -879,7 +769,6 @@ var providerDeleteOperation = speedhttp.NewReplyOperation[providerIDInput](
 	),
 )
 
-// domainClaimOperation declares POST /admin/sso/providers/:id/domains.
 var domainClaimOperation = speedhttp.NewReplyOperation[domainClaimInput](
 	"authn.admin.sso.providers.claimDomain",
 	http.MethodPost,
@@ -903,8 +792,6 @@ var domainClaimOperation = speedhttp.NewReplyOperation[domainClaimInput](
 	),
 )
 
-// domainRemoveOperation declares DELETE
-// /admin/sso/providers/:id/domains/:domain.
 var domainRemoveOperation = speedhttp.NewReplyOperation[domainAddressInput](
 	"authn.admin.sso.providers.removeDomain",
 	http.MethodDelete,
@@ -920,8 +807,6 @@ var domainRemoveOperation = speedhttp.NewReplyOperation[domainAddressInput](
 	),
 )
 
-// domainVerifyOperation declares POST
-// /admin/sso/providers/:id/domains/:domain/verify.
 var domainVerifyOperation = speedhttp.NewReplyOperation[domainAddressInput](
 	"authn.admin.sso.providers.verifyDomain",
 	http.MethodPost,
@@ -938,8 +823,6 @@ var domainVerifyOperation = speedhttp.NewReplyOperation[domainAddressInput](
 	),
 )
 
-// reverifyDomainsOperation declares POST
-// /admin/sso/providers/:id/reverify-domains.
 var reverifyDomainsOperation = speedhttp.NewReplyOperation[providerIDInput](
 	"authn.admin.sso.providers.reverifyDomains",
 	http.MethodPost,
@@ -955,8 +838,6 @@ var reverifyDomainsOperation = speedhttp.NewReplyOperation[providerIDInput](
 	),
 )
 
-// metadataRefreshOperation declares POST
-// /admin/sso/providers/:id/metadata/refresh.
 var metadataRefreshOperation = speedhttp.NewReplyOperation[providerIDInput](
 	"authn.admin.sso.providers.refreshMetadata",
 	http.MethodPost,
@@ -973,9 +854,6 @@ var metadataRefreshOperation = speedhttp.NewReplyOperation[providerIDInput](
 	),
 )
 
-// The impersonation-record group.
-
-// impersonationListOperation declares GET /tenants/:tenant/impersonations.
 var impersonationListOperation = speedhttp.NewOperation[impersonationListInput, AuthnAdminImpersonationList](
 	"authn.admin.impersonations.list",
 	http.MethodGet,
@@ -991,7 +869,6 @@ var impersonationListOperation = speedhttp.NewOperation[impersonationListInput, 
 	),
 )
 
-// impersonationRevokeOperation declares DELETE /tenants/:tenant/impersonations/:id.
 var impersonationRevokeOperation = speedhttp.NewReplyOperation[impersonationIDInput](
 	"authn.admin.impersonations.revoke",
 	http.MethodDelete,
@@ -1007,9 +884,6 @@ var impersonationRevokeOperation = speedhttp.NewReplyOperation[impersonationIDIn
 	),
 )
 
-// systemOperations is the part of the API decided in the platform domain:
-// accounts, their sessions and their service secrets, and the impersonation
-// records of a tenant (the tenant is the data the records are confined to).
 var systemOperations = speedhttp.Operations{
 	accountListOperation,
 	accountCreateOperation,
@@ -1033,8 +907,6 @@ var systemOperations = speedhttp.Operations{
 	impersonationRevokeOperation,
 }
 
-// tenantOperations is the part of the API decided in the tenant's own policy
-// domain: memberships and identity providers.
 var tenantOperations = speedhttp.Operations{
 	memberListOperation,
 	memberWriteOperation,
@@ -1052,7 +924,4 @@ var tenantOperations = speedhttp.Operations{
 	metadataRefreshOperation,
 }
 
-// operations is every operation the module serves, for the checks that hold the
-// declaration as a whole. The fragments are generated from the two scoped
-// slices, not from this one.
 var operations = append(append(speedhttp.Operations{}, systemOperations...), tenantOperations...)

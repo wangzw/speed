@@ -13,21 +13,12 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// publishTimeout bounds how long an event published after a commit may take.
 const publishTimeout = 5 * time.Second
 
-// batch holds the events of one operation that go out once its transaction has
-// committed.
 type batch struct {
 	after []event.Event
 }
 
-// emit hands an event over. One that goes through the outbox is staged in the
-// transaction when the assembly has an outbox, so that it is published once the
-// transaction commits and never if it rolls back, and a failure to stage fails
-// the operation. Every other event, and one that goes through the outbox in an
-// assembly without it, is kept in the batch to be published after the commit,
-// and a failure to publish it never fails the operation.
 func (p *product) emit(tx *gorm.DB, b *batch, evt event.Event, viaOutbox bool) error {
 	if viaOutbox && p.outbox != nil {
 		if err := p.outbox.Stage(tx, evt); err != nil {
@@ -39,10 +30,6 @@ func (p *product) emit(tx *gorm.DB, b *batch, evt event.Event, viaOutbox bool) e
 	return nil
 }
 
-// publish sends the events of a batch to the bus once the operation's
-// transaction has committed. The write stands whatever becomes of the caller's
-// context and of the bus, so the publication does not take its cancellation, and
-// an event the bus refuses is a Warn and nothing more.
 func (p *product) publish(ctx context.Context, b *batch) {
 	if p.bus == nil || len(b.after) == 0 {
 		return
@@ -57,8 +44,6 @@ func (p *product) publish(ctx context.Context, b *batch) {
 	}
 }
 
-// describe is the text of an error for a log line: the class of the failure and
-// the dependency's own words, which name no value of a caller.
 func describe(err error) string {
 	if errors.Is(err, context.Canceled) {
 		return "the call was cancelled"
@@ -66,7 +51,6 @@ func describe(err error) string {
 	return err.Error()
 }
 
-// The closed sets of the payload fields this module fills.
 const (
 	changeAdded            = "added"
 	changeRemoved          = "removed"
@@ -107,8 +91,6 @@ func identifierChanged(id authn.AccountID, kind authn.IdentifierKind, change str
 	}}
 }
 
-// membershipChanged is the event of one change to a membership. The tenant is in
-// the envelope and never in the payload.
 func membershipChanged(id authn.AccountID, tenant, change, source string) event.Event {
 	return event.Event{Type: authn.EventMembershipChanged, TenantID: tenant, Payload: authn.MembershipChanged{
 		AccountID: id.String(), Change: change, Source: source,
@@ -127,5 +109,4 @@ func throttleEngaged(scope authn.ThrottleScope, id authn.AccountID) event.Event 
 	return event.Event{Type: authn.EventThrottleEngaged, Payload: payload}
 }
 
-// slogCause is the attribute that carries the text of an error a line is about.
 func slogCause(err error) slog.Attr { return slog.String("cause", describe(err)) }

@@ -9,19 +9,13 @@ import (
 	"github.com/vislake/speed/pkg/internal/openapigen"
 )
 
-// The module's two fragments, relative to the package directory `go test` runs
-// in: the public acceptance surface and the tenant management one.
 const (
 	publicFragmentPath  = "openapi/invite.json"
 	tenantsFragmentPath = "openapi/invite.tenants.json"
 )
 
-// TestTheFragmentIsGeneratedFromTheDeclarations holds the embedded fragments to
-// what the declarations generate. A fragment is a build product: a handler or a
-// route that changes without the declaration fails here, and the fix is to
-// change the declaration and regenerate.
-//
-// Run with UPDATE_FRAGMENTS=1 to write the generated fragments.
+// TestTheFragmentIsGeneratedFromTheDeclarations checks that the committed
+// fragments match what the declarations generate.
 func TestTheFragmentIsGeneratedFromTheDeclarations(t *testing.T) {
 	for _, fragment := range []struct {
 		path       string

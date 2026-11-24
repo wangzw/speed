@@ -10,19 +10,12 @@ import (
 	"github.com/vislake/speed/pkg/internal/openapigen"
 )
 
-// The module's two fragments, relative to the package directory `go test` runs
-// in: the platform-domain surface and the tenant-domain one.
 const (
 	systemFragmentPath  = "openapi/admin.json"
 	tenantsFragmentPath = "openapi/admin.tenants.json"
 )
 
-// TestTheFragmentIsGeneratedFromTheDeclarations holds the embedded fragments to
-// what the declarations generate. A fragment is a build product: a handler or a
-// route that changes without the declaration fails here, and the fix is to
-// change the declaration and regenerate.
-//
-// Run with UPDATE_FRAGMENTS=1 to write the generated fragments.
+// TestTheFragmentIsGeneratedFromTheDeclarations holds the embedded fragments to what the declarations generate.
 func TestTheFragmentIsGeneratedFromTheDeclarations(t *testing.T) {
 	for _, fragment := range []struct {
 		path       string
@@ -52,10 +45,7 @@ func TestTheFragmentIsGeneratedFromTheDeclarations(t *testing.T) {
 	}
 }
 
-// TestTheProviderWriteConfigIsPublishedAsAnObject holds the schema of a
-// provider write's config: the capability accepts only a JSON object, so the
-// fragment publishes that constraint rather than leaving the member open to any
-// value.
+// TestTheProviderWriteConfigIsPublishedAsAnObject checks that a provider write's config is published as a JSON object.
 func TestTheProviderWriteConfigIsPublishedAsAnObject(t *testing.T) {
 	var doc struct {
 		Components struct {

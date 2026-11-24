@@ -5,12 +5,6 @@ import (
 	"time"
 )
 
-// The bodies this module's routes answer with. They are the fragment's
-// components: the generated contract names each one after its Go type, so these
-// names are part of what a client is built from. Each view is built field by
-// field from the capability's value, so a field added to a stored row later does
-// not reach a client by being there.
-
 // AuthnAdminAccount is one account as the management routes show it.
 type AuthnAdminAccount struct {
 	_ struct{} `description:"One account as the management routes show it, built field by field so that a field added to the stored account does not reach a client by being there."`
@@ -28,9 +22,7 @@ type AuthnAdminAccount struct {
 }
 
 // AuthnAdminIdentifier is one login identifier of an account as the management
-// routes show it: the kind, the normalized value and whether its ownership was
-// proved. It carries nothing else of the stored row — no identifier of its own,
-// no verification instant and no named way of verification.
+// routes show it.
 type AuthnAdminIdentifier struct {
 	_ struct{} `description:"One login identifier bound to an account: its kind, its normalized value and whether its ownership was proved. It carries no identifier of its own, no verification instant and no named way of verification."`
 
@@ -80,8 +72,6 @@ type AuthnAdminRemoved struct {
 	Removed int `json:"removed" required:"true" description:"The number of factors removed"`
 }
 
-// utcPtr is t as an RFC 3339 instant in UTC, and nil for the zero time, which
-// a view never publishes as 0001-01-01T00:00:00Z.
 func utcPtr(t time.Time) *time.Time {
 	if t.IsZero() {
 		return nil
@@ -171,8 +161,7 @@ type AuthnAdminMemberList struct {
 }
 
 // AuthnAdminProviderDomain is one email domain a provider has claimed, with its
-// verification state. A claim is written by the domain-claim route and becomes
-// verified when the verification route finds its DNS TXT record.
+// verification state.
 type AuthnAdminProviderDomain struct {
 	_ struct{} `description:"One email domain a provider has claimed, and whether its ownership was proved."`
 
@@ -180,8 +169,7 @@ type AuthnAdminProviderDomain struct {
 	Verified bool   `json:"verified" required:"true" description:"True when the domain's DNS TXT record proved ownership; only verified domains take part in sign-in discovery."`
 }
 
-// AuthnAdminProvider is one SSO provider. The encrypted client secret never
-// appears.
+// AuthnAdminProvider is one SSO provider, without its encrypted client secret.
 type AuthnAdminProvider struct {
 	_ struct{} `description:"One SSO provider. The encrypted client secret never appears, warnings names each setting that loosens a default, and domains lists every email domain the provider has claimed."`
 
@@ -224,8 +212,7 @@ type AuthnAdminVerifyToken struct {
 	VerifyToken string `json:"verify_token" required:"true" description:"The token to publish in DNS"`
 }
 
-// AuthnAdminImpersonation is one impersonation record. The reason never appears
-// here.
+// AuthnAdminImpersonation is one impersonation record, without its reason.
 type AuthnAdminImpersonation struct {
 	_ struct{} `description:"One impersonation record. The reason never appears here; it is in the record and the audit row alone."`
 

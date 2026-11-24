@@ -9,11 +9,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// ttl is the lifetime an invitation is issued with when the call states no
-// deadline. It is the declared default when the assembly has no settings store,
-// when the read fails and when the value is outside the domain, which the store
-// judges when a value is written and not when it is read. A fault is reported at
-// Error once, and again only when it changes or has been cleared in between.
 func (p *product) ttl() time.Duration {
 	if p.store == nil {
 		return defaults.TTL
@@ -21,7 +16,6 @@ func (p *product) ttl() time.Duration {
 	value, err := settings.Get[time.Duration](p.store, settings.Global(), ttlKey)
 	switch {
 	case errors.Is(err, settings.ErrUnknownKey):
-		// No layer holds a row for the key, which is the declared default.
 		p.report(ttlKey, "", "")
 		return defaults.TTL
 	case err != nil:
@@ -36,9 +30,6 @@ func (p *product) ttl() time.Duration {
 	return value
 }
 
-// report writes the Error line for a fault of one setting. The same fault is
-// written once; an empty problem clears it so that it is written again if it
-// comes back.
 func (p *product) report(key, problem, detail string) {
 	p.mu.Lock()
 	if p.reported == nil {

@@ -10,8 +10,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// A secret carries the prefix and 256 bits, and only its digest is kept: what the
-// table holds is the SHA-256 in hex, never the secret.
+// A secret carries the prefix and 256 bits, and only its SHA-256 digest in hex is stored.
 func TestASecretCarriesItsPrefixAndOnlyItsDigestIsKept(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -30,8 +29,6 @@ func TestASecretCarriesItsPrefixAndOnlyItsDigestIsKept(t *testing.T) {
 		if row.Hash != secretDigest(secret) || strings.Contains(row.Hash, secret) {
 			t.Errorf("the table holds %q, want the digest %q and not the secret", row.Hash, secretDigest(secret))
 		}
-		// The listing carries the identifier, the label and the times, never the
-		// secret.
 		infos, err := h.p.ListServiceSecrets(ctx, service)
 		if err != nil || len(infos) != 1 || infos[0].ID != secretID || infos[0].Label != "ci" {
 			t.Errorf("ListServiceSecrets gave %+v (%v), want the one secret's identifier and label", infos, err)
@@ -39,8 +36,7 @@ func TestASecretCarriesItsPrefixAndOnlyItsDigestIsKept(t *testing.T) {
 	})
 }
 
-// A presented secret is found by its digest and verified against the account, the
-// secret identifier and the expiry.
+// A presented secret is found by its digest and verified against the account, identifier and expiry.
 func TestAVerifiedSecretReturnsTheAccountTheSecretAndTheExpiry(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -54,7 +50,6 @@ func TestAVerifiedSecretReturnsTheAccountTheSecretAndTheExpiry(t *testing.T) {
 		if err != nil || account != service || gotSecret != secretID || !utc(gotExpiry).Equal(utc(expiry)) {
 			t.Errorf("VerifyServiceSecret gave %q, %q, %v, %v; want the account, the identifier and the expiry", account, gotSecret, gotExpiry, err)
 		}
-		// A verify stamps the time of last use.
 		var row secretRow
 		if err := h.handle.Where("id = ?", secretID).Take(&row).Error; err != nil {
 			t.Fatalf("reading the row: %v", err)
@@ -65,8 +60,7 @@ func TestAVerifiedSecretReturnsTheAccountTheSecretAndTheExpiry(t *testing.T) {
 	})
 }
 
-// A revoked secret, an expired secret and a wrong client identifier are all
-// refused with ErrInvalidCredentials.
+// A revoked secret, an expired secret and a wrong client identifier are all ErrInvalidCredentials.
 func TestARefusedSecretIsInvalidCredentials(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -90,7 +84,7 @@ func TestARefusedSecretIsInvalidCredentials(t *testing.T) {
 				t.Errorf("%s gave %v, want ErrInvalidCredentials", c.name, err)
 			}
 		}
-		// Revoked.
+
 		if err = h.p.RevokeServiceSecret(ctx, service, secretID); err != nil {
 			t.Fatalf("revoking: %v", err)
 		}
@@ -98,7 +92,6 @@ func TestARefusedSecretIsInvalidCredentials(t *testing.T) {
 			t.Errorf("a revoked secret gave %v, want ErrInvalidCredentials", err)
 		}
 
-		// Expired.
 		expiry := h.clock.read().Add(time.Hour)
 		_, shortLived, err := h.p.CreateServiceSecret(ctx, service, "short", &expiry)
 		if err != nil {

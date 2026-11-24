@@ -33,14 +33,12 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The accounts the HTTP cases act as and impersonate.
 const (
 	httpActorID  = authn.AccountID("acct-http-admin")
 	httpTargetID = authn.AccountID("acct-http-user")
 	httpTenant   = "tenant-http"
 )
 
-// The names of the stand-in modules that provide what this module requires.
 const (
 	httpAccountsModule    = "stand-in.http-accounts"
 	httpMembershipsModule = "stand-in.http-memberships"
@@ -56,8 +54,6 @@ const (
 // named nowhere else.
 const listenerRecord = "an HTTP listener is listening"
 
-// boundAddresses keeps the log records an entry point wrote, so that a case can
-// read back where it bound itself.
 type boundAddresses struct {
 	mu      sync.Mutex
 	records []slog.Record
@@ -97,7 +93,6 @@ func (b *boundAddresses) addressOf(endpoint string) string {
 	return ""
 }
 
-// httpLogging is the logging capability over the capture.
 type httpLogging struct{ logger *slog.Logger }
 
 func (l httpLogging) Named(string) *slog.Logger { return l.logger }
@@ -108,8 +103,6 @@ type noRedaction struct{}
 func (noRedaction) AddKeys(...string)              {}
 func (noRedaction) AddPattern(string, log.Matcher) {}
 
-// provide declares a module that provides instance under token. A stand-in has
-// no configuration of its own and no lifecycle beyond handing the instance over.
 func provide(name string, instance any, token core.Token) core.Module {
 	return core.Module{
 		Name:     name,
@@ -118,18 +111,14 @@ func provide(name string, instance any, token core.Token) core.Module {
 	}
 }
 
-// httpDirectoryModule is the provider name of the harness's tenant directory.
 const httpDirectoryModule = "http-tenant-directory"
 
-// httpDirectory resolves the tenant names the harness uses: each is its own
-// identifier, because the harness has no roster.
 type httpDirectory struct{}
 
 func (httpDirectory) TenantIDOf(_ context.Context, name string) (string, bool, error) {
 	return name, true, nil
 }
 
-// httpReply is what a client got back.
 type httpReply struct {
 	status     int
 	body       string
@@ -137,7 +126,6 @@ type httpReply struct {
 	header     http.Header
 }
 
-// sessionView is the part of GET /api/v1/auth/session these cases read.
 type sessionView struct {
 	Authenticated bool   `json:"authenticated"`
 	AccountID     string `json:"account_id"`
@@ -145,8 +133,6 @@ type sessionView struct {
 	Impersonating bool   `json:"impersonating"`
 }
 
-// httpHarness is one running assembly: the bound address, a cookie-jarred client
-// and the capabilities a case uses to set its scene up.
 type httpHarness struct {
 	t           *testing.T
 	ctx         context.Context
@@ -159,11 +145,6 @@ type httpHarness struct {
 	bare        *http.Client
 }
 
-// assembleOverHTTP drives the real stack to Serve and runs use against it. The
-// session store, the gateway and the mounter are the real modules: the token
-// carried by the cookie is verified against the database by the same code a
-// deployment runs. The account, membership, factor, audit, scope and decision
-// capabilities are stand-ins, so a case needs no registered factor to impersonate.
 func assembleOverHTTP(t *testing.T, use func(h *httpHarness)) {
 	t.Helper()
 
@@ -260,10 +241,6 @@ func assembleOverHTTP(t *testing.T, use func(h *httpHarness)) {
 	}
 }
 
-// createSession makes a browser session for account, authenticated with a
-// password and a one-time code at the multi-factor level, and puts its cookie in
-// the jar as a login response would. It returns the cookie's name, which the
-// session backend keeps for the lifetime of the process.
 func (h *httpHarness) createSession(account authn.AccountID) (name string) {
 	h.t.Helper()
 	issued, err := h.sessions.Create(h.ctx, authn.NewSession{
@@ -290,7 +267,6 @@ func (h *httpHarness) createSession(account authn.AccountID) (name string) {
 	return cookies[0].Name
 }
 
-// jarToken is the value the jar holds of the session cookie named cookie.
 func (h *httpHarness) jarToken(cookie string) string {
 	h.t.Helper()
 	base, err := url.Parse(h.base)
@@ -306,9 +282,6 @@ func (h *httpHarness) jarToken(cookie string) string {
 	return ""
 }
 
-// do issues one request, carrying an explicit session cookie when token is not
-// empty. A non-GET request declares itself same-origin, as a page of the
-// deployment would.
 func (h *httpHarness) do(client *http.Client, method, path string, body any, cookie, token string) httpReply {
 	h.t.Helper()
 	var reader io.Reader
@@ -352,7 +325,6 @@ func (h *httpHarness) do(client *http.Client, method, path string, body any, coo
 	}
 }
 
-// state reads GET /api/v1/auth/session over the jar and decodes the answer.
 func (h *httpHarness) state() sessionView {
 	h.t.Helper()
 	r := h.do(h.client, http.MethodGet, "/api/v1/auth/session", nil, "", "")
@@ -366,8 +338,6 @@ func (h *httpHarness) state() sessionView {
 	return v
 }
 
-// startImpersonation begins an impersonation over the jar and fails the case
-// when the route does not answer 200.
 func (h *httpHarness) startImpersonation() {
 	h.t.Helper()
 	r := h.do(h.client, http.MethodPost, "/api/v1/auth/impersonation", map[string]any{
@@ -381,11 +351,7 @@ func (h *httpHarness) startImpersonation() {
 	}
 }
 
-// TestEndingAnImpersonationKeepsTheSessionToken holds the whole browser flow over
-// the real routes and a real database: starting rotates the token, ending clears
-// the marker without rotating, and the token in force when the end request
-// settles stays valid as the initiator's own identity. A request still in flight
-// with that token when the end settles is therefore not refused.
+// TestEndingAnImpersonationKeepsTheSessionToken checks that a start rotates the session token and an end clears the marker without rotating it.
 func TestEndingAnImpersonationKeepsTheSessionToken(t *testing.T) {
 	assembleOverHTTP(t, func(h *httpHarness) {
 		h.accounts.put(httpActorID, authn.Account{Kind: authn.KindUser, Status: authn.StatusActive})
@@ -401,9 +367,8 @@ func TestEndingAnImpersonationKeepsTheSessionToken(t *testing.T) {
 
 		preEnd := h.jarToken(cookie)
 
-		// The end and a read still carrying the token both leave at the same
-		// time. Neither order refuses the read: the end leaves the token in
-		// place.
+		// The end leaves the token in place, so a read racing it succeeds whichever
+		// order it lands in.
 		var (
 			ended httpReply
 			read  httpReply
@@ -431,10 +396,6 @@ func TestEndingAnImpersonationKeepsTheSessionToken(t *testing.T) {
 			t.Errorf("a read carrying the token in force when the end settled answered %d, want 200: %s",
 				read.status, read.body)
 		} else {
-			// Whichever side of the record's end the read lands on, it is
-			// authenticated: before the end as the target acted for by the actor,
-			// after it as the actor alone. The identity is pinned by the plain
-			// read below, which always lands after the end.
 			var v sessionView
 			if err := json.Unmarshal([]byte(read.body), &v); err != nil {
 				t.Fatalf("decoding %q: %v", read.body, err)
@@ -444,8 +405,6 @@ func TestEndingAnImpersonationKeepsTheSessionToken(t *testing.T) {
 			}
 		}
 
-		// The token is usable for a plain read after the end, and it resolves to
-		// the initiator's own identity.
 		after := h.do(h.bare, http.MethodGet, "/api/v1/auth/session", nil, cookie, preEnd)
 		if after.status != http.StatusOK {
 			t.Fatalf("a read carrying the token in force before the end answered %d after it, want 200: %s",
@@ -459,18 +418,13 @@ func TestEndingAnImpersonationKeepsTheSessionToken(t *testing.T) {
 			t.Errorf("the plain read after the end reads %+v, want the actor alone", plain)
 		}
 
-		// The jar never received a replacement cookie, and it does not need one.
 		if v := h.state(); !v.Authenticated || v.Impersonating || v.AccountID != string(httpActorID) {
 			t.Errorf("the jar's session after the end reads %+v, want the actor and not impersonating", v)
 		}
 	})
 }
 
-// TestTheStartRotatesTheCookieAndTheEndLeavesIt pins the carrier shape at the
-// HTTP boundary: the start write hands the browser exactly one new session
-// cookie, and the end write hands it none -- it clears the marker on the
-// session already in force, so the token the browser holds keeps working. A
-// second end finds nothing to end and writes no cookie either.
+// TestTheStartRotatesTheCookieAndTheEndLeavesIt checks that a start writes exactly one new session cookie and an end writes none.
 func TestTheStartRotatesTheCookieAndTheEndLeavesIt(t *testing.T) {
 	assembleOverHTTP(t, func(h *httpHarness) {
 		h.accounts.put(httpActorID, authn.Account{Kind: authn.KindUser, Status: authn.StatusActive})

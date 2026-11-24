@@ -11,9 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// recordingMembershipHook records the removals it is called for and keeps what
-// its cleanup made, so a case can tell a second call that finished the cleanup
-// from one that built the same thing twice.
 type recordingMembershipHook struct {
 	authn.MembershipLifecycle
 	mu      sync.Mutex
@@ -50,8 +47,6 @@ func (h *recordingMembershipHook) cleanedCount() int {
 	return len(h.cleaned)
 }
 
-// recordingMembershipGuard records the removals it was asked about and answers
-// with the error a case scripts.
 type recordingMembershipGuard struct {
 	mu      sync.Mutex
 	calls   []string
@@ -94,10 +89,7 @@ func (g *recordingMembershipGuard) seen() []string {
 	return append([]string(nil), g.calls...)
 }
 
-// RemoveMembershipForDeletion is the account-deletion path: it neither asks the
-// guard nor calls the membership lifecycle hook. The deletion's own cleanup
-// withdraws what the modules hold, and a guard keeps a domain that stays in
-// service governable rather than one whose owner is being erased.
+// RemoveMembershipForDeletion is the account-deletion path: it asks neither the guard nor the membership lifecycle hook.
 func TestRemoveMembershipForDeletionSkipsTheGuardAndTheHook(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -125,8 +117,7 @@ func TestRemoveMembershipForDeletionSkipsTheGuardAndTheHook(t *testing.T) {
 	})
 }
 
-// Remove calls the membership lifecycle hook after the removal commits, so a
-// module that holds data keyed by the membership cleans it on the ordinary path.
+// Remove calls the membership lifecycle hook after the removal commits.
 func TestRemoveCallsTheMembershipHook(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -147,9 +138,7 @@ func TestRemoveCallsTheMembershipHook(t *testing.T) {
 	})
 }
 
-// A failing membership hook leaves the removal in force and answers
-// ErrCleanupIncomplete; repeating the same call finishes the cleanup without
-// repeating what the hook already made.
+// A failing membership hook leaves the removal in force and answers ErrCleanupIncomplete, and repeating the call finishes the cleanup without repeating what the hook made.
 func TestAFailingMembershipHookLeavesTheRemovalAndTheRetryCompletes(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -167,8 +156,6 @@ func TestAFailingMembershipHookLeavesTheRemovalAndTheRetryCompletes(t *testing.T
 			t.Errorf("%d membership row(s) left after the failed cleanup, want none: the removal is in force", n)
 		}
 
-		// The retry is the same call for the same membership, which is what an
-		// idempotent cleanup makes.
 		if err := h.p.Remove(ctx, id, "acme"); err != nil {
 			t.Fatalf("retrying the removal: %v", err)
 		}
@@ -181,8 +168,7 @@ func TestAFailingMembershipHookLeavesTheRemovalAndTheRetryCompletes(t *testing.T
 	})
 }
 
-// The guard is asked before the removal; a refusal is the call's error and
-// leaves the membership in place. The lifecycle hook is not reached.
+// The guard is asked before the removal; a refusal is the call's error and leaves the membership in place.
 func TestTheGuardRefusesTheRemovalAndLeavesTheMembership(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -211,8 +197,7 @@ func TestTheGuardRefusesTheRemovalAndLeavesTheMembership(t *testing.T) {
 	})
 }
 
-// The guards stand side by side: every one is asked, and one refusal is enough
-// even when another allows the removal.
+// Every guard is asked, and one refusal is enough even when another allows the removal.
 func TestEveryMembershipGuardIsAsked(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -238,7 +223,6 @@ func TestEveryMembershipGuardIsAsked(t *testing.T) {
 	})
 }
 
-// sharedGuardLock is one non-reentrant per-tenant lock two guards take.
 type sharedGuardLock struct {
 	gate chan struct{}
 }
@@ -257,7 +241,6 @@ func (l *sharedGuardLock) take(ctx context.Context) (func(), error) {
 	}
 }
 
-// sharingGuard is a guard wired to a lock another guard is wired to as well.
 type sharingGuard struct {
 	lock *sharedGuardLock
 }
@@ -272,9 +255,7 @@ func (g *sharingGuard) CheckMembershipRemoval(context.Context, authn.AccountID, 
 	return nil
 }
 
-// Two guards wired to one lock object take it once for a removal. A second
-// acquisition of the same non-reentrant lock would wait on the removal itself
-// until its context ended, turning every such removal into ErrUnavailable.
+// Two guards wired to one lock object take it once for a removal.
 func TestTwoGuardsSharingOneLockTakeItOnce(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -299,8 +280,7 @@ func TestTwoGuardsSharingOneLockTakeItOnce(t *testing.T) {
 	})
 }
 
-// The guard's lock is taken before the check, held across the removal's
-// commit, and released before the lifecycle hooks run.
+// The guard's lock is taken before the check, held across the commit, and released before the lifecycle hooks run.
 func TestTheRemovalTakesTheGuardLockBeforeTheCheckAndAheadOfTheCommit(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -324,8 +304,7 @@ func TestTheRemovalTakesTheGuardLockBeforeTheCheckAndAheadOfTheCommit(t *testing
 	})
 }
 
-// A lock that cannot be taken is an unavailable dependency: the guards are not
-// asked and the membership stays.
+// A lock that cannot be taken is unavailable: the guards are not asked and the membership stays.
 func TestALockThatCannotBeTakenRefusesTheRemoval(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -352,8 +331,6 @@ func TestALockThatCannotBeTakenRefusesTheRemoval(t *testing.T) {
 	})
 }
 
-// eventLog is a mutex-protected list of steps that a guard, the removal and a
-// hook append to, so their order is observable.
 type eventLog struct {
 	mu     sync.Mutex
 	events []string
@@ -371,8 +348,6 @@ func (l *eventLog) snapshot() []string {
 	return append([]string(nil), l.events...)
 }
 
-// eventMembershipGuard records its lock and the check. Its release records the
-// unlock, which the product calls after the removal's commit.
 type eventMembershipGuard struct {
 	events *eventLog
 }
@@ -387,7 +362,6 @@ func (g *eventMembershipGuard) CheckMembershipRemoval(context.Context, authn.Acc
 	return nil
 }
 
-// eventMembershipHook records that the lifecycle hook ran.
 type eventMembershipHook struct{ events *eventLog }
 
 func (h *eventMembershipHook) MembershipRemoved(context.Context, authn.AccountID, string) error {
@@ -395,8 +369,7 @@ func (h *eventMembershipHook) MembershipRemoved(context.Context, authn.AccountID
 	return nil
 }
 
-// A guard that cannot answer is an unavailable dependency and not a pass: the
-// removal is not carried out.
+// A guard that cannot answer is unavailable and not a pass: the removal is not carried out.
 func TestAGuardThatCannotAnswerRefusesTheRemoval(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -419,9 +392,7 @@ func TestAGuardThatCannotAnswerRefusesTheRemoval(t *testing.T) {
 	})
 }
 
-// Removing a membership that is not there is already removed: no guard decision
-// is needed for a removal that takes nothing away. The lifecycle hook is still
-// called, because a previous call's cleanup is what the retry finishes.
+// Removing a membership that is not there asks no guard, because it takes nothing away.
 func TestRemovingAnAbsentMembershipDoesNotAskTheGuard(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -443,9 +414,7 @@ func TestRemovingAnAbsentMembershipDoesNotAskTheGuard(t *testing.T) {
 	})
 }
 
-// Account deletion is the documented exception: it is not an explicit membership
-// removal, so it neither asks the guard nor calls the membership lifecycle. The
-// AccountDeleted hook and the membership events are the deletion's own paths.
+// Account deletion neither asks the membership guard nor calls the membership lifecycle hook.
 func TestDeletingAnAccountDoesNotConsultTheMembershipGuardOrHook(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -473,9 +442,7 @@ func TestDeletingAnAccountDoesNotConsultTheMembershipGuardOrHook(t *testing.T) {
 	})
 }
 
-// Re-adding a member who left writes the membership again and runs no removal
-// hook, so a module that cleared the account's roles when it left has nothing to
-// restore on the rejoin and the member starts from no roles.
+// Re-adding a removed member writes the membership again and runs no removal hook.
 func TestReAddingARemovedMemberRunsNoRemovalHook(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()

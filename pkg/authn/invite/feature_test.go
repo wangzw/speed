@@ -6,8 +6,7 @@ import (
 	"github.com/vislake/speed/pkg/feature"
 )
 
-// TestTheModuleDeclaresTheInvitationsFeature holds the declaration the frontend
-// gates the invitation faces on: one static Spec with the exact name.
+// TestTheModuleDeclaresTheInvitationsFeature checks that the module declares one static authn.invitations feature spec.
 func TestTheModuleDeclaresTheInvitationsFeature(t *testing.T) {
 	want := feature.Spec{Name: "authn.invitations"}
 	var got []feature.Spec

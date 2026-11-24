@@ -11,8 +11,6 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// accountViewOf builds one account as the management routes show it, from the
-// account row and the identifiers bound to it.
 func accountViewOf(a authn.Account, identifiers []authn.Identifier) AuthnAdminAccount {
 	return AuthnAdminAccount{
 		ID:          string(a.ID),
@@ -28,11 +26,6 @@ func accountViewOf(a authn.Account, identifiers []authn.Identifier) AuthnAdminAc
 	}
 }
 
-// identifiersOf builds the view's identifiers: the kind, the normalized value
-// and whether the way the identifier came to be verified proves ownership. The
-// order is fixed and does not follow the store: by kind as username, email,
-// phone, and within one kind by value ascending. The slice is never nil, so the
-// answer carries an empty array rather than null.
 func identifiersOf(identifiers []authn.Identifier) []AuthnAdminIdentifier {
 	out := make([]AuthnAdminIdentifier, 0, len(identifiers))
 	for _, i := range identifiers {
@@ -55,8 +48,6 @@ func identifiersOf(identifiers []authn.Identifier) []AuthnAdminIdentifier {
 	return out
 }
 
-// identifierKindRank is the fixed order the account view sorts identifiers by.
-// A kind outside the declared set sorts last, after phone.
 func identifierKindRank(k authn.IdentifierKind) int {
 	switch k {
 	case authn.IdentifierUsername:
@@ -69,13 +60,6 @@ func identifierKindRank(k authn.IdentifierKind) int {
 	return 3
 }
 
-// viewOf reads the identifiers bound to one account and builds its view. It is
-// the single-account read's path; a page takes the batch read instead.
-//
-// A tombstone is built without a read: deleting an account erases its
-// identifiers, and the identifier read reports a tombstone as
-// authn.ErrAccountNotFound, so the empty list is the answer rather than a
-// failed read.
 func (m *product) viewOf(ctx context.Context, a authn.Account) (AuthnAdminAccount, error) {
 	if a.Status == authn.StatusDeleted {
 		return accountViewOf(a, nil), nil
@@ -87,9 +71,6 @@ func (m *product) viewOf(ctx context.Context, a authn.Account) (AuthnAdminAccoun
 	return accountViewOf(a, identifiers), nil
 }
 
-// accountListParams is the closed set of query parameters the account list
-// route declares. The set is what the OpenAPI fragment publishes; the route
-// check holds the declaration to it.
 var accountListParams = map[string]bool{
 	"status":              true,
 	"kind":                true,
@@ -100,8 +81,6 @@ var accountListParams = map[string]bool{
 	"limit":               true,
 }
 
-// handleAccountList answers GET /admin/accounts: one page of accounts, filtered
-// by status, kind and an identifier prefix. The action is account.read.
 func (m *product) handleAccountList(ctx context.Context, in accountListInput) (AuthnAdminAccountList, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
@@ -121,11 +100,6 @@ func (m *product) handleAccountList(ctx context.Context, in accountListInput) (A
 	if err != nil {
 		return AuthnAdminAccountList{}, m.unavailable("listing accounts", err)
 	}
-	// One identifier read for the whole page. A tombstone is left out of it:
-	// deleting an account erases its identifiers, and the batch read leaves such
-	// an id out, so the row answers with an empty array instead of failing the
-	// page. The single read, which names one account and not a page, still
-	// answers 404 for one that is gone.
 	ids := make([]authn.AccountID, 0, len(accounts))
 	for _, a := range accounts {
 		if a.Status != authn.StatusDeleted {
@@ -141,19 +115,11 @@ func (m *product) handleAccountList(ctx context.Context, in accountListInput) (A
 	}
 	views := make([]AuthnAdminAccount, len(accounts))
 	for i, a := range accounts {
-		// A row deleted between the page read and the identifier read has no
-		// entry, the same absence a tombstone has, and still answers with an
-		// empty array.
 		views[i] = accountViewOf(a, byID[a.ID])
 	}
 	return AuthnAdminAccountList{Accounts: views, NextCursor: next}, nil
 }
 
-// accountQuery reads the list's query parameters into a read query. A filter it
-// does not know, an identifier prefix without a kind, or a display-name prefix
-// that is not text is a 400. An empty value of an accepted filter — including an
-// empty display_name_prefix — is no filter, the same reading status, kind and
-// after take.
 func (m *product) accountQuery(in accountListInput) (authn.AccountQuery, error) {
 	var q authn.AccountQuery
 	if s := in.Status; s != "" {
@@ -182,9 +148,6 @@ func (m *product) accountQuery(in accountListInput) (authn.AccountQuery, error) 
 		q.IdentifierKind, q.IdentifierPrefix = ik, prefix
 	}
 	if p := in.DisplayNamePrefix; p != "" {
-		// A display name is stored as text, so a prefix that is not text is a
-		// shape the route refuses here rather than a byte sequence the read would
-		// hand to the database, which rejects it and answers an outage.
 		if !utf8.ValidString(p) {
 			return authn.AccountQuery{}, m.bad()
 		}
@@ -198,16 +161,6 @@ func (m *product) accountQuery(in accountListInput) (authn.AccountQuery, error) 
 	return q, nil
 }
 
-// handleAccountCreate answers POST /admin/accounts. The action is
-// account.create, and a service account additionally needs client.manage. A
-// user account requires a username: an account is opened with a login name, so
-// the route refuses one that names none before the module writes a row nothing
-// can use. The username's form and the reserved set are the module's to judge.
-// A service account is not held to that: it signs in with a service secret, not
-// a username. An email address and a phone number are written with a way an
-// administrator may state — the administrator's own assertion or an import
-// record — and never a proof of ownership, which is not the administrator's to
-// make.
 func (m *product) handleAccountCreate(ctx context.Context, in accountCreateInput) (AuthnAdminAccountEnvelope, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
@@ -273,8 +226,6 @@ func (m *product) handleAccountCreate(ctx context.Context, in accountCreateInput
 	return AuthnAdminAccountEnvelope{Account: view}, nil
 }
 
-// handleAccountPatch answers PATCH /admin/accounts/:id: the display name, the
-// attribute set and the protected flag. The action is account.update.
 func (m *product) handleAccountPatch(ctx context.Context, in accountPatchInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
@@ -315,8 +266,6 @@ func (m *product) handleAccountPatch(ctx context.Context, in accountPatchInput, 
 	return speedhttp.JSONReply(200, AuthnAdminAccountEnvelope{Account: view}), nil
 }
 
-// applyPatch writes each field the request named, in order. A failure closes the
-// patch with a failed row and the answer it belongs to.
 func (m *product) applyPatch(ctx context.Context, id authn.AccountID, in accountPatchInput, actionID string) error {
 	done := func(err error) error {
 		if err != nil {
@@ -342,7 +291,6 @@ func (m *product) applyPatch(ctx context.Context, id authn.AccountID, in account
 	return nil
 }
 
-// handleAccountGet answers GET /admin/accounts/:id. The action is account.read.
 func (m *product) handleAccountGet(ctx context.Context, in accountIDInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
@@ -369,8 +317,6 @@ func (m *product) handleAccountGet(ctx context.Context, in accountIDInput, _ *sp
 	return speedhttp.JSONReply(200, AuthnAdminAccountEnvelope{Account: view}), nil
 }
 
-// handleAccountDelete answers DELETE /admin/accounts/:id. The action is
-// account.delete and the actor needs a fresh local multi-factor authentication.
 func (m *product) handleAccountDelete(ctx context.Context, in accountIDInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
@@ -395,10 +341,8 @@ func (m *product) handleAccountDelete(ctx context.Context, in accountIDInput, _ 
 	if err := m.require(id, authn.FreshLocalMulti(m.settings.recentWindow())); err != nil {
 		return nil, err
 	}
-	// The deletion's audit row follows the commit: the tombstone and the account's
-	// erased rows are what the row records, and a row written before the
-	// transaction would survive a rollback it did not describe. A failed
-	// transaction still writes a compensation row, best effort.
+	// The audit row follows the commit: a row written first would describe an
+	// action that may roll back.
 	if err := m.accountAdm.Delete(ctx, accountID, authn.ReasonAdmin); err != nil {
 		m.auditBestEffort(ctx, failedAudit(actionAccountDelete, audit.AccountObject(string(accountID)), newActionID()))
 		return m.replyFailure(ctx, "deleting an account", err)
@@ -408,9 +352,6 @@ func (m *product) handleAccountDelete(ctx context.Context, in accountIDInput, _ 
 	return speedhttp.EmptyReply(204), nil
 }
 
-// handleAccountStatus answers POST /admin/accounts/:id/status: it disables an
-// account or restores it. The action is account.disable and the actor needs a
-// fresh local multi-factor authentication.
 func (m *product) handleAccountStatus(ctx context.Context, in accountStatusInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
@@ -459,9 +400,6 @@ func (m *product) handleAccountStatus(ctx context.Context, in accountStatusInput
 	return speedhttp.JSONReply(200, AuthnAdminAccountEnvelope{Account: view}), nil
 }
 
-// handleIdentifierAdd answers POST /admin/accounts/:id/identifiers: it adds a
-// login name or an email address an administrator asserts. The action is
-// account.update.
 func (m *product) handleIdentifierAdd(ctx context.Context, in identifierAddInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
@@ -503,8 +441,6 @@ func (m *product) handleIdentifierAdd(ctx context.Context, in identifierAddInput
 	return speedhttp.EmptyReply(204), nil
 }
 
-// handleIdentifierRemove answers DELETE
-// /admin/accounts/:id/identifiers/:identifier. The action is account.update.
 func (m *product) handleIdentifierRemove(ctx context.Context, in identifierRemoveInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
@@ -538,7 +474,6 @@ func (m *product) handleIdentifierRemove(ctx context.Context, in identifierRemov
 	return speedhttp.EmptyReply(204), nil
 }
 
-// statusOf maps a status name to the value it names.
 func statusOf(s string) (authn.AccountStatus, bool) {
 	switch s {
 	case "disabled":
@@ -551,7 +486,6 @@ func statusOf(s string) (authn.AccountStatus, bool) {
 	return 0, false
 }
 
-// identifierKindValid reports whether k is one of the identifier kinds.
 func identifierKindValid(k authn.IdentifierKind) bool {
 	switch k {
 	case authn.IdentifierUsername, authn.IdentifierEmail, authn.IdentifierPhone:
@@ -560,9 +494,6 @@ func identifierKindValid(k authn.IdentifierKind) bool {
 	return false
 }
 
-// adminIdentifierKind reports whether an administrator's identifier write may
-// name k. The route adds a login name or an email address an administrator
-// asserts; a phone number is added or changed only through an SMS code.
 func adminIdentifierKind(k authn.IdentifierKind) bool {
 	switch k {
 	case authn.IdentifierUsername, authn.IdentifierEmail:
@@ -571,12 +502,6 @@ func adminIdentifierKind(k authn.IdentifierKind) bool {
 	return false
 }
 
-// administratorVia reads the way an administrator may state an identifier came
-// to be verified. An administrator asserts an identifier (admin) or records an
-// import (import-unverified); a proof of ownership — an SMS code or an IdP
-// claim — is not the administrator's to state and is refused. The empty string
-// is passed through, so an identifier written without a way is refused by the
-// capability.
 func administratorVia(v string) (authn.Verification, bool) {
 	switch v {
 	case "", authn.VerifiedViaAdmin, authn.VerifiedViaImportUnverified:

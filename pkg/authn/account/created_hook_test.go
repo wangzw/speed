@@ -9,9 +9,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// Create calls the created hook after the account is committed, so a module
-// that holds something with the account's lifecycle builds it when the account
-// begins to exist.
+// Create calls the created hook after the account commits.
 func TestCreateCallsTheCreatedHook(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		account, err := h.p.Create(context.Background(), authn.CreateAccount{
@@ -29,8 +27,7 @@ func TestCreateCallsTheCreatedHook(t *testing.T) {
 	})
 }
 
-// Register calls the created hook too: a self-registered account begins to
-// exist exactly as one an administrator creates.
+// Register calls the created hook as an administrator's Create does.
 func TestRegisterCallsTheCreatedHook(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		h.openSelfRegistration()
@@ -42,8 +39,6 @@ func TestRegisterCallsTheCreatedHook(t *testing.T) {
 	})
 }
 
-// createdOnceHook models an implementer's idempotent creation: the first call
-// may fail, and every call for one account leaves one entry.
 type createdOnceHook struct {
 	authn.AccountLifecycle
 	failures int
@@ -64,9 +59,7 @@ func (h *createdOnceHook) AccountCreated(_ context.Context, id authn.AccountID) 
 	return nil
 }
 
-// A failing created hook leaves the account in being and the call is
-// ErrCleanupIncomplete; the retry of the same hook call completes without
-// creating anything a second time.
+// A failing created hook leaves the account and answers ErrCleanupIncomplete, and its retry completes without creating a second time.
 func TestAFailingCreatedHookLeavesTheAccountAndTheRetryCompletes(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -91,8 +84,6 @@ func TestAFailingCreatedHookLeavesTheAccountAndTheRetryCompletes(t *testing.T) {
 		if _, err := h.p.Get(ctx, id); err != nil {
 			t.Fatalf("the account does not exist though its created hook failed: %v", err)
 		}
-		// The retry is the same hook call for the same account, which is what an
-		// idempotent ensure makes.
 		if err := h.p.callHooks(ctx, id, nil, func(hookCtx context.Context, hk authn.AccountLifecycle) error {
 			return hk.AccountCreated(hookCtx, id)
 		}); err != nil {
@@ -104,9 +95,6 @@ func TestAFailingCreatedHookLeavesTheAccountAndTheRetryCompletes(t *testing.T) {
 	})
 }
 
-// deletedBeforeCreatedHook deletes the account on its first creation call, which
-// is the deletion a retry of the creation hook can arrive after, and then does
-// what an implementation does: reads the tombstone and returns nil.
 type deletedBeforeCreatedHook struct {
 	authn.AccountLifecycle
 	admin    authn.AccountAdmin
@@ -135,8 +123,7 @@ func (h *deletedBeforeCreatedHook) AccountCreated(ctx context.Context, id authn.
 
 func (h *deletedBeforeCreatedHook) AccountDeleted(context.Context, authn.AccountID) error { return nil }
 
-// An account deleted before the created hook runs is no work for the hook: the
-// creation call succeeds, and the hook reads a tombstone.
+// A created hook that finds the account already deleted succeeds and reads a tombstone.
 func TestTheCreatedHookToleratesAnAccountDeletedBeforeItRuns(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()

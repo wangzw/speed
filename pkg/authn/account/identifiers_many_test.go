@@ -10,13 +10,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestIdentifiersManyAnswersEachAccountAsItsSingleReadDoes holds the batch read
-// to the single read's answer: the same identifiers in the same order, carrying
-// the same verification way, which is what the management view derives its
-// proven flag from. The two rows of the first account are written in an order
-// that agrees with neither the created_at, id order the single read returns nor
-// the identifier order, so a batch that returned either of those would fail
-// here, and so would one that dropped the verification way.
+// The batch read answers the same identifiers in the same order with the same verification way as the single read.
 func TestIdentifiersManyAnswersEachAccountAsItsSingleReadDoes(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -64,8 +58,7 @@ func TestIdentifiersManyAnswersEachAccountAsItsSingleReadDoes(t *testing.T) {
 	})
 }
 
-// TestIdentifiersManyOfNoAccountsIsAnEmptyMap holds the empty input's answer: an
-// empty map and no error, so a page with no account to read costs no statement.
+// IdentifiersMany of no accounts is an empty map and no error, costing no statement.
 func TestIdentifiersManyOfNoAccountsIsAnEmptyMap(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		for _, ids := range [][]authn.AccountID{nil, {}} {
@@ -83,11 +76,7 @@ func TestIdentifiersManyOfNoAccountsIsAnEmptyMap(t *testing.T) {
 	})
 }
 
-// TestIdentifiersManyLeavesOutWhatItsSingleReadReportsNotFound holds the batch's
-// answer for an unknown account and a tombstone: no entry, so a page that holds
-// one keeps rendering and the row shows no identifiers, while the single read
-// still reports ErrAccountNotFound for either. A stale identifier left behind a
-// deletion is not the tombstone's answer.
+// An unknown account or a tombstone has no batch entry, so a page keeps rendering while the single read reports ErrAccountNotFound.
 func TestIdentifiersManyLeavesOutWhatItsSingleReadReportsNotFound(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()

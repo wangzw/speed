@@ -9,12 +9,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// TestManagementWritesAreRefusedForAnUnverifiedAccount holds the signup gate of
-// the management face: issuing and revoking answer 403 contact-required for a
-// pending self-registration, ask no
-// Decider, write no audit row and write no invitation row. Listing is a read and
-// is not gated, and an account that never registered or has proved its address
-// issues as before.
+// TestManagementWritesAreRefusedForAnUnverifiedAccount checks that issuing and revoking answer 403 contact-required for a pending registration, asking no Decider and writing nothing.
 func TestManagementWritesAreRefusedForAnUnverifiedAccount(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -80,9 +75,7 @@ func TestManagementWritesAreRefusedForAnUnverifiedAccount(t *testing.T) {
 	}
 }
 
-// TestASecondIssuanceIsRefusedForAnUnverifiedAccount holds the gate on the
-// issue route: an unverified operator is refused before the pending-address
-// check and writes nothing. The first invitation stays pending and live.
+// TestASecondIssuanceIsRefusedForAnUnverifiedAccount checks that an unverified operator's second issuance is refused and writes nothing.
 func TestASecondIssuanceIsRefusedForAnUnverifiedAccount(t *testing.T) {
 	h := newHarness(t)
 	first := h.issue("tenant-a", "alice@example.com")
@@ -100,8 +93,7 @@ func TestASecondIssuanceIsRefusedForAnUnverifiedAccount(t *testing.T) {
 	}
 }
 
-// TestListingIsNotGated holds that the read is unaffected: a pending
-// self-registration lists its tenant's invitations.
+// TestListingIsNotGated checks that a pending self-registration can still list its tenant's invitations.
 func TestListingIsNotGated(t *testing.T) {
 	h := newHarness(t)
 	h.issue("tenant-a", "alice@example.com")
@@ -116,9 +108,7 @@ func TestListingIsNotGated(t *testing.T) {
 	}
 }
 
-// TestServiceAccountsAreExemptFromTheGate holds the exemption: a service account
-// carries no self-registration, so even a state that reports pending does not
-// refuse it.
+// TestServiceAccountsAreExemptFromTheGate checks that a service account is not gated even when its state reports pending.
 func TestServiceAccountsAreExemptFromTheGate(t *testing.T) {
 	h := newHarness(t)
 	h.accounts.kinds[adminID] = authn.KindService
@@ -133,11 +123,7 @@ func TestServiceAccountsAreExemptFromTheGate(t *testing.T) {
 	}
 }
 
-// TestTheSignupGateReadsTheOperatorsOwnState holds the gate's subject when the
-// request is an impersonation: the operator's hands are on the request, so the
-// operator's unproved address is what the write is refused for, even when the
-// impersonated account has proved its own. Reading the effective account
-// instead would let the operator issue through the target's verification.
+// TestTheSignupGateReadsTheOperatorsOwnState checks that an impersonating request is gated on the operator's state, not the impersonated account's.
 func TestTheSignupGateReadsTheOperatorsOwnState(t *testing.T) {
 	const targetID = authn.AccountID("acct-target")
 	h := newHarness(t)
@@ -169,9 +155,7 @@ func TestTheSignupGateReadsTheOperatorsOwnState(t *testing.T) {
 	}
 }
 
-// TestAnUnreadableSignupStateIs503 holds the failure direction: a state read that
-// fails refuses the action as unavailable and never as a pass, and writes
-// nothing.
+// TestAnUnreadableSignupStateIs503 checks that a failed state read is a 503 and writes nothing.
 func TestAnUnreadableSignupStateIs503(t *testing.T) {
 	h := newHarness(t)
 	h.verification.err = errors.New("boom")
@@ -188,10 +172,7 @@ func TestAnUnreadableSignupStateIs503(t *testing.T) {
 	}
 }
 
-// TestAcceptDoesNotCreateOrProveAnAccount holds the removed paths: an acceptance
-// never opens an account for an address that has none, never reads the pending
-// contact of a self-registration, and never writes an identifier. A caller
-// without a proven address is refused and the invitation stays pending.
+// TestAcceptDoesNotCreateOrProveAnAccount checks that an acceptance never creates an account, reads a pending contact, or writes an identifier.
 func TestAcceptDoesNotCreateOrProveAnAccount(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue("tenant-a", "alice@example.com")

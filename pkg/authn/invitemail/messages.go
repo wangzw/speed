@@ -11,14 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// The message keys this module renders. They are namespaced by the module so
-// no other module's catalog can collide with one. One invitation notice is a
-// subject and a plain-text and an HTML body, both bodies interpolating the
-// tenant the invitation grants and the acceptance link. The body comes in two
-// forms: one naming the inviter, chosen when the notice carries a display name,
-// and one for an invitation a host command issued with no inviter to name. The
-// deadline is a separate pair of lines so a notice whose caller does not know it
-// omits the sentence rather than rendering an invented instant.
 const (
 	subjectKey    i18n.Key = "authn.invitemail.subject"
 	textKey       i18n.Key = "authn.invitemail.body_text"
@@ -29,33 +21,19 @@ const (
 	expiryHTMLKey i18n.Key = "authn.invitemail.expiry_html"
 )
 
-// messageKeys is the full set of messages one notice renders, in the order the
-// startup check reads them.
 var messageKeys = []i18n.Key{
 	subjectKey, textKey, htmlKey, textByKey, htmlByKey, expiryTextKey, expiryHTMLKey,
 }
 
-// localesFS carries this module's message catalog: one file per language, each
-// naming the subject and the two bodies of an invitation notice. It is declared
-// to the i18n engine as an i18n.Catalog resource, so the engine merges it with
-// every other module's and a Translate of one of these keys resolves to words
-// rather than to itself.
-//
 //go:embed locales/*.json
 var localesFS embed.FS
 
-// catalogPattern selects the message files under localesFS, one per locale.
 const catalogPattern = "locales/*.json"
 
-// messageCatalog is the catalog resource this module declares to the engine.
 func messageCatalog() i18n.Catalog {
 	return i18n.Catalog{FS: localesFS, Pattern: catalogPattern}
 }
 
-// catalogLocales lists the locales the embedded catalog carries, read off the
-// file names, sorted. The startup check renders every message in every one of
-// them, so a catalog with a language that is missing a message fails before any
-// notice is sent rather than at the first request in that language.
 func catalogLocales() ([]i18n.Locale, error) {
 	names, err := fs.Glob(localesFS, catalogPattern)
 	if err != nil {

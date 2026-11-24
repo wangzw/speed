@@ -10,9 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// fakeTenantAdminCounter scripts the host seam's answer and remembers the
-// accounts it was asked about. It also holds the one tenant lock the deletion
-// takes, so a case can see whether the check and the cleanup ran under it.
 type fakeTenantAdminCounter struct {
 	mu      sync.Mutex
 	tenant  string
@@ -67,8 +64,6 @@ func (f *fakeTenantAdminCounter) locksHeld() bool {
 	return f.locked > 0
 }
 
-// fakeTenantOwnerCounter scripts the owner seam's answer and records whether
-// the tenant locks the deletion path takes were already held when it was asked.
 type fakeTenantOwnerCounter struct {
 	mu     sync.Mutex
 	admin  *fakeTenantAdminCounter
@@ -88,10 +83,7 @@ func (f *fakeTenantOwnerCounter) OwnsActiveBusinessTenant(_ context.Context, _ s
 
 var _ authz.TenantOwnerCounter = (*fakeTenantOwnerCounter)(nil)
 
-// TestSuspendingTheOwnerIsAskedUnderTheTenantLocks holds the ordering the
-// disable path shares with the deletion: the owner check runs after the
-// administrator's tenant locks are taken and before the write, so a concurrent
-// transfer cannot make the account an owner between the check and the commit.
+// The owner check runs after the administrator's tenant locks are taken and before the write, on the disable path as on the deletion.
 func TestSuspendingTheOwnerIsAskedUnderTheTenantLocks(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		id := h.user("owner", "correct horse battery")
@@ -117,8 +109,6 @@ func TestSuspendingTheOwnerIsAskedUnderTheTenantLocks(t *testing.T) {
 	})
 }
 
-// lockObservingHook is a lifecycle hook that records whether the deletion's
-// tenant lock was still held when the cleanup ran.
 type lockObservingHook struct{ counter *fakeTenantAdminCounter }
 
 func (lockObservingHook) AccountCreated(context.Context, authn.AccountID) error  { return nil }
@@ -133,7 +123,6 @@ func (lockObservingHook) ServiceSecretRevoked(context.Context, authn.AccountID, 
 	return nil
 }
 
-// accountStatus reads the stored status of an account.
 func (h *harness) accountStatus(t *testing.T, id authn.AccountID) int16 {
 	t.Helper()
 	var row accountRow
@@ -143,10 +132,7 @@ func (h *harness) accountStatus(t *testing.T, id authn.AccountID) int16 {
 	return row.Status
 }
 
-// TestDeletingTheLastTenantAdministratorIsRefused holds the guard: the seam
-// answers that this account is the only tenant administrator of a business
-// tenant, the account is not deleted, and no cleanup hook runs. The refusal is
-// the deletion's own code, carrying the tenant a surface names.
+// A sole tenant administrator of a business tenant is refused, and no cleanup hook runs.
 func TestDeletingTheLastTenantAdministratorIsRefused(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -186,12 +172,7 @@ func TestDeletingTheLastTenantAdministratorIsRefused(t *testing.T) {
 	})
 }
 
-// TestTheDeletionHoldsTheTenantLockAcrossTheCheckAndTheCleanup holds the
-// serialisation: the check is asked and the AccountDeleted cleanup runs while
-// the account's tenant lock is held, and the lock is given back exactly once
-// when the deletion returns. Two deletions in one tenant therefore cannot each
-// read the other's binding as present and then together leave the tenant with
-// no administrator.
+// The check and the AccountDeleted cleanup run while the tenant lock is held, and the lock is given back exactly once.
 func TestTheDeletionHoldsTheTenantLockAcrossTheCheckAndTheCleanup(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -215,8 +196,7 @@ func TestTheDeletionHoldsTheTenantLockAcrossTheCheckAndTheCleanup(t *testing.T) 
 	})
 }
 
-// A lock that cannot be taken is ErrUnavailable and the deletion does not run:
-// an unjudgeable floor is never permission.
+// A lock that cannot be taken is ErrUnavailable and the deletion does not run.
 func TestALockThatCannotBeTakenRefusesTheDeletion(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -253,9 +233,7 @@ func TestDeletingAnAccountWithASecondTenantAdministratorProceeds(t *testing.T) {
 	})
 }
 
-// An account whose only administrator binding is in a personal tenant is not
-// protected: the host's counter answers "not sole" for it, and the deletion
-// proceeds.
+// An account whose only administrator binding is in a personal tenant is not protected, and the deletion proceeds.
 func TestAPersonalTenantDoesNotProtectTheAccount(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -271,8 +249,7 @@ func TestAPersonalTenantDoesNotProtectTheAccount(t *testing.T) {
 	})
 }
 
-// A seam that cannot answer is a 503-shaped failure, never a pass: an unknown
-// floor must not let the deletion through.
+// A counter that cannot answer refuses the deletion rather than letting it pass.
 func TestAnUnreadableCounterRefusesTheDeletion(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -292,8 +269,7 @@ func TestAnUnreadableCounterRefusesTheDeletion(t *testing.T) {
 	})
 }
 
-// An assembly that supplies no counter keeps the deletion behaviour it had
-// before the seam existed.
+// An assembly that supplies no counter keeps the earlier deletion behaviour.
 func TestNoCounterKeepsTheExistingDeletionBehaviour(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -309,9 +285,7 @@ func TestNoCounterKeepsTheExistingDeletionBehaviour(t *testing.T) {
 	})
 }
 
-// A repeated delete of a tombstone finishes the cleanup instead of being
-// refused: there is no live account left whose administrator floor the guard
-// protects.
+// Repeating the delete of a tombstone finishes the cleanup rather than being refused.
 func TestRepeatingTheDeleteOfATombstoneStillFinishesTheCleanup(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -331,8 +305,7 @@ func TestRepeatingTheDeleteOfATombstoneStillFinishesTheCleanup(t *testing.T) {
 	})
 }
 
-// Deleting an account that does not exist stays ErrAccountNotFound, and the
-// counter is not asked about it.
+// Deleting a missing account stays ErrAccountNotFound and does not ask the counter.
 func TestDeletingAnUnknownAccountDoesNotAskTheCounter(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		counter := &fakeTenantAdminCounter{tenant: "acme", sole: true}

@@ -6,9 +6,7 @@ import (
 	"github.com/vislake/speed/pkg/feature"
 )
 
-// TestTheModuleDeclaresTheImpersonationFeature holds the declaration the
-// frontend gates the impersonation routes on: one static Spec with the exact
-// name.
+// TestTheModuleDeclaresTheImpersonationFeature checks the one static feature declaration.
 func TestTheModuleDeclaresTheImpersonationFeature(t *testing.T) {
 	want := feature.Spec{Name: "authn.impersonation"}
 	var got []feature.Spec

@@ -16,8 +16,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 )
 
-// auditHas reports whether the recorded audit holds a row with action and
-// outcome.
 func auditHas(t *testing.T, r *rig, action, outcome string) bool {
 	t.Helper()
 	for _, e := range r.audit.entries() {
@@ -28,8 +26,6 @@ func auditHas(t *testing.T, r *rig, action, outcome string) bool {
 	return false
 }
 
-// auditNamesObject reports whether the recorded audit holds a row of action
-// whose object is object.
 func auditNamesObject(t *testing.T, r *rig, action, object string) bool {
 	t.Helper()
 	for _, e := range r.audit.entries() {
@@ -40,8 +36,6 @@ func auditNamesObject(t *testing.T, r *rig, action, object string) bool {
 	return false
 }
 
-// identifiersIn collects the distinct values the rows carry under key, so a case
-// can tell rows linked by one identifier from rows carrying several.
 func identifiersIn(rows []audit.Entry, key string) map[string]bool {
 	out := map[string]bool{}
 	for _, row := range rows {
@@ -50,14 +44,11 @@ func identifiersIn(rows []audit.Entry, key string) map[string]bool {
 	return out
 }
 
-// problemCode returns the machine-readable code of a problem response, the part
-// after the last colon of its type.
 func problemCode(t *testing.T, body string) string {
 	t.Helper()
 	return codeOf(problemType(t, body))
 }
 
-// problemType returns the full problem type of a problem response.
 func problemType(t *testing.T, body string) string {
 	t.Helper()
 	var p struct {
@@ -69,7 +60,6 @@ func problemType(t *testing.T, body string) string {
 	return p.Type
 }
 
-// codeOf is the code part of a problem type, the part after the last colon.
 func codeOf(problemType string) string {
 	if i := strings.LastIndex(problemType, ":"); i >= 0 {
 		return problemType[i+1:]
@@ -77,10 +67,7 @@ func codeOf(problemType string) string {
 	return problemType
 }
 
-// TestResettingTheFactorsOfAnAccountWithNoOtherWayInIsRefused holds the
-// lock-out guard: when the account module reports that a factor is the only way
-// into the account, mfa-reset answers 409 last-login-method, leaves MFA.Reset
-// uncalled and records the failed attempt beside the permitted row.
+// TestResettingTheFactorsOfAnAccountWithNoOtherWayInIsRefused checks the 409 last-login-method guard on mfa-reset.
 func TestResettingTheFactorsOfAnAccountWithNoOtherWayInIsRefused(t *testing.T) {
 	r := newRig(t)
 	r.accountAdm.loginWay = false
@@ -99,8 +86,7 @@ func TestResettingTheFactorsOfAnAccountWithNoOtherWayInIsRefused(t *testing.T) {
 	}
 }
 
-// TestResettingTheFactorsOfAnAccountWithAnotherWayInIsAllowed is the other side
-// of the guard: an account with a non-factor way to log in is reset as before.
+// TestResettingTheFactorsOfAnAccountWithAnotherWayInIsAllowed is the other side of the guard: an account with a non-factor way to log in is reset as before.
 func TestResettingTheFactorsOfAnAccountWithAnotherWayInIsAllowed(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodPost, "/api/v1/system/auth/accounts/"+string(userID)+"/mfa-reset", nil, fresh()...)
@@ -112,15 +98,8 @@ func TestResettingTheFactorsOfAnAccountWithAnotherWayInIsAllowed(t *testing.T) {
 	}
 }
 
-// TestTheStrongRoutesNeedASeasonedAdministratorWithANonSMSSecond holds the two
-// higher gates of the strong routes: a fresh, local, multi-factor
-// authentication with a non-SMS second method and a seasoned factor of the
-// actor's own. A successful privileged action drives both gates; a weak or
-// stale authentication is answered with the step-up 401, and a missing seasoned
-// factor with the 403 a step-up cannot clear. Either way the capability is not
-// called.
+// TestTheStrongRoutesNeedASeasonedAdministratorWithANonSMSSecond checks the strength and seasoned-factor gates on the two resets.
 func TestTheStrongRoutesNeedASeasonedAdministratorWithANonSMSSecond(t *testing.T) {
-	// A TOTP administrator passes both strong routes.
 	r := newRig(t)
 	rec := r.do(http.MethodPost, "/api/v1/system/auth/accounts/"+string(userID)+"/mfa-reset", nil, fresh()...)
 	if rec.Code != http.StatusOK {
@@ -140,8 +119,6 @@ func TestTheStrongRoutesNeedASeasonedAdministratorWithANonSMSSecond(t *testing.T
 		t.Errorf("Set ran %d times, want once", r.passwords.calls)
 	}
 
-	// A passkey is the other non-SMS second method, so a WebAuthn administrator
-	// passes too.
 	r = newRig(t)
 	webauthn := fresh(authntest.WithMethods(authn.MethodPassword, authn.MethodWebAuthn))
 	rec = r.do(http.MethodPost, "/api/v1/system/auth/accounts/"+string(userID)+"/mfa-reset", nil, webauthn...)
@@ -152,8 +129,6 @@ func TestTheStrongRoutesNeedASeasonedAdministratorWithANonSMSSecond(t *testing.T
 		t.Errorf("Reset ran %d times for a WebAuthn administrator, want once", r.mfa.resets)
 	}
 
-	// A missing seasoned factor is not a strength shortfall: no re-authentication
-	// clears it, so both routes answer the 403 rather than the step-up 401.
 	r = newRig(t)
 	r.mfa.seasoned = false
 	rec = r.do(http.MethodPost, "/api/v1/system/auth/accounts/"+string(userID)+"/mfa-reset", nil, fresh()...)
@@ -211,9 +186,7 @@ func TestTheStrongRoutesNeedASeasonedAdministratorWithANonSMSSecond(t *testing.T
 	}
 }
 
-// TestARefusalStopsEveryReadRoute holds that a list route asks the Decider
-// before it calls the capability: a Decider that refuses is a 403 and the
-// capability's read is never made.
+// TestARefusalStopsEveryReadRoute checks that a Decider refusal stops every read before the capability is called.
 func TestARefusalStopsEveryReadRoute(t *testing.T) {
 	r := newRig(t)
 	r.accounts.put("acct-t2", authn.Account{Kind: authn.KindUser, Status: authn.StatusActive})
@@ -245,9 +218,7 @@ func TestARefusalStopsEveryReadRoute(t *testing.T) {
 	}
 }
 
-// TestTheSSOExemptRoute holds the sso-exempt write: an existing membership is
-// updated and the mandatory audit lands, and a missing membership is a 404
-// before the Decider is asked.
+// TestTheSSOExemptRoute checks the sso-exempt write and the 404 of a missing membership before the Decider.
 func TestTheSSOExemptRoute(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodPut, "/api/v1/tenants/"+tenantA+"/members/"+string(userID)+"/sso-exempt",
@@ -262,7 +233,6 @@ func TestTheSSOExemptRoute(t *testing.T) {
 		t.Error("the mandatory audit row was not written")
 	}
 
-	// A missing membership is a 404 and the Decider is never asked.
 	missing := newRig(t)
 	rec = missing.do(http.MethodPut, "/api/v1/tenants/"+tenantA+"/members/absent/sso-exempt",
 		map[string]any{"sso_exempt": true}, fresh()...)
@@ -274,10 +244,7 @@ func TestTheSSOExemptRoute(t *testing.T) {
 	}
 }
 
-// TestProviderWarnings holds that each setting that loosens a default surfaces
-// its warning on the get and list responses, that a provider that sets none
-// carries no warning, and that the retained merge flag adds none: merging no
-// longer happens.
+// TestProviderWarnings checks that each loosening setting surfaces its warning and a default provider carries none.
 func TestProviderWarnings(t *testing.T) {
 	r := newRig(t)
 	r.providers.put(authn.SSOProvider{
@@ -310,7 +277,6 @@ func TestProviderWarnings(t *testing.T) {
 	}
 	assertWarnings(t, listed.Providers[0].Warnings, want)
 
-	// A provider that sets none carries no warning.
 	def := newRig(t)
 	def.providers.put(authn.SSOProvider{ID: idpA, Tenant: tenantA, Protocol: authn.SSOProtocolSAML, Provisioning: authn.ProvisioningJIT})
 	rec = def.do(http.MethodGet, "/api/v1/tenants/"+tenantA+"/sso/providers/"+idpA, nil, fresh()...)
@@ -319,7 +285,6 @@ func TestProviderWarnings(t *testing.T) {
 	}
 }
 
-// providerWarningsFrom reads the warnings of the provider in a get response.
 func providerWarningsFrom(t *testing.T, body string) []string {
 	t.Helper()
 	var out struct {
@@ -333,7 +298,6 @@ func providerWarningsFrom(t *testing.T, body string) []string {
 	return out.Provider.Warnings
 }
 
-// assertWarnings holds that each fragment appears in one of the warnings.
 func assertWarnings(t *testing.T, got, want []string) {
 	t.Helper()
 	for _, fragment := range want {
@@ -350,9 +314,7 @@ func assertWarnings(t *testing.T, got, want []string) {
 	}
 }
 
-// TestTheStatusRouteMapsAndRefusesDeleted holds the status name mapping and the
-// refusal of a delete through this route: an account is disabled or restored,
-// never deleted.
+// TestTheStatusRouteMapsAndRefusesDeleted checks the status mapping and the refusal of a delete through the status route.
 func TestTheStatusRouteMapsAndRefusesDeleted(t *testing.T) {
 	r := newRig(t)
 	for _, tc := range []struct {
@@ -389,20 +351,16 @@ func TestTheStatusRouteMapsAndRefusesDeleted(t *testing.T) {
 	}
 }
 
-// TestIdentifierAddAssertsOnlyAsAnAdministrator holds the boundary of the
-// identifier route: a login name or an email address an administrator asserts,
-// with the way fixed to admin. A phone number and a proof of ownership are
-// refused and the capability is not called.
+// TestIdentifierAddAssertsOnlyAsAnAdministrator checks that the identifier route accepts only an administrator's assertion.
 func TestIdentifierAddAssertsOnlyAsAnAdministrator(t *testing.T) {
 	r := newRig(t)
 	base := "/api/v1/system/auth/accounts/" + string(userID) + "/identifiers"
 
-	// A phone number changes only through an SMS code.
 	rec := r.do(http.MethodPost, base, map[string]any{"kind": "phone", "value": "+8613800000000"}, fresh()...)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("a phone identifier: status = %d, want 400", rec.Code)
 	}
-	// A proof of ownership is not the administrator's to state.
+
 	rec = r.do(http.MethodPost, base, map[string]any{"kind": "email", "value": "a@example.com", "verified_via": "sms-code"}, fresh()...)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("a claimed sms-code: status = %d, want 400", rec.Code)
@@ -411,7 +369,6 @@ func TestIdentifierAddAssertsOnlyAsAnAdministrator(t *testing.T) {
 		t.Error("AddIdentifier ran for a refused identifier")
 	}
 
-	// The administrator's assertion itself is accepted, written as admin.
 	rec = r.do(http.MethodPost, base, map[string]any{"kind": "email", "value": "a@example.com", "verified_via": "admin"}, fresh()...)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("an admin-asserted email: status = %d, want 204; body %s", rec.Code, rec.Body.String())
@@ -421,9 +378,7 @@ func TestIdentifierAddAssertsOnlyAsAnAdministrator(t *testing.T) {
 	}
 }
 
-// TestAccountCreateRefusesAProofVia holds the same boundary on the create
-// route: an administrator asserts an identifier or records an import, and may
-// not state a proof of ownership.
+// TestAccountCreateRefusesAProofVia checks that a create may assert an identifier or an import, not a proof.
 func TestAccountCreateRefusesAProofVia(t *testing.T) {
 	r := newRig(t)
 	for _, body := range []map[string]any{
@@ -439,7 +394,6 @@ func TestAccountCreateRefusesAProofVia(t *testing.T) {
 		t.Error("Create ran though a proof of ownership was claimed")
 	}
 
-	// An administrator's assertion is accepted.
 	rec := r.do(http.MethodPost, "/api/v1/system/auth/accounts",
 		map[string]any{"kind": "user", "username": "a", "email": "a@example.com", "email_verified_via": "admin"}, fresh()...)
 	if rec.Code != http.StatusCreated {
@@ -450,13 +404,7 @@ func TestAccountCreateRefusesAProofVia(t *testing.T) {
 	}
 }
 
-// TestAccountCreateRefusesAUserAccountWithNoIdentifier holds that the route
-// refuses a user account it cannot open with a login name before anything is
-// written: the kind alone, a display name alone, an attribute set alone, or an
-// address or phone number without a username is not an account, and the API does
-// not leave an unusable row behind. The refusal is the route's own 400 and the
-// module is never called. A service account is not held to that -- it signs in
-// with a service secret.
+// TestAccountCreateRefusesAUserAccountWithNoIdentifier checks that a user account without a username is refused before any write.
 func TestAccountCreateRefusesAUserAccountWithNoIdentifier(t *testing.T) {
 	r := newRig(t)
 	for _, body := range []map[string]any{
@@ -480,14 +428,12 @@ func TestAccountCreateRefusesAUserAccountWithNoIdentifier(t *testing.T) {
 		t.Errorf("Create ran %d times for an account with no identifier", n)
 	}
 
-	// A username is what opens a user account.
 	rec := r.do(http.MethodPost, "/api/v1/system/auth/accounts",
 		map[string]any{"kind": "user", "display_name": "Grace", "username": "grace"}, fresh()...)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("a user account with a username: status = %d, want 201; body %s", rec.Code, rec.Body.String())
 	}
 
-	// A service account signs in with a service secret, so it needs no username.
 	rec = r.do(http.MethodPost, "/api/v1/system/auth/accounts",
 		map[string]any{"kind": "service", "display_name": "Nightly"}, fresh()...)
 	if rec.Code != http.StatusCreated {
@@ -495,11 +441,8 @@ func TestAccountCreateRefusesAUserAccountWithNoIdentifier(t *testing.T) {
 	}
 }
 
-// TestTheAnswerMapsEverySentinel holds the sentinel-to-answer mapping: each
-// sentinel a capability returns gets its own status and code, and one no case
-// names is a 503, so a class dropped from its case cannot pass unnoticed.
+// TestTheAnswerMapsEverySentinel checks that each capability sentinel maps to its own status and code, and an unnamed one to 503.
 func TestTheAnswerMapsEverySentinel(t *testing.T) {
-	// A read of an object that is not there is a 404.
 	for _, tc := range []struct {
 		name   string
 		method string
@@ -517,7 +460,6 @@ func TestTheAnswerMapsEverySentinel(t *testing.T) {
 		})
 	}
 
-	// A failure a write returns, driven through the create route.
 	for _, tc := range []struct {
 		name   string
 		err    error
@@ -558,12 +500,7 @@ func TestTheAnswerMapsEverySentinel(t *testing.T) {
 	}
 }
 
-// TestCreatingAPasswordAccountWithOnlyAPhoneIsRefused holds the create route's
-// refusal of a user account whose only identifier is a phone number: a user
-// account is opened with a username, and a phone number is not one. The route
-// refuses before the module is asked, so the account module's own rule about a
-// credential that authenticates nothing is never reached from here; that rule is
-// held by the account package over a migrated database (TestCreateRefusesWhatItAdmitsNot).
+// TestCreatingAPasswordAccountWithOnlyAPhoneIsRefused checks that a user account whose only identifier is a phone is refused.
 func TestCreatingAPasswordAccountWithOnlyAPhoneIsRefused(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodPost, "/api/v1/system/auth/accounts", map[string]any{
@@ -583,9 +520,7 @@ func TestCreatingAPasswordAccountWithOnlyAPhoneIsRefused(t *testing.T) {
 	}
 }
 
-// TestRemovingTheLastLoginNameIsA409 holds that the management route answers the
-// account module's refusal with the same 409 login-identifier-required the
-// self-service route uses, so a client can tell it from a malformed identifier.
+// TestRemovingTheLastLoginNameIsA409 checks that removing the last login name is 409 login-identifier-required.
 func TestRemovingTheLastLoginNameIsA409(t *testing.T) {
 	r := newRig(t)
 	r.accountAdm.err = authn.ErrIdentifierRequired
@@ -601,9 +536,7 @@ func TestRemovingTheLastLoginNameIsA409(t *testing.T) {
 	}
 }
 
-// TestRemovingAUsernameIsA409UsernameImmutable holds that the management route
-// answers a username removal with 409 username-immutable, the same code the
-// self-service route uses, and that nothing is removed.
+// TestRemovingAUsernameIsA409UsernameImmutable checks that a username removal is 409 username-immutable and removes nothing.
 func TestRemovingAUsernameIsA409UsernameImmutable(t *testing.T) {
 	r := newRig(t)
 	r.accountAdm.err = authn.ErrUsernameImmutable
@@ -619,8 +552,7 @@ func TestRemovingAUsernameIsA409UsernameImmutable(t *testing.T) {
 	}
 }
 
-// TestTheAccountListQueryPairsPrefixAndKind holds the coupling rule: an
-// identifier prefix and an identifier kind are given together or not at all.
+// TestTheAccountListQueryPairsPrefixAndKind holds the coupling rule: an identifier prefix and an identifier kind are given together or not at all.
 func TestTheAccountListQueryPairsPrefixAndKind(t *testing.T) {
 	r := newRig(t)
 	for _, q := range []string{"?identifier_prefix=abc", "?identifier_kind=email"} {
@@ -636,9 +568,7 @@ func TestTheAccountListQueryPairsPrefixAndKind(t *testing.T) {
 	}
 }
 
-// TestTheAccountListParsesTheDisplayNamePrefix holds that the display-name
-// prefix reaches the account surface as written, beside the identifier prefix,
-// status and kind the list already narrows by.
+// TestTheAccountListParsesTheDisplayNamePrefix checks that the display-name prefix reaches the account surface.
 func TestTheAccountListParsesTheDisplayNamePrefix(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodGet, "/api/v1/system/auth/accounts?display_name_prefix=Ali&status=active&kind=user", nil, fresh()...)
@@ -654,10 +584,7 @@ func TestTheAccountListParsesTheDisplayNamePrefix(t *testing.T) {
 	}
 }
 
-// TestTheAccountListRefusesANonUTF8DisplayNamePrefix holds that the display-name
-// prefix is text: a byte sequence that is not valid UTF-8 is a 400 and the read
-// is never made, rather than a filter the read hands to the database, which
-// rejects it and answers an outage instead of the shape error the caller caused.
+// TestTheAccountListRefusesANonUTF8DisplayNamePrefix checks that a display-name prefix that is not valid UTF-8 is a 400 before the read.
 func TestTheAccountListRefusesANonUTF8DisplayNamePrefix(t *testing.T) {
 	r := newRig(t)
 	for _, q := range []string{"?display_name_prefix=%BF", "?display_name_prefix=caf%C3", "?display_name_prefix=%FF%FE"} {
@@ -670,7 +597,6 @@ func TestTheAccountListRefusesANonUTF8DisplayNamePrefix(t *testing.T) {
 		t.Errorf("the account list read ran %d time(s) on a non-UTF-8 prefix, want no read", r.accounts.listCalls)
 	}
 
-	// A prefix that is valid UTF-8 text reaches the read as written.
 	rec := r.do(http.MethodGet, "/api/v1/system/auth/accounts?display_name_prefix=Ali", nil, fresh()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("a valid prefix: status = %d, want 200: %s", rec.Code, rec.Body.String())
@@ -680,10 +606,7 @@ func TestTheAccountListRefusesANonUTF8DisplayNamePrefix(t *testing.T) {
 	}
 }
 
-// TestTheAccountListRefusesAQueryParameterItDoesNotAccept holds the list's
-// closed parameter set: a parameter the route does not know is a 400, so a
-// misspelled filter is reported rather than swallowed by a read that ignores it
-// and answers an unfiltered page.
+// TestTheAccountListRefusesAQueryParameterItDoesNotAccept checks that a parameter the list does not declare is a 400.
 func TestTheAccountListRefusesAQueryParameterItDoesNotAccept(t *testing.T) {
 	r := newRig(t)
 	for _, q := range []string{"?nope=1", "?displayname_prefix=Ali", "?statuss=active", "?user=alice"} {
@@ -697,9 +620,7 @@ func TestTheAccountListRefusesAQueryParameterItDoesNotAccept(t *testing.T) {
 	}
 }
 
-// TestTheAccountListReadsAnEmptyFilterAsNoFilter holds that an accepted filter
-// given empty — including an empty display_name_prefix — is no filter: the read
-// still runs, with nothing narrowed by it.
+// TestTheAccountListReadsAnEmptyFilterAsNoFilter checks that an accepted filter given empty narrows nothing.
 func TestTheAccountListReadsAnEmptyFilterAsNoFilter(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodGet, "/api/v1/system/auth/accounts?display_name_prefix=&status=&after=", nil, fresh()...)
@@ -715,9 +636,7 @@ func TestTheAccountListReadsAnEmptyFilterAsNoFilter(t *testing.T) {
 	}
 }
 
-// TestPagedRoutesRefuseANegativeLimit holds that a negative limit is a 400 on
-// every paged route and that zero is accepted: zero asks for no explicit bound,
-// which the capability reads as its default page size.
+// TestPagedRoutesRefuseANegativeLimit checks that a negative limit is a 400 on every paged route and zero is accepted.
 func TestPagedRoutesRefuseANegativeLimit(t *testing.T) {
 	r := newRig(t)
 	r.accounts.put("acct-t2", authn.Account{Kind: authn.KindUser, Status: authn.StatusActive})
@@ -756,8 +675,7 @@ func TestAccountCreateRefusesAnUnknownKind(t *testing.T) {
 	}
 }
 
-// TestIdentifierAddShape holds the three shape checks of the identifier route:
-// a non-empty value, the default way of admin, and a refusal of any other way.
+// TestIdentifierAddShape holds the three shape checks of the identifier route: a non-empty value, the default way of admin, and a refusal of any other way.
 func TestIdentifierAddShape(t *testing.T) {
 	r := newRig(t)
 	base := "/api/v1/system/auth/accounts/" + string(userID) + "/identifiers"
@@ -769,7 +687,6 @@ func TestIdentifierAddShape(t *testing.T) {
 		t.Error("AddIdentifier ran for an empty value")
 	}
 
-	// A body without a way defaults to admin.
 	if rec := r.do(http.MethodPost, base, map[string]any{"kind": "email", "value": "a@example.com"}, fresh()...); rec.Code != http.StatusNoContent {
 		t.Fatalf("no verified_via: status = %d, want 204; body %s", rec.Code, rec.Body.String())
 	}
@@ -786,9 +703,7 @@ func TestIdentifierAddShape(t *testing.T) {
 	}
 }
 
-// TestProviderWriteInheritsAndOverridesTheFlags holds both directions of the
-// boolean handling: a partial update keeps the stored flags, and an explicit
-// flag on a create is obeyed.
+// TestProviderWriteInheritsAndOverridesTheFlags checks that a partial update keeps stored flags and a create obeys an explicit one.
 func TestProviderWriteInheritsAndOverridesTheFlags(t *testing.T) {
 	r := newRig(t)
 	r.providers.put(authn.SSOProvider{
@@ -810,8 +725,6 @@ func TestProviderWriteInheritsAndOverridesTheFlags(t *testing.T) {
 			got.UsernameStrategy, got.UsernameClaim)
 	}
 
-	// An explicit enabled:false on a create is obeyed, and the strategy it
-	// states is written.
 	created := newRig(t)
 	rec = created.do(http.MethodPost, "/api/v1/tenants/"+tenantA+"/sso/providers",
 		map[string]any{
@@ -833,9 +746,7 @@ func TestProviderWriteInheritsAndOverridesTheFlags(t *testing.T) {
 	}
 }
 
-// TestProviderCreateRequiresItsFields holds that a create missing any of the
-// protocol, the name and the provisioning is refused and the capability is not
-// called.
+// TestProviderCreateRequiresItsFields checks that a create missing protocol, name or provisioning is refused before the capability.
 func TestProviderCreateRequiresItsFields(t *testing.T) {
 	full := map[string]any{"protocol": "saml", "name": "n", "provisioning": "jit"}
 	for _, drop := range []string{"protocol", "name", "provisioning"} {
@@ -857,8 +768,7 @@ func TestProviderCreateRequiresItsFields(t *testing.T) {
 	}
 }
 
-// TestTheMetadataRefreshRouteDispatches holds that the route dispatches to the
-// refresher of the provider's protocol and refuses a protocol with none.
+// TestTheMetadataRefreshRouteDispatches holds that the route dispatches to the refresher of the provider's protocol and refuses a protocol with none.
 func TestTheMetadataRefreshRouteDispatches(t *testing.T) {
 	r := newRig(t)
 	r.providers.put(authn.SSOProvider{ID: idpA, Tenant: tenantA, Protocol: authn.SSOProtocolSAML, Provisioning: authn.ProvisioningJIT})
@@ -870,7 +780,6 @@ func TestTheMetadataRefreshRouteDispatches(t *testing.T) {
 		t.Errorf("the refresher ran %d times, want once", r.refresher.calls)
 	}
 
-	// A protocol with no refresher in this assembly is a 400.
 	r.providers.put(authn.SSOProvider{ID: "oidc-1", Tenant: tenantA, Protocol: authn.SSOProtocolOIDC, Provisioning: authn.ProvisioningJIT})
 	rec = r.do(http.MethodPost, "/api/v1/tenants/"+tenantA+"/sso/providers/oidc-1/metadata/refresh", nil, fresh()...)
 	if rec.Code != http.StatusBadRequest {
@@ -878,8 +787,7 @@ func TestTheMetadataRefreshRouteDispatches(t *testing.T) {
 	}
 }
 
-// TestTheDomainRoutesRefuseAMissingProvider holds that a domain route resolves
-// the provider before the Decider and answers a missing one with a 404.
+// TestTheDomainRoutesRefuseAMissingProvider holds that a domain route resolves the provider before the Decider and answers a missing one with a 404.
 func TestTheDomainRoutesRefuseAMissingProvider(t *testing.T) {
 	for _, tc := range []struct {
 		method string
@@ -904,12 +812,8 @@ func TestTheDomainRoutesRefuseAMissingProvider(t *testing.T) {
 	}
 }
 
-// TestTheAuditRowsCarryTheContract holds the audit content this module writes:
-// the action name, the outcome and the detail keys of a representative write,
-// and the failed row linked to the permitted one by the action identifier.
+// TestTheAuditRowsCarryTheContract checks the action, outcome and detail keys of the rows a representative write records.
 func TestTheAuditRowsCarryTheContract(t *testing.T) {
-	// A successful create writes one success row with the action, the object and
-	// the detail the contract names.
 	r := newRig(t)
 	rec := r.do(http.MethodPost, "/api/v1/system/auth/accounts", map[string]any{"kind": "user", "username": "a"}, fresh()...)
 	if rec.Code != http.StatusCreated {
@@ -930,7 +834,6 @@ func TestTheAuditRowsCarryTheContract(t *testing.T) {
 		t.Errorf("the detail is %+v, want the kind and the source", e.Detail)
 	}
 
-	// A write that fails is closed with a failed row linked by the action id.
 	failed := newRig(t)
 	failed.accountAdm.err = authn.ErrAccountExists
 	rec = failed.do(http.MethodPost, "/api/v1/system/auth/accounts", map[string]any{"kind": "user", "username": "a"}, fresh()...)
@@ -952,21 +855,16 @@ func TestTheAuditRowsCarryTheContract(t *testing.T) {
 			rows[0].Detail[detailActionID], rows[1].Detail[detailActionID])
 	}
 
-	// The membership write and the session revocation carry their names.
 	mem := newRig(t)
 	mem.do(http.MethodPut, "/api/v1/tenants/"+tenantA+"/members/"+string(userID), map[string]any{"active": true}, fresh()...)
 	if !auditHas(t, mem, actionMembershipSet, outcomeSuccess) {
 		t.Error("the membership write wrote no row named authn.membership.set")
 	}
-	// The row names the account as an account object: the type marker and the
-	// identifier, so a reader does not mistake it for the session or tenant
-	// name another row of the table carries.
 	if !auditNamesObject(t, mem, actionMembershipSet, audit.AccountObject(string(userID))) {
 		t.Errorf("the membership row does not name the account object %q: %+v",
 			audit.AccountObject(string(userID)), mem.audit.entries())
 	}
 
-	// An account administration write names the account the same way.
 	upd := newRig(t)
 	upd.do(http.MethodPatch, "/api/v1/system/auth/accounts/"+string(userID),
 		map[string]any{"display_name": "Ada"}, fresh()...)
@@ -982,16 +880,7 @@ func TestTheAuditRowsCarryTheContract(t *testing.T) {
 	}
 }
 
-// TestABulkRevocationNamesEverySessionItRevokes holds that the audit row of a
-// revocation names the session it revoked, so revoking an account's sessions
-// writes one mandatory row per session, read before the action — and, when the
-// action fails, one failed row per session, with every row of the action linked
-// by the one action identifier. With nothing to name, nothing is revoked and the
-// answer says so.
-//
-// The action, the outcomes and the detail key are asserted as the literals the
-// capability's closed tables state, so the case does not move with a production
-// constant.
+// TestABulkRevocationNamesEverySessionItRevokes checks that a bulk revocation writes one row per session, linked by one action id.
 func TestABulkRevocationNamesEverySessionItRevokes(t *testing.T) {
 	const (
 		revokeAction = "authn.session.revoke"
@@ -1007,8 +896,6 @@ func TestABulkRevocationNamesEverySessionItRevokes(t *testing.T) {
 	}
 	want := []string{string(sessionA), string(second)}
 	slices.Sort(want)
-	// namedWith is the sessions the rows of one outcome name, sorted. Every row
-	// is held to the one action by the caller.
 	namedWith := func(rows []audit.Entry, outcome string) []string {
 		var named []string
 		for _, row := range rows {
@@ -1028,8 +915,6 @@ func TestABulkRevocationNamesEverySessionItRevokes(t *testing.T) {
 		}
 	}
 
-	// The action goes through: one permitted row per session, all of them
-	// carrying the one action identifier.
 	done := newRig(t)
 	seed(done, sessionA, second)
 	answer := done.do(http.MethodPost, path, nil, fresh()...)
@@ -1051,8 +936,6 @@ func TestABulkRevocationNamesEverySessionItRevokes(t *testing.T) {
 		t.Errorf("the rows carry the action identifiers %v, want one shared identifier", got)
 	}
 
-	// The action fails: the permitted rows are closed by failed rows under the
-	// same identifier, one per session, naming the same sessions.
 	failed := newRig(t)
 	seed(failed, sessionA, second)
 	failed.sessions.revokeErr = errors.New("the revocation failed")
@@ -1074,8 +957,6 @@ func TestABulkRevocationNamesEverySessionItRevokes(t *testing.T) {
 		t.Errorf("the rows carry the action identifiers %v, want one shared identifier", got)
 	}
 
-	// No revocable session: nothing is named, nothing is revoked, and the answer
-	// says so rather than reporting a revocation no row accounts for.
 	empty := newRig(t)
 	seed(empty)
 	rec := empty.do(http.MethodPost, path, nil, fresh()...)
@@ -1089,8 +970,6 @@ func TestABulkRevocationNamesEverySessionItRevokes(t *testing.T) {
 		t.Errorf("the audit holds %v, want no row: no session was revoked", rows)
 	}
 
-	// The set cannot be read: no row could name what the action would end, so
-	// the action is not carried out and the answer is the outage.
 	unreadable := newRig(t)
 	seed(unreadable, sessionA, second)
 	unreadable.sessions.err = errors.New("the store is unreachable")
@@ -1106,10 +985,8 @@ func TestABulkRevocationNamesEverySessionItRevokes(t *testing.T) {
 	}
 }
 
-// TestTheViewsCarryTheFields holds that each response view carries the fields it
-// is built from, so a swapped or dropped assignment cannot pass unnoticed.
+// TestTheViewsCarryTheFields holds that each response view carries the fields it is built from, so a swapped or dropped assignment cannot pass unnoticed.
 func TestTheViewsCarryTheFields(t *testing.T) {
-	// The account view carries mfa_required.
 	r := newRig(t)
 	r.accounts.put(userID, authn.Account{Kind: authn.KindUser, Status: authn.StatusActive, MFARequired: true})
 	rec := r.do(http.MethodGet, "/api/v1/system/auth/accounts/"+string(userID), nil, fresh()...)
@@ -1126,7 +1003,6 @@ func TestTheViewsCarryTheFields(t *testing.T) {
 		t.Errorf("the account view is %+v, want the id and mfa_required", account.Account)
 	}
 
-	// The session view carries impersonation_id, id and the ended flag.
 	s := newRig(t)
 	s.sessions.put(authn.SessionInfo{ID: sessionA, Account: userID, Kind: authn.SessionBrowser, ImpersonationID: "gr-1"})
 	rec = s.do(http.MethodGet, "/api/v1/system/auth/accounts/"+string(userID)+"/sessions", nil, fresh()...)
@@ -1143,7 +1019,6 @@ func TestTheViewsCarryTheFields(t *testing.T) {
 		t.Errorf("the session view is %+v, want the id and impersonation_id", sessions.Sessions)
 	}
 
-	// The secret view carries the id and the revoked flag.
 	sec := newRig(t)
 	sec.accounts.put(userID, authn.Account{Kind: authn.KindService, Status: authn.StatusActive})
 	sec.accounts.secrets = map[authn.AccountID][]authn.ServiceSecretInfo{
@@ -1164,7 +1039,6 @@ func TestTheViewsCarryTheFields(t *testing.T) {
 		t.Errorf("the secret view is %+v, want the id, label and revoked", secrets.Secrets)
 	}
 
-	// The provider view carries the version.
 	p := newRig(t)
 	p.providers.put(authn.SSOProvider{ID: idpA, Tenant: tenantA, Protocol: authn.SSOProtocolSAML, Provisioning: authn.ProvisioningJIT, Version: 5})
 	rec = p.do(http.MethodGet, "/api/v1/tenants/"+tenantA+"/sso/providers/"+idpA, nil, fresh()...)
@@ -1181,7 +1055,6 @@ func TestTheViewsCarryTheFields(t *testing.T) {
 		t.Errorf("the provider view is %+v, want the id and version", provider.Provider)
 	}
 
-	// The impersonation view carries the actor, the target and the end.
 	imp := newRig(t)
 	ended := time.Now().UTC().Truncate(time.Second)
 	imp.records.put(authn.ImpersonationGrant{
@@ -1220,7 +1093,6 @@ func TestTheViewsCarryTheFields(t *testing.T) {
 	}
 }
 
-// parseTime reads an RFC 3339 timestamp the views write.
 func parseTime(t *testing.T, s string) time.Time {
 	t.Helper()
 	got, err := time.Parse(time.RFC3339Nano, s)
@@ -1230,17 +1102,12 @@ func parseTime(t *testing.T, s string) time.Time {
 	return got
 }
 
-// TestRecentWindowBoundsDefaultAndReport holds the freshness window's domain and
-// default: a value outside its domain reads as the declared default and is
-// reported once, a change is reported again, a value within the domain is used,
-// and a store with nothing set reads as the default.
+// TestRecentWindowBoundsDefaultAndReport checks the freshness window's bounds, default and one-time reporting.
 func TestRecentWindowBoundsDefaultAndReport(t *testing.T) {
 	logs := &logBuffer{}
 	store := newStore()
 	reader := newReader(store, logs.logger())
 
-	// A value above the upper bound reads as the default and is reported once,
-	// however many times it is read.
 	store.values[recentWindowPath] = 2 * time.Hour
 	if got := reader.recentWindow(); got != defaultRecentWindow {
 		t.Errorf("an out-of-domain value read as %v, want the default %v", got, defaultRecentWindow)
@@ -1252,30 +1119,24 @@ func TestRecentWindowBoundsDefaultAndReport(t *testing.T) {
 		t.Errorf("the setting was reported %d times, want once", n)
 	}
 
-	// A change of the offending value is reported again.
 	store.values[recentWindowPath] = 3 * time.Hour
 	reader.recentWindow()
 	if n := strings.Count(logs.String(), recentWindowPath); n != 2 {
 		t.Errorf("a changed value was reported %d times in all, want two", n)
 	}
 
-	// A value within the domain is used.
 	store.values[recentWindowPath] = 5 * time.Minute
 	if got := reader.recentWindow(); got != 5*time.Minute {
 		t.Errorf("a value within the domain read as %v, want 5m", got)
 	}
 
-	// A store with nothing set reads as the default.
 	absent := newReader(newStore(), logs.logger())
 	if got := absent.recentWindow(); got != defaultRecentWindow {
 		t.Errorf("an unset store read as %v, want the default %v", got, defaultRecentWindow)
 	}
 }
 
-// TestTheDeciderIsAskedBeforeTheStrengthCheck holds the pipeline order: the
-// Decider is asked before the actor's strength is judged, so an unauthorized
-// actor is answered 403 and never learns whether their authentication would
-// have sufficed.
+// TestTheDeciderIsAskedBeforeTheStrengthCheck checks that a Decider refusal is answered before the strength check.
 func TestTheDeciderIsAskedBeforeTheStrengthCheck(t *testing.T) {
 	r := newRig(t)
 	r.decider.allow = false
@@ -1289,8 +1150,7 @@ func TestTheDeciderIsAskedBeforeTheStrengthCheck(t *testing.T) {
 	}
 }
 
-// TestTheMetadataRefreshRouteIsMountedWithARefresher holds that the
-// metadata-refresh sub-route exists when a refresher is present.
+// TestTheMetadataRefreshRouteIsMountedWithARefresher holds that the metadata-refresh sub-route exists when a refresher is present.
 func TestTheMetadataRefreshRouteIsMountedWithARefresher(t *testing.T) {
 	r := newRig(t)
 	if _, ok := r.mounter.Registered(http.MethodPost, "/api/v1/tenants/:tenant/sso/providers/:id/metadata/refresh"); !ok {
@@ -1298,8 +1158,7 @@ func TestTheMetadataRefreshRouteIsMountedWithARefresher(t *testing.T) {
 	}
 }
 
-// TestMemberPutDefaultsTheSource holds that a membership written without a
-// source is stored as an administrator's.
+// TestMemberPutDefaultsTheSource holds that a membership written without a source is stored as an administrator's.
 func TestMemberPutDefaultsTheSource(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodPut, "/api/v1/tenants/"+tenantA+"/members/"+string(userID), map[string]any{"active": true}, fresh()...)
@@ -1315,9 +1174,7 @@ func TestMemberPutDefaultsTheSource(t *testing.T) {
 	}
 }
 
-// TestPasswordResetWithoutASessionStore holds the run of a password reset in an
-// assembly with no session store: the write succeeds, nothing is revoked, and
-// the module says so.
+// TestPasswordResetWithoutASessionStore checks that a password reset with no session store succeeds, revokes nothing and logs it.
 func TestPasswordResetWithoutASessionStore(t *testing.T) {
 	r := newRig(t, noSessions)
 	rec := r.do(http.MethodPost, "/api/v1/system/auth/accounts/"+string(userID)+"/password",
@@ -1333,11 +1190,7 @@ func TestPasswordResetWithoutASessionStore(t *testing.T) {
 	}
 }
 
-// TestBindingRefusalsCarryTheCapabilityProblemType holds that a request the
-// entry point refuses before the handler runs is answered in this capability's
-// vocabulary: a malformed body, an unknown member, a non-integer query value
-// and a wrong Content-Type are bad-request or unsupported-media-type, the same
-// codes the handlers write, and not the RFC 9457 default about:blank.
+// TestBindingRefusalsCarryTheCapabilityProblemType checks that binding refusals carry this capability's problem types.
 func TestBindingRefusalsCarryTheCapabilityProblemType(t *testing.T) {
 	r := newRig(t)
 	cases := []struct {
@@ -1389,9 +1242,7 @@ func TestBindingRefusalsCarryTheCapabilityProblemType(t *testing.T) {
 	}
 }
 
-// TestARequiredBodyMustBePresent holds requestBody.required at the routes that
-// declare it: an empty JSON body is a 400 before the handler runs, so no
-// account is written, no flag changes and no membership is written.
+// TestARequiredBodyMustBePresent checks that an empty body on a route that requires one is a 400 before the handler.
 func TestARequiredBodyMustBePresent(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -1453,15 +1304,10 @@ func TestARequiredBodyMustBePresent(t *testing.T) {
 	}
 }
 
-// TestEveryBodyCarryingRouteKeepsTheCapabilityBodyLimit holds the capability's
-// 64 KiB request-body limit at every route that declares a body. The limit is
-// the capability's own and is tighter than the endpoint's, so a body over it is
-// a 400 bad-request rather than a 413 or a request the handler processes. The
-// padding is trailing space, which JSON accepts, so without the guard each body
-// below would bind and reach its handler.
+// TestEveryBodyCarryingRouteKeepsTheCapabilityBodyLimit holds the capability's 64 KiB request-body limit at every route that declares a body.
 func TestEveryBodyCarryingRouteKeepsTheCapabilityBodyLimit(t *testing.T) {
-	// A body of 70 KiB is over the capability's limit and stays well under the
-	// endpoint's default, which is what tells the two limits apart.
+	// 70 KiB is over the capability's 64 KiB limit but under the endpoint's
+	// default, so the two limits are told apart.
 	const overLimit = 70 << 10
 	cases := []struct {
 		name   string
@@ -1551,10 +1397,7 @@ func TestEveryBodyCarryingRouteKeepsTheCapabilityBodyLimit(t *testing.T) {
 	}
 }
 
-// TestMemberRemoveMapsCapabilityFailuresToItsDeclaredAnswers holds the reply
-// operation's answer set: a failure the old handler mapped to 400, 404 and 409
-// still gets those statuses, rather than falling to the 500 of a status the
-// simple form could not declare.
+// TestMemberRemoveMapsCapabilityFailuresToItsDeclaredAnswers holds that a failure mapping to 400, 404 or 409 gets that status rather than a 500.
 func TestMemberRemoveMapsCapabilityFailuresToItsDeclaredAnswers(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -1589,10 +1432,7 @@ func TestMemberRemoveMapsCapabilityFailuresToItsDeclaredAnswers(t *testing.T) {
 	}
 }
 
-// TestAccountDeleteAnswersTheLastAdministratorWithItsOwnCode holds the
-// account-deletion refusal: a dedicated problem code, not the generic conflict
-// the membership removal uses, and the affected tenant in the detail so a
-// surface can name the organization the operator has to hand over.
+// TestAccountDeleteAnswersTheLastAdministratorWithItsOwnCode checks that the last-administrator deletion refusal has its own code and names the tenant.
 func TestAccountDeleteAnswersTheLastAdministratorWithItsOwnCode(t *testing.T) {
 	r := newRig(t)
 	r.accountAdm.err = &authn.AccountLastTenantAdminError{Tenant: "acme"}

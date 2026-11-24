@@ -8,11 +8,7 @@ import (
 )
 
 // TestASupersededUnexpiredRowReadsExpiredOnTheLink holds the public read's
-// judgement of a row a later invitation replaced. Normally only an expired row
-// is superseded, but a second instance with a fast clock can replace a row whose
-// deadline its own clock still sees ahead. Superseded_at means the link grants
-// nothing, so the read answers the expired state and withholds the address, the
-// organization and the deadline.
+// judgement of a row a later invitation replaced.
 func TestASupersededUnexpiredRowReadsExpiredOnTheLink(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue(tenant, "alice@example.com")
@@ -35,10 +31,8 @@ func TestASupersededUnexpiredRowReadsExpiredOnTheLink(t *testing.T) {
 	}
 }
 
-// TestASupersededUnexpiredRowReadsExpiredInTheList holds the read side's other
-// face: the same row is listed as expired, kept out of the pending filter and
-// carried by the expired one, and it sorts into the expired group even though
-// its deadline is still ahead.
+// TestASupersededUnexpiredRowReadsExpiredInTheList checks that the same row is
+// listed as expired and kept out of the pending filter.
 func TestASupersededUnexpiredRowReadsExpiredInTheList(t *testing.T) {
 	h := newHarness(t)
 	pending := h.issue(tenant, "pending@example.com")

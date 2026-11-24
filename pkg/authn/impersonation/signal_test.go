@@ -11,11 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestTheWireNamesAreTheDeclaredOnes holds the names the design fixes as a
-// promise to dashboards and to an event consumer, written as independent
-// literals so that changing a constant does not move the assertion with it: the
-// metric, its scope and its outcome attribute, and the audit action, outcome and
-// detail key.
+// TestTheWireNamesAreTheDeclaredOnes checks the metric, scope, attribute, audit action, outcome and detail key constants against independent literals.
 func TestTheWireNamesAreTheDeclaredOnes(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		if _, err := r.p.Start(context.Background(), adminIdentity(t), request()); err != nil {
@@ -64,14 +60,9 @@ func TestTheWireNamesAreTheDeclaredOnes(t *testing.T) {
 	})
 }
 
-// TestARefusalWithNoInstrumentDoesNotPanic holds the nil guard of the sessions
-// counter: an assembly with no meter provider leaves the counter nil, and a path
-// that counts an outcome must then record nothing rather than call into a nil
-// instrument.
+// TestARefusalWithNoInstrumentDoesNotPanic checks that counting an outcome with a nil instrument records nothing and does not panic.
 func TestARefusalWithNoInstrumentDoesNotPanic(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
-		// What build leaves when Init finds no meter provider: the struct is
-		// there and its counter is nil.
 		r.p.meters = &meters{}
 		r.accounts.put(actorID, authn.Account{Kind: authn.KindUser, Status: authn.StatusDisabled})
 		if _, err := r.p.Start(context.Background(), adminIdentity(t), request()); !errors.Is(err, authn.ErrImpersonationRestricted) {

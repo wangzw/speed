@@ -16,9 +16,6 @@ import (
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
-// invitationHandleOnPostgres opens the case's own database on the compose
-// stack's server and builds the table this module reads from the PostgreSQL
-// migration files, the way the database module applies them.
 func invitationHandleOnPostgres(t *testing.T) *gorm.DB {
 	t.Helper()
 	handle := quietly(dbtest.Postgres(t, pgtest.Acquire(t), nil).DB())
@@ -26,18 +23,14 @@ func invitationHandleOnPostgres(t *testing.T) *gorm.DB {
 	return handle
 }
 
-// columnShape is what the case asserts about one column on PostgreSQL.
 type columnShape struct {
 	dataType string
 	nullable string
 	def      string
 }
 
-// TestTheInvitationTableOnPostgres holds the schema the migration file declares
-// on the engine the migration was written for: every column, its type, its
-// nullability and the two defaults the writers rely on. The token digest is
-// unique, and the live-slot index is partial and unique over the stored pending
-// state only.
+// TestTheInvitationTableOnPostgres checks the PostgreSQL schema: every column,
+// its type, nullability, the two defaults and the indexes.
 func TestTheInvitationTableOnPostgres(t *testing.T) {
 	handle := invitationHandleOnPostgres(t)
 
@@ -131,10 +124,8 @@ func TestTheInvitationTableOnPostgres(t *testing.T) {
 	}
 }
 
-// TestTheListingOrderAndCursorOnPostgres holds the four-group order and the
-// cursor predicate on the engine the listing actually runs against: the CASE
-// expression that groups rows and the cursor's comparison are PostgreSQL SQL,
-// so a page boundary must land in the right group there too.
+// TestTheListingOrderAndCursorOnPostgres checks the four-group order and the
+// cursor predicate on PostgreSQL.
 func TestTheListingOrderAndCursorOnPostgres(t *testing.T) {
 	handle := invitationHandleOnPostgres(t)
 	h := newHarnessOn(t, handle)
@@ -187,11 +178,8 @@ func TestTheListingOrderAndCursorOnPostgres(t *testing.T) {
 	}
 }
 
-// TestTheLiveSlotAndSupersessionOnPostgres holds the two writes the design puts
-// in one transaction, on the engine whose partial index is the arbiter: an
-// expired row is replaced in place by superseded_at while a new live row is
-// inserted, a second live row for the same pair is refused by the index, and a
-// superseded row does not occupy the live slot.
+// TestTheLiveSlotAndSupersessionOnPostgres checks the live-slot index and
+// supersession on PostgreSQL.
 func TestTheLiveSlotAndSupersessionOnPostgres(t *testing.T) {
 	handle := invitationHandleOnPostgres(t)
 	h := newHarnessOn(t, handle)
@@ -225,8 +213,6 @@ func TestTheLiveSlotAndSupersessionOnPostgres(t *testing.T) {
 		t.Errorf("rows = %d, want the old and the new one", got)
 	}
 
-	// A second live pending row for the same tenant and address meets the
-	// partial unique index.
 	err = handle.Exec(
 		`INSERT INTO authn_invitations
 			(id, tenant_id, email, token_digest, status, invited_by, expires_at, last_sent_at, created_at, updated_at)
@@ -241,8 +227,6 @@ func TestTheLiveSlotAndSupersessionOnPostgres(t *testing.T) {
 		t.Errorf("the refused insert changed the row count to %d, want 2", got)
 	}
 
-	// A superseded row is history rather than a live slot, so it is insertable
-	// beside the live one.
 	err = handle.Exec(
 		`INSERT INTO authn_invitations
 			(id, tenant_id, email, token_digest, status, invited_by, expires_at, last_sent_at, superseded_at, created_at, updated_at)

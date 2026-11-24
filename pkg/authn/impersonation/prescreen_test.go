@@ -10,7 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 )
 
-// problemTypeOf reads the problem type of a refusal.
 func problemTypeOf(t *testing.T, w *httptest.ResponseRecorder) string {
 	t.Helper()
 	var problem struct {
@@ -22,9 +21,6 @@ func problemTypeOf(t *testing.T, w *httptest.ResponseRecorder) string {
 	return problem.Type
 }
 
-// refusedBeforeStart holds that a request the route refused on its body reached
-// nothing: the status and the capability's problem code, and no record, audit
-// row or denied count.
 func refusedBeforeStart(t *testing.T, r *rig, w *httptest.ResponseRecorder, status int, code string) {
 	t.Helper()
 	if w.Code != status {
@@ -44,10 +40,7 @@ func refusedBeforeStart(t *testing.T, r *rig, w *httptest.ResponseRecorder, stat
 	}
 }
 
-// TestStartRefusesAnEmptyBodyBeforeItStarts holds the rule the route carried
-// before it was declared as an operation: a request that declares no body is a
-// 400 bad-request, answered before Start, so it writes neither a denied audit
-// row nor a record and counts no denied attempt.
+// TestStartRefusesAnEmptyBodyBeforeItStarts checks that a request with no declared body is a 400 before Start, with no audit row or record.
 func TestStartRefusesAnEmptyBodyBeforeItStarts(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.mounter.As(adminOpts()...)
@@ -62,10 +55,7 @@ func TestStartRefusesAnEmptyBodyBeforeItStarts(t *testing.T) {
 	})
 }
 
-// TestStartKeepsTheCapabilityMediaTypeRule holds the media type the route
-// accepted before it was declared as an operation: application/json with no
-// parameter or with charset=utf-8 as its only one. Every other type, including
-// a parameter beyond that one, is a 415 unsupported-media-type.
+// TestStartKeepsTheCapabilityMediaTypeRule checks that the capability accepts application/json with no parameter or with charset=utf-8 only.
 func TestStartKeepsTheCapabilityMediaTypeRule(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.mounter.As(adminOpts()...)
@@ -87,8 +77,7 @@ func TestStartKeepsTheCapabilityMediaTypeRule(t *testing.T) {
 	})
 }
 
-// TestStartAcceptsTheOneAllowedMediaTypeParameter holds the parameter the rule
-// allows: application/json with charset=utf-8 is bound and processed.
+// TestStartAcceptsTheOneAllowedMediaTypeParameter checks that application/json with charset=utf-8 is bound and processed.
 func TestStartAcceptsTheOneAllowedMediaTypeParameter(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.mounter.As(adminOpts()...)
@@ -105,11 +94,7 @@ func TestStartAcceptsTheOneAllowedMediaTypeParameter(t *testing.T) {
 	})
 }
 
-// TestStartKeepsTheCapabilityBodyRule holds the body rule the route carried
-// before it was declared as an operation: one JSON value the declaration can
-// hold, no member the declaration does not carry, and nothing after the value.
-// Every refusal carries the capability's bad-request code rather than the entry
-// point's untyped about:blank.
+// TestStartKeepsTheCapabilityBodyRule checks that the capability accepts one JSON value with no unknown member and nothing after it.
 func TestStartKeepsTheCapabilityBodyRule(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.mounter.As(adminOpts()...)
@@ -133,9 +118,7 @@ func TestStartKeepsTheCapabilityBodyRule(t *testing.T) {
 	})
 }
 
-// TestStartRefusesABodyOverTheCapabilityLimit holds the capability's 64 KiB
-// body limit: a valid JSON body over it is a 400 bad-request, the answer the
-// route gave before it was declared as an operation.
+// TestStartRefusesABodyOverTheCapabilityLimit checks that a valid JSON body over the 64 KiB limit is a 400 bad-request.
 func TestStartRefusesABodyOverTheCapabilityLimit(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.mounter.As(adminOpts()...)
@@ -147,10 +130,7 @@ func TestStartRefusesABodyOverTheCapabilityLimit(t *testing.T) {
 	})
 }
 
-// TestStartBindsMemberNamesWithoutRegardToCase holds the member matching the
-// route had before it was declared as an operation: encoding/json matches a
-// member to its field without regard to case, so the start binds a body whose
-// member names are capitalised.
+// TestStartBindsMemberNamesWithoutRegardToCase checks that encoding/json matches a member to its field without regard to case.
 func TestStartBindsMemberNamesWithoutRegardToCase(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.mounter.As(adminOpts()...)

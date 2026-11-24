@@ -11,8 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// listStatus reads one page from the management listing under an optional query
-// and returns the identifiers the page answered, in order.
 func (h *harness) listStatus(query string) []string {
 	h.t.Helper()
 	h.asAdmin()
@@ -37,9 +35,6 @@ func (h *harness) listStatus(query string) []string {
 	return ids
 }
 
-// sameIdentifiers reports whether got and want hold the same identifiers,
-// whatever their order: a page of rows issued in the same instant has no stable
-// order beyond the identifier tie-break.
 func sameIdentifiers(got, want []string) bool {
 	if len(got) != len(want) {
 		return false
@@ -52,14 +47,10 @@ func sameIdentifiers(got, want []string) bool {
 }
 
 // TestTheListRouteFiltersByStatus holds each value of the status query to the
-// rows it names. The stored states are pending, accepted and revoked; expired is
-// a pending row whose deadline has passed, so the pending and expired filters
-// split the pending rows by the clock and the stored state is unchanged.
+// rows it names.
 func TestTheListRouteFiltersByStatus(t *testing.T) {
 	h := newHarness(t)
 	const tenant = "tenant-a"
-	// This one expires: the default lifetime is 168 hours and the clock moves
-	// past it before the rest are issued.
 	past := h.issue(tenant, "past@example.com")
 	h.clock.advance(169 * time.Hour)
 	pending := h.issue(tenant, "pending@example.com")
@@ -89,10 +80,8 @@ func TestTheListRouteFiltersByStatus(t *testing.T) {
 	}
 }
 
-// TestTheExpiredFilterStartsAtTheDeadline holds the boundary: an invitation is
-// redeemable up to, but not at, its deadline, which is where the expired filter
-// starts. A second before the deadline it is still pending; at the deadline it
-// is expired; later it stays expired.
+// TestTheExpiredFilterStartsAtTheDeadline checks that an invitation is pending
+// until, but not at, its deadline.
 func TestTheExpiredFilterStartsAtTheDeadline(t *testing.T) {
 	h := newHarness(t)
 	const tenant = "tenant-a"
@@ -127,9 +116,6 @@ func TestTheExpiredFilterStartsAtTheDeadline(t *testing.T) {
 	}
 }
 
-// seed writes one invitation row straight into the table, with the identifier,
-// status and creation time the case names, so an ordering and a cursor are
-// deterministic.
 func (h *harness) seed(id, tenant, email string, status int16, createdAt time.Time) {
 	h.t.Helper()
 	row := invitationRow{
@@ -152,9 +138,7 @@ func identifiersOf(invitations []Invitation) []string {
 }
 
 // TestACursorPageKeepsTheTenantAndTheFilter holds the cursor predicate to a
-// conjunction with the tenant and the status filter. The cursor carries an OR
-// of its own, so without parentheses around it the second page widens to every
-// tenant's pending rows instead of continuing this tenant's filtered page.
+// conjunction with the tenant and the status filter.
 func TestACursorPageKeepsTheTenantAndTheFilter(t *testing.T) {
 	h := newHarness(t)
 	base := h.clock.read()

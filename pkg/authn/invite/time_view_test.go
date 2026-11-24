@@ -7,7 +7,6 @@ import (
 	"testing"
 )
 
-// requireNullField asserts that one field of a decoded JSON object is null.
 func requireNullField(t *testing.T, object map[string]json.RawMessage, name string) {
 	t.Helper()
 	raw, present := object[name]
@@ -20,8 +19,6 @@ func requireNullField(t *testing.T, object map[string]json.RawMessage, name stri
 	}
 }
 
-// requireUTCInstant asserts that one field of a decoded JSON object is a
-// quoted string and that its wire text ends in Z.
 func requireUTCInstant(t *testing.T, object map[string]json.RawMessage, name string) {
 	t.Helper()
 	raw, present := object[name]
@@ -34,9 +31,8 @@ func requireUTCInstant(t *testing.T, object map[string]json.RawMessage, name str
 	}
 }
 
-// TestAnUnacceptedInvitationPublishesANullAcceptedAt holds the wire rule for an
-// invitation that has not been accepted: accepted_at is null in the issue
-// answer and in the list, not the zero instant.
+// TestAnUnacceptedInvitationPublishesANullAcceptedAt checks that an unaccepted
+// invitation publishes accepted_at as null in the issue answer and the list.
 func TestAnUnacceptedInvitationPublishesANullAcceptedAt(t *testing.T) {
 	h := newHarness(t)
 	h.asAdmin()

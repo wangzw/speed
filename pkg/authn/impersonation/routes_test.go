@@ -19,20 +19,17 @@ import (
 
 func init() { gin.SetMode(gin.TestMode) }
 
-// postBody is a start request as JSON.
 func postBody() string {
 	return `{"account":"acct-user","tenant":"tenant-a","reason":"a support call","ttl_seconds":0}`
 }
 
-// startRequest builds the start route's request with the body and the JSON type.
 func startRequest(body string) *http.Request {
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/auth/impersonation", strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	return r
 }
 
-// TestTheRoutesCarryTheRegisteredAccess holds the registrations: the status and
-// the end are Impersonable, and the start is not.
+// TestTheRoutesCarryTheRegisteredAccess checks that status and end are registered Impersonable and start is not.
 func TestTheRoutesCarryTheRegisteredAccess(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.p.mountRoutes()
@@ -57,9 +54,7 @@ func TestTheRoutesCarryTheRegisteredAccess(t *testing.T) {
 	})
 }
 
-// TestStartOverCookieAttachesTheSessionAndWritesTheCookie holds the cookie
-// carrier: the marker is set to the new record, a fresh cookie is written, and
-// the answer carries the record.
+// TestStartOverCookieAttachesTheSessionAndWritesTheCookie checks that a cookie start sets the marker, writes a fresh cookie and answers the record.
 func TestStartOverCookieAttachesTheSessionAndWritesTheCookie(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.mounter.As(adminOpts()...)
@@ -86,10 +81,7 @@ func TestStartOverCookieAttachesTheSessionAndWritesTheCookie(t *testing.T) {
 	})
 }
 
-// TestStartResolvesTheRequestedNameToTheTenantsIdentifier holds the request
-// surface's rule: the body names the tenant by name, while the membership read
-// and the record key by the identifier. A name no tenant carries is refused as
-// a target outside the tenant, and no record is written.
+// TestStartResolvesTheRequestedNameToTheTenantsIdentifier checks that the body's tenant name is keyed as the identifier in the record and token.
 func TestStartResolvesTheRequestedNameToTheTenantsIdentifier(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		pair := namePair{name: "team-alpha", id: tenantA}
@@ -120,9 +112,7 @@ func TestStartResolvesTheRequestedNameToTheTenantsIdentifier(t *testing.T) {
 	})
 }
 
-// TestStartRefusesANameNoTenantCarries holds the other half: a name the
-// directory does not know is refused as a target that is not a member, before
-// any record or audit row.
+// TestStartRefusesANameNoTenantCarries checks that an unknown tenant name is refused before any record or token.
 func TestStartRefusesANameNoTenantCarries(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		pair := namePair{name: "team-alpha", id: tenantA}
@@ -144,12 +134,7 @@ func TestStartRefusesANameNoTenantCarries(t *testing.T) {
 	})
 }
 
-// TestStartRefusesTheInternalIdentifierAsTheTenantName holds the request
-// surface's input domain: the body names a tenant by its name, never by the
-// internal identifier the record and the membership store key by. The fixture's
-// two values differ, so a body carrying the identifier — the shape the surface
-// accepted before the name rule — is refused, while the same pair's name is
-// accepted.
+// TestStartRefusesTheInternalIdentifierAsTheTenantName checks that the body's tenant is a name, never the record's internal identifier.
 func TestStartRefusesTheInternalIdentifierAsTheTenantName(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		pair := namePair{name: "team-alpha", id: tenantA}
@@ -158,8 +143,6 @@ func TestStartRefusesTheInternalIdentifierAsTheTenantName(t *testing.T) {
 		r.mounter.As(adminOpts(authntest.WithBackend(tokenBackend))...)
 		r.p.mountRoutes()
 
-		// The identifier is not a name of the pair, so the directory answers
-		// unknown and the start is refused before any record or token.
 		w := r.mounter.Do(startRequest(`{"account":"acct-user","tenant":"` + tenantA + `","reason":"a support call"}`))
 		if w.Code != http.StatusForbidden {
 			t.Fatalf("status = %d, want 403 when the body carries the internal identifier: %s", w.Code, w.Body.String())
@@ -171,8 +154,6 @@ func TestStartRefusesTheInternalIdentifierAsTheTenantName(t *testing.T) {
 			t.Errorf("a token was issued: %+v", r.tokens.issued)
 		}
 
-		// The same fixture's name is accepted, so the refusal above is the
-		// name's identity and not a rig that refuses every start.
 		w = r.mounter.Do(startRequest(`{"account":"acct-user","tenant":"team-alpha","reason":"a support call"}`))
 		if w.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200 for the name team-alpha: %s", w.Code, w.Body.String())
@@ -183,8 +164,6 @@ func TestStartRefusesTheInternalIdentifierAsTheTenantName(t *testing.T) {
 	})
 }
 
-// namePair is one name and the identifier it names, answering both directions
-// of the tenant seam over the same pair.
 type namePair struct{ name, id string }
 
 func (p namePair) TenantNameOf(_ context.Context, id string) (string, error) {
@@ -201,10 +180,7 @@ func (p namePair) TenantIDOf(_ context.Context, name string) (string, bool, erro
 	return "", false, nil
 }
 
-// TestStartOverBearerIssuesTheImpersonationToken holds the bearer carrier: the
-// answer carries an access token, no session is touched, and the issue carries
-// the target, the actor, the record, its tenant and session, and a lifetime no
-// longer than the shorter of the access-token setting and the record.
+// TestStartOverBearerIssuesTheImpersonationToken checks that a bearer start answers an access token and leaves the session untouched.
 func TestStartOverBearerIssuesTheImpersonationToken(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.mounter.As(adminOpts(authntest.WithBackend(tokenBackend))...)
@@ -233,24 +209,19 @@ func TestStartOverBearerIssuesTheImpersonationToken(t *testing.T) {
 		if in.ImpersonationID == "" || in.Scope != tenantA {
 			t.Errorf("the issue reads record %q scope %q, want the record and the tenant", in.ImpersonationID, in.Scope)
 		}
-		// The issue carries the actor's own factors; the token module is what
-		// caps the record's level at a single factor.
 		if len(in.Methods) != 2 || in.Methods[0] != authn.MethodPassword || in.Methods[1] != authn.MethodTOTP {
 			t.Errorf("the issue's methods are %v, want the actor's methods", in.Methods)
 		}
 		if in.Assurance != authn.AssuranceMulti {
 			t.Errorf("the issue's assurance is %d, want the actor's", in.Assurance)
 		}
-		// The lifetime is the shorter of the access-token setting (10m) and the
-		// record's remaining lifetime (30m): ten minutes.
 		if in.TTL != 10*time.Minute {
 			t.Errorf("the token lifetime is %v, want the access-token setting", in.TTL)
 		}
 	})
 }
 
-// TestStartOverBearerWithoutTokensIsUnavailable holds that a bearer start in an
-// assembly with no token capability fails before any action.
+// TestStartOverBearerWithoutTokensIsUnavailable checks that a bearer start without a token capability fails before any action.
 func TestStartOverBearerWithoutTokensIsUnavailable(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.p.tokens = nil
@@ -266,9 +237,7 @@ func TestStartOverBearerWithoutTokensIsUnavailable(t *testing.T) {
 	})
 }
 
-// TestCarrierFailureCompensates holds the compensation: a start whose carrier
-// cannot be attached ends the record with the reason start-failed, writes a
-// failed audit row, and answers 503.
+// TestCarrierFailureCompensates checks that an unattachable carrier ends the record as start-failed, audits the failure and answers 503.
 func TestCarrierFailureCompensates(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.sessions.setErr = errFromStore
@@ -291,20 +260,20 @@ func TestCarrierFailureCompensates(t *testing.T) {
 		if rows[0].EndReason == nil || *rows[0].EndReason != authn.EndStartFailed {
 			t.Errorf("the compensated record's end reason is %v, want start-failed", rows[0].EndReason)
 		}
-		// The last audit row is the failed one that links to the granted row.
+
 		entries := r.audit.entries()
 		last := entries[len(entries)-1]
 		if last.Outcome != outcomeFailed || last.Detail[detailGrantID] != rows[0].ID {
 			t.Errorf("the last audit row is %+v, want a failed row linked by grant_id", last)
 		}
-		// No started event is published for a start whose carrier failed.
+
 		if got := len(r.bus.ofType(authn.EventImpersonationStarted)); got != 0 {
 			t.Errorf("%d started events were published, want none", got)
 		}
 	})
 }
 
-// TestStatusReturnsTheRecordInForceAndNotFoundWithout holds the status route.
+// TestStatusReturnsTheRecordInForceAndNotFoundWithout checks that the status route answers the record in force and 404 without one.
 func TestStatusReturnsTheRecordInForceAndNotFoundWithout(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.mounter.As(adminOpts()...)
@@ -328,7 +297,6 @@ func TestStatusReturnsTheRecordInForceAndNotFoundWithout(t *testing.T) {
 			t.Errorf("the status reads %+v, want the target", body.Grant)
 		}
 
-		// A session with no record answers 404.
 		r.mounter.As(adminOpts(authntest.WithSession("no-record-session"))...)
 		if w := r.mounter.Do(httptest.NewRequest(http.MethodGet, "/api/v1/auth/impersonation", nil)); w.Code != http.StatusNotFound {
 			t.Errorf("the status of a session with no record answered %d, want 404", w.Code)
@@ -336,8 +304,7 @@ func TestStatusReturnsTheRecordInForceAndNotFoundWithout(t *testing.T) {
 	})
 }
 
-// TestEndOverCookieClearsTheMarker holds the delete route: the record ends and,
-// under a cookie, the marker is cleared without a new token or a cookie.
+// TestEndOverCookieClearsTheMarker checks that the delete route ends the record and clears the marker without a new token or cookie.
 func TestEndOverCookieClearsTheMarker(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.mounter.As(adminOpts()...)
@@ -346,7 +313,7 @@ func TestEndOverCookieClearsTheMarker(t *testing.T) {
 			t.Fatalf("the start answered %d", w.Code)
 		}
 		r.sessions.setCalls = nil
-		// The start wrote a cookie; the delete is what this case is about.
+
 		r.sessions.cookie = false
 
 		r.mounter.As(impersonatingOpts(sessionBackend)...)
@@ -363,9 +330,7 @@ func TestEndOverCookieClearsTheMarker(t *testing.T) {
 	})
 }
 
-// TestAnImpersonatingIdentityIsRefusedOnTheStartRoute holds the gateway level: the
-// start route is not registered Impersonable, so an impersonating identity is
-// answered 401 before the handler.
+// TestAnImpersonatingIdentityIsRefusedOnTheStartRoute checks that an impersonating identity is answered 401 there before the handler.
 func TestAnImpersonatingIdentityIsRefusedOnTheStartRoute(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.mounter.As(impersonatingOpts(sessionBackend)...)
@@ -377,10 +342,7 @@ func TestAnImpersonatingIdentityIsRefusedOnTheStartRoute(t *testing.T) {
 	})
 }
 
-// TestTheStartHandlerRefusesAnImpersonatingIdentityItself holds the handler's own
-// refusal, the fallback for a path that does not go through the gateway. The
-// typed handler answers a fault rather than writing a response, so the fault is
-// what the case reads.
+// TestTheStartHandlerRefusesAnImpersonatingIdentityItself checks the handler's own refusal, the fallback for a path that bypasses the gateway.
 func TestTheStartHandlerRefusesAnImpersonatingIdentityItself(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := authntest.Context(t, context.Background(), impersonatingOpts(sessionBackend)...)
@@ -395,9 +357,6 @@ func TestTheStartHandlerRefusesAnImpersonatingIdentityItself(t *testing.T) {
 		if want := "urn:speed:authn:impersonation-restricted"; fault.Type != want {
 			t.Errorf("the problem type is %q, want %q", fault.Type, want)
 		}
-		// The refusal is the handler's own and never reaches Start, so nothing is
-		// audited, no denied attempt is counted and no record is written. Without
-		// the early return, Start refuses the same way but the seam still writes.
 		if rows := r.audit.entries(); len(rows) != 0 {
 			t.Errorf("the early refusal wrote %d audit rows, want none: %+v", len(rows), rows)
 		}
@@ -410,9 +369,6 @@ func TestTheStartHandlerRefusesAnImpersonatingIdentityItself(t *testing.T) {
 	})
 }
 
-// impersonatingOpts are the options of an impersonating identity as a verifying
-// backend would stamp it: the target's account, the actor, the record's tenant,
-// and the level capped at a single factor.
 func impersonatingOpts(backend string) []authntest.Option {
 	return []authntest.Option{
 		authntest.WithAccount(targetID),
@@ -424,9 +380,7 @@ func impersonatingOpts(backend string) []authntest.Option {
 	}
 }
 
-// TestStartOverCookiePublishesTheStartedPayload holds the started event's
-// payload: the record, the actor, the target, the actor's session and the end
-// instant, as the design fixes them.
+// TestStartOverCookiePublishesTheStartedPayload checks that a cookie start publishes the started event with the record, actor, target, session and expiry.
 func TestStartOverCookiePublishesTheStartedPayload(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.mounter.As(adminOpts()...)
@@ -452,9 +406,7 @@ func TestStartOverCookiePublishesTheStartedPayload(t *testing.T) {
 	})
 }
 
-// TestStatusAnswersNotFoundForALapsedRecord holds the status route when the
-// record is there but no longer in force: it is answered 404, and the lapse is
-// written back.
+// TestStatusAnswersNotFoundForALapsedRecord checks that the status route answers 404 for a lapsed record and writes the lapse back.
 func TestStatusAnswersNotFoundForALapsedRecord(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.mounter.As(adminOpts()...)
@@ -470,7 +422,6 @@ func TestStatusAnswersNotFoundForALapsedRecord(t *testing.T) {
 			t.Fatalf("the start body is not the grant: %v", err)
 		}
 
-		// Past the record's end without ending it: the row is there, unended.
 		r.clock.advance(31 * time.Minute)
 		r.mounter.As(impersonatingOpts(sessionBackend)...)
 		w := r.mounter.Do(httptest.NewRequest(http.MethodGet, "/api/v1/auth/impersonation", nil))
@@ -483,12 +434,7 @@ func TestStatusAnswersNotFoundForALapsedRecord(t *testing.T) {
 	})
 }
 
-// TestStartSeparatesAnUnseasonedActorFromAShortfall holds the two refusals a
-// failing actor's authentication reaches the route with. A missing seasoned
-// factor is the 403 a step-up can never clear, so it carries no challenge; the
-// assurance, freshness, Local and method-set checks stay the 401 the step-up
-// dialog answers. The seasoned answer is true throughout the second case, so a
-// remaining 401 proves the checks before it were judged first.
+// TestStartSeparatesAnUnseasonedActorFromAShortfall checks the two refusals a failing actor's authentication reaches the route with.
 func TestStartSeparatesAnUnseasonedActorFromAShortfall(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.p.mountRoutes()
@@ -540,13 +486,7 @@ func TestStartSeparatesAnUnseasonedActorFromAShortfall(t *testing.T) {
 	})
 }
 
-// TestStartAnswersContactRequiredForAPendingRegistration holds the answer the
-// start route gives an initiator whose self-registration is pending: 403
-// contact-required, with no record, no denied attempt and no audit row. The 403
-// is the mapping's own; without the sentinel's branch in startFailure it falls
-// through to the 503 of a dependency that did not answer, which a client reads
-// as a retry rather than as guidance to prove the address. An account that never
-// registered and one that has proved its address start as before.
+// TestStartAnswersContactRequiredForAPendingRegistration checks that a pending self-registration is answered 403 contact-required with no record, audit row or denied count.
 func TestStartAnswersContactRequiredForAPendingRegistration(t *testing.T) {
 	t.Run("a pending registration", func(t *testing.T) {
 		onEachDialect(t, func(t *testing.T, r *rig) {
@@ -601,9 +541,7 @@ func TestStartAnswersContactRequiredForAPendingRegistration(t *testing.T) {
 	}
 }
 
-// TestStartFailureMapsEachErrorToItsStatusAndCode holds the handler's answer to
-// each error Start returns: the fault's status and problem code are the design's,
-// which the entry point writes and the client reads.
+// TestStartFailureMapsEachErrorToItsStatusAndCode checks the status and problem code the handler answers for each error Start returns.
 func TestStartFailureMapsEachErrorToItsStatusAndCode(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		for _, c := range []struct {

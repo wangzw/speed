@@ -8,8 +8,6 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// bindingEvent decodes the one event of a type the bus holds, failing the case if
-// there is not exactly one.
 func bindingEvent[T any](t *testing.T, h *harness, eventType string) T {
 	t.Helper()
 	events := h.bus.of(eventType)
@@ -27,8 +25,6 @@ func bindingEvent[T any](t *testing.T, h *harness, eventType string) T {
 func TestIdentifierChangesArePublished(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
-		// The account keeps its password, so removing the phone number leaves it a
-		// way to log in and the removal is the event under test.
 		id := h.user("binder", "correct horse battery")
 		if err := h.p.AddIdentifier(ctx, id, authn.IdentifierPhone, "+8613812345678", admin); err != nil {
 			t.Fatalf("adding: %v", err)
@@ -58,8 +54,7 @@ func TestIdentifierChangesArePublished(t *testing.T) {
 	})
 }
 
-// A password write publishes a change, and a rehash after a successful check is
-// not one: it is the same password rewritten at the current cost.
+// A password write publishes a change, and a rehash after a check is not one.
 func TestAPasswordChangeIsPublishedButARehashIsNot(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -71,8 +66,6 @@ func TestAPasswordChangeIsPublishedButARehashIsNot(t *testing.T) {
 		if before != 1 {
 			t.Fatalf("%d password-change events after the import, want one", before)
 		}
-		// A successful check rewrites the weak entry, and that is not a change of
-		// the password.
 		if _, _, err := h.p.Verify(ctx, "rehasher", "correct horse battery"); err != nil {
 			t.Fatalf("verifying: %v", err)
 		}
@@ -82,8 +75,7 @@ func TestAPasswordChangeIsPublishedButARehashIsNot(t *testing.T) {
 	})
 }
 
-// A membership's changes are published as they happen: added, suspended, resumed,
-// and the SSO exemption set and cleared.
+// Membership additions, suspensions, resumptions and SSO exemption changes are published.
 func TestMembershipChangesArePublished(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -125,8 +117,7 @@ func TestMembershipChangesArePublished(t *testing.T) {
 	})
 }
 
-// A back-off that begins on an account publishes the engagement, carrying the
-// account identifier.
+// A back-off that begins on an account publishes the engagement with the account identifier.
 func TestAnAccountEngagementIsPublished(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -148,8 +139,7 @@ func TestAnAccountEngagementIsPublished(t *testing.T) {
 	})
 }
 
-// A created account's event is published to the bus and not staged in the
-// outbox: it is the account's first fact and nothing has to be undone with it.
+// A created account's event goes to the bus, not the outbox.
 func TestACreatedEventGoesToTheBusAndNotTheOutbox(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		h.withOutbox()

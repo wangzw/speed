@@ -22,12 +22,7 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// TestAcceptAddsAMembershipForAProvenAccountThroughTheRealAccountModule holds
-// the whole of a redemption against the account module's own reads and writes
-// over one SQLite database both migration sets are applied to: an authenticated
-// caller who holds the invited address as a proven email identifier gets the
-// membership, and the acceptance writes neither an account nor an identifier,
-// so the address keeps the channel it was proved through and its sign-in axis.
+// TestAcceptAddsAMembershipForAProvenAccountThroughTheRealAccountModule checks that a redemption adds the membership and writes no account or identifier.
 func TestAcceptAddsAMembershipForAProvenAccountThroughTheRealAccountModule(t *testing.T) {
 	withRealAccountProduct(t, func(handle *gorm.DB, _ authn.Signups, admin authn.AccountAdmin, accounts authn.Accounts,
 		verification authn.SignupVerification, memberships authn.Memberships,
@@ -44,9 +39,6 @@ func TestAcceptAddsAMembershipForAProvenAccountThroughTheRealAccountModule(t *te
 		if err != nil {
 			t.Fatalf("creating the account: %v", err)
 		}
-		// The invited address is proved through the ordinary email-code channel
-		// and is the account's second address, so proving it does not make it a
-		// sign-in way.
 		if addErr := admin.AddIdentifier(ctx, created.ID, authn.IdentifierEmail, "newcomer@example.com",
 			authn.Verification{Via: authn.VerifiedViaEmailCode}); addErr != nil {
 			t.Fatalf("proving the invited address: %v", addErr)
@@ -75,8 +67,6 @@ func TestAcceptAddsAMembershipForAProvenAccountThroughTheRealAccountModule(t *te
 			t.Errorf("membership = %+v, want active with source %q", got, SourceInvite)
 		}
 
-		// Acceptance wrote no identifier: the invited address is still a single
-		// email-code identifier, and it is not a sign-in way.
 		identifier := emailIdentifier(t, ctx, accounts, created.ID, "newcomer@example.com")
 		if identifier.VerifiedVia != authn.VerifiedViaEmailCode {
 			t.Errorf("the invited address reads via %q, want the email-code proof it already had", identifier.VerifiedVia)
@@ -90,10 +80,7 @@ func TestAcceptAddsAMembershipForAProvenAccountThroughTheRealAccountModule(t *te
 	})
 }
 
-// TestAcceptRefusesAnAccountWithoutTheInvitedAddressThroughTheRealAccountModule
-// holds the refusal for a caller whose proven address is another one: the
-// invitation stays pending, no membership is written, and no account is opened
-// for the invited address.
+// TestAcceptRefusesAnAccountWithoutTheInvitedAddressThroughTheRealAccountModule checks that a caller proving another address is refused and nothing is written.
 func TestAcceptRefusesAnAccountWithoutTheInvitedAddressThroughTheRealAccountModule(t *testing.T) {
 	withRealAccountProduct(t, func(handle *gorm.DB, _ authn.Signups, admin authn.AccountAdmin, accounts authn.Accounts,
 		verification authn.SignupVerification, memberships authn.Memberships,
@@ -132,12 +119,7 @@ func TestAcceptRefusesAnAccountWithoutTheInvitedAddressThroughTheRealAccountModu
 	})
 }
 
-// TestAFreshlyRegisteredAccountCannotAcceptUntilItProvesTheInvitedAddress holds
-// the whole flow the product requires: registration leaves the address pending;
-// acceptance is refused with the proof step's error while it is unproved; the
-// ordinary email-code proof moves it to verified; and the same token then
-// redeems, with no second account and with the address proved by the code and
-// not by the invitation.
+// TestAFreshlyRegisteredAccountCannotAcceptUntilItProvesTheInvitedAddress checks that a pending registration is refused until the address is proved, then the same token redeems.
 func TestAFreshlyRegisteredAccountCannotAcceptUntilItProvesTheInvitedAddress(t *testing.T) {
 	withRealAccountProduct(t, func(handle *gorm.DB, signups authn.Signups, admin authn.AccountAdmin,
 		accounts authn.Accounts, verification authn.SignupVerification, memberships authn.Memberships,
@@ -170,7 +152,6 @@ func TestAFreshlyRegisteredAccountCannotAcceptUntilItProvesTheInvitedAddress(t *
 			t.Errorf("a membership was written before the proof: ok=%t, err=%v", ok, readErr)
 		}
 
-		// The ordinary email-code proof is what moves the address to verified.
 		if addErr := admin.AddIdentifier(ctx, registered.ID, authn.IdentifierEmail, "newcomer@example.com",
 			authn.Verification{Via: authn.VerifiedViaEmailCode}); addErr != nil {
 			t.Fatalf("proving the address: %v", addErr)
@@ -201,9 +182,7 @@ func TestAFreshlyRegisteredAccountCannotAcceptUntilItProvesTheInvitedAddress(t *
 	})
 }
 
-// TestAcceptRefusesASuspendedMembershipThroughTheRealAccountModule holds that a
-// suspended member is not reactivated: the acceptance answers the dedicated
-// error, the stored membership stays suspended, and the invitation is revoked.
+// TestAcceptRefusesASuspendedMembershipThroughTheRealAccountModule checks that a suspended member is refused, stays suspended, and the invitation is revoked.
 func TestAcceptRefusesASuspendedMembershipThroughTheRealAccountModule(t *testing.T) {
 	withRealAccountProduct(t, func(handle *gorm.DB, _ authn.Signups, admin authn.AccountAdmin, accounts authn.Accounts,
 		verification authn.SignupVerification, memberships authn.Memberships,
@@ -224,8 +203,6 @@ func TestAcceptRefusesASuspendedMembershipThroughTheRealAccountModule(t *testing
 		if err != nil {
 			t.Fatalf("issuing an invitation: %v", err)
 		}
-		// The suspension lands after issuance: an address that is already a
-		// member cannot be invited, and this case is about acceptance meeting one.
 		if putErr := memberships.Put(ctx, authn.Membership{
 			Account: created.ID, Tenant: tenant, Active: false, Source: "admin",
 		}); putErr != nil {
@@ -252,9 +229,7 @@ func TestAcceptRefusesASuspendedMembershipThroughTheRealAccountModule(t *testing
 	})
 }
 
-// TestAcceptPreservesAnExistingMembershipsSourceAndExemptionThroughTheRealAccountModule
-// holds the write's values against the real membership store: an active
-// membership that already exists keeps its source and its SSO exemption.
+// TestAcceptPreservesAnExistingMembershipsSourceAndExemptionThroughTheRealAccountModule checks that an existing active membership keeps its source and SSO exemption.
 func TestAcceptPreservesAnExistingMembershipsSourceAndExemptionThroughTheRealAccountModule(t *testing.T) {
 	withRealAccountProduct(t, func(handle *gorm.DB, _ authn.Signups, admin authn.AccountAdmin, accounts authn.Accounts,
 		verification authn.SignupVerification, memberships authn.Memberships,
@@ -275,9 +250,6 @@ func TestAcceptPreservesAnExistingMembershipsSourceAndExemptionThroughTheRealAcc
 		if err != nil {
 			t.Fatalf("issuing an invitation: %v", err)
 		}
-		// The membership appears after issuance: an address that is already a
-		// member cannot be invited, and this case is about an acceptance that
-		// finds one.
 		if putErr := memberships.Put(ctx, authn.Membership{
 			Account: created.ID, Tenant: tenant, Active: true, Source: "admin", SSOExempt: true,
 		}); putErr != nil {
@@ -298,8 +270,6 @@ func TestAcceptPreservesAnExistingMembershipsSourceAndExemptionThroughTheRealAcc
 	})
 }
 
-// newRealProduct builds this module's product over the account module's own
-// capabilities and the database both modules' tables stand on.
 func newRealProduct(t *testing.T, handle *gorm.DB, admin authn.AccountAdmin, accounts authn.Accounts,
 	verification authn.SignupVerification, memberships authn.Memberships,
 ) *product {
@@ -317,8 +287,6 @@ func newRealProduct(t *testing.T, handle *gorm.DB, admin authn.AccountAdmin, acc
 		tenantDescs:  &fakeTenantDescriptions{byID: map[string]authn.TenantDescription{}},
 		logger:       (&logBuffer{}).logger(),
 	}
-	// The account module delivers the transaction-aware membership write beside
-	// the plain one; the acceptance joins it.
 	if writer, ok := memberships.(provisioning.MembershipWriter); ok {
 		p.membershipWriter = writer
 	}
@@ -326,7 +294,6 @@ func newRealProduct(t *testing.T, handle *gorm.DB, admin authn.AccountAdmin, acc
 	return p
 }
 
-// rowOf reads one invitation row straight from the table.
 func rowOf(t *testing.T, handle *gorm.DB, id string) invitationRow {
 	t.Helper()
 	var rows []invitationRow
@@ -339,7 +306,6 @@ func rowOf(t *testing.T, handle *gorm.DB, id string) invitationRow {
 	return rows[0]
 }
 
-// emailIdentifier reads the one email identifier an account holds for a value.
 func emailIdentifier(t *testing.T, ctx context.Context, accounts authn.Accounts, id authn.AccountID, value string) authn.Identifier {
 	t.Helper()
 	identifiers, err := accounts.Identifiers(ctx, id)
@@ -358,7 +324,6 @@ func emailIdentifier(t *testing.T, ctx context.Context, accounts authn.Accounts,
 	return found[0]
 }
 
-// identifierCount counts the identifier rows an account holds for one value.
 func identifierCount(t *testing.T, handle *gorm.DB, id authn.AccountID, value string) int64 {
 	t.Helper()
 	var n int64
@@ -369,7 +334,6 @@ func identifierCount(t *testing.T, handle *gorm.DB, id authn.AccountID, value st
 	return n
 }
 
-// accountCount reads how many account rows the database holds.
 func accountCount(t *testing.T, handle *gorm.DB) int64 {
 	t.Helper()
 	var n int64
@@ -379,14 +343,8 @@ func accountCount(t *testing.T, handle *gorm.DB) int64 {
 	return n
 }
 
-// openPasswordSignupKey is the setting the account module's registration reads
-// as its authority. The stand-in below turns it on; every other key it answers
-// as undeclared, which the module reads as that item's declared default.
 const openPasswordSignupKey = "authn.account.password-signup"
 
-// openPasswordSignup is a settings store whose password-signup item is open. It
-// is what lets a case start from a real pending self-registration rather than a
-// hand-written row.
 type openPasswordSignup struct{}
 
 func (openPasswordSignup) Get(_ settings.Layer, key string, target any) error {
@@ -430,8 +388,6 @@ func (openPasswordSignup) Read(key string, reads ...settings.LayerRead) ([]setti
 	return results, nil
 }
 
-// provideSettings declares the stand-in module that hands the settings store
-// over.
 func provideSettings() core.Module {
 	return core.Module{
 		Name:     "stand-in.invite-settings",
@@ -440,11 +396,7 @@ func provideSettings() core.Module {
 	}
 }
 
-// withRealAccountProduct brings the real account module up over a SQLite file of
-// this test's own, so that its reads and writes run their own checks, and runs
-// use inside the drive with the handle and the capabilities the invitation
-// module takes up. use runs before the drive closes the pool, which is why it is
-// a callback rather than a set of return values.
+// use runs before the drive closes the pool, which is why it takes a callback.
 func withRealAccountProduct(t *testing.T,
 	use func(*gorm.DB, authn.Signups, authn.AccountAdmin, authn.Accounts, authn.SignupVerification, authn.Memberships),
 ) {

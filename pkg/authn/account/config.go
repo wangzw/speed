@@ -10,10 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The keys this module accepts, relative to its namespace. The two remaining
-// configuration items fix what is allocated at construction, so a change to one
-// requires a restart; the rest are settings, read from the settings store while
-// the process runs.
 const (
 	concurrencyItem       = "password-concurrency"
 	signupConcurrencyItem = "signup-concurrency"
@@ -56,27 +52,17 @@ const (
 	reservedPath        = ConfigNamespace + "." + reservedKey
 )
 
-// The values the switches that relax a check take. The strict one is the default
-// of each.
 const (
 	signupClosed = "closed"
 	signupOpen   = "open"
 )
 
-// The sanity bounds on the sizes configuration states. A derivation width of
-// 256 is beyond any machine this runs on, and a budget past a tebibyte is a
-// typing mistake that is better refused than allocated.
 const (
-	maxConcurrency     = 256
-	maxMemoryBudgetMiB = 1 << 20
-	// memoryBudgetFloorMiB is the least a memory budget may be: twice the
-	// largest memory one derivation may take, so that one derivation is never
-	// most of the budget and two of the largest still run together.
+	maxConcurrency       = 256
+	maxMemoryBudgetMiB   = 1 << 20
 	memoryBudgetFloorMiB = 2 * password.MaxMemoryKiB / 1024
 )
 
-// The bounds of the settings other than those the back-off shares with the
-// static table, which password declares.
 const (
 	minPasswordLengthFloor, minPasswordLengthCeil = 8, 64
 	minThrottleFree, maxThrottleFree              = 1, 10
@@ -84,20 +70,12 @@ const (
 	minThrottleDecay, maxThrottleDecay            = time.Minute, 24 * time.Hour
 	minRetention, maxRetention                    = time.Hour, 8760 * time.Hour
 
-	// signupIPLimitCeil is how many registrations one source address may make in
-	// a minute, at most; the minute is the setting's own unit, not its value.
-	signupIPLimitCeil = 10000
-	// signupHourlyFloor and signupHourlyCeil bound the registrations of the whole
-	// deployment in an hour.
-	signupHourlyFloor, signupHourlyCeil = 1, 1000000
-	// unverifiedTTLCeil is how long a self-registered account may stay without a
-	// proved address; zero turns the sweep off.
-	unverifiedTTLCeil = 8760 * time.Hour
-	// minUnverifiedSweep and maxUnverifiedSweep bound how often that sweep runs.
+	signupIPLimitCeil                      = 10000
+	signupHourlyFloor, signupHourlyCeil    = 1, 1000000
+	unverifiedTTLCeil                      = 8760 * time.Hour
 	minUnverifiedSweep, maxUnverifiedSweep = time.Minute, 24 * time.Hour
 )
 
-// moduleConfig is the set of input items this module accepts.
 type moduleConfig struct {
 	// PasswordConcurrency is how many password derivations run at once, fixed
 	// when the module is built.
@@ -111,14 +89,12 @@ type moduleConfig struct {
 	PasswordMemoryBudgetMiB int `config:"password-memory-budget-mib"`
 }
 
-// configDefaults is what this module is worth without a configuration file.
 var configDefaults = moduleConfig{
 	PasswordConcurrency:     password.DefaultConcurrency(),
 	SignupConcurrency:       password.DefaultConcurrency(),
 	PasswordMemoryBudgetMiB: password.DefaultMemoryBudgetKiB / 1024,
 }
 
-// options carries the settings items and their declared defaults.
 type options struct {
 	PasswordAlgorithm        string        `config:"password-algorithm"`
 	Signup                   string        `config:"signup"`
@@ -139,12 +115,6 @@ type options struct {
 	ReservedUsernames        string        `config:"reserved-usernames"`
 }
 
-// defaults is the prototype the settings module reads the declared defaults off.
-// It never receives a value. The algorithm is Argon2id, the stronger of the two;
-// the Argon2id numbers are the least OWASP combination that costs the least
-// memory; the password minimum is the domain's floor, which a deployment raises
-// when its own credential policy asks for more; the rest are the strictest value
-// of each range's usual end.
 var defaults = options{
 	PasswordAlgorithm:        string(password.Argon2id),
 	Signup:                   signupClosed,
@@ -165,10 +135,6 @@ var defaults = options{
 	ReservedUsernames:        "[]",
 }
 
-// The domain of each setting is the one statement of its range: the settings
-// store holds a write to it, and a read is judged against it again, since a
-// value stored before the domain was declared, or written around the store, is
-// served as it is.
 func algorithmInDomain(v string) bool {
 	return v == string(password.Argon2id) || v == string(password.PBKDF2SHA256)
 }
@@ -209,15 +175,12 @@ func decayInDomain(d time.Duration) bool { return d >= minThrottleDecay && d <= 
 
 func retentionInDomain(d time.Duration) bool { return d >= minRetention && d <= maxRetention }
 
-// resolved is the configuration this module actually runs on.
 type resolved struct {
 	concurrency       int
 	signupConcurrency int
 	memoryBudget      int64 // KiB
 }
 
-// resolve turns decoded configuration into what the module runs on, or says
-// which item to correct.
 func (c moduleConfig) resolve() (resolved, error) {
 	var r resolved
 	if c.PasswordConcurrency < 1 || c.PasswordConcurrency > maxConcurrency {
@@ -240,7 +203,6 @@ func (c moduleConfig) resolve() (resolved, error) {
 	return r, nil
 }
 
-// schema declares this module's input items.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,
@@ -263,8 +225,6 @@ func schema() config.Schema {
 	}
 }
 
-// settingsSchema declares this module's runtime parameters, each with the domain
-// the code acts on.
 func settingsSchema() settings.Schema {
 	return settings.Schema{
 		Namespace: ConfigNamespace,
@@ -358,8 +318,6 @@ func settingsSchema() settings.Schema {
 	}
 }
 
-// readConfig decodes this module's section and validates it. Prepare and New both
-// go through it, so the two see one table.
 func readConfig(reader config.Reader) (resolved, error) {
 	var cfg moduleConfig
 	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {

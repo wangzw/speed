@@ -9,18 +9,11 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// domainClaims is the narrow shape the provider views read domains through. The
-// published SSOProviders method set carries no domain read, so the SSO provider
-// group is mounted only when the delivered register also answers this.
 type domainClaims interface {
 	Domains(ctx context.Context, idpID string) ([]authn.SSOProviderDomain, error)
 	DomainsMany(ctx context.Context, ids []string) (map[string][]authn.SSOProviderDomain, error)
 }
 
-// providerViewOf builds one SSO provider as the management routes show it. The
-// encrypted client secret never appears; the warnings name the settings that
-// loosen a default, so an administrator sees them on the response that set them;
-// domains carries every claim with its verification state.
 func providerViewOf(p authn.SSOProvider, domains []authn.SSOProviderDomain, tenantName string) AuthnAdminProvider {
 	claims := make([]AuthnAdminProviderDomain, len(domains))
 	for i, d := range domains {
@@ -46,9 +39,6 @@ func providerViewOf(p authn.SSOProvider, domains []authn.SSOProviderDomain, tena
 	}
 }
 
-// readDomains reads one provider's email-domain claims. Every failure is the
-// dependency being unavailable: the provider itself was resolved before the
-// decision.
 func (m *product) readDomains(ctx context.Context, idpID string) ([]authn.SSOProviderDomain, error) {
 	domains, err := m.domainClaims.Domains(ctx, idpID)
 	if err != nil {
@@ -57,8 +47,6 @@ func (m *product) readDomains(ctx context.Context, idpID string) ([]authn.SSOPro
 	return domains, nil
 }
 
-// providerWarnings names each setting of a provider that loosens a default:
-// IdP-initiated sign-in and accepting SHA-1.
 func providerWarnings(p authn.SSOProvider) []string {
 	var out []string
 	if p.AllowIDPInitiated {
@@ -70,9 +58,6 @@ func providerWarnings(p authn.SSOProvider) []string {
 	return out
 }
 
-// providerWriteFields is the body of a provider write, apart from the two
-// segments that address it. The create and update inputs carry the same body,
-// and this is the one reading of it.
 type providerWriteFields struct {
 	Protocol          string
 	Name              string
@@ -88,7 +73,6 @@ type providerWriteFields struct {
 	ClientSecret      *string
 }
 
-// writeFields reads the create input's body.
 func (in providerCreateInput) writeFields() providerWriteFields {
 	return providerWriteFields{
 		Protocol: in.Protocol, Name: in.Name, Enabled: in.Enabled, Provisioning: in.Provisioning,
@@ -98,7 +82,6 @@ func (in providerCreateInput) writeFields() providerWriteFields {
 	}
 }
 
-// writeFields reads the update input's body.
 func (in providerUpdateInput) writeFields() providerWriteFields {
 	return providerWriteFields{
 		Protocol: in.Protocol, Name: in.Name, Enabled: in.Enabled, Provisioning: in.Provisioning,
@@ -108,11 +91,6 @@ func (in providerUpdateInput) writeFields() providerWriteFields {
 	}
 }
 
-// configObject renders a bound configuration object as the raw JSON the
-// capability validates. An absent config stays nil, which the capability reads
-// as "not given"; a present one is re-encoded because the binding decodes it
-// into a map. Every member came from a decoded body, so each is valid JSON and
-// encoding the map cannot fail.
 func configObject(config map[string]json.RawMessage) json.RawMessage {
 	if config == nil {
 		return nil
@@ -121,9 +99,6 @@ func configObject(config map[string]json.RawMessage) json.RawMessage {
 	return raw
 }
 
-// provider builds the provider value a write carries. It fills the boolean
-// fields the body left out from the base, which is the stored provider for an
-// update and the zero value for a create.
 func (f providerWriteFields) provider(id, tenant string, base authn.SSOProvider) authn.SSOProvider {
 	p := authn.SSOProvider{
 		ID:                id,
@@ -164,8 +139,6 @@ func (f providerWriteFields) provider(id, tenant string, base authn.SSOProvider)
 	return p
 }
 
-// handleProviderList answers GET /admin/tenants/:tenant/sso/providers. The
-// action is idp.manage.
 func (m *product) handleProviderList(ctx context.Context, in tenantInput) (AuthnAdminProviderList, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
@@ -200,8 +173,6 @@ func (m *product) handleProviderList(ctx context.Context, in tenantInput) (Authn
 	return AuthnAdminProviderList{Providers: views}, nil
 }
 
-// handleProviderCreate answers POST /admin/tenants/:tenant/sso/providers. The
-// path and the body must agree on the tenant. The action is idp.manage.
 func (m *product) handleProviderCreate(ctx context.Context, in providerCreateInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
@@ -213,9 +184,6 @@ func (m *product) handleProviderCreate(ctx context.Context, in providerCreateInp
 	if in.Protocol == "" || in.Name == "" || in.Provisioning == "" {
 		return nil, m.bad()
 	}
-	// The path resolves to the internal identifier before the handler runs; the
-	// body names the tenant by name, so the two are compared through the name
-	// the path tenant carries.
 	tenantName, nameErr := m.nameOf(ctx, in.Tenant)
 	if nameErr != nil {
 		return nil, m.unavailable("reading the tenant's name", nameErr)
@@ -242,8 +210,6 @@ func (m *product) handleProviderCreate(ctx context.Context, in providerCreateInp
 	return speedhttp.JSONReply(201, AuthnAdminProviderEnvelope{Provider: providerViewOf(provider, nil, tenantName)}), nil
 }
 
-// handleProviderGet answers GET /admin/sso/providers/:id. The decision's tenant
-// is the provider's own, resolved from the store before the Decider is asked.
 func (m *product) handleProviderGet(ctx context.Context, in providerIDInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, p, err := m.providerFor(ctx, in.Tenant, in.ID)
 	if err != nil {
@@ -263,9 +229,6 @@ func (m *product) handleProviderGet(ctx context.Context, in providerIDInput, _ *
 	return speedhttp.JSONReply(200, AuthnAdminProviderEnvelope{Provider: providerViewOf(p, domains, tenantName)}), nil
 }
 
-// handleProviderUpdate answers PUT /admin/sso/providers/:id. The tenant is the
-// provider's own and is immutable: a body that names another is refused. The
-// action is idp.manage.
 func (m *product) handleProviderUpdate(ctx context.Context, in providerUpdateInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, existing, err := m.providerFor(ctx, in.Tenant, in.ID)
 	if err != nil {
@@ -275,8 +238,6 @@ func (m *product) handleProviderUpdate(ctx context.Context, in providerUpdateInp
 	if nameErr != nil {
 		return nil, m.unavailable("reading the tenant's name", nameErr)
 	}
-	// The path resolved to the provider's tenant identifier; the body names the
-	// tenant by name, and a value naming another tenant is refused.
 	if in.BodyTenant != "" && in.BodyTenant != tenantName {
 		return nil, m.bad()
 	}
@@ -303,8 +264,6 @@ func (m *product) handleProviderUpdate(ctx context.Context, in providerUpdateInp
 	return speedhttp.JSONReply(200, AuthnAdminProviderEnvelope{Provider: providerViewOf(provider, domains, tenantName)}), nil
 }
 
-// handleProviderDelete answers DELETE /admin/sso/providers/:id. The action is
-// idp.manage.
 func (m *product) handleProviderDelete(ctx context.Context, in providerIDInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, p, err := m.providerFor(ctx, in.Tenant, in.ID)
 	if err != nil {
@@ -332,8 +291,6 @@ func (m *product) handleProviderDelete(ctx context.Context, in providerIDInput, 
 	return speedhttp.EmptyReply(204), nil
 }
 
-// handleDomainClaim answers POST /admin/sso/providers/:id/domains and returns
-// the token to publish in DNS. The action is idp.manage.
 func (m *product) handleDomainClaim(ctx context.Context, in domainClaimInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, provider, err := m.providerFor(ctx, in.Tenant, in.ID)
 	if err != nil {
@@ -365,24 +322,18 @@ func (m *product) handleDomainClaim(ctx context.Context, in domainClaimInput, _ 
 	return speedhttp.JSONReply(200, AuthnAdminVerifyToken{VerifyToken: token}), nil
 }
 
-// handleDomainRemove answers DELETE /admin/sso/providers/:id/domains/:domain.
-// The action is idp.manage.
 func (m *product) handleDomainRemove(ctx context.Context, in domainAddressInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	return m.changeDomain(ctx, in, "remove", func(idpID, domain string) error {
 		return m.ssoProviders.RemoveDomain(ctx, idpID, domain)
 	})
 }
 
-// handleDomainVerify answers POST
-// /admin/sso/providers/:id/domains/:domain/verify. The action is idp.manage.
 func (m *product) handleDomainVerify(ctx context.Context, in domainAddressInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	return m.changeDomain(ctx, in, "verify", func(idpID, domain string) error {
 		return m.ssoProviders.VerifyDomain(ctx, idpID, domain)
 	})
 }
 
-// handleReverifyDomains answers POST /admin/sso/providers/:id/reverify-domains.
-// The action is idp.manage.
 func (m *product) handleReverifyDomains(ctx context.Context, in providerIDInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, provider, err := m.providerFor(ctx, in.Tenant, in.ID)
 	if err != nil {
@@ -406,9 +357,6 @@ func (m *product) handleReverifyDomains(ctx context.Context, in providerIDInput,
 	return speedhttp.EmptyReply(204), nil
 }
 
-// changeDomain runs a domain write the same way for the remove and verify
-// routes: resolve the provider, decide, write the mandatory audit, call the
-// capability.
 func (m *product) changeDomain(ctx context.Context, in domainAddressInput, change string, act func(idpID, domain string) error) (speedhttp.Reply, error) {
 	id, provider, err := m.providerFor(ctx, in.Tenant, in.ID)
 	if err != nil {
@@ -436,13 +384,6 @@ func (m *product) changeDomain(ctx context.Context, in domainAddressInput, chang
 	return speedhttp.EmptyReply(204), nil
 }
 
-// providerFor reads the provider a route's :id names, after the caller and
-// admission checks. Its error is either the handler's own refusal or
-// errNotFound, which lookupFailure turns into the bare 404.
-// providerFor reads one provider and holds it to the tenant the path names: a
-// provider addressed under a tenant it does not belong to answers not found,
-// the same answer a provider that does not exist gets, so the path cannot be
-// used to probe another tenant's providers.
 func (m *product) providerFor(ctx context.Context, tenant, providerID string) (authn.Identity, authn.SSOProvider, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
@@ -461,8 +402,6 @@ func (m *product) providerFor(ctx context.Context, tenant, providerID string) (a
 	return id, p, nil
 }
 
-// lookupFailure writes providerFor's answer: a missing provider is a bare 404,
-// and every other error is the fault the handler returns.
 func (m *product) lookupFailure(err error) (speedhttp.Reply, error) {
 	if errors.Is(err, errNotFound) {
 		return speedhttp.EmptyReply(404), nil
@@ -470,9 +409,6 @@ func (m *product) lookupFailure(err error) (speedhttp.Reply, error) {
 	return nil, err
 }
 
-// handleMetadataRefresh answers POST
-// /admin/sso/providers/:id/metadata/refresh: it dispatches to the refresher of
-// the provider's protocol. The action is idp.manage.
 func (m *product) handleMetadataRefresh(ctx context.Context, in providerIDInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, provider, err := m.providerFor(ctx, in.Tenant, in.ID)
 	if err != nil {
@@ -480,8 +416,6 @@ func (m *product) handleMetadataRefresh(ctx context.Context, in providerIDInput,
 	}
 	refresher := m.refresherFor(provider.Protocol)
 	if refresher == nil {
-		// The provider's protocol has no refresher in this assembly; the request
-		// asks for an operation nothing delivers.
 		return nil, m.bad()
 	}
 	if err = m.gateSignup(ctx, id); err != nil {
@@ -511,7 +445,6 @@ func (m *product) handleMetadataRefresh(ctx context.Context, in providerIDInput,
 	return speedhttp.JSONReply(200, AuthnAdminProviderEnvelope{Provider: providerViewOf(refreshed, domains, tenantName)}), nil
 }
 
-// refresherFor returns the refresher of a protocol, or nil when none is there.
 func (m *product) refresherFor(protocol string) authn.SSOMetadataRefresher {
 	for _, r := range m.refreshers {
 		if r.Protocol() == protocol {

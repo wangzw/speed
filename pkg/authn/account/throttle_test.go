@@ -10,7 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// failuresOf reads the count a key holds, and whether it holds one at all.
 func (h *harness) failuresOf(scope authn.ThrottleScope, key string) (int, bool) {
 	h.t.Helper()
 	var rows []struct{ Failures int }
@@ -25,8 +24,7 @@ func (h *harness) failuresOf(scope authn.ThrottleScope, key string) (int, bool) 
 	return rows[0].Failures, true
 }
 
-// The free attempts are free, the one past them engages the back-off, and the
-// wait doubles up to the cap.
+// The free attempts are free, the next engages the back-off, and the wait doubles up to the cap.
 func TestTheFreeAttemptsAreFreeAndTheWaitDoubles(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -56,9 +54,7 @@ func TestTheFreeAttemptsAreFreeAndTheWaitDoubles(t *testing.T) {
 	})
 }
 
-// Only the failure at the free attempts plus one engages the back-off: a further
-// failure at a key that is already held back is counted but reports nothing
-// again, in the log, in the event or in the counter.
+// Only the failure at the free attempts plus one engages the back-off; later failures are counted but report nothing again.
 func TestOnlyTheFirstFailurePastTheFreeAttemptsEngages(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -76,7 +72,7 @@ func TestOnlyTheFirstFailurePastTheFreeAttemptsEngages(t *testing.T) {
 		if got := engagements(); got != 1 {
 			t.Fatalf("the engagement counter is %d at the failure past the free attempts, want one", got)
 		}
-		// The key is held back already; one more failure engages nothing.
+
 		if engaged, err := h.p.Fail(ctx, authn.ScopeAccount, "k"); err != nil || engaged {
 			t.Errorf("a failure past the first engagement gave engaged=%v, %v; want it counted on without engaging", engaged, err)
 		}
@@ -114,8 +110,7 @@ func TestASuccessClearsTheKeyAndNoOther(t *testing.T) {
 	})
 }
 
-// Once the window has gone by without a failure and the wait its failures earned
-// has run out, the count returns to one on the next failure.
+// Once the window passes without a failure and the earned wait runs out, the count returns to one on the next failure.
 func TestTheCountReturnsToZeroAfterTheWindow(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -125,7 +120,7 @@ func TestTheCountReturnsToZeroAfterTheWindow(t *testing.T) {
 				t.Fatalf("failing: %v", err)
 			}
 		}
-		// Within the window the count stands.
+
 		h.clock.advance(time.Minute)
 		engaged, err := h.p.Fail(ctx, authn.ScopeClient, key)
 		if err != nil || engaged {
@@ -134,8 +129,6 @@ func TestTheCountReturnsToZeroAfterTheWindow(t *testing.T) {
 		if n, _ := h.failuresOf(authn.ScopeClient, key); n != 4 {
 			t.Errorf("the count is %d within the window, want four", n)
 		}
-		// Past the window with no failure and with the wait run out, the next one
-		// starts again at one.
 		h.clock.advance(defaults.ThrottleDecay + time.Minute)
 		if _, err := h.p.Fail(ctx, authn.ScopeClient, key); err != nil {
 			t.Fatalf("failing after the window: %v", err)
@@ -171,8 +164,7 @@ func TestConcurrentFailuresAreAllCounted(t *testing.T) {
 	})
 }
 
-// A scope that is not one of the six is refused, so that counters never share a
-// key space.
+// A scope outside the six is refused, so counters never share a key space.
 func TestAScopeOutsideTheSixIsRefused(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -189,8 +181,7 @@ func TestAScopeOutsideTheSixIsRefused(t *testing.T) {
 	})
 }
 
-// A state that cannot be read is an error and never a zero, so a caller that
-// cannot tell does not verify.
+// A state that cannot be read is an error, never a zero, so a caller that cannot tell does not verify.
 func TestACheckThatCannotReadIsAnError(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		h.handle.Exec("DROP TABLE " + tableThrottles)

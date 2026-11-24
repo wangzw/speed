@@ -29,8 +29,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// stubDatabase is the database capability backed by a real handle. The module
-// calls DB and Dialect and nothing else.
 type stubDatabase struct {
 	handle  *gorm.DB
 	dialect db.Dialect
@@ -41,14 +39,10 @@ func (d stubDatabase) Dialect() db.Dialect                            { return d
 func (d stubDatabase) BlindIndex(string) string                       { return "" }
 func (d stubDatabase) Open(context.Context, string) (*gorm.DB, error) { return nil, nil }
 
-// quietly is a session of a delivered handle that writes no record of a failed
-// statement, several of which these cases fail on purpose.
 func quietly(handle *gorm.DB) *gorm.DB {
 	return handle.Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)})
 }
 
-// applyMigrations runs every migration file the module ships for a dialect, in the
-// order the database module applies them, a statement at a time.
 func applyMigrations(t testing.TB, handle *gorm.DB, dialect db.Dialect) {
 	t.Helper()
 	entries, err := fs.ReadDir(migrationsFS, string(dialect))
@@ -71,9 +65,6 @@ func applyMigrations(t testing.TB, handle *gorm.DB, dialect db.Dialect) {
 	}
 }
 
-// applyMigrationFile applies one migration file of a dialect, statement by
-// statement, and leaves the others alone. The upgrade case drives the earlier
-// declaration and then the newer file over the same database.
 func applyMigrationFile(t testing.TB, handle *gorm.DB, dialect db.Dialect, name string) {
 	t.Helper()
 	text, err := fs.ReadFile(migrationsFS, string(dialect)+"/"+name)
@@ -90,25 +81,14 @@ func applyMigrationFile(t testing.TB, handle *gorm.DB, dialect db.Dialect, name 
 	}
 }
 
-// dialectsUnderTest lists the engines this build's cases run on, each named as
-// its subtest is. PostgreSQL is appended by the integration build; see
-// account_integration_test.go.
 var dialectsUnderTest = []db.Dialect{db.SQLite}
 
-// databaseOpeners is how a case gets a database of its own per engine. The
-// PostgreSQL entry is contributed beside the dialect itself, by the integration
-// build.
 var databaseOpeners = map[db.Dialect]func(*testing.T) db.Database{
 	db.SQLite: func(t *testing.T) db.Database {
 		return dbtest.SQLite(t, filepath.Join(t.TempDir(), "account.db"), nil)
 	},
 }
 
-// openDatabase hands back the handle the engine's own module delivers over a
-// database of this test's own, with this module's migrations applied.
-//
-// A dialect with no opener is a programming error — dialectsUnderTest is the
-// only source of them — so it fails rather than reporting.
 func openDatabase(t *testing.T, dialect db.Dialect) *gorm.DB {
 	t.Helper()
 	open, ok := databaseOpeners[dialect]
@@ -120,8 +100,6 @@ func openDatabase(t *testing.T, dialect db.Dialect) *gorm.DB {
 	return handle
 }
 
-// forEachDialect runs a case on every engine this build's cases run on, each a
-// subtest with a harness of its own.
 func forEachDialect(t *testing.T, run func(t *testing.T, h *harness)) {
 	t.Helper()
 	for _, dialect := range dialectsUnderTest {
@@ -131,15 +109,12 @@ func forEachDialect(t *testing.T, run func(t *testing.T, h *harness)) {
 	}
 }
 
-// testClock is a clock a case moves by hand.
 type testClock struct {
 	mu  sync.Mutex
 	now time.Time
 }
 
-// newTestClock starts a clock at an instant far from the real one, so that a
-// statement that read the real clock instead of the module's would disagree with
-// the rows the module wrote.
+// The instant is far from the real one, so a statement that read the real clock disagrees with the rows.
 func newTestClock() *testClock {
 	return &testClock{now: time.Date(2031, 3, 4, 12, 0, 0, 0, time.UTC)}
 }
@@ -156,7 +131,6 @@ func (c *testClock) advance(d time.Duration) {
 	c.now = c.now.Add(d)
 }
 
-// logBuffer is what the module's logger writes into, for a case to read.
 type logBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -174,7 +148,6 @@ func (l *logBuffer) String() string {
 	return l.buf.String()
 }
 
-// lines are the log lines that carry every one of the fragments.
 func (l *logBuffer) lines(fragments ...string) []string {
 	var out []string
 	for _, line := range strings.Split(l.String(), "\n") {
@@ -189,7 +162,6 @@ func (l *logBuffer) lines(fragments ...string) []string {
 	return out
 }
 
-// recordingBus keeps what is published and the handlers subscribed.
 type recordingBus struct {
 	mu       sync.Mutex
 	events   []event.Event
@@ -216,7 +188,6 @@ func (b *recordingBus) Subscribe(eventType string, _ string, h event.Handler) {
 	b.handlers[eventType] = append(b.handlers[eventType], h)
 }
 
-// of is the events of a type published so far.
 func (b *recordingBus) of(eventType string) []event.Event {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -229,9 +200,6 @@ func (b *recordingBus) of(eventType string) []event.Event {
 	return out
 }
 
-// stagingOutbox is an outbox that stages an event in a table of the case's, in
-// the transaction it is handed, as the real one does. A row in the table is an
-// event that a commit would publish, and a rollback takes it away.
 type stagingOutbox struct {
 	fail error
 }
@@ -260,7 +228,6 @@ func (h *harness) staged() []stagedRow {
 	return rows
 }
 
-// recordingHook is an AccountLifecycle that keeps its calls and fails on demand.
 type recordingHook struct {
 	mu       sync.Mutex
 	calls    []string
@@ -294,8 +261,6 @@ func (h *recordingHook) ServiceSecretRevoked(_ context.Context, id authn.Account
 	return h.record("revoked:" + id.String() + ":" + credential)
 }
 
-// reset forgets the calls recorded so far, so that a case reads only the
-// transition it drives and not the account creation that set it up.
 func (h *recordingHook) reset() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -321,8 +286,6 @@ func (h *recordingHook) fail(call string, err error) {
 	h.failWith[call] = err
 }
 
-// fakeSettings is a settings store a case writes values into and reads through
-// the same typed interface the module reads.
 type fakeSettings struct {
 	mu     sync.Mutex
 	values map[string]any
@@ -386,8 +349,6 @@ func (s *fakeSettings) Read(key string, reads ...settings.LayerRead) ([]settings
 	return results, nil
 }
 
-// harness is the module's product over a migrated database of one dialect, with
-// the optional capabilities replaced by ones a case can read.
 type harness struct {
 	t       *testing.T
 	p       *product
@@ -400,8 +361,6 @@ type harness struct {
 	set     *fakeSettings
 }
 
-// newHarness builds a harness on a dialect. The cost of a password hash is the
-// declared default, which is what a deployment without settings runs on.
 func newHarness(t *testing.T, dialect db.Dialect) *harness {
 	t.Helper()
 	handle := openDatabase(t, dialect)
@@ -422,7 +381,6 @@ func newHarness(t *testing.T, dialect db.Dialect) *harness {
 	return h
 }
 
-// withOutbox gives the harness an outbox that stages into a table of its own.
 func (h *harness) withOutbox() *stagingOutbox {
 	h.t.Helper()
 	if err := h.handle.Exec("CREATE TABLE test_staged (id " + h.autoID() + ", type TEXT NOT NULL, tenant_id TEXT NOT NULL, payload TEXT NOT NULL)").Error; err != nil {
@@ -440,15 +398,11 @@ func (h *harness) autoID() string {
 	return "INTEGER PRIMARY KEY AUTOINCREMENT"
 }
 
-// withSettings gives the harness a settings store.
 func (h *harness) withSettings() *fakeSettings {
 	h.p.store = h.set
 	return h.set
 }
 
-// cheapHash is an Argon2id entry at the smallest cost an entry may state, which a
-// case imports when it needs an account with a password and does not want to pay
-// for the derivation of one. The password of it is the password the case gives.
 func cheapHash(t testing.TB, plaintext string) string {
 	t.Helper()
 	params := password.Params{Algorithm: password.Argon2id, MemoryKiB: 8, Iterations: 1, Parallelism: 1}
@@ -459,8 +413,6 @@ func cheapHash(t testing.TB, plaintext string) string {
 	return phc
 }
 
-// user creates an enabled user account with a username and an email address and
-// the password, which is imported from a cheap hash.
 func (h *harness) user(name, plaintext string) authn.AccountID {
 	h.t.Helper()
 	in := authn.CreateAccount{
@@ -474,13 +426,10 @@ func (h *harness) user(name, plaintext string) authn.AccountID {
 	if err != nil {
 		h.t.Fatalf("creating %s: %v", name, err)
 	}
-	// The creation's own hook call has its own case; a case that reads the hook
-	// is about the transition it drives.
 	h.hook.reset()
 	return account.ID
 }
 
-// count is how many rows a table holds under a condition.
 func (h *harness) count(table, where string, args ...any) int64 {
 	h.t.Helper()
 	var n int64
@@ -494,8 +443,6 @@ func (h *harness) count(table, where string, args ...any) int64 {
 	return n
 }
 
-// sqlRecorder is a GORM logger that keeps the text of every statement that runs,
-// with the placeholders as they were written and no value in them.
 type sqlRecorder struct {
 	mu         sync.Mutex
 	statements []string
@@ -521,17 +468,12 @@ func (r *sqlRecorder) take() []string {
 	return out
 }
 
-// recordSQL makes the product's statements visible to the case: the statements
-// recorded carry the values bound to them, since GORM renders them into the text
-// for its logger, so a case reads them as a reader of a statement log would.
 func (h *harness) recordSQL() *sqlRecorder {
 	rec := &sqlRecorder{}
 	h.p.handle = h.handle.Session(&gorm.Session{Logger: rec})
 	return rec
 }
 
-// recordingAudit is the audit capability a case installs: it keeps every entry
-// handed to it and can be made to fail.
 type recordingAudit struct {
 	mu      sync.Mutex
 	entries []audit.Entry
@@ -554,7 +496,6 @@ func (a *recordingAudit) written() []audit.Entry {
 	return append([]audit.Entry(nil), a.entries...)
 }
 
-// withAudit gives the harness an audit capability a case can read.
 func (h *harness) withAudit() *recordingAudit {
 	h.t.Helper()
 	a := &recordingAudit{}
@@ -562,8 +503,6 @@ func (h *harness) withAudit() *recordingAudit {
 	return a
 }
 
-// withMeters gives the product the instruments over a reader a case collects
-// from, so that a case can count what the module reported.
 func (h *harness) withMeters() *metricsReader {
 	h.t.Helper()
 	reader := sdkmetric.NewManualReader()
@@ -576,8 +515,6 @@ func (h *harness) withMeters() *metricsReader {
 	return &metricsReader{t: h.t, reader: reader}
 }
 
-// metricsReader collects the instruments the module reported through and reads
-// the counters and histogram counts a case asserts on.
 type metricsReader struct {
 	t      *testing.T
 	reader *sdkmetric.ManualReader
@@ -598,8 +535,6 @@ func (r *metricsReader) collect() map[string]metricdata.Metrics {
 	return out
 }
 
-// counter is the sum of an int64 counter, over the points whose attributes carry
-// every pair given.
 func (r *metricsReader) counter(name string, want map[string]string) int64 {
 	r.t.Helper()
 	m, ok := r.collect()[name]
@@ -620,8 +555,6 @@ func (r *metricsReader) counter(name string, want map[string]string) int64 {
 	return total
 }
 
-// histogramCount is how many observations a float64 histogram recorded, over the
-// points whose attributes carry every pair given.
 func (r *metricsReader) histogramCount(name string, want map[string]string) uint64 {
 	r.t.Helper()
 	m, ok := r.collect()[name]

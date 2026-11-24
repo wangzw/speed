@@ -10,7 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// membershipChangedEvent is the event a case hands the subscriber.
 func membershipChangedEvent(tenant, account, change string) event.Event {
 	return event.Event{
 		Type:     authn.EventMembershipChanged,
@@ -19,9 +18,8 @@ func membershipChangedEvent(tenant, account, change string) event.Event {
 	}
 }
 
-// TestSuspendingOrRemovingAMemberRevokesTheirPendingInvitations holds the rule:
-// a member who is suspended or removed loses the invitations addressed to them
-// in that tenant, and the token then answers the terminal revoked state.
+// TestSuspendingOrRemovingAMemberRevokesTheirPendingInvitations checks that a
+// suspended or removed member loses the invitations addressed to them in that tenant.
 func TestSuspendingOrRemovingAMemberRevokesTheirPendingInvitations(t *testing.T) {
 	for _, change := range []string{membershipChangeSuspended, membershipChangeRemoved} {
 		t.Run(change, func(t *testing.T) {
@@ -48,15 +46,8 @@ func TestSuspendingOrRemovingAMemberRevokesTheirPendingInvitations(t *testing.T)
 	}
 }
 
-// TestASupersededExpiredRowIsNotRevoked holds the condition on both system
-// writes: a suspended or removed member and a deleted organization end the
-// grants that can still be redeemed, so a row whose deadline has passed is left
-// as expired. Two expired rows make that condition tell a deadline judgement
-// from the other predicates it could be confused with: a superseded row, which
-// keeps its stored pending state and records only that it was replaced, and a
-// row no later invitation replaced, which carries no superseded_at at all.
-// Neither may be revoked, so an implementation that keys on superseded_at
-// instead of the deadline is refused by the second row.
+// TestASupersededExpiredRowIsNotRevoked checks that both system writes leave an
+// already expired row as expired.
 func TestASupersededExpiredRowIsNotRevoked(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -80,15 +71,10 @@ func TestASupersededExpiredRowIsNotRevoked(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			h := newHarness(t)
 			h.accounts.put("member@example.com", "acct-member")
-			// The member's second address is expired and left unreplaced, so the
-			// system write would meet it on the same predicate as a dead row with
-			// no replacement history.
 			h.accounts.put("member-second@example.com", "acct-member")
 			unreplaced := h.issue(tenant, "member-second@example.com")
 			old := h.issue(tenant, "member@example.com")
 			h.clock.advance(DefaultTTL + time.Minute)
-			// The second issuance supersedes the expired one: the old row keeps
-			// its stored pending state and records only that it was replaced.
 			live := h.issue(tenant, "member@example.com")
 
 			if err := c.write(h, "member@example.com"); err != nil {
@@ -122,11 +108,8 @@ func TestASupersededExpiredRowIsNotRevoked(t *testing.T) {
 	}
 }
 
-// TestSuspensionLeavesOtherRowsAndChangesAlone holds the condition on the write:
-// only the pending invitation for that tenant and that member's address is
-// revoked. Another tenant's invitation, another address's invitation, an
-// accepted invitation and a membership that is added rather than withdrawn stay
-// as they are.
+// TestSuspensionLeavesOtherRowsAndChangesAlone checks that only the member's
+// pending invitation in that tenant is revoked.
 func TestSuspensionLeavesOtherRowsAndChangesAlone(t *testing.T) {
 	h := newHarness(t)
 	h.accounts.put("member@example.com", "acct-member")

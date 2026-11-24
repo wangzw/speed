@@ -29,19 +29,13 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// testTTLKey is the setting this module carries for the configured lifetime. It
-// is written out here rather than read from a constant so that the case names
-// the key the design lists. testDefaultTTL is the declared default the design
-// fixes.
 const (
 	testTTLKey     = "authn.invite.ttl"
 	testDefaultTTL = 168 * time.Hour
 )
 
-// TestAStoredTTLShapesTheNextIssuance holds the runtime read: the lifetime is a
-// setting read when an invitation is issued, so a value written after the module
-// started shapes the invitation issued next. The declared default is 168h, and
-// the value written here is distinctly shorter.
+// TestAStoredTTLShapesTheNextIssuance checks that a stored lifetime shapes the
+// next issuance.
 func TestAStoredTTLShapesTheNextIssuance(t *testing.T) {
 	h := newSettingsAssembly(t)
 	h.store.set(testTTLKey, 2*time.Hour)
@@ -55,9 +49,8 @@ func TestAStoredTTLShapesTheNextIssuance(t *testing.T) {
 	}
 }
 
-// TestATTLThatCannotBeReadReadsAsTheDefaultAndSaysSo holds the failure
-// direction: a store that fails is the declared default, and the fault is
-// reported at Error once, naming the setting.
+// TestATTLThatCannotBeReadReadsAsTheDefaultAndSaysSo checks that a failed read
+// uses the default and logs one Error naming the key.
 func TestATTLThatCannotBeReadReadsAsTheDefaultAndSaysSo(t *testing.T) {
 	h := newSettingsAssembly(t)
 	h.store.failOn(testTTLKey, errors.New("the store is down"))
@@ -74,9 +67,8 @@ func TestATTLThatCannotBeReadReadsAsTheDefaultAndSaysSo(t *testing.T) {
 	}
 }
 
-// TestAnOutOfDomainTTLReadsAsTheDefaultAndSaysSo holds the second failure
-// direction: a value outside the declared domain is not acted on, the default
-// is used, and the fault is reported at Error once.
+// TestAnOutOfDomainTTLReadsAsTheDefaultAndSaysSo checks that an out-of-domain
+// value uses the default and logs one Error.
 func TestAnOutOfDomainTTLReadsAsTheDefaultAndSaysSo(t *testing.T) {
 	h := newSettingsAssembly(t)
 	h.store.set(testTTLKey, 9000*time.Hour)
@@ -93,9 +85,8 @@ func TestAnOutOfDomainTTLReadsAsTheDefaultAndSaysSo(t *testing.T) {
 	}
 }
 
-// TestAConfigurationCarryingTheRemovedTTLFailsStartup holds the move out of
-// configuration: a configuration file that still carries the lifetime is an
-// unknown key and refuses the startup, naming the key.
+// TestAConfigurationCarryingTheRemovedTTLFailsStartup checks that a configuration
+// still carrying the lifetime fails startup as an unknown key.
 func TestAConfigurationCarryingTheRemovedTTLFailsStartup(t *testing.T) {
 	err := loadInviteConfiguration(t, `{"authn":{"invite":{"ttl":"2h"}}}`)
 	if !errors.Is(err, config.ErrUnknownKey) {
@@ -106,9 +97,6 @@ func TestAConfigurationCarryingTheRemovedTTLFailsStartup(t *testing.T) {
 	}
 }
 
-// settingsAssembly is the module's product over a migrated SQLite database,
-// assembled through its descriptor so that the settings store it takes up is the
-// one a host would have supplied.
 type settingsAssembly struct {
 	t     *testing.T
 	p     *product
@@ -175,8 +163,6 @@ func newSettingsAssembly(t *testing.T) *settingsAssembly {
 	return h
 }
 
-// supplyModule registers a module that delivers one capability and hands it the
-// instance a case can read.
 func supplyModule(t *testing.T, reg *core.Registry, name string, token core.Token, instance any) {
 	t.Helper()
 	reg.Register(core.Module{
@@ -186,9 +172,6 @@ func supplyModule(t *testing.T, reg *core.Registry, name string, token core.Toke
 	reg.Supply(instance, name)
 }
 
-// loadInviteConfiguration runs the real loader over a JSON primary source,
-// returning what loading it answered. Unlike the authntest reader it does not
-// stop the case on a refusal: the refusal is what the case asserts.
 func loadInviteConfiguration(t *testing.T, body string) error {
 	t.Helper()
 	locator := filepath.Join(t.TempDir(), "config.json")
@@ -207,7 +190,6 @@ func loadInviteConfiguration(t *testing.T, body string) error {
 	return err
 }
 
-// lines are the log lines that carry every one of the fragments.
 func (b *logBuffer) lines(fragments ...string) []string {
 	var out []string
 	for _, line := range strings.Split(b.String(), "\n") {
@@ -222,8 +204,6 @@ func (b *logBuffer) lines(fragments ...string) []string {
 	return out
 }
 
-// fakeSettingsStore is a settings store a case writes values into and reads
-// through the same typed interface the module reads.
 type fakeSettingsStore struct {
 	mu     sync.Mutex
 	values map[string]any
@@ -283,8 +263,6 @@ func (s *fakeSettingsStore) Read(key string, reads ...settings.LayerRead) ([]set
 	return results, nil
 }
 
-// recordingEventBus is the event bus of the assembly: a publish reaches every
-// handler subscribed to the type, in the publisher's goroutine.
 type recordingEventBus struct {
 	mu       sync.Mutex
 	handlers map[string][]event.Handler
@@ -308,7 +286,6 @@ func (b *recordingEventBus) Publish(ctx context.Context, evt event.Event) error 
 	return nil
 }
 
-// deliver hands one event to every subscriber of its type.
 func (b *recordingEventBus) deliver(t *testing.T, evt event.Event) {
 	t.Helper()
 	if err := b.Publish(context.Background(), evt); err != nil {
@@ -316,8 +293,6 @@ func (b *recordingEventBus) deliver(t *testing.T, evt event.Event) {
 	}
 }
 
-// capturedLogger is the logging capability of the assembly, writing into the
-// case's buffer.
 type capturedLogger struct {
 	logger *slog.Logger
 }

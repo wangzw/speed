@@ -12,8 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/password"
 )
 
-// mustChangeAccount creates a user account with a password that has to be
-// changed at the next login.
 func (h *harness) mustChangeAccount(name, plaintext string) authn.AccountID {
 	h.t.Helper()
 	created, err := h.p.Create(context.Background(), authn.CreateAccount{
@@ -25,8 +23,6 @@ func (h *harness) mustChangeAccount(name, plaintext string) authn.AccountID {
 	return created.ID
 }
 
-// legacyEntry is an entry in the form without a leading dollar sign, built from a
-// PHC one so that the same password verifies against both.
 func legacyEntry(t testing.TB, plaintext string, iterations int) string {
 	t.Helper()
 	phc, err := password.Params{Algorithm: password.PBKDF2SHA256, PBKDF2Iterations: iterations}.
@@ -35,12 +31,11 @@ func legacyEntry(t testing.TB, plaintext string, iterations int) string {
 		t.Fatalf("writing a pbkdf2 entry: %v", err)
 	}
 	parts := strings.Split(phc, "$")
-	// parts[2] is "i=<iterations>,l=<length>".
+
 	return "pbkdf2-sha256$" + strings.TrimPrefix(strings.Split(parts[2], ",")[0], "i=") + "$" + parts[3] + "$" + parts[4]
 }
 
-// A correct password for an enabled account returns the account, and a credential
-// that has to be changed says so.
+// A correct password returns the account, and one that must be changed says so.
 func TestVerifySucceedsAndReportsMustChange(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -52,9 +47,7 @@ func TestVerifySucceedsAndReportsMustChange(t *testing.T) {
 	})
 }
 
-// An unknown name, a disabled account, an account with no password and a wrong
-// password all answer the one sentinel, and each costs a derivation against the
-// decoy, which is what keeps them from being told apart by anything but time.
+// An unknown name, a disabled account, an account with no password and a wrong password all answer one sentinel, each after a derivation against the decoy.
 func TestEnumerationAnswersTheOneSentinelAndDerivesAgainstTheDecoy(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -76,7 +69,7 @@ func TestEnumerationAnswersTheOneSentinelAndDerivesAgainstTheDecoy(t *testing.T)
 				t.Errorf("%s gave %v, want ErrInvalidCredentials", c.name, err)
 			}
 		}
-		// A disabled account answers the same sentinel.
+
 		_ = h.p.SetStatus(ctx, known, authn.StatusDisabled, authn.ReasonAdmin)
 		if _, _, err := h.p.Verify(ctx, "known", "correct horse battery"); !errors.Is(err, authn.ErrInvalidCredentials) {
 			t.Errorf("a disabled account gave %v, want ErrInvalidCredentials", err)
@@ -88,10 +81,7 @@ func TestEnumerationAnswersTheOneSentinelAndDerivesAgainstTheDecoy(t *testing.T)
 	})
 }
 
-// The account-level back-off is silent: past its threshold even the right
-// password under another spelling is refused with ErrInvalidCredentials and not a
-// 429, so that a changed spelling does not tell an attacker the account exists.
-// The identifier-level back-off is visible as a *ThrottledError.
+// Past the account back-off even the right password under another spelling is ErrInvalidCredentials, not a 429.
 func TestTheAccountThrottleIsSilentAndTheIdentifierThrottleIsVisible(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -101,13 +91,11 @@ func TestTheAccountThrottleIsSilentAndTheIdentifierThrottleIsVisible(t *testing.
 				t.Fatalf("failure %d gave %v, want ErrInvalidCredentials", i, err)
 			}
 		}
-		// Another spelling of the same account's identifier: the account-level
-		// back-off holds it, and the answer is the ordinary refusal, not a 429.
 		_, _, err := h.p.Verify(ctx, "alice@example.com", "correct horse battery")
 		if !errors.Is(err, authn.ErrInvalidCredentials) || errors.Is(err, authn.ErrThrottled) {
 			t.Errorf("the right password under another spelling gave %v, want the silent ErrInvalidCredentials", err)
 		}
-		// The spelling that failed is held visibly, with a Retry-After.
+
 		_, _, err = h.p.Verify(ctx, "alice", "correct horse battery")
 		var throttled *authn.ThrottledError
 		if !errors.As(err, &throttled) || throttled.RetryAfter <= 0 {
@@ -116,8 +104,7 @@ func TestTheAccountThrottleIsSilentAndTheIdentifierThrottleIsVisible(t *testing.
 	})
 }
 
-// Set judges a new password by the policy, normalizes it, and refuses one that is
-// the account's own identifier in any of its forms.
+// Set judges a new password by the policy, normalizes it, and refuses the account's own identifier in any form.
 func TestSetJudgesThePolicyAndNormalizes(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -137,16 +124,14 @@ func TestSetJudgesThePolicyAndNormalizes(t *testing.T) {
 				t.Errorf("%s: Set gave %v, want %v", c.name, err, c.want)
 			}
 		}
-		// The stored password verifies after normalization of the input.
+
 		if _, _, err := h.p.Verify(ctx, "policed", "correct horse battery"); err != nil {
 			t.Errorf("the password just set does not verify: %v", err)
 		}
 	})
 }
 
-// A call that carries the current password checks it: a wrong one is
-// ErrInvalidCredentials and is counted, and the password is set only when it is
-// right and different.
+// A call carrying the current password checks it, counts a wrong one, and sets the password only when it is right and different.
 func TestSetChecksTheCurrentPasswordWhenCarried(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -167,9 +152,7 @@ func TestSetChecksTheCurrentPasswordWhenCarried(t *testing.T) {
 	})
 }
 
-// A stored entry that cannot be read, as one written around the module would be,
-// is answered as a wrong password, reported without any of its text, and never
-// derived from.
+// An unreadable stored entry is answered as a wrong password, reported without its text, and never derived from.
 func TestACorruptStoredRowIsRefusedAndReportedWithoutItsText(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -191,8 +174,7 @@ func TestACorruptStoredRowIsRefusedAndReportedWithoutItsText(t *testing.T) {
 	})
 }
 
-// ImportHash takes a legacy entry, writes the same bytes in the PHC shell, and
-// the password verifies against it.
+// ImportHash rewrites a legacy entry as the same bytes in the PHC shell, and the password verifies.
 func TestImportHashTakesALegacyEntryAndRewritesIt(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -236,9 +218,7 @@ func TestImportHashRefusesWhatItCannotRead(t *testing.T) {
 	})
 }
 
-// A check that holds rewrites a stored entry weaker than the current cost, and
-// the rewrite is a compare-and-swap on the old entry, so two checks that both
-// found it weak write it once.
+// A holding check rewrites an entry weaker than the current cost once, through a compare-and-swap on the old entry.
 func TestAWeakEntryIsRewrittenOnceUnderConcurrentChecks(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -296,8 +276,6 @@ func TestClearRemovesTheCredential(t *testing.T) {
 	})
 }
 
-// emailIdentifierID is the identifier ID of an account's email address, which a
-// reset names in SetPasswordOptions.RequireIdentifier.
 func emailIdentifierID(t *testing.T, h *harness, id authn.AccountID) string {
 	t.Helper()
 	identifiers, err := h.p.Identifiers(context.Background(), id)
@@ -313,8 +291,7 @@ func emailIdentifierID(t *testing.T, h *harness, id authn.AccountID) string {
 	return ""
 }
 
-// RequireActive re-judges the account inside the write transaction: a disabled
-// account is ErrAccountUnavailable and keeps its password.
+// RequireActive re-judges the account in the write transaction: a disabled account is ErrAccountUnavailable and keeps its password.
 func TestSetRequireActiveRefusesADisabledAccount(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -335,8 +312,7 @@ func TestSetRequireActiveRefusesADisabledAccount(t *testing.T) {
 	})
 }
 
-// RequireExisting keeps a reset from setting a first password: an account with no
-// credential is ErrAccountUnavailable and no row is created.
+// RequireExisting refuses to set a first password: an account with no credential is ErrAccountUnavailable and no row is created.
 func TestSetRequireExistingRefusesAnAccountWithoutACredential(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -354,9 +330,7 @@ func TestSetRequireExistingRefusesAnAccountWithoutACredential(t *testing.T) {
 	})
 }
 
-// RequireIdentifier re-reads the identifier inside the write transaction: one
-// that belongs to another account, or to none, is ErrAccountUnavailable, and the
-// account's own is accepted.
+// RequireIdentifier re-reads the identifier in the write transaction: another account's or none is ErrAccountUnavailable, the account's own is accepted.
 func TestSetRequireIdentifierRefusesAnIdentifierOfAnotherAccount(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -381,8 +355,7 @@ func TestSetRequireIdentifierRefusesAnIdentifierOfAnotherAccount(t *testing.T) {
 	})
 }
 
-// AdvanceValidAfter moves the instant in the write transaction and leaves the
-// rest of the account alone, and the event names the reset and its channel.
+// AdvanceValidAfter moves the instant in the write transaction, leaves the rest alone, and the event names the reset and its channel.
 func TestSetAdvancesValidAfterAndLeavesTheAccountAlone(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -423,8 +396,7 @@ func TestSetAdvancesValidAfterAndLeavesTheAccountAlone(t *testing.T) {
 	})
 }
 
-// By is inferred from the current password when it is not given, and a value
-// outside the closed set is refused before anything is written.
+// By is inferred from the current password when absent, and a value outside the closed set is refused before anything is written.
 func TestSetAttributesTheChangeAndRefusesAnUnknownAttribution(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -468,11 +440,7 @@ func TestSetAttributesTheChangeAndRefusesAnUnknownAttribution(t *testing.T) {
 	})
 }
 
-// TestSetRefusesAnAccountWithNoLoginName holds that a password needs a login name
-// to authenticate: an account whose username was written away around this
-// surface, so that its only identifier is a phone number even one chosen as a
-// sign-in way, is refused, and adding a username is what makes the same call
-// succeed.
+// A password needs a login name: an account left with only a phone number, even one chosen as a sign-in way, is refused, and adding a username makes the call succeed.
 func TestSetRefusesAnAccountWithNoLoginName(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -510,11 +478,7 @@ func TestSetRefusesAnAccountWithNoLoginName(t *testing.T) {
 	})
 }
 
-// TestSetRefusesAnAccountWhoseOnlyEmailIsNoSignInWay holds that a proved email
-// kept as a contact alone is no login name either: an account whose username was
-// written away around this surface and whose source record did not choose its
-// address is refused a password until its holder does, and the choice is what
-// makes the same call succeed.
+// A proved email kept as a contact alone is no login name, so the account is refused a password until its holder chooses it.
 func TestSetRefusesAnAccountWhoseOnlyEmailIsNoSignInWay(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -553,18 +517,12 @@ func TestSetRefusesAnAccountWhoseOnlyEmailIsNoSignInWay(t *testing.T) {
 	})
 }
 
-// TestVerifyAcceptsAnEmailOnlyWhenItIsChosenAsASignInWay holds that among several
-// addresses a proved email is no login name until its holder chooses it: a
-// password check against it answers as an unknown name does, the username beside
-// it still works, and choosing the address makes the same check succeed. The
-// choice is the only thing that changes; the address is proved either way.
+// Among several addresses a proved email is no login name until its holder chooses it, while the username beside it still works.
 func TestVerifyAcceptsAnEmailOnlyWhenItIsChosenAsASignInWay(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
 		const password = "correct horse battery"
 		id := h.user("mailer", password)
-		// A second, unproved address means the proved one is not the account's
-		// only address, so the holder's choice is what selects it.
 		if err := h.p.AddIdentifier(ctx, id, authn.IdentifierEmail, "other@example.com",
 			authn.Verification{Via: authn.VerifiedViaAdmin}); err != nil {
 			t.Fatalf("adding a second address: %v", err)

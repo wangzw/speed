@@ -10,10 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// resendingAccounts turns the acceptance's identifier read into a concurrent
-// resend: the token the acceptance is holding is replaced before the
-// conditional write runs. It is the race a resend issued while an acceptance is
-// in flight creates.
 type resendingAccounts struct {
 	authn.Accounts
 	once   sync.Once
@@ -25,10 +21,7 @@ func (a *resendingAccounts) Identifiers(ctx context.Context, id authn.AccountID)
 	return a.Accounts.Identifiers(ctx, id)
 }
 
-// TestAcceptDoesNotRedeemATokenThatAResendReplaced holds the claim's condition:
-// a token that a concurrent resend replaced no longer resolves, so the
-// acceptance must not win the row with it. The resend's row stays pending with
-// the new send counted, and the stale token answers no invitation.
+// TestAcceptDoesNotRedeemATokenThatAResendReplaced checks that a token a concurrent resend replaced no longer resolves and the row keeps its resend count.
 func TestAcceptDoesNotRedeemATokenThatAResendReplaced(t *testing.T) {
 	h := newHarness(t)
 	h.proveEmail("acct-alice", "alice@example.com")

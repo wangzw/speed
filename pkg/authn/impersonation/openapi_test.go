@@ -12,11 +12,8 @@ import (
 	"github.com/vislake/speed/pkg/internal/routecontract"
 )
 
-// TestTheStartDeclaresTheUnseasonedRefusal holds the fragment's 403 of the start
-// operation. The design gives an actor with no seasoned non-SMS factor its own
-// 403 rather than the step-up 401, and a pending self-registration the
-// contact-required 403, so the declared operation a generated client is built
-// from carries both causes.
+// TestTheStartDeclaresTheUnseasonedRefusal holds the fragment's 403 of the
+// start operation.
 func TestTheStartDeclaresTheUnseasonedRefusal(t *testing.T) {
 	var doc struct {
 		Paths map[string]map[string]struct {
@@ -45,10 +42,7 @@ func TestTheStartDeclaresTheUnseasonedRefusal(t *testing.T) {
 }
 
 // TestTheStartRequestBodyCarriesTheDeclaredDescription holds the schema
-// description of the start body. It lives on the input's blank field, which
-// the entry point does not bind and the generator copies onto the inline body
-// schema. Losing it would drop the only place a generated client learns that
-// tenant and reason are refused rather than merely optional.
+// description of the start body.
 func TestTheStartRequestBodyCarriesTheDeclaredDescription(t *testing.T) {
 	var doc struct {
 		Paths map[string]map[string]struct {
@@ -85,12 +79,8 @@ func TestTheStartRequestBodyCarriesTheDeclaredDescription(t *testing.T) {
 	}
 }
 
-// TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters holds the one thing
-// the OpenAPI fragment and the registrations have to agree on: the fragment is
-// the only source a generated client is built from, and the design leaves the
-// two free to drift with no failure signal at run time. The check drives the
-// module's own Init, through the real route-mounting module, and compares what
-// it registered there with what it declared.
+// TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters checks that the
+// fragment's operations are the routes the module registers; they can drift unnoticed.
 func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 	stubs, config := routefixture.Assembly(t, Module())
 	stubs = append(stubs, routefixture.Seams(

@@ -10,10 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// The cases here hold MembershipWriter's tx variants to the behaviour of the
-// Memberships surface, and hold their writes to the caller's transaction.
-
-// membershipOf is the membership a case compares, with the account taken out.
 func membershipOf(t *testing.T, h *harness, id authn.AccountID, tenant string) (authn.Membership, bool) {
 	t.Helper()
 	m, found, err := h.p.Membership(context.Background(), tenant, id)
@@ -23,8 +19,7 @@ func membershipOf(t *testing.T, h *harness, id authn.AccountID, tenant string) (
 	return m, found
 }
 
-// PutMembershipTx writes the same row Put writes, and hands its caller an after
-// closure that publishes the change once the caller's transaction commits.
+// PutMembershipTx writes the same row Put writes and hands back an after-commit publication.
 func TestPutMembershipTxMatchesPut(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		plain := h.user("plain", "")
@@ -66,8 +61,7 @@ func TestPutMembershipTxMatchesPut(t *testing.T) {
 	})
 }
 
-// PutMembershipTx writes in the transaction it is handed: a caller that rolls
-// that transaction back leaves no row and publishes nothing.
+// PutMembershipTx writes in the caller's transaction: a rollback leaves no row and publishes nothing.
 func TestPutMembershipTxRollsBackWithItsCaller(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		id := h.user("alice", "")
@@ -97,8 +91,7 @@ func TestPutMembershipTxRollsBackWithItsCaller(t *testing.T) {
 	})
 }
 
-// RemoveMembershipTx removes the row in the caller's transaction and returns
-// the publication for after its commit.
+// RemoveMembershipTx removes the row in the caller's transaction and returns the after-commit publication.
 func TestRemoveMembershipTxMatchesTheDeletionPath(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		id := h.user("alice", "")
@@ -134,8 +127,7 @@ func TestRemoveMembershipTxMatchesTheDeletionPath(t *testing.T) {
 	})
 }
 
-// A caller that rolls back its transaction keeps the membership it asked
-// RemoveMembershipTx to remove.
+// A caller that rolls its transaction back keeps the membership RemoveMembershipTx removed.
 func TestRemoveMembershipTxRollsBackWithItsCaller(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		id := h.user("alice", "")

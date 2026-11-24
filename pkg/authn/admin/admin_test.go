@@ -14,11 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// route is one management route as a case drives it: its handler, the method
-// and path, the path parameters the handler reads, and the domain its action is
-// decided in. The handler is the one the operation's declaration binds, so a
-// case drives the same entry point the mounter registers: the input is bound
-// from the request before the handler runs.
 type route struct {
 	name    string
 	handler gin.HandlerFunc
@@ -28,11 +23,6 @@ type route struct {
 	domain  decisionDomain
 }
 
-// allRoutes lists every management route of the module. A case drives them to
-// hold a property that must hold of each: the refusal of a Decider that is not
-// there, and — split by the domain the action is decided in — either the
-// impersonation refusal or its absence. The bodies are left out, because the
-// checks those cases exercise come before a body is read.
 func allRoutes(p *product) []route {
 	return []route{
 		{"account list", accountListOperation.Handle(p.handleAccountList), http.MethodGet, "/admin/accounts", nil, platformDomain},
@@ -72,14 +62,7 @@ func allRoutes(p *product) []route {
 	}
 }
 
-// TestDecisionFill holds the Decision the Decider receives for every management
-// route: the Action the route decides under, and — for the routes that act on
-// another account's or another tenant's object — the tenant, target and target
-// account. A tenant T1 administrator acting on a tenant T2 object must hand the
-// Decider T2 as the tenant on the tenant-level routes, and the object's account
-// as the target account on the account-level ones, so a Decider that decides by
-// tenant cannot be told the wrong one and one that decides by action cannot be
-// told the wrong one either.
+// TestDecisionFill checks the Decision every management route sends to the Decider.
 func TestDecisionFill(t *testing.T) {
 	r := newRig(t)
 	r.accounts.put("acct-t2", authn.Account{Kind: authn.KindUser, Status: authn.StatusActive})
@@ -152,9 +135,6 @@ func TestDecisionFill(t *testing.T) {
 		{"account delete", http.MethodDelete, "/api/v1/system/auth/accounts/acct-t2", nil, authn.ActionAccountDelete, "", "acct-t2", "acct-t2"},
 		{"provider delete", http.MethodDelete, "/api/v1/tenants/" + tenantB + "/sso/providers/" + idpA, nil, authn.ActionIDPManage, tenantB, idpA, ""},
 	}
-	// Each case that names an account as its audit object must write the
-	// account type marker and the identifier, so a reader can tell it from a
-	// session or a provider identifier.
 	accountObjects := map[string]struct{ action, object string }{
 		"account patch":     {actionAccountUpdate, "account:acct-t2"},
 		"account status":    {actionAccountDisable, "account:acct-t2"},
@@ -211,9 +191,7 @@ func TestDecisionFill(t *testing.T) {
 	}
 }
 
-// TestATenantMismatchIsRefusedBeforeTheDecider holds that a path, a body and a
-// stored row that disagree on the tenant are a 400 and the Decider is never
-// asked.
+// TestATenantMismatchIsRefusedBeforeTheDecider checks that a tenant mismatch is a 400 before the Decider is asked.
 func TestATenantMismatchIsRefusedBeforeTheDecider(t *testing.T) {
 	r := newRig(t)
 	r.providers.put(authn.SSOProvider{
@@ -221,7 +199,6 @@ func TestATenantMismatchIsRefusedBeforeTheDecider(t *testing.T) {
 		Provisioning: authn.ProvisioningJIT,
 	})
 
-	// The body names a tenant other than the path's.
 	rec := r.do(http.MethodPost, "/api/v1/tenants/"+tenantA+"/sso/providers",
 		map[string]any{"tenant": tenantB, "protocol": "saml", "name": "x", "provisioning": "jit"}, fresh()...)
 	if rec.Code != http.StatusBadRequest {
@@ -231,7 +208,6 @@ func TestATenantMismatchIsRefusedBeforeTheDecider(t *testing.T) {
 		t.Errorf("the Decider was asked %d times, want none", r.decider.count())
 	}
 
-	// The body names a tenant other than the stored one, which PUT cannot change.
 	rec = r.do(http.MethodPut, "/api/v1/tenants/"+tenantB+"/sso/providers/"+idpA,
 		map[string]any{"tenant": tenantA, "protocol": "saml", "name": "x", "provisioning": "jit"}, fresh()...)
 	if rec.Code != http.StatusBadRequest {
@@ -242,10 +218,7 @@ func TestATenantMismatchIsRefusedBeforeTheDecider(t *testing.T) {
 	}
 }
 
-// TestARecordAddressedUnderAnotherTenantIsNotFound holds the path's tenant to
-// the record's own: a provider or an impersonation record reached under a
-// tenant it does not belong to answers not found and the Decider is not asked,
-// so the address cannot be used to probe another tenant's records.
+// TestARecordAddressedUnderAnotherTenantIsNotFound checks that a provider or record addressed under a tenant it does not belong to is a 404.
 func TestARecordAddressedUnderAnotherTenantIsNotFound(t *testing.T) {
 	r := newRig(t)
 	r.providers.put(authn.SSOProvider{
@@ -271,8 +244,7 @@ func TestARecordAddressedUnderAnotherTenantIsNotFound(t *testing.T) {
 	}
 }
 
-// TestNoDeciderDeniesEveryRoute holds that an assembly with no Decider answers
-// every management route with a 403 and never asks any capability.
+// TestNoDeciderDeniesEveryRoute holds that an assembly with no Decider answers every management route with a 403 and never asks any capability.
 func TestNoDeciderDeniesEveryRoute(t *testing.T) {
 	r := newRig(t, noDecider)
 	for _, rt := range allRoutes(r.p) {
@@ -286,12 +258,7 @@ func TestNoDeciderDeniesEveryRoute(t *testing.T) {
 	}
 }
 
-// TestAnImpersonatingActorIsRefusedOnThePlatformDomain holds that an
-// impersonating identity reaching a platform-domain handler directly is
-// answered 403 impersonation-restricted, before the Decider is asked. The
-// platform domain is the account, session, secret and impersonation-record
-// surfaces: none of them is a capability the impersonated account holds, since
-// a target never carries a platform permission.
+// TestAnImpersonatingActorIsRefusedOnThePlatformDomain checks that an impersonating identity on a platform-domain handler is 403 before the Decider.
 func TestAnImpersonatingActorIsRefusedOnThePlatformDomain(t *testing.T) {
 	r := newRig(t)
 	for _, rt := range allRoutes(r.p) {
@@ -308,14 +275,7 @@ func TestAnImpersonatingActorIsRefusedOnThePlatformDomain(t *testing.T) {
 	}
 }
 
-// TestAnImpersonatingActorIsAdmittedOnTheTenantDomain holds that the same
-// identity reaching a tenant-domain handler is not answered
-// impersonation-restricted: the tenant-domain management surface is a
-// capability the impersonated account holds when its own membership grants it,
-// so the handler decides by the effective account. The cases drive handlers
-// directly, so a body the case did not supply may answer 400 and an object it
-// did not seed may answer 404; what none of them may answer is the platform
-// domain's 403.
+// TestAnImpersonatingActorIsAdmittedOnTheTenantDomain checks that an impersonating identity on a tenant-domain handler is not refused.
 func TestAnImpersonatingActorIsAdmittedOnTheTenantDomain(t *testing.T) {
 	r := newRig(t)
 	for _, rt := range allRoutes(r.p) {
@@ -330,11 +290,7 @@ func TestAnImpersonatingActorIsAdmittedOnTheTenantDomain(t *testing.T) {
 	}
 }
 
-// TestATenantDomainRouteDecidesAnImpersonatingActorByTheEffectiveAccount holds
-// the whole path through the mounter for one tenant-domain route: the route is
-// registered Impersonable, so the gateway lets the identity through, and the
-// handler asks the Decider for the action with the identity whose effective
-// account is the impersonated one. The decided tenant is the request's.
+// TestATenantDomainRouteDecidesAnImpersonatingActorByTheEffectiveAccount checks that an impersonating tenant-domain request is decided by the effective account.
 func TestATenantDomainRouteDecidesAnImpersonatingActorByTheEffectiveAccount(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodGet, "/api/v1/tenants/"+tenantA+"/members", nil, impersonating()...)
@@ -355,10 +311,7 @@ func TestATenantDomainRouteDecidesAnImpersonatingActorByTheEffectiveAccount(t *t
 	}
 }
 
-// TestTenantDomainGroupsAreImpersonable holds the registration split: the
-// tenant-domain groups (memberships, identity providers and metadata refresh)
-// are registered Impersonable, while the platform-domain groups — the account,
-// session, secret and impersonation-record surfaces — are not.
+// TestTenantDomainGroupsAreImpersonable checks that tenant-domain groups are registered Impersonable and platform-domain groups are not.
 func TestTenantDomainGroupsAreImpersonable(t *testing.T) {
 	r := newRig(t)
 	cases := []struct {
@@ -385,8 +338,6 @@ func TestTenantDomainGroupsAreImpersonable(t *testing.T) {
 	for _, tc := range cases {
 		reg, ok := r.mounter.Registered(http.MethodGet, tc.path)
 		if !ok {
-			// A route with another method still carries the group's mark; the
-			// path lookup takes any method the group registered.
 			for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch} {
 				if reg, ok = r.mounter.Registered(method, tc.path); ok {
 					break
@@ -403,11 +354,8 @@ func TestTenantDomainGroupsAreImpersonable(t *testing.T) {
 	}
 }
 
-// TestTheMandatoryAuditLandsBeforeTheWrite holds that a write whose mandatory
-// audit row cannot be written is answered 503 and the capability is not called,
-// so that an unrecorded management action cannot be taken.
+// TestTheMandatoryAuditLandsBeforeTheWrite checks that a write whose mandatory audit fails is 503 and calls no capability.
 func TestTheMandatoryAuditLandsBeforeTheWrite(t *testing.T) {
-	// A create: the row is written before Create.
 	r := newRig(t)
 	r.audit.fails(audit.ErrWriteFailed)
 	rec := r.do(http.MethodPost, "/api/v1/system/auth/accounts",
@@ -419,8 +367,6 @@ func TestTheMandatoryAuditLandsBeforeTheWrite(t *testing.T) {
 		t.Error("Create was called though the mandatory audit failed")
 	}
 
-	// A delete: the row follows the commit, so a failing audit does not stop
-	// the deletion, and the delete's failure writes a compensation row.
 	r = newRig(t)
 	r.audit.fails(audit.ErrWriteFailed)
 	rec = r.do(http.MethodDelete, "/api/v1/system/auth/accounts/"+string(userID), nil, fresh()...)
@@ -448,9 +394,7 @@ func TestTheMandatoryAuditLandsBeforeTheWrite(t *testing.T) {
 	}
 }
 
-// TestTheMandatoryAuditLandsBeforeASecretWrite holds the same ordering for the
-// service-secret group, whose route needs client.manage and a fresh
-// authentication.
+// TestTheMandatoryAuditLandsBeforeASecretWrite checks that a service-secret write whose mandatory audit fails is 503 and calls no capability.
 func TestTheMandatoryAuditLandsBeforeASecretWrite(t *testing.T) {
 	r := newRig(t)
 	r.audit.fails(audit.ErrWriteFailed)
@@ -464,9 +408,7 @@ func TestTheMandatoryAuditLandsBeforeASecretWrite(t *testing.T) {
 	}
 }
 
-// TestAStaticSubjectIsRefusedOnTheStrongRoutes holds that a subject of the
-// static credential table, which has no factors and no account to answer for,
-// is refused on the routes that ask for a seasoned administrator.
+// TestAStaticSubjectIsRefusedOnTheStrongRoutes checks that a static credential subject is refused 401 on the routes that need a seasoned administrator.
 func TestAStaticSubjectIsRefusedOnTheStrongRoutes(t *testing.T) {
 	r := newRig(t)
 	static := []authntest.Option{
@@ -494,8 +436,7 @@ func TestAStaticSubjectIsRefusedOnTheStrongRoutes(t *testing.T) {
 	}
 }
 
-// TestADeciderThatFailsOrPanicsIsUnavailable holds that a returned error and a
-// panic alike are a 503 and no action is carried out.
+// TestADeciderThatFailsOrPanicsIsUnavailable holds that a returned error and a panic alike are a 503 and no action is carried out.
 func TestADeciderThatFailsOrPanicsIsUnavailable(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -517,7 +458,6 @@ func TestADeciderThatFailsOrPanicsIsUnavailable(t *testing.T) {
 		})
 	}
 
-	// A Decider that panics is caught and answered the same way.
 	r := newRig(t)
 	r.p.decider = panicDecider{}
 	rec := r.do(http.MethodPost, "/api/v1/system/auth/accounts",
@@ -530,15 +470,13 @@ func TestADeciderThatFailsOrPanicsIsUnavailable(t *testing.T) {
 	}
 }
 
-// panicDecider is a Decider that panics, to drive the handler's recover.
 type panicDecider struct{}
 
 func (panicDecider) Decide(context.Context, authn.Decision) (bool, error) {
 	panic("the decider panicked")
 }
 
-// TestARefusalIsForbiddenAndNothingHappens holds that a Decider which refuses
-// is a 403 and the capability is not called.
+// TestARefusalIsForbiddenAndNothingHappens holds that a Decider which refuses is a 403 and the capability is not called.
 func TestARefusalIsForbiddenAndNothingHappens(t *testing.T) {
 	r := newRig(t)
 	r.decider.allow = false
@@ -555,8 +493,7 @@ func TestARefusalIsForbiddenAndNothingHappens(t *testing.T) {
 	}
 }
 
-// TestACreateNeedsClientManageForAServiceAccount holds that a service account
-// is asked about twice, and a user account once.
+// TestACreateNeedsClientManageForAServiceAccount holds that a service account is asked about twice, and a user account once.
 func TestACreateNeedsClientManageForAServiceAccount(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodPost, "/api/v1/system/auth/accounts",
@@ -577,9 +514,7 @@ func TestACreateNeedsClientManageForAServiceAccount(t *testing.T) {
 	}
 }
 
-// TestTheImpersonationRecordGroup holds the record routes: the required tenant
-// parameter, the pre-Decider 404 for a missing record, the best-effort tier of
-// the revocation, and the 403 for an impersonating actor.
+// TestTheImpersonationRecordGroup checks the record routes' tenant requirement, missing-record 404, best-effort revocation and impersonation refusal.
 func TestTheImpersonationRecordGroup(t *testing.T) {
 	r := newRig(t)
 	r.records.put(authn.ImpersonationGrant{ID: grantA, Actor: adminID, Target: userID, Tenant: tenantB})
@@ -588,13 +523,11 @@ func TestTheImpersonationRecordGroup(t *testing.T) {
 		EndedAt: time.Now(), EndReason: authn.EndExplicit,
 	})
 
-	// A list shows only the tenant's records.
 	rec := r.do(http.MethodGet, "/api/v1/system/tenants/"+tenantB+"/impersonations", nil, fresh()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("list: status = %d, want 200", rec.Code)
 	}
 
-	// A missing record is a 404 before the Decider.
 	missing := newRig(t)
 	rec = missing.do(http.MethodDelete, "/api/v1/system/tenants/"+tenantB+"/impersonations/absent", nil, fresh()...)
 	if rec.Code != http.StatusNotFound {
@@ -604,8 +537,6 @@ func TestTheImpersonationRecordGroup(t *testing.T) {
 		t.Error("the Decider was asked for a record that is not there")
 	}
 
-	// The revocation is best-effort: a failing audit does not stop it, and an
-	// already-ended record gets the same answer.
 	r.audit.fails(audit.ErrWriteFailed)
 	rec = r.do(http.MethodDelete, "/api/v1/system/tenants/"+tenantB+"/impersonations/"+grantA, nil, fresh()...)
 	if rec.Code != http.StatusNoContent {
@@ -620,8 +551,7 @@ func TestTheImpersonationRecordGroup(t *testing.T) {
 	}
 }
 
-// TestRouteGroupsFollowTheirCapabilities holds that a group whose capability is
-// absent is not mounted, and that the others are unaffected.
+// TestRouteGroupsFollowTheirCapabilities holds that a group whose capability is absent is not mounted, and that the others are unaffected.
 func TestRouteGroupsFollowTheirCapabilities(t *testing.T) {
 	cases := []struct {
 		omit    leaveOut
@@ -681,8 +611,7 @@ func TestRouteGroupsFollowTheirCapabilities(t *testing.T) {
 	}
 }
 
-// TestTheAccountAndMembershipGroupsAreAlwaysMounted holds that removing every
-// optional capability leaves the required groups in place.
+// TestTheAccountAndMembershipGroupsAreAlwaysMounted holds that removing every optional capability leaves the required groups in place.
 func TestTheAccountAndMembershipGroupsAreAlwaysMounted(t *testing.T) {
 	r := newRig(t, noSessions, noMFA, noTokens, noProviders, noRefresher, noRecords)
 	for _, want := range [][2]string{
@@ -697,11 +626,7 @@ func TestTheAccountAndMembershipGroupsAreAlwaysMounted(t *testing.T) {
 	}
 }
 
-// TestAnUnseasonedActorIsForbiddenOnTheResets holds the split of the two
-// refusals the factor and password resets make of a failing actor: a missing
-// seasoned factor is the 403 a step-up cannot clear and no write or audit row
-// follows, while a weak authentication ahead of it stays the step-up 401 even
-// when the seasoned answer is true.
+// TestAnUnseasonedActorIsForbiddenOnTheResets checks that a missing seasoned factor is 403 and a weak authentication is 401 on the two resets.
 func TestAnUnseasonedActorIsForbiddenOnTheResets(t *testing.T) {
 	routes := []struct {
 		name string
@@ -747,9 +672,7 @@ func TestAnUnseasonedActorIsForbiddenOnTheResets(t *testing.T) {
 	})
 }
 
-// TestAStrengthShortfallIsAStepUp holds that an actor whose authentication is
-// not a fresh local multi-factor one is answered 401 on the routes that ask for
-// one, and the write does not happen.
+// TestAStrengthShortfallIsAStepUp checks that a stale authentication is refused 401 on the routes that ask for a fresh one.
 func TestAStrengthShortfallIsAStepUp(t *testing.T) {
 	r := newRig(t)
 	stale := append(fresh(), authntest.WithAuthTime(time.Now().Add(-time.Hour)))

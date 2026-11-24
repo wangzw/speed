@@ -1,28 +1,5 @@
 // Package invite is the invitation module of the authentication capability: it
-// holds the authn_invitations table, the state machine of an invitation, and
-// the routes of its issuance face and its acceptance face.
-//
-// An invitation is a pending grant of a membership: it names an address and a
-// tenant and, until it is accepted, no account and no membership row exists.
-// One module owns the whole of it — the table, the token, and both faces of the
-// routes — and delivers the Invites capability exclusively. It does not keep
-// accounts, memberships or passwords: acceptance reads the caller's identifiers
-// through Accounts, requires the invited address among the proven ones, and
-// writes the membership through Memberships with invite as the source of a new
-// one. Those rules stay with the account module.
-//
-// The management face, under /api/v1/tenants/{tenant}/invitations, is decided in
-// the handler by the Decider seam, with the action authn.membership.manage, and
-// a write lands its mandatory audit row before the action. The acceptance read,
-// under /api/v1/auth/invitations/{token}, is public: it only shows what a token
-// points to. The acceptance write is optional: it needs a signed-in caller who
-// proves the invited address, and a request without an identity is refused.
-//
-// The module renders no message and runs no retry loop. After a successful
-// management issue it asks the optional InviteNotifier seam, bounded to five
-// seconds, and reports the outcome beside the one-time link: a missing notifier
-// is not_configured, and a failed notice is logged and audited best-effort
-// without undoing the invitation.
+// owns the authn_invitations table, the invitation state machine and its routes.
 package invite
 
 import (
@@ -52,40 +29,21 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// ModuleName is this module's name in the registry. A host writes it into the
+// ModuleName is this module's name in the registry; a host names it in the
 // command that mounts the invitation routes.
 const ModuleName = "authn.invite"
 
-// ConfigNamespace is where this module's input items are mounted. It is this
-// module's own name, as a registering module's namespace always is.
+// ConfigNamespace is where this module's input items and settings are mounted.
 const ConfigNamespace = ModuleName
 
-// defaultEndpoint is the endpoint this module's ordinary OpenAPI fragment
-// declares its routes for. The endpoint the routes are actually mounted on is
-// the one the mounter resolves; the fragment is a static declaration written
-// before that is known, so it carries the conventional name. The
-// tenant-management fragment names api, the conventional endpoint for routes
-// decided in a tenant's policy domain.
 const defaultEndpoint = "account"
 
-// inviteFragment is this module's public OpenAPI fragment, describing the
-// acceptance routes. It is generated from the operation declarations, never
-// written by hand.
-//
 //go:embed openapi/invite.json
 var inviteFragment []byte
 
-// inviteTenantsFragment is this module's tenant-domain fragment, describing the
-// management routes.
-//
 //go:embed openapi/invite.tenants.json
 var inviteTenantsFragment []byte
 
-// inviteSpec and inviteTenantsSpec are the two APIs this module's declarations
-// hang off: the ordinary acceptance surface and the tenant management one. Their
-// prefix and version are the common ones; the fragments write the capability's
-// own segment, so a route's declared path begins with the part of the mounter's
-// base that lies below the root.
 var (
 	inviteSpec = speedhttp.Spec{
 		Endpoint: defaultEndpoint,
@@ -105,62 +63,23 @@ var (
 //go:embed migrations
 var migrationRoot embed.FS
 
-// migrationsFS is migrationRoot with the wrapping directory removed, so the
-// tree the database module sees has one directory per dialect at its root.
 var migrationsFS = func() fs.FS {
 	sub, err := fs.Sub(migrationRoot, "migrations")
 	if err != nil {
-		// The embed directive above is what makes this unreachable: the
-		// directory is part of the source tree or the build fails first.
+		// Unreachable: the embed directive fails the build first.
 		panic(ModuleName + ": the embedded migration tree: " + err.Error())
 	}
 	return sub
 }()
 
-// product must satisfy the capability it delivers.
 var _ Invites = (*product)(nil)
 
-// product also withdraws a deleted tenant's pending invitations for the tenant
-// ownership module's deletion path.
 var _ authn.InvitationRevoker = (*product)(nil)
 
-// init registers this module with the process registry. Registration travels
-// with the import, which is what makes "does this command mount the invitation
-// routes" a question the host answers by importing this package and writing
-// ModuleName into the command.
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// Module is the descriptor a host registers.
-//
-// The database, the route mounter, the key-value store, the account read and
-// write surfaces, the signup verification reads, the membership writes, the
-// tenant description read and the audit capability are required, and each is
-// delivered exclusively by another module, so the closure of a command that
-// takes this one in does not pull them in: the host writes them down. The audit
-// capability being required is what makes an assembly without one fail before
-// any instance is built, rather than at the first write; the key-value store is
-// required because the issuance and acceptance-probe budgets count through it,
-// and a budget that silently disappeared with its dependency would leave the
-// invitation faces unbounded. The tenant description read is required because
-// the module cannot refuse the system tenant or name an organization without
-// it: both are part of the contract it serves, not a view that can be left
-// nameless. The decision seam, the settings store, the event bus, the invitation
-// notifier, the tenant name read and the tenant state read are taken up in Init
-// and none is required: the absence of a Decider is a legal assembly in which
-// every management request is refused, without the settings the lifetime and the
-// budget limits read as their declared defaults, and without a notifier the
-// issue answer reports the notice as not_configured. The invitation role policy
-// and the two transaction-aware writes an acceptance joins are taken up in Init
-// as well and none is required, because an assembly that only issues, lists,
-// revokes and resends invitations is legal. The two role seams are needed only
-// when an invitation carries a role; the membership writer is needed by every
-// acceptance, so an assembly without it answers 503 on acceptance while the
-// rest of the surface stays available. An assembly that meets a role without
-// the capability it needs fails closed instead of skipping the check.
-//
-// The stance is StateEnabled and never StateAuto: whether to mount the
-// invitation routes is a decision on the command tree, not a conclusion a
-// configuration can infer.
+// Module is the descriptor a host registers. Every required capability is
+// delivered exclusively by another module, so the host writes them down.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -187,14 +106,10 @@ func Module() core.Module {
 			inviteTenantsSpec,
 			tenantOperations,
 			publicOperations,
-			// The invitation faces: issued and accepted on routes mounted
-			// whenever the module is in force, so the feature is static.
 			feature.Spec{Name: "authn.invitations"},
 		},
 
 		Prepare: func(context.Context, *core.Registry) (core.Enablement, error) {
-			// The module has no configuration items of its own; the lifetime it
-			// issues with is a setting, read when an invitation is issued.
 			return core.Enablement{State: core.StateEnabled}, nil
 		},
 
@@ -224,68 +139,41 @@ func Module() core.Module {
 	}
 }
 
-// productOf narrows an instance to this module's product. An instance of
-// another shape is one the host supplied for this module, and the callbacks
-// leave it alone.
 func productOf(instance any) (*product, bool) {
 	p, ok := instance.(*product)
 	return p, ok && p != nil
 }
 
-// product is the module's instance. It holds the required capabilities and the
-// optional ones taken up in Init.
 type product struct {
 	handle *gorm.DB
-	// now is the clock every time written to the database or bound to a query
-	// is read from, in UTC.
+	// now is the clock every database time is read from, in UTC.
 	now clock.Source
 
 	accounts     authn.Accounts
 	verification authn.SignupVerification
 	memberships  authn.Memberships
-	// tenantDescs answers what a tenant is called, what it is shown by and
-	// whether it is the system tenant. It is required: the module refuses the
-	// system tenant and names an organization in every public link.
-	tenantDescs authn.TenantDescriptionResolver
+	tenantDescs  authn.TenantDescriptionResolver
 
 	mounter mount.Mounter
 	audit   audit.Audit
 
-	// kv is the counter store the send and probe budgets count through. It is
-	// required: a security budget that silently disappeared with its dependency
-	// would leave the invitation faces unbounded.
 	kv kv.KV
 
-	// The optional capabilities. Each is nil when absent: a missing Decider
-	// refuses every management request, without the settings the lifetime reads
-	// as its declared default, and without a notifier the issuance answer
-	// reports the notice as not_configured.
-	store       settings.Store
-	bus         event.Bus
-	decider     authn.Decider
-	notifier    authn.InviteNotifier
-	tenantNames authn.TenantNameResolver
-	tenantState authn.TenantStateResolver
-	// rolePolicy answers whether a role may be granted, and whether an
-	// invitation's role may still be bound. The membership writer and the role
-	// binder are the transaction-aware writes an acceptance joins. None is
-	// required by the descriptor: rolePolicy and roleBinder are needed only
-	// when an invitation carries a role, while membershipWriter is needed by
-	// every acceptance, so an assembly without it answers 503 when an
-	// invitation is accepted. A needed capability that is absent fails closed
-	// instead of letting the check be skipped.
+	store            settings.Store
+	bus              event.Bus
+	decider          authn.Decider
+	notifier         authn.InviteNotifier
+	tenantNames      authn.TenantNameResolver
+	tenantState      authn.TenantStateResolver
 	rolePolicy       authn.InviteRolePolicy
 	membershipWriter membershipWriterTx
 	roleBinder       provisioning.RoleBinder
 	logger           *slog.Logger
 
-	// mu guards reported, which holds for each fault the one last written, so
-	// that a setting read on every issuance is reported once and not on each.
 	mu       sync.Mutex
 	reported map[string]string
 }
 
-// newProduct takes up what the descriptor requires.
 func newProduct(reg *core.Registry) (*product, error) {
 	database, err := core.Resolve[db.Database](reg)
 	if err != nil {
@@ -333,9 +221,6 @@ func newProduct(reg *core.Registry) (*product, error) {
 	}, nil
 }
 
-// optional takes up a capability whose absence is a legal assembly: the zero
-// value says it is absent, and any other failure to take it up ends the start,
-// because a capability that is there and cannot be taken up is not an absence.
 func optional[T any](reg *core.Registry, what string) (T, error) {
 	var zero T
 	v, err := core.Resolve[T](reg)
@@ -349,8 +234,6 @@ func optional[T any](reg *core.Registry, what string) (T, error) {
 	}
 }
 
-// wire runs in Init, where every instance exists. It takes up the optional
-// capabilities and mounts the routes.
 func (p *product) wire(reg *core.Registry) error {
 	if delivered, err := core.Resolve[log.Logger](reg); err == nil {
 		p.logger = delivered.Named(ModuleName)
@@ -389,27 +272,16 @@ func (p *product) wire(reg *core.Registry) error {
 		p.bus.Subscribe(settings.ChangedEventType, ModuleName, p.onSettingsChanged)
 	}
 	if p.bus != nil {
-		// A member who is suspended or removed loses the invitations addressed to
-		// them in that tenant: the grant a pending invitation stands for belongs
-		// to a member, and a membership that is gone cannot be granted again. The
-		// invitation's own row is still the authority; the event is the hint that
-		// sends this module to it.
 		p.bus.Subscribe(authn.EventMembershipChanged, ModuleName, p.onMembershipChanged)
 	}
 	p.mountRoutes()
 	return nil
 }
 
-// conn is the database handle bound to the context of one call.
 func (p *product) conn(ctx context.Context) *gorm.DB { return p.handle.WithContext(ctx) }
 
-// at is the current time as the database stores it.
 func (p *product) at() time.Time { return utc(p.now.Now()) }
 
-// checkMigrated reports that the module's table is not there, so that a command
-// which forgot to apply the migrations fails at the start rather than at the
-// first request. A table that cannot be read at all is the database not
-// answering.
 func (p *product) checkMigrated(ctx context.Context) error {
 	if err := p.conn(ctx).Exec("SELECT 1 FROM " + tableInvitations + " LIMIT 1").Error; err != nil {
 		return fmt.Errorf("%w: %s: the invitation table does not exist", authn.ErrNotMigrated, tableInvitations)
@@ -417,8 +289,6 @@ func (p *product) checkMigrated(ctx context.Context) error {
 	return nil
 }
 
-// diagnose writes the start diagnostic: the endpoint the invitation routes were
-// mounted on.
 func (p *product) diagnose() {
 	p.logger.Info(ModuleName+": the invitation routes are mounted",
 		"endpoint", p.mounter.Endpoint(), "base_path", p.mounter.BaseIn(speedhttp.Scope("")))

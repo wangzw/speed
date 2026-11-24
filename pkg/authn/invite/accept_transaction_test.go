@@ -11,19 +11,13 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// failingBinder refuses every binding write. It is the injected failure that has
-// to roll the whole acceptance back.
 type failingBinder struct{ err error }
 
 func (f failingBinder) BindRoleTx(context.Context, *gorm.DB, string, string, string) (func(context.Context) error, error) {
 	return nil, f.err
 }
 
-// TestABindingFailureRollsTheAcceptanceBack holds the one-transaction rule
-// against the real membership store: the claim and the membership write are
-// undone with the binding that failed, so the invitation stays pending and the
-// account holds no membership, even though the membership insert had already
-// run inside the transaction.
+// TestABindingFailureRollsTheAcceptanceBack checks that a failed role binding rolls back the claim and the membership write.
 func TestABindingFailureRollsTheAcceptanceBack(t *testing.T) {
 	withRealAccountProduct(t, func(handle *gorm.DB, _ authn.Signups, admin authn.AccountAdmin, accounts authn.Accounts,
 		verification authn.SignupVerification, memberships authn.Memberships,

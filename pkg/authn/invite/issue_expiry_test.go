@@ -7,9 +7,8 @@ import (
 	"time"
 )
 
-// TestAnExplicitZeroDeadlineIsRefused holds the issue request's two ways of
-// naming no deadline apart from a malformed one: an explicit zero instant is a
-// value outside the domain, so it answers 400 and writes nothing.
+// TestAnExplicitZeroDeadlineIsRefused checks that an explicit zero instant answers
+// 400 and writes nothing.
 func TestAnExplicitZeroDeadlineIsRefused(t *testing.T) {
 	h := newHarness(t)
 	h.asAdmin()

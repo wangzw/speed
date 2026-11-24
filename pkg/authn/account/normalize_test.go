@@ -8,6 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
+// Each kind of identifier is folded and held to its shape.
 func TestNormalizeIdentifierVectors(t *testing.T) {
 	longLocal := strings.Repeat("a", 254-len("@x.io"))
 	for _, c := range []struct {
@@ -17,7 +18,6 @@ func TestNormalizeIdentifierVectors(t *testing.T) {
 		want  string
 		valid bool
 	}{
-		// Usernames.
 		{"a username is lower-cased", authn.IdentifierUsername, "Alice", "alice", true},
 		{"the compatibility characters of NFKC fold to ascii", authn.IdentifierUsername, "ＡＬＩＣＥ０１", "alice01", true},
 		{"a ligature folds to its letters", authn.IdentifierUsername, "ﬁnn", "finn", true},
@@ -42,7 +42,6 @@ func TestNormalizeIdentifierVectors(t *testing.T) {
 		{"a non-ascii letter that NFKC keeps is refused", authn.IdentifierUsername, "älice", "", false},
 		{"the empty username", authn.IdentifierUsername, "", "", false},
 
-		// Email addresses.
 		{"an email address is lower-cased", authn.IdentifierEmail, "Alice@Example.COM", "alice@example.com", true},
 		{"surrounding space is trimmed", authn.IdentifierEmail, "  alice@example.com\t", "alice@example.com", true},
 		{"a sub-address is kept", authn.IdentifierEmail, "alice+tag@example.com", "alice+tag@example.com", true},
@@ -61,7 +60,6 @@ func TestNormalizeIdentifierVectors(t *testing.T) {
 		{"255 bytes is too long", authn.IdentifierEmail, "a" + longLocal + "@x.io", "", false},
 		{"the empty email address", authn.IdentifierEmail, "", "", false},
 
-		// Phone numbers.
 		{"an E.164 number", authn.IdentifierPhone, "+8613812345678", "+8613812345678", true},
 		{"seven digits is the shortest", authn.IdentifierPhone, "+1234567", "+1234567", true},
 		{"six digits is too short", authn.IdentifierPhone, "+123456", "", false},
@@ -76,7 +74,6 @@ func TestNormalizeIdentifierVectors(t *testing.T) {
 		{"a fullwidth digit is refused: NFKC is not applied", authn.IdentifierPhone, "+８613812345678", "", false},
 		{"the empty number", authn.IdentifierPhone, "", "", false},
 
-		// Kinds.
 		{"a kind that is none of the three", authn.IdentifierKind("fax"), "alice", "", false},
 		{"the empty kind", authn.IdentifierKind(""), "alice", "", false},
 	} {
@@ -94,6 +91,7 @@ func TestNormalizeIdentifierVectors(t *testing.T) {
 	}
 }
 
+// A normalization failure does not name the value.
 func TestANormalizationFailureNamesNoValue(t *testing.T) {
 	for _, in := range []struct {
 		kind  authn.IdentifierKind
@@ -110,8 +108,7 @@ func TestANormalizationFailureNamesNoValue(t *testing.T) {
 	}
 }
 
-// Normalization is a fixed point: a value that is stored is read back in the same
-// form, which is what lets the write and the lookup agree.
+// Normalization is a fixed point: a stored value reads back unchanged, so write and lookup agree.
 func TestNormalizationIsIdempotent(t *testing.T) {
 	for _, c := range []struct {
 		kind  authn.IdentifierKind
@@ -132,6 +129,7 @@ func TestNormalizationIsIdempotent(t *testing.T) {
 	}
 }
 
+// A prefix is folded and held to its kind's shape, and fewer than three characters is authn.ErrInvalidArgument.
 func TestNormalizePrefix(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -164,6 +162,7 @@ func TestNormalizePrefix(t *testing.T) {
 	}
 }
 
+// A prefix bound is the least string above every extension of the prefix.
 func TestPrefixBoundIsTheLeastStringAboveEveryExtension(t *testing.T) {
 	for _, c := range []struct{ prefix, want string }{
 		{"abc", "abd"}, {"ab9", "ab:"}, {"+861", "+862"}, {"a@b", "a@c"},

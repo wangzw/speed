@@ -12,54 +12,30 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/slug"
 )
 
-// The bounds an identifier is held to.
 const (
-	// emailMaxBytes is the longest an email address may be, which is the longest
-	// the SMTP path admits.
-	emailMaxBytes = 254
-	// prefixMinChars is the shortest identifier prefix a listing accepts, so that
-	// a listing cannot read the whole table.
+	emailMaxBytes  = 254
 	prefixMinChars = 3
 )
 
 var (
-	// usernamePrefixShape is the form a prefix of a normalized username takes.
 	usernamePrefixShape = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
-	// phoneShape is E.164: a plus sign, a country code that does not begin with
-	// zero, and at most fifteen digits in all.
-	phoneShape = regexp.MustCompile(`^\+[1-9][0-9]{6,14}$`)
-	// phonePrefixShape is the form a prefix of an E.164 number takes.
-	phonePrefixShape = regexp.MustCompile(`^\+[1-9][0-9]{0,14}$`)
+	phoneShape          = regexp.MustCompile(`^\+[1-9][0-9]{6,14}$`)
+	phonePrefixShape    = regexp.MustCompile(`^\+[1-9][0-9]{0,14}$`)
 )
 
-// errNotWellFormed is what every normalization failure is. It names the class
-// of identifier and the rule it broke, and never the value, which is a person's.
+// errNotWellFormed names the class of identifier and the rule it broke, never
+// the value.
 func errNotWellFormed(kind authn.IdentifierKind, rule string) error {
 	err := fmt.Errorf("%w: a %s %s", authn.ErrInvalidIdentifier, kind, rule)
 	if kind == authn.IdentifierUsername {
-		// The shape of a username is its own failure: a form carrying several
-		// fields can only say which one is wrong if the answer names it.
 		return authn.UsernameShape(err)
 	}
 	return err
 }
 
-// NormalizeIdentifier is the one form an identifier is stored and looked up in.
-// It is applied on both sides, to the value written and to the value asked for,
-// because the database compares what it is given and a side that skipped it
-// would find nothing and report no error.
-//
-// A username is put through NFKC and lower-cased, and has to match
-// [a-z0-9][a-z0-9-]{2,62}: it holds no @, no dot and no underscore, does not
-// begin with the static credential table's prefix and is not the shape of a
-// UUID, which is what an account identifier looks like. An email address is
-// trimmed and lower-cased,
-// has to be ASCII, hold exactly one @ with something on each side, and be at
-// most 254 bytes; no alias is folded, so a sub-address and a dot stay as written.
-// A phone number has to be E.164, a plus sign and 7 to 15 digits, written as it
-// is stored: the server does not parse numbers, and a space or a dash is
-// refused. Any failure is authn.ErrInvalidIdentifier, and the error never
-// carries the value.
+// NormalizeIdentifier is the form an identifier is stored and looked up in, and
+// is applied to both sides. A value outside its kind's form returns an error
+// wrapping authn.ErrInvalidIdentifier that names the class and the rule.
 func NormalizeIdentifier(kind authn.IdentifierKind, value string) (string, error) {
 	switch kind {
 	case authn.IdentifierUsername:
@@ -88,9 +64,6 @@ func normalizeUsername(value string) (string, error) {
 	return folded, nil
 }
 
-// isUUIDShaped reports whether s reads as a UUID in any of the forms the parser
-// takes. A username of that shape would be taken for an account identifier by a
-// reader that tells the two apart by their look.
 func isUUIDShaped(s string) bool {
 	_, err := uuid.Parse(s)
 	return err == nil
@@ -111,8 +84,6 @@ func normalizeEmail(value string) (string, error) {
 	return strings.ToLower(trimmed), nil
 }
 
-// printableASCII reports whether every byte of s is a visible ASCII character,
-// the space excluded.
 func printableASCII(s string) bool {
 	for i := 0; i < len(s); i++ {
 		if c := s[i]; c < 0x21 || c > 0x7e {
@@ -122,11 +93,6 @@ func printableASCII(s string) bool {
 	return true
 }
 
-// normalizePrefix is NormalizeIdentifier for the beginning of an identifier: the
-// same folding and the same alphabet, none of the whole-value rules. It is what a
-// listing by prefix compares with, so the prefix is read the way the stored
-// values were written. A prefix shorter than prefixMinChars once folded is
-// authn.ErrInvalidArgument.
 func normalizePrefix(kind authn.IdentifierKind, prefix string) (string, error) {
 	var folded string
 	switch kind {
@@ -154,9 +120,6 @@ func normalizePrefix(kind authn.IdentifierKind, prefix string) (string, error) {
 	return folded, nil
 }
 
-// prefixBound is the least string above every string that begins with prefix,
-// which is the prefix with its last byte raised by one. A prefix is ASCII once
-// normalized, so the last byte is below 0x7f and the raise cannot overflow.
 func prefixBound(prefix string) string {
 	last := len(prefix) - 1
 	return prefix[:last] + string(prefix[last]+1)

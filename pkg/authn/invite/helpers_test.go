@@ -24,19 +24,15 @@ import (
 	"github.com/vislake/speed/pkg/kv"
 )
 
-// quietly is a session of a delivered handle that writes no record of a failed
-// statement, several of which these cases fail on purpose.
 func quietly(handle *gorm.DB) *gorm.DB {
 	return handle.Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)})
 }
 
-// openDatabase hands back the handle the engine's own module delivers over a
-// SQLite database of this test's own, with this module's migrations applied.
 func openDatabase(t *testing.T) *gorm.DB {
 	t.Helper()
 	handle := quietly(dbtest.SQLite(t, filepath.Join(t.TempDir(), "invite.db"), nil).DB())
-	// One connection, so that SQLite serializes the writes and a case that
-	// races two acceptances sees one winner rather than a busy database.
+	// One connection, so SQLite serializes the writes and a race case sees one
+	// winner rather than a busy database.
 	if pool, err := handle.DB(); err == nil {
 		pool.SetMaxOpenConns(1)
 	}
@@ -44,16 +40,11 @@ func openDatabase(t *testing.T) *gorm.DB {
 	return handle
 }
 
-// applyMigrations runs every migration file this module ships for SQLite, in
-// the order the database module applies them, a statement at a time.
 func applyMigrations(t testing.TB, handle *gorm.DB) {
 	t.Helper()
 	applyMigrationsFor(t, handle, string(db.SQLite))
 }
 
-// applyMigrationsFor runs every migration file this module ships for one
-// dialect, in the order the database module applies them, a statement at a
-// time.
 func applyMigrationsFor(t testing.TB, handle *gorm.DB, dialect string) {
 	t.Helper()
 	entries, err := fs.ReadDir(migrationsFS, dialect)
@@ -76,7 +67,6 @@ func applyMigrationsFor(t testing.TB, handle *gorm.DB, dialect string) {
 	}
 }
 
-// testClock is a clock a case moves by hand.
 type testClock struct {
 	mu  sync.Mutex
 	now time.Time
@@ -98,7 +88,6 @@ func (c *testClock) advance(d time.Duration) {
 	c.now = c.now.Add(d)
 }
 
-// logBuffer collects what the module logs.
 type logBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -120,10 +109,7 @@ func (b *logBuffer) logger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(b, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
 
-// fakeAccounts is the account read surface. Lookup and Identifiers are
-// exercised; the rest of the interface is embedded nil, which a case must not
-// reach. via is the way the held address was established, email-code unless a
-// case says otherwise.
+// The embedded authn.Accounts is nil: only the methods this fake implements may be called.
 type fakeAccounts struct {
 	authn.Accounts
 	mu        sync.Mutex
@@ -135,16 +121,10 @@ type fakeAccounts struct {
 	statuses  map[authn.AccountID]authn.AccountStatus
 	via       string
 	lookupEr  error
-	// failID and failIDErr make Get answer failIDErr for that one account, so a
-	// case can fail a single inviter's read without scripting call counts.
 	failID    authn.AccountID
 	failIDErr error
-	// manyErr makes the bulk identifier read fail on its own.
-	manyErr error
-	// getsByID counts the Get reads of each account, so a case can assert that a
-	// particular account (an inviter, say) was never read while the acceptance
-	// read the caller's own account.
-	getsByID map[authn.AccountID]int
+	manyErr   error
+	getsByID  map[authn.AccountID]int
 }
 
 func newAccounts() *fakeAccounts {
@@ -159,46 +139,36 @@ func newAccounts() *fakeAccounts {
 	}
 }
 
-// named records the display name Get answers for an account.
 func (a *fakeAccounts) named(id authn.AccountID, name string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.names[id] = name
 }
 
-// user records the username the account holds, as its username identifier.
 func (a *fakeAccounts) user(id authn.AccountID, username string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.usernames[id] = username
 }
 
-// gone records that the account is a tombstone: Get answers
-// authn.ErrAccountNotFound and the identifier read has no entry for it.
 func (a *fakeAccounts) gone(id authn.AccountID) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.missing[id] = true
 }
 
-// getCountOf reports how many Get reads the named account answered.
 func (a *fakeAccounts) getCountOf(id authn.AccountID) int {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.getsByID[id]
 }
 
-// disabled records that the account is not active, as the account store would
-// report it after an administrator disabled it.
 func (a *fakeAccounts) disabled(id authn.AccountID) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.statuses[id] = authn.StatusDisabled
 }
 
-// failsFor records that Get answers err for this account alone, so a case can
-// fail one inviter's read while every other read, including the acting
-// account's, still answers.
 func (a *fakeAccounts) failsFor(id authn.AccountID, err error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -206,7 +176,6 @@ func (a *fakeAccounts) failsFor(id authn.AccountID, err error) {
 	a.failIDErr = err
 }
 
-// failsMany records that the bulk identifier read answers err.
 func (a *fakeAccounts) failsMany(err error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -219,8 +188,6 @@ func (a *fakeAccounts) put(email string, id authn.AccountID) {
 	a.byEmail[email] = id
 }
 
-// Get answers the acting account's kind: every account is a user unless a case
-// says otherwise, and a service account has no self-registration to gate.
 func (a *fakeAccounts) Get(_ context.Context, id authn.AccountID) (authn.Account, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -255,10 +222,6 @@ func (a *fakeAccounts) Lookup(_ context.Context, _ authn.IdentifierKind, value s
 	return id, nil
 }
 
-// Identifiers answers the email identifiers the account holds. The way each was
-// established is the case's via, email-code by default, so an existing account
-// in the ordinary case already proves the address and acceptance adds only the
-// membership.
 func (a *fakeAccounts) Identifiers(_ context.Context, id authn.AccountID) ([]authn.Identifier, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -281,8 +244,6 @@ func (a *fakeAccounts) Identifiers(_ context.Context, id authn.AccountID) ([]aut
 	return out, nil
 }
 
-// IdentifiersMany answers the identifiers of each live account in one read. A
-// tombstone has no entry, as the real surface promises.
 func (a *fakeAccounts) IdentifiersMany(ctx context.Context, ids []authn.AccountID) (map[authn.AccountID][]authn.Identifier, error) {
 	a.mu.Lock()
 	manyErr := a.manyErr
@@ -307,8 +268,6 @@ func (a *fakeAccounts) IdentifiersMany(ctx context.Context, ids []authn.AccountI
 	return out, nil
 }
 
-// fakeAccountAdmin is the account write surface, counting each call and
-// recording the input it was given.
 type fakeAccountAdmin struct {
 	authn.AccountAdmin
 	mu       sync.Mutex
@@ -320,7 +279,6 @@ type fakeAccountAdmin struct {
 	addedErr error
 }
 
-// addedIdentifier is one AddIdentifier call the fake recorded.
 type addedIdentifier struct {
 	Account authn.AccountID
 	Kind    authn.IdentifierKind
@@ -328,8 +286,6 @@ type addedIdentifier struct {
 	Via     authn.Verification
 }
 
-// AddIdentifier records the write the acceptance makes when it finds a pending
-// owner for the invited address.
 func (a *fakeAccountAdmin) AddIdentifier(_ context.Context, id authn.AccountID, kind authn.IdentifierKind, value string, via authn.Verification) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -355,36 +311,26 @@ func (a *fakeAccountAdmin) Create(_ context.Context, in authn.CreateAccount) (au
 	return authn.Account{ID: id, Kind: authn.KindUser, Status: authn.StatusActive}, nil
 }
 
-// fakeMemberships is the membership read and write surface. err is the write
-// failure a case scripts; readErr is the read failure, kept separate because an
-// acceptance reads before it writes.
 type fakeMemberships struct {
 	authn.Memberships
-	mu      sync.Mutex
-	held    map[string]authn.Membership
-	puts    []authn.Membership
-	count   int
-	err     error
-	readErr error
-	// duringRead runs before the membership read answers, so a case can move the
-	// clock between the terminal check and the suspension settlement.
+	mu         sync.Mutex
+	held       map[string]authn.Membership
+	puts       []authn.Membership
+	count      int
+	err        error
+	readErr    error
 	duringRead func()
-	// duringJoin runs after the acceptance read the membership and before the
-	// conditional write, so a case can interleave a suspension or a resend.
 	duringJoin func()
 }
 
-// newMemberships builds an empty membership stand-in.
 func newMemberships() *fakeMemberships {
 	return &fakeMemberships{held: map[string]authn.Membership{}}
 }
 
-// membershipKey identifies one membership in the fake's held map.
 func membershipKey(tenant string, id authn.AccountID) string {
 	return tenant + "\x00" + string(id)
 }
 
-// hold writes a membership the case wants the read to answer.
 func (f *fakeMemberships) hold(m authn.Membership) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -419,15 +365,11 @@ func (f *fakeMemberships) Put(_ context.Context, m authn.Membership) error {
 	return nil
 }
 
-// MembershipTx answers the same membership as Membership. The stand-in keeps
-// its rows in memory rather than in the transaction handle, so a case that has
-// to see a rollback drives the real account module instead.
+// The stand-in keeps rows in memory, not in the transaction handle: a rollback case needs the real account module.
 func (f *fakeMemberships) MembershipTx(ctx context.Context, _ *gorm.DB, tenant string, id authn.AccountID) (authn.Membership, bool, error) {
 	return f.Membership(ctx, tenant, id)
 }
 
-// PutJoiningTx is PutJoining with the after-commit closure the transaction-aware
-// write returns. The stand-in publishes nothing, so the closure is nil.
 func (f *fakeMemberships) PutJoiningTx(ctx context.Context, _ *gorm.DB, m authn.Membership, wasActive bool) (bool, func(context.Context) error, error) {
 	joined, err := f.PutJoining(ctx, m, wasActive)
 	if err != nil || !joined {
@@ -436,9 +378,6 @@ func (f *fakeMemberships) PutJoiningTx(ctx context.Context, _ *gorm.DB, m authn.
 	return true, nil, nil
 }
 
-// PutJoining models the account module's conditional write: an inactive row is
-// never resumed, and a row the caller read as active but that is gone is not
-// written again.
 func (f *fakeMemberships) PutJoining(_ context.Context, m authn.Membership, wasActive bool) (bool, error) {
 	if f.duringJoin != nil {
 		f.duringJoin()
@@ -461,22 +400,18 @@ func (f *fakeMemberships) PutJoining(_ context.Context, m authn.Membership, wasA
 	return true, nil
 }
 
-// roleJudgement is one call the role policy stand-in answered.
 type roleJudgement struct {
 	Tenant  string
 	Account string
 	Role    string
 }
 
-// fakeRolePolicy is the invitation role policy stand-in: it answers what a case
-// scripts and records the questions it was asked.
 type fakeRolePolicy struct {
-	mu         sync.Mutex
-	grantErr   error
-	stillErr   error
-	granted    []roleJudgement
-	stillAsked []roleJudgement
-	// stillErrFor names the inviter whose judgement fails; empty fails nobody.
+	mu          sync.Mutex
+	grantErr    error
+	stillErr    error
+	granted     []roleJudgement
+	stillAsked  []roleJudgement
 	stillErrFor string
 }
 
@@ -509,22 +444,17 @@ func (f *fakeRolePolicy) acceptCalls() []roleJudgement {
 	return append([]roleJudgement(nil), f.stillAsked...)
 }
 
-// boundRole is one binding the role binder stand-in wrote.
 type boundRole struct {
 	Tenant  string
 	Account string
 	Role    string
 }
 
-// fakeRoleBinder is the transaction-aware role binder stand-in. It records the
-// bindings it was asked to write and can be told to fail, which is how a case
-// drives a write failure through the acceptance's transaction.
 type fakeRoleBinder struct {
 	mu       sync.Mutex
 	bindings []boundRole
 	err      error
-	// txSeen records whether the call was handed a transaction handle.
-	txSeen bool
+	txSeen   bool
 }
 
 func (f *fakeRoleBinder) BindRoleTx(_ context.Context, tx *gorm.DB, tenant, account, role string) (func(context.Context) error, error) {
@@ -544,8 +474,6 @@ func (f *fakeRoleBinder) written() []boundRole {
 	return append([]boundRole(nil), f.bindings...)
 }
 
-// fakeTenantStates answers the tenant state the authentication face reads. A
-// tenant a case did not name is serving.
 type fakeTenantStates struct {
 	mu     sync.Mutex
 	states map[string]authn.TenantState
@@ -566,9 +494,6 @@ func (f *fakeTenantStates) TenantStateOf(_ context.Context, id string) (authn.Te
 	return authn.TenantServing, nil
 }
 
-// fakeTenantDescriptions answers the tenant description seam. A tenant a case
-// did not name is an ordinary organization whose name doubles as its display
-// name.
 type fakeTenantDescriptions struct {
 	mu   sync.Mutex
 	byID map[string]authn.TenantDescription
@@ -587,15 +512,12 @@ func (f *fakeTenantDescriptions) TenantDescriptionOf(_ context.Context, id strin
 	return authn.TenantDescription{Name: id, DisplayName: id}, nil
 }
 
-// auditRecord is one audit row as it was recorded: the entry the module supplied
-// and the identity the journal reads out of the context.
 type auditRecord struct {
 	entry   audit.Entry
 	actor   authn.AccountID
 	account authn.AccountID
 }
 
-// recordingAudit keeps the rows it was asked to write and can be told to fail.
 type recordingAudit struct {
 	mu      sync.Mutex
 	rows    []audit.Entry
@@ -633,7 +555,6 @@ func (a *recordingAudit) recorded() []auditRecord {
 
 func (a *recordingAudit) fails(err error) { a.mu.Lock(); a.err = err; a.mu.Unlock() }
 
-// fakeDecider answers what a case scripts and counts its calls.
 type fakeDecider struct {
 	mu    sync.Mutex
 	allow bool
@@ -659,8 +580,6 @@ func (d *fakeDecider) last() (authn.Decision, bool) {
 	return d.calls[len(d.calls)-1], true
 }
 
-// harness is the module's product over a migrated SQLite database, with the
-// capabilities replaced by ones a case can read.
 type harness struct {
 	t            *testing.T
 	p            *product
@@ -687,8 +606,6 @@ func newHarness(t *testing.T) *harness {
 	return newHarnessOn(t, openDatabase(t))
 }
 
-// newHarnessOn builds the harness over a handle the case opened, so a case on
-// another engine reuses every stand-in the SQLite cases use.
 func newHarnessOn(t *testing.T, handle *gorm.DB) *harness {
 	t.Helper()
 	h := &harness{
@@ -734,20 +651,16 @@ func newHarnessOn(t *testing.T, handle *gorm.DB) *harness {
 	return h
 }
 
-// issue issues an invitation as the administrator would, over a context that
-// carries the administrator's identity.
 func (h *harness) issue(tenant, email string) Issued {
 	h.t.Helper()
 	return h.issueAs(adminID, tenant, email, "")
 }
 
-// issueRole issues an invitation that grants a role.
 func (h *harness) issueRole(tenant, email, role string) Issued {
 	h.t.Helper()
 	return h.issueAs(adminID, tenant, email, role)
 }
 
-// issueAs issues an invitation as the named account, optionally with a role.
 func (h *harness) issueAs(account authn.AccountID, tenant, email, role string) Issued {
 	h.t.Helper()
 	ctx := authntest.Context(h.t, context.Background(), authntest.WithAccount(account))
@@ -758,24 +671,18 @@ func (h *harness) issueAs(account authn.AccountID, tenant, email, role string) I
 	return issued
 }
 
-// acceptCtx records that the account proves the address and returns a context
-// carrying that account, which is what an acceptance takes.
 func (h *harness) acceptCtx(id authn.AccountID, email string) context.Context {
 	h.t.Helper()
 	h.proveEmail(id, email)
 	return authntest.Context(h.t, context.Background(), authntest.WithAccount(id))
 }
 
-// acceptAsHTTP does the same for a request through the Mounter: it records the
-// proof and sets the identity the following requests carry.
 func (h *harness) acceptAsHTTP(id authn.AccountID, email string) {
 	h.t.Helper()
 	h.proveEmail(id, email)
 	h.mounter.As(authntest.WithAccount(id))
 }
 
-// proveEmail records that the account holds the address as a proven email
-// identifier in the account read stand-in.
 func (h *harness) proveEmail(id authn.AccountID, email string) {
 	h.t.Helper()
 	normalized, err := normalizeEmail(email)
@@ -785,8 +692,6 @@ func (h *harness) proveEmail(id authn.AccountID, email string) {
 	h.accounts.put(normalized, id)
 }
 
-// row reads one row straight from the table, for a case to inspect the stored
-// state.
 func (h *harness) row(id string) invitationRow {
 	h.t.Helper()
 	var rows []invitationRow
@@ -799,9 +704,6 @@ func (h *harness) row(id string) invitationRow {
 	return rows[0]
 }
 
-// supersede records that a later invitation replaced rowID without touching the
-// row's deadline: the shape a second instance with a skewed clock can leave
-// behind, where the replaced row is still ahead of its deadline.
 func (h *harness) supersede(rowID string) {
 	h.t.Helper()
 	if err := h.handle.Model(&invitationRow{}).Where("id = ?", rowID).
@@ -810,8 +712,6 @@ func (h *harness) supersede(rowID string) {
 	}
 }
 
-// budgetCount reads the count one budget kind holds for subject in the window
-// the clock is in.
 func (h *harness) budgetCount(kind, subject string) float64 {
 	h.t.Helper()
 	key := budgetKey(kind, subject, h.p.issueBudget().window, h.clock.read())
@@ -823,10 +723,6 @@ func (h *harness) budgetCount(kind, subject string) float64 {
 
 const adminID = authn.AccountID("acct-admin")
 
-// fakeSignupVerification reports the self-registration state a case scripts and
-// answers the pending-contact reverse lookup. states overrides state for the
-// accounts it names, so a case can tell an unproved operator from a proved
-// target.
 type fakeSignupVerification struct {
 	mu           sync.Mutex
 	state        authn.SignupStatus
@@ -840,8 +736,6 @@ type fakeSignupVerification struct {
 	contactReads int
 }
 
-// SignupStateOf answers the state scripted for the account, falling back to
-// state, or the scripted failure.
 func (v *fakeSignupVerification) SignupStateOf(_ context.Context, id authn.AccountID) (authn.SignupStatus, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -853,14 +747,12 @@ func (v *fakeSignupVerification) SignupStateOf(_ context.Context, id authn.Accou
 	return v.state, v.err
 }
 
-// readCount is how many state reads the fake answered.
 func (v *fakeSignupVerification) readCount() int {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	return v.stateReads
 }
 
-// PendingAccountByContact answers the scripted owner.
 func (v *fakeSignupVerification) PendingAccountByContact(_ context.Context, _ string, _ string) (string, bool, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -868,26 +760,18 @@ func (v *fakeSignupVerification) PendingAccountByContact(_ context.Context, _ st
 	return v.owner, v.pending, v.pendingErr
 }
 
-// identityNames stands in for the roster's id-to-name seam over an assembly
-// whose fixture identifiers double as their names.
 type identityNames struct{}
 
 func (identityNames) TenantNameOf(_ context.Context, id string) (string, error) {
 	return id, nil
 }
 
-// fakeKV is an in-memory kv.KV for the budget counters. It implements the whole
-// contract, but the budgets only use IncrByFloatWithTTL; the expiry is the wall
-// clock, so a case that moves the injected clock to a new window gets a new key
-// rather than relying on an eviction.
+// The expiry is the wall clock, not the injected clock: moving the case's clock starts a new key rather than evicting.
 type fakeKV struct {
 	mu     sync.Mutex
 	values map[string]float64
 	expiry map[string]time.Time
 	err    error
-	// onIncr runs before a count is applied, letting a case interleave a write
-	// between the charge and the caller's next step, or hold two chargers at the
-	// same point. It runs outside the lock, so it may block.
 	onIncr func(key string, delta float64)
 }
 
