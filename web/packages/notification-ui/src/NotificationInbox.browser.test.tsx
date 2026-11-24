@@ -1,21 +1,3 @@
-/**
- * NotificationInbox in a real browser: axe's label-content-name-mismatch
- * (WCAG 2.5.3 Label in Name) over an unread row's "mark as read" control,
- * and the focus a write must keep on the control that started it.
- *
- * The rule reads a control's visible text through the canvas text-measurement
- * API; jsdom answers `getContext('2d')` with null, so the check throws there
- * and comes back indeterminate for every node. Only a real browser can pass or
- * fail it. The control shows "Mark as read" and carries a longer accessible
- * name that also identifies the message; the longer-name wording must keep the
- * visible text contiguous so it stays inside the name.
- *
- * The focus cases live here because jsdom does not blur a focused control
- * when it turns natively disabled; Chromium does, which is the failure the
- * controls must not reproduce. The title of an unread message starts a read
- * write and reports busy while it runs; the pager control that reaches the
- * last page becomes unavailable. Both keep the focus they had.
- */
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import axe from 'axe-core'
@@ -34,7 +16,6 @@ const MESSAGES_PATH = '/api/v1/notifications/messages'
 const UNREAD_PATH = '/api/v1/notifications/messages/unread-count'
 const TITLE = 'Build finished'
 
-/** Answers the inbox read with one unread message, and the bell's count. */
 const respond: RealResponder = (call) => {
   if (call.path === UNREAD_PATH) {
     return jsonResponse(200, { unread: 1 })
@@ -78,7 +59,6 @@ describe('NotificationInbox row action Label in Name in Chromium', () => {
   })
 })
 
-/** A response the case settles by hand, so one write can be held in flight. */
 function deferred<T>(): {
   readonly promise: Promise<T>
   readonly resolve: (value: T) => void
@@ -90,7 +70,6 @@ function deferred<T>(): {
   return { promise, resolve }
 }
 
-/** What currently holds focus, for a failure message. */
 function describeActiveElement(): string {
   const active = document.activeElement
   if (active === null) {
@@ -107,8 +86,6 @@ interface Row {
   read: boolean
 }
 
-/** A stateful inbox the responder reads and mutates, honouring the listing's
- * limit and offset. */
 function inboxResponder(rows: Row[]): RealResponder {
   const unread = () => rows.filter((row) => !row.read).length
   return (call: RealCall) => {
@@ -172,10 +149,6 @@ describe('NotificationInbox write focus in Chromium', () => {
     const title = await screen.findByRole('button', { name: TITLE })
     await userEvent.click(title)
 
-    // The title starts the message's read write and reports busy; it stays
-    // focusable and keeps the focus it had. Focus is asserted first so a
-    // control that dropped it is reported as the defect rather than as a
-    // missing attribute.
     expect(
       title,
       `focus while the open write runs; document.activeElement is ${describeActiveElement()}`,
@@ -215,8 +188,6 @@ describe('NotificationInbox write focus in Chromium', () => {
     await userEvent.click(next)
     await screen.findByText('Five')
 
-    // The control that moved the operator to the last page is unavailable
-    // there, and it is the control that keeps the focus.
     await waitFor(() =>
       expect(next).toHaveAttribute('aria-disabled', 'true'),
     )

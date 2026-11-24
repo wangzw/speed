@@ -1,21 +1,3 @@
-/**
- * The notification surface's reads and writes, one hook each over the
- * generated react-query hooks of @speed/api-sdk.
- *
- * Every read is keyed under the acting tenant through auth-core's
- * tenantQueryKey (frontend standards: a query key whose outermost
- * segment is the tenant, so a tenant switch can never serve the previous
- * tenant's rows) and enabled only while a tenant is known, failing
- * closed rather than inventing one. The generated constructors supply the
- * key's own segments, so the shape a write invalidates by cannot drift
- * from the shape a read cached under.
- *
- * The writes -- mark one read, mark every unread read, set one type's
- * channel -- invalidate the tenant's message list, unread count and
- * preference matrix on success, so the surfaces follow the server's
- * answer without a hand-maintained query-key copy.
- */
-
 import { useCallback, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
@@ -38,30 +20,21 @@ import type {
 } from '@speed/api-sdk'
 import { tenantQueryKey, useCurrentTenant, useTenantQueryKey } from '@speed/auth-core'
 
-/** A page of the caller's messages, reduced so an absent body reads as an
- * empty page rather than undefined. */
 export interface NotificationInbox {
   readonly messages: NonNullable<NotificationInboxListMessages200['messages']>
   readonly total: number
 }
 
-/** The current tenant id, or null when no tenant route/provider is set. */
 function useActingTenantId(): string | null {
   return useCurrentTenant()?.tenantId ?? null
 }
 
-/** The listing filters a caller can apply to the message list. */
 export interface NotificationMessageListing {
-  /** Restrict the page to one group; absent or empty means every group. */
   readonly group?: string
-  /** Page size; absent leaves the server's default page bound. */
   readonly limit?: number
-  /** Number of rows to skip; absent means the first page. */
   readonly offset?: number
 }
 
-/** The caller's messages, optionally filtered by group and paged (GET
- * /notifications/messages). */
 export function useNotificationMessages(listing?: NotificationMessageListing) {
   const group = listing?.group
   const limit = listing?.limit
@@ -96,10 +69,6 @@ export function useNotificationMessages(listing?: NotificationMessageListing) {
   })
 }
 
-/** The number of the caller's unread, unexpired messages (GET
- * /notifications/messages/unread-count); undefined until it settles.
- * `enabled` lets a host that offers the count somewhere other than the inbox
- * withhold the read where the deployment serves no inbox endpoint. */
 export function useNotificationUnreadCount(enabled = true) {
   const bareKey = useMemo(() => getNotificationInboxGetUnreadCountQueryKey(), [])
   const { tenantId, queryKey } = useTenantQueryKey(bareKey)
@@ -112,8 +81,6 @@ export function useNotificationUnreadCount(enabled = true) {
   })
 }
 
-/** The caller's preference matrix, one row per type in the taxonomy (GET
- * /notifications/preferences). */
 export function useNotificationPreferences() {
   const bareKey = useMemo(
     () => getNotificationPreferencesListPreferencesQueryKey(),
@@ -131,9 +98,6 @@ export function useNotificationPreferences() {
   )
 }
 
-/** The preference matrix's type taxonomy, one entry per declared type
- * (GET /notifications/types): the per-type `unsubscribable` flag the
- * matrix disables a row by and the default channels the matrix hints. */
 export function useNotificationTypes() {
   const bareKey = useMemo(() => getNotificationPreferencesListTypesQueryKey(), [])
   const { tenantId, queryKey } = useTenantQueryKey(bareKey)
@@ -146,9 +110,6 @@ export function useNotificationTypes() {
   })
 }
 
-/** Invalidates the acting tenant's message list, unread count and
- * preference matrix: the write path's stale-marking, built from the
- * generated key constructors so it can never drift from the read keys. */
 function useInvalidateNotifications(): () => void {
   const tenantId = useActingTenantId()
   const queryClient = useQueryClient()
@@ -156,9 +117,6 @@ function useInvalidateNotifications(): () => void {
     if (tenantId === null) {
       return
     }
-    // The bare constructors are the reads' own key tails; prefixing them
-    // with the tenant matches every cached entry (the list's prefix also
-    // reaches a list cached under a group filter).
     for (const tail of [
       getNotificationInboxListMessagesQueryKey(),
       getNotificationInboxGetUnreadCountQueryKey(),
@@ -171,8 +129,6 @@ function useInvalidateNotifications(): () => void {
   }, [queryClient, tenantId])
 }
 
-/** Marks one message read (POST /notifications/messages/:id/read) and
- * refreshes the affected reads. */
 export function useMarkNotificationRead() {
   const invalidate = useInvalidateNotifications()
   return useNotificationInboxMarkMessageRead({
@@ -180,8 +136,6 @@ export function useMarkNotificationRead() {
   })
 }
 
-/** Marks every unread message read (POST
- * /notifications/messages/read-all) and refreshes the affected reads. */
 export function useMarkAllNotificationsRead() {
   const invalidate = useInvalidateNotifications()
   return useNotificationInboxMarkAllMessagesRead({
@@ -189,8 +143,6 @@ export function useMarkAllNotificationsRead() {
   })
 }
 
-/** Turns one channel on or off for one type (PUT
- * /notifications/preferences/:type_key/:channel) and refreshes the matrix. */
 export function useSetNotificationPreference() {
   const invalidate = useInvalidateNotifications()
   return useNotificationPreferencesUpdatePreference({

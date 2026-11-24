@@ -1,24 +1,14 @@
 /**
- * NotificationPresenceProvider: the host's notification feature-presence
- * facts, carried by context.
- *
- * The same shape as NotificationStreamProvider: the props are facts the
- * host read from its feature document, and this package reads no feature
- * state for them. Two facts travel together because the surfaces consume
- * them together -- whether the preference matrix exists at all, and which
- * optional delivery channels the deployment serves beside the always-on
- * in-app channel.
- *
- * The default value fails closed: a tree without a provider reads
- * `preferences` false and `channels` empty, so the notification surface
- * renders its inbox alone and a standalone preference matrix offers only
- * the in-app column. There is no transitional branch in between -- a
- * surface never guesses that a preference matrix or a channel exists.
+ * Carries the host's notification feature-presence facts by context. A
+ * tree without a provider fails closed: no preference surface and no
+ * optional channel.
  */
 
 import { createContext, useContext, useMemo } from 'react'
 import type { ReactNode } from 'react'
 
+/** The presence facts the provider supplies: whether the preference
+ * feature is served and which optional channels it offers. */
 export type NotificationPresenceProviderProps = {
   /** Whether the feature `notification.preferences` is served. */
   readonly preferences: boolean
@@ -26,6 +16,7 @@ export type NotificationPresenceProviderProps = {
    * always-on in-app channel; the host maps the serving
    * `notification.channel.*` features onto it. */
   readonly channels: readonly ('email' | 'sms')[]
+  /** The subtree that reads these facts. */
   readonly children: ReactNode
 }
 
@@ -34,7 +25,6 @@ type NotificationPresence = {
   readonly channels: readonly ('email' | 'sms')[]
 }
 
-/** The fail-closed value: no preference surface, no optional channel. */
 const ABSENT: NotificationPresence = { preferences: false, channels: [] }
 
 const NotificationPresenceContext = createContext<NotificationPresence>(ABSENT)
@@ -46,8 +36,6 @@ export function NotificationPresenceProvider({
   channels,
   children,
 }: NotificationPresenceProviderProps) {
-  // A fresh object per render would re-render every consumer whenever the
-  // host's provider re-renders; the value changes only with the facts.
   const value = useMemo(() => ({ preferences, channels }), [preferences, channels])
   return (
     <NotificationPresenceContext.Provider value={value}>

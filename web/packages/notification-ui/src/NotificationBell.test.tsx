@@ -1,11 +1,3 @@
-/**
- * NotificationBell behaviour over GET /notifications/messages/unread-count:
- * the unread count is carried on the accessible name ("Notifications: 3
- * unread", or the bare label at zero), the badge prints the count, and
- * activating the button calls the host's onClick. A failed read leaves the
- * bell at zero without crashing.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 import { screen, waitFor, within } from '@testing-library/react'
@@ -38,8 +30,6 @@ describe('NotificationBell', () => {
     expect(button).toHaveTextContent('3')
     await userEvent.click(button)
     expect(onClick).toHaveBeenCalledTimes(1)
-    // Label in Name needs canvas text measurement, which jsdom lacks; the
-    // named browser case decides it.
     await expectNoAxeViolations({
       decidedInBrowser: 'notificationBellUnread',
     })
@@ -60,8 +50,6 @@ describe('NotificationBell', () => {
     expect(within(button).getByTestId('host-icon')).toBeInTheDocument()
     await userEvent.click(button)
     expect(onClick).toHaveBeenCalledTimes(1)
-    // The handler receives the activation event, so a host can read the
-    // modifier keys or the target itself.
     const event: unknown = onClick.mock.calls[0]?.[0]
     expect(event).toHaveProperty('type', 'click')
   })
@@ -70,9 +58,6 @@ describe('NotificationBell', () => {
     const respond: RealResponder = () => jsonResponse(200, { unread: 0 })
     const rig = makeRealClientRigWithoutSession(respond)
     rig.store.set('access-1')
-    // A host-level re-render, standing in for any render after the read (a
-    // parent update, a refetch): the zero-count bell renders no badge content
-    // in any of them.
     function Harness() {
       const [, bump] = useState(0)
       return (
@@ -88,9 +73,6 @@ describe('NotificationBell', () => {
     renderWithProviders(<Harness />)
     const button = await screen.findByRole('button', { name: zhCN.bell.label })
     await user.click(screen.getByRole('button', { name: 'bump' }))
-    // No badge content at zero, not merely hidden: a hidden "0" would be
-    // visible text the accessible name does not carry (WCAG 2.5.3), and
-    // display:none would still leave a badge nobody asked for in the tree.
     expect(button.textContent).toBe('')
   })
 
@@ -121,11 +103,6 @@ describe('NotificationBell', () => {
   })
 
   it('raises the bell to the 44px touch-target floor under a coarse pointer', async () => {
-    // The bell is an icon-only button; on a finger-driven device it gates
-    // up to the 44x44 floor (the layout design's pointer rule). jsdom
-    // evaluates no media condition, so the emitted CSS is matched against
-    // the bell itself: a coarse rule elsewhere on the page cannot satisfy
-    // this assertion for it.
     const respond: RealResponder = () => jsonResponse(200, { unread: 0 })
     const rig = makeRealClientRigWithoutSession(respond)
     rig.store.set('access-1')

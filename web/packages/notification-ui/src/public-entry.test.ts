@@ -1,14 +1,3 @@
-/**
- * The public entry carries the message-text resolver.
- *
- * `renderDetail` receives the raw notification message, so a host that
- * renders the title or body itself must resolve the delivery pipeline's
- * time markers with the same function the inbox uses. That function is
- * therefore part of the package's public entry, not an internal-only
- * helper: a host has no other way to keep the private-use markers out of
- * its own detail panel.
- */
-
 import { describe, expect, it } from 'vitest'
 import { resolveMessageText } from './index.js'
 

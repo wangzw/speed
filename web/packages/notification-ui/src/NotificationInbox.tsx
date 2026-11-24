@@ -1,50 +1,7 @@
 /**
- * NotificationInbox: the notification surface -- the caller's messages
- * with per-message and mark-all read.
- *
- * It reads one page of the caller's messages (GET
- * /notifications/messages) and renders each as a row: title, body and
- * received time, an unread indicator, and -- for an unread row -- a
- * "mark as read" affordance. A header action marks every unread message
- * read (POST /notifications/messages/read-all) and reports the answer's
- * count. Both writes are the generated mutations, and each follows its
- * answer by invalidating the acting tenant's reads (see internal/queries),
- * so the list and the header bell's unread count move together.
- *
- * Both actions report through one write-feedback scope: the header action
- * and every row action share one result slot under the list, so a success
- * and a failure never stand together and the attempt that settles last is
- * the one shown. While one attempt is in flight the control that started
- * it reports busy and every other write control in the scope -- the header
- * action, the other rows' actions, the titles that activate a message and
- * the pager -- stays focusable and unavailable without a reason, so
- * attempts never overlap. Marking one message read confirms with that
- * message's title, not only by flipping the row; marking all confirms the
- * answer's count. A page, group or page-size change is a new context and
- * clears the slot.
- *
- * A landed row action takes its own button out with the row turning read,
- * so focus moves in the same commit to the same button on the next unread
- * row, else the previous one, else the list container. The move happens
- * only when focus was on the removed button (the browser drops it to the
- * body); a reader who moved focus elsewhere keeps it.
- *
- * A host may narrow and shape the surface through optional props: a group
- * filter and a page size (with previous/next paging driven by the
- * response's total), a per-row detail renderer, and an `onOpen` action
- * that turns a row carrying a link into an activatable one -- it marks
- * the message read first and then hands the message to the host, which
- * owns the navigation. The embedded variant drops the page header for a
- * heading at the caller's level, so the surface nests inside another
- * page's outline.
- *
- * The read is one of the four settled states (ui-kit's AsyncSection): a
- * labelled loading placeholder, a retryable error placeholder, an empty
- * placeholder, or the list. The admission layer's bare 404 is split out
- * of the failure branch as the tenant refusal state, which offers no
- * retry. A failed refresh over the already settled list keeps the list
- * on screen and marks it stale above with a retry, rather than replacing
- * it with the error placeholder.
+ * The notification surface: the caller's messages with per-message and
+ * mark-all read. Optional props narrow the list by group, page it, append
+ * a row detail, or render it embedded.
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -84,12 +41,13 @@ import {
 } from './internal/queries.js'
 import { useNotificationUiTranslation } from './internal/translation.js'
 
+/** Props narrowing the inbox: a group filter, page size, per-row detail
+ * renderer, and activation of linked rows. */
 export type NotificationInboxProps = {
   /**
-   * Called with a message whose row was activated. A row is activatable
-   * only when the message carries a link and this is supplied; an unread
-   * message is marked read first, and the callback runs once that write
-   * lands. The host owns what happens next (usually navigation).
+   * Called with an activated row's message. A row activates only with a
+   * link and this supplied; an unread message is marked read first, then
+   * the callback runs. The host owns what follows.
    */
   readonly onOpen?: (message: NotificationMessage) => void
   /** Extra content appended to each row, below its body and time. */
@@ -106,20 +64,11 @@ export type NotificationInboxProps = {
   readonly headingLevel?: EmptyStateHeadingLevel
 }
 
-/** Whether a message is still unread. The server writes `read_at` as JSON
- * `null` for an unread message (the route's view carries a nullable
- * `*time.Time` with no omitempty), and the generated type models the field
- * as an optional `string | null` -- so a runtime `null` counts as unread
- * alongside an absent or empty value. */
 function isUnread(message: NotificationMessage): boolean {
   const readAt: string | null | undefined = message.read_at
   return readAt === undefined || readAt === null || readAt === ''
 }
 
-/** The write the inbox scope has in flight, and which control started it.
- * One scope interlocks its writes, so at most one of these stands. A title
- * that opens an unread message starts the same row write as that row's own
- * action, which is what the origin tells apart. */
 type PendingWrite =
   | { readonly kind: 'all' }
   | {
@@ -128,10 +77,6 @@ type PendingWrite =
       readonly origin: 'row' | 'title'
     }
 
-/** The id of the row whose mark-read action takes focus when the action of
- * `removedId`'s row is gone from the rendered rows: the next row that still
- * has one, else the previous row, else none (the caller falls back to the
- * list container). */
 function rowLandingId(
   rows: readonly NotificationMessage[],
   removedId: string,
@@ -155,9 +100,6 @@ function rowLandingId(
   return null
 }
 
-/** The identity of a list context: one group filter and page size. A
- * change of either is a new list, so the page index and the standing
- * feedback of the old one must not survive it. */
 function listContextOf(
   group: string | undefined,
   pageSize: number | undefined,
@@ -165,6 +107,8 @@ function listContextOf(
   return JSON.stringify([group ?? null, pageSize ?? null])
 }
 
+/** Renders one page of the caller's messages with per-message and
+ * mark-all read. */
 export function NotificationInbox({
   onOpen,
   renderDetail,
@@ -174,10 +118,6 @@ export function NotificationInbox({
   headingLevel = 'h2',
 }: NotificationInboxProps = {}) {
   const { t } = useNotificationUiTranslation()
-  // The page index belongs to the list context it was chosen in: when the
-  // host changes the group or page size, the new list is read from its
-  // first page during this very render, so no request goes out at the
-  // previous page's offset and no follow-up request is needed.
   const listContext = listContextOf(group, pageSize)
   const [pages, setPages] = useState<{
     readonly context: string
@@ -191,43 +131,20 @@ export function NotificationInbox({
   })
   const markRead = useMarkNotificationRead()
   const markAllRead = useMarkAllNotificationsRead()
-  // The read-all action writes the whole inbox, so its gate reads the
-  // whole inbox's unread count -- the same query the header bell renders,
-  // refreshed by every write's invalidation. Counting the visible page's
-  // unread rows would disable the action whenever that page happens to be
-  // read through, even though unread messages remain on other pages (or
-  // under the current group).
   const unreadTotal = useNotificationUnreadCount().data
-  // The inbox is one feedback scope: the header action and every row's
-  // action write into the same slot, so only one result stands at a time
-  // and the attempt that settles last is the one shown.
   const feedback = useWriteFeedback()
   const resolveError = useNotificationUiErrorText()
-  // The mark-read confirmation names the message it changed. A time marker in
-  // the title is resolved in the viewer's display zone here too, so the
-  // confirmation never repeats a marker the row already resolved.
   const formatInstant = useFormatInstant()
   const resetFeedback = feedback.reset
-  // The write in flight and the control that started it. The scope's other
-  // write controls stay unavailable without a reason while it runs, so two
-  // attempts never overlap and one result never describes another attempt's
-  // context.
   const [pendingWrite, setPendingWrite] = useState<PendingWrite | null>(null)
-  // The last total a settled page of the current list reported. It keeps the
-  // pager mounted while the next page's read is in flight.
+  // The pager keeps the last settled total so it stays mounted while the
+  // next page's read is in flight; unmounting it would drop the operator's
+  // focus to the body. A new list context resets it.
   const [pagerTotal, setPagerTotal] = useState(0)
-  // The rendered row actions by message id, and the list container: the two
-  // landing places when a landed write takes the action that started it out
-  // of the document. The removal a write in flight belongs to sits beside
-  // them.
   const rowActions = useRef(new Map<string, HTMLButtonElement>())
   const listContainer = useRef<HTMLUListElement | null>(null)
   const pendingRowRemoval = useRef<{ readonly messageId: string } | null>(null)
 
-  // A new filter or page size is a new list: drop the previous list's
-  // standing result, which would otherwise describe another context. The
-  // context change is detected through a ref so the effect acts on the
-  // change alone.
   const previousContext = useRef(listContext)
   useEffect(() => {
     if (previousContext.current === listContext) {
@@ -237,19 +154,12 @@ export function NotificationInbox({
     setPages({ context: listContext, index: 0 })
     setPagerTotal(0)
     setPendingWrite(null)
-    // A write started on the old list must not move focus to a landing place
-    // that belongs to the new one.
     pendingRowRemoval.current = null
     resetFeedback()
   }, [listContext, resetFeedback])
 
   const page = messages.data
 
-  // A landed row write turns its row read, so the action that started it
-  // leaves the document and the browser drops focus to the body. Focus moves
-  // in the same commit to the same action on the next unread row, else on
-  // the previous one, else to the list container -- but only when the
-  // removal is what dropped it: focus the reader moved elsewhere stays put.
   useLayoutEffect(() => {
     const pending = pendingRowRemoval.current
     if (pending === null || rowActions.current.has(pending.messageId)) {
@@ -268,11 +178,6 @@ export function NotificationInbox({
     target?.focus()
   }, [page])
   const list = page?.messages ?? []
-  // A page change reads a new window, and until that answer lands there is
-  // no page to take a total from. The pager keeps the last settled total for
-  // its own list so it stays mounted across the read: unmounting it would
-  // take the control the operator just activated out of the document and
-  // drop their focus to the page body. A new list context resets it.
   useEffect(() => {
     if (page !== undefined) {
       setPagerTotal(page.total)
@@ -291,12 +196,6 @@ export function NotificationInbox({
       .finally(() => setPendingWrite(null))
   }
 
-  // Marking one message read confirms the message it changed; `after` runs
-  // only once the write has landed, which is how opening a linked message
-  // never navigates on a read that did not reach the server. A row action's
-  // own success removes it with the row, so its landing place is recorded
-  // before the attempt starts; a title that opens the message keeps its own
-  // place because it stays in the document.
   const markOneRead = (
     message: NotificationMessage,
     options: {
@@ -328,9 +227,6 @@ export function NotificationInbox({
       .finally(() => setPendingWrite(null))
   }
 
-  // A page change is a context change: the previous page's write result no
-  // longer describes what is on screen, so the feedback scope resets with
-  // the move.
   const goToPage = (next: number): void => {
     resetFeedback()
     setPages({ context: listContext, index: next })
@@ -347,10 +243,6 @@ export function NotificationInbox({
     markOneRead(message, { origin: 'title', after: () => onOpen(message) })
   }
 
-  // "Mark all as read" starts its own write or reports the scope's other one.
-  // Its precondition -- something is unread -- is the one state it explains;
-  // a write in flight elsewhere in the scope makes it unavailable with no
-  // reason, like any other sibling write control.
   const markAllInitiated = pendingWrite?.kind === 'all'
   const markAllBlocked = (unreadTotal ?? 0) === 0
   const markAllAction = (
@@ -374,11 +266,6 @@ export function NotificationInbox({
 
   const surfaceContent = (
     <>
-      {/* The empty placeholder stands under the surface's own heading,
-          which already names the space: a second heading here ("No
-          notifications") would re-enter the outline as a redundant chapter,
-          so the placeholder renders headerless as one role="status" region
-          (emptyHeadingLevel="none"). */}
       <TenantAsyncSection<NotificationInboxPage>
         pending={pending}
         payload={pending ? undefined : page}
@@ -409,10 +296,6 @@ export function NotificationInbox({
         }}
       >
         {(settled) => (
-          // The list is the control group's container: a landed row action
-          // that leaves no unread row behind lands focus here. It is named
-          // and programmatically focusable, so it is announced as the group
-          // the result belongs to.
           <List
             ref={listContainer}
             tabIndex={-1}
@@ -481,8 +364,6 @@ export function NotificationInbox({
         </Box>
       )}
 
-      {/* The scope's one result sits under the controls that write into it:
-          the header action and the row actions share this slot. */}
       <WriteFeedbackRegion outcome={feedback.outcome} resolve={resolveError} />
     </>
   )
@@ -491,25 +372,17 @@ export function NotificationInbox({
     <SectionCard
       title={t('inbox.title')}
       actions={markAllAction}
-      // The embedded heading continues the host page's outline. SectionCard
-      // types its level as the section range (h2-h6); this component keeps
-      // accepting every level it always did, so the value passes through.
       headingLevel={headingLevel as SectionCardHeadingLevel}
     >
       {surfaceContent}
     </SectionCard>
   ) : (
     <PageLayout title={t('inbox.title')} actions={markAllAction}>
-      {/* The page header owns the h1, so the list's card carries no second
-          heading of its own; the list is named by its aria-label. */}
       <SectionCard>{surfaceContent}</SectionCard>
     </PageLayout>
   )
 }
 
-/** One message row: title, body, time, state chip and (unread only) the
- * mark-read action. A message carrying a link renders its title as the
- * row's activation control. */
 function NotificationRow({
   message,
   markReadBusy,
@@ -533,11 +406,6 @@ function NotificationRow({
 }) {
   const { t } = useNotificationUiTranslation()
   const formatInstant = useFormatInstant()
-  // The title cannot be an ActionButton: it is a text control inside the
-  // row's typography. It takes the guard directly, so a swallowed activation
-  // never marks the message read or hands it to the host mid-write. A title
-  // that starts the row's read reports busy like any other initiating
-  // control; a title reached while another write runs is unavailable.
   const activateTitle = useActivationGuard(
     () => {
       onOpen?.()
@@ -545,9 +413,6 @@ function NotificationRow({
     { busy: titleBusy, unavailable: titleUnavailable },
   )
   const unread = isUnread(message)
-  // The server writes a time segment as a marker naming the parameter; both
-  // the visible text and the action's accessible name carry the resolved
-  // instant, never the marker.
   const title = resolveMessageText(message.title, message.params, formatInstant)
   const body = resolveMessageText(message.body, message.params, formatInstant)
   return (
@@ -586,8 +451,6 @@ function NotificationRow({
                 display: 'flex',
                 alignItems: 'center',
                 gap: 1,
-                // Reserve room for the trailing action so a long title
-                // never slides under it.
                 pr: unread ? 12 : 0,
               }}
             >
@@ -610,9 +473,6 @@ function NotificationRow({
                     textAlign: 'start',
                     borderRadius: 1,
                     p: 0,
-                    // The title keeps its own look, but an unavailable one
-                    // gives no pointer feedback: the write behind it is what
-                    // is running, and the row already reports it.
                     '&[aria-disabled="true"]': {
                       cursor: 'default',
                       '&:hover': { backgroundColor: 'transparent' },
@@ -658,8 +518,6 @@ function NotificationRow({
             </>
           }
         />
-        {/* The detail renders outside ListItemText's secondary typography
-            (a <p> by default), so host content may be block-level. */}
         {renderDetail !== undefined && (
           <Box sx={{ mt: 1 }}>{renderDetail(message)}</Box>
         )}

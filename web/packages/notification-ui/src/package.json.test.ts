@@ -1,18 +1,3 @@
-/**
- * The package manifest's dependency contract, pinned by the suite.
- *
- * The notification surfaces render over the host's React/MUI tree and
- * read their data through react-query hooks the host supplies, so react,
- * react-dom, @mui/material, @emotion/* and @tanstack/react-query are
- * peers. @speed/i18n, @speed/ui-kit are regular dependencies; @speed/auth-core
- * supplies the acting tenant for query-key namespacing; @speed/api-sdk binds
- * the generated notification operations; @speed/api-client supplies the
- * event-stream opener type (and its createClient's openEventStream).
- *
- * The manifest is read from disk, never imported as a module: vite refuses
- * to resolve a package's own package.json through the module graph.
- */
-
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'

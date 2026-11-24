@@ -1,22 +1,3 @@
-/**
- * usage-example.test.tsx -- the README quick start, compiled and run.
- *
- * The quick start wires the notification surface for a signed-in viewer:
- * the bilingual i18n instance with both namespaces registered (the
- * notification-ui namespace for this package's strings, the ui-kit
- * namespace because the surfaces compose ui-kit components), the
- * AppThemeProvider tree, a QueryClientProvider and a TenantProvider (the
- * surfaces key their reads under the acting tenant). The notification
- * surface's feature-presence facts -- the preference matrix and the
- * optional delivery channels -- come from NotificationPresenceProvider,
- * which the quick start mounts from the host's feature document. This
- * file is that journey: it renders the bell beside the notification
- * center over a real @speed/api-client whose scripted fetch answers
- * genuine Response objects, hears the bell count, marks every message
- * read through the center, and switches the whole page to the other
- * supported language.
- */
-
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -41,7 +22,6 @@ const UNREAD_PATH = '/api/v1/notifications/messages/unread-count'
 const PREFERENCES_PATH = '/api/v1/notifications/preferences'
 const TYPES_PATH = '/api/v1/notifications/types'
 
-/** One small inbox + an empty taxonomy. */
 function responder(): RealResponder {
   let rows = [
     {
@@ -102,14 +82,12 @@ describe('notification surface quick start', () => {
       </NotificationPresenceProvider>,
     )
 
-    // The bell reads the unread count.
     expect(
       await screen.findByRole('button', {
         name: zhCN.bell.labelWithCount.replace('{{n}}', '2'),
       }),
     ).toBeInTheDocument()
 
-    // The center lists the messages and marks them all read.
     expect(await screen.findByText('Build finished')).toBeInTheDocument()
     await userEvent.click(
       screen.getByRole('button', { name: zhCN.inbox.markAllRead }),
@@ -117,14 +95,12 @@ describe('notification surface quick start', () => {
     expect(
       await screen.findByText(zhCN.inbox.markAllReadDone.replace('{{n}}', '2')),
     ).toBeInTheDocument()
-    // The bell follows to zero.
     await waitFor(() =>
       expect(
         screen.getByRole('button', { name: zhCN.bell.label }),
       ).toBeInTheDocument(),
     )
 
-    // The whole page re-renders in the other language.
     await switchLanguage(i18n, 'en-US')
     expect(
       await screen.findByRole('button', { name: enUS.bell.label }),

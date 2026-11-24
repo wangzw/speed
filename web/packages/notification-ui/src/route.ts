@@ -1,21 +1,3 @@
-/**
- * The notification surface's route-declaration types -- the structural
- * mirror of @speed/route-kit's registration surface.
- *
- * Like @speed/admin-ui, this package reuses the declarative
- * registration seam: the notification surface exports one declaration --
- * a path pattern, a view callback and an optional navigation label --
- * and the application's composition layer collects it and hands it to the
- * route layer it chose. This package imports no router and does no path
- * matching: a declaration is data plus a view and nothing more.
- *
- * The shapes are kept structurally identical to route-kit's
- * RouteContext / RouteDeclaration / RouteTable. A declaration this
- * package exports is assignable to route-kit's RouteDeclaration without a
- * shared type edge between the two packages -- same-tier packages never
- * import one another.
- */
-
 import type { ReactNode } from 'react'
 import type { FeatureName } from '@speed/api-sdk/features'
 
@@ -30,13 +12,7 @@ export interface NotificationRouteContext {
   readonly params: NotificationRouteParams
 }
 
-/**
- * One page declaration. Structurally route-kit's RouteDeclaration: the
- * path pattern a URL matches against, the view the match renders, an
- * optional navigation label (absent keeps the page out of the navigation)
- * and an optional permission code (data; this package never decides on
- * it).
- */
+/** One page declaration, structurally route-kit's RouteDeclaration. */
 export interface NotificationRoute {
   /** The path pattern, e.g. '/notifications'. */
   readonly path: string
@@ -48,12 +24,8 @@ export interface NotificationRoute {
   /** The permission code the page needs (data; this package never decides
    * on it). */
   readonly permission?: string
-  /**
-   * The feature names this page needs (data; this package never decides
-   * on it). The elements are the generated `FeatureName` type, narrower
-   * than route-kit's string array, so a declaration still assigns to
-   * RouteDeclaration while a misspelled name fails to compile.
-   */
+  /** The feature names this page needs (data; this package never decides
+   * on it). */
   readonly requires?: readonly FeatureName[]
 }
 
