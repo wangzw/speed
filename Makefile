@@ -19,6 +19,18 @@ GATE_JOBS ?= 4
 GATE_TIME_SCALE ?= 1
 export GATE_TIME_SCALE
 
+# Derived only when unset: `off` when CI is set to anything but `false`, `on`
+# otherwise; an empty or any other value fails web-check-static.
+WEB_CACHE ?= $(if $(filter-out false,$(CI)),off,on)
+
+WEB_CACHE_LINT_ARGS := $(if $(filter on,$(WEB_CACHE)),--cache --cache-strategy content --cache-location node_modules/.cache/eslint/)
+WEB_CACHE_TYPECHECK_ARGS := $(if $(filter on,$(WEB_CACHE)),--incremental)
+
+# The caches only serve a local rerun in place, and the lint cache is keyed by
+# file content rather than mtime.
+# The lint cache covers a local rule only while its implementation lives under
+# web/eslint-rules/ and its options are plain values.
+
 UNCACHED_PACKAGES ?= ./starters/demo/server/treecheck ./starters/demo/server/e2e/factorseed
 
 uncached-dirs = $(abspath $(UNCACHED_PACKAGES))
@@ -196,9 +208,10 @@ web-check: ## Run the frontend checks (pnpm install + lint, typecheck, rule test
 	@$(MAKE) web-check-build
 
 web-check-static: ## Install the frontend dependencies and run its static checks
+	@case '$(WEB_CACHE)' in on|off) ;; *) echo "WEB_CACHE must be 'on' or 'off', not '$(WEB_CACHE)'" >&2; exit 1;; esac
 	@pnpm -C web install --frozen-lockfile --workspace-concurrency=1 --child-concurrency=$(GATE_JOBS)
-	@pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) --no-sort lint --concurrency=off
-	@pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) --no-sort typecheck
+	@pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) --no-sort lint --concurrency=off $(WEB_CACHE_LINT_ARGS)
+	@pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) --no-sort typecheck $(WEB_CACHE_TYPECHECK_ARGS)
 	@pnpm -C web exec vitest run --maxWorkers=$(GATE_JOBS) eslint-rules/ scripts/
 
 web-check-test: ## Run the frontend's unit tests and route-level accessibility sweep
