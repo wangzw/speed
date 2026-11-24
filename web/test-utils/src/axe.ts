@@ -6,7 +6,6 @@ import { expect } from 'vitest'
 import axe from 'axe-core'
 
 export const BROWSER_DECIDED_RULES = [
-  'aria-hidden-focus',
   'label-content-name-mismatch',
 ] as const
 
@@ -48,30 +47,6 @@ export const BROWSER_DETERMINATIONS = {
     testName:
       'NotificationBell Label in Name in Chromium > settles Label in Name for the bell with an unread count',
     rules: ['label-content-name-mismatch'],
-  },
-  accountsDetailPanel: {
-    file: 'packages/admin-ui/src/AccountsPage.browser.test.tsx',
-    testName:
-      'AccountsPage focus traps in Chromium > keeps the detail panel focus trap holding over a hidden page',
-    rules: ['aria-hidden-focus'],
-  },
-  accountsOneTimeSecret: {
-    file: 'packages/admin-ui/src/AccountsPage.browser.test.tsx',
-    testName:
-      'AccountsPage focus traps in Chromium > keeps the one-time secret focus trap holding over a hidden page',
-    rules: ['aria-hidden-focus'],
-  },
-  appShellMobileDrawer: {
-    file: 'packages/layout-kit/src/components/AppShell.browser.test.tsx',
-    testName:
-      'AppShell geometry in Chromium > keeps the temporary drawer focus trap holding on the mobile layout',
-    rules: ['aria-hidden-focus'],
-  },
-  appShellSidebarDrawer: {
-    file: 'packages/layout-kit/src/components/AppShell.browser.test.tsx',
-    testName:
-      'AppShell sidebar layout in Chromium > shows the brand once at 400px and pins the open drawer bottom row, with no accessibility violations',
-    rules: ['aria-hidden-focus'],
   },
 } as const satisfies Record<string, BrowserDetermination>
 
@@ -192,11 +167,37 @@ interface OpenOverlay {
   readonly root: HTMLElement
   readonly ariaModal: HTMLElement | null
   readonly kind: OverlayKind
+  /**
+   * Still in the document during its exit transition: MUI has closed it and
+   * the background hook lifted `inert`, but MUI keeps the background
+   * `aria-hidden` until the transition ends. It still hides the page context,
+   * so the page-context rules stay exempt, but its background must not be
+   * asserted inert -- that lift is the contract.
+   */
+  readonly exiting: boolean
 }
 
 function isShown(element: HTMLElement): boolean {
   const style = window.getComputedStyle(element)
   return style.display !== 'none' && style.visibility !== 'hidden'
+}
+
+// MUI keeps an exiting modal in the DOM until its exit transition ends and
+// only then lifts the background's `aria-hidden`. The hook that marks the
+// background inert lifts it in the closing commit, so a scan that lands in
+// that window would see an "open" overlay over a background with no inert.
+// The focus trap's start sentinel carries `tabindex=0` while its modal is
+// open and `-1` once it closes, which is the exit signal available in the DOM.
+function isExitingModal(root: HTMLElement): boolean {
+  for (const testId of ['sentinelStart', 'sentinelEnd']) {
+    const sentinel = root.querySelector<HTMLElement>(
+      `[data-testid="${testId}"]`,
+    )
+    if (sentinel !== null) {
+      return sentinel.getAttribute('tabindex') === '-1'
+    }
+  }
+  return false
 }
 
 function openOverlays(): OpenOverlay[] {
@@ -226,6 +227,7 @@ function openOverlays(): OpenOverlay[] {
         familyRoot === null
           ? 'other'
           : overlayKindFromClasses([...familyRoot.classList]),
+      exiting: isExitingModal(root),
     })
   }
   return overlays
@@ -240,7 +242,8 @@ function assertBackgroundAriaHidden(overlay: OpenOverlay): void {
   ) {
     keepChain.add(current)
   }
-  const offenders: Element[] = []
+  const missingAriaHidden: Element[] = []
+  const missingInert: Element[] = []
   const collect = (parent: Element): void => {
     for (const child of parent.children) {
       if (
@@ -255,19 +258,31 @@ function assertBackgroundAriaHidden(overlay: OpenOverlay): void {
         continue
       }
       if (child.getAttribute('aria-hidden') !== 'true') {
-        offenders.push(child)
+        missingAriaHidden.push(child)
+      }
+      if (!child.hasAttribute('inert')) {
+        missingInert.push(child)
       }
     }
   }
   collect(document.body)
-  if (offenders.length > 0) {
-    const summary = offenders
+  if (missingAriaHidden.length === 0 && missingInert.length === 0) {
+    return
+  }
+  const summarize = (elements: readonly Element[]): string =>
+    elements
       .map((element) => `<${element.tagName.toLowerCase()}>`)
       .join(', ')
-    expect.fail(
-      `axe page-context exemption refused: an ${overlay.kind === 'other' ? 'overlay' : overlay.kind} is open, but its background is not aria-hidden. Elements outside it without aria-hidden="true": ${summary}`,
-    )
+  const details: string[] = []
+  if (missingAriaHidden.length > 0) {
+    details.push(`Without aria-hidden="true": ${summarize(missingAriaHidden)}`)
   }
+  if (missingInert.length > 0) {
+    details.push(`Without inert: ${summarize(missingInert)}`)
+  }
+  expect.fail(
+    `axe page-context exemption refused: an ${overlay.kind === 'other' ? 'overlay' : overlay.kind} is open, but its background is not fully hidden. ${details.join('; ')}`,
+  )
 }
 
 function summarizeTargets(rule: axe.Result): string {
@@ -277,18 +292,18 @@ function summarizeTargets(rule: axe.Result): string {
 
 // Do not import `vitest/browser` here: it augments Vitest's matchers with an
 // older jest-dom set, and this module is compiled into every jsdom program.
-export type AxeKeyboardDriver = (keys: string) => Promise<void>
-
-function keyboardDriver(): AxeKeyboardDriver | undefined {
+// The browser setup sets this marker; the jsdom setup never does, so a jsdom
+// program that names a browser in its user agent is still the jsdom tier.
+function browserTierMarker(): boolean {
   return (
-    globalThis as { __speedAxeKeyboardDriver?: AxeKeyboardDriver }
-  ).__speedAxeKeyboardDriver
+    globalThis as { __speedAxeBrowserTier?: boolean }
+  ).__speedAxeBrowserTier === true
 }
 
 export function isBrowserTier(
-  driver: AxeKeyboardDriver | undefined = keyboardDriver(),
+  marker: boolean | undefined = browserTierMarker(),
 ): boolean {
-  return typeof driver === 'function'
+  return marker === true
 }
 
 function describeEnvironment(): string {
@@ -297,15 +312,10 @@ function describeEnvironment(): string {
 
 function reportNonCriticalIncomplete(
   incomplete: readonly axe.Result[],
-  overlay: OpenOverlay | null,
 ): void {
   for (const rule of incomplete) {
-    const untestedTrap =
-      rule.id === 'aria-hidden-focus' &&
-      overlay !== null &&
-      overlay.kind === 'other'
     console.warn(
-      `[test-utils/axe] indeterminate in ${describeEnvironment()} (reported, not asserted): ${summarizeTargets(rule)}${untestedTrap ? '; the open overlay is not an aria-modal dialog or drawer, so its focus trap was not exercised' : ''}`,
+      `[test-utils/axe] indeterminate in ${describeEnvironment()} (reported, not asserted): ${summarizeTargets(rule)}`,
     )
   }
 }
@@ -315,70 +325,6 @@ async function runAxeScan(options: axe.RunOptions = {}): Promise<axe.AxeResults>
   document.title = document.title || 'test document'
   document.documentElement.lang = document.documentElement.lang || 'en'
   return axe.run(document, options)
-}
-
-function tabbableElements(root: HTMLElement): HTMLElement[] {
-  return [...root.querySelectorAll<HTMLElement>(FOCUSABLE_CONTROL_SELECTOR)].filter((element) => {
-    if (element.hasAttribute('disabled')) {
-      return false
-    }
-    if (element.getAttribute('aria-hidden') === 'true') {
-      return false
-    }
-    if (
-      element.tagName === 'INPUT' &&
-      element.getAttribute('type') === 'hidden'
-    ) {
-      return false
-    }
-    if (element.tabIndex < 0) {
-      return false
-    }
-    if (element.getClientRects().length === 0) {
-      return false
-    }
-    return window.getComputedStyle(element).visibility !== 'hidden'
-  })
-}
-
-function describeActiveElement(element: Element | null): string {
-  if (!(element instanceof HTMLElement)) {
-    return 'no element'
-  }
-  const label =
-    element.getAttribute('aria-label') ?? element.textContent?.trim() ?? ''
-  const suffix = label === '' ? '' : ` "${label.slice(0, 60)}"`
-  return `<${element.tagName.toLowerCase()}${suffix}>`
-}
-
-function realKeyboard(): AxeKeyboardDriver {
-  const driver = keyboardDriver()
-  if (driver === undefined) {
-    expect.fail(
-      'the axe focus-trap check needs the browser tier\'s real keyboard, but its setup did not install the driver',
-    )
-  }
-  return driver
-}
-
-async function verifyFocusTrap(overlay: OpenOverlay): Promise<void> {
-  const pressKeys = realKeyboard()
-  const steps = tabbableElements(overlay.root).length + 2
-  const directions = [
-    { keys: '{Tab}', label: 'Tab' },
-    { keys: '{Shift>}{Tab}{/Shift}', label: 'Shift+Tab' },
-  ]
-  for (const direction of directions) {
-    for (let step = 0; step < steps; step += 1) {
-      await pressKeys(direction.keys)
-      const active = document.activeElement
-      if (!(active instanceof HTMLElement) || !overlay.root.contains(active)) {
-        expect.fail(
-          `axe aria-hidden-focus is undecided and the open ${overlay.kind}'s focus trap does not hold: ${direction.label} moved focus to ${describeActiveElement(active)}, outside the overlay`,
-        )
-      }
-    }
-  }
 }
 
 async function runAxeAssertions(
@@ -402,7 +348,12 @@ async function runAxeAssertions(
   const overlays = openOverlays()
   const topOverlay = overlays.at(-1) ?? null
   if (topOverlay !== null) {
-    assertBackgroundAriaHidden(topOverlay)
+    // An exiting overlay still hides the page context (MUI keeps
+    // `aria-hidden` until the transition ends), but the hook has already
+    // lifted `inert` so focus can return; its background is not asserted.
+    if (!topOverlay.exiting) {
+      assertBackgroundAriaHidden(topOverlay)
+    }
     for (const rule of PAGE_CONTEXT_RULES) {
       disabled.add(rule)
     }
@@ -411,21 +362,8 @@ async function runAxeAssertions(
     rules: Object.fromEntries([...disabled].map((rule) => [rule, { enabled: false }])),
   })
   if (result.violations.length > 0) {
-    const focusTrapDependent = result.violations.filter(
-      (rule) => rule.id === 'aria-hidden-focus' && topOverlay !== null,
-    )
-    const failing = result.violations.filter(
-      (rule) => !focusTrapDependent.includes(rule),
-    )
-    for (const rule of focusTrapDependent) {
-      console.warn(
-        `[test-utils/axe] aria-hidden-focus under an open MUI overlay (reported, not asserted): ${summarizeTargets(rule)}`,
-      )
-    }
-    if (failing.length > 0) {
-      const summary = failing.map(summarizeTargets).join('\n')
-      expect.fail(`axe violations found:\n${summary}`)
-    }
+    const summary = result.violations.map(summarizeTargets).join('\n')
+    expect.fail(`axe violations found:\n${summary}`)
   }
   const incomplete = result.incomplete
   const indeterminatePageContext = incomplete.filter((rule) =>
@@ -439,24 +377,9 @@ async function runAxeAssertions(
         'landmark) in the render, or disable the rule explicitly in disabledRules.',
     )
   }
-  const focusTrapRule =
-    topOverlay !== null && topOverlay.kind !== 'other'
-      ? incomplete.find((rule) => rule.id === 'aria-hidden-focus')
-      : undefined
-  let verifiedFocusTrap: axe.Result | undefined
-  if (
-    focusTrapRule !== undefined &&
-    topOverlay !== null &&
-    isBrowserTier()
-  ) {
-    await verifyFocusTrap(topOverlay)
-    verifiedFocusTrap = focusTrapRule
-  }
   if (decision !== undefined && isBrowserTier()) {
     const undecided = decision.rules.filter((rule) =>
-      incomplete.some(
-        (result) => result.id === rule && result !== verifiedFocusTrap,
-      ))
+      incomplete.some((result) => result.id === rule))
     if (undecided.length > 0) {
       expect.fail(
         'the browser case declared to decide '
@@ -464,11 +387,20 @@ async function runAxeAssertions(
       )
     }
   }
+  // The inert background is what makes this rule decidable; an incomplete
+  // result means axe could not confirm the background is unreachable, so it
+  // fails rather than joining the leftovers that are only reported.
+  const indeterminateFocus = incomplete.filter(
+    (rule) => rule.id === 'aria-hidden-focus',
+  )
+  if (indeterminateFocus.length > 0) {
+    expect.fail(
+      `axe could not determine aria-hidden-focus:\n`
+        + indeterminateFocus.map(summarizeTargets).join('\n'),
+    )
+  }
   reportNonCriticalIncomplete(
-    incomplete.filter(
-      (rule) => rule !== verifiedFocusTrap && !decidedElsewhere.has(rule.id),
-    ),
-    topOverlay,
+    incomplete.filter((rule) => !decidedElsewhere.has(rule.id)),
   )
 }
 
@@ -489,7 +421,7 @@ export async function runHeadingOrderCheck(): Promise<readonly axe.Result[]> {
     runOnly: { type: 'rule', values: ['heading-order'] },
   })
   if (result.incomplete.length > 0) {
-    reportNonCriticalIncomplete(result.incomplete, null)
+    reportNonCriticalIncomplete(result.incomplete)
   }
   return result.violations
 }

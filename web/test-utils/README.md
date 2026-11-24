@@ -61,18 +61,22 @@ through `node_modules` rather than the map.
   `expectNoAxeViolationsForPage` (the page tier for packages whose unit
   under test is page-level chrome), and `runHeadingOrderCheck` (the
   single-rule probe for level-dependent headings). Each package's
-  `test-utils/axe.ts` re-exports the tier its scans need. Two DOM
-  indeterminacies are pinned rather than left to whoever reads the log:
+  `test-utils/axe.ts` re-exports the tier its scans need. One DOM
+  indeterminacy is pinned rather than left to whoever reads the log:
   while an overlay is open, the page-context exemption is applied only
-  after the helper asserts the page behind it is `aria-hidden` (the
-  ARIA-forbidden tags aside), and the browser tier decides
-  `aria-hidden-focus` for an open aria-modal MUI Dialog or Drawer by
-  pressing Tab and Shift+Tab through the overlay's focus trap — a trap
-  that holds resolves the rule with no report, an escape fails the scan.
-  Overlays Tab would dismiss (Menu, Select) keep their report, which
-  names that reason. That report is an accepted known limitation, recorded
-  in `docs/design/modules/web/design-web-ui-kit.md` under
-  "非模态浮层的焦点空档".
+  after the helper asserts every part of the page behind it is both
+  `aria-hidden` and `inert` (the ARIA-forbidden tags and a control-free
+  tooltip portal aside), naming what lacks either attribute. A
+  violation fails the scan in both tiers, `aria-hidden-focus` included,
+  and an `aria-hidden-focus` result axe cannot determine fails as well.
+  A modal still in its exit transition (its focus-trap sentinel reads
+  closed) is not asserted as open -- the background hook has already
+  lifted `inert` so focus could return -- while it still exempts the
+  page-context rules, because MUI keeps the page `aria-hidden` until the
+  transition ends. The browser tier decides only
+  `label-content-name-mismatch`, through the named cases
+  `BROWSER_DETERMINATIONS` points at, and an incomplete rule it does not
+  decide is reported.
 - `render.tsx` — the render-primitive layer: `TEST_LANGUAGES`, the
   deterministic bilingual `createTestI18n` base, the
   retries-nothing `createTestQueryClient`, and the shared
@@ -122,17 +126,19 @@ through `node_modules` rather than the map.
 `src/session-harness.test.ts` is the harness's own regression (the
 script dispatch gate's prototype-chain branch); `src/axe.test.ts` pins the
 pure decisions the axe harness makes without a DOM (the tier it runs in,
-decided by whether the browser setup installed the real-keyboard driver,
+decided by the marker the browser setup sets,
 the tags that cannot carry `aria-hidden`, the overlay family a marker
 class list names, and the check that holds each browser determination to
 a browser case that runs the axe assertion); `src/axe.dom.test.ts` pins
 the jsdom tier's side of that decision (a user agent that names a browser
-does not hand a jsdom scan a keyboard it cannot press); and
-`src/axe.browser.test.tsx` pins what an open overlay faces: a trapped
-dialog passes with no report, an untrapped one's focus escape fails the
-scan in either Tab direction, a background left readable fails the
-page-context exemption, and a menu's unexercised trap is reported with
-the reason. `src/timers.test.ts` reproduces the stranded-frame failure:
+does not hand a jsdom scan a browser tier, the background
+of an open dialog or menu must carry both attributes, and a modal still
+in its exit transition is not asserted as open); and
+`src/axe.browser.test.tsx` pins what an open overlay faces: a background
+that is `aria-hidden` but not `inert` fails under a dialog and under a
+menu, one that carries both passes with no report, and a background left
+readable fails the page-context exemption. `src/timers.test.ts` reproduces the
+stranded-frame failure:
 it takes the jsdom environment for its own file, makes a focus change
 under fake timers, restores the real clock through `restoreRealTimers()`
 and requires a frame requested after that to run. Run them with

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import {
+  BROWSER_DECIDED_RULES,
   BROWSER_DETERMINATIONS,
   isBrowserTier,
   isAriaHiddenForbiddenTag,
@@ -13,25 +14,24 @@ import type { AxeAssertionOptions } from './axe'
 
 const WEB_ROOT = fileURLToPath(new URL('../../', import.meta.url))
 
-const driver = async (): Promise<void> => undefined
-
 describe('isBrowserTier', () => {
-  it('names the browser tier when its setup installed the real keyboard', () => {
-    expect(isBrowserTier(driver)).toBe(true)
+  it('names the browser tier when its setup set the tier marker', () => {
+    expect(isBrowserTier(true)).toBe(true)
   })
 
-  it('names the jsdom tier when no driver is installed', () => {
+  it('names the jsdom tier when the marker is absent or false', () => {
     expect(isBrowserTier(undefined)).toBe(false)
+    expect(isBrowserTier(false)).toBe(false)
   })
 
-  it('reads the installed driver off the global the browser setup writes', () => {
-    const host = globalThis as { __speedAxeKeyboardDriver?: () => Promise<void> }
+  it('reads the tier marker off the global the browser setup writes', () => {
+    const host = globalThis as { __speedAxeBrowserTier?: boolean }
     expect(isBrowserTier()).toBe(false)
-    host.__speedAxeKeyboardDriver = driver
+    host.__speedAxeBrowserTier = true
     try {
       expect(isBrowserTier()).toBe(true)
     } finally {
-      delete host.__speedAxeKeyboardDriver
+      delete host.__speedAxeBrowserTier
     }
   })
 })
@@ -275,6 +275,13 @@ function assertCaseRunsAxe(
 }
 
 describe('BROWSER_DETERMINATIONS', () => {
+  it('no longer leaves aria-hidden-focus to a browser determination', () => {
+    expect(BROWSER_DECIDED_RULES).toEqual(['label-content-name-mismatch'])
+    for (const determination of Object.values(BROWSER_DETERMINATIONS)) {
+      expect(determination.rules).not.toContain('aria-hidden-focus')
+    }
+  })
+
   for (const [key, determination] of Object.entries(
     BROWSER_DETERMINATIONS,
   )) {
@@ -422,7 +429,7 @@ describe('d', () => {
   })
 })`
     expect(() =>
-      assertCaseRunsAxe(source, 'd > target', 'accountsDetailPanel'),
+      assertCaseRunsAxe(source, 'd > target', 'totpManualDisclosure'),
     ).toThrow(/does not declare itself/)
   })
 
