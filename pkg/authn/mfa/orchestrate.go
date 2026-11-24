@@ -12,22 +12,12 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/step"
 )
 
-// errFactorDefect is what a factor's answer is wrapped in when the answer is not
-// one that call may give. The factor is at fault, not the client, so the call
-// ends as an outage of that factor and not as a refusal.
 var errFactorDefect = errors.New("the factor gave an answer its call may not give")
 
-// answerFault is the step a call ends in when a dependency it needs could not be
-// read: an outage, and never a refusal, so that a client is not told its code was
-// wrong when nothing was checked.
 func (m *product) answerFault(err error) authn.Step {
 	return authn.StepUnavailable(m.unavailable(err))
 }
 
-// lookup finds the factor a call is about and the implementation of its kind.
-// The step it returns is the answer when ok is false. A row that is not there, one
-// of another account, and one that is not active read alike, as a factor that is
-// not enrolled, and none of the three reaches the factor or the back-off.
 func (m *product) lookup(ctx context.Context, account authn.AccountID, factorID string, wantStatus authn.FactorStatus) (rec authn.FactorRecord, factor authn.Factor, answer authn.Step, ok bool) {
 	if account == "" || factorID == "" {
 		return rec, nil, authn.StepRefused(authn.ErrFactorNotEnrolled), false
@@ -51,10 +41,6 @@ func (m *product) lookup(ctx context.Context, account authn.AccountID, factorID 
 	return rec, impl, authn.Step{}, true
 }
 
-// backoff checks the factor's back-off. When the call may not go on the step is
-// its answer: a wait for a factor in back-off, and an outage when the back-off
-// cannot be read, because a back-off that cannot be read must not let an attempt
-// through.
 func (m *product) backoff(ctx context.Context, rec authn.FactorRecord) (authn.Step, bool) {
 	wait, err := m.throttle.Check(ctx, authn.ScopeFactor, rec.ID)
 	if err != nil {
@@ -69,9 +55,6 @@ func (m *product) backoff(ctx context.Context, rec authn.FactorRecord) (authn.St
 	return authn.Step{}, false
 }
 
-// failed counts one failed attempt against the factor. When it is the one that
-// started a back-off the event and the count follow. A failure to count is an
-// Error and the attempt stays refused.
 func (m *product) failed(ctx context.Context, rec authn.FactorRecord) {
 	engaged, err := m.throttle.Fail(ctx, authn.ScopeFactor, rec.ID)
 	if err != nil {
@@ -90,7 +73,6 @@ func (m *product) failed(ctx context.Context, rec authn.FactorRecord) {
 		slog.String("reason_class", authn.ReasonThrottled))
 }
 
-// cleared forgets the failures of a factor that has just passed.
 func (m *product) cleared(ctx context.Context, rec authn.FactorRecord) {
 	if err := m.throttle.Succeed(ctx, authn.ScopeFactor, rec.ID); err != nil {
 		m.logger.Error(ModuleName+": the failures of a factor could not be cleared",
@@ -99,9 +81,6 @@ func (m *product) cleared(ctx context.Context, rec authn.FactorRecord) {
 	}
 }
 
-// defect ends a call whose factor gave an answer the call may not have. It is
-// logged at Error, which is where a defect goes, and answered as an outage of
-// the factor.
 func (m *product) defect(rec authn.FactorRecord, call string, got step.Kind) authn.Step {
 	m.logger.Error(ModuleName+": a factor gave an answer its call may not give",
 		slog.String("account", string(rec.Account)), slog.String("factor", rec.ID),
@@ -109,9 +88,7 @@ func (m *product) defect(rec authn.FactorRecord, call string, got step.Kind) aut
 	return authn.StepUnavailable(fmt.Errorf("%w: %s from %s", errFactorDefect, got, call))
 }
 
-// Challenge starts a verification on the chosen factor: it sends a code or makes
-// a passkey's options. The factor's back-off is checked first, and a factor in
-// back-off is sent nothing. A challenge is no guess, so it counts nothing.
+// Challenge starts a verification on the chosen factor, sending a code or making a passkey's options. It checks the factor's back-off first and sends nothing to a factor in back-off.
 func (m *product) Challenge(ctx context.Context, f authn.FlowState, factorID string) (authn.Step, error) {
 	rec, factor, answer, ok := m.lookup(ctx, f.Account, factorID, authn.FactorActive)
 	if !ok {
@@ -135,10 +112,6 @@ func (m *product) Challenge(ctx context.Context, f authn.FlowState, factorID str
 	}
 }
 
-// passAllowed reports whether a pass is one a factor of the kind may give: it
-// names a method, and every method it names is the kind's own. A pass that
-// claimed another method would reach Assurance as a second factor of a kind it
-// is not.
 func passAllowed(kind authn.FactorKind, pass authn.Pass) bool {
 	own := methodsOf(kind)
 	if len(pass.Methods) == 0 {
@@ -152,15 +125,7 @@ func passAllowed(kind authn.FactorKind, pass authn.Pass) bool {
 	return true
 }
 
-// Verify checks a second factor. The factor's back-off is checked first and a
-// factor in back-off is not asked; then the factor is, a failure is counted and a
-// pass clears the count, and what the call came to is counted for the
-// dashboards.
-//
-// The answer is the factor's, with nothing added: StepPassed, StepRefused,
-// StepThrottled or StepUnavailable. A factor that is not enrolled, that is still
-// pending or disabled, or that belongs to another account is refused before it
-// is asked and before it is counted.
+// Verify checks a second factor after checking its back-off, counts a failure and clears the count on a pass, and reports the verification. The answer is the factor's own Step; a factor that is not active, not enrolled or another account's is refused before it is asked.
 func (m *product) Verify(ctx context.Context, f authn.FlowState, factorID string, in authn.StepInput) (authn.Step, error) {
 	rec, factor, answer, ok := m.lookup(ctx, f.Account, factorID, authn.FactorActive)
 	if !ok {
@@ -216,7 +181,6 @@ func (m *product) Verify(ctx context.Context, f authn.FlowState, factorID string
 	}
 }
 
-// outcomeOf is the outcome a step that is not a pass or a refusal is counted as.
 func outcomeOf(s authn.Step) string {
 	if step.KindOf(s) == step.KindThrottled {
 		return verifyThrottled
@@ -224,26 +188,15 @@ func outcomeOf(s authn.Step) string {
 	return verifyUnavailable
 }
 
-// pendingKey is the context key under which Enroll hands the pending row to the
-// factor it calls.
 type pendingKey struct{}
 
-// PendingFactor is the pending row the call to Factor.Enroll in progress is
-// registering, which Enroll wrote before it called the factor and which it
-// activates after the factor's last step. A factor reads it to key the data of
-// its own by the row's identifier. It is the only way a factor learns the
-// identifier, so a factor that does not find one has been called by something
-// other than Enroll and registers nothing.
+// PendingFactor returns the pending row Enroll is registering, for a factor to key its own data by its identifier. It is present only in a call made by Enroll.
 func PendingFactor(ctx context.Context) (authn.FactorRecord, bool) {
 	rec, ok := ctx.Value(pendingKey{}).(authn.FactorRecord)
 	return rec, ok
 }
 
-// The envelope Enroll keeps its own state in. The engine keeps the private bytes
-// of a registration as they are between steps, and Enroll needs the identifier of
-// the pending row on the next one, so every step that moves on carries it in
-// front of the factor's own bytes: the version, the identifier's length and the
-// identifier.
+// Enroll carries its own state in front of the factor's private bytes: the envelope version, the pending row identifier's length and the identifier.
 const envelopeVersion = 1
 
 func wrapPrivate(id string, inner []byte) []byte {
@@ -266,8 +219,6 @@ func unwrapPrivate(b []byte) (id string, inner []byte, ok bool) {
 	return string(rest[:n]), rest[n:], true
 }
 
-// withEnvelope returns the factor's answer with its private bytes wrapped, for an
-// answer that moves the registration on, and the answer as it is for any other.
 func withEnvelope(id string, s authn.Step) authn.Step {
 	var wrapped authn.Step
 	switch step.KindOf(s) {
@@ -281,20 +232,7 @@ func withEnvelope(id string, s authn.Step) authn.Step {
 	return wrapped.WithSends(step.SendsOf(s))
 }
 
-// Enroll is the one way a factor is registered, a step at a time.
-//
-// The first step, which is the one whose flow state holds no private bytes,
-// counts the account's factors of the kind and writes a pending row, then calls
-// the factor. Every later step finds that row again through the private bytes the
-// previous step left and calls the factor on it. The last step, the one the
-// factor answers with StepEnrolled, makes the row active and publishes the
-// change. A row that is not active is never used to verify; a registration whose
-// flow is abandoned is released by Abandon at once, and one left behind by a
-// flow that was never abandoned is swept once it has been pending past
-// pending-ttl.
-//
-// A step after the first checks the factor's back-off and counts a refusal
-// against it, because the confirmation step is a guess at a code.
+// Enroll registers a factor one step at a time: the first step counts the kind and writes a pending row, later steps find it through the private bytes, and the last step activates it and publishes the change. A step after the first is held to the factor's back-off.
 func (m *product) Enroll(ctx context.Context, f authn.FlowState, kind authn.FactorKind, in authn.StepInput) (authn.Step, error) {
 	if f.Account == "" {
 		return authn.Step{}, fmt.Errorf("%w: a registration is for an account", authn.ErrInvalidArgument)
@@ -314,8 +252,6 @@ func (m *product) beginEnroll(ctx context.Context, f authn.FlowState, kind authn
 	if err != nil {
 		return authn.StepRefused(err), nil
 	}
-	// A kind that may be held only once has nothing for a name to tell
-	// apart, so it refuses one rather than storing a name no surface reads.
 	if !factorTakesName(kind) && label != "" {
 		return authn.StepRefused(fmt.Errorf("%w: a %s factor carries no name", authn.ErrInvalidArgument, kind)), nil
 	}
@@ -355,10 +291,6 @@ func (m *product) continueEnroll(ctx context.Context, f authn.FlowState, kind au
 	return m.settleEnroll(ctx, rec, got, callErr, false), nil
 }
 
-// settleEnroll turns a factor's answer to a registration step into the engine's.
-// first is whether the pending row was written by this call: an answer that does
-// not move the registration on leaves nothing for a later step to find, so the
-// row is dropped at once and not left to the sweep.
 func (m *product) settleEnroll(ctx context.Context, rec authn.FactorRecord, got authn.Step, callErr error, first bool) authn.Step {
 	if callErr != nil {
 		m.logger.Error(ModuleName+": a factor failed to register",
@@ -394,16 +326,11 @@ func (m *product) settleEnroll(ctx context.Context, rec authn.FactorRecord, got 
 	}
 }
 
-// finishEnroll is the last step: the row is made active, and only now. A row
-// that is no longer pending, which a sweep, a reset or a removal made it, is not
-// brought back, and the registration is refused.
 func (m *product) finishEnroll(ctx context.Context, rec authn.FactorRecord, got authn.Step) authn.Step {
 	at := m.clock.Now()
 	var won bool
 	var err error
 	if _, replaces := m.kindLimit(rec.Kind); replaces {
-		// The single entry of this kind is replaced: the new row activates
-		// and the old one retires in one transaction.
 		won, err = m.register.activateReplacing(ctx, rec.Account, rec.ID, rec.Kind, at)
 	} else {
 		won, err = m.register.activate(ctx, rec.Account, rec.ID, at)
@@ -425,13 +352,7 @@ func (m *product) finishEnroll(ctx context.Context, rec authn.FactorRecord, got 
 	return authn.StepEnrolled(rec).WithSends(step.SendsOf(got))
 }
 
-// Abandon releases what a registration flow created when the flow is abandoned
-// before its last step. The flow's private bytes carry the identifier of the
-// pending row the flow wrote, and only that row is removed -- and only while it
-// is still pending. Bytes that are not this module's envelope, a row that is
-// not there, and a row a sweep, a reset or a removal already took all leave the
-// register as it was, so a flow may be released more than once. The factor's
-// own data goes with the row, as it does when the sweep removes one.
+// Abandon releases what a registration flow created when the flow is abandoned: it removes only the pending row the flow wrote, and only while it is still pending, together with the factor's own data. It is idempotent.
 func (m *product) Abandon(ctx context.Context, f authn.FlowState) error {
 	id, _, ok := unwrapPrivate(f.Private)
 	if !ok {
@@ -455,9 +376,6 @@ func (m *product) Abandon(ctx context.Context, f authn.FlowState) error {
 	return nil
 }
 
-// dropPending removes a pending row that no later step will find, and the data
-// the factor wrote for it. The row goes first and conditionally, so that a
-// registration that is finishing and this removal cannot both win.
 func (m *product) dropPending(ctx context.Context, rec authn.FactorRecord) {
 	removed, err := m.register.removePending(ctx, rec.ID)
 	if err != nil {
@@ -471,9 +389,6 @@ func (m *product) dropPending(ctx context.Context, rec authn.FactorRecord) {
 	}
 }
 
-// cleanKind has the factor of the row's kind remove the data it keeps for the
-// row. A kind with no implementation here has no one to ask, and what it left
-// stays with the module that is not taken in.
 func (m *product) cleanKind(ctx context.Context, rec authn.FactorRecord) {
 	factor, present := m.factors[rec.Kind]
 	if !present {

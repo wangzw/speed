@@ -19,6 +19,7 @@ func asAccount(t *testing.T, id authn.AccountID) context.Context {
 	return authntest.Context(t, context.Background(), authntest.WithAccount(id))
 }
 
+// TestRemoveHasTheFactorCleanItsDataBeforeTheRowGoes checks that the factor cleans its data before the row goes.
 func TestRemoveHasTheFactorCleanItsDataBeforeTheRowGoes(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -57,6 +58,7 @@ func TestRemoveHasTheFactorCleanItsDataBeforeTheRowGoes(t *testing.T) {
 	})
 }
 
+// TestRemoveThatFailsInTheFactorLeavesTheRowForARetry checks that a removal failing in the factor leaves the row for a retry.
 func TestRemoveThatFailsInTheFactorLeavesTheRowForARetry(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -83,6 +85,7 @@ func TestRemoveThatFailsInTheFactorLeavesTheRowForARetry(t *testing.T) {
 	})
 }
 
+// TestTheLastFactorOfAnAccountThatRequiresOneStays checks that the last factor of an account that requires one stays.
 func TestTheLastFactorOfAnAccountThatRequiresOneStays(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP, authn.FactorSMS}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -92,11 +95,9 @@ func TestTheLastFactorOfAnAccountThatRequiresOneStays(t *testing.T) {
 		pending := r.insertRow(acct, authn.FactorTOTP, authn.FactorPending, r.clock.read(), nil)
 		ctx := context.Background()
 
-		// With a second active one the first may go.
 		if err := r.p.Remove(ctx, acct, first); err != nil {
 			t.Fatalf("removing one of two: %v", err)
 		}
-		// A pending row is not a factor the account can use, so the last active one stays.
 		before := totp.count("remove")
 		err := r.p.Remove(ctx, acct, second)
 		if !errors.Is(err, authn.ErrLastFactor) {
@@ -117,11 +118,9 @@ func TestTheLastFactorOfAnAccountThatRequiresOneStays(t *testing.T) {
 		if denied != 1 {
 			t.Errorf("%d denied rows, want 1", denied)
 		}
-		// A row that is not active never takes strength away.
 		if err := r.p.Remove(ctx, acct, pending); err != nil {
 			t.Errorf("removing a pending row: %v", err)
 		}
-		// An account that does not require one may remove its last.
 		r.accounts.required[acct] = false
 		if err := r.p.Remove(ctx, acct, second); err != nil {
 			t.Errorf("removing the last factor of an account that does not require one: %v", err)
@@ -129,6 +128,7 @@ func TestTheLastFactorOfAnAccountThatRequiresOneStays(t *testing.T) {
 	})
 }
 
+// TestRemoveOnlyReachesTheAccountsOwnFactors checks that Remove reaches only the account's own factors.
 func TestRemoveOnlyReachesTheAccountsOwnFactors(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		theirs := r.activeFactor("someone-else", authn.FactorTOTP, time.Hour)
@@ -149,6 +149,7 @@ func TestRemoveOnlyReachesTheAccountsOwnFactors(t *testing.T) {
 	})
 }
 
+// TestRemoveRefusesWhenTheAccountCannotBeReadAndTheRowIsActive checks that Remove refuses when the account cannot be read and the row is active.
 func TestRemoveRefusesWhenTheAccountCannotBeReadAndTheRowIsActive(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
@@ -162,6 +163,7 @@ func TestRemoveRefusesWhenTheAccountCannotBeReadAndTheRowIsActive(t *testing.T) 
 	})
 }
 
+// TestRemoveOfAKindNobodyDeliversStillRemovesTheRow checks that Remove of a kind nobody delivers still removes the row.
 func TestRemoveOfAKindNobodyDeliversStillRemovesTheRow(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		id := r.activeFactor(acct, authn.FactorWebAuthn, time.Hour)
@@ -177,9 +179,7 @@ func TestRemoveOfAKindNobodyDeliversStillRemovesTheRow(t *testing.T) {
 	})
 }
 
-// The exported Remove is the capability's promise and touches no session: the
-// route that wants the other devices signed out orchestrates it. A module with
-// live sessions still ends none of them, and the sessions seam is never called.
+// TestRemoveEndsNoSessionItself checks that MFA.Remove touches no session.
 func TestRemoveEndsNoSessionItself(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP, authn.FactorSMS}, func(t *testing.T, r *rig) {
 		for _, kind := range []authn.FactorKind{authn.FactorTOTP, authn.FactorSMS, authn.FactorWebAuthn} {
@@ -207,6 +207,7 @@ func TestRemoveEndsNoSessionItself(t *testing.T) {
 	})
 }
 
+// TestTheEventNamesWhoActed checks that the event names who acted.
 func TestTheEventNamesWhoActed(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		cases := []struct {
@@ -235,6 +236,7 @@ func TestTheEventNamesWhoActed(t *testing.T) {
 	})
 }
 
+// TestAnEventThatCannotBePublishedDoesNotFailTheRemoval checks that an event that cannot be published does not fail the removal.
 func TestAnEventThatCannotBePublishedDoesNotFailTheRemoval(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		r.bus.err = errors.New("bus down")
@@ -258,8 +260,7 @@ func TestAnEventThatCannotBePublishedDoesNotFailTheRemoval(t *testing.T) {
 	})
 }
 
-// Reset leaves a failure at any step with the account stricter than before. Each
-// step reads what the previous one left, which is the evidence of the order.
+// TestResetRunsItsStepsInOrder checks that Reset runs its steps in order, leaving the account stricter when one fails.
 func TestResetRunsItsStepsInOrder(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP, authn.FactorSMS}, func(t *testing.T, r *rig) {
 		a := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
@@ -324,12 +325,12 @@ func TestResetRunsItsStepsInOrder(t *testing.T) {
 	})
 }
 
+// TestResetThatFailsAtAStepLeavesTheAccountStricterAndCanBeRepeated checks that a Reset failing at a step leaves the account stricter and can be repeated.
 func TestResetThatFailsAtAStepLeavesTheAccountStricterAndCanBeRepeated(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
 		ctx := context.Background()
 
-		// Step 1 fails: nothing else happened.
 		r.admin.err = errors.New("account store down")
 		if _, err := r.p.Reset(ctx, acct, ""); !errors.Is(err, authn.ErrUnavailable) {
 			t.Fatalf("Reset = %v, want ErrUnavailable", err)
@@ -339,9 +340,6 @@ func TestResetThatFailsAtAStepLeavesTheAccountStricterAndCanBeRepeated(t *testin
 		}
 		r.admin.err = nil
 
-		// Step 3 fails: the flag is set and the factors are disabled, which is
-		// stricter than before: the account has to register again and cannot use
-		// the factors it had. No event yet.
 		r.sessions.err = errors.New("session store down")
 		if _, err := r.p.Reset(ctx, acct, ""); !errors.Is(err, authn.ErrUnavailable) {
 			t.Fatalf("Reset = %v, want ErrUnavailable", err)
@@ -353,8 +351,6 @@ func TestResetThatFailsAtAStepLeavesTheAccountStricterAndCanBeRepeated(t *testin
 			t.Error("the change was published although the reset did not finish")
 		}
 
-		// The repeat finishes it: nothing left to disable, the sessions revoked
-		// again, the event published once.
 		r.sessions.err = nil
 		removed, err := r.p.Reset(ctx, acct, "")
 		if err != nil {
@@ -369,7 +365,6 @@ func TestResetThatFailsAtAStepLeavesTheAccountStricterAndCanBeRepeated(t *testin
 		if n := len(r.bus.ofType(authn.EventFactorChanged)); n != 1 {
 			t.Errorf("%d events, want the one of the finished reset", n)
 		}
-		// A third call changes nothing more.
 		if _, err := r.p.Reset(ctx, acct, ""); err != nil {
 			t.Fatalf("a third call: %v", err)
 		}
@@ -379,6 +374,7 @@ func TestResetThatFailsAtAStepLeavesTheAccountStricterAndCanBeRepeated(t *testin
 	})
 }
 
+// TestResetStopsAtADisableThatFailsBeforeAnySessionIsRevoked checks that Reset stops at a disable that fails before any session is revoked.
 func TestResetStopsAtADisableThatFailsBeforeAnySessionIsRevoked(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h, newFactor(authn.FactorTOTP))
@@ -397,6 +393,7 @@ func TestResetStopsAtADisableThatFailsBeforeAnySessionIsRevoked(t *testing.T) {
 	})
 }
 
+// TestResetWithoutASessionModuleStillStopsTheFactorsAndSaysSo checks that Reset without a session module still stops the factors and says so.
 func TestResetWithoutASessionModuleStillStopsTheFactorsAndSaysSo(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		r.p.sessions = nil
@@ -414,6 +411,7 @@ func TestResetWithoutASessionModuleStillStopsTheFactorsAndSaysSo(t *testing.T) {
 	})
 }
 
+// TestResetOfAnAccountThatIsNotThereChangesNothing checks that resetting an account that is not there changes nothing.
 func TestResetOfAnAccountThatIsNotThereChangesNothing(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
@@ -430,6 +428,7 @@ func TestResetOfAnAccountThatIsNotThereChangesNothing(t *testing.T) {
 	})
 }
 
+// TestSeasonedNeedsANonSMSActiveFactorOldEnough checks that Seasoned needs a non-SMS active factor old enough.
 func TestSeasonedNeedsANonSMSActiveFactorOldEnough(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		minAge := 24 * time.Hour
@@ -472,7 +471,6 @@ func TestSeasonedNeedsANonSMSActiveFactorOldEnough(t *testing.T) {
 				t.Errorf("Seasoned(%s) = %v, want %v", account, got, want)
 			}
 		}
-		// Time moving on seasons a factor; the setting moves the line.
 		r.clock.advance(2 * time.Second)
 		if !check("just-short") {
 			t.Error("a factor that has been active long enough since is not seasoned")
@@ -483,7 +481,6 @@ func TestSeasonedNeedsANonSMSActiveFactorOldEnough(t *testing.T) {
 		}
 		r.store.set(sensitiveMinAgePath, 1000*time.Hour)
 		if !check("old-passkey") {
-			// 1000h is outside the domain (720h at most): the declared default of 24h applies.
 			t.Error("a setting outside its domain was acted on instead of the default")
 		}
 		if len(r.logs.lines("level=ERROR", sensitiveMinAgePath)) != 1 {
@@ -495,6 +492,7 @@ func TestSeasonedNeedsANonSMSActiveFactorOldEnough(t *testing.T) {
 	})
 }
 
+// TestFactorsListsEveryStatusOfTheAccountAndNoOtherAccount checks that Factors lists every status of the account and no other account's.
 func TestFactorsListsEveryStatusOfTheAccountAndNoOtherAccount(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		a := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
@@ -527,6 +525,7 @@ func TestFactorsListsEveryStatusOfTheAccountAndNoOtherAccount(t *testing.T) {
 	})
 }
 
+// TestKindsListsWhatIsTakenInAndIsACopy checks that Kinds lists what is taken in and is a copy.
 func TestKindsListsWhatIsTakenInAndIsACopy(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h, newFactor(authn.FactorWebAuthn), newFactor(authn.FactorTOTP))
@@ -545,10 +544,7 @@ func TestKindsListsWhatIsTakenInAndIsACopy(t *testing.T) {
 	})
 }
 
-// A sensitive-min-age that cannot be read reads as its declared default of 24
-// hours: a factor two hours old is not seasoned. Reading the type's zero value
-// would season a factor the instant it was registered, lowering the bar for
-// impersonation and for resetting another account's factors.
+// TestSeasonedUnderAnUnreadableSensitiveMinAgeUsesTheDeclaredDefault checks that an unreadable sensitive-min-age reads as its declared default of 24 hours.
 func TestSeasonedUnderAnUnreadableSensitiveMinAgeUsesTheDeclaredDefault(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		r.store.fail(sensitiveMinAgePath, errors.New("settings: not loaded"))
@@ -563,9 +559,7 @@ func TestSeasonedUnderAnUnreadableSensitiveMinAgeUsesTheDeclaredDefault(t *testi
 	})
 }
 
-// A sensitive-min-age below its domain's minimum reads as the declared default of
-// 24 hours: a factor two hours old is not seasoned even though a stored thirty
-// minutes, zero or a negative duration would season it.
+// TestAnOutOfDomainSensitiveMinAgeUsesTheDeclaredDefault checks that a sensitive-min-age outside its domain reads as the declared default of 24 hours.
 func TestAnOutOfDomainSensitiveMinAgeUsesTheDeclaredDefault(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		r.activeFactor("young", authn.FactorTOTP, 2*time.Hour)

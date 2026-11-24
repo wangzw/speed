@@ -6,8 +6,7 @@ import (
 	"github.com/vislake/speed/pkg/feature"
 )
 
-// TestTheModuleDeclaresTheMultiFactorFeature holds the declaration the frontend
-// gates the multi-factor section on: one static Spec with the exact name.
+// TestTheModuleDeclaresTheMultiFactorFeature checks that the module declares the static feature authn.mfa under its exact name.
 func TestTheModuleDeclaresTheMultiFactorFeature(t *testing.T) {
 	want := feature.Spec{Name: "authn.mfa"}
 	var got []feature.Spec

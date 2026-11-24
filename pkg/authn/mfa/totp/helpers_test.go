@@ -25,21 +25,14 @@ import (
 	"github.com/vislake/speed/pkg/internal/dbtest"
 )
 
-// rootKey is a root key for the field encryption of the test handles. It is
-// longer than the floor and is not a secret of any deployment.
 const rootKey = "totp-test-root-key-0123456789-abcdefghijklmnop"
 
-// base is the instant the cases that need a fixed time start from.
 var base = time.Date(2026, time.March, 14, 12, 0, 0, 0, time.UTC)
 
-// acct is the account the cases register factors for.
 const acct = authn.AccountID("acct-1")
 
-// username is the username identifier the cases bind to acct by default.
 const username = "alice"
 
-// fakeAccounts answers the account reads this factor makes. Only Identifiers is
-// its own; the rest of the interface is the embedded one's and is never called.
 type fakeAccounts struct {
 	authn.Accounts
 	identifiers map[authn.AccountID][]authn.Identifier
@@ -54,16 +47,12 @@ func (a fakeAccounts) Identifiers(_ context.Context, id authn.AccountID) ([]auth
 	return a.identifiers[id], nil
 }
 
-// named accounts are the account reads of an account whose username is
-// username, which is what a case that does not exercise the label sees.
 func named() fakeAccounts {
 	return fakeAccounts{identifiers: map[authn.AccountID][]authn.Identifier{
 		acct: {{Kind: authn.IdentifierUsername, Value: username}},
 	}}
 }
 
-// fakeClock is a clock a case moves. It reads in the zone it was built with, so
-// a case can hand the factor a time that is not UTC.
 type fakeClock struct {
 	mu  sync.Mutex
 	now time.Time
@@ -77,10 +66,6 @@ func (c *fakeClock) read() time.Time {
 	return c.now
 }
 
-// factorsTable is the factor register table of authn.mfa, which the register of
-// the multi-factor module writes and this factor is keyed into by. It mirrors
-// that module's migration; the cases here build it so that a real multi-factor
-// module can drive this factor end to end.
 const factorsTable = `CREATE TABLE IF NOT EXISTS authn_factors (
     id           TEXT      NOT NULL PRIMARY KEY,
     account_id   TEXT      NOT NULL,
@@ -92,8 +77,6 @@ const factorsTable = `CREATE TABLE IF NOT EXISTS authn_factors (
     last_used_at TIMESTAMP NULL
 )`
 
-// openHandle delivers a real database handle with the encryption key set, so the
-// seed column can be sealed, and with no table built.
 func openHandle(t *testing.T, key string) db.Database {
 	t.Helper()
 	items := dbtest.Items(nil)
@@ -103,10 +86,6 @@ func openHandle(t *testing.T, key string) db.Database {
 	return dbtest.SQLite(t, filepath.Join(t.TempDir(), "totp.db"), items)
 }
 
-// openSerialHandle is openHandle with the pool held to one connection, so that
-// two statements on one factor serialize on it rather than one failing on the
-// engine's write lock. It is what the concurrency case uses, where what is under
-// test is that the conditional write and not the pool decides the winner.
 func openSerialHandle(t *testing.T, key string) db.Database {
 	t.Helper()
 	items := dbtest.Items{"max-open-conns": 1, "max-idle-conns": 1}
@@ -116,8 +95,6 @@ func openSerialHandle(t *testing.T, key string) db.Database {
 	return dbtest.SQLite(t, filepath.Join(t.TempDir(), "totp.db"), items)
 }
 
-// buildTable runs a migration tree's statements of one dialect against the
-// handle, so the table a case needs is the one the module ships.
 func buildTable(t *testing.T, h *gorm.DB, tree fs.FS, dialect string) {
 	t.Helper()
 	entries, err := fs.ReadDir(tree, dialect)
@@ -140,7 +117,6 @@ func buildTable(t *testing.T, h *gorm.DB, tree fs.FS, dialect string) {
 	}
 }
 
-// createRegister builds the factor register table.
 func createRegister(t *testing.T, h *gorm.DB) {
 	t.Helper()
 	if err := h.Exec(factorsTable).Error; err != nil {
@@ -148,18 +124,14 @@ func createRegister(t *testing.T, h *gorm.DB) {
 	}
 }
 
-// rig is the factor over a real database handle with a fixed clock.
 type rig struct {
 	t      *testing.T
 	factor *factor
 	h      *gorm.DB
 }
 
-// newRig builds the factor over a handle with the seed table built and the
-// encryption key set.
 func newRig(t *testing.T) *rig { return newRigOn(t, openHandle(t, rootKey)) }
 
-// newSerialRig is newRig over a handle whose pool is one connection.
 func newSerialRig(t *testing.T) *rig { return newRigOn(t, openSerialHandle(t, rootKey)) }
 
 func newRigOn(t *testing.T, database db.Database) *rig {
@@ -179,7 +151,6 @@ func newRigOn(t *testing.T, database db.Database) *rig {
 	}
 }
 
-// seed writes a seed row for a factor of the account with the secret given.
 func (r *rig) seed(factorID, secret string) {
 	r.t.Helper()
 	if err := r.factor.register.insert(context.Background(), seed{
@@ -194,12 +165,10 @@ func (r *rig) seed(factorID, secret string) {
 	}
 }
 
-// active is the record of an enrolled factor.
 func active(factorID string) authn.FactorRecord {
 	return authn.FactorRecord{ID: factorID, Account: acct, Kind: authn.FactorTOTP, Status: authn.FactorActive}
 }
 
-// generate is a fresh valid base32 seed.
 func generate(t *testing.T) string {
 	t.Helper()
 	key, err := pquernaotp.Generate(pquernaotp.GenerateOpts{
@@ -212,8 +181,6 @@ func generate(t *testing.T) string {
 	return key.Secret()
 }
 
-// codeAt is the code a seed produces at the instant given, with the parameters
-// the factor generates codes for.
 func codeAt(t *testing.T, secret string, at time.Time) string {
 	t.Helper()
 	return codeWith(t, secret, at, pquernaotp.ValidateOpts{
@@ -221,8 +188,6 @@ func codeAt(t *testing.T, secret string, at time.Time) string {
 	})
 }
 
-// codeWith is the code a seed produces with the options given, which the
-// negative cases use to build a code the factor must not accept.
 func codeWith(t *testing.T, secret string, at time.Time, opts pquernaotp.ValidateOpts) string {
 	t.Helper()
 	code, err := pquernaotp.GenerateCodeCustom(secret, at.UTC(), opts)
@@ -232,28 +197,20 @@ func codeWith(t *testing.T, secret string, at time.Time, opts pquernaotp.Validat
 	return code
 }
 
-// input is a submitted answer carrying a code.
 func input(code string) authn.StepInput {
 	return authn.StepInput{Action: authn.InputSubmit, Fields: map[string]string{codeField: code}}
 }
 
-// flow is an enrollment flow state.
 func flow() authn.FlowState {
 	return authn.FlowState{ID: "flow-1", Purpose: authn.PurposeEnroll, Account: acct}
 }
 
-// ---- the registry harness ----
-
-// The stand-in modules an assembly drives: the capabilities another module
-// delivers exclusively in a real command, supplied to a module of its own here.
 const (
 	dbModule      = "stand-in.db"
 	mounterModule = "stand-in.mounter"
 	accountModule = "stand-in.account"
 )
 
-// standIn is a module that declares the tokens given, exclusively when told to,
-// and delivers instance from its New.
 func standIn(name string, instance any, exclusive bool, tokens ...core.Token) core.Module {
 	provides := make([]core.Provision, len(tokens))
 	for i, tk := range tokens {
@@ -266,10 +223,6 @@ func standIn(name string, instance any, exclusive bool, tokens ...core.Token) co
 	}
 }
 
-// stubReader is a configuration reader handing this module its two input items
-// and nothing else: the issuer of its own namespace and the gateway's public
-// address it defaults off. It is supplied to the registry the way a host
-// supplies the one the loader built.
 type stubReader struct {
 	issuer    string
 	publicURL string
@@ -285,8 +238,6 @@ func (r stubReader) Decode(_ string, target any) error {
 	return nil
 }
 
-// stubThrottle is a failure back-off that is never in back-off and counts
-// nothing, which is the state a working module is in when a case reaches it.
 type stubThrottle struct{}
 
 func (stubThrottle) Check(context.Context, authn.ThrottleScope, string) (time.Duration, error) {
@@ -298,40 +249,20 @@ func (stubThrottle) Fail(context.Context, authn.ThrottleScope, string) (bool, er
 }
 func (stubThrottle) Succeed(context.Context, authn.ThrottleScope, string) error { return nil }
 
-// accountStandIn carries the three capabilities the account module does. The
-// account reads and writes are the embedded interface's; the back-off is the
-// stub above, because the multi-factor module reaches it around every
-// verification.
 type accountStandIn struct {
 	authn.Accounts
 	authn.AccountAdmin
 	authn.Throttle
 }
 
-// assembly drives a real registry through this module's descriptor and the real
-// multi-factor module, which takes the TOTP factor up and drives it. The
-// database, the mounter and the account capabilities are supplied as stand-in
-// modules of their own, which is how the required capabilities are satisfied
-// without the modules that deliver them.
 type assembly struct {
-	// key is the field-encryption root key; empty leaves the handle without one,
-	// which is the assembly the startup check refuses.
-	key string
-	// seed builds this module's seed table before the drive.
-	seed bool
-	// register builds the factor register table before the drive, so that the
-	// multi-factor module's own Start finds it.
+	key      string
+	seed     bool
 	register bool
-	// accounts answers the account reads; the zero value names the account by
-	// its username.
 	accounts fakeAccounts
-	// issuer is the configured site name; empty is "speed".
-	issuer string
+	issuer   string
 }
 
-// drive advances the assembly to Start, runs action there, and returns what the
-// drive returned. The database handle is handed to the action so a case can read
-// what the registry wrote.
 func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core.Registry, h *gorm.DB) error) error {
 	t.Helper()
 	database := openHandle(t, a.key)
@@ -373,7 +304,6 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 	})
 }
 
-// pendingID is the identifier of the account's pending TOTP factor row.
 func pendingID(t *testing.T, h *gorm.DB) string {
 	t.Helper()
 	var ids []string
@@ -387,7 +317,6 @@ func pendingID(t *testing.T, h *gorm.DB) string {
 	return ids[0]
 }
 
-// secretOf reads the seed of a factor through the module's own store.
 func secretOf(t *testing.T, h *gorm.DB, factorID string) string {
 	t.Helper()
 	s, found, err := (&register{handle: h}).load(context.Background(), factorID)
@@ -397,7 +326,6 @@ func secretOf(t *testing.T, h *gorm.DB, factorID string) string {
 	return s.Secret
 }
 
-// kindOf is the kind of a step, for a case that reads what the factor answered.
 func kindOf(t *testing.T, s authn.Step) step.Kind {
 	t.Helper()
 	return step.KindOf(s)

@@ -26,17 +26,12 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The stand-in modules an assembly drives: the capabilities another module
-// delivers exclusively in a real command, each supplied to a module of its own
-// here because the modules that deliver them are not ones these cases bring in.
 const (
 	dbModule      = "stand-in.db"
 	accountModule = "stand-in.account"
 	mounterModule = "stand-in.mounter"
 )
 
-// standIn is a module that declares the tokens names, exclusively when told to,
-// and delivers instance from its New.
 func standIn(name string, instance any, exclusive bool, tokens ...core.Token) core.Module {
 	provides := make([]core.Provision, len(tokens))
 	for i, tk := range tokens {
@@ -49,10 +44,6 @@ func standIn(name string, instance any, exclusive bool, tokens ...core.Token) co
 	}
 }
 
-// accountStandIn delivers the three capabilities the account module does, as one
-// instance, and answers the reads this module and the multi-factor module make of
-// it. The failure back-off lets every attempt through, which is what a case that
-// checks a ceremony and not a policy wants.
 type accountStandIn struct {
 	authn.Accounts
 	authn.AccountAdmin
@@ -77,17 +68,10 @@ func (a *accountStandIn) Fail(context.Context, authn.ThrottleScope, string) (boo
 
 func (a *accountStandIn) Succeed(context.Context, authn.ThrottleScope, string) error { return nil }
 
-// assembly is one drive of a real registry through this module's descriptor and
-// the multi-factor module's, over a real database. It is what holds the two
-// modules together: the descriptor, the pending-row handoff, and the factor and
-// login method as the multi-factor module uses them.
 type assembly struct {
-	// migrate builds both modules' tables before the drive, so that Start's
-	// probes find them. A case that wants a table missing leaves it false.
 	migrate bool
 }
 
-// migrationSets are the migration resources a module declares.
 func migrationSets(module core.Module) []db.Migrations {
 	var out []db.Migrations
 	for _, res := range module.Resources {
@@ -98,7 +82,6 @@ func migrationSets(module core.Module) []db.Migrations {
 	return out
 }
 
-// applyModuleMigrations builds a module's tables from its embedded migrations.
 func applyModuleMigrations(t *testing.T, handle *gorm.DB, module core.Module, dialect string) {
 	t.Helper()
 	for _, m := range migrationSets(module) {
@@ -123,10 +106,6 @@ func applyModuleMigrations(t *testing.T, handle *gorm.DB, module core.Module, di
 	}
 }
 
-// drive advances the assembly to Start, runs action there, and returns what the
-// drive returned once every Stop and Close has run. The delivery declarations are
-// held inside the drive: a product that does not deliver what a descriptor claims
-// makes the drive fail before action runs.
 func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core.Registry) error) error {
 	t.Helper()
 
@@ -165,8 +144,7 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 	})
 }
 
-// The descriptor delivers the factor and the login method, neither exclusively,
-// and requires the database, the multi-factor module and the account reads.
+// TestTheDescriptorNamesWhatItDeliversAndRequires checks that the descriptor delivers the factor and login method unclaimed and requires the database, MFA and account reads.
 func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "authn.mfa.webauthn" {
@@ -196,9 +174,7 @@ func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 	}
 }
 
-// Prepare reads the configuration the relying party is built from, so it is
-// handed a reader over a runnable public address, and it states the enabled
-// stance and nothing else.
+// TestPrepareStatesEnabledAndNothingElse checks that Prepare states the enabled stance and nothing else.
 func TestPrepareStatesEnabledAndNothingElse(t *testing.T) {
 	reg := core.New()
 	reg.Register(config.Module())
@@ -212,10 +188,7 @@ func TestPrepareStatesEnabledAndNothingElse(t *testing.T) {
 	}
 }
 
-// Prepare refuses a relying party id that does not cover the public address's
-// host: a credential is bound to the relying party id, so one that does not cover
-// the host would let an assertion collected at the site complete a ceremony begun
-// elsewhere.
+// TestPrepareRefusesARelyingPartyIDOutsideTheHost checks that Prepare refuses a relying party id that does not cover the public host.
 func TestPrepareRefusesARelyingPartyIDOutsideTheHost(t *testing.T) {
 	reg := core.New()
 	reg.Register(config.Module())
@@ -225,7 +198,7 @@ func TestPrepareRefusesARelyingPartyIDOutsideTheHost(t *testing.T) {
 	}
 }
 
-// Importing the package registers the module with the process registry.
+// TestImportingThePackageRegistersTheModuleWithTheProcess checks that importing the package registers the module with the process registry.
 func TestImportingThePackageRegistersTheModuleWithTheProcess(t *testing.T) {
 	got, ok := core.ProcessRegistry.Lookup(ModuleName)
 	if !ok {
@@ -236,8 +209,7 @@ func TestImportingThePackageRegistersTheModuleWithTheProcess(t *testing.T) {
 	}
 }
 
-// A real registry delivers the factor and the login method from one instance,
-// which core's own delivery check asserted as the drive ran.
+// TestARealRegistryDeliversTheFactorAndTheLoginMethod checks that a real registry delivers the factor and the login method from one instance.
 func TestARealRegistryDeliversTheFactorAndTheLoginMethod(t *testing.T) {
 	var got authn.Factor
 	var method authn.LoginMethod
@@ -265,8 +237,7 @@ func TestARealRegistryDeliversTheFactorAndTheLoginMethod(t *testing.T) {
 	}
 }
 
-// Start refuses when a table is missing, naming the migration command, rather
-// than serving requests against tables that are not there.
+// TestStartRefusesWhenATableIsMissing checks that Start refuses with ErrNotMigrated when a table is missing.
 func TestStartRefusesWhenATableIsMissing(t *testing.T) {
 	err := assembly{migrate: false}.drive(t, func(context.Context, *core.Registry) error {
 		t.Error("the drive reached its action with the tables missing")
@@ -277,10 +248,7 @@ func TestStartRefusesWhenATableIsMissing(t *testing.T) {
 	}
 }
 
-// The whole registration and assertion runs through the multi-factor module: it
-// writes the pending row, hands it to the factor, activates it on the last step,
-// and drives the challenge and verification that follow. This is the case that
-// holds the pending-row handoff and the seam between the two modules.
+// TestRegistrationAndVerificationThroughTheMultiFactorModule checks the whole registration and assertion through the multi-factor module.
 func TestRegistrationAndVerificationThroughTheMultiFactorModule(t *testing.T) {
 	err := assembly{migrate: true}.drive(t, func(ctx context.Context, reg *core.Registry) error {
 		m, err := core.Resolve[authn.MFA](reg)
@@ -338,9 +306,7 @@ func TestRegistrationAndVerificationThroughTheMultiFactorModule(t *testing.T) {
 	}
 }
 
-// The assurance of a passkey login is composed by the multi-factor module from
-// the proof this method hands over: a passkey that verified the user is a
-// multi-factor level, and one that did not is a single one.
+// TestAssuranceComposesFromAPasskeyProof checks that the assurance composes from a passkey proof by whether the user was verified.
 func TestAssuranceComposesFromAPasskeyProof(t *testing.T) {
 	err := assembly{migrate: true}.drive(t, func(_ context.Context, reg *core.Registry) error {
 		m, err := core.Resolve[authn.MFA](reg)
@@ -362,10 +328,7 @@ func TestAssuranceComposesFromAPasskeyProof(t *testing.T) {
 	}
 }
 
-// A passkey login drives the whole chain: a real registration and ceremony
-// produce a proof the multi-factor module reads, its policy asks for no second
-// factor because the assertion verified the user, and its assurance composes that
-// proof to multi-factor.
+// TestAPasskeyLoginComposesToMultiFactorWithoutASecondFactor checks that a passwordless passkey login composes to multi-factor without a second factor.
 func TestAPasskeyLoginComposesToMultiFactorWithoutASecondFactor(t *testing.T) {
 	err := assembly{migrate: true}.drive(t, func(ctx context.Context, reg *core.Registry) error {
 		m, err := core.Resolve[authn.MFA](reg)

@@ -12,9 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/step"
 )
 
-// newYork is a zone four or five hours behind UTC, which is what makes a time that
-// was not converted compare wrongly against one that was: SQLite compares a time
-// as text in the zone it carries.
 func newYork(t *testing.T) *time.Location {
 	t.Helper()
 	loc, err := time.LoadLocation("America/New_York")
@@ -24,9 +21,7 @@ func newYork(t *testing.T) *time.Location {
 	return loc
 }
 
-// A clock that reads in New York, and rows another replica wrote in UTC, are the
-// two halves of the comparison. Every comparison the module makes has to come out
-// the same as it does in UTC.
+// TestComparisonsAreRightWhenTheClockReadsInAnotherZone checks that every comparison is right when the clock reads outside UTC.
 func TestComparisonsAreRightWhenTheClockReadsInAnotherZone(t *testing.T) {
 	ny := newYork(t)
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
@@ -35,9 +30,8 @@ func TestComparisonsAreRightWhenTheClockReadsInAnotherZone(t *testing.T) {
 		if r.p.clock.Now().Location() != time.UTC {
 			t.Fatalf("the module's reading of the clock is in %v, want UTC", r.p.clock.Now().Location())
 		}
-		now := base // the same instant, in UTC, for what "another replica" writes
+		now := base
 
-		// Seasoned: the line is now - 24h, and a row at it counts.
 		at := func(d time.Duration) *time.Time { v := now.Add(-d); return &v }
 		r.insertRow("exactly", authn.FactorTOTP, authn.FactorActive, now.Add(-48*time.Hour), at(24*time.Hour))
 		r.insertRow("a-second-short", authn.FactorTOTP, authn.FactorActive, now.Add(-48*time.Hour), at(24*time.Hour-time.Second))
@@ -49,7 +43,6 @@ func TestComparisonsAreRightWhenTheClockReadsInAnotherZone(t *testing.T) {
 			}
 		}
 
-		// The sweep: the line is now - 1h.
 		over := r.insertRow(acct, authn.FactorTOTP, authn.FactorPending, now.Add(-time.Hour-time.Second), nil)
 		exact := r.insertRow(acct, authn.FactorTOTP, authn.FactorPending, now.Add(-time.Hour), nil)
 		short := r.insertRow(acct, authn.FactorTOTP, authn.FactorPending, now.Add(-time.Hour+time.Second), nil)
@@ -64,8 +57,7 @@ func TestComparisonsAreRightWhenTheClockReadsInAnotherZone(t *testing.T) {
 	})
 }
 
-// The register's statements convert a time they are given: a caller that hands
-// them one in another zone gets the same answer as one that hands them UTC.
+// TestTheRegisterConvertsATimeItIsGivenToUTC checks that the register converts a time it is given to UTC.
 func TestTheRegisterConvertsATimeItIsGivenToUTC(t *testing.T) {
 	ny := newYork(t)
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
@@ -100,8 +92,6 @@ func TestTheRegisterConvertsATimeItIsGivenToUTC(t *testing.T) {
 			}
 		}
 
-		// Read raw, the written time is text in UTC on SQLite and the same instant on
-		// PostgreSQL.
 		var raw []struct{ Activated string }
 		if qerr := r.h.Raw("SELECT CAST(activated_at AS TEXT) AS activated FROM authn_factors WHERE id = ?", rec.ID).Scan(&raw).Error; qerr != nil || len(raw) != 1 {
 			t.Fatalf("reading the column: %v %v", raw, qerr)
@@ -110,7 +100,6 @@ func TestTheRegisterConvertsATimeItIsGivenToUTC(t *testing.T) {
 			t.Errorf("the activation time is stored as %q, which is in New York's zone", raw[0].Activated)
 		}
 
-		// A line handed in as a New York time cuts at the same instant.
 		yes, err := r.p.register.seasoned(ctx, acct, local.Add(time.Second))
 		if err != nil || !yes {
 			t.Errorf("seasoned just after the activation = %v, %v, want true", yes, err)
@@ -131,8 +120,7 @@ func TestTheRegisterConvertsATimeItIsGivenToUTC(t *testing.T) {
 	})
 }
 
-// A registration finished while the clock reads in another zone is activated at
-// the instant and Seasoned counts from it.
+// TestARegistrationFinishedUnderAnotherZoneIsActiveAtTheInstant checks that a registration finished under another zone is active at the instant given.
 func TestARegistrationFinishedUnderAnotherZoneIsActiveAtTheInstant(t *testing.T) {
 	ny := newYork(t)
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {

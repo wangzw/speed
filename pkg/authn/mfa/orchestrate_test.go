@@ -16,7 +16,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/step"
 )
 
-// answerIs fails the case unless the step is of the kind.
 func answerIs(t *testing.T, got authn.Step, want step.Kind) {
 	t.Helper()
 	if k := step.KindOf(got); k != want {
@@ -24,13 +23,11 @@ func answerIs(t *testing.T, got authn.Step, want step.Kind) {
 	}
 }
 
-// confirming is the answer of a factor whose registration has a step still to go.
 func confirming(private string) authn.Step {
 	return authn.StepPrompt("confirm", []byte(private), authn.Field{Name: "code", Kind: authn.FieldCode, Required: true})
 }
 
-// A registration that has a step still to go leaves a pending row, which nothing
-// else uses, and the row becomes active on the last step and not before.
+// TestARegistrationActivatesTheRowOnTheLastStepOnly checks that a registration leaves a pending row that becomes active only on the last step.
 func TestARegistrationActivatesTheRowOnTheLastStepOnly(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -64,7 +61,6 @@ func TestARegistrationActivatesTheRowOnTheLastStepOnly(t *testing.T) {
 			t.Errorf("the private bytes %q carry neither the identifier of the pending row nor the factor's own", private)
 		}
 
-		// The next step is called with the factor's own bytes, and with the row.
 		r.clock.advance(3 * time.Minute)
 		next := flow(acct)
 		next.Private = step.PrivateOf(first)
@@ -112,6 +108,7 @@ func TestARegistrationActivatesTheRowOnTheLastStepOnly(t *testing.T) {
 	})
 }
 
+// TestARowThatIsPendingCannotBeUsedToVerify checks that a pending row cannot be used to verify.
 func TestARowThatIsPendingCannotBeUsedToVerify(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -148,6 +145,7 @@ func TestARowThatIsPendingCannotBeUsedToVerify(t *testing.T) {
 	})
 }
 
+// TestEnrollRefusesPastTheLimitPerKindAndCountsOnlyWhatIsNotDisabled checks that Enroll refuses past the limit per kind and counts only what is not disabled.
 func TestEnrollRefusesPastTheLimitPerKindAndCountsOnlyWhatIsNotDisabled(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP, authn.FactorSMS}, func(t *testing.T, r *rig) {
 		r.store.set(maxPerKindPath, 2)
@@ -161,8 +159,6 @@ func TestEnrollRefusesPastTheLimitPerKindAndCountsOnlyWhatIsNotDisabled(t *testi
 		r.insertRow("other", authn.FactorTOTP, authn.FactorActive, r.clock.read(), nil)
 		r.insertRow(acct, authn.FactorSMS, authn.FactorActive, r.clock.read(), nil)
 
-		// One active and one pending are two; the third is refused, and disabled rows
-		// and other accounts' rows were no part of the count.
 		r.activeFactor(acct, authn.FactorTOTP, time.Hour)
 		if _, err := r.p.Enroll(ctx, flow(acct), authn.FactorTOTP, authn.StepInput{}); err != nil {
 			t.Fatalf("the second factor of the kind: %v", err)
@@ -187,7 +183,6 @@ func TestEnrollRefusesPastTheLimitPerKindAndCountsOnlyWhatIsNotDisabled(t *testi
 		if len(denied) != 1 {
 			t.Errorf("%d denied audit rows, want 1", len(denied))
 		}
-		// The limit is per kind: the same account registers the other kind.
 		r.store.set(maxPerKindPath, 2)
 		if _, err := r.p.Enroll(ctx, flow(acct), authn.FactorSMS, authn.StepInput{}); err != nil {
 			t.Errorf("a factor of another kind: Enroll = %v, want it allowed under its own count", err)
@@ -195,6 +190,7 @@ func TestEnrollRefusesPastTheLimitPerKindAndCountsOnlyWhatIsNotDisabled(t *testi
 	})
 }
 
+// TestEnrollRefusesAKindNobodyDelivers checks that Enroll refuses a kind nobody delivers.
 func TestEnrollRefusesAKindNobodyDelivers(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		for _, kind := range []authn.FactorKind{authn.FactorWebAuthn, "carrier-pigeon", ""} {
@@ -212,8 +208,7 @@ func TestEnrollRefusesAKindNobodyDelivers(t *testing.T) {
 	})
 }
 
-// A first step that does not move the registration on leaves no state for a later
-// step to find, so the pending row and what the factor wrote for it go at once.
+// TestAFirstStepThatDoesNotMoveOnLeavesNoPendingRow checks that a first step that does not move on leaves no pending row or factor data.
 func TestAFirstStepThatDoesNotMoveOnLeavesNoPendingRow(t *testing.T) {
 	cases := map[string]func(context.Context, authn.FlowState, authn.StepInput) (authn.Step, error){
 		"refused": func(context.Context, authn.FlowState, authn.StepInput) (authn.Step, error) {
@@ -261,6 +256,7 @@ func TestAFirstStepThatDoesNotMoveOnLeavesNoPendingRow(t *testing.T) {
 	})
 }
 
+// TestALaterStepFindsOnlyAPendingRowOfTheSameAccount checks that a later step finds only a pending row of the same account.
 func TestALaterStepFindsOnlyAPendingRowOfTheSameAccount(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP, authn.FactorSMS}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -306,8 +302,6 @@ func TestALaterStepFindsOnlyAPendingRowOfTheSameAccount(t *testing.T) {
 			t.Errorf("the row is %v after refused continuations, want it still pending", status)
 		}
 
-		// A row that is already active is not continued: no later step makes an
-		// active row active again, or brings back a removed one.
 		answerIs(t, continued(acct, authn.FactorTOTP, private), step.KindEnrolled)
 		answerIs(t, continued(acct, authn.FactorTOTP, private), step.KindRefused)
 		if n := len(r.bus.ofType(authn.EventFactorChanged)); n != 1 {
@@ -316,8 +310,7 @@ func TestALaterStepFindsOnlyAPendingRowOfTheSameAccount(t *testing.T) {
 	})
 }
 
-// A registration whose row was swept, reset or removed between its steps does not
-// resurrect the row.
+// TestAnActivationThatLostTheRaceIsRefused checks that a registration whose row was swept, reset or removed is not resurrected.
 func TestAnActivationThatLostTheRaceIsRefused(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -358,9 +351,7 @@ func TestAnActivationThatLostTheRaceIsRefused(t *testing.T) {
 	})
 }
 
-// The confirmation step is a guess at a code: it is held to the factor's back-off
-// and a refusal is counted against the factor, where the first step, which guesses
-// nothing, is neither.
+// TestTheConfirmationStepIsHeldToTheFactorsBackOff checks that the confirmation step is held to the factor's back-off and a refusal is counted.
 func TestTheConfirmationStepIsHeldToTheFactorsBackOff(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -404,7 +395,7 @@ func TestTheConfirmationStepIsHeldToTheFactorsBackOff(t *testing.T) {
 	})
 }
 
-// Verify is the one place a failure is counted and a pass clears the count.
+// TestVerifyThrottlesBeforeAskingAndCountsTheOutcome checks that Verify checks the back-off first, counts a failure and clears the count on a pass.
 func TestVerifyThrottlesBeforeAskingAndCountsTheOutcome(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -418,7 +409,6 @@ func TestVerifyThrottlesBeforeAskingAndCountsTheOutcome(t *testing.T) {
 			return got
 		}
 
-		// A pass: checked, asked, cleared, the use recorded.
 		answerIs(t, verify(), step.KindPassed)
 		if want := []string{"check:factor:" + id, "succeed:factor:" + id}; fmt.Sprint(r.throttle.callList()) != fmt.Sprint(want) {
 			t.Errorf("the back-off calls for a pass are %v, want %v", r.throttle.callList(), want)
@@ -430,7 +420,6 @@ func TestVerifyThrottlesBeforeAskingAndCountsTheOutcome(t *testing.T) {
 			t.Errorf("the counter of passes is %d, want 1", got)
 		}
 
-		// A refusal is counted against the factor and not cleared.
 		totp.verifyFn = func(context.Context, authn.FlowState, authn.FactorRecord, authn.StepInput) (authn.Step, error) {
 			return authn.StepRefused(errors.New("wrong code")), nil
 		}
@@ -448,10 +437,7 @@ func TestVerifyThrottlesBeforeAskingAndCountsTheOutcome(t *testing.T) {
 	})
 }
 
-// TestAFlaggedFactorIsDisabledAndAnnounced holds the clone chain: a verification
-// whose factor reports a flagged credential is refused, the factor's row is set
-// disabled so it no longer verifies, and the change is published as
-// authn.factor.changed with flagged.
+// TestAFlaggedFactorIsDisabledAndAnnounced checks that a flagged credential disables the factor row and publishes authn.factor.changed with flagged.
 func TestAFlaggedFactorIsDisabledAndAnnounced(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorWebAuthn}, func(t *testing.T, r *rig) {
 		wa := r.p.factors[authn.FactorWebAuthn].(*fakeFactor)
@@ -479,6 +465,7 @@ func TestAFlaggedFactorIsDisabledAndAnnounced(t *testing.T) {
 	})
 }
 
+// TestAFactorInBackOffIsNotAskedAndNothingIsCounted checks that a factor in back-off is not asked and nothing is counted.
 func TestAFactorInBackOffIsNotAskedAndNothingIsCounted(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -514,9 +501,7 @@ func TestAFactorInBackOffIsNotAskedAndNothingIsCounted(t *testing.T) {
 	})
 }
 
-// A back-off that cannot be read must not let an attempt through: the call ends
-// as an outage of the factor and the factor is not asked, because a state that
-// could not be read is not the same as no back-off.
+// TestAFactorWhoseBackOffCannotBeReadIsNotAsked checks that an unreadable back-off ends the call as an outage without asking the factor.
 func TestAFactorWhoseBackOffCannotBeReadIsNotAsked(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -549,9 +534,7 @@ func TestAFactorWhoseBackOffCannotBeReadIsNotAsked(t *testing.T) {
 	})
 }
 
-// A register that cannot be read or written is an outage, not a refusal: a check
-// or a registration ends with the factor unavailable and the factor is not asked,
-// so a client is never told its code was wrong when nothing was checked.
+// TestAnUnreadableRegisterAnswersAnOutageAndAsksNoFactor checks that an unreadable register is an outage and the factor is not asked.
 func TestAnUnreadableRegisterAnswersAnOutageAndAsksNoFactor(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -569,7 +552,6 @@ func TestAnUnreadableRegisterAnswersAnOutageAndAsksNoFactor(t *testing.T) {
 			t.Error("the factor was asked although the register could not be read")
 		}
 
-		// A registration whose pending row cannot be written is the same outage.
 		enr, err := r.p.Enroll(context.Background(), flow(acct), authn.FactorTOTP, authn.StepInput{})
 		if err != nil {
 			t.Fatal(err)
@@ -581,6 +563,7 @@ func TestAnUnreadableRegisterAnswersAnOutageAndAsksNoFactor(t *testing.T) {
 	})
 }
 
+// TestTheFailureThatStartsABackOffIsAnnouncedOnceAndCounted checks that the failure that starts a back-off is announced once and counted.
 func TestTheFailureThatStartsABackOffIsAnnouncedOnceAndCounted(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -612,7 +595,6 @@ func TestTheFailureThatStartsABackOffIsAnnouncedOnceAndCounted(t *testing.T) {
 		if len(lines) != 1 || strings.Contains(lines[0], "level=ERROR") {
 			t.Errorf("the log lines for the back-off are %q, want one that is not an Error", lines)
 		}
-		// The fourth attempt is in back-off and is not counted again.
 		got, _ := r.p.Verify(context.Background(), flow(acct), id, authn.StepInput{})
 		answerIs(t, got, step.KindThrottled)
 		if r.throttle.count("fail") != 3 {
@@ -621,6 +603,7 @@ func TestTheFailureThatStartsABackOffIsAnnouncedOnceAndCounted(t *testing.T) {
 	})
 }
 
+// TestAPassClearsTheFailuresSoTheNextRunStartsOver checks that a pass clears the failures so the next run starts over.
 func TestAPassClearsTheFailuresSoTheNextRunStartsOver(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -652,6 +635,7 @@ func TestAPassClearsTheFailuresSoTheNextRunStartsOver(t *testing.T) {
 	})
 }
 
+// TestAReplayIsCountedAsAFailureAndReportedAsAReplay checks that a replay is counted as a failure and reported as a replay.
 func TestAReplayIsCountedAsAFailureAndReportedAsAReplay(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -674,6 +658,7 @@ func TestAReplayIsCountedAsAFailureAndReportedAsAReplay(t *testing.T) {
 	})
 }
 
+// TestOnlyAnActiveFactorOfTheAccountIsAskedToVerify checks that only an active factor of the account is asked to verify.
 func TestOnlyAnActiveFactorOfTheAccountIsAskedToVerify(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -705,12 +690,12 @@ func TestOnlyAnActiveFactorOfTheAccountIsAskedToVerify(t *testing.T) {
 		if totp.count("verify") != 0 || len(r.throttle.callList()) != 0 {
 			t.Errorf("a factor that is not the account's active one reached the factor or the back-off: %v %v", totp.callList(), r.throttle.callList())
 		}
-		// And the one that is, for contrast.
 		got, _ := r.p.Verify(context.Background(), flow(acct), active, authn.StepInput{})
 		answerIs(t, got, step.KindPassed)
 	})
 }
 
+// TestAKindWithNoImplementationIsRefusedAndNeverCounted checks that a kind with no implementation is refused and never counted.
 func TestAKindWithNoImplementationIsRefusedAndNeverCounted(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		id := r.activeFactor(acct, authn.FactorWebAuthn, time.Hour)
@@ -732,6 +717,7 @@ func TestAKindWithNoImplementationIsRefusedAndNeverCounted(t *testing.T) {
 	})
 }
 
+// TestAnAnswerAFactorMayNotGiveIsAFaultOfTheFactor checks that an answer a factor may not give is a fault of the factor.
 func TestAnAnswerAFactorMayNotGiveIsAFaultOfTheFactor(t *testing.T) {
 	good := authn.Pass{Methods: methodsOf(authn.FactorTOTP)}
 	answers := map[string]authn.Step{
@@ -765,7 +751,6 @@ func TestAnAnswerAFactorMayNotGiveIsAFaultOfTheFactor(t *testing.T) {
 		if lines := r.logs.lines("level=ERROR", "may not give"); len(lines) != len(answers) {
 			t.Errorf("%d Error lines for %d defects", len(lines), len(answers))
 		}
-		// A factor that errors is the same outage.
 		totp.verifyFn = func(context.Context, authn.FlowState, authn.FactorRecord, authn.StepInput) (authn.Step, error) {
 			return authn.StepPassed(good), errors.New("crashed")
 		}
@@ -776,6 +761,7 @@ func TestAnAnswerAFactorMayNotGiveIsAFaultOfTheFactor(t *testing.T) {
 	})
 }
 
+// TestAnOutageOfTheFactorIsNotCountedAsAGuess checks that an outage of the factor is not counted as a guess.
 func TestAnOutageOfTheFactorIsNotCountedAsAGuess(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -794,13 +780,13 @@ func TestAnOutageOfTheFactorIsNotCountedAsAGuess(t *testing.T) {
 		if r.counter("authn.mfa.verifications", attribute.String("outcome", "unavailable")) != 1 {
 			t.Error("the outage was not counted as unavailable")
 		}
-		// It is not a refusal: the two are told apart by the engine.
 		if step.KindOf(got) == step.KindRefused {
 			t.Error("an outage answered as a refusal")
 		}
 	})
 }
 
+// TestChallengePassesTheFactorsOwnPromptAndCountsNothing checks that Challenge passes the factor's own prompt and counts nothing.
 func TestChallengePassesTheFactorsOwnPromptAndCountsNothing(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorSMS}, func(t *testing.T, r *rig) {
 		sms := r.p.factors[authn.FactorSMS].(*fakeFactor)
@@ -838,8 +824,7 @@ func TestChallengePassesTheFactorsOwnPromptAndCountsNothing(t *testing.T) {
 	})
 }
 
-// What the user typed, and the codes and seeds the factors handle, are in no log
-// line the module writes.
+// TestNoSecretReachesALogLine checks that no code, seed or submitted value reaches a log line.
 func TestNoSecretReachesALogLine(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -869,10 +854,7 @@ func TestNoSecretReachesALogLine(t *testing.T) {
 	})
 }
 
-// A max-per-kind that cannot be read reads as its declared default of five: a
-// first registration goes through. Reading the type's zero value would set the
-// limit to zero and refuse every registration, since a count of zero is at a
-// limit of zero.
+// TestEnrollingUnderAnUnreadableMaxPerKindUsesTheDeclaredDefault checks that an unreadable max-per-kind reads as its declared default of five.
 func TestEnrollingUnderAnUnreadableMaxPerKindUsesTheDeclaredDefault(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		r.store.fail(maxPerKindPath, errors.New("settings: not loaded"))
@@ -882,9 +864,7 @@ func TestEnrollingUnderAnUnreadableMaxPerKindUsesTheDeclaredDefault(t *testing.T
 	})
 }
 
-// A max-per-kind outside its domain reads as the declared default of five. A
-// stored zero would refuse the first registration instead of admitting the fifth;
-// a stored twenty-one would admit a sixth.
+// TestAnOutOfDomainMaxPerKindUsesTheDeclaredDefault checks that a max-per-kind outside its domain reads as the declared default of five.
 func TestAnOutOfDomainMaxPerKindUsesTheDeclaredDefault(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorWebAuthn}, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -904,11 +884,7 @@ func TestAnOutOfDomainMaxPerKindUsesTheDeclaredDefault(t *testing.T) {
 	})
 }
 
-// An empty identifier is refused before the register is read: a factor that is
-// not named, or one of no account, is not the account's, so the answer is the
-// refusal of a factor that is not enrolled and no read is made. The register is
-// dropped so that a read would answer an outage, which is what tells the refusal
-// apart from a failed read.
+// TestAnEmptyIdentifierIsRefusedWithoutReadingTheRegister checks that an empty identifier is refused before the register is read.
 func TestAnEmptyIdentifierIsRefusedWithoutReadingTheRegister(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		if err := r.h.Migrator().DropTable(factorTable); err != nil {
@@ -940,9 +916,7 @@ func TestAnEmptyIdentifierIsRefusedWithoutReadingTheRegister(t *testing.T) {
 	})
 }
 
-// A registration stores the label its first step carries, trimmed, and stores
-// an empty one when the step carries none: the server generates no name. A
-// label submitted on a later step does not overwrite it.
+// TestARegistrationStoresTheSubmittedLabelAndGeneratesNothing checks that the first step's label is stored trimmed, empty when absent, and not overwritten later.
 func TestARegistrationStoresTheSubmittedLabelAndGeneratesNothing(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorWebAuthn}, func(t *testing.T, r *rig) {
 		passkey := r.p.factors[authn.FactorWebAuthn].(*fakeFactor)
@@ -965,8 +939,6 @@ func TestARegistrationStoresTheSubmittedLabelAndGeneratesNothing(t *testing.T) {
 			t.Fatalf("the pending row is %+v, want the submitted label trimmed", rows)
 		}
 
-		// A label on the confirmation step changes nothing: the name is the one
-		// the registration was started with.
 		next := flow(acct)
 		next.Private = step.PrivateOf(first)
 		last, err := r.p.Enroll(ctx, next, authn.FactorWebAuthn,
@@ -979,7 +951,6 @@ func TestARegistrationStoresTheSubmittedLabelAndGeneratesNothing(t *testing.T) {
 			t.Errorf("the active row's label is %q, want the one the registration started with", got.Label)
 		}
 
-		// A registration with no label gets no generated name.
 		first, err = r.p.Enroll(ctx, flow("another-account"), authn.FactorWebAuthn, authn.StepInput{})
 		if err != nil {
 			t.Fatalf("Enroll without a label: %v", err)
@@ -992,8 +963,7 @@ func TestARegistrationStoresTheSubmittedLabelAndGeneratesNothing(t *testing.T) {
 	})
 }
 
-// A label outside its domain is refused before any row is written: a value the
-// register would not admit never becomes a pending factor.
+// TestARegistrationRefusesALabelOutsideItsDomain checks that a label outside its domain is refused before any row is written.
 func TestARegistrationRefusesALabelOutsideItsDomain(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -1022,11 +992,6 @@ func TestARegistrationRefusesALabelOutsideItsDomain(t *testing.T) {
 	}
 }
 
-// TestASecondTOTPRegistrationReplacesTheActiveOne holds the one-entry rule: an
-// account keeps a single active authenticator entry, a new registration lives
-// pending beside it, and the activation retires the old row in the same step.
-// The retired row is disabled, not deleted, so the audit trail keeps it, and it
-// can no longer verify.
 // activeIDs are the identifiers of the account's active rows of one kind.
 func activeIDs(rows []authn.FactorRecord, kind authn.FactorKind) []string {
 	var ids []string
@@ -1038,6 +1003,7 @@ func activeIDs(rows []authn.FactorRecord, kind authn.FactorKind) []string {
 	return ids
 }
 
+// TestASecondTOTPRegistrationReplacesTheActiveOne checks that a new authenticator registration stands beside the active one and retires it on activation.
 func TestASecondTOTPRegistrationReplacesTheActiveOne(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -1065,7 +1031,6 @@ func TestASecondTOTPRegistrationReplacesTheActiveOne(t *testing.T) {
 			t.Fatalf("a second enrollment must stand beside the active one: %v", err)
 		}
 		answerIs(t, second, step.KindPrompt)
-		// The old entry still verifies while the new one is being proved.
 		if got := activeIDs(r.rows(acct), authn.FactorTOTP); len(got) != 1 || got[0] != old {
 			t.Fatalf("the active entry while the new one is pending is %v, want the old row %s", got, old)
 		}
@@ -1082,7 +1047,6 @@ func TestASecondTOTPRegistrationReplacesTheActiveOne(t *testing.T) {
 		if active[0] == old {
 			t.Fatalf("the replacement left the old entry active")
 		}
-		// The retired row is still there, disabled, and no longer verifies.
 		if found, there := r.status(old); !there || found != authn.FactorDisabled {
 			t.Errorf("the replaced row reads %v (there %v), want disabled", found, there)
 		}
@@ -1096,9 +1060,7 @@ func TestASecondTOTPRegistrationReplacesTheActiveOne(t *testing.T) {
 	})
 }
 
-// TestACancelledTOTPReplacementKeepsTheActiveEntry holds the failure path: a
-// replacement the reader gives up leaves the pending row releaseable and the
-// old entry active, so the account never sits without its second factor.
+// TestACancelledTOTPReplacementKeepsTheActiveEntry checks that a cancelled replacement leaves the old active entry usable.
 func TestACancelledTOTPReplacementKeepsTheActiveEntry(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -1129,9 +1091,7 @@ func TestACancelledTOTPReplacementKeepsTheActiveEntry(t *testing.T) {
 	})
 }
 
-// TestATOTPRegistrationRefusesAName holds that the single authenticator entry
-// takes no name: a label names a factor among several, and this kind cannot have
-// several.
+// TestATOTPRegistrationRefusesAName checks that the single authenticator entry refuses a label.
 func TestATOTPRegistrationRefusesAName(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		got, err := r.p.Enroll(context.Background(), flow(acct), authn.FactorTOTP,

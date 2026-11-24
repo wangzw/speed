@@ -7,9 +7,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestResolveDefaultsTheIssuerToThePublicHost holds the declared default: an
-// empty issuer is the host name of the gateway's public address, without a
-// scheme, a port or a path.
+// TestResolveDefaultsTheIssuerToThePublicHost checks that an empty issuer defaults to the public address's host.
 func TestResolveDefaultsTheIssuerToThePublicHost(t *testing.T) {
 	got, err := moduleConfig{}.resolve(gateMount{PublicURL: "https://id.example.com:8443/api/v1/auth"})
 	if err != nil {
@@ -20,8 +18,7 @@ func TestResolveDefaultsTheIssuerToThePublicHost(t *testing.T) {
 	}
 }
 
-// TestResolveKeepsAnExplicitIssuer holds that a configured issuer is used as it
-// is, trimmed, over the public address.
+// TestResolveKeepsAnExplicitIssuer checks that a configured issuer is kept, trimmed.
 func TestResolveKeepsAnExplicitIssuer(t *testing.T) {
 	got, err := moduleConfig{Issuer: "  Acme Corp  "}.resolve(gateMount{PublicURL: "https://id.example.com"})
 	if err != nil {
@@ -32,16 +29,14 @@ func TestResolveKeepsAnExplicitIssuer(t *testing.T) {
 	}
 }
 
-// TestResolveRefusesWhenThereIsNoIssuerAndNoPublicHost holds that an assembly
-// with neither is a configuration the module cannot run on, because the otpauth
-// address has no issuer to name.
+// TestResolveRefusesWhenThereIsNoIssuerAndNoPublicHost checks that neither an issuer nor a public host is refused.
 func TestResolveRefusesWhenThereIsNoIssuerAndNoPublicHost(t *testing.T) {
 	if _, err := (moduleConfig{}).resolve(gateMount{}); !errors.Is(err, authn.ErrInvalidConfig) {
 		t.Errorf("resolve returned %v, want ErrInvalidConfig", err)
 	}
 }
 
-// TestHostOfIsTheHostAlone holds the host extraction the default goes through.
+// TestHostOfIsTheHostAlone checks that hostOf returns the host alone.
 func TestHostOfIsTheHostAlone(t *testing.T) {
 	cases := map[string]string{
 		"https://id.example.com":                  "id.example.com",

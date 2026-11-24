@@ -8,10 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/step"
 )
 
-// TestAbandonReleasesOnlyTheRowItsFlowWrote holds that abandoning a registration
-// flow removes the pending row that flow wrote and nothing else: another
-// registration's pending row for the same account stays, and the factor's own
-// data is removed for the one row that went.
+// TestAbandonReleasesOnlyTheRowItsFlowWrote checks that abandoning a flow removes only the pending row that flow wrote, with its factor data.
 func TestAbandonReleasesOnlyTheRowItsFlowWrote(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorWebAuthn}, func(t *testing.T, r *rig) {
 		passkey := r.p.factors[authn.FactorWebAuthn].(*fakeFactor)
@@ -56,10 +53,7 @@ func TestAbandonReleasesOnlyTheRowItsFlowWrote(t *testing.T) {
 	})
 }
 
-// TestAbandonWithoutAPendingRowChangesNothing holds that a flow whose private
-// bytes carry no identifier, an identifier of a row that is not there, or one
-// of a row that is no longer pending is a no-op: the register and the factor's
-// data stay as they were.
+// TestAbandonWithoutAPendingRowChangesNothing checks that abandoning a flow with no pending row of its own changes nothing.
 func TestAbandonWithoutAPendingRowChangesNothing(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorWebAuthn}, func(t *testing.T, r *rig) {
 		passkey := r.p.factors[authn.FactorWebAuthn].(*fakeFactor)
@@ -102,7 +96,6 @@ func TestAbandonWithoutAPendingRowChangesNothing(t *testing.T) {
 	})
 }
 
-// privateFlow is a flow of the account whose private bytes are the given ones.
 func privateFlow(account authn.AccountID, private []byte) authn.FlowState {
 	f := flow(account)
 	f.Private = private

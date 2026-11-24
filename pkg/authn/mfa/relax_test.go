@@ -11,9 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// relaxRig is the module with a settings store, an event bus and an audit seam
-// wired the way Init wires them, and no database: the relaxation monitor reads
-// none of the module's own tables.
 type relaxRig struct {
 	p     *product
 	bus   *recordingBus
@@ -35,14 +32,10 @@ func newRelaxRig(t *testing.T) *relaxRig {
 	return r
 }
 
-// deliverChange hands a settings.changed event to the module's subscription, as a
-// replica that received the change would.
 func (r *relaxRig) deliverChange(change settings.Change) {
 	_ = r.bus.deliver(context.Background(), event.Event{Type: settings.ChangedEventType, Payload: change})
 }
 
-// relaxWarns returns the Warn lines of the relaxation monitor that carry every
-// one of the substrings.
 func (r *relaxRig) relaxWarns(substrings ...string) []string {
 	var out []string
 	for _, line := range strings.Split(r.logs.String(), "\n") {
@@ -60,10 +53,7 @@ func (r *relaxRig) relaxWarns(substrings ...string) []string {
 	return out
 }
 
-// TestARelaxingChangeWritesAWarnAndAnAuditRow holds the visibility: for every
-// watched setting, a change that moves it in its relaxing direction writes one
-// Warn naming the key and the direction and one best-effort audit row, and
-// nothing else.
+// TestARelaxingChangeWritesAWarnAndAnAuditRow checks that a relaxing change writes one Warn and one best-effort audit row.
 func TestARelaxingChangeWritesAWarnAndAnAuditRow(t *testing.T) {
 	cases := []struct{ key, old, new, direction string }{
 		{globalRequiredPath, "true", "false", dirToFalse},
@@ -92,19 +82,13 @@ func TestARelaxingChangeWritesAWarnAndAnAuditRow(t *testing.T) {
 	}
 }
 
-// TestATighteningOrUnwatchedChangeWritesNothing holds the other direction and
-// the filter: a move that checks more is not a relaxation, and a setting this
-// module does not watch is not reported.
+// TestATighteningOrUnwatchedChangeWritesNothing checks that a tightening change and an unwatched setting write nothing.
 func TestATighteningOrUnwatchedChangeWritesNothing(t *testing.T) {
 	r := newRelaxRig(t)
-	// Turning the switch on, narrowing the window and lengthening the age all
-	// check more, not less.
 	r.deliverChange(settings.Change{Key: globalRequiredPath, Old: "false", New: "true"})
 	r.deliverChange(settings.Change{Key: recentWindowPath, Old: "20m0s", New: "10m0s"})
 	r.deliverChange(settings.Change{Key: sensitiveMinAgePath, Old: "12h0m0s", New: "24h0m0s"})
-	// A change that keeps a value the same relaxes nothing.
 	r.deliverChange(settings.Change{Key: recentWindowPath, Old: "10m0s", New: "10m0s"})
-	// A setting this module does not watch.
 	r.deliverChange(settings.Change{Key: maxPerKindPath, Old: "1", New: "20"})
 	if got := r.relaxWarns(); len(got) != 0 {
 		t.Errorf("a tightening or unwatched change was reported:\n%s", r.logs.String())
@@ -114,9 +98,7 @@ func TestATighteningOrUnwatchedChangeWritesNothing(t *testing.T) {
 	}
 }
 
-// TestASensitiveChangeIsIgnoredEntirely holds the Sensitive filter against a
-// change whose values would relax: a withheld change is dropped before the
-// relaxation test, so it writes no Warn and no audit row.
+// TestASensitiveChangeIsIgnoredEntirely checks that a withheld sensitive change writes no Warn and no audit row.
 func TestASensitiveChangeIsIgnoredEntirely(t *testing.T) {
 	r := newRelaxRig(t)
 	r.deliverChange(settings.Change{Key: globalRequiredPath, Old: "true", New: "false", Sensitive: true})
@@ -129,10 +111,7 @@ func TestASensitiveChangeIsIgnoredEntirely(t *testing.T) {
 	}
 }
 
-// TestADeletionThatFallsBackRelaxes holds the comparison over the declared
-// default: a watched setting whose row is deleted reads as its declared default,
-// so removing an override that checked more than the default is itself a
-// relaxation.
+// TestADeletionThatFallsBackRelaxes checks that deleting an override that checked more than the default counts as a relaxation.
 func TestADeletionThatFallsBackRelaxes(t *testing.T) {
 	r := newRelaxRig(t)
 	r.deliverChange(settings.Change{Key: globalRequiredPath, Old: "true", New: "", Deleted: true})
@@ -143,10 +122,7 @@ func TestADeletionThatFallsBackRelaxes(t *testing.T) {
 	}
 }
 
-// TestTheMonitorIsInertWithoutASettingsStore holds the guard: without a settings
-// store there is no setting to watch, so the settings.changed handler is not
-// subscribed and a delivered change leaves no trace, and the handler invoked
-// directly is inert and does not panic.
+// TestTheMonitorIsInertWithoutASettingsStore checks that without a settings store the monitor subscribes to nothing and is inert.
 func TestTheMonitorIsInertWithoutASettingsStore(t *testing.T) {
 	logs := &logBuffer{}
 	p := build(nil, nil, nil, nil, nil)
@@ -171,9 +147,7 @@ func TestTheMonitorIsInertWithoutASettingsStore(t *testing.T) {
 	}
 }
 
-// TestAnAuditWriteFailureStillWarnsAndDoesNotFail holds the best-effort
-// direction: the change is still reported at Warn and the handler carries on
-// rather than failing the event.
+// TestAnAuditWriteFailureStillWarnsAndDoesNotFail checks that an audit write failure still warns and does not fail the handler.
 func TestAnAuditWriteFailureStillWarnsAndDoesNotFail(t *testing.T) {
 	r := newRelaxRig(t)
 	r.audit.err = errors.New("the audit is down")

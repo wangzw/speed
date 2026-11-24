@@ -1,21 +1,4 @@
-// Package mfatest writes and reads the multi-factor register for a test.
-//
-// The impersonation journey needs an operator whose non-SMS factor has been
-// active past authn.mfa.sensitive-min-age, whose floor is one hour. A factor
-// enrolled through the product is activated now, so a test that needs a seasoned
-// one writes the row with a backdated activation instant. This package is that
-// write, and the reads a test asserts it with, exposed without a build tag and
-// without adding anything to the multi-factor module's own API.
-//
-// The statements are the module's: the factor rows go through
-// pkg/authn/mfa/internal/factorstore and the TOTP seed through
-// pkg/authn/mfa/internal/totpseed, so a renamed column or a status the register
-// no longer writes breaks a case here rather than passing silently. The seed is
-// sealed by the same encrypted model an enrollment uses and under the key the
-// database handle was assembled with.
-//
-// Only test code and the end-to-end harness may import this package. Package
-// authn's dependency test fails a production import.
+// Package mfatest writes and reads the multi-factor register for a test, including a factor activated in the past and a sealed TOTP seed.
 package mfatest
 
 import (
@@ -30,17 +13,9 @@ import (
 	"github.com/vislake/speed/pkg/db"
 )
 
-// seedLimit is the per-kind cap a fixture writes under. A test does not
-// exercise the limit, which the multi-factor module enforces on a registration;
-// the value is high enough that a fixture never meets it and the statement still
-// counts what the product counts.
 const seedLimit = 1 << 20
 
-// SeedActiveFactor writes an active factor of kind for account, activated at
-// activatedAt, and answers its identifier. The row is written by the register's
-// own pending insert and activation statement, at the instant the caller
-// chooses, so a factor can be older than an enrollment could make it. A kind's
-// own data, the TOTP seed for instance, is not written here.
+// SeedActiveFactor writes an active factor of kind for account at activatedAt and returns its identifier. It writes no kind-specific data.
 func SeedActiveFactor(ctx context.Context, database db.Database, account authn.AccountID,
 	kind authn.FactorKind, activatedAt time.Time,
 ) (factorID string, err error) {
@@ -59,12 +34,7 @@ func SeedActiveFactor(ctx context.Context, database db.Database, account authn.A
 	return rec.ID, nil
 }
 
-// SeedTOTPFactor writes an active TOTP factor activated at activatedAt, with
-// secret (base32) as its seed, and answers the factor's identifier. The seed is
-// written through the encrypted model, with the factor's fixed parameters, so a
-// code computed from secret verifies through the ordinary login path. A write of
-// the seed that fails takes the factor row back out, so a failed call leaves
-// nothing behind.
+// SeedTOTPFactor writes an active TOTP factor at activatedAt with the given base32 secret and returns its identifier; a failed seed write leaves no factor row.
 func SeedTOTPFactor(ctx context.Context, database db.Database, account authn.AccountID,
 	activatedAt time.Time, secret string,
 ) (factorID string, err error) {
@@ -93,8 +63,7 @@ func SeedTOTPFactor(ctx context.Context, database db.Database, account authn.Acc
 	return factorID, nil
 }
 
-// Factors lists the account's factors, every status, through the register's own
-// read.
+// Factors lists the account's factors of every status.
 func Factors(ctx context.Context, database db.Database, account authn.AccountID) ([]authn.FactorRecord, error) {
 	recs, err := factorstore.New(database.DB()).List(ctx, account, -1)
 	if err != nil {
@@ -103,9 +72,7 @@ func Factors(ctx context.Context, database db.Database, account authn.AccountID)
 	return recs, nil
 }
 
-// Seasoned reports whether the account has a non-SMS active factor older than
-// minAge. It is the register's own seasoned answer, the statement the
-// impersonation gate reads, not a second copy of the query.
+// Seasoned reports whether the account has a non-SMS active factor older than minAge.
 func Seasoned(ctx context.Context, database db.Database, account authn.AccountID, minAge time.Duration) (bool, error) {
 	cutoff := clock.UTC(time.Now().Add(-minAge))
 	seasoned, err := factorstore.New(database.DB()).Seasoned(ctx, account, cutoff)
@@ -115,8 +82,7 @@ func Seasoned(ctx context.Context, database db.Database, account authn.AccountID
 	return seasoned, nil
 }
 
-// TOTPSecret reads back a TOTP factor's seed through the encrypted model, so the
-// serializer opens it. It answers false for a factor with no seed row.
+// TOTPSecret reads a TOTP factor's seed through the encrypted model and reports false when there is none.
 func TOTPSecret(ctx context.Context, database db.Database, factorID string) (secret string, found bool, err error) {
 	record, found, err := totpseed.New(database.DB()).Load(ctx, factorID)
 	if err != nil {

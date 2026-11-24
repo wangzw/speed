@@ -29,7 +29,6 @@ const (
 	problemType  = "urn:speed:authn:"
 )
 
-// routed is a rig with the routes mounted.
 func routed(t *testing.T, kinds ...authn.FactorKind) *rig {
 	t.Helper()
 	var r *rig
@@ -59,7 +58,6 @@ func (r *rig) do(method, path string, headers map[string]string) *httptest.Respo
 	return r.mounter.Do(req)
 }
 
-// doJSON sends a request carrying body as its JSON document.
 func (r *rig) doJSON(method, path string, body any) *httptest.ResponseRecorder {
 	r.t.Helper()
 	raw, err := json.Marshal(body)
@@ -80,8 +78,6 @@ func problemOf(t *testing.T, w *httptest.ResponseRecorder) problemBody {
 	return p
 }
 
-// cookieValue is the value of the named cookie in the response, and whether the
-// response carried it.
 func cookieValue(w *httptest.ResponseRecorder, name string) (string, bool) {
 	for _, c := range w.Result().Cookies() {
 		if c.Name == name {
@@ -91,6 +87,7 @@ func cookieValue(w *httptest.ResponseRecorder, name string) (string, bool) {
 	return "", false
 }
 
+// TestTheRoutesAreTheThreeTheDesignNamesAndAllAreGuarded checks that the routes are the three the design names and all are guarded.
 func TestTheRoutesAreTheThreeTheDesignNamesAndAllAreGuarded(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	got := r.mounter.Registrations()
@@ -110,6 +107,7 @@ func TestTheRoutesAreTheThreeTheDesignNamesAndAllAreGuarded(t *testing.T) {
 	}
 }
 
+// TestTheListIsTheCallersOwnAndCarriesNothingSecret checks that the list is the caller's own and carries nothing secret.
 func TestTheListIsTheCallersOwnAndCarriesNothingSecret(t *testing.T) {
 	r := routed(t, authn.FactorTOTP, authn.FactorSMS)
 	active := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
@@ -164,7 +162,6 @@ func TestTheListIsTheCallersOwnAndCarriesNothingSecret(t *testing.T) {
 			t.Errorf("the list mentions %q", secret)
 		}
 	}
-	// An account with none gets an empty list, which is a list.
 	r.mounter.As(authntest.WithAccount("nobody"))
 	if got := r.do(http.MethodGet, listPath, nil).Body.String(); !strings.Contains(got, `"factors":[]`) {
 		t.Errorf("the list of an account with none is %s, want an empty array", got)
@@ -184,6 +181,7 @@ func multiAt(age time.Duration, extra ...authntest.Option) []authntest.Option {
 	}, extra...)
 }
 
+// TestDeletingAFactorNeedsAFreshMultiFactorAuthenticationVerifiedHere checks that deleting a factor needs a fresh multi-factor authentication verified here.
 func TestDeletingAFactorNeedsAFreshMultiFactorAuthenticationVerifiedHere(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -239,10 +237,7 @@ func TestDeletingAFactorNeedsAFreshMultiFactorAuthenticationVerifiedHere(t *test
 	}
 }
 
-// A last factor is the only removal a fresh first factor may carry: with a
-// second active factor on the account, the same fresh first factor is refused,
-// and an old first factor is refused for the last factor too because the
-// deletion has not been proved freshly.
+// TestDeletingALastFactorNeedsAFreshFirstFactor checks that only the last factor may be removed on a fresh first factor.
 func TestDeletingALastFactorNeedsAFreshFirstFactor(t *testing.T) {
 	t.Run("two factors, a fresh first factor", func(t *testing.T) {
 		r := routed(t, authn.FactorTOTP)
@@ -300,10 +295,7 @@ func TestDeletingALastFactorNeedsAFreshFirstFactor(t *testing.T) {
 	})
 }
 
-// A factor that is not the caller's and one that is not there both read as
-// already gone and answer the same 204 a landed removal gives: a different
-// answer for another account's identifier would say it exists, and repeating a
-// removal is idempotent. The other account's row is untouched.
+// TestDeletingAFactorThatIsNotTheCallersOrIsGoneReadsAsAlreadyDone checks that another account's factor and a missing one both answer the 204 of a landed removal.
 func TestDeletingAFactorThatIsNotTheCallersOrIsGoneReadsAsAlreadyDone(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	theirs := r.activeFactor("someone-else", authn.FactorTOTP, time.Hour)
@@ -320,17 +312,13 @@ func TestDeletingAFactorThatIsNotTheCallersOrIsGoneReadsAsAlreadyDone(t *testing
 	if w := r.do(http.MethodDelete, listPath+"/"+long, nil); w.Code != http.StatusBadRequest {
 		t.Errorf("an identifier longer than any there is = %d, want 400", w.Code)
 	}
-	// The longest identifier the guard admits is not over it: it reaches the
-	// register as an identifier that is not there and answers 204, not 400.
 	boundary := strings.Repeat("x", maxFactorIDLen)
 	if w := r.do(http.MethodDelete, listPath+"/"+boundary, nil); w.Code != http.StatusNoContent {
 		t.Errorf("an identifier of exactly the longest admitted length = %d, want 204 as a factor that is not there", w.Code)
 	}
 }
 
-// Removing an enabled factor of any kind ends the account's other sessions and
-// keeps the one that asked signed in: a credential taken away must not stay
-// trusted on another device.
+// TestRemovingAFactorEndsTheAccountsOtherSessionsAndKeepsTheCurrentOne checks that removing an active factor ends the other sessions and keeps the requesting one.
 func TestRemovingAFactorEndsTheAccountsOtherSessionsAndKeepsTheCurrentOne(t *testing.T) {
 	for _, kind := range []authn.FactorKind{authn.FactorTOTP, authn.FactorSMS} {
 		t.Run(string(kind), func(t *testing.T) {
@@ -340,10 +328,6 @@ func TestRemovingAFactorEndsTheAccountsOtherSessionsAndKeepsTheCurrentOne(t *tes
 			r.sessions.add(sessionUUID, acct)
 			r.sessions.add(otherSession, acct)
 			r.sessions.add("another-accounts-session", "someone-else")
-			// The revocation runs after the removal: at the instant the session
-			// store is called the factor row is already gone. That is what tells
-			// this orchestration apart from a capability that revokes before it
-			// deletes the row.
 			var rowThereWhenRevoking bool
 			r.sessions.onRevoke = func() {
 				_, rowThereWhenRevoking = r.status(id)
@@ -373,10 +357,7 @@ func TestRemovingAFactorEndsTheAccountsOtherSessionsAndKeepsTheCurrentOne(t *tes
 	}
 }
 
-// Removing an enabled factor is a rotation point: the device that made the
-// request stays signed in on a new token, and the token it held before no longer
-// authenticates. The session is rotated, not revoked, and the new token reaches
-// the client as the response's session cookie.
+// TestRemovingAnActiveFactorRotatesTheRequestingSessionsToken checks that removing an active factor rotates the requesting session and returns the new cookie.
 func TestRemovingAnActiveFactorRotatesTheRequestingSessionsToken(t *testing.T) {
 	for _, kind := range []authn.FactorKind{authn.FactorTOTP, authn.FactorSMS} {
 		t.Run(string(kind), func(t *testing.T) {
@@ -416,8 +397,7 @@ func TestRemovingAnActiveFactorRotatesTheRequestingSessionsToken(t *testing.T) {
 	}
 }
 
-// A factor that is not active never added to the account's strength, so removing
-// one ends no session and rotates none.
+// TestDeletingAFactorThatIsNotActiveEndsNoSession checks that removing a pending or disabled factor ends and rotates no session.
 func TestDeletingAFactorThatIsNotActiveEndsNoSession(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	r.mounter.As(append(multiAt(time.Minute), authntest.WithSession(sessionUUID))...)
@@ -449,8 +429,7 @@ func TestDeletingAFactorThatIsNotActiveEndsNoSession(t *testing.T) {
 	}
 }
 
-// The refusal is decided before the sessions are touched: an account that cannot
-// be read leaves the factor and every session where they were.
+// TestADeletionRefusedForAnUnreadableAccountEndsNoSession checks that a deletion refused for an unreadable account touches no session.
 func TestADeletionRefusedForAnUnreadableAccountEndsNoSession(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
@@ -476,8 +455,7 @@ func TestADeletionRefusedForAnUnreadableAccountEndsNoSession(t *testing.T) {
 	}
 }
 
-// A removal that fails in the factor did not happen, so the sessions stay as they
-// were.
+// TestADeletionThatFailsInTheFactorEndsNoSession checks that a removal failing in the factor leaves every session as it was.
 func TestADeletionThatFailsInTheFactorEndsNoSession(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
@@ -505,11 +483,7 @@ func TestADeletionThatFailsInTheFactorEndsNoSession(t *testing.T) {
 	}
 }
 
-// A session store that fails after the row is gone is reported as an outage: the
-// factor is already removed and the other devices are still signed in. Repeating
-// the request answers 204 because the row already reads as gone, and still ends
-// the other sessions and rotates the requesting one, so the retry finishes the
-// work the first attempt could not.
+// TestADeletionWhoseSessionRevocationFailsReportsItAndARetryFinishes checks that a failed revocation after the removal answers 503 and a retry finishes the work.
 func TestADeletionWhoseSessionRevocationFailsReportsItAndARetryFinishes(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
@@ -565,11 +539,7 @@ func TestADeletionWhoseSessionRevocationFailsReportsItAndARetryFinishes(t *testi
 	}
 }
 
-// A rotation that fails after the row is gone is reported as an outage, like a
-// failed revocation: the factor is already removed and the requesting device
-// still holds its old token, which is valid. Repeating the request answers 204
-// because the row already reads as gone, and still rotates the requesting
-// session, so the retry finishes the work the first attempt could not.
+// TestADeletionWhoseRotationFailsReportsItAndARetryRotates checks that a failed rotation after the removal answers 503 and a retry rotates the session.
 func TestADeletionWhoseRotationFailsReportsItAndARetryRotates(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
@@ -613,9 +583,7 @@ func TestADeletionWhoseRotationFailsReportsItAndARetryRotates(t *testing.T) {
 	}
 }
 
-// With no session store taken in, the route still removes the factor and says
-// in one Warn that the account's sessions stay valid: the capability has no
-// session seam to call, so the removal stands and nothing is revoked.
+// TestDeletingAFactorWithoutASessionModuleRemovesItAndSaysSo checks that with no session store the route removes the factor and warns that sessions stay valid.
 func TestDeletingAFactorWithoutASessionModuleRemovesItAndSaysSo(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	r.p.sessions = nil
@@ -641,6 +609,7 @@ func TestDeletingAFactorWithoutASessionModuleRemovesItAndSaysSo(t *testing.T) {
 	}
 }
 
+// TestDeletingTheLastFactorOfAnAccountThatRequiresOneIsAConflict checks that deleting the last factor of an account that requires one is a conflict.
 func TestDeletingTheLastFactorOfAnAccountThatRequiresOneIsAConflict(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
@@ -665,6 +634,7 @@ func TestDeletingTheLastFactorOfAnAccountThatRequiresOneIsAConflict(t *testing.T
 	}
 }
 
+// TestDeletingIsAnOutageWhenTheFactorCannotCleanUp checks that deleting is an outage when the factor cannot clean up.
 func TestDeletingIsAnOutageWhenTheFactorCannotCleanUp(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
@@ -684,6 +654,7 @@ func TestDeletingIsAnOutageWhenTheFactorCannotCleanUp(t *testing.T) {
 	}
 }
 
+// TestTheCrossOriginCheckGuardsTheDeletion checks that the cross-origin check guards the deletion.
 func TestTheCrossOriginCheckGuardsTheDeletion(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
@@ -705,6 +676,7 @@ func TestTheCrossOriginCheckGuardsTheDeletion(t *testing.T) {
 	}
 }
 
+// TestAnAnonymousRequestIsTurnedAwayAndTheFactorStays checks that an anonymous request is turned away and the factor stays.
 func TestAnAnonymousRequestIsTurnedAwayAndTheFactorStays(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
@@ -717,11 +689,7 @@ func TestAnAnonymousRequestIsTurnedAwayAndTheFactorStays(t *testing.T) {
 	}
 }
 
-// An impersonating identity reaches both factor routes and acts on the
-// effective account: it lists and removes the impersonated account's factors,
-// with the operator's own freshness satisfying the requirement. The handler is
-// exercised without the gateway in front too, so the route's behaviour does not
-// rest on the registration alone.
+// TestAnImpersonatingIdentityRemovesTheEffectiveAccountsFactor checks that an impersonating identity lists and removes the effective account's factors with its own freshness.
 func TestAnImpersonatingIdentityRemovesTheEffectiveAccountsFactor(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
@@ -740,7 +708,6 @@ func TestAnImpersonatingIdentityRemovesTheEffectiveAccountsFactor(t *testing.T) 
 		t.Error("the effective account's factor is still there")
 	}
 
-	// The handler alone, the path a registration made wrongly would expose.
 	id = r.activeFactor(acct, authn.FactorTOTP, time.Hour)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -756,11 +723,7 @@ func TestAnImpersonatingIdentityRemovesTheEffectiveAccountsFactor(t *testing.T) 
 	}
 }
 
-// A request that reaches one of the handlers without the gateway — the path the
-// handler's own refusal exists for — is answered 401 with the capability's
-// challenge, not a bare problem document: RFC 9110 requires a 401 to carry one.
-// The chain is the mounter's own wrapper with no gateway in front of it; the
-// handler writes the header through the fault the entry point writes.
+// TestTheHandlersOwn401CarriesTheCapabilityChallenge checks that a handler reached without the gateway answers 401 with the capability's challenge.
 func TestTheHandlersOwn401CarriesTheCapabilityChallenge(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	cases := []struct {
@@ -785,8 +748,6 @@ func TestTheHandlersOwn401CarriesTheCapabilityChallenge(t *testing.T) {
 			w := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(w)
 			c.Request = httptest.NewRequest(tc.method, tc.path, nil)
-			// The cross-origin check the mounter applies to an unsafe method is
-			// not what this case is about; a same-origin request passes it.
 			c.Request.Header.Set("Sec-Fetch-Site", "same-origin")
 			c.Params = tc.params
 			mount.Wrap(r.mounter.CSRF(), r.mounter.Endpoint(), tc.handler)(c)
@@ -805,6 +766,7 @@ func TestTheHandlersOwn401CarriesTheCapabilityChallenge(t *testing.T) {
 	}
 }
 
+// TestTheListIsAnOutageWhenTheRegisterCannotBeRead checks that the list is an outage when the register cannot be read.
 func TestTheListIsAnOutageWhenTheRegisterCannotBeRead(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	r.mounter.As(authntest.WithAccount(acct))
@@ -820,10 +782,7 @@ func TestTheListIsAnOutageWhenTheRegisterCannotBeRead(t *testing.T) {
 	}
 }
 
-// A recent-window that cannot be read reads as its declared default of ten
-// minutes: a deletion with an authentication two minutes old goes through.
-// Reading the type's zero value would demand an authentication made this instant
-// and refuse a fresh one.
+// TestDeletingUnderAnUnreadableRecentWindowUsesTheDeclaredDefault checks that an unreadable recent-window reads as its declared default of ten minutes.
 func TestDeletingUnderAnUnreadableRecentWindowUsesTheDeclaredDefault(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
@@ -838,9 +797,7 @@ func TestDeletingUnderAnUnreadableRecentWindowUsesTheDeclaredDefault(t *testing.
 	}
 }
 
-// A recent-window below its domain's minimum reads as the declared default of ten
-// minutes: a deletion with an authentication two minutes old goes through.
-// Honoring a stored thirty seconds instead would refuse it.
+// TestAnOutOfDomainRecentWindowUsesTheDeclaredDefault checks that a recent-window outside its domain reads as the declared default of ten minutes.
 func TestAnOutOfDomainRecentWindowUsesTheDeclaredDefault(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
@@ -855,8 +812,6 @@ func TestAnOutOfDomainRecentWindowUsesTheDeclaredDefault(t *testing.T) {
 	}
 }
 
-// recordOfID reads one factor row by identifier from the register, failing the
-// case when it is not there.
 func (r *rig) recordOfID(id string) authn.FactorRecord {
 	r.t.Helper()
 	for _, rec := range r.rows(acct) {
@@ -868,11 +823,8 @@ func (r *rig) recordOfID(id string) authn.FactorRecord {
 	return authn.FactorRecord{}
 }
 
-// The rename writes the label and nothing else, trims around it, and answers
-// the updated row. It asks for no step-up: a label is metadata, like a display
-// name.
+// TestTheRenameWritesOnlyTheLabelAndAnswersTheRow checks that a rename trims and writes only the label and answers the row.
 func TestTheRenameWritesOnlyTheLabelAndAnswersTheRow(t *testing.T) {
-	// Only a kind that may be held more than once carries a name.
 	r := routed(t, authn.FactorWebAuthn)
 	id := r.activeFactor(acct, authn.FactorWebAuthn, time.Hour)
 	if err := r.h.Exec("UPDATE authn_factors SET label = 'old', last_used_at = ? WHERE id = ?",
@@ -902,7 +854,6 @@ func TestTheRenameWritesOnlyTheLabelAndAnswersTheRow(t *testing.T) {
 		t.Errorf("the rename changed more than the label: before %+v, after %+v", before, after)
 	}
 
-	// An empty label clears the name; nothing is generated in its place.
 	if w := r.doJSON(http.MethodPatch, listPath+"/"+id, map[string]string{"label": ""}); w.Code != http.StatusOK {
 		t.Fatalf("clearing PATCH = %d (%s), want 200", w.Code, w.Body.String())
 	}
@@ -916,10 +867,7 @@ func TestTheRenameWritesOnlyTheLabelAndAnswersTheRow(t *testing.T) {
 	}
 }
 
-// A factor that is not the caller's is answered as one that is not there, so
-// another account's identifier says nothing about whether it exists. Both read
-// as the one problem code, because telling them apart would say the factor
-// exists.
+// TestRenamingAnotherAccountsFactorReadsAsNotFound checks that another account's factor reads as not found under the same problem code.
 func TestRenamingAnotherAccountsFactorReadsAsNotFound(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	theirs := r.activeFactor("someone-else", authn.FactorTOTP, time.Hour)
@@ -950,10 +898,7 @@ func TestRenamingAnotherAccountsFactorReadsAsNotFound(t *testing.T) {
 	}
 }
 
-// A label outside its domain is refused as a bad request and leaves the stored
-// one as it is.
-// The authenticator entry takes no name: a rename with one is refused before
-// the row is written, while clearing a legacy name stays allowed.
+// TestTheRenameRefusesANameOnTheAuthenticatorEntry checks that a label is refused as a bad request and the authenticator entry takes no name.
 func TestTheRenameRefusesANameOnTheAuthenticatorEntry(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
@@ -974,6 +919,7 @@ func TestTheRenameRefusesANameOnTheAuthenticatorEntry(t *testing.T) {
 	}
 }
 
+// TestTheRenameRefusesALabelOutsideItsDomain checks that the rename refuses a label outside its domain.
 func TestTheRenameRefusesALabelOutsideItsDomain(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -1003,7 +949,6 @@ func TestTheRenameRefusesALabelOutsideItsDomain(t *testing.T) {
 		})
 	}
 
-	// The longest label the domain admits is stored: the boundary is not over.
 	r := routed(t, authn.FactorWebAuthn)
 	id := r.activeFactor(acct, authn.FactorWebAuthn, time.Hour)
 	r.mounter.As(authntest.WithAccount(acct))

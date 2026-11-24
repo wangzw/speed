@@ -17,14 +17,9 @@ import (
 	"github.com/vislake/speed/pkg/db"
 )
 
-// nothing is an action that only lets the drive arrive.
 func nothing(context.Context, *core.Registry, *gorm.DB) error { return nil }
 
-// TestTheDescriptorNamesWhatItDeliversAndRequires holds the descriptor's shape:
-// the factor capability is delivered and not claimed, so several kinds stand
-// side by side, and the database, the multi-factor module and the account reads
-// are required, each delivered exclusively by another module, so the closure
-// does not pull them in.
+// TestTheDescriptorNamesWhatItDeliversAndRequires checks that the descriptor delivers the factor unclaimed and requires the database, the multi-factor module and the account reads.
 func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "authn.mfa.totp" {
@@ -48,8 +43,7 @@ func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 	}
 }
 
-// TestImportingThePackageRegistersTheModuleWithTheProcess holds the init: a host
-// that imports the package finds the module in the process registry.
+// TestImportingThePackageRegistersTheModuleWithTheProcess checks that importing the package registers the module with the process registry.
 func TestImportingThePackageRegistersTheModuleWithTheProcess(t *testing.T) {
 	got, ok := core.ProcessRegistry.Lookup(ModuleName)
 	if !ok {
@@ -60,9 +54,7 @@ func TestImportingThePackageRegistersTheModuleWithTheProcess(t *testing.T) {
 	}
 }
 
-// TestStartRefusesWithoutAUsableEncryptionKey holds the startup check: with the
-// seed table there but no root key, the round trip through the encrypted column
-// fails and the module ends the startup with ErrNoEncryptionKey.
+// TestStartRefusesWithoutAUsableEncryptionKey checks that Start refuses with ErrNoEncryptionKey when the encrypted column cannot round-trip.
 func TestStartRefusesWithoutAUsableEncryptionKey(t *testing.T) {
 	err := assembly{seed: true, register: true}.drive(t, nothing)
 	if !errors.Is(err, authn.ErrNoEncryptionKey) {
@@ -70,9 +62,7 @@ func TestStartRefusesWithoutAUsableEncryptionKey(t *testing.T) {
 	}
 }
 
-// TestStartRefusesWhenTheSeedTableIsMissing holds the other startup check: the
-// register table is there, so the multi-factor module starts, and this module's
-// own probe of its missing seed table ends the startup with ErrNotMigrated.
+// TestStartRefusesWhenTheSeedTableIsMissing checks that Start refuses with ErrNotMigrated when the seed table is missing.
 func TestStartRefusesWhenTheSeedTableIsMissing(t *testing.T) {
 	err := assembly{key: rootKey, register: true}.drive(t, nothing)
 	if !errors.Is(err, authn.ErrNotMigrated) {
@@ -80,11 +70,7 @@ func TestStartRefusesWhenTheSeedTableIsMissing(t *testing.T) {
 	}
 }
 
-// TestARealRegistryRegistersAndVerifiesATOTPFactor holds the factor end to end
-// under the real multi-factor module: the first registration step answers once
-// with the otpauth address and writes a sealed seed, the confirmation step
-// requires a code and activates the factor, and a later code verifies. The
-// address is answered once; nothing reads the seed back out.
+// TestARealRegistryRegistersAndVerifiesATOTPFactor checks that a real registry registers a TOTP factor and verifies a later code.
 func TestARealRegistryRegistersAndVerifiesATOTPFactor(t *testing.T) {
 	var uri string
 	err := assembly{key: rootKey, seed: true, register: true}.drive(t,
@@ -146,12 +132,7 @@ func TestARealRegistryRegistersAndVerifiesATOTPFactor(t *testing.T) {
 	}
 }
 
-// TestEnrollmentGeneratesAConventionalSeed holds the parameters a registration
-// generates with and writes down: the twenty-byte secret, HMAC-SHA1, six digits
-// and a thirty-second step, which is what every authenticator app expects, and
-// the algorithm, digits and period columns that record them. A seed of another
-// length, or a row recording other parameters, would draw a code no app
-// produces.
+// TestEnrollmentGeneratesAConventionalSeed checks that an enrollment generates and records the conventional TOTP parameters.
 func TestEnrollmentGeneratesAConventionalSeed(t *testing.T) {
 	var (
 		bytes     int

@@ -11,9 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/step"
 )
 
-// A registration answers with the creation options, and the client's response
-// registers a credential and activates the factor. The two steps are the whole
-// of what this module does for a registration.
+// TestRegistrationAnswersOptionsThenEnrolls checks that a registration answers creation options and the response activates the factor.
 func TestRegistrationAnswersOptionsThenEnrolls(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -32,9 +30,7 @@ func TestRegistrationAnswersOptionsThenEnrolls(t *testing.T) {
 	})
 }
 
-// A registration begun under the security-key profile asks for no discoverable
-// credential and only prefers user verification, which is the whole difference
-// between the two profiles.
+// TestTheTwoProfilesDifferInTheOptions checks that the security-key profile asks for no discoverable credential and only prefers user verification.
 func TestTheTwoProfilesDifferInTheOptions(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -66,8 +62,7 @@ func TestTheTwoProfilesDifferInTheOptions(t *testing.T) {
 	})
 }
 
-// A second-factor assertion keeps the relying party's preferred user
-// verification: only the passkey login's assertion is raised to required.
+// TestASecondFactorAssertionPrefersUserVerification checks that a second-factor assertion keeps user verification preferred.
 func TestASecondFactorAssertionPrefersUserVerification(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -80,9 +75,7 @@ func TestASecondFactorAssertionPrefersUserVerification(t *testing.T) {
 	})
 }
 
-// A registration excludes the account's active credentials only: a disabled
-// factor's credential is not offered, so the authenticator that holds it can be
-// registered again. An active one is still excluded.
+// TestRegistrationExcludesOnlyActiveCredentials checks that a registration excludes only active credentials.
 func TestRegistrationExcludesOnlyActiveCredentials(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -105,8 +98,7 @@ func TestRegistrationExcludesOnlyActiveCredentials(t *testing.T) {
 	})
 }
 
-// A second registration for an account that already holds a credential excludes
-// it, so the same authenticator is not registered twice.
+// TestRegistrationExcludesExistingCredentials checks that a second registration excludes the credential the account already holds.
 func TestRegistrationExcludesExistingCredentials(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -124,8 +116,7 @@ func TestRegistrationExcludesExistingCredentials(t *testing.T) {
 	})
 }
 
-// The challenge answers with assertion options about the registered credential,
-// and a valid assertion passes the factor with the methods the module reports.
+// TestChallengeThenVerifyPassesAFactor checks that a challenge yields assertion options and a valid assertion passes the factor.
 func TestChallengeThenVerifyPassesAFactor(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -154,8 +145,7 @@ func TestChallengeThenVerifyPassesAFactor(t *testing.T) {
 	})
 }
 
-// An assertion whose signature does not hold is refused, and the stored counter
-// is left where it was.
+// TestAnAssertionWithATamperedSignatureIsRefused checks that an assertion with a broken signature is refused and the counter is unchanged.
 func TestAnAssertionWithATamperedSignatureIsRefused(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -173,9 +163,7 @@ func TestAnAssertionWithATamperedSignatureIsRefused(t *testing.T) {
 	})
 }
 
-// The same assertion presented twice is refused the second time: its counter has
-// already been consumed, which the library reports as a clone warning. It is what
-// stops the ceremony data being spent twice at this layer.
+// TestASecondPresentationOfAnAssertionIsRefused checks that the same assertion presented twice is refused the second time.
 func TestASecondPresentationOfAnAssertionIsRefused(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -193,9 +181,7 @@ func TestASecondPresentationOfAnAssertionIsRefused(t *testing.T) {
 	})
 }
 
-// A counter that goes backwards is the library's clone warning: the factor is
-// flagged, the assertion is refused, and a later call is refused before the factor
-// is asked, so the credential is unusable until it is removed.
+// TestACloneWarningRefusesAndFlagsTheFactor checks that a counter that goes backwards flags the factor and refuses the assertion.
 func TestACloneWarningRefusesAndFlagsTheFactor(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -217,8 +203,6 @@ func TestACloneWarningRefusesAndFlagsTheFactor(t *testing.T) {
 		if _, flagged := r.storedCount(t, rec.ID); !flagged {
 			t.Error("the credential was not flagged after its counter went backwards")
 		}
-		// A flagged factor is unavailable: the next challenge refuses without
-		// even answering with options.
 		got, err := r.p.Challenge(context.Background(), authn.FlowState{Account: acct}, rec)
 		if err != nil {
 			t.Fatalf("Challenge: %v", err)
@@ -229,12 +213,7 @@ func TestACloneWarningRefusesAndFlagsTheFactor(t *testing.T) {
 	})
 }
 
-// The ceremony state this module keeps between steps fits inside the flow
-// record's private bytes, which the login engine bounds at 8 KiB. A registration
-// and an assertion each serialize to a small value, and the assertion's grows by a
-// descriptor per allowed credential, so a credential list of the size an account
-// can hold stays well inside the bound. The design lists this as an assumption
-// with this test guarding it.
+// TestTheCeremonyStateFitsTheFlowRecord checks that the ceremony state fits the flow record's private bytes.
 func TestTheCeremonyStateFitsTheFlowRecord(t *testing.T) {
 	const privateBound = 8 << 10
 	wa, err := newRelyingParty(testConfig())
@@ -266,10 +245,7 @@ func TestTheCeremonyStateFitsTheFlowRecord(t *testing.T) {
 	}
 }
 
-// A credential whose counter never moves — a synchronizable passkey reports 0 on
-// every assertion — keeps passing. The library warns of a clone only when the
-// presented count is not above the stored one and the two are not both zero, so a
-// run of zero-count assertions is not mistaken for one.
+// TestACredentialWhoseCounterStaysZeroKeepsPassing checks that a credential whose counter stays zero keeps passing.
 func TestACredentialWhoseCounterStaysZeroKeepsPassing(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -287,8 +263,7 @@ func TestACredentialWhoseCounterStaysZeroKeepsPassing(t *testing.T) {
 	})
 }
 
-// A ceremony whose session has expired is refused: the library reads the expiry
-// this module records because the timeouts are enforced.
+// TestAnExpiredCeremonyIsRefused checks that a ceremony past its expiry is refused.
 func TestAnExpiredCeremonyIsRefused(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -311,8 +286,7 @@ func TestAnExpiredCeremonyIsRefused(t *testing.T) {
 	})
 }
 
-// A call about a factor that has no credential is refused, which is a factor that
-// was removed or never written here.
+// TestAFactorWithoutACredentialIsRefused checks that a call about a factor with no credential is refused.
 func TestAFactorWithoutACredentialIsRefused(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -331,8 +305,7 @@ func TestAFactorWithoutACredentialIsRefused(t *testing.T) {
 	})
 }
 
-// Enroll is refused when no pending row was handed to it, which is a call from
-// something other than the multi-factor module; nothing is written.
+// TestEnrollWithoutAPendingRowIsRefused checks that Enroll without a pending row is refused and writes nothing.
 func TestEnrollWithoutAPendingRowIsRefused(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -346,8 +319,7 @@ func TestEnrollWithoutAPendingRowIsRefused(t *testing.T) {
 	})
 }
 
-// Remove deletes the credential and, with the account's last one, its user
-// handle; it is idempotent.
+// TestRemoveDropsTheCredentialAndWithItTheHandle checks that Remove deletes the credential and drops the handle with the last one.
 func TestRemoveDropsTheCredentialAndWithItTheHandle(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -371,15 +343,14 @@ func TestRemoveDropsTheCredentialAndWithItTheHandle(t *testing.T) {
 	})
 }
 
-// Kind is the factor kind the module delivers.
+// TestKindIsWebAuthn checks that the module delivers the webauthn kind.
 func TestKindIsWebAuthn(t *testing.T) {
 	if got := (&product{}).Kind(); got != authn.FactorWebAuthn {
 		t.Errorf("Kind = %q, want webauthn", got)
 	}
 }
 
-// The name an authenticator shows for the account is its username identifier, or
-// its account identifier when it has none. It decides nothing but the display.
+// TestTheAuthenticatorNameIsTheUsernameOrTheAccount checks that the authenticator name is the username identifier or the account identifier.
 func TestTheAuthenticatorNameIsTheUsernameOrTheAccount(t *testing.T) {
 	r := newRig(t, openDialect(t, sqliteDialect))
 	ctx := context.Background()
@@ -392,9 +363,7 @@ func TestTheAuthenticatorNameIsTheUsernameOrTheAccount(t *testing.T) {
 	}
 }
 
-// Ceremony data this module did not write is refused rather than handed to the
-// library, whose decoder trusts a length prefix and would allocate from a tampered
-// one.
+// TestForeignCeremonyDataIsRefused checks that ceremony data this module did not write is refused.
 func TestForeignCeremonyDataIsRefused(t *testing.T) {
 	for _, b := range [][]byte{nil, []byte("not json"), []byte(`{"session":""}`)} {
 		if _, _, err := parseCeremony(b); err == nil {
@@ -403,14 +372,13 @@ func TestForeignCeremonyDataIsRefused(t *testing.T) {
 	}
 }
 
-// Name is the login method name the module reports.
+// TestNameIsPasskey checks that the login method is named passkey.
 func TestNameIsPasskey(t *testing.T) {
 	if got := (&product{}).Name(); got != "passkey" {
 		t.Errorf("Name = %q, want passkey", got)
 	}
 }
 
-// challengeOptionsOf starts a registration and returns the creation options.
 func creationOptionsOf(t *testing.T, r *rig, rec authn.FactorRecord, profile string) creationOptions {
 	t.Helper()
 	got, err := r.p.beginEnroll(context.Background(), rec, authn.StepInput{
@@ -425,8 +393,6 @@ func creationOptionsOf(t *testing.T, r *rig, rec authn.FactorRecord, profile str
 	return decodeCreation(t, step.DataOf(got))
 }
 
-// challenge starts a second-factor assertion and returns the options and the
-// private state that answers it.
 func (r *rig) challenge(t *testing.T, rec authn.FactorRecord) (assertionOptions, []byte) {
 	t.Helper()
 	got, err := r.p.Challenge(context.Background(), authn.FlowState{Account: acct}, rec)
@@ -439,7 +405,6 @@ func (r *rig) challenge(t *testing.T, rec authn.FactorRecord) (assertionOptions,
 	return decodeAssertion(t, step.DataOf(got)), step.PrivateOf(got)
 }
 
-// verify answers a challenge with a credential body and returns the step.
 func (r *rig) verify(t *testing.T, rec authn.FactorRecord, private, body []byte) authn.Step {
 	t.Helper()
 	got, err := r.p.Verify(context.Background(), authn.FlowState{Private: private}, rec,

@@ -10,7 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// tenantRequirementStub is the authn.TenantMFARequirement seam a case scripts.
 type tenantRequirementStub struct {
 	required bool
 	err      error
@@ -22,11 +21,7 @@ func (s *tenantRequirementStub) RequiresMFA(_ context.Context, id authn.AccountI
 	return s.required, s.err
 }
 
-// TestRequireAsksWhetherATenantRequiresMultiFactor holds the tenant branch of
-// the policy: a tenant the account is an active member of that requires a factor
-// makes the account require one, a requirement that cannot be read is treated as
-// required, and an assembly with no seam keeps the account and deployment
-// policies alone.
+// TestRequireAsksWhetherATenantRequiresMultiFactor checks the tenant branch: a requirement makes the account require one, an unreadable one counts as required, and no seam leaves the account and deployment policies.
 func TestRequireAsksWhetherATenantRequiresMultiFactor(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -62,9 +57,7 @@ func TestRequireAsksWhetherATenantRequiresMultiFactor(t *testing.T) {
 	}
 }
 
-// TestRequireDoesNotAskATenantWhenTheAccountHasAFactor holds that an account
-// with an active factor is decided before the tenant seam, which is the order of
-// the policy table: the factor is used whatever a tenant says.
+// TestRequireDoesNotAskATenantWhenTheAccountHasAFactor checks that an account with an active factor is decided before the tenant seam.
 func TestRequireDoesNotAskATenantWhenTheAccountHasAFactor(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		stub := &tenantRequirementStub{required: true}
@@ -84,9 +77,7 @@ func TestRequireDoesNotAskATenantWhenTheAccountHasAFactor(t *testing.T) {
 	})
 }
 
-// TestRequireKeepsTodayBehaviourWithoutTheSeam holds that an assembly that wires
-// no TenantMFARequirement asks only the account's flag and the deployment's
-// switch, as it did before the seam existed.
+// TestRequireKeepsTodayBehaviourWithoutTheSeam checks that an assembly without the tenant seam asks only the account flag and deployment switch.
 func TestRequireKeepsTodayBehaviourWithoutTheSeam(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		if r.p.tenantMFA != nil {
@@ -106,9 +97,7 @@ func TestRequireKeepsTodayBehaviourWithoutTheSeam(t *testing.T) {
 	})
 }
 
-// TestRequireAsksTheTenantsOfTheRequirementAccount holds the impersonation split:
-// the policy is decided for the requirement account, so the tenant seam is asked
-// about that account and never about the operator proving the factors.
+// TestRequireAsksTheTenantsOfTheRequirementAccount checks that the tenant seam is asked about the requirement account, not the operator's.
 func TestRequireAsksTheTenantsOfTheRequirementAccount(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		stub := &tenantRequirementStub{required: true}

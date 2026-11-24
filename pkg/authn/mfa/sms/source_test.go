@@ -4,10 +4,7 @@ import (
 	"testing"
 )
 
-// TestTheChallengeCarriesTheFlowSource holds that the address the engine put on
-// the flow reaches the code engine as the send's source. The factor has no
-// request of its own: FlowState.Source is the only place it can learn where the
-// call came from, and an empty one is passed through as empty.
+// TestTheChallengeCarriesTheFlowSource checks that the flow's source address reaches the code engine as the send's source.
 func TestTheChallengeCarriesTheFlowSource(t *testing.T) {
 	const source = "203.0.113.7"
 	r := newRig()

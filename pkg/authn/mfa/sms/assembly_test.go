@@ -13,16 +13,11 @@ import (
 	"github.com/vislake/speed/pkg/internal/configtest"
 )
 
-// The stand-in modules an assembly drives: the SMS code engine and the account
-// reads, each delivered exclusively by another module of the directory in a real
-// command, supplied to a module of its own here.
 const (
 	smsModule     = "stand-in.sms"
 	accountModule = "stand-in.account"
 )
 
-// standIn is a module that declares the token exclusively and delivers instance
-// from its New.
 func standIn(name string, instance any, token core.Token) core.Module {
 	return core.Module{
 		Name:     name,
@@ -31,10 +26,6 @@ func standIn(name string, instance any, token core.Token) core.Module {
 	}
 }
 
-// driveWith runs a real registry through this module's descriptor to the stage
-// where the instance exists and its dependencies were resolved, and hands the
-// registry to action. A nil codes or accounts leaves that stand-in out, which is
-// how the missing-dependency cases are driven.
 func driveWith(t *testing.T, codes *fakeCodes, accounts *fakeAccounts, action func(ctx context.Context, reg *core.Registry) error) error {
 	t.Helper()
 	reg := core.New()
@@ -55,6 +46,7 @@ func driveWith(t *testing.T, codes *fakeCodes, accounts *fakeAccounts, action fu
 	})
 }
 
+// TestTheDescriptorDeliversTheFactorWithoutClaimingIt checks that the descriptor delivers the factor without claiming it.
 func TestTheDescriptorDeliversTheFactorWithoutClaimingIt(t *testing.T) {
 	m := Module()
 	if m.Name != "authn.mfa.sms" || ModuleName != "authn.mfa.sms" {
@@ -80,6 +72,7 @@ func TestTheDescriptorDeliversTheFactorWithoutClaimingIt(t *testing.T) {
 	}
 }
 
+// TestPrepareStatesEnabledAndNothingElse checks that Prepare states enabled and nothing else.
 func TestPrepareStatesEnabledAndNothingElse(t *testing.T) {
 	got, err := Module().Prepare(t.Context(), core.New())
 	if err != nil {
@@ -90,9 +83,7 @@ func TestPrepareStatesEnabledAndNothingElse(t *testing.T) {
 	}
 }
 
-// TestPrepareStandsDownWhenNeitherCarrierNorTemplateIsConfigured holds the
-// all-empty case: with no carrier selected and no template configured, SMS was
-// not configured for this run and the second factor is not offered.
+// TestPrepareStandsDownWhenNeitherCarrierNorTemplateIsConfigured checks that Prepare stands down when neither a carrier nor a template is configured.
 func TestPrepareStandsDownWhenNeitherCarrierNorTemplateIsConfigured(t *testing.T) {
 	reader := configtest.Reader(t, "{}", Module())
 	reg := core.New()
@@ -108,6 +99,7 @@ func TestPrepareStandsDownWhenNeitherCarrierNorTemplateIsConfigured(t *testing.T
 	}
 }
 
+// TestARealRegistryDeliversTheSMSFactorOnTheEngineAndAccountReads checks that a real registry delivers the SMS factor on the engine and account reads.
 func TestARealRegistryDeliversTheSMSFactorOnTheEngineAndAccountReads(t *testing.T) {
 	codes := &fakeCodes{sendID: sentinelChallenge}
 	accounts := &fakeAccounts{identifiers: []authn.Identifier{provenPhoneIdentifier()}}
@@ -120,9 +112,6 @@ func TestARealRegistryDeliversTheSMSFactorOnTheEngineAndAccountReads(t *testing.
 		if factors[0].Kind() != authn.FactorSMS {
 			t.Fatalf("the delivered factor is of kind %q, want %q", factors[0].Kind(), authn.FactorSMS)
 		}
-		// The instance is wired to the capabilities the registry resolved, not to
-		// nothing: a prove-phone enrollment goes through the supplied account
-		// reads, and a challenge sends through the supplied code engine.
 		enrolled, err := factors[0].Enroll(ctx, flow(0, "", nil), submit(nil))
 		if err != nil || step.KindOf(enrolled) != step.KindEnrolled {
 			t.Fatalf("Enroll answered %s (error %v), want an enrollment", step.KindOf(enrolled), err)
@@ -144,6 +133,7 @@ func TestARealRegistryDeliversTheSMSFactorOnTheEngineAndAccountReads(t *testing.
 	}
 }
 
+// TestACommandWithoutTheSMSCodeEngineFailsBeforeAnythingIsBuilt checks that a command without the SMS code engine fails before anything is built.
 func TestACommandWithoutTheSMSCodeEngineFailsBeforeAnythingIsBuilt(t *testing.T) {
 	err := driveWith(t, nil, &fakeAccounts{}, func(context.Context, *core.Registry) error {
 		t.Error("the drive reached its action with no SMS code engine")
@@ -154,6 +144,7 @@ func TestACommandWithoutTheSMSCodeEngineFailsBeforeAnythingIsBuilt(t *testing.T)
 	}
 }
 
+// TestACommandWithoutTheAccountReadsFailsToo checks that a command without the account reads fails too.
 func TestACommandWithoutTheAccountReadsFailsToo(t *testing.T) {
 	err := driveWith(t, &fakeCodes{}, nil, func(context.Context, *core.Registry) error {
 		t.Error("the drive reached its action with no account reads")
@@ -164,6 +155,7 @@ func TestACommandWithoutTheAccountReadsFailsToo(t *testing.T) {
 	}
 }
 
+// TestImportingThePackageRegistersTheModuleWithTheProcess checks that importing the package registers the module with the process registry.
 func TestImportingThePackageRegistersTheModuleWithTheProcess(t *testing.T) {
 	got, ok := core.ProcessRegistry.Lookup(ModuleName)
 	if !ok {

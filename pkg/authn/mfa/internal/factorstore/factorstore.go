@@ -1,15 +1,4 @@
-// Package factorstore holds the statements on authn_factors: one row per second
-// factor an account has registered, whatever its kind.
-//
-// The multi-factor module's register is these statements and nothing else, and
-// the module's test-support package mfatest writes and reads the same rows
-// through them, so a fixture cannot drift from what the product writes. That is
-// why the statements live here, under pkg/authn/mfa/internal, rather than in
-// the module beside the orchestration that decides: mfatest is a package of its
-// own and a module's unexported register is not reachable from it.
-//
-// Nothing here decides anything. The limits, the ordering of a registration and
-// what a row's status means are the multi-factor module's to decide.
+// Package factorstore holds the statements on authn_factors, the register of the second factors an account has, shared by the multi-factor module and its test-support package.
 package factorstore
 
 import (
@@ -30,12 +19,8 @@ const Table = "authn_factors"
 // SweepBatch is how many pending rows one statement of the sweep reads.
 const SweepBatch = 1000
 
-// The columns of the register as a read names them.
 const factorColumns = "id, account_id, kind, label, status, created_at, activated_at, last_used_at"
 
-// factorRow is one row of the register as a read returns it. The times are
-// pointers where the column is nullable, and every time read is converted to UTC
-// on the way out.
 type factorRow struct {
 	ID          string
 	AccountID   string
@@ -47,9 +32,6 @@ type factorRow struct {
 	LastUsedAt  *time.Time
 }
 
-// record is the row as the root package's FactorRecord, which holds nothing of
-// the kind's own data. A status outside the three the column admits reads as
-// disabled: a value nobody chose is not one to verify with.
 func (r factorRow) record() authn.FactorRecord {
 	rec := authn.FactorRecord{
 		ID:        r.ID,
@@ -75,8 +57,7 @@ func (r factorRow) record() authn.FactorRecord {
 	return rec
 }
 
-// Store is the factor register: the statements on authn_factors and nothing
-// else.
+// Store is the statements on authn_factors.
 type Store struct {
 	handle *gorm.DB
 }
@@ -124,12 +105,7 @@ func (g *Store) Find(ctx context.Context, account authn.AccountID, id string) (r
 	return rows[0].record(), true, nil
 }
 
-// InsertPending writes a pending row of the kind, after counting the account's
-// rows of that kind that are not disabled. label is stored as given, so an empty
-// one is a factor with no name. The count and the insert are one transaction; a
-// disabled row, which only a reset leaves behind, does not count, or an account
-// whose factors were all reset could not register another once it held the
-// limit. A count at the limit is ErrFactorLimit.
+// InsertPending writes a pending row of the kind after counting the account's rows of that kind that are not disabled. label is stored as given; a count at the limit is ErrFactorLimit.
 func (g *Store) InsertPending(ctx context.Context, account authn.AccountID, kind authn.FactorKind, label string, limit int, besideActive bool, at time.Time) (authn.FactorRecord, error) {
 	rec := authn.FactorRecord{
 		ID:        event.NewID(),
@@ -141,10 +117,6 @@ func (g *Store) InsertPending(ctx context.Context, account authn.AccountID, kind
 	}
 	err := g.session(ctx).Transaction(func(tx *gorm.DB) error {
 		var count int64
-		// A kind the new registration replaces counts only the pending rows:
-		// the active row it will retire keeps verifying, and it is not a
-		// second factor while the new one is being proved. Any other kind
-		// counts everything that is not disabled.
 		query := tx.Table(Table).Where("account_id = ? AND kind = ?", string(account), string(kind))
 		if besideActive {
 			query = query.Where("status = ?", int(authn.FactorPending))
@@ -166,9 +138,7 @@ func (g *Store) InsertPending(ctx context.Context, account authn.AccountID, kind
 	return rec, nil
 }
 
-// Activate makes a pending row active, at the instant at. The statement is
-// conditional on the row still being pending, so a sweep, a reset or a removal
-// that came first wins, and the result says whether this call did.
+// Activate makes a pending row active at the given instant, only if it is still pending, and reports whether this call did.
 func (g *Store) Activate(ctx context.Context, account authn.AccountID, id string, at time.Time) (bool, error) {
 	res := g.session(ctx).Exec("UPDATE "+Table+" SET status = ?, activated_at = ? WHERE id = ? AND account_id = ? AND status = ?",
 		int(authn.FactorActive), clock.UTC(at), id, string(account), int(authn.FactorPending))
@@ -178,11 +148,7 @@ func (g *Store) Activate(ctx context.Context, account authn.AccountID, id string
 	return res.RowsAffected == 1, nil
 }
 
-// ActivateReplacing makes a pending row active and, in the same transaction,
-// disables the account's other active rows of the same kind -- the factor the
-// registration replaces. The replacement happens only when the activation won,
-// so a row a sweep, a reset or a removal took first leaves the old factor
-// active, and the old row keeps its data for the audit trail.
+// ActivateReplacing makes a pending row active and disables the account's other active rows of the same kind in one transaction, only when the activation won.
 func (g *Store) ActivateReplacing(ctx context.Context, account authn.AccountID, id string, kind authn.FactorKind, at time.Time) (bool, error) {
 	won := false
 	err := g.session(ctx).Transaction(func(tx *gorm.DB) error {
@@ -204,9 +170,7 @@ func (g *Store) ActivateReplacing(ctx context.Context, account authn.AccountID, 
 	return won, nil
 }
 
-// UpdateLabel writes the label of one row of the account and says whether there
-// was one. A row of another account changes nothing and reports false, so the
-// caller cannot tell it apart from a row that is not there.
+// UpdateLabel writes the label of one row of the account and reports whether there was one. Another account's row changes nothing.
 func (g *Store) UpdateLabel(ctx context.Context, account authn.AccountID, id, label string) (bool, error) {
 	res := g.session(ctx).Exec("UPDATE "+Table+" SET label = ? WHERE id = ? AND account_id = ?",
 		label, id, string(account))
@@ -233,9 +197,7 @@ func (g *Store) Remove(ctx context.Context, account authn.AccountID, id string) 
 	return res.RowsAffected == 1, nil
 }
 
-// RemovePending deletes a row that is still pending. A row that has become
-// anything else in the meantime is left alone, which is what keeps the sweep and
-// a registration that is finishing from deleting each other's work.
+// RemovePending deletes a row that is still pending, leaving one that changed status alone.
 func (g *Store) RemovePending(ctx context.Context, id string) (bool, error) {
 	res := g.session(ctx).Exec("DELETE FROM "+Table+" WHERE id = ? AND status = ?", id, int(authn.FactorPending))
 	if res.Error != nil {
@@ -244,9 +206,7 @@ func (g *Store) RemovePending(ctx context.Context, id string) (bool, error) {
 	return res.RowsAffected == 1, nil
 }
 
-// DisableAll sets every row of the account that is not yet disabled to disabled,
-// in one transaction, and returns how many it changed. A row already disabled is
-// not counted, so a second call that finds nothing to do returns zero.
+// DisableAll disables every row of the account that is not disabled, in one transaction, and returns how many it changed.
 func (g *Store) DisableAll(ctx context.Context, account authn.AccountID) (int, error) {
 	var changed int64
 	err := g.session(ctx).Transaction(func(tx *gorm.DB) error {
@@ -261,9 +221,7 @@ func (g *Store) DisableAll(ctx context.Context, account authn.AccountID) (int, e
 	return int(changed), nil
 }
 
-// Disable sets one active row of the account to disabled. The update is
-// conditional on the row still being active, so a second detection of the same
-// clone, or a reset or a removal that came first, is a no-op.
+// Disable disables one active row of the account, only if it is still active.
 func (g *Store) Disable(ctx context.Context, account authn.AccountID, id string) error {
 	res := g.session(ctx).Exec("UPDATE "+Table+" SET status = ? WHERE id = ? AND account_id = ? AND status = ?",
 		int(authn.FactorDisabled), id, string(account), int(authn.FactorActive))

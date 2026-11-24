@@ -6,9 +6,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestDescribeReportsTheCeremony holds the descriptor the discovery endpoint
-// publishes for the passkey method: a webauthn ceremony button with no protocol,
-// label or fields, and which opens no account.
+// TestDescribeReportsTheCeremony checks that Describe reports the passkey ceremony that opens no account.
 func TestDescribeReportsTheCeremony(t *testing.T) {
 	got := (&product{}).Describe()
 	if got.Name != "passkey" || got.Kind != authn.MethodKindWebAuthn ||

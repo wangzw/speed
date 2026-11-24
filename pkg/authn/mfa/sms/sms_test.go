@@ -12,8 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/step"
 )
 
-// The values the cases drive through the factor, so that an assertion that one
-// is nowhere in an answer or an error has something to find.
 const (
 	testAccount       = authn.AccountID("acct_0001")
 	sentinelPhone     = "+8613800000000"
@@ -21,7 +19,6 @@ const (
 	sentinelCode      = "482913"
 )
 
-// sendCall is one call to the code engine's Send, as the fake recorded it.
 type sendCall struct {
 	purpose string
 	phone   string
@@ -32,14 +29,11 @@ type sendCall struct {
 	proof   string
 }
 
-// verifyCall is one call to the code engine's Verify.
 type verifyCall struct {
 	id   string
 	code string
 }
 
-// fakeCodes is an SMSCodes whose Send and Verify answer with what a case set and
-// record what they were asked.
 type fakeCodes struct {
 	mu        sync.Mutex
 	sends     []sendCall
@@ -87,8 +81,6 @@ func (c *fakeCodes) verifyCount() int {
 	return len(c.verifies)
 }
 
-// fakeAccounts is an Accounts whose Identifiers answer with what a case set. The
-// other methods are not this module's and fail the case that reaches them.
 type fakeAccounts struct {
 	authn.Accounts
 
@@ -114,15 +106,12 @@ func (a *fakeAccounts) identifierCalls() int {
 	return a.calls
 }
 
-// rig is one factor with its two fakes.
 type rig struct {
 	f  *factor
 	cs *fakeCodes
 	ac *fakeAccounts
 }
 
-// newRig builds a factor whose code engine returns sentinelChallenge for a send
-// and whose account holds one proven phone, unless a case changes those first.
 func newRig() *rig {
 	cs := &fakeCodes{sendID: sentinelChallenge}
 	ac := &fakeAccounts{identifiers: []authn.Identifier{{
@@ -132,8 +121,6 @@ func newRig() *rig {
 	return &rig{f: &factor{codes: cs, accounts: ac}, cs: cs, ac: ac}
 }
 
-// provenPhoneIdentifier is an identifier of a phone whose ownership a code
-// proved.
 func provenPhoneIdentifier() authn.Identifier {
 	return authn.Identifier{
 		Kind: authn.IdentifierPhone, Value: sentinelPhone,
@@ -153,12 +140,14 @@ func record() authn.FactorRecord {
 	return authn.FactorRecord{ID: "fac_1", Account: testAccount, Kind: authn.FactorSMS, Status: authn.FactorActive}
 }
 
+// TestTheFactorIsOfTheSMSKind checks that the factor is of the sms kind.
 func TestTheFactorIsOfTheSMSKind(t *testing.T) {
 	if got := newRig().f.Kind(); got != authn.FactorSMS {
 		t.Errorf("Kind = %q, want %q", got, authn.FactorSMS)
 	}
 }
 
+// TestEnrollRegistersTheAccountsProvenPhoneWithoutAStep checks that Enroll registers the account's proven phone without a step.
 func TestEnrollRegistersTheAccountsProvenPhoneWithoutAStep(t *testing.T) {
 	r := newRig()
 	got, err := r.f.Enroll(t.Context(), flow(0, "", nil), submit(nil))
@@ -170,6 +159,7 @@ func TestEnrollRegistersTheAccountsProvenPhoneWithoutAStep(t *testing.T) {
 	}
 }
 
+// TestEnrollRefusesAnAccountWithNoProvenPhone checks that Enroll refuses an account with no proven phone.
 func TestEnrollRefusesAnAccountWithNoProvenPhone(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -203,6 +193,7 @@ func TestEnrollRefusesAnAccountWithNoProvenPhone(t *testing.T) {
 	}
 }
 
+// TestEnrollIsAnOutageWhenThePhoneCannotBeRead checks that Enroll is an outage when the phone cannot be read.
 func TestEnrollIsAnOutageWhenThePhoneCannotBeRead(t *testing.T) {
 	r := newRig()
 	r.ac.err = errors.New("boom")
@@ -215,6 +206,7 @@ func TestEnrollIsAnOutageWhenThePhoneCannotBeRead(t *testing.T) {
 	}
 }
 
+// TestChallengeSendsOneCodeForTheMFAAndAsksForIt checks that Challenge sends one code for the mfa purpose and asks for it.
 func TestChallengeSendsOneCodeForTheMFAAndAsksForIt(t *testing.T) {
 	r := newRig()
 	got, err := r.f.Challenge(t.Context(), flow(3, "en-US", nil), record())
@@ -255,14 +247,13 @@ func TestChallengeSendsOneCodeForTheMFAAndAsksForIt(t *testing.T) {
 		t.Error("the send is not marked to deliver: the account's phone is proven, so the code is really sent")
 	}
 
-	// The challenge identifier is kept in the private bytes, which is how the
-	// verification step learns which challenge the code answers.
 	id, ok := readChallenge(step.PrivateOf(got))
 	if !ok || id != sentinelChallenge {
 		t.Errorf("the answer keeps challenge %q (ok %v), want %q", id, ok, sentinelChallenge)
 	}
 }
 
+// TestChallengeSendsNothingWhenTheFlowHasNoSendBudget checks that Challenge sends nothing when the flow has no send budget.
 func TestChallengeSendsNothingWhenTheFlowHasNoSendBudget(t *testing.T) {
 	r := newRig()
 	got, err := r.f.Challenge(t.Context(), flow(0, "", nil), record())
@@ -280,6 +271,7 @@ func TestChallengeSendsNothingWhenTheFlowHasNoSendBudget(t *testing.T) {
 	}
 }
 
+// TestChallengeThatIsThrottledByTheEngineAsksToWait checks that a throttled challenge asks the caller to wait.
 func TestChallengeThatIsThrottledByTheEngineAsksToWait(t *testing.T) {
 	r := newRig()
 	r.cs.sendErr = &authn.ThrottledError{RetryAfter: 7 * time.Second}
@@ -295,6 +287,7 @@ func TestChallengeThatIsThrottledByTheEngineAsksToWait(t *testing.T) {
 	}
 }
 
+// TestChallengeRefusesAnUnsupportedRegion checks that Challenge refuses an unsupported region.
 func TestChallengeRefusesAnUnsupportedRegion(t *testing.T) {
 	r := newRig()
 	r.cs.sendErr = authn.ErrUnsupportedRegion
@@ -310,6 +303,7 @@ func TestChallengeRefusesAnUnsupportedRegion(t *testing.T) {
 	}
 }
 
+// TestChallengeIsAnOutageWhenTheEngineCannotSend checks that Challenge is an outage when the engine cannot send.
 func TestChallengeIsAnOutageWhenTheEngineCannotSend(t *testing.T) {
 	r := newRig()
 	r.cs.sendErr = authn.ErrUnavailable
@@ -322,6 +316,7 @@ func TestChallengeIsAnOutageWhenTheEngineCannotSend(t *testing.T) {
 	}
 }
 
+// TestChallengeSendsNothingForAnAccountWithNoProvenPhone checks that Challenge sends nothing for an account with no proven phone.
 func TestChallengeSendsNothingForAnAccountWithNoProvenPhone(t *testing.T) {
 	r := newRig()
 	r.ac.identifiers = nil
@@ -340,6 +335,7 @@ func TestChallengeSendsNothingForAnAccountWithNoProvenPhone(t *testing.T) {
 	}
 }
 
+// TestVerifyPassesTheChallengeAndTheCode checks that Verify passes the challenge and the code.
 func TestVerifyPassesTheChallengeAndTheCode(t *testing.T) {
 	r := newRig()
 	private := markChallenge(sentinelChallenge)
@@ -368,6 +364,7 @@ func TestVerifyPassesTheChallengeAndTheCode(t *testing.T) {
 	}
 }
 
+// TestVerifyRefusesACodeThatDoesNotHold checks that Verify refuses a code that does not hold.
 func TestVerifyRefusesACodeThatDoesNotHold(t *testing.T) {
 	r := newRig()
 	r.cs.verifyErr = authn.ErrInvalidCredentials
@@ -383,6 +380,7 @@ func TestVerifyRefusesACodeThatDoesNotHold(t *testing.T) {
 	}
 }
 
+// TestVerifyIsAnOutageWhenTheEngineCannotBeReached checks that Verify is an outage when the engine cannot be reached.
 func TestVerifyIsAnOutageWhenTheEngineCannotBeReached(t *testing.T) {
 	r := newRig()
 	r.cs.verifyErr = authn.ErrUnavailable
@@ -395,6 +393,7 @@ func TestVerifyIsAnOutageWhenTheEngineCannotBeReached(t *testing.T) {
 	}
 }
 
+// TestVerifyRefusesAFlowThatCarriesNoChallenge checks that Verify refuses a flow that carries no challenge.
 func TestVerifyRefusesAFlowThatCarriesNoChallenge(t *testing.T) {
 	for _, private := range [][]byte{nil, []byte("not-ours"), []byte(`{"v":2,"id":"x"}`), []byte(`{"v":1,"id":""}`)} {
 		r := newRig()
@@ -411,6 +410,7 @@ func TestVerifyRefusesAFlowThatCarriesNoChallenge(t *testing.T) {
 	}
 }
 
+// TestVerifyRefusesAnAnswerWithNoCode checks that Verify refuses an answer with no code.
 func TestVerifyRefusesAnAnswerWithNoCode(t *testing.T) {
 	r := newRig()
 	got, err := r.f.Verify(t.Context(), flow(0, "", markChallenge(sentinelChallenge)), record(), submit(map[string]string{}))
@@ -425,12 +425,14 @@ func TestVerifyRefusesAnAnswerWithNoCode(t *testing.T) {
 	}
 }
 
+// TestRemoveKeepsNoDataOfItsOwn checks that Remove keeps no data of its own.
 func TestRemoveKeepsNoDataOfItsOwn(t *testing.T) {
 	if err := newRig().f.Remove(t.Context(), testAccount, record()); err != nil {
 		t.Errorf("Remove = %v, want nil: the factor keeps no data of its own to erase", err)
 	}
 }
 
+// TestTheChallengeMarkRoundTripsAndRejectsAnythingElse checks that the challenge mark round-trips and rejects anything else.
 func TestTheChallengeMarkRoundTripsAndRejectsAnythingElse(t *testing.T) {
 	if id, ok := readChallenge(markChallenge(sentinelChallenge)); !ok || id != sentinelChallenge {
 		t.Errorf("the mark does not round-trip: got (%q, %v)", id, ok)
@@ -442,8 +444,7 @@ func TestTheChallengeMarkRoundTripsAndRejectsAnythingElse(t *testing.T) {
 	}
 }
 
-// TestChallengeForwardsTheProofToTheCodeEngine holds the factor's side of the
-// gate: the proof the engine put in FlowState reaches the code engine unchanged.
+// TestChallengeForwardsTheProofToTheCodeEngine checks that the human-verification proof reaches the code engine unchanged.
 func TestChallengeForwardsTheProofToTheCodeEngine(t *testing.T) {
 	r := newRig()
 	fl := flow(3, "en-US", nil)
@@ -461,9 +462,7 @@ func TestChallengeForwardsTheProofToTheCodeEngine(t *testing.T) {
 	}
 }
 
-// TestChallengeRefusesWhenTheCodeEngineRefusesTheProof holds the factor's answer
-// to the gate's two refusals: a refused step, which the engine answers with the
-// gate's own 403 or 400.
+// TestChallengeRefusesWhenTheCodeEngineRefusesTheProof checks that a refused proof is answered with the code engine's refusal.
 func TestChallengeRefusesWhenTheCodeEngineRefusesTheProof(t *testing.T) {
 	for _, tc := range []struct {
 		name string

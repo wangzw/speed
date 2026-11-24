@@ -15,8 +15,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// enrollFirstStep drives an assembly to Start, runs the first step of a TOTP
-// enrollment, and answers the otpauth address it answered with.
 func enrollFirstStep(t *testing.T, a assembly) string {
 	t.Helper()
 	var uri string
@@ -46,16 +44,11 @@ func enrollFirstStep(t *testing.T, a assembly) string {
 	return uri
 }
 
-// otpauth is the part of the address an authenticator app reads: the label it
-// shows and the issuer parameter beside it.
 type otpauth struct {
 	label  string
 	issuer string
 }
 
-// parseOTPAuth reads the label and issuer of an otpauth address. The parser
-// decodes the label, so the case compares what the app shows and not the
-// encoding the library chose.
 func parseOTPAuth(t *testing.T, uri string) otpauth {
 	t.Helper()
 	parsed, err := url.Parse(uri)
@@ -72,9 +65,7 @@ func parseOTPAuth(t *testing.T, uri string) otpauth {
 	return otpauth{label: label, issuer: parsed.Query().Get("issuer")}
 }
 
-// TestTheEnrollmentAddressNamesTheAccountByUsername holds the label an
-// authenticator app shows: the configured site name and the account's username,
-// in that order, with the site name also in the issuer parameter.
+// TestTheEnrollmentAddressNamesTheAccountByUsername checks that the otpauth label carries the site name and the account's username.
 func TestTheEnrollmentAddressNamesTheAccountByUsername(t *testing.T) {
 	const site = "Speed Demo"
 	got := parseOTPAuth(t, enrollFirstStep(t, assembly{
@@ -88,9 +79,7 @@ func TestTheEnrollmentAddressNamesTheAccountByUsername(t *testing.T) {
 	}
 }
 
-// TestTheEnrollmentAddressFallsBackToTheAccountIdentifier holds that a missing
-// username never fails an enrollment: an account with none, an empty username
-// value and a read that fails all label the account by its identifier.
+// TestTheEnrollmentAddressFallsBackToTheAccountIdentifier checks that a missing username labels the account by its identifier.
 func TestTheEnrollmentAddressFallsBackToTheAccountIdentifier(t *testing.T) {
 	const site = "Speed Demo"
 	cases := []struct {

@@ -17,10 +17,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/step"
 )
 
-// The otpauth address a registration answers with carries the parameters the
-// factor stores and validates: six digits, a thirty-second step, HMAC-SHA1 and
-// the issuer. An address advertising other parameters would draw codes the
-// factor never accepts, so enrollment confirmation could never succeed.
+// TestGapOTPAuthURICarriesTheStoredParameters checks that the otpauth address carries the parameters the factor stores.
 func TestGapOTPAuthURICarriesTheStoredParameters(t *testing.T) {
 	r := newRig(t)
 	rec := authn.FactorRecord{ID: "f1", Account: acct, Kind: authn.FactorTOTP, Status: authn.FactorPending}
@@ -57,9 +54,7 @@ func TestGapOTPAuthURICarriesTheStoredParameters(t *testing.T) {
 	}
 }
 
-// advance is atomic: the conditional write, not a read, decides which of two
-// attempts that present one counter is the one. Re-advancing to a counter that is
-// already stored, or to a lower one, loses.
+// TestGapAdvanceIsAtomic checks that advance wins only for a counter above the stored one.
 func TestGapAdvanceIsAtomic(t *testing.T) {
 	r := newRig(t)
 	secret := generate(t)
@@ -87,9 +82,7 @@ func TestGapAdvanceIsAtomic(t *testing.T) {
 	}
 }
 
-// advance and remove are scoped to the one factor: another factor whose counter
-// is below the advanced one is untouched by an advance, and its seed survives a
-// removal of a different factor.
+// TestGapAdvanceAndRemoveAreScopedToTheFactor checks that advance and remove touch only the named factor.
 func TestGapAdvanceAndRemoveAreScopedToTheFactor(t *testing.T) {
 	r := newRig(t)
 	secret := generate(t)
@@ -120,8 +113,7 @@ func TestGapAdvanceAndRemoveAreScopedToTheFactor(t *testing.T) {
 	}
 }
 
-// A seed write that fails is surfaced rather than swallowed: a registration whose
-// write hits a duplicate factor row answers an error and not the otpauth address.
+// TestGapBeginEnrollSurfacesASeedWriteFailure checks that a failed seed write is answered as an error.
 func TestGapBeginEnrollSurfacesASeedWriteFailure(t *testing.T) {
 	r := newRig(t)
 	rec := authn.FactorRecord{ID: "f1", Account: acct, Kind: authn.FactorTOTP, Status: authn.FactorPending}
@@ -135,13 +127,9 @@ func TestGapBeginEnrollSurfacesASeedWriteFailure(t *testing.T) {
 	}
 }
 
-// The startup round trip reads back what it wrote; a serializer that seals on
-// write but returns something else on read is caught there rather than at the
-// first enrollment.
+// TestGapStartRefusesWhenTheEncryptedColumnDoesNotReadBack checks that a serializer that does not read back what it wrote fails the startup.
 func TestGapStartRefusesWhenTheEncryptedColumnDoesNotReadBack(t *testing.T) {
 	r := newRig(t)
-	// The registration is process-wide; an assembly puts the real serializer back,
-	// so one is run in cleanup.
 	gormschema.RegisterSerializer("encrypted", faultySerializer{})
 	t.Cleanup(func() { openHandle(t, rootKey) })
 
@@ -150,9 +138,7 @@ func TestGapStartRefusesWhenTheEncryptedColumnDoesNotReadBack(t *testing.T) {
 	}
 }
 
-// A confirmation code presented to two racers at once activates the factor
-// exactly once: the conditional write lets one through and the other is a replay,
-// which is finishEnroll's own lost-write-back branch.
+// TestGapConcurrentConfirmationsOfOneCodeLeaveExactlyOneEnrolled checks that two concurrent confirmations of one code enroll the factor once.
 func TestGapConcurrentConfirmationsOfOneCodeLeaveExactlyOneEnrolled(t *testing.T) {
 	r := newSerialRig(t)
 	rec := authn.FactorRecord{ID: "f1", Account: acct, Kind: authn.FactorTOTP, Status: authn.FactorPending}
@@ -197,8 +183,7 @@ func TestGapConcurrentConfirmationsOfOneCodeLeaveExactlyOneEnrolled(t *testing.T
 	}
 }
 
-// A confirmation step whose seed row is gone is a factor that is not enrolled,
-// not a code mismatch, which the multi-factor module treats differently.
+// TestGapFinishEnrollRefusesWhenTheSeedIsGone checks that a confirmation without a seed row reads as not enrolled.
 func TestGapFinishEnrollRefusesWhenTheSeedIsGone(t *testing.T) {
 	r := newRig(t)
 	rec := authn.FactorRecord{ID: "f1", Account: acct, Kind: authn.FactorTOTP, Status: authn.FactorPending}
@@ -220,8 +205,7 @@ func TestGapFinishEnrollRefusesWhenTheSeedIsGone(t *testing.T) {
 	}
 }
 
-// A valid code wrapped in surrounding whitespace is still accepted, which is what
-// the trim in match provides.
+// TestGapVerifyAcceptsAPaddedCode checks that a valid code with surrounding whitespace is accepted.
 func TestGapVerifyAcceptsAPaddedCode(t *testing.T) {
 	r := newRig(t)
 	secret := generate(t)
@@ -232,9 +216,7 @@ func TestGapVerifyAcceptsAPaddedCode(t *testing.T) {
 	}
 }
 
-// The clock guards refuse a code under a clock set before the epoch and keep the
-// step below zero from being taken for the matched one at the epoch boundary, so
-// a counter cannot wrap around to a huge value or move to a negative one.
+// TestGapClockGuards checks that a code under a clock before the epoch and at the epoch boundary does not wrap the counter.
 func TestGapClockGuards(t *testing.T) {
 	secret := generate(t)
 	s := seed{FactorID: "f1", Secret: secret, Algorithm: algorithmSHA1, Digits: digitsOfSix, Period: periodSeconds}
@@ -242,9 +224,6 @@ func TestGapClockGuards(t *testing.T) {
 	if _, ok := match(s, time.Unix(-30, 0), codeAt(t, secret, time.Unix(0, 0))); ok {
 		t.Error("a code of the epoch's first step matched under a pre-epoch clock")
 	}
-	// The step below zero produces the same code as the first one, so what the
-	// guard fixes is the counter the match is reported at: it must be the first
-	// step and not a negative one that a replay check would then refuse.
 	got, ok := match(s, time.Unix(0, 0), codeAt(t, secret, time.Unix(0, 0)))
 	if !ok {
 		t.Fatal("the first step's code did not match at the epoch's first step")
@@ -254,8 +233,7 @@ func TestGapClockGuards(t *testing.T) {
 	}
 }
 
-// The stored algorithm column maps to the library's value; a row of another
-// algorithm is verified with that algorithm and not the default.
+// TestGapVerifyUsesTheStoredAlgorithm checks that a seed is verified with its stored algorithm.
 func TestGapVerifyUsesTheStoredAlgorithm(t *testing.T) {
 	r := newRig(t)
 	secret := generate(t)
@@ -272,8 +250,7 @@ func TestGapVerifyUsesTheStoredAlgorithm(t *testing.T) {
 	}
 }
 
-// algorithmByName maps every algorithm the column can hold, and refuses one it
-// does not generate codes for.
+// TestGapAlgorithmByName checks that every algorithm the column admits maps, and an unknown one is refused.
 func TestGapAlgorithmByName(t *testing.T) {
 	cases := map[string]otp.Algorithm{
 		"SHA1":   otp.AlgorithmSHA1,
@@ -297,10 +274,6 @@ func TestGapAlgorithmByName(t *testing.T) {
 	}
 }
 
-// faultySerializer stands in for the encrypted column's serializer and returns a
-// value other than the one written, which is the read the startup check must
-// catch. It is registered under the encrypted serializer's name for the length of
-// one case.
 type faultySerializer struct{}
 
 func (faultySerializer) Value(context.Context, *gormschema.Field, reflect.Value, any) (any, error) {

@@ -1,20 +1,4 @@
-// Package webauthn is the WebAuthn factor of the authentication capability and,
-// in the same module, the passkey login method. It delivers authn.Factor with
-// the kind webauthn and authn.LoginMethod under the name passkey.
-//
-// As a factor it proves a second factor with an authenticator-bound credential:
-// it registers a credential and verifies an assertion against it, and it keeps
-// the credential's own state, its counter, its backup flags and whether it is a
-// passkey. As a login method it proves a first factor the same way, through a
-// discoverable credential the client chooses, which needs no password and can
-// itself count as two factors when the assertion verifies the user.
-//
-// The library that speaks the protocol is at version 0.x and its types change
-// between releases, so none of its types leaves this package: the root
-// package's Factor, Step and LoginMethod are the surface, and the library is
-// named only inside this package. The failure back-off, the audit row and the
-// event around a factor call are done by the multi-factor module, not here; this
-// module does cryptography and the state of its own.
+// Package webauthn is the WebAuthn second factor and, in the same module, the passkey login method. No type of the pinned 0.x library leaves the package; the root package's Factor, Step and LoginMethod are its surface.
 package webauthn
 
 import (
@@ -42,60 +26,35 @@ const ModuleName = "authn.mfa.webauthn"
 // module name.
 const ConfigNamespace = ModuleName
 
-// methodName is the name this module reports as a login method. It is a constant
-// of the code: it appears in routes, flow records and metric attributes, and a
-// published name never changes.
 const methodName = "passkey"
 
-// The module's own names for the steps the engine keeps in the flow record, and
-// the field a client submits its WebAuthn response in.
 const (
 	stepRegistration = "webauthn"
 	stepAssertion    = "webauthn"
 	stepPasskey      = "passkey"
 )
 
-// diagnosticPrefix starts every line this module writes to the startup
-// diagnostics, which have several writers.
 const diagnosticPrefix = "authn: "
 
 //go:embed migrations
 var migrationRoot embed.FS
 
-// migrationsFS is migrationRoot with the wrapping directory removed, so that the
-// tree the database module sees has one directory per dialect at its root.
 var migrationsFS = func() fs.FS {
 	sub, err := fs.Sub(migrationRoot, "migrations")
 	if err != nil {
-		// The embed directive is what makes this unreachable: the directory is
-		// part of the source tree or the build fails first.
 		panic(ModuleName + ": the embedded migration tree: " + err.Error())
 	}
 	return sub
 }()
 
-// The module registers itself. Importing this package is what puts it in a
-// binary's available set.
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// product must deliver what the descriptor declares.
 var (
 	_ authn.Factor      = (*product)(nil)
 	_ authn.LoginMethod = (*product)(nil)
 )
 
-// Module is the descriptor a host registers.
-//
-// The database, the multi-factor module and the account reads are required, and
-// each is delivered exclusively by another module, so the closure of a command
-// that names this one does not pull them in: the host writes them down. The
-// multi-factor module is required because this module's factor is taken in by it
-// and its passkey login reaches a second factor through it; a command that named
-// this module without it could register a credential no login could use.
-//
-// The stance is StateEnabled and never StateAuto: the module delivers both
-// capabilities without claiming either exclusively, and a standalone provider
-// that states StateAuto is the cell resolution disables.
+// Module is the descriptor a host registers. It delivers the factor and the passkey login method without claiming either, and requires the database, the multi-factor module and the account reads.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -122,9 +81,6 @@ func Module() core.Module {
 			return core.Enablement{State: core.StateEnabled}, nil
 		},
 
-		// New builds the relying party from configuration and reads no table of
-		// its own: this stage runs before the migrations are applied, so on a
-		// first start the tables are not there yet.
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
 			return newProduct(reg)
 		},
@@ -143,22 +99,15 @@ func Module() core.Module {
 			return nil
 		},
 
-		// The handle belongs to the database module, which closes it.
 		Close: func(context.Context, *core.Registry, any) error { return nil },
 	}
 }
 
-// productOf narrows an instance to this module's product. The callbacks are also
-// handed an instance a host supplied for the module, which can be any value that
-// delivers the capabilities; they act on the module's own product and leave a
-// supplied one as it is.
 func productOf(instance any) (*product, bool) {
 	p, ok := instance.(*product)
 	return p, ok && p != nil
 }
 
-// readerOf takes up the configuration reader. Its absence is the host's omission
-// and is carried out as it stands, not read as "nothing was configured".
 func readerOf(reg *core.Registry) (config.Reader, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
@@ -168,7 +117,6 @@ func readerOf(reg *core.Registry) (config.Reader, error) {
 	return reader, nil
 }
 
-// product is the module's instance. It delivers the factor and the login method.
 type product struct {
 	register *register
 	accounts authn.Accounts
@@ -179,7 +127,6 @@ type product struct {
 	logger *slog.Logger
 }
 
-// newProduct takes up what the descriptor requires and builds the relying party.
 func newProduct(reg *core.Registry) (*product, error) {
 	reader, err := readerOf(reg)
 	if err != nil {
@@ -208,9 +155,6 @@ func newProduct(reg *core.Registry) (*product, error) {
 	return build(database, mfa, accounts, wa, cfg), nil
 }
 
-// build assembles a product from its parts. The logger starts as the process's,
-// so that a product that has not been through Init is still one that does not
-// panic.
 func build(database db.Database, mfa authn.MFA, accounts authn.Accounts, wa *libwebauthn.WebAuthn, cfg resolved) *product {
 	return &product{
 		register: &register{handle: database.DB()},
@@ -222,8 +166,6 @@ func build(database db.Database, mfa authn.MFA, accounts authn.Accounts, wa *lib
 	}
 }
 
-// wire runs in Init, where every instance exists: it takes up the logging
-// capability.
 func (p *product) wire(reg *core.Registry) error {
 	if delivered, err := core.Resolve[log.Logger](reg); err == nil {
 		p.logger = delivered.Named(ModuleName)
@@ -231,9 +173,6 @@ func (p *product) wire(reg *core.Registry) error {
 	return nil
 }
 
-// start runs in Start: the two tables must be there, and the multi-factor module
-// must have taken this factor's kind in, or a credential this module registers
-// would never be offered.
 func (p *product) start(ctx context.Context) error {
 	if err := p.register.probe(ctx); err != nil {
 		return err

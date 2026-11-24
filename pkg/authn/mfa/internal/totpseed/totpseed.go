@@ -1,13 +1,4 @@
-// Package totpseed holds the statements on authn_totp_secrets, the table of
-// the TOTP factor's seeds.
-//
-// The secret column carries the encrypted serializer, so a write seals it and a
-// read opens it; a read that reached the column through anything but this model
-// would come back as ciphertext, and the database module refuses that rather
-// than hand it over. The multi-factor module's test-support package mfatest
-// writes and reads a seed through these statements, so a fixture seals its
-// secret with the same model, and under the same configured key, as a browser
-// enrollment.
+// Package totpseed holds the statements on authn_totp_secrets, the TOTP factor's seed table. The secret column uses the encrypted serializer, so a write seals it and a read opens it.
 package totpseed
 
 import (
@@ -24,10 +15,7 @@ import (
 // Table is the table of the TOTP seeds.
 const Table = "authn_totp_secrets"
 
-// The parameters a seed is generated with. They are the convention every
-// authenticator app follows: HMAC-SHA1, six digits and a thirty-second step.
-// They are not settings; the step is fixed so that a wider window cannot be
-// turned on, which would only widen an attacker's.
+// The parameters a seed is generated with: HMAC-SHA1, six digits and a thirty-second step, the convention every authenticator app follows. They are fixed, not settings.
 const (
 	// PeriodSeconds is the step a generated code is valid for.
 	PeriodSeconds = 30
@@ -37,16 +25,8 @@ const (
 	AlgorithmSHA1 = "SHA1"
 )
 
-// probePlaintext is the value the startup round trip writes into the encrypted
-// column and reads back. It is not a secret of any deployment: it exists only so
-// that a write and a read that cannot be encrypted fail the startup instead of
-// the first enrollment.
 const probePlaintext = "speed/authn/totp/encrypted-column-probe"
 
-// row is a row of the table as the model path sees it. The secret carries the
-// serializer, so a write seals it and a read opens it; a read that reached the
-// column through anything but this model would come back as ciphertext, and the
-// database module refuses that rather than hand it over.
 type row struct {
 	FactorID    string `gorm:"column:factor_id;primaryKey"`
 	Secret      string `gorm:"column:secret;serializer:encrypted"`
@@ -56,23 +36,25 @@ type row struct {
 	LastCounter int64  `gorm:"column:last_counter"`
 }
 
-// TableName is the table this model maps to, which is the one the migration
-// creates.
 func (row) TableName() string { return Table }
 
 // Seed is the data of one TOTP factor as the factor reads and writes it. The
 // secret is the plaintext; it never leaves this module.
 type Seed struct {
-	FactorID    string
-	Secret      string
-	Algorithm   string
-	Digits      int
-	Period      int
+	// FactorID is the factor row the seed belongs to.
+	FactorID string
+	// Secret is the plaintext base32 seed.
+	Secret string
+	// Algorithm is the HMAC digest name stored with the seed.
+	Algorithm string
+	// Digits is the number of digits a generated code carries.
+	Digits int
+	// Period is the step in seconds a generated code is valid for.
+	Period int
+	// LastCounter is the highest counter already used, which replay is judged against.
 	LastCounter int64
 }
 
-// row is the model form of the seed. The two types hold the same fields in the
-// same order, so one converts to the other.
 func (s Seed) row() row { return row(s) }
 
 func seedOf(r row) Seed { return Seed(r) }
@@ -112,11 +94,7 @@ func (g *Store) Load(ctx context.Context, factorID string) (Seed, bool, error) {
 	return seedOf(r), true, nil
 }
 
-// Advance raises last_counter to counter, and only when it is still below it.
-// The statement is what decides a replay: two attempts that present the code of
-// one counter both read a lower stored value, the conditional write lets exactly
-// one through, and the other is told rows were affected zero times. The result
-// says whether this call was the one.
+// Advance raises last_counter to counter only while it is still below it; the affected-row count decides which of two attempts proving the same counter wins.
 func (g *Store) Advance(ctx context.Context, factorID string, counter int64) (bool, error) {
 	res := g.session(ctx).Exec("UPDATE "+Table+" SET last_counter = ? WHERE factor_id = ? AND last_counter < ?",
 		counter, factorID, counter)
@@ -148,12 +126,7 @@ func (g *Store) Probe(ctx context.Context) error {
 	return fmt.Errorf("reading %s: %w", Table, err)
 }
 
-// RoundTrip writes a probe row and reads it back through the model, in a
-// transaction that is rolled back, so that a handle whose encrypted column
-// cannot be sealed or opened is found at startup. Every failure is the same one:
-// the column could not be written and read, whatever the underlying cause. The
-// parameters a probe row records are the factor's fixed ones, passed by the
-// module that owns them.
+// RoundTrip writes a probe row and reads it back through the model in a rolled-back transaction, so a handle whose encrypted column cannot be sealed or opened fails at startup.
 func (g *Store) RoundTrip(ctx context.Context, algorithm string, digits, period int) error {
 	tx := g.session(ctx).Begin()
 	if tx.Error != nil {

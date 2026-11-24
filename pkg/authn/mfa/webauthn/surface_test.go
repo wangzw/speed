@@ -20,45 +20,23 @@ import (
 	"time"
 )
 
-// goListBudget bounds the one go list this file runs, which lists the export
-// files of this package's dependency closure. With a warm build cache it returns
-// in about a second; with a cold one it compiles that closure first, which can
-// take much longer. The budget leaves room for a cold cache and still catches a
-// return to one go list per import, which took minutes.
 const goListBudget = 2 * time.Minute
 
-// checkBudget bounds the whole export-surface check end to end. Type-checking
-// this package's files against the listed export data takes about a second; the
-// budget catches a return to resolving imports by type-checking them from
-// source, which forked one go list per import and took minutes. That path would
-// not run inside the single go list above, so it needs its own bound.
 const checkBudget = 5 * time.Minute
 
-// libraryPath is the import path of the WebAuthn library whose types must not
-// reach this package's export surface. It is at version 0.x and changes between
-// releases, so a caller tied to one of its types is tied to the version this
-// module pins.
 const libraryPath = "github.com/go-webauthn/webauthn"
 
-// exportedType is one exported symbol's type, held for the walk.
 type exportedType struct {
 	name string
 	typ  types.Type
 }
 
-// checkedPackage type-checks this package from source and returns its scope and
-// the symbols it exports. Imports are resolved from the go list export data
-// through the gc importer, not from their source: the source importer forked one
-// go list per import, which made this check take minutes.
 func checkedPackage(t *testing.T) (*types.Package, []exportedType) {
 	t.Helper()
 	type result struct {
 		checked packageCheck
 		err     error
 	}
-	// The check runs off the test goroutine so that checkBudget can bound it: a
-	// regression to type-checking imports from source would otherwise hang until
-	// the go test timeout, past the point of saying which check regressed.
 	done := make(chan result, 1)
 	go func() {
 		checked, err := checkPackage()
@@ -78,14 +56,11 @@ func checkedPackage(t *testing.T) (*types.Package, []exportedType) {
 	}
 }
 
-// packageCheck is one type check's result.
 type packageCheck struct {
 	pkg      *types.Package
 	exported []exportedType
 }
 
-// checkPackage is computed once, so the two cases that read it type-check this
-// package once rather than twice.
 var checkPackage = sync.OnceValues(func() (packageCheck, error) {
 	bp, err := gobuild.Default.ImportDir(".", 0)
 	if err != nil {
@@ -124,17 +99,8 @@ var checkPackage = sync.OnceValues(func() (packageCheck, error) {
 	return packageCheck{pkg: pkg, exported: out}, nil
 })
 
-// exportData lists this package's dependency closure once: every import path
-// the compiler knows about, mapped to its compiled export file. The gc importer
-// reads those files instead of type-checking each dependency from source.
 var exportData = sync.OnceValues(listExportData)
 
-// listExportData runs the one go list that feeds the gc importer. It inherits
-// this process's environment variables, so it reads the same GOFLAGS and the
-// same build cache location. Build tags passed on the go test command line are
-// not inherited this way; only tags written into GOFLAGS reach the subprocess.
-// This package's non-test files carry no build tags, so no tag needs to be
-// forwarded to the go list arguments.
 func listExportData() (map[string]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), goListBudget)
 	defer cancel()
@@ -162,8 +128,6 @@ func listExportData() (map[string]string, error) {
 	return data, nil
 }
 
-// gcImporter is shared by this package's check and by the library-reference
-// check, so both read the same export data instead of starting another importer.
 var gcImporter = sync.OnceValues(func() (types.Importer, error) {
 	data, err := exportData()
 	if err != nil {
@@ -185,8 +149,6 @@ var gcImporter = sync.OnceValues(func() (types.Importer, error) {
 	}), nil
 })
 
-// libraryRefs reports the library types reachable from typ, following named
-// types, signatures, structs, interfaces and containers.
 func libraryRefs(typ types.Type, seen map[types.Type]bool) []string {
 	if typ == nil || seen[typ] {
 		return nil
@@ -242,9 +204,7 @@ func libraryRefs(typ types.Type, seen map[types.Type]bool) []string {
 	return nil
 }
 
-// The export surface carries no type of the WebAuthn library: a caller is tied
-// to the root package's Factor, Step and LoginMethod, and the version this module
-// pins reaches no further than its own internals.
+// TestNoLibraryTypeReachesTheExportSurface checks that no WebAuthn library type reaches the export surface.
 func TestNoLibraryTypeReachesTheExportSurface(t *testing.T) {
 	_, exported := checkedPackage(t)
 	for _, e := range exported {
@@ -254,8 +214,7 @@ func TestNoLibraryTypeReachesTheExportSurface(t *testing.T) {
 	}
 }
 
-// The export surface is small and pinned: the module name, the config namespace
-// and the descriptor. A symbol added without a decision fails here.
+// TestTheExportSurfaceIsPinned checks that the export surface is exactly the module name, config namespace and descriptor.
 func TestTheExportSurfaceIsPinned(t *testing.T) {
 	_, exported := checkedPackage(t)
 	var got []string
@@ -269,9 +228,7 @@ func TestTheExportSurfaceIsPinned(t *testing.T) {
 	}
 }
 
-// The check sees what it is meant to see: a type the library defines is
-// reachable from a symbol that names it, which is the defect the test above
-// refuses.
+// TestTheLibraryRefCheckSeesTheLibrary checks that the library-reference check finds a library type.
 func TestTheLibraryRefCheckSeesTheLibrary(t *testing.T) {
 	imp, err := gcImporter()
 	if err != nil {

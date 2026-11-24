@@ -22,9 +22,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The stand-in modules an assembly drives: the capabilities another module
-// delivers exclusively in a real command, each supplied to a module of its own
-// here because the modules that deliver them are not ones these cases bring in.
 const (
 	dbModule      = "stand-in.db"
 	accountModule = "stand-in.account"
@@ -32,9 +29,6 @@ const (
 	loggerModule  = "stand-in.log"
 )
 
-// standIn is a module that declares the tokens names, exclusively when told to,
-// and delivers instance from its New. It is how a case hands the registry an
-// instance for a module it does not have.
 func standIn(name string, instance any, exclusive bool, tokens ...core.Token) core.Module {
 	provides := make([]core.Provision, len(tokens))
 	for i, tk := range tokens {
@@ -47,61 +41,29 @@ func standIn(name string, instance any, exclusive bool, tokens ...core.Token) co
 	}
 }
 
-// factorModule registers one factor the way a factor subpackage does: a module of
-// its own, delivering the factor capability non-exclusively so several stand side
-// by side. The index keeps the names apart when a case registers two factors of
-// one kind to reach ErrFactorConflict, because the kind is what they share.
 func factorModule(i int, f authn.Factor) core.Module {
 	return standIn(fmt.Sprintf("stand-in.factor.%d.%s", i, f.Kind()), f, false, (*authn.Factor)(nil))
 }
 
-// accountStandIn is one instance delivering all three capabilities the account
-// module does, as its instance is.
 type accountStandIn struct {
 	authn.Accounts
 	authn.AccountAdmin
 	authn.Throttle
 }
 
-// standInLogger is a logging capability that writes every record to a buffer the
-// case reads: the module takes it up in Init and warns through it in Start.
 type standInLogger struct{ logs *logBuffer }
 
 func (l standInLogger) Named(string) *slog.Logger { return l.logs.logger() }
 func (l standInLogger) Redaction() log.Redaction  { return nil }
 
-// assembly is one drive of a real registry through this module's descriptor. The
-// database, the mounter, the account capabilities and the failure back-off are
-// supplied as stand-in modules of their own; the factors, the settings store and
-// the logging capability are what the case varies.
-//
-// The cases in the other files build the product by hand over a rig, which is
-// what lets them reach one state at a time. What they cannot reach is the
-// descriptor itself: which callback takes up which capability, what Init checks
-// about the factors and the policy, and what Start checks about the register —
-// and that is what a case built on this holds.
 type assembly struct {
-	// factors are registered as modules of their own and all take part.
 	factors []authn.Factor
-	// store is supplied to a stand-in for the settings module; nil leaves the
-	// module with no store and every setting at its declared default.
-	store settings.Store
-	// logger is supplied to a stand-in for the logging module; nil leaves the
-	// module writing to the process default.
+	store   settings.Store
 	logging log.Logger
-	// migrate builds the module's table before the drive, so that Start's probe
-	// finds it. A case that wants the table missing leaves it false.
 	migrate bool
-	// seed runs on the handle once the table is built and before the drive takes
-	// part, which is how a case puts rows there that only a running system would
-	// have written.
-	seed func(t *testing.T, handle *gorm.DB)
+	seed    func(t *testing.T, handle *gorm.DB)
 }
 
-// drive advances the assembly to Start, runs action there, and returns what the
-// drive returned once every Stop and Close has run. The delivery declaration is
-// held inside the drive: a product that does not deliver what the descriptor
-// claims makes the drive fail before action runs.
 func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core.Registry) error) error {
 	t.Helper()
 
@@ -155,14 +117,9 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 	})
 }
 
-// nothing is an action that only lets the drive arrive.
 func nothing(context.Context, *core.Registry) error { return nil }
 
-// TestTheDescriptorNamesWhatItDeliversAndRequires holds the descriptor's shape:
-// the multi-factor capability is claimed exclusively, the account lifecycle hook
-// travels with it without being claimed, and the required capabilities are the
-// ones another module delivers exclusively, so the closure does not pull them in
-// and the host writes them down.
+// TestTheDescriptorNamesWhatItDeliversAndRequires checks that the descriptor claims MFA exclusively and requires the capabilities another module delivers.
 func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "authn.mfa" {
@@ -202,9 +159,7 @@ func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 	}
 }
 
-// TestPrepareStatesEnabledAndNothingElse holds the stance: the module claims the
-// capability exclusively, and an exclusive provider that states StateAuto is the
-// cell resolution disables.
+// TestPrepareStatesEnabledAndNothingElse checks that Prepare states the enabled stance and nothing else.
 func TestPrepareStatesEnabledAndNothingElse(t *testing.T) {
 	got, err := Module().Prepare(t.Context(), core.New())
 	if err != nil {
@@ -215,8 +170,7 @@ func TestPrepareStatesEnabledAndNothingElse(t *testing.T) {
 	}
 }
 
-// TestImportingThePackageRegistersTheModuleWithTheProcess holds the init: a host
-// that imports the package finds the module in the process registry.
+// TestImportingThePackageRegistersTheModuleWithTheProcess checks that importing the package registers the module with the process registry.
 func TestImportingThePackageRegistersTheModuleWithTheProcess(t *testing.T) {
 	got, ok := core.ProcessRegistry.Lookup(ModuleName)
 	if !ok {
@@ -227,11 +181,7 @@ func TestImportingThePackageRegistersTheModuleWithTheProcess(t *testing.T) {
 	}
 }
 
-// TestARealRegistryDeliversMultiFactorAndTheAccountLifecycleHook holds the
-// descriptor end to end: a real registry built the module, its Init took up the
-// factor, the settings and the session capabilities, and the one instance it
-// built answers for both the multi-factor capability and the lifecycle hook —
-// which is what core's own delivery check asserted as the drive ran.
+// TestARealRegistryDeliversMultiFactorAndTheAccountLifecycleHook checks that a real registry builds one instance delivering MFA and the account lifecycle hook.
 func TestARealRegistryDeliversMultiFactorAndTheAccountLifecycleHook(t *testing.T) {
 	var deliveredMFA authn.MFA
 	var deliveredHook authn.AccountLifecycle
@@ -257,8 +207,7 @@ func TestARealRegistryDeliversMultiFactorAndTheAccountLifecycleHook(t *testing.T
 	}
 }
 
-// TestTwoFactorsOfOneKindFailTheDrive holds ErrFactorConflict: two implementations
-// of one kind are a declaration that is not well formed, and the drive names both.
+// TestTwoFactorsOfOneKindFailTheDrive checks that two factors of one kind fail the drive with ErrFactorConflict.
 func TestTwoFactorsOfOneKindFailTheDrive(t *testing.T) {
 	err := assembly{
 		factors: []authn.Factor{newFactor(authn.FactorTOTP), newFactor(authn.FactorTOTP)},
@@ -272,9 +221,7 @@ func TestTwoFactorsOfOneKindFailTheDrive(t *testing.T) {
 	}
 }
 
-// TestAFactorClaimingAKindOutsideTheSetFailsTheDrive holds the other malformed
-// declaration: a kind that is not one of the closed set cannot be a row's kind
-// and cannot be an implementation.
+// TestAFactorClaimingAKindOutsideTheSetFailsTheDrive checks that a factor declaring a kind outside the closed set fails the drive.
 func TestAFactorClaimingAKindOutsideTheSetFailsTheDrive(t *testing.T) {
 	err := assembly{
 		factors: []authn.Factor{newFactor(authn.FactorKind("sms-2020"))},
@@ -285,9 +232,7 @@ func TestAFactorClaimingAKindOutsideTheSetFailsTheDrive(t *testing.T) {
 	}
 }
 
-// TestNoFactorWithTheMandatorySwitchOnFailsTheDrive holds ErrNoFactor from Init:
-// a command that requires a factor of every account and takes in no factor module
-// cannot satisfy its own policy, and the failure is named before anything runs.
+// TestNoFactorWithTheMandatorySwitchOnFailsTheDrive checks that the mandatory switch with no factor module fails the drive with ErrNoFactor.
 func TestNoFactorWithTheMandatorySwitchOnFailsTheDrive(t *testing.T) {
 	store := newStore()
 	store.set(globalRequiredPath, true)
@@ -300,9 +245,7 @@ func TestNoFactorWithTheMandatorySwitchOnFailsTheDrive(t *testing.T) {
 	}
 }
 
-// TestNoFactorWithTheSwitchOffIsALegalAssembly holds the absence that is not a
-// failure: no factor module and no requirement is a deployment where no second
-// factor is taken in, and the drive arrives.
+// TestNoFactorWithTheSwitchOffIsALegalAssembly checks that no factor module with the switch off is a legal assembly.
 func TestNoFactorWithTheSwitchOffIsALegalAssembly(t *testing.T) {
 	reached := false
 	err := assembly{migrate: true}.drive(t, func(context.Context, *core.Registry) error {
@@ -317,9 +260,7 @@ func TestNoFactorWithTheSwitchOffIsALegalAssembly(t *testing.T) {
 	}
 }
 
-// TestStartRefusesWhenTheRegisterTableIsMissing holds ErrNotMigrated: a table
-// module whose table cannot be read ends the startup and names the migration
-// command rather than serving requests against a register that is not there.
+// TestStartRefusesWhenTheRegisterTableIsMissing checks that Start refuses with ErrNotMigrated when the register table is missing.
 func TestStartRefusesWhenTheRegisterTableIsMissing(t *testing.T) {
 	err := assembly{factors: []authn.Factor{newFactor(authn.FactorTOTP)}}.drive(t, func(context.Context, *core.Registry) error {
 		t.Error("the drive reached its action with the table missing")
@@ -330,9 +271,7 @@ func TestStartRefusesWhenTheRegisterTableIsMissing(t *testing.T) {
 	}
 }
 
-// TestStartRefusesWhenAccountsHoldAKindNoModuleDelivers holds the other ErrNoFactor:
-// the register holds an active factor whose kind no module taken in delivers, so
-// no login that needs it could be completed; the failure names the kinds.
+// TestStartRefusesWhenAccountsHoldAKindNoModuleDelivers checks that Start refuses when the register holds active factors of a kind no module delivers.
 func TestStartRefusesWhenAccountsHoldAKindNoModuleDelivers(t *testing.T) {
 	err := assembly{
 		migrate: true,
@@ -352,10 +291,7 @@ func TestStartRefusesWhenAccountsHoldAKindNoModuleDelivers(t *testing.T) {
 	}
 }
 
-// TestStartWarnsWhenTheAdmissionLayerTakesNoPart holds the startup diagnostic: a
-// deployment with no tenant admission layer has nobody executing a tenant's
-// requirement of multi-factor, and the module says so with a Warn naming that
-// module.
+// TestStartWarnsWhenTheAdmissionLayerTakesNoPart checks that Start warns when no tenant admission layer enforces a tenant's requirement.
 func TestStartWarnsWhenTheAdmissionLayerTakesNoPart(t *testing.T) {
 	logs := &logBuffer{}
 	err := assembly{
@@ -371,10 +307,7 @@ func TestStartWarnsWhenTheAdmissionLayerTakesNoPart(t *testing.T) {
 	}
 }
 
-// TestStartTakesUndeliveredKindsAsUnavailableWithoutFailing holds the diagnostic
-// for a kind accounts hold but this command does not: it is a factor that is
-// unavailable, said with a Warn, and not a startup failure, because a factor
-// module taken out is a legal assembly the operators are told about.
+// TestStartTakesUndeliveredKindsAsUnavailableWithoutFailing checks that a kind accounts hold without an implementation is reported as unavailable, not as a startup failure.
 func TestStartTakesUndeliveredKindsAsUnavailableWithoutFailing(t *testing.T) {
 	logs := &logBuffer{}
 	err := assembly{
@@ -397,10 +330,7 @@ func TestStartTakesUndeliveredKindsAsUnavailableWithoutFailing(t *testing.T) {
 	}
 }
 
-// Start says which factor kinds take part: a deployment with none taken in has
-// the empty-assembly line, and one with a factor taken in names the kinds that
-// do. Which line a deployment gets is what tells an operator whether any factor
-// is in play.
+// TestStartSaysWhichFactorKindsTakePart checks the startup line that names the factor kinds taking part.
 func TestStartSaysWhichFactorKindsTakePart(t *testing.T) {
 	empty := &logBuffer{}
 	if err := (assembly{migrate: true, logging: standInLogger{logs: empty}}).drive(t, nothing); err != nil {

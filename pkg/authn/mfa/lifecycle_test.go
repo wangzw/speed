@@ -13,6 +13,7 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
+// TestAccountDeletedHasEveryFactorCleanItsDataAndRemovesTheRows checks that AccountDeleted has every factor clean its data and removes the rows.
 func TestAccountDeletedHasEveryFactorCleanItsDataAndRemovesTheRows(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP, authn.FactorSMS}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -37,7 +38,6 @@ func TestAccountDeletedHasEveryFactorCleanItsDataAndRemovesTheRows(t *testing.T)
 		if _, there := r.status(theirs); !there {
 			t.Error("another account's row was removed")
 		}
-		// Idempotent: nothing left, nothing to fail on.
 		if err := r.p.AccountDeleted(context.Background(), acct); err != nil {
 			t.Errorf("a second call: %v", err)
 		}
@@ -53,6 +53,7 @@ func sortedStrings(in []string) []string {
 	return out
 }
 
+// TestACleanupThatFailsIsReturnedAndTheRepeatFinishesIt checks that a failed cleanup is returned and the repeat finishes it.
 func TestACleanupThatFailsIsReturnedAndTheRepeatFinishesIt(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -84,6 +85,7 @@ func TestACleanupThatFailsIsReturnedAndTheRepeatFinishesIt(t *testing.T) {
 	})
 }
 
+// TestADisabledAccountKeepsItsFactors checks that a disabled account keeps its factors.
 func TestADisabledAccountKeepsItsFactors(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
@@ -102,8 +104,7 @@ func TestADisabledAccountKeepsItsFactors(t *testing.T) {
 	})
 }
 
-// AccountEnabled changes nothing: a disabled account kept its factors, and the
-// enabled account uses the same ones.
+// TestAnEnabledAccountKeepsItsFactors checks that enabling a disabled account keeps the factors it had.
 func TestAnEnabledAccountKeepsItsFactors(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
@@ -120,6 +121,7 @@ func deleted(id string, account authn.AccountID) event.Event {
 	return event.Event{ID: id, Type: authn.EventAccountDeleted, Payload: authn.AccountDeleted{AccountID: string(account)}}
 }
 
+// TestTheDeletionEventCompensatesAndIsDeduplicatedByItsID checks that the deletion event compensates and is deduplicated by its identifier.
 func TestTheDeletionEventCompensatesAndIsDeduplicatedByItsID(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -134,9 +136,6 @@ func TestTheDeletionEventCompensatesAndIsDeduplicatedByItsID(t *testing.T) {
 			t.Fatal("the deletion event did not clean the account")
 		}
 
-		// The same event again, at-least-once as some transports are, is not done a
-		// second time: a row that appeared in between is left, which shows the
-		// identifier was what stopped it. A different event for the account is.
 		again := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
 		if err := r.bus.deliver(ctx, deleted("evt-1", acct)); err != nil {
 			t.Fatal(err)
@@ -153,6 +152,7 @@ func TestTheDeletionEventCompensatesAndIsDeduplicatedByItsID(t *testing.T) {
 	})
 }
 
+// TestAFailedCleanupIsNotMarkedDoneSoARedeliveryRunsIt checks that a failed cleanup is not marked done, so a redelivery runs it again.
 func TestAFailedCleanupIsNotMarkedDoneSoARedeliveryRunsIt(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -171,6 +171,7 @@ func TestAFailedCleanupIsNotMarkedDoneSoARedeliveryRunsIt(t *testing.T) {
 	})
 }
 
+// TestADeletionEventThatCannotBeReadIsDropped checks that a deletion event that cannot be read is dropped.
 func TestADeletionEventThatCannotBeReadIsDropped(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
@@ -190,6 +191,7 @@ func TestADeletionEventThatCannotBeReadIsDropped(t *testing.T) {
 	})
 }
 
+// TestTheSeenEventsAreBounded checks that the seen-event set is bounded.
 func TestTheSeenEventsAreBounded(t *testing.T) {
 	s := newSeenEvents()
 	for i := 0; i < seenCapacity+50; i++ {
