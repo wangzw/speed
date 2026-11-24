@@ -238,15 +238,15 @@ EMBEDS_FRONTEND_BUILD = (
 # The three phases `web-check` splits into, in order, and the commands each
 # carries. Together they are the whole frontend gate -- install, lint,
 # typecheck and the rule tests; the unit tests and the route-level sweep; the
-# build -- with the width every command takes from GATE_JOBS. Two commands nest
-# two widths: the test leg's package scripts each start their own vitest
-# process, and the install hands each lifecycle script the whole budget, so
-# both run their projects one at a time and let the inner process take the
-# whole GATE_JOBS. The product of the two widths is what the budget bounds, not
-# either factor alone. The lint leg nests the other way round: pnpm -r runs
-# GATE_JOBS packages at once and each ESLint process is told to lint on one
-# thread. The build's `build:self` scripts compile only their own package into
-# its own dist/, so its workspace width is GATE_JOBS too.
+# build -- with the width every command takes from GATE_JOBS. The unit-test
+# leg starts one vitest process over every workspace member, so its
+# --maxWorkers is the whole width and no package layer multiplies it. The
+# lint leg is the one that nests two widths: pnpm -r runs GATE_JOBS packages
+# at once and each ESLint process is told to lint on one thread. The install
+# loads the workspace under one lockfile, so its --workspace-concurrency=1
+# takes no effect and only writes the width out; --child-concurrency caps its
+# lifecycle scripts. The build's `build:self` scripts compile only their own
+# package into its own dist/, so its workspace width is GATE_JOBS too.
 WEB_CHECK_PHASES = {
     "web-check-static": (
         "pnpm -C web install --frozen-lockfile --workspace-concurrency=1 "
@@ -257,7 +257,8 @@ WEB_CHECK_PHASES = {
         "pnpm -C web exec vitest run --maxWorkers=$(GATE_JOBS) eslint-rules/ scripts/",
     ),
     "web-check-test": (
-        "pnpm -C web -r --workspace-concurrency=1 test --maxWorkers=$(GATE_JOBS)",
+        "pnpm -C web exec vitest run --config vitest.unit.config.ts "
+        "--maxWorkers=$(GATE_JOBS)",
         "$(MAKE) web-a11y",
     ),
     "web-check-build": (
@@ -933,12 +934,11 @@ class LoopingLegTests(unittest.TestCase):
         for gate_jobs, width in ((None, "4"), ("7", "7")):
             with self.subTest(leg="web-check-static", gate_jobs=gate_jobs):
                 calls = self.leg_calls("web-check-static", gate_jobs)
-                # The install nests its widths the same way the test leg does:
-                # one project at a time, each lifecycle script taking the whole
-                # GATE_JOBS. The lint leg nests the other way round: pnpm -r
-                # runs GATE_JOBS packages at once and each ESLint process is
-                # told to lint on one thread, so neither width is left to the
-                # tool's default.
+                # The install runs one project at a time, each lifecycle
+                # script taking the whole GATE_JOBS. The lint leg runs
+                # GATE_JOBS packages at once and tells each ESLint process to
+                # lint on one thread, so neither width is left to the tool's
+                # default.
                 install = self.pnpm_call(calls, "install")
                 self.assertIn("--workspace-concurrency=1", install["args"])
                 self.assertIn(f"--child-concurrency={width}", install["args"])
@@ -949,18 +949,38 @@ class LoopingLegTests(unittest.TestCase):
                 self.assertIn(f"--workspace-concurrency={width}", typecheck["args"])
                 self.assertIn(f"--maxWorkers={width}", self.pnpm_call(calls, "vitest")["args"])
             with self.subTest(leg="web-check-test", gate_jobs=gate_jobs):
-                # The product of the package width and the per-process worker
-                # count is what the budget bounds. The packages run one at a
-                # time and each vitest process takes the whole GATE_JOBS, so
-                # the product is GATE_JOBS, not its square.
+                # The unit tests run in one vitest process whose projects
+                # cover every workspace member, so --maxWorkers is the whole
+                # budget: no package layer multiplies it. Each package keeps
+                # its own `test` script for a single-package run.
                 calls = self.leg_calls("web-check-test", gate_jobs)
-                test_call = self.pnpm_call(calls, "test")
-                self.assertIn("--workspace-concurrency=1", test_call["args"])
-                self.assertNotIn(f"--workspace-concurrency={width}", test_call["args"])
-                self.assertIn(f"--maxWorkers={width}", test_call["args"])
-                self.assertIn(
-                    f"--maxWorkers={width}", self.pnpm_call(calls, "test:a11y")["args"]
+                vitest_calls = [
+                    call
+                    for call in calls
+                    if call["tool"] == "pnpm" and "vitest" in call["args"]
+                ]
+                self.assertEqual(len(vitest_calls), 1, vitest_calls)
+                unit_call = vitest_calls[0]
+                self.assertIn("--config", unit_call["args"])
+                self.assertIn("vitest.unit.config.ts", unit_call["args"])
+                self.assertIn(f"--maxWorkers={width}", unit_call["args"])
+                self.assertNotIn("-r", unit_call["args"])
+                self.assertFalse(
+                    any(
+                        arg.startswith("--workspace-concurrency=")
+                        for arg in unit_call["args"]
+                    ),
+                    unit_call["args"],
                 )
+                # The route-level sweep stays a separate process with its own
+                # config, which is the only worker width it takes.
+                a11y_calls = [
+                    call
+                    for call in calls
+                    if call["tool"] == "pnpm" and "test:a11y" in call["args"]
+                ]
+                self.assertEqual(len(a11y_calls), 1, a11y_calls)
+                self.assertIn(f"--maxWorkers={width}", a11y_calls[0]["args"])
             with self.subTest(leg="web-check-build", gate_jobs=gate_jobs):
                 # `build:self` compiles only its own package, so the workspace
                 # runs at GATE_JOBS; the demo host is built separately by vite.

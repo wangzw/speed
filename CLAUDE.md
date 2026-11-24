@@ -142,21 +142,23 @@ they start. Four carry no width this repository can set and run at whatever
 their runtime decides: tsc, the rolldown thread pool behind `vite build`, the
 shellcheck processes actionlint starts (one per CPU it sees), and the threads
 pnpm install links packages with.
-Set it to the CPU share this run may use. A leg that nests two of those
-widths keeps the product within the budget, not just each factor. pnpm -r
-starting one vitest process per package is one such leg: the frontend test
-segment runs its packages one at a time (`--workspace-concurrency=1`) and
-gives each vitest process the whole `GATE_JOBS`, so the product is `GATE_JOBS`
-rather than its square. The lint leg nests the other way round: pnpm -r runs
-`GATE_JOBS` packages at once and each ESLint process lints on one thread
-(`--concurrency=off`). pnpm install installs the workspace in one pass under
-its shared lockfile, so `--child-concurrency` caps the lifecycle scripts of
-the whole install at `GATE_JOBS`, and `--workspace-concurrency=1` takes no
-effect there and only keeps that width from being left to a default.
-`web-a11y` and `web-browser` start a single vitest process, so their
-`--maxWorkers` is already the budget. `make -j N check` multiplies it: up to
-N segments run at once, each able to use `GATE_JOBS` cores, so a caller
-running segments in parallel divides its budget between the two.
+Set it to the CPU share this run may use. The default is 4, so a local caller
+with a larger share passes it explicitly, as in `make check GATE_JOBS=16`; on
+a rerun Go's test cache already replays the packages whose inputs did not
+change, so the gain there is smaller than on a cold run. A leg that nests two
+of those widths keeps the product within the budget, not just each factor.
+The lint leg is one: pnpm -r runs `GATE_JOBS` packages at once and each ESLint
+process lints on one thread (`--concurrency=off`). pnpm install installs the
+workspace in one pass under its shared lockfile, so `--child-concurrency` caps
+the lifecycle scripts of the whole install at `GATE_JOBS`, and
+`--workspace-concurrency=1` takes no effect there and only keeps that width
+from being left to a default. The frontend unit tests nest no width: one
+vitest process runs every workspace member's suite as a project of
+`web/vitest.unit.config.ts`, so its `--maxWorkers` is the budget, and
+`web-a11y` and `web-browser` likewise start a single vitest process each.
+`make -j N check` multiplies it: up to N segments run at once, each able to use
+`GATE_JOBS` cores, so a caller running segments in parallel divides its budget
+between the two.
 
 **The test reporter is pinned, not selected by the runner**, so a warning a
 passing case prints is in the log whichever way the gate was started. Under

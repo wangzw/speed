@@ -147,11 +147,18 @@ pnpm install --frozen-lockfile   # reproduce CI's install exactly
 pnpm -r lint                     # eslint over every package (flat config)
 pnpm -r typecheck                # tsc --noEmit over every package
 pnpm -r test                     # vitest run over every package
+pnpm exec vitest run --config vitest.unit.config.ts --maxWorkers=4   # every member, one process (the gate's unit leg)
 pnpm build                       # emit dist/ (ESM .js + .d.ts) per package
 ```
 
 Single-package runs work from the package directory (`pnpm test`, `pnpm
 build`, ...) or with `pnpm --filter @speed/<name> <script>` from `web/`.
+
+The gate's unit leg is the single-process line above, at `GATE_JOBS`
+workers (`make web-check-test`); `pnpm -r test` keeps the per-package
+entry, which is also what `--coverage` stays on. At the gate's width
+individual cases take longer than 5s on a loaded machine, which is why the
+shared test budget exists.
 
 ## Browser tier
 
