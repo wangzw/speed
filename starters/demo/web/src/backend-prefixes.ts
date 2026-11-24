@@ -5,7 +5,7 @@
  * `backend-prefixes.json` beside this package is the list this app's dev proxy
  * generates from; it is a hand-kept mirror of the claims in the server
  * configuration, held to them by the server's
- * TestThePrefixManifestAgreesWithTheDifferentialTableAndTheClaims. The namespaces an endpoint
+ * TestThePrefixManifestMatchesTheOwnershipTable. The namespaces an endpoint
  * owns are a product fact -- they do not follow which modules a particular
  * build imports or runs -- so the list stands even when a deployment splits
  * the listener again. The ops endpoint shares the backend listener, so its

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
+	"io/fs"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -24,6 +24,7 @@ import (
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/db/sqlite"
 	eventmemory "github.com/vislake/speed/pkg/event/memory"
+	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/tenant"
 	"github.com/vislake/speed/pkg/tenant/admission"
@@ -1746,29 +1747,47 @@ func TestTheSeedRoleDescriptionKeysMatchTheRoleCatalog(t *testing.T) {
 		tenantAdminDescriptionKey:   true,
 	}
 	for _, locale := range []string{"zh-CN", "en-US"} {
-		path := filepath.Join("..", "..", "..", "pkg", "authz", "policy", "rolelocales", locale+".json")
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("reading the role catalog %s: %v", path, err)
-		}
+		raw := roleCatalogBytes(t, locale)
 		var entries map[string]string
 		if err := json.Unmarshal(raw, &entries); err != nil {
-			t.Fatalf("%s is not a JSON object of message text: %v", path, err)
+			t.Fatalf("the role catalog for %s is not a JSON object of message text: %v", locale, err)
 		}
 		if len(entries) != len(want) {
-			t.Errorf("%s carries %d key(s), want the seed's %d role keys", path, len(entries), len(want))
+			t.Errorf("the role catalog for %s carries %d key(s), want the seed's %d role keys",
+				locale, len(entries), len(want))
 		}
 		for key := range want {
 			if _, ok := entries[key]; !ok {
-				t.Errorf("%s carries no entry for %q, a key the seed writes into a builtin role", path, key)
+				t.Errorf("the role catalog for %s carries no entry for %q, a key the seed writes into a builtin role",
+					locale, key)
 			}
 		}
 		for key := range entries {
 			if !want[key] {
-				t.Errorf("%s carries %q, which the seed never writes into a builtin role", path, key)
+				t.Errorf("the role catalog for %s carries %q, which the seed never writes into a builtin role",
+					locale, key)
 			}
 		}
 	}
+}
+
+// roleCatalogBytes answers the role catalog compiled into this binary for one
+// locale, so a changed file changes the package hash and the cached result
+// cannot outlive it.
+func roleCatalogBytes(t *testing.T, locale string) []byte {
+	t.Helper()
+	for _, catalog := range core.Resources[i18n.Catalog](core.ProcessRegistry) {
+		if catalog.Value.Pattern != "rolelocales/*.json" {
+			continue
+		}
+		raw, err := fs.ReadFile(catalog.Value.FS, "rolelocales/"+locale+".json")
+		if err != nil {
+			t.Fatalf("reading the compiled-in role catalog for %s: %v", locale, err)
+		}
+		return raw
+	}
+	t.Fatal("the process registry declares no role catalog whose pattern is rolelocales/*.json")
+	return nil
 }
 
 // TestSeedLeavesAPersonalDomainsRoleUnfrozen holds the host's personal-domain

@@ -2,16 +2,19 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/starters/demo/server/internal/demotest"
 )
 
 // The dispatch selects an endpoint by the path prefixes the configuration
@@ -25,15 +28,11 @@ import (
 //
 // Two documents are read. The served /openapi.json is the available set of
 // this binary — the fragments of every module the imports reach, whether or
-// not a command names it. contracts/api.json is the committed merged document
-// @speed/api-sdk is generated from. A claim table has to cover both: the first
-// is what this binary can answer, the second is what the platform ships, and a
-// platform module the host stops importing drops out of the first without
-// leaving the second.
-
-// platformContractPath is the committed platform document, relative to this
-// module's directory (starters/demo/server).
-const platformContractPath = "../../../contracts/api.json"
+// not a command names it. The merged document gen writes is what the frontend's
+// SDK is generated from. A claim table has to cover both: the first is what
+// this binary can answer, the second is what the platform ships, and a platform
+// module the host stops importing drops out of the first without leaving the
+// second. ./treecheck holds the committed artifact to what gen writes.
 
 // testdataFiles are the six sample configurations. They are override documents
 // over the platform defaults, so each one's effective claim table — the
@@ -316,8 +315,8 @@ func checkClaimsCover(t *testing.T, configName, documentName string,
 	}
 }
 
-// platformListener is the listener expectedOwners describes: the one carrying
-// the api, account, admin and web endpoints.
+// platformListener is the listener the ownership table describes: the one
+// carrying the api, account, admin and web endpoints.
 const platformListener = "backend"
 
 // nonRootBackendClaims collects one configuration's non-root claims on the
@@ -344,7 +343,7 @@ func nonRootBackendClaims(claims map[string]endpointClaim) map[string][]string {
 // checkClaimsExact holds one configuration's claim table to the platform's
 // ownership table in the direction checkClaimsCover does not read: on the
 // backend listener, the non-root prefixes and the endpoint each belongs to
-// have to equal expectedOwners. checkClaimsCover reports a namespace that lost
+// have to equal the ownership table. checkClaimsCover reports a namespace that lost
 // its claim; this reports a namespace claimed from outside the table. Such a
 // claim is invisible to every other case — the frontend matches its routes
 // against the manifest, not against the configuration — and at run time the
@@ -352,6 +351,7 @@ func nonRootBackendClaims(claims map[string]endpointClaim) map[string][]string {
 func checkClaimsExact(t *testing.T, configName string, claims map[string]endpointClaim) {
 	t.Helper()
 	claimed := nonRootBackendClaims(claims)
+	expectedOwners := demotest.ExpectedOwners()
 	for prefix, owner := range expectedOwners {
 		endpoints, ok := claimed[prefix]
 		switch {
@@ -376,113 +376,11 @@ func checkClaimsExact(t *testing.T, configName string, claims map[string]endpoin
 	}
 }
 
-// backendPrefixManifestPath is the dev-proxy manifest the frontend package
-// carries, relative to this module's directory (starters/demo/server).
-const backendPrefixManifestPath = "../web/backend-prefixes.json"
-
-// readPrefixManifest decodes that manifest into one prefix-to-endpoint table.
-// The file groups prefixes by the endpoint that claims them, which is the shape
-// the dev proxy and the frontend's route guard read; the comparisons below work
-// on the flat table, because that is the claim the configuration makes.
-func readPrefixManifest(t *testing.T) map[string]string {
-	t.Helper()
-	doc, err := os.ReadFile(filepath.Clean(backendPrefixManifestPath))
-	if err != nil {
-		t.Fatalf("reading %s: %v", backendPrefixManifestPath, err)
-	}
-	var parsed map[string][]string
-	if err := json.Unmarshal(doc, &parsed); err != nil {
-		t.Fatalf("%s is not a JSON object of endpoint to prefixes: %v", backendPrefixManifestPath, err)
-	}
-	if len(parsed) == 0 {
-		t.Fatalf("%s lists no endpoint", backendPrefixManifestPath)
-	}
-	owners := make(map[string]string)
-	for endpoint, prefixes := range parsed {
-		for _, prefix := range prefixes {
-			if prefix == "/" {
-				t.Errorf("%s: %q lists the root, which the web fallback endpoint claims and no API namespace owns",
-					backendPrefixManifestPath, endpoint)
-				continue
-			}
-			if other, duplicate := owners[prefix]; duplicate {
-				t.Errorf("%s: both %q and %q list %q", backendPrefixManifestPath, other, endpoint, prefix)
-				continue
-			}
-			owners[prefix] = endpoint
-		}
-	}
-	return owners
-}
-
-// checkManifestAgainstOwnership holds the manifest to the differential case's
-// ownership table in both directions: the table is the case's written claim
-// about which endpoint answers each namespace, and the manifest is the
-// frontend's copy of the same fact.
-func checkManifestAgainstOwnership(t *testing.T, owners map[string]string) {
-	t.Helper()
-	for prefix, endpoint := range owners {
-		expected, listed := expectedOwners[prefix]
-		switch {
-		case !listed:
-			t.Errorf("%s: %q lists %q, which the ownership table gives to no endpoint",
-				backendPrefixManifestPath, endpoint, prefix)
-		case expected != endpoint:
-			t.Errorf("%s: %q lists %q, but the ownership table gives it to %q",
-				backendPrefixManifestPath, endpoint, prefix, expected)
-		}
-	}
-	for prefix, endpoint := range expectedOwners {
-		if _, listed := owners[prefix]; !listed {
-			t.Errorf("%s: no endpoint lists %q, which the ownership table gives to %q",
-				backendPrefixManifestPath, prefix, endpoint)
-		}
-	}
-}
-
-// checkManifestAgainstClaims holds the manifest to one configuration's claims on
-// the backend listener, prefix for prefix and endpoint for endpoint.
-func checkManifestAgainstClaims(t *testing.T, configName string, owners map[string]string, claims map[string]endpointClaim) {
-	t.Helper()
-	claimed := nonRootBackendClaims(claims)
-	for prefix, endpoint := range owners {
-		endpoints, ok := claimed[prefix]
-		switch {
-		case !ok:
-			t.Errorf("%s: %s lists %q for %q, but the %s listener claims no such prefix",
-				configName, backendPrefixManifestPath, prefix, endpoint, platformListener)
-		case len(endpoints) > 1:
-			t.Errorf("%s: %s lists %q for %q, but the %s listener claims it from more than one endpoint (%s)",
-				configName, backendPrefixManifestPath, prefix, endpoint, platformListener, strings.Join(endpoints, ", "))
-		case endpoints[0] != endpoint:
-			t.Errorf("%s: %s lists %q for %q, but the %s listener claims it for %q",
-				configName, backendPrefixManifestPath, prefix, endpoint, platformListener, endpoints[0])
-		}
-	}
-	for prefix, endpoints := range claimed {
-		if _, listed := owners[prefix]; listed {
-			continue
-		}
-		t.Errorf("%s: the %s listener claims %q for %s, but %s lists no such prefix",
-			configName, platformListener, prefix, strings.Join(endpoints, ", "), backendPrefixManifestPath)
-	}
-}
-
-// TestThePrefixManifestAgreesWithTheDifferentialTableAndTheClaims holds the
-// three statements of the backend claim table together: the frontend's
-// dev-proxy manifest, the differential case's written ownership table, and each
-// configuration's non-root claims on the backend listener. The design requires
-// them equal; a manifest entry the configuration does not claim makes the dev
-// proxy forward a namespace the run never answers, and a claim the manifest
-// omits leaves the page paths unchecked against it.
-//
-// The case is static — it reads the manifest, the table and the configurations
-// without starting a process — so the three are held together even when the
-// cases that run the program are not.
-func TestThePrefixManifestAgreesWithTheDifferentialTableAndTheClaims(t *testing.T) {
+// TestTheConfigurationsClaimExactlyTheOwnershipTable checks that each
+// configuration's non-root backend claims give every prefix the ownership
+// table's endpoint, in both directions.
+func TestTheConfigurationsClaimExactlyTheOwnershipTable(t *testing.T) {
 	t.Parallel()
-	owners := readPrefixManifest(t)
-	checkManifestAgainstOwnership(t, owners)
 	configurations := []namedClaims{{
 		name:   "the rendered template",
 		claims: claimsFromConfig(t, "the rendered template", []byte(configBody(t, []int{8080}, ":memory:"))),
@@ -495,7 +393,6 @@ func TestThePrefixManifestAgreesWithTheDifferentialTableAndTheClaims(t *testing.
 	}
 	for _, configuration := range configurations {
 		checkClaimsExact(t, configuration.name, configuration.claims)
-		checkManifestAgainstClaims(t, configuration.name, owners, configuration.claims)
 	}
 }
 
@@ -596,17 +493,14 @@ func checkAuditSamples(t *testing.T) {
 	}
 }
 
-// checkPlatformClaims reads the two documents and holds every configuration to
-// them: the one the case is running, and the six samples a copy starts from.
-// Each configuration is also held to the ownership table itself, in both
-// directions, and its audit sample to the platform default.
+// checkPlatformClaims holds every configuration to the two documents of the
+// platform's API surface: the one the case is running, and the six samples a
+// copy starts from. Each configuration is also held to the ownership table
+// itself, in both directions, and its audit sample to the platform default.
 func checkPlatformClaims(t *testing.T, locator string, served []byte) {
 	t.Helper()
 	checkAuditSamples(t)
-	contract, err := os.ReadFile(filepath.Clean(platformContractPath))
-	if err != nil {
-		t.Fatalf("reading the committed platform contract: %v", err)
-	}
+	contract := mergedDocument(t)
 	configurations := []namedClaims{
 		{"the case's configuration", claimsFromFile(t, configFilePath(locator))},
 	}
@@ -622,7 +516,7 @@ func checkPlatformClaims(t *testing.T, locator string, served []byte) {
 		body []byte
 	}{
 		{"the served /openapi.json", served},
-		{"contracts/api.json", contract},
+		{"the merged document gen writes", contract},
 	}
 	for _, document := range documents {
 		operations := documentedOperations(t, document.name, document.body)
@@ -634,12 +528,39 @@ func checkPlatformClaims(t *testing.T, locator string, served []byte) {
 	}
 }
 
+// mergedDocument answers the document this program's gen command writes, run
+// once per test binary. The cases compare against what gen writes; ./treecheck
+// holds the committed artifact to it.
+func mergedDocument(t *testing.T) []byte {
+	t.Helper()
+	mergedDocumentOnce.Do(func() {
+		dir := t.TempDir()
+		out := filepath.Join(dir, "api.json")
+		res := runCommandArgs(t, hostBinary, dir, []string{"sqlite-memory", genCommand, "-o", out}, nil)
+		if res.err != nil {
+			mergedDocumentErr = fmt.Errorf("gen failed: %w\n%s", res.err, res.combined())
+			return
+		}
+		mergedDocumentBytes, mergedDocumentErr = os.ReadFile(out)
+	})
+	if mergedDocumentErr != nil {
+		t.Fatalf("getting the merged document gen writes: %v", mergedDocumentErr)
+	}
+	return mergedDocumentBytes
+}
+
+var (
+	mergedDocumentOnce  sync.Once
+	mergedDocumentBytes []byte
+	mergedDocumentErr   error
+)
+
 // tenantParam is the path form the authorization guard's declaration table
 // matches: gin keeps a parameter as :name, while the contract writes {name}.
 var tenantParam = regexp.MustCompile(`\{([^}]+)\}`)
 
 // TestTheTenantManagementRoutesAreDeclaredOpenForTheAuthorizationGuard holds the
-// host's declaration list to the committed contract. The tenant-management
+// host's declaration list to the merged document gen writes. The tenant-management
 // operations are served on the api endpoint, whose chain carries the
 // authorization guard; their handlers decide each action through the Decider,
 // so an operation the host does not declare open is refused 403 before its
@@ -647,15 +568,12 @@ var tenantParam = regexp.MustCompile(`\{([^}]+)\}`)
 // list, and a list entry the contract does not serve.
 func TestTheTenantManagementRoutesAreDeclaredOpenForTheAuthorizationGuard(t *testing.T) {
 	t.Parallel()
-	contract, err := os.ReadFile(filepath.Clean(platformContractPath))
-	if err != nil {
-		t.Fatalf("reading the committed platform contract: %v", err)
-	}
+	contract := mergedDocument(t)
 	var document struct {
 		Paths map[string]map[string]json.RawMessage `json:"paths"`
 	}
 	if err := json.Unmarshal(contract, &document); err != nil {
-		t.Fatalf("the committed contract is not readable: %v", err)
+		t.Fatalf("the merged document gen writes is not readable: %v", err)
 	}
 
 	declared := make(map[string]bool, len(tenantManagementRoutes))

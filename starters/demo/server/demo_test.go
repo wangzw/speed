@@ -42,6 +42,11 @@ import (
 // hostBinary is the compiled program every case runs.
 var hostBinary string
 
+// deployDirEnv names the deployment directory ./treecheck hands the
+// deployment-template cases. Those cases read files outside the module root, so
+// only that driver runs them, and this binary builds no program when it does.
+const deployDirEnv = "TREECHECK_DEPLOY_DIR"
+
 func startLimit() time.Duration {
 	return coretest.Scale(60 * time.Second)
 }
@@ -97,19 +102,21 @@ func TestMain(m *testing.M) {
 		os.Exit(m.Run())
 	}
 
+	// The deployment-template cases read files outside the module root, so only
+	// ./treecheck runs them, naming the deployment directory through
+	// deployDirEnv. That run starts no child and needs no program.
+	if os.Getenv(deployDirEnv) != "" {
+		os.Exit(m.Run())
+	}
+
 	dir, err := os.MkdirTemp("", "demo")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "creating the build directory failed:", err)
 		os.Exit(1)
 	}
 	hostBinary = filepath.Join(dir, "demo")
-	args := []string{"build"}
-	if raceEnabled {
-		args = append(args, "-race")
-	}
-	args = append(args, "-o", hostBinary, ".")
-	if out, buildErr := exec.Command("go", args...).CombinedOutput(); buildErr != nil {
-		fmt.Fprintf(os.Stderr, "building the program failed: %v\n%s", buildErr, out)
+	if err := demotest.BuildProgram(hostBinary, raceEnabled); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		_ = os.RemoveAll(dir)
 		os.Exit(1)
 	}
@@ -419,6 +426,9 @@ func runCommandOn(t *testing.T, binary, config string, args ...string) commandRe
 // tree.
 func runCommandArgs(t *testing.T, binary, dir string, args, extraEnv []string) commandResult {
 	t.Helper()
+	if binary == "" {
+		t.Fatal("this test binary was started only for the deployment-template cases, so it built no program")
+	}
 	limit := commandLimit()
 	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
@@ -478,6 +488,9 @@ func startArgs(t *testing.T, dir string, args, extraEnv []string) *process {
 // them.
 func startProcess(t *testing.T, binary, dir string, args, extraEnv []string) *process {
 	t.Helper()
+	if binary == "" {
+		t.Fatal("this test binary was started only for the deployment-template cases, so it built no program")
+	}
 	cmd := exec.Command(binary, args...)
 	cmd.Dir = dir
 	cmd.Env = append(childEnv(), extraEnv...)
@@ -1291,73 +1304,6 @@ func TestGenWritesTheMergedDocument(t *testing.T) {
 		}
 		check(t, []byte(res.stdout))
 	})
-}
-
-// committedMergedDocumentPath is the merged document artifact the repository
-// commits, beside the feature vocabulary. It is relative to this module's
-// directory, which is where `go test` runs the package.
-const committedMergedDocumentPath = "../../../contracts/api.json"
-
-// committedMergedDocumentTitle is the info.title the committed artifact is
-// written with: the title in the regeneration command web/orval.config.ts
-// documents. The version is the program's own, which gen uses when the command
-// line names none.
-const committedMergedDocumentTitle = "speed"
-
-// TestCommittedMergedDocument holds the committed merged document to what this
-// binary's gen command writes, byte for byte, the application-owner marking
-// included. The frontend's SDK is generated from the committed artifact, and a
-// Go route added or changed without regenerating alters what gen writes while
-// leaving the artifact — and every case that reads only the artifact — green.
-// Running the command rather than rebuilding its output in this process is
-// what keeps the case honest: it compares the artifact with the command's
-// current result, not with a second copy of the same code.
-func TestCommittedMergedDocument(t *testing.T) {
-	t.Parallel()
-	config := writeConfig(t, freePorts(t, listenerCount))
-	out := filepath.Join(t.TempDir(), "api.json")
-	res := runCommand(t, config, "sqlite-memory", genCommand,
-		"--title", committedMergedDocumentTitle, "-o", out)
-	if res.err != nil {
-		t.Fatalf("gen failed: %v\n%s", res.err, res.combined())
-	}
-	generated, err := os.ReadFile(out)
-	if err != nil {
-		t.Fatalf("reading what gen wrote: %v", err)
-	}
-	committed, err := os.ReadFile(committedMergedDocumentPath)
-	if err != nil {
-		t.Fatalf("reading %s: %v (regenerate it with the gen command web/orval.config.ts documents)",
-			committedMergedDocumentPath, err)
-	}
-	if !bytes.Equal(generated, committed) {
-		t.Errorf("the committed merged document is out of step with what gen writes: %s\n"+
-			"regenerate %s with the gen command web/orval.config.ts documents",
-			firstByteDifference(generated, committed), committedMergedDocumentPath)
-	}
-}
-
-// firstByteDifference names the first byte two documents disagree on, with a
-// short excerpt of each, so a stale artifact reports the operation that changed
-// rather than dumping both documents into the failure.
-func firstByteDifference(generated, committed []byte) string {
-	common := min(len(generated), len(committed))
-	for index := range common {
-		if generated[index] != committed[index] {
-			return fmt.Sprintf("byte %d differs: gen wrote %q, the committed document has %q",
-				index, excerpt(generated, index), excerpt(committed, index))
-		}
-	}
-	return fmt.Sprintf("gen wrote %d bytes, the committed document has %d; the first %d are equal",
-		len(generated), len(committed), common)
-}
-
-// excerpt is the bytes around index, as a string, at most about eighty long.
-func excerpt(document []byte, index int) string {
-	const context = 40
-	start := max(index-context, 0)
-	end := min(index+context, len(document))
-	return string(document[start:end])
 }
 
 // TestMarkOperationsWithNoOwnedOperationIsIdentity pins the byte-level
@@ -2458,12 +2404,19 @@ type flyProxyCarrier struct {
 }
 
 // renderDeployTemplate renders deploy/fly.yaml.tmpl the way deploy/entrypoint.sh
-// does: every placeholder in it is replaced with a value of the shape the
-// entrypoint renders. It answers the template's text, so a case reads the
-// sections the deployment build carries rather than a copy of them.
+// does: every placeholder gets a value of the shape the entrypoint renders.
+// Only ./treecheck runs these cases, through deployDirEnv.
 func renderDeployTemplate(t *testing.T) string {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "deploy", "fly.yaml.tmpl"))
+	dir, ok := os.LookupEnv(deployDirEnv)
+	if !ok || dir == "" {
+		if strings.HasPrefix(t.Name(), "TestTheDeployTemplate") {
+			t.Skip("the deployment template is read outside this module; ./treecheck runs this case with " + deployDirEnv)
+		}
+		t.Fatalf("a case that reads the deployment template has to be named TestTheDeployTemplate*, so "+
+			"./treecheck runs it with %s", deployDirEnv)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "fly.yaml.tmpl"))
 	if err != nil {
 		t.Fatalf("reading the deployment template: %v", err)
 	}
@@ -2499,7 +2452,7 @@ func renderDeployTemplate(t *testing.T) string {
 	return rendered
 }
 
-// TestTheFlyTemplateTrustsTheFlyProxy holds the deployment template, not a
+// TestTheDeployTemplateTrustsTheFlyProxy holds the deployment template, not a
 // test-local copy of it, to the one proxy a Fly Machine is reached through.
 // Fly's proxy is the only peer whose forwarded headers are believed, and the
 // client address is read from Fly-Client-IP because Fly appends the app's own
@@ -2507,7 +2460,7 @@ func renderDeployTemplate(t *testing.T) string {
 // rendered the way deploy/entrypoint.sh renders it and loaded through the same
 // pkg/config entry point the binary uses, so a deployment that runs the
 // template carries the trust settings this case asserts.
-func TestTheFlyTemplateTrustsTheFlyProxy(t *testing.T) {
+func TestTheDeployTemplateTrustsTheFlyProxy(t *testing.T) {
 	t.Parallel()
 	rendered := renderDeployTemplate(t)
 	// The default build carries the mail and social methods, so every section
@@ -2545,13 +2498,13 @@ type deploySeedCarrier struct {
 	} `config:"accounts"`
 }
 
-// TestTheFlyTemplateSeedsTheOperatorUsername holds the template to the seed
+// TestTheDeployTemplateSeedsTheOperatorUsername holds the template to the seed
 // entry the entrypoint renders. The address is the identifier the account is
 // looked up by, and the username is the login name it is created with: a
 // placeholder left in place would seed a username the login surface cannot
 // find. The case renders the template the way deploy/entrypoint.sh does and
 // reads the item back, so the placeholder and its input cannot drift apart.
-func TestTheFlyTemplateSeedsTheOperatorUsername(t *testing.T) {
+func TestTheDeployTemplateSeedsTheOperatorUsername(t *testing.T) {
 	t.Parallel()
 	rendered := renderDeployTemplate(t)
 	// The default build carries the mail and social methods, so the template's
