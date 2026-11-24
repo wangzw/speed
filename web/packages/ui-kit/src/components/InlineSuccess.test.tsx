@@ -1,10 +1,3 @@
-/**
- * InlineSuccess contract: one polite status region, mounted whether or not
- * there is anything to confirm, visually silent (clipped, never
- * display:none -- a hidden region would not be live) while the message is
- * null and filled when it arrives. The region is never keyed to its
- * message: the same node is filled, cleared and filled again.
- */
 
 import { useState } from 'react'
 import userEvent from '@testing-library/user-event'
@@ -13,7 +6,6 @@ import { alertClasses } from '@mui/material/Alert'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { InlineSuccess } from './InlineSuccess.js'
 
-/** A host holding the message, so changes re-render the banner in place. */
 function SuccessHost() {
   const [message, setMessage] = useState<string | null>(null)
   return (
@@ -62,9 +54,6 @@ describe('InlineSuccess', () => {
     const { getByRole } = renderWithProviders(<InlineSuccess message={null} />)
     const status = getByRole('status')
     expect(status).toHaveTextContent('')
-    // Still in the accessibility tree -- clipped, never display:none: a
-    // display:none live region announces nothing when its text later
-    // changes. The clip is the 1x1 absolute box, not a painted banner.
     expect(status).toBeInTheDocument()
     expect(status).not.toHaveStyle({ display: 'none' })
     expect(status).toHaveStyle(CLIPPED)
@@ -78,9 +67,6 @@ describe('InlineSuccess', () => {
   })
 
   it('renders an empty string literally as a banner, not as silent', () => {
-    // The design ruling holds `''` and `null` apart: only `null` means
-    // "nothing to confirm" and clips the region. An empty string is a
-    // success carrying no text -- a painted, empty banner.
     const { getByRole } = renderWithProviders(<InlineSuccess message="" />)
     const status = getByRole('status')
     expect(status).toHaveTextContent('')
@@ -94,7 +80,6 @@ describe('InlineSuccess', () => {
     )
     const status = getByRole('status')
     expect(status).toHaveStyle({ marginTop: '37px' })
-    // The banner's own width rule still applies underneath the host rule.
     expect(status).toHaveStyle({ width: '100%' })
   })
 
@@ -105,8 +90,6 @@ describe('InlineSuccess', () => {
     expect(silent).toHaveStyle(CLIPPED)
 
     await userEvent.click(view.getByRole('button', { name: 'fill' }))
-    // One region throughout (never a second born with its text), now
-    // carrying the message -- the change is what a screen reader announces.
     expect(view.getAllByRole('status')).toHaveLength(1)
     expect(view.getByRole('status')).toBe(silent)
     expect(silent).toHaveTextContent('Setting saved')

@@ -1,10 +1,3 @@
-/**
- * CopyButton contract: the control writes the complete value to the
- * clipboard, announces the copy through a polite live region, carries the
- * caller's label or the namespace default, and stays silent when the
- * Clipboard API is unavailable. The visible face renders the caller's
- * text button; the icon face renders the icon control.
- */
 
 import { createRef } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'

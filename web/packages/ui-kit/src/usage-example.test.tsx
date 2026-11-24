@@ -1,34 +1,3 @@
-/**
- * The README usage example, compiled and executed by the suite.
- *
- * The suite executes BOTH documented compositions: the README's Quick
- * start composes host pages from the public exports and registers the
- * ui-kit namespace at bootstrap, and its "Write feedback" section
- * composes the write-feedback scope. This file renders both through the
- * same host tree (renderWithProviders) and asserts what the pages show,
- * so the documented usage cannot drift from the API -- the package suite
- * compiles and runs them. The upload panel
- * the Quick start documents joins the members page on the same host
- * screen: the host owns the queue as `rows` state and every File it
- * picked (a retry hands the same bytes back), runs each transfer in its
- * own transport code -- one logical POST per file against the labelled
- * placeholder URL, answered by a scripted fetch stub returning genuine
- * Response objects -- and patches row statuses and progress into the
- * state FileUploader renders. FileUploader itself holds no rows, no
- * Files and no transport: every abort (cancel, unmount) is the host's
- * AbortController doing the aborting. The stub stands in for the host's
- * generated api-sdk storage call: the merged API document ships no
- * storage fragment, so no generated storage operation exists and ui-kit
- * itself ships no endpoint -- the placeholder URL below is labelled as
- * such.
- *
- * Host-content strings (titles, headers, the transport's error text) are
- * English fixtures on purpose: they stand in for a host's own
- * translations and are data in a test file (exempt from the
- * no-literal-text rule), not rendered product text. Assertions derive
- * every built-in string from the locale bundles, never inline
- * translations.
- */
 
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -62,9 +31,6 @@ import {
   WriteFeedbackRegion,
 } from './index.js'
 
-// The package README, located from this file rather than the working
-// directory: the unit-test gate runs every member from web/, so the working
-// directory is not the package root.
 const README_PATH = join(
   dirname(fileURLToPath(import.meta.url)),
   '..',
@@ -93,11 +59,6 @@ const COLUMNS: readonly DataTableColumn<Member>[] = [
   },
 ]
 
-/**
- * The README's example host page: it owns every piece of state the
- * components report through props -- sort, selection, filter and
- * pagination are all controlled from here.
- */
 function MembersPage() {
   const [sort, setSort] = useState<DataTableSort | null>(null)
   const [selected, setSelected] = useState<readonly (string | number)[]>([])
@@ -132,17 +93,8 @@ function MembersPage() {
   )
 }
 
-/**
- * The upload endpoint the host's transport sends its one round trip
- * per file to. A real host's upload code calls a generated api-sdk
- * storage operation here -- the merged API document ships no storage
- * fragment, so no such operation exists -- and this is an explicitly
- * labelled fixture placeholder: ui-kit ships no endpoint, and the suite
- * pins the transport shape without pretending to know a wire protocol.
- */
 const STORAGE_UPLOAD_URL = 'https://uploads.example.test/objects'
 
-/** True when the given rejection is an abort signal's AbortError. */
 function isAbortError(error: unknown): boolean {
   if (error instanceof DOMException) {
     return error.name === 'AbortError'
@@ -150,13 +102,6 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError'
 }
 
-/**
- * The host's upload transport: one logical POST of the picked bytes per
- * file to the host's storage endpoint, reporting progress slices around
- * the round trip and translating an unsuccessful answer into the row's
- * error text. The fetch is the host's own call -- FileUploader never
- * sees a URL, a signal or a body.
- */
 async function uploadToStorage(
   file: File,
   signal: AbortSignal,
@@ -176,22 +121,12 @@ async function uploadToStorage(
   onProgress(0.75)
 }
 
-/**
- * The example upload panel: the host that owns the queue. `rows` is host
- * state -- FileUploader renders exactly what this component writes --
- * and each picked File stays in a host map, because a retry hands the
- * same bytes back to the transport. One AbortController per transfer
- * gives the host both cancellations (abort + drop the row) and the
- * unmount abort; FileUploader itself contributes no state, no fetch and
- * no transfer.
- */
 function UploadPanel() {
   const [rows, setRows] = useState<readonly FileUploaderRow[]>([])
   const filesRef = useRef(new Map<string, File>())
   const controllersRef = useRef(new Map<string, AbortController>())
   const nextIdRef = useRef(1)
 
-  // Leaving the screen aborts every transfer this panel owns.
   useEffect(() => {
     const controllers = controllersRef.current
     return () => {
@@ -227,8 +162,6 @@ function UploadPanel() {
       .catch((error: unknown) => {
         controllersRef.current.delete(id)
         if (isAbortError(error)) {
-          // Cancelled (its row was already dropped) or the panel
-          // unmounted: there is nothing left to render.
           return
         }
         patchRow(id, {
@@ -341,11 +274,7 @@ describe('README usage example', () => {
     expect(fenceEnd).toBeGreaterThan(blockStart)
     const block = readme.slice(blockStart, fenceEnd)
 
-    // The documented composition resolves failure text through the shared
-    // resolver -- the same call the executed TenantNameSection makes.
     expect(block).toContain('createErrorTextResolver(')
-    // A hand-built template resolver would render raw `errors.*` keys, so
-    // the documented composition must never carry one.
     expect(block).not.toContain('t(`errors.${')
   })
 
@@ -368,15 +297,6 @@ describe('README usage example', () => {
   })
 })
 
-/**
- * The scripted transport stand-in the documented host transport sends
- * its round trips to: each request is recorded (url, declared content
- * type, body bytes, signal) and parked until the test opens its gate,
- * so every in-flight state is observable; opening a gate answers the
- * parked request with a genuine Response of the given status. An abort
- * on the request's signal rejects it the way fetch rejects an aborted
- * request, so the host's abort paths are exercised for real.
- */
 interface ScriptedStorageTransport {
   readonly uploadCalls: readonly RecordedRequest[]
   readonly gates: readonly ((status: number) => void)[]
@@ -418,9 +338,6 @@ function scriptedStorageTransport(): ScriptedStorageTransport {
         const signal = init?.signal
         const onAbort = (): void => {
           signal?.removeEventListener('abort', onAbort)
-          // fetch rejects an aborted request with an AbortError; the
-          // fixture mirrors that shape with a plain Error carrying the
-          // name, so the host's abort handling is the real code path.
           const error = new Error('The operation was aborted.')
           error.name = 'AbortError'
           reject(error)
@@ -450,13 +367,6 @@ function scriptedStorageTransport(): ScriptedStorageTransport {
   return { uploadCalls, gates, pending, fetchMock }
 }
 
-/**
- * The upload half of the README Quick start, executed: the documented
- * UploadPanel on the same host screen as the members page, its journeys
- * driven over the scripted transport stand-in -- one logical round trip
- * per picked file, in the order the files were picked, every state
- * transition patched into the rows the panel owns.
- */
 describe('README upload panel', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -470,14 +380,9 @@ describe('README upload panel', () => {
       type: 'image/jpeg',
     })
 
-    // Request index 1 is closeup.jpg's first attempt: the transport's
-    // answer of 503 turns into the row's host-written error text, so the
-    // retry leg proves a failed row recovers through the widget's retry
-    // affordance. All other requests answer 201.
     const transport = scriptedStorageTransport()
     vi.stubGlobal('fetch', transport.fetchMock)
 
-    // The upload panel shares the host screen with the members page.
     const utils = renderWithProviders(
       <>
         <MembersPage />
@@ -488,13 +393,9 @@ describe('README upload panel', () => {
       utils.getByRole('heading', { level: 1, name: 'Members' }),
     ).toBeInTheDocument()
     expect(utils.getByText('Ada')).toBeInTheDocument()
-    // An empty queue renders no rows and no live region.
     expect(utils.queryByRole('listitem')).not.toBeInTheDocument()
     expect(utils.queryByRole('status')).not.toBeInTheDocument()
 
-    // Pick two files: both rows join the host-owned queue and their
-    // transfers launch in pick order, each reporting its first progress
-    // slice before its round trip goes out.
     const input = utils.getByLabelText(zhCN.fileUploader.chooseFiles) as HTMLInputElement
     await act(async () => {
       selectFiles(input, [portrait, closeup])
@@ -517,8 +418,6 @@ describe('README upload panel', () => {
     )
     expect(transport.uploadCalls[1]!.contentType).toBe('image/jpeg')
 
-    // Complete the first round trip: portrait.png settles succeeded and
-    // the live region announces it.
     await act(async () => {
       transport.gates[0]!(201)
     })
@@ -527,8 +426,6 @@ describe('README upload panel', () => {
       zhCN.fileUploader.announceUploaded.replace('{{name}}', portrait.name),
     )
 
-    // The second round trip answers 503: closeup.jpg fails, showing the
-    // host-written error text and the retry affordance.
     await act(async () => {
       transport.gates[1]!(503)
     })
@@ -542,10 +439,6 @@ describe('README upload panel', () => {
     )
     expect(utils.queryByRole('progressbar')).not.toBeInTheDocument()
 
-    // Retry the failed row: the host hands the same File back to its
-    // transport, the row returns to uploading (clearing the live region,
-    // so an identical later failure would re-announce) and the third
-    // request goes out -- closeup.jpg's bytes, in order.
     fireEvent.click(
       utils.getByRole('button', { name: zhCN.fileUploader.actionRetry }),
     )
@@ -571,8 +464,6 @@ describe('README upload panel', () => {
       zhCN.fileUploader.announceUploaded.replace('{{name}}', closeup.name),
     )
 
-    // Remove the first row: the queue keeps the second, and the members
-    // page next to it never noticed.
     const portraitRow = utils.getByText(portrait.name).closest('li')!
     fireEvent.click(
       within(portraitRow).getByRole('button', {
@@ -583,8 +474,6 @@ describe('README upload panel', () => {
     expect(utils.getByText(closeup.name)).toBeInTheDocument()
     expect(utils.getByText('Katherine')).toBeInTheDocument()
 
-    // Language switch leg: the remaining row's built-in texts, the picker
-    // label and the standing announcement follow the bundle.
     await act(async () => {
       await switchLanguage(utils.i18n, 'en-US')
     })
@@ -619,10 +508,6 @@ describe('README upload panel', () => {
     expect(transport.uploadCalls).toHaveLength(1)
     expect(transport.uploadCalls[0]!.signal?.aborted).toBe(false)
 
-    // The row's cancel affordance reports up: the host aborts its own
-    // controller and drops the row from the queue it owns. The parked
-    // round trip rejects with the abort, and the host's transport treats
-    // that rejection as the row going away -- nothing renders failed.
     fireEvent.click(
       utils.getByRole('button', { name: zhCN.fileUploader.actionCancel }),
     )
@@ -648,9 +533,6 @@ describe('README upload panel', () => {
     expect(transport.uploadCalls).toHaveLength(1)
     expect(transport.uploadCalls[0]!.signal?.aborted).toBe(false)
 
-    // Leaving the screen runs the panel's unmount cleanup: every transfer
-    // it owns aborts, and the host transport treats the abort as the row
-    // going away with the panel -- nothing re-renders, nothing errors.
     utils.unmount()
     await act(async () => {})
     expect(transport.uploadCalls[0]!.signal?.aborted).toBe(true)
@@ -658,7 +540,6 @@ describe('README upload panel', () => {
   })
 })
 
-/** Asserts that the parked round trip rejected with the abort signal's error. */
 async function expectAbort(promise: Promise<number>): Promise<void> {
   const rejection: unknown = await promise.then(
     () => {
@@ -671,10 +552,6 @@ async function expectAbort(promise: Promise<number>): Promise<void> {
 
 const TENANT_NAMESPACE = 'tenant'
 
-// The host's own namespace, written here as the host would write it. The
-// zh-CN values are pseudo-translations: each one stays visibly distinct
-// from its en-US counterpart, so a case that asserts the message captured
-// at succeed time still catches the wrong bundle rendering.
 const TENANT_BUNDLES = {
   'zh-CN': {
     save: '[zh-CN] Save',
@@ -698,27 +575,14 @@ const TENANT_BUNDLES = {
   },
 } as const
 
-/**
- * The read-only whitelist of codes the tenant namespace carries text for:
- * the attempt's own refusal codes plus the transport codes every write can
- * reach. Anything else resolves to `errors.unknown`, so a raw key can
- * never reach the alert.
- */
 const TENANT_ERROR_CODES: ReadonlySet<string> = new Set([
   ...CLIENT_TRANSPORT_ERROR_CODES,
   'tenant.name_required',
 ])
 
-/** What the next renameTenant call does, set by the failure cases. */
 let renameFailure: 'network' | 'plain' | null = null
-/** The name the last call received, asserted against the README's 'Acme'. */
 let renamedName: string | null = null
 
-/**
- * The host's own API call, standing in for the generated api-sdk operation
- * the README composition calls. The composition owns the transport; the
- * write-feedback scope only settles the promise it returns.
- */
 async function renameTenant(name: string): Promise<void> {
   renamedName = name
   await Promise.resolve()
@@ -730,7 +594,6 @@ async function renameTenant(name: string): Promise<void> {
   }
 }
 
-/** The README's write-feedback composition: one scope per control group. */
 function TenantNameSection() {
   const feedback = useWriteFeedback()
   const { t } = useTranslation(TENANT_NAMESPACE)
@@ -782,8 +645,6 @@ describe('README write-feedback composition', () => {
     )
     await act(async () => {})
 
-    // The documented call passes the field's name through to the host's API
-    // operation.
     expect(renamedName).toBe('Acme')
     expect(utils.getByRole('status').textContent).toBe(
       TENANT_BUNDLES['zh-CN'].renamed,
@@ -792,8 +653,6 @@ describe('README write-feedback composition', () => {
     await act(async () => {
       await switchLanguage(utils.i18n, 'en-US')
     })
-    // The success message is the host's translation captured at succeed
-    // time; the control labels follow the new language, the message does not.
     expect(utils.getByRole('status').textContent).toBe(
       TENANT_BUNDLES['zh-CN'].renamed,
     )
@@ -837,7 +696,6 @@ describe('README write-feedback composition', () => {
     expect(alert).toHaveTextContent(
       TENANT_BUNDLES['zh-CN'].errors.unknown,
     )
-    // A hand-built `errors.${code}` resolver would render the raw key here.
     expect(alert).not.toHaveTextContent('errors.client.unknown')
   })
 

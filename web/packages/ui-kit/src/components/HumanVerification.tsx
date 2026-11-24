@@ -1,55 +1,7 @@
 /**
- * HumanVerification: the block a send renders when the deployment requires
- * a human-verification proof on its surface.
- *
- * Presentational only: the block renders the mechanism the deployment
- * named for `scope` and reports what it obtains upward. The proof-of-work
- * solve, the captcha challenge and the proof's lifetime belong to the host
- * (auth-core's `useHumanVerification`), so this component carries no
- * request, no session and no business rule; a host that runs another
- * mechanism gates its send with its own state and renders nothing here.
- *
- *  - `off` (or a gate that requires nothing) renders nothing.
- *  - `turnstile` renders Cloudflare's widget in explicit-render mode,
- *    under the action the gate names, and yields the token it calls back
- *    with; an expired or failed widget yields null. Once the host consumes
- *    a token and clears `proof`, the widget is reset so the next send can
- *    obtain a fresh one.
- *  - `pow` shows the work in progress and then its outcome. The solve is
- *    the host's; `onRetry` asks for another attempt after a failure.
- *  - `captcha` renders the self-hosted challenge the host issued: the
- *    image form shows the picture and an answer field, the slider form
- *    shows the background and piece behind a native range input so it is
- *    keyboard operable, and the audio form plays the spoken digits for a
- *    screen-reader user, moving focus to the player and naming its
- *    language. The server chooses between the image and slider forms, so
- *    the block offers no form choice: the one accessibility entry asks
- *    for the audio alternative, and a refusal that states a wait holds
- *    that entry and shows the wait. A refresh keeps the selection. The
- *    image and audio forms yield `<challenge id>.<answer>` from their
- *    answer field's submit (or Enter in it); the slider is the answer
- *    itself, yielding the same shape when it is released, or when Enter
- *    is pressed after the keyboard moved it. A failed issue offers one
- *    retry.
- *
- * The gate is the discovery document's `human` member (`{phone, other}`),
- * so a host passes it unmodified; `scope` names the surface this block
- * serves. The id prefix carries the scope, so two blocks on one page --
- * such as a step-up dialog over an account section -- never share the
- * answer field's id.
- *
- * Whatever the mechanism, the block renders inside one named group. It
- * never moves focus into itself: the control that asked while the proof
- * is pending keeps focus. It records that control when the group appears,
- * announces once (through the kit's delayed live region) that completing
- * the block continues on its own, keeps focus at the group when the
- * block's own state change removes the control that held it, and hands
- * focus back to the recorded control when the group goes away and the
- * viewer was still inside. The refresh and audio entries stand outside
- * the keyed challenge form so a swap keeps the control that asked for it
- * mounted and busy. The block's own buttons are ActionButtons: `busy`
- * while their action runs, `unavailable` when the host's send is in
- * flight or their precondition is unmet.
+ * The human-verification block a send renders: presentational only, it
+ * renders the mechanism the deployment named and reports what it obtains.
+ * Focus never moves into it; the initiating control keeps and recovers it.
  */
 
 import {
@@ -87,7 +39,9 @@ export interface HumanVerificationGate {
 
 /** The discovery document's whole gate, one member per surface. */
 export interface HumanVerificationGateSet {
+  /** The gate for the phone surface. */
   readonly phone: HumanVerificationGate
+  /** The gate for every other surface. */
   readonly other: HumanVerificationGate
 }
 
@@ -99,14 +53,21 @@ export type HumanCaptchaForm = 'image' | 'slider' | 'audio'
 
 /** One issued self-hosted captcha challenge, as the host read it. */
 export interface HumanCaptchaChallenge {
+  /** The challenge id a proof names, base64url without padding. */
   readonly id: string
+  /** The form the challenge takes. */
   readonly form: HumanCaptchaForm
   /** The stable instruction key the server named; the block words it. */
   readonly instruction: string
+  /** The digit picture of an image challenge, when the form is `image`. */
   readonly image_url?: string
+  /** The background of a slider challenge, when the form is `slider`. */
   readonly background_url?: string
+  /** The piece a slider challenge slides over its background. */
   readonly piece_url?: string
+  /** The spoken digits of an audio challenge, when the form is `audio`. */
   readonly audio_url?: string
+  /** How long the challenge stays valid, in whole seconds; a proof naming an expired challenge is refused. */
   readonly expires_in: number
 }
 
@@ -121,18 +82,15 @@ export interface HumanVerificationProps {
   readonly status?: HumanVerificationStatus
   /** The host's issued captcha challenge, or null while none is loaded. */
   readonly captcha?: HumanCaptchaChallenge | null
-  /** Receives a Turnstile token or a captcha proof, or null when the
-   * widget expires or fails. */
+  /** Receives a Turnstile token or captcha proof, or null when the widget expires or fails. */
   readonly onToken: (token: string | null) => void
   /** Asked for another attempt after a failure. */
   readonly onRetry?: () => void
-  /** Asked for a fresh captcha challenge in the selection in force: the
-   * server's rotation, or the audio alternative once it was chosen. */
+  /** Asked for the next challenge in the selection in force. */
   readonly onRefreshCaptcha?: () => void
-  /** The accessibility entry: asked for the audio alternative explicitly. */
+  /** Asked for the audio alternative explicitly. */
   readonly onRequestAudio?: () => void
-  /** The wait a refused accessibility request stated, in whole seconds.
-   * While it is set the entry is held and the wait is shown. */
+  /** A refused accessibility request's stated wait; the entry is held while it is set. */
   readonly audioRetryAfterSeconds?: number
   /** Disables the widget or form while the surrounding send is in flight. */
   readonly disabled?: boolean
@@ -203,8 +161,7 @@ function loadTurnstile(): Promise<TurnstileApi> {
 /** A subtree in which an element cannot take focus. */
 const UNFOCUSABLE_ANCESTOR = '[hidden], [inert]'
 
-/** Hands focus back to the control that asked for the block, when that
- * control is still in the document and still focusable. */
+/** Hands focus back to the initiator when it is still in the document and focusable. */
 function restoreInitiator(initiator: HTMLElement | null): void {
   if (initiator === null || !initiator.isConnected) {
     return
@@ -216,17 +173,10 @@ function restoreInitiator(initiator: HTMLElement | null): void {
 }
 
 /**
- * The block's one container: the named group every mechanism renders
- * inside, the announcement inserted a frame after it appears, and the
- * focus hand-off around it.
- *
- * The block never moves focus into itself. It records the control that
- * held focus outside it when the container appeared (an automatic send
- * has none, because focus is on the body), continues at this container
- * when a control inside it left the document because of the block's own
- * state change, and hands focus back to the recorded control when the
- * container goes away while the viewer was still inside it. Focus the
- * viewer has moved elsewhere is left alone.
+ * The block's one named group. It records the control that held focus
+ * outside it, continues at the container when the block's own state change
+ * removed the focused control, and hands focus back when the block goes away
+ * with the viewer still inside.
  */
 function HumanVerificationFrame({
   children,
@@ -239,9 +189,7 @@ function HumanVerificationFrame({
   const lastFocusInsideRef = useRef<HTMLElement | null>(null)
   const focusEscapedRef = useRef(false)
 
-  // The control that asked for the block. Recorded in the commit the
-  // container first renders in, before any focus a child moves in its
-  // own effect (the audio player).
+  // Recorded before any child effect moves focus (the audio player).
   useLayoutEffect(() => {
     const container = containerRef.current
     const active = document.activeElement
@@ -254,8 +202,7 @@ function HumanVerificationFrame({
     initiatorRef.current = active
   }, [])
 
-  // The viewer's focus travelling inside the block, and whether it has
-  // since moved to an element outside it.
+  // Track focus inside the block, and whether it has since moved outside.
   useEffect(() => {
     const container = containerRef.current
     if (container === null) {
@@ -279,10 +226,7 @@ function HumanVerificationFrame({
     }
   }, [])
 
-  // A control inside the block left the document because the block's own
-  // state changed (the answer was submitted, the retry started another
-  // attempt): continue at the container. A control the viewer is still on
-  // is untouched.
+  // The block's own state change removed the focused control: continue at the container.
   useLayoutEffect(() => {
     const container = containerRef.current
     const last = lastFocusInsideRef.current
@@ -295,8 +239,7 @@ function HumanVerificationFrame({
     container.focus()
   })
 
-  // The block is going away: hand focus back to the control that asked
-  // for it, unless the viewer has moved focus somewhere else.
+  // The block is going away: hand focus back unless the viewer moved elsewhere.
   useLayoutEffect(() => {
     return () => {
       const last = lastFocusInsideRef.current
@@ -333,8 +276,7 @@ function HumanVerificationFrame({
   )
 }
 
-/** The Turnstile widget. Its token is single-use, so the widget is reset
- * once the host clears the proof it consumed. */
+/** The token is single-use, so the widget is reset once the host clears the consumed proof. */
 function TurnstileBlock({
   siteKey,
   action,
@@ -351,9 +293,7 @@ function TurnstileBlock({
   const containerRef = useRef<HTMLDivElement | null>(null)
   const widgetRef = useRef<string | null>(null)
   const previousProof = useRef(proof)
-  // The host's callback behind a ref: a parent that re-creates the
-  // function on every render must not tear the widget down and render a
-  // second one.
+  // Behind a ref: a parent that re-creates the callback must not re-render the widget.
   const onTokenRef = useRef(onToken)
   onTokenRef.current = onToken
 
@@ -384,9 +324,7 @@ function TurnstileBlock({
         })
       })
       .catch(() => {
-        // The widget cannot render (the script was blocked or failed). The
-        // host keeps the send disabled while it holds no token; no text is
-        // invented for a mechanism the page cannot reach.
+        // The blocked script leaves the host without a token; no text is invented.
       })
     return () => {
       active = false
@@ -478,9 +416,10 @@ function PowBlock({
   )
 }
 
-/** The instruction a challenge's stable key names, in this bundle's words.
- * An unknown key is a contract the client does not yet word; the generic
- * sentence keeps the form usable rather than showing a raw key. */
+/**
+ * The instruction a challenge's stable key names. An unknown key falls back
+ * to the generic sentence rather than showing a raw key.
+ */
 function instructionText(
   instruction: string,
   t: (key: string) => string,
@@ -503,13 +442,11 @@ interface ImageSize {
   readonly height: number
 }
 
-/** The slider form: the background with the piece over the gap it was cut
- * from, moved by a native range input. The range value is the piece's
- * offset in the background's own pixels, which is the answer the server
- * compares. The background scales down with the container, so the piece
- * and its offset are drawn at the same scale: the position the viewer
- * aligns maps back to the natural-width offset the server compares,
- * within its tolerance, at any rendered width. */
+/**
+ * The slider form. The range value is the piece's offset in the
+ * background's natural pixels, which is the answer the server compares; the
+ * piece is drawn at the same scale as the background.
+ */
 function CaptchaSlider({
   challenge,
   disabled,
@@ -524,10 +461,7 @@ function CaptchaSlider({
   const [background, setBackground] = useState<ImageSize | null>(null)
   const [piece, setPiece] = useState<ImageSize | null>(null)
   const [offset, setOffset] = useState(0)
-  // The background's rendered width, measured after layout and whenever
-  // the container resizes. jsdom has no layout and no ResizeObserver, so
-  // the unit tier sees the natural width and the browser tier proves the
-  // scaling.
+  // jsdom has no layout, so the unit tier sees the natural width.
   const frameRef = useRef<HTMLDivElement | null>(null)
   const [renderedWidth, setRenderedWidth] = useState<number | null>(null)
   useEffect(() => {
@@ -546,8 +480,7 @@ function CaptchaSlider({
     observer.observe(frame)
     return () => observer.disconnect()
   }, [background])
-  // The rendered width against the background's natural width. Until the
-  // image loads (or where no layout exists) the natural size is drawn.
+  // Until the image loads, the natural size is drawn.
   const scale =
     background !== null && renderedWidth !== null && renderedWidth > 0
       ? renderedWidth / background.width
@@ -561,18 +494,8 @@ function CaptchaSlider({
       ? Math.max(0, Math.round((background.height - piece.height) / 2))
       : 0
   const instruction = instructionText(challenge.instruction, t)
-  // The host's send is in flight, or the piece's travel is not known yet:
-  // either way the slider has no answer to give. A native range has no
-  // read-only semantics (`readonly` is ignored on it), so the control keeps
-  // the read-only treatment's promise -- focusable, reported unavailable,
-  // its interactions swallowed -- by carrying `aria-disabled` and guarding
-  // the handlers itself, instead of taking the native disable that would
-  // drop focus.
+  // A native range has no read-only semantics, so `held` is aria-disabled plus guarded handlers.
   const held = disabled || maxOffset === 0
-  // The slider is the answer: releasing it (or pressing Enter after the
-  // keyboard has moved it) hands the offset to the host, so aligning the
-  // piece is the whole interaction and no separate confirmation stands
-  // between the viewer and the next step.
   const answer = (): void => {
     if (held) {
       return
@@ -643,10 +566,7 @@ function CaptchaSlider({
         max={maxOffset}
         step={1}
         value={offset}
-        // Not a native `disabled`: that would take the range out of the tab
-        // order and move a focused control's focus away. The held state is
-        // reported with `aria-disabled`, and the handlers below decline the
-        // interactions it covers.
+        // Not a native `disabled`: that would drop the range out of the tab order.
         aria-disabled={held ? true : undefined}
         aria-describedby={`${rangeId}-instruction`}
         aria-keyshortcuts="Enter"
@@ -663,18 +583,8 @@ function CaptchaSlider({
             answer()
           }
         }}
-        // The track spans exactly the image frame, not the whole card: the
-        // drag distance then corresponds to the piece's travel at every
-        // rendered width. It shrinks with the container the same way the
-        // frame does (`maxWidth: '100%'`), while the instruction and label
-        // stay full width.
-        //
-        // The native control paints its thumb and filled track with the
-        // accent; the token keeps that accent on the active theme's
-        // primary instead of the browser's default blue. `accentColor` is
-        // not one of the sx system props, so its theme path is read
-        // through the callback (a plain 'primary.main' string is emitted
-        // as-is and the browser drops it).
+        // The track spans the image frame so drag distance matches the piece's travel.
+        // `accentColor` is not an sx system prop: the callback is what makes it theme-aware.
         sx={{
           width: background?.width ?? 320,
           maxWidth: '100%',
@@ -685,9 +595,7 @@ function CaptchaSlider({
   )
 }
 
-/** One issued captcha challenge and the answer control its form takes. The
- * component is keyed by the challenge id, so a fresh challenge resets the
- * answer the previous one held. */
+/** Keyed by the challenge id, so a fresh challenge resets the previous answer. */
 function CaptchaForm({
   scope,
   challenge,
@@ -703,10 +611,7 @@ function CaptchaForm({
   const answerId = `human-verification-${scope}-${useId()}`
   const [answer, setAnswer] = useState('')
   const instruction = instructionText(challenge.instruction, t)
-  // The audio form receives focus when it appears, so a screen-reader user
-  // lands on the player without hunting for it. The element names the
-  // language its digits are spoken in, which is the active locale the
-  // challenge was requested with.
+  // The audio player takes focus when it appears; its `lang` is the active locale.
   const audioRef = useRef<HTMLAudioElement | null>(null)
   useEffect(() => {
     if (challenge.form === 'audio') {
@@ -767,11 +672,8 @@ function CaptchaForm({
             value={answer}
             autoComplete="off"
             slotProps={{
-              // A write in flight takes the field read-only, not natively
-              // disabled: the field stays focusable, and the ADR gives the
-              // form's inputs the read-only treatment. TextField forwards
-              // `readOnly` to the input slot, which puts it on the input
-              // element; the top-level prop would only reach FormControl.
+              // Read-only, not disabled. It must go through the input slot: the
+              // top-level prop would only reach FormControl.
               input: { readOnly: disabled },
               htmlInput: { 'aria-describedby': `${answerId}-instruction` },
             }}
@@ -804,10 +706,8 @@ function CaptchaForm({
 }
 
 /**
- * The refresh and audio entries, and the wait a refusal states. They stand
- * outside the keyed challenge form, so a challenge swap keeps the control
- * that asked for it mounted: it carries `busy` while the next challenge is
- * requested, and the other entry is `unavailable`.
+ * The refresh and audio entries, outside the keyed form, so a swap keeps the
+ * control that asked for it mounted and busy.
  */
 function CaptchaActions({
   form,
@@ -835,9 +735,7 @@ function CaptchaActions({
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-        {/* The image and slider forms are the server's rotation, so the
-            block offers no form choice. The audio alternative is the one
-            accessibility entry, held while a refusal states a wait. */}
+        {/* The audio entry is the one form choice the block offers. */}
         {form !== 'audio' ? (
           <ActionButton
             type="button"
@@ -858,10 +756,7 @@ function CaptchaActions({
           type="button"
           size="small"
           busy={refreshBusy}
-          // A swap is in flight: the one that started it is busy, and every
-          // other entry, this one included, is held until it lands. The
-          // refresh used to stay available when the audio entry or the host
-          // started the swap, so it could layer a second request onto it.
+          // A swap in flight holds every entry but the one that started it.
           unavailable={disabled || (switching && pendingAction !== 'refresh')}
           onClick={onRefresh}
         >
@@ -884,9 +779,7 @@ function CaptchaActions({
   )
 }
 
-/** The self-hosted captcha: the host's challenge when it holds one, the
- * issue in progress or its retry when it does not, and the verified state
- * once the host holds the proof the block yielded. */
+/** The challenge, the issue in progress or its retry, and the verified state. */
 function CaptchaBlock({
   scope,
   challenge,
@@ -912,9 +805,7 @@ function CaptchaBlock({
 }) {
   const { t } = useUiKitTranslation()
   const audioWaitId = useId()
-  // The form the current or most recent challenge took. It outlives a
-  // swap, so the audio entry keeps its place while the next challenge is
-  // requested.
+  // Outlives a swap, so the audio entry keeps its place while the next challenge loads.
   const [shownForm, setShownForm] = useState<HumanCaptchaForm | null>(null)
   // Which of the two entries asked for the swap in flight.
   const [pendingAction, setPendingAction] = useState<
@@ -923,10 +814,7 @@ function CaptchaBlock({
   if (challenge !== null && challenge.form !== shownForm) {
     setShownForm(challenge.form)
   }
-  // A challenge arriving means the swap the entry asked for has landed, a
-  // failure means it did not, and a proof means the block is done: in each
-  // case no entry has a swap in flight any more. The id is the dependency,
-  // so a host that re-creates the object does not clear the state mid-swap.
+  // Keyed on the id, so a host that re-creates the object does not clear the state mid-swap.
   const challengeId = challenge?.id ?? null
   useEffect(() => {
     if (challengeId !== null || proof !== null || status === 'failed') {
@@ -998,8 +886,7 @@ function CaptchaBlock({
     )
   }
 
-  // The entries keep their slot across every state, so a control that
-  // held focus while the challenge was replaced is not rebuilt.
+  // The entries keep their slot across every state, so a control that held focus is not rebuilt.
   return (
     <>
       <Fragment key="content">{content}</Fragment>
@@ -1026,11 +913,7 @@ function CaptchaBlock({
   )
 }
 
-/**
- * The human-verification block: nothing when the surface's gate requires
- * none, Cloudflare's widget for `turnstile`, the solve's state for `pow`,
- * and the issued challenge for `captcha`.
- */
+/** Nothing when the surface's gate requires no proof, else the named mechanism's block. */
 export function HumanVerification({
   scope,
   gate,

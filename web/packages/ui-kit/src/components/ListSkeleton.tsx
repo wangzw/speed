@@ -1,13 +1,6 @@
 /**
- * ListSkeleton: the pending-state placeholder of a list read.
- *
- * The component owns the announcement contract -- a role="status"
- * region carrying the caller's accessible name with aria-busy set, so
- * a screen reader hears one loading announcement, never a fake heading
- * -- and the row envelope: one row per entry with the list's own
- * spacing and the divider between rows. The caller owns what each row
- * looks like (the pass-through `rows` entries), because the placeholder
- * rows mirror the content rows of their own list.
+ * The pending-state placeholder of a list read: the loading announcement and
+ * the row envelope; the caller owns each row's content.
  */
 
 import { forwardRef } from 'react'

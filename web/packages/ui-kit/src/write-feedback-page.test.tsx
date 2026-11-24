@@ -1,13 +1,3 @@
-/**
- * WriteFeedbackPageProvider: one page, one visible result.
- *
- * The cases pin the page-level rules: a scope's attempt start or
- * settlement clears the other scopes' slots, `reset` stays local, and
- * without the provider the slots keep the single-scope behaviour the
- * library ships. The two scopes live in one component, so the owner has
- * to be per hook instance rather than per component -- two scopes in one
- * component must still clear each other.
- */
 
 import { act, cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react'
 import { useState } from 'react'

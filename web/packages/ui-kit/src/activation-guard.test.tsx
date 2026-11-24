@@ -1,17 +1,3 @@
-/**
- * useActivationGuard: the click/change/submit guard that lets a focusable
- * control refuse activation while its own write is in flight or its
- * precondition is unmet.
- *
- * The suite holds the contract: an idle activation reaches the handler
- * with its arguments, a swallowed one does not, a swallowed submit event
- * is cancelled so the form does not submit, and any other first argument
- * is left untouched. The returned function keeps one identity for the
- * component's lifetime and judges each call by the latest committed
- * render, so a state change takes effect on the very next activation. A
- * switch whose change handler goes through the guard keeps its controlled
- * value while a write runs.
- */
 
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'

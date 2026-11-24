@@ -1,37 +1,4 @@
-/**
- * activation-guard: the one place a write-starting control decides whether
- * an activation may reach its handler.
- *
- * A control that starts a write stays focusable while the write is in
- * flight or while its precondition is unmet; it cannot be natively
- * disabled without dropping a focused control's focus to the document
- * body. What is left to stop is activation, and this hook is the guard
- * that stops it:
- *
- *  - While `busy` or `unavailable` holds, a call never reaches the
- *    handler. If its first argument is a submit event -- a React
- *    `FormEvent` or a native `SubmitEvent` -- the guard calls
- *    `preventDefault()`, so the browser does not submit the form. Any
- *    other argument is left untouched: a change event is not cancelled,
- *    because a controlled value does not change when its handler is
- *    swallowed.
- *  - Otherwise the handler runs with the original arguments and the hook
- *    returns nothing. A promise the handler returns is not awaited and its
- *    rejection is not swallowed here; react-hook-form's
- *    `handleSubmit(...)` result can be handed over as it is.
- *
- * The guard holds no write state, reads no feedback scope and never
- * touches focus. The caller passes `busy` from `useWriteFeedback().pending`
- * or its own per-item in-flight state, and `unavailable` from whatever
- * makes the precondition false.
- *
- * The returned function keeps one identity for the component's lifetime;
- * each call judges by the handler and state of the latest committed
- * render, held in a ref that is not part of any dependency list. It
- * judges the same way `ActionButton`'s own click guard does, so a form
- * with both a submit button and an `onSubmit` guard refuses a double
- * submission at either layer without conflict.
- */
+/** The hook a write-starting control uses to decide whether an activation reaches its handler. */
 
 import { useCallback, useLayoutEffect, useRef } from 'react'
 
@@ -43,7 +10,6 @@ export interface ActivationGuardState {
   readonly unavailable?: boolean
 }
 
-/** A first argument the guard may have to cancel a form submit through. */
 interface SubmitLikeEvent {
   readonly type: 'submit'
   preventDefault(): void
@@ -64,12 +30,9 @@ function isSubmitEvent(value: unknown): value is SubmitLikeEvent {
 }
 
 /**
- * Wraps a control's activation handler so that activation is swallowed
- * while the control is busy or unavailable.
- *
- * @param handler The handler an idle activation reaches.
- * @param state The control's busy and unavailable state.
- * @returns A stable handler that applies the current state on each call.
+ * Wraps a control's activation handler so activation is swallowed while
+ * `busy` or `unavailable` is true; a swallowed submit is cancelled and the
+ * handler judges the latest committed state with one stable identity.
  */
 export function useActivationGuard<A extends readonly unknown[]>(
   handler: (...args: A) => void,

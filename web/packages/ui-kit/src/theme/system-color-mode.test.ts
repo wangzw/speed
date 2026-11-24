@@ -1,9 +1,3 @@
-/**
- * The device color-mode source: the read, the server snapshot and the
- * media-query subscription the 'system' preference follows. Every case
- * asserts the degrade-to-light contract, because a color mode read must
- * never fail a render.
- */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -19,8 +13,6 @@ afterEach(() => {
 
 describe('readSystemColorMode', () => {
   it('answers light when there is no matchMedia', () => {
-    // jsdom ships no matchMedia; stating it keeps this case honest even
-    // if a future shared setup installs a default stub.
     vi.stubGlobal('matchMedia', undefined)
     expect(readSystemColorMode()).toBe('light')
   })

@@ -1,19 +1,3 @@
-/**
- * use-page-refresh: the shared mechanism behind a surface's refresh action.
- *
- * The tests hold the mechanism's contract: the reset runs before any
- * re-read, a disabled read is skipped, two reads resolving to one query key
- * issue one request, every settlement callback of that key is notified, and
- * the control reports busy while a re-read is in flight and drops a second
- * activation that lands before the busy state renders.
- *
- * They also hold the refresh label and announcement: the label takes the
- * oldest successful settle time among the enabled reads, a placeholder read
- * keeps its pre-change time until the new value lands, and a click
- * announces only once every re-read read settles successfully, with the
- * announcement cleared on each click and never raised by an automatic
- * re-read.
- */
 
 import { describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
@@ -24,12 +8,10 @@ import type {
   PageRefreshSettled,
 } from './use-page-refresh.js'
 
-/** A settled successful read answer. */
 function success<TData>(data: TData): PageRefreshSettled<TData> {
   return { status: 'success', data }
 }
 
-/** A query handle the tests script; `refetch` is a spy. */
 function handle<TData>(options: {
   readonly refetch: () => Promise<PageRefreshSettled<TData>>
   readonly enabled?: boolean
@@ -110,7 +92,6 @@ describe('usePageRefresh', () => {
     await waitFor(() => expect(result.current.busy).toBe(false))
     expect(refetchAny).toHaveBeenCalledTimes(1)
     expect(refetchSameKey).not.toHaveBeenCalled()
-    // Both readers of the one key learn the result this refresh settled.
     expect(settled).toHaveBeenCalledTimes(2)
     expect(settled).toHaveBeenCalledWith(success('all'))
   })
@@ -134,8 +115,6 @@ describe('usePageRefresh', () => {
     act(() => result.current.refresh())
     await waitFor(() => expect(result.current.busy).toBe(true))
 
-    // The guard is the mechanism's, so a second activation landing before
-    // the busy state has rendered still issues nothing.
     act(() => result.current.refresh())
     expect(refetch).toHaveBeenCalledTimes(1)
 
@@ -220,8 +199,6 @@ describe('refresh settle times', () => {
     )
     expect(result.current.updatedAt).toBe(1_000)
 
-    // The key moved and the old answer stays on screen: the time it settled
-    // at is still the one shown.
     rerender({
       reads: [
         pageRefreshRead(
@@ -232,7 +209,6 @@ describe('refresh settle times', () => {
     })
     expect(result.current.updatedAt).toBe(1_000)
 
-    // The new value landed, so the label moves to its settle time.
     rerender({
       reads: [
         pageRefreshRead('records', handle({ refetch: neverReRead, dataUpdatedAt: 3_000 })),
@@ -336,8 +312,6 @@ describe('refresh announcement', () => {
     )
 
     act(() => result.current.refresh())
-    // The refresh issues its re-read in a microtask, as every activation
-    // does; let it land before answering it.
     await act(async () => {
       await Promise.resolve()
     })
@@ -348,8 +322,6 @@ describe('refresh announcement', () => {
     await waitFor(() => expect(result.current.announcements).toBe(1))
 
     act(() => result.current.refresh())
-    // The region is emptied at the click, before the re-read settles, so the
-    // same text fills it again and is announced a second time.
     expect(result.current.announcements).toBe(0)
     await act(async () => {
       await Promise.resolve()
@@ -409,12 +381,10 @@ describe('refresh announcement', () => {
       expect(refetch).not.toHaveBeenCalled()
       expect(result.current.busy).toBe(true)
 
-      // The page moved the key; the old value is still on screen.
       rerender({ reads: [read(1_000, true)] })
       expect(result.current.announcements).toBe(0)
       expect(result.current.busy).toBe(true)
 
-      // The new value landed at a time not earlier than the click.
       rerender({ reads: [read(6_000)] })
       await waitFor(() => expect(result.current.announcements).toBe(1))
       expect(result.current.busy).toBe(false)
@@ -424,7 +394,6 @@ describe('refresh announcement', () => {
   })
 })
 
-/** A read no refresh in these cases re-reads. */
 function neverReRead(): Promise<PageRefreshSettled<never>> {
   return Promise.resolve({ status: 'success', data: undefined as never })
 }

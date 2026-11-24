@@ -1,14 +1,3 @@
-/**
- * The surface mapping contract: resolved values on `theme.surface`, the
- * component overrides that paint them, and the by-slot merge with the
- * touch-target floor.
- *
- * The Card half renders a real card and reads the emitted CSS rather
- * than trusting the theme object alone: `MuiCard` has only a `root` slot,
- * so a `styleOverrides.outlined` key would be silently dropped. Reading
- * the stylesheet proves the outlined variant is the attachment that
- * actually reaches the component.
- */
 
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -38,8 +27,6 @@ describe('theme.surface resolution', () => {
     expect(theme.surface.page.borderColor).toBe(theme.palette.divider)
     expect(theme.surface.overlay.borderColor).toBe(theme.palette.divider)
     expect(theme.surface.header.borderColor).toBe(theme.palette.divider)
-    // The container token default declares the one border a surface draws
-    // without a project asking for it; every other role starts inert.
     expect(theme.surface.container.borderWidth).toBe(
       defaultTokens.surface.container.borderWidth,
     )
@@ -89,7 +76,6 @@ describe('theme.surface resolution', () => {
     })
     expect(theme.surface.overlay.fill).toBe('rgba(1, 2, 3, 0.5)')
     expect(theme.surface.overlay.backdropFilter).toBe('blur(8px)')
-    // An omitted elevation keeps the component's own layer.
     expect(theme.surface.overlay.elevation).toBeUndefined()
     expect(theme.surface.container.backdropFilter).toBeUndefined()
   })
@@ -138,8 +124,6 @@ describe('surface fill opacity', () => {
     const override: TokensOverride = {
       surface: { container: { opacity: 0.5 } },
     }
-    // The resolved fill is the mode's own paper color, so the same token
-    // value stays translucent in each mode.
     expect(createAppTheme(override).theme.surface.container.fill).toBe(
       'rgba(255, 255, 255, 0.5)',
     )
@@ -179,19 +163,11 @@ function renderCard(projectTokens?: TokensOverride): Element {
   return screen.getByText('card')
 }
 
-/**
- * The class names of every rule in `css` that declares `fill` as a
- * background. Emotion keeps style tags across tests, so the stylesheet
- * also holds classes from earlier renders; matching the class against the
- * element being asserted is what keeps the check tied to this render.
- */
 function classesDeclaringBackground(css: string, fill: string): string[] {
   const names: string[] = []
   const normalizedFill = fill.replace(/\s+/g, '')
   for (const rule of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
     const [, selector = '', declarations = ''] = rule
-    // Stylis drops whitespace inside a declaration, so an rgba fill is
-    // compared without it.
     if (!declarations.replace(/\s+/g, '').includes(`background-color:${normalizedFill}`)) {
       continue
     }
@@ -237,13 +213,11 @@ describe('surface component overrides', () => {
       </ThemeProvider>,
     )
     const bar = screen.getByRole('banner')
-    // The fill is the container role, not a color the host declares.
     const carriers = classesDeclaringBackground(
       emittedStyleText(),
       containerFill,
     )
     expect(carriers.some((name) => bar.classList.contains(name))).toBe(true)
-    // The bar is the shell's top edge, so only the bottom edge is drawn.
     expect(bar).toHaveStyle({
       borderBottomStyle: 'solid',
       borderBottomColor: theme.surface.container.borderColor,
@@ -252,15 +226,11 @@ describe('surface component overrides', () => {
   })
 
   it('does not redefine MuiPaper.root', () => {
-    // A root override that clears backgroundImage would flatten MUI's
-    // dark elevation overlay on Dialog and Menu.
     const { theme } = createAppTheme()
     expect(theme.components?.MuiPaper).toBeUndefined()
   })
 
   it('leaves TableContainer without a surface', () => {
-    // The surrounding SectionCard owns the one surface; TableContainer is
-    // deliberately absent from the overrides.
     const { theme } = createAppTheme()
     expect(surfaceComponents?.MuiTableContainer).toBeUndefined()
     expect(theme.components?.MuiTableContainer).toBeUndefined()
@@ -355,8 +325,6 @@ describe('surface component overrides', () => {
     const permanent = getComputedStyle(
       document.querySelector(`.${drawerClasses.paper}`) as Element,
     )
-    // Chrome, not a card: square, divided from the content on the right,
-    // flush with the viewport on the other three edges.
     expect(permanent.borderRadius).toBe('0px')
     expect(permanent.borderRightWidth).toBe('2px')
     expect(permanent.borderTopWidth).toBe('0px')
@@ -374,8 +342,6 @@ describe('surface component overrides', () => {
     const temporary = getComputedStyle(
       document.querySelector(`.${drawerClasses.paper}`) as Element,
     )
-    // The floating drawer keeps the overlay treatment: a border on every
-    // side rather than the standing column's single divider.
     expect(temporary.borderTopWidth).toBe('1px')
     expect(temporary.borderRightWidth).toBe('1px')
   })

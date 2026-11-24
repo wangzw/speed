@@ -1,21 +1,11 @@
-/**
- * The email-address rule shared by the surfaces that accept one as a
- * login identifier: the authn account module's `NormalizeIdentifier`
- * (email kind) stated on the client, so a malformed address is refused
- * in the field it was typed in instead of making a round trip that can
- * only answer the generic bad-request.
- *
- * The rule is the server's: the value is trimmed; the result is printable
- * ASCII (bytes 0x21 to 0x7e, so no space remains inside it); it holds
- * exactly one `@` with a non-empty part on each side; and it is at most
- * 254 bytes. Case is preserved -- the server folds it, and folding a
- * value the viewer is still editing would change what they typed.
- *
- * `parseEmailAddress` returns the trimmed address, so callers submit the
- * same value they validated; `null` means the address is not well formed.
- */
+/** The maximum length, in bytes, of an email address the rule accepts. */
 export const EMAIL_ADDRESS_MAX_BYTES = 254
 
+/**
+ * Parses an email address by the authn account rule: trims it, accepts
+ * printable ASCII with one `@` and a non-empty part each side, rejects over
+ * `EMAIL_ADDRESS_MAX_BYTES` bytes, preserves case; `null` when malformed.
+ */
 export function parseEmailAddress(value: string): string | null {
   const trimmed = value.trim()
   const bytes = new TextEncoder().encode(trimmed)

@@ -1,14 +1,3 @@
-/**
- * useFormatInstant / useResolvedTimeZone behaviour: the display-time-zone
- * context resolved through the shared chain, and instants formatted in the
- * resolved zone and the active UI language.
- *
- * The expected strings are computed with `@speed/i18n`'s own
- * `formatInstant`, so the suite pins how the hook wires zone, language and
- * style together rather than a locale's exact wording. The zone-fallback
- * cases are the point: an unusable provider value must not throw and must
- * not silently become the engine's process-local default.
- */
 
 import type { ReactNode } from 'react'
 import { describe, expect, it } from 'vitest'
@@ -22,9 +11,6 @@ import { createTestI18n } from '@speed/test-utils/render'
 import { DisplayTimeZoneProvider } from './display-time-zone.js'
 import { useFormatInstant, useResolvedTimeZone } from './use-format-instant.js'
 
-/** The browser zone this suite's vitest config pins (a non-UTC name), read
- * from the engine rather than restated, so a config change shows up as a
- * mismatch here. */
 const BROWSER_TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
 
 function wrapperFor(timeZone?: string, language = 'zh-CN') {
@@ -57,8 +43,6 @@ describe('useResolvedTimeZone', () => {
   })
 
   it('falls back to the browser zone for an unusable provider value', () => {
-    // The config pins a non-UTC browser zone; otherwise this assertion
-    // would hold for an implementation that skips straight to UTC.
     expect(BROWSER_TIME_ZONE).not.toBe('UTC')
     const { Wrapper } = wrapperFor('Mars/Olympus')
     const { result } = renderHook(() => useResolvedTimeZone(), {
@@ -130,8 +114,6 @@ describe('useFormatInstant', () => {
   })
 
   it('renders an empty account time zone in the browser zone, not UTC', () => {
-    // The host hands an unset account preference through as an empty value;
-    // the surface must land on the browser's zone, not the terminal tier.
     expect(BROWSER_TIME_ZONE).not.toBe('UTC')
     const { Wrapper } = wrapperFor('', 'en-US')
     const { result } = renderHook(() => useFormatInstant(), {

@@ -1,13 +1,3 @@
-/**
- * FormField contract: one field of react-hook-form plumbing with the
- * validation-error text contract -- required injects the 'form.required'
- * rule (never overriding an explicit one), errors surface after submit,
- * a namespace-key error message renders as the active language's text
- * and follows language switches, any other message renders verbatim.
- * The render state carries field/invalid/touched/required plus the raw
- * and resolved error text; the field needs a control or a FormProvider
- * context and fails loudly without either.
- */
 
 import { createRef } from 'react'
 import type { Ref } from 'react'
@@ -39,9 +29,6 @@ function renderFieldForm(options: {
   const onSubmit = vi.fn<SubmitHandler<FormValues>>()
   const states: FormFieldRenderState<FormValues, 'name'>[] = []
   function Harness() {
-    // An undefined initial value renders the control uncontrolled and
-    // flips it to controlled when RHF writes the first value; define it
-    // up front unless the FormField's own defaultValue supplies it.
     const { control, handleSubmit } = useForm<FormValues>({
       defaultValues:
         options.defaultValues ??
@@ -73,7 +60,6 @@ function nameInput(utils: ReturnType<typeof renderFieldForm>): HTMLInputElement 
   return utils.getByLabelText('Name') as HTMLInputElement
 }
 
-/** A single field with the styling props under test left to the caller. */
 function FieldHarness({
   sx,
   className,
@@ -153,8 +139,6 @@ describe('FormField', () => {
   })
 
   it('resolves any ui-kit-namespace key a custom rule returns', async () => {
-    // RHF runs non-required rules only against non-empty values, so the
-    // failing input carries a value here.
     const utils = renderFieldForm({
       defaultValues: { name: 'bad' },
       rules: { validate: (value: string) => (value === 'bad' ? 'form.invalid' : true) },
@@ -168,8 +152,6 @@ describe('FormField', () => {
   })
 
   it('does not inject the required rule when rules already define one', async () => {
-    // 'form.required' absent on purpose: an explicit rule wins, so the
-    // verbatim message above is what shows.
     const utils = renderFieldForm({
       required: true,
       rules: { required: 'Give it a name' },

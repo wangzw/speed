@@ -1,14 +1,3 @@
-/**
- * SectionCard contract: the card is a `<section>` carrying the container
- * surface, its title renders as a real heading at the requested level
- * (h2 by default) and names the section through `aria-labelledby`, an
- * untitled card renders no heading block and no accessible name, the
- * content area is padded unless `flushContent` removes it, and `sx`
- * reaches the card root. A plain surface renders the content without a
- * card, a heading, a description or an accessible name, keeping the
- * section's trailing actions above the children, and a plain provider
- * nested inside a card leaves that outer card's own surface intact.
- */
 
 import { createRef } from 'react'
 import { describe, expect, it } from 'vitest'
@@ -85,7 +74,6 @@ describe('SectionCard', () => {
         Body
       </SectionCard>,
     )
-    // The default inset is the icon column plus the gaps, not plain padding.
     expect(within(aligned.container).getByText('Body')).not.toHaveStyle({
       paddingLeft: '24px',
     })
@@ -95,7 +83,6 @@ describe('SectionCard', () => {
         Body
       </SectionCard>,
     )
-    // The content starts at the card's own padding, keeping its full width.
     expect(within(fullWidth.container).getByText('Body')).toHaveStyle({
       paddingLeft: '24px',
     })
@@ -164,8 +151,6 @@ describe('SectionCard', () => {
     expect(section).not.toHaveClass(cardClasses.root)
     expect(section).not.toHaveAttribute('aria-labelledby')
     expect(queryByRole('heading')).not.toBeInTheDocument()
-    // The card and its heading element go; the section keeps its name, so a
-    // page built from block cards still announces each section.
     expect(getByRole('region', { name: 'Billing' })).toBe(section)
     expect(getByRole('button', { name: 'Invite' })).toBeInTheDocument()
     expect(queryByText('How this workspace pays.')).not.toBeInTheDocument()

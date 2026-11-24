@@ -1,12 +1,3 @@
-/**
- * The theme-layer letter case, sampled by button variant.
- *
- * Material's `button` typography asks for capitals. A filled or outlined
- * button is a button and keeps them; a text button carries a link-shaped
- * action whose sentence should read as written ("Create an account", "Forgot
- * your password?"), so only that variant is exempted. The decorative
- * `overline` role keeps its capitals either way.
- */
 
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'

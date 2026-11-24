@@ -1,11 +1,4 @@
-/**
- * The ui-kit namespace translation hook, bound once so component
- * families do not repeat the namespace string.
- *
- * Components take their text from this namespace's bundles and never
- * hardcode user-facing strings; hosts override wording through the
- * namespace registration, not through component props.
- */
+/** The ui-kit namespace translation hook, bound once so components do not repeat the namespace string. */
 
 import { useTranslation } from '@speed/i18n'
 import { UI_KIT_NAMESPACE } from '../resources.js'

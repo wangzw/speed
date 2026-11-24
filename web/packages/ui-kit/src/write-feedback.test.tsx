@@ -1,17 +1,3 @@
-/**
- * useWriteFeedback contract: one slot per feedback scope, settled by the
- * attempt that lands last.
- *
- * The cases pin the rules a wrong implementation loses: overlapping
- * attempts settle the slot in landing order (not starting order), a null
- * settlement does not touch the slot, a throwing attempt is captured as a
- * failure instead of propagating, reset clears the slot without
- * cancelling an attempt in flight, the in-flight count keeps `pending`
- * true until every attempt settles, and the success message is the
- * translated string captured at `succeed` time -- a later language
- * switch does not rewrite it while a failure code keeps following the
- * active language.
- */
 
 import { act, renderHook, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -56,7 +42,6 @@ describe('useWriteFeedback', () => {
     act(() => {
       runPromise = result.current.run(() => attempt.promise)
     })
-    // The deadline is read when the attempt settles, not when it starts.
     act(() => {
       vi.advanceTimersByTime(5_000)
     })
@@ -94,7 +79,6 @@ describe('useWriteFeedback', () => {
     })
   })
 
-
   it('shows the outcome of the attempt that settles last, not the first one', async () => {
     const { result } = renderHook(() => useWriteFeedback())
     const first = deferred<string | null>()
@@ -108,8 +92,6 @@ describe('useWriteFeedback', () => {
     })
     expect(result.current.pending).toBe(true)
 
-    // The attempt started second settles first; its outcome occupies the
-    // slot until the other attempt lands.
     await act(async () => {
       second.resolve('second landed')
       await secondRun
@@ -119,7 +101,6 @@ describe('useWriteFeedback', () => {
       message: 'second landed',
     })
 
-    // The attempt started first settles last and replaces the slot.
     await act(async () => {
       first.resolve('first landed')
       await firstRun
@@ -176,8 +157,6 @@ describe('useWriteFeedback', () => {
     act(() => {
       runPromise = result.current.run(() => Promise.resolve(null))
     })
-    // The attempt starts by clearing the slot: the previous success is gone
-    // before the gate's outcome is known.
     expect(result.current.outcome).toBeNull()
 
     await act(async () => {
@@ -199,8 +178,6 @@ describe('useWriteFeedback', () => {
       nullRun = result.current.run(() => nullAttempt.promise)
     })
 
-    // B settles null while A is still in flight: the slot is empty from B's
-    // own reset and B does not touch it.
     await act(async () => {
       nullAttempt.resolve(null)
       await nullRun
@@ -208,7 +185,6 @@ describe('useWriteFeedback', () => {
     expect(result.current.outcome).toBeNull()
     expect(result.current.pending).toBe(true)
 
-    // A's string is the result the slot shows.
     await act(async () => {
       stringAttempt.resolve('A landed')
       await stringRun
@@ -232,7 +208,6 @@ describe('useWriteFeedback', () => {
       nullRun = result.current.run(() => nullAttempt.promise)
     })
 
-    // A settles a string first; the slot shows it while B is in flight.
     await act(async () => {
       stringAttempt.resolve('A landed')
       await stringRun
@@ -242,7 +217,6 @@ describe('useWriteFeedback', () => {
       message: 'A landed',
     })
 
-    // B settles null last and does not touch the slot: A's success stays.
     await act(async () => {
       nullAttempt.resolve(null)
       await nullRun
@@ -266,7 +240,6 @@ describe('useWriteFeedback', () => {
       nullRun = result.current.run(() => nullAttempt.promise)
     })
 
-    // The rejecting attempt settles first and occupies the slot.
     await act(async () => {
       failing.reject({ code: 'write_failed' })
       await failingRun
@@ -276,7 +249,6 @@ describe('useWriteFeedback', () => {
       code: 'write_failed',
     })
 
-    // The null settlement lands last and does not touch the slot.
     await act(async () => {
       nullAttempt.resolve(null)
       await nullRun
@@ -300,15 +272,12 @@ describe('useWriteFeedback', () => {
       nullRun = result.current.run(() => nullAttempt.promise)
     })
 
-    // The null settlement lands first: the slot stays empty from its own
-    // reset while the rejecting attempt is still in flight.
     await act(async () => {
       nullAttempt.resolve(null)
       await nullRun
     })
     expect(result.current.outcome).toBeNull()
 
-    // The rejection then lands and stays.
     await act(async () => {
       failing.reject({ code: 'write_failed' })
       await failingRun
@@ -328,8 +297,6 @@ describe('useWriteFeedback', () => {
     act(() => {
       runPromise = result.current.run(() => attempt.promise)
     })
-    // The elevation gate answers during the attempt's flight: that result
-    // is the slot's, and the later null settlement must not clear it.
     act(() => {
       result.current.fail({ code: 'write_failed' })
     })
@@ -386,8 +353,6 @@ describe('useWriteFeedback', () => {
     await act(async () => {
       await expect(runPromise).resolves.toBeUndefined()
     })
-    // `run` has settled by the time its own promise resolves: the slot is
-    // already updated, no polling needed.
     expect(result.current.outcome).toEqual({
       kind: 'failure',
       code: 'client.unknown',
@@ -443,7 +408,6 @@ describe('useWriteFeedback', () => {
       result.current.reset()
     })
     expect(result.current.outcome).toBeNull()
-    // The attempt is still in flight: reset clears the slot, never the work.
     expect(result.current.pending).toBe(true)
 
     await act(async () => {
@@ -474,7 +438,6 @@ describe('useWriteFeedback', () => {
       first.resolve('first')
       await firstRun
     })
-    // One attempt is still in flight.
     expect(result.current.pending).toBe(true)
 
     await act(async () => {
@@ -705,7 +668,6 @@ describe('useWriteFeedback', () => {
       first: useWriteFeedback(),
       second: useWriteFeedback(),
     }))
-    // The initial values on the first render.
     expect(result.current.first.outcome).toBeNull()
     expect(result.current.first.pending).toBe(false)
     expect(result.current.second.outcome).toBeNull()
@@ -746,8 +708,6 @@ describe('useWriteFeedback', () => {
         runSettled = true
       })
     })
-    // Flush the microtasks run has queued so far: its promise must not be
-    // fire-and-forget.
     await act(async () => {
       await Promise.resolve()
     })
@@ -797,7 +757,6 @@ describe('useWriteFeedback', () => {
   })
 })
 
-/** A host holding one feedback scope beside the region that renders it. */
 function FeedbackHarness() {
   const feedback = useWriteFeedback()
   const { t, i18n } = useTranslation(UI_KIT_NAMESPACE)
@@ -829,11 +788,6 @@ function FeedbackHarness() {
 
 const ResetGeneration = createContext(0)
 
-/**
- * A host whose effect resets the scope on [generation, reset]. Because the
- * callbacks keep their identity, the pending flip does not re-run the
- * effect and the settled result survives it.
- */
 function ResetOnGenerationHost({
   attempt,
 }: {
@@ -875,9 +829,6 @@ describe('useWriteFeedback with a rendered region', () => {
       await switchLanguage(view.i18n, 'en-US')
     })
 
-    // The success message is a snapshot: the region still shows exactly the
-    // text translated before the switch, not the en-US bundle and not a
-    // re-resolved code.
     expect(view.getByRole('status').textContent).toBe(
       zhCN.emptyState.empty.title,
     )
@@ -897,8 +848,6 @@ describe('useWriteFeedback with a rendered region', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       'en-US:host.write_failed',
     )
-    // A failure never stands beside a success: the success region stays
-    // mounted but empty.
     expect(screen.getByRole('status')).toHaveTextContent('')
   })
 
@@ -909,14 +858,11 @@ describe('useWriteFeedback with a rendered region', () => {
     )
 
     await userEvent.click(view.getByRole('button', { name: 'run' }))
-    // Pending: the slot is empty from the attempt's own reset.
     expect(view.getByRole('status').textContent).toBe('')
 
     await act(async () => {
       attempt.resolve('settled by run')
     })
-    // The settle flips pending back to false. A stable reset identity keeps
-    // the host effect from re-running and clearing the just-settled result.
     expect(view.getByRole('status').textContent).toBe('settled by run')
   })
 })

@@ -1,13 +1,3 @@
-/**
- * TotpQrCode: the SVG symbol an enrolment panel shows for its URI.
- *
- * The cases pin the contract the panel relies on: the image is exposed
- * as one accessible image under the caller's own label, the same URI
- * always renders the same symbol (so a re-render does not flicker), the
- * symbol carries a quiet zone and scales to the requested size, and an
- * empty or unrepresentable URI renders nothing rather than throwing into
- * the tree.
- */
 
 import { describe, expect, it } from 'vitest'
 import { renderWithProviders } from '../../test-utils/render.js'

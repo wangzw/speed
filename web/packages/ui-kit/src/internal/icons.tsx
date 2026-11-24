@@ -1,16 +1,9 @@
 /**
- * Hand-authored geometric icons for EmptyState's built-in variants, the
- * DataTable copy control and SidePanel's close control.
- *
- * Drawn as 24px-grid strokes in currentColor so they follow whatever
- * text color the surrounding theme paints -- no icon-font dependency,
- * no MUI icons package. The icons are decorative by contract: a
- * neighbouring title, description or control label carries the meaning,
- * so every icon renders aria-hidden and focusable=false.
+ * Hand-authored 24px-grid stroke icons in currentColor. Decorative by
+ * contract: every icon renders aria-hidden and focusable=false.
  */
 
 interface IconProps {
-  /** Box length in px; stroke geometry is sized for the 24 grid. */
   readonly size?: number
 }
 

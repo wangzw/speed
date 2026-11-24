@@ -1,10 +1,3 @@
-/**
- * AppThemeProvider contract: provides the merged-token theme through MUI
- * context, merges the MUI locale of the active i18n language onto it,
- * follows 'languageChanged' (MUI built-in texts switch with the app
- * language), rebuilds when an override layer changes identity, and
- * renders the theme-aware baseline alongside the children.
- */
 
 import { act, render } from '@testing-library/react'
 import { useEffect } from 'react'
@@ -34,13 +27,11 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-/** Read the theme MUI context hands the tree at render time. */
 function ThemeProbe({ onTheme }: { onTheme: (theme: Theme) => void }) {
   onTheme(useTheme())
   return null
 }
 
-/** Capture the provider's color-mode control at render time. */
 function ModeProbe({
   onControl,
 }: {
@@ -50,7 +41,6 @@ function ModeProbe({
   return null
 }
 
-/** Install a matchMedia stub for the system color-mode query. */
 function stubSystemColorMode(matches: boolean): {
   readonly changeMatches: (next: boolean) => void
 } {
@@ -78,7 +68,6 @@ function stubSystemColorMode(matches: boolean): {
   }
 }
 
-/** Capture the provider's preset control at render time. */
 function PresetProbe({
   onControl,
 }: {
@@ -88,7 +77,6 @@ function PresetProbe({
   return null
 }
 
-/** Two addressable presets with a field the built theme exposes directly. */
 const SHARP_PRESET: ThemePreset = {
   id: 'sharp',
   tokens: { shape: { borderRadius: 2 } },
@@ -148,16 +136,11 @@ describe('AppThemeProvider', () => {
     })
     expect(seen?.palette.primary.main).toBe('#333333')
     expect(seen?.palette.secondary.main).toBe('#222222')
-    // Untouched branches keep the defaults.
     expect(seen?.palette.error.main).toBe(defaultTokens.color.semantic.error.main)
   })
 
   it('keeps the kit palette, typography and shape under a components-only override layer', () => {
     let seen: Theme | undefined
-    // The README's component-level customisation recipe: the second
-    // createTheme argument is a diff options object, never a theme built
-    // by createTheme() -- a full theme would re-apply MUI's defaults over
-    // the token-mapped palette, typography and shape.
     const componentOverrides = {
       components: {
         MuiButton: {
@@ -214,15 +197,6 @@ describe('AppThemeProvider', () => {
   })
 
   it('picks up a language a child switches to inside its own mount effect (P1-4 regression)', async () => {
-    // AppThemeProvider snapshots i18n.language into state at first render
-    // and registers its languageChanged listener in an effect. React runs
-    // child effects before parent effects, so a child that switches
-    // language inside its own mount effect emits the event before the
-    // provider's listener exists -- the MUI built-in texts would stay on
-    // the snapshot language. (Re)attaching the listener re-adopts the
-    // instance's live language in the same effect, so a switch that fired
-    // before the listener existed is recovered at attach time instead of
-    // being lost.
     const i18n = createUiKitI18n('zh-CN')
     let seen: Theme | undefined
     function SwitchingChild() {
@@ -248,11 +222,6 @@ describe('AppThemeProvider', () => {
   })
 
   it('adopts the language of a swapped-in i18n instance without waiting for an event (P1-4 regression)', () => {
-    // Re-subscribing the effect to a new i18n instance (the prop changed
-    // identity) must also re-adopt the instance's live language: a new
-    // instance never emits languageChanged for the language it was
-    // created on, so the re-attach is the only point that can pick it
-    // up.
     const first = createUiKitI18n('zh-CN')
     const second = createUiKitI18n('en-US')
     const seen: Theme[] = []
@@ -508,12 +477,6 @@ describe('AppThemeProvider', () => {
     })
 
     it('keeps the active preset and the color mode independent', () => {
-      // Two dimensions, one theme: a mode change must not reset the
-      // selected preset, and a preset change must not reset the mode. Each
-      // dimension is flipped twice, with the other observed after every
-      // step, so a provider that bound them (resetting the selection on a
-      // mode change, or rebuilding the theme without the mode) fails on
-      // the first assertion after the crossing.
       let seen: Theme | undefined
       let presetControl: AppThemePresetControl | undefined
       let modeControl: AppThemeModeControl | undefined
@@ -614,9 +577,6 @@ describe('AppThemeProvider', () => {
   })
 
   it('renders with a language outside the MUI locale table, using the en-US MUI locale fallback', () => {
-    // createI18n's supported set is host-chosen and may include languages
-    // the MUI locale table does not map; rendering must never throw for
-    // one of them.
     const i18n = createI18n({
       supportedLanguages: ['zh-CN', 'en-US', 'fr-FR'],
       defaultLanguage: 'fr-FR',

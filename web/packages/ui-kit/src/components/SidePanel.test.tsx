@@ -1,14 +1,3 @@
-/**
- * SidePanel contract: a controlled modal panel whose close button,
- * Escape key and backdrop click all report onClose and nothing closes
- * itself; `busy` makes all three inert; onExited reports the end of the
- * exit transition (never the open flip); the dialog is named by its
- * title (an h2) and described only when a description is given; role and
- * aria-modal come from MUI exactly once; the panel stacks at
- * theme.zIndex.modal, above the AppShell AppBar; focus moves into the
- * panel on open and back to the opener on close. Built-in text comes
- * from the ui-kit namespace; the close label is host-overridable.
- */
 
 import { createRef, useState } from 'react'
 import { act, fireEvent, waitFor, within } from '@testing-library/react'
@@ -35,13 +24,7 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-/**
- * The `width` declared for `element`'s emotion class inside the
- * `@media (min-width: <minWidth>px)` block of the emitted CSS. Breakpoint-
- * keyed `sx` values compile to a base rule and an at-rule jsdom cannot
- * evaluate, so the assertion reads the generated text scoped to this
- * element's own class rather than the whole document.
- */
+/** jsdom cannot evaluate a breakpoint at-rule, so this reads the emitted CSS for the element's own class. */
 function widthAt(
   css: string,
   element: Element,
@@ -73,7 +56,6 @@ function setup(overrides: Partial<SidePanelProps> = {}) {
   return { onClose, onExited, ...utils }
 }
 
-/** A host whose busy flag the test flips without going through a focus-taking control. */
 const busyControls: {
   setBusy: (busy: boolean) => void
   onClose: () => void
@@ -98,7 +80,6 @@ function BusyHarness() {
   )
 }
 
-/** A host that opens the panel from a button, so focus restoration has an opener. */
 function FocusHarness() {
   const [open, setOpen] = useState(false)
   return (
@@ -118,7 +99,6 @@ function FocusHarness() {
   )
 }
 
-/** A host whose close control drives `open`, so the exit transition runs on a live tree. */
 function ExitHarness({ onExited }: { readonly onExited: () => void }) {
   const [open, setOpen] = useState(true)
   return (
@@ -176,17 +156,11 @@ describe('SidePanel', () => {
     expect(document.querySelectorAll('[aria-modal]')).toHaveLength(1)
     const dialog = document.querySelector('[role="dialog"]')
     expect(dialog).toHaveAttribute('aria-modal', 'true')
-    // The dialog is the drawer's paper itself -- not a second wrapper --
-    // and it carries the tabIndex={-1} MUI supplies for programmatic
-    // focus, never a duplicate tabIndex={0}.
     expect(dialog).toBe(document.querySelector(`.${drawerClasses.paper}`))
     expect(dialog).toHaveAttribute('tabindex', '-1')
   })
 
   it('stacks at theme.zIndex.modal, above the AppShell AppBar', () => {
-    // Render with a non-default modal token so the assertion cannot be
-    // satisfied by a hardcoded MUI default: the panel must read the
-    // resolved theme, not remember the number 1300.
     let theme: Theme | undefined
     function ThemeProbe() {
       theme = useTheme()
@@ -205,8 +179,6 @@ describe('SidePanel', () => {
     expect(theme!.zIndex.modal).toBe(1600)
     const root = document.querySelector<HTMLElement>(`.${drawerClasses.root}`)
     expect(root).not.toBeNull()
-    // The AppShell AppBar sits at theme.zIndex.drawer + 1; the panel must
-    // resolve its stacking context above that.
     expect(theme!.zIndex.modal).toBeGreaterThan(theme!.zIndex.drawer + 1)
     expect(getComputedStyle(root!).zIndex).toBe('1600')
   })
@@ -246,8 +218,6 @@ describe('SidePanel', () => {
     expect(paper).not.toBeNull()
     expect(paper).toHaveStyle({ overflowY: 'hidden' })
 
-    // The body paragraph sits directly inside the content box, which is
-    // the column's growing/shrinking child and the only scroll layer.
     const content = getByText(BODY).parentElement
     expect(content).not.toBeNull()
     expect(content).toHaveStyle({
@@ -264,8 +234,6 @@ describe('SidePanel', () => {
     const content = getByText(BODY).parentElement
     const action = getByRole('button', { name: 'Save details' })
     expect(content).not.toBeNull()
-    // The content box is the only scroll layer; the action row follows it
-    // as a sibling so it stays reachable while the body scrolls.
     expect(content).not.toContainElement(action)
     expect(content!.nextElementSibling).toContainElement(action)
     expect(content!.nextElementSibling).toHaveStyle({
@@ -330,9 +298,6 @@ describe('SidePanel', () => {
     close.focus()
     expect(close).toHaveFocus()
 
-    // The panel turns busy while its close button holds focus. The button
-    // must stay focusable, report unavailable instead of turning natively
-    // disabled, and keep the focus it had.
     act(() => {
       busyControls.setBusy(true)
     })
@@ -341,7 +306,6 @@ describe('SidePanel', () => {
     expect(close).not.toBeDisabled()
     expect(close).toHaveFocus()
 
-    // Click, Enter and Space all reach the guard and are swallowed.
     fireEvent.click(close)
     await user.keyboard('{Enter}')
     await user.keyboard(' ')
@@ -354,7 +318,6 @@ describe('SidePanel', () => {
     const { getByRole } = renderWithProviders(<ExitHarness onExited={onExited} />)
     expect(onExited).not.toHaveBeenCalled()
 
-    // The host closes the panel; the open flip alone is not the exit.
     fireEvent.click(getByRole('button', { name: 'Close the panel' }))
     expect(getByRole('dialog')).toBeInTheDocument()
     expect(onExited).not.toHaveBeenCalled()
@@ -363,16 +326,12 @@ describe('SidePanel', () => {
 
   it('fires onExited when the exit transition ends, with the page reachable and the panel still mounted', async () => {
     const onExited = vi.fn(() => {
-      // The modal has stopped hiding the page behind it, but the panel's
-      // content is still in the document; it unmounts in the render
-      // commit that follows this callback.
       expect(container).not.toHaveAttribute('aria-hidden')
       expect(document.querySelector('[role="dialog"]')).not.toBeNull()
     })
     const { getByRole, container } = renderWithProviders(
       <ExitHarness onExited={onExited} />,
     )
-    // While the panel is open its modal hides the page container.
     expect(container).toHaveAttribute('aria-hidden', 'true')
 
     fireEvent.click(getByRole('button', { name: 'Close the panel' }))
@@ -387,8 +346,6 @@ describe('SidePanel', () => {
     const { getByRole } = renderWithProviders(<ExitHarness onExited={onExited} />)
     fireEvent.click(getByRole('button', { name: 'Close the panel' }))
     await waitFor(() => expect(onExited).toHaveBeenCalledTimes(1))
-    // The content lives only for the exit transition; keepMounted would
-    // leave the dialog in the document behind a hidden root.
     await waitFor(() =>
       expect(document.querySelector('[role="dialog"]')).toBeNull(),
     )

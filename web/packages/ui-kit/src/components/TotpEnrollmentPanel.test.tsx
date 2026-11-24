@@ -1,15 +1,3 @@
-/**
- * TotpEnrollmentPanel contract: a pure controlled block over the values
- * the caller parsed and translated.
- *
- * The cases pin what the panel promises a surface: the caller's symbol,
- * guidance, manual-entry copy and parameters are what render; the manual
- * disclosure opens on request and exposes only the supplied secret and
- * parameter rows; the copy control writes the raw secret and announces the
- * caller's wording; the code field carries the six-digit numeric
- * contract; the caller's two actions keep the documented order; and none
- * of the strings is read from a language bundle.
- */
 
 import { useState } from 'react'
 import type { ReactNode } from 'react'
@@ -48,7 +36,6 @@ type HarnessProps = Partial<TotpEnrollmentPanelProps> & {
   readonly secondaryLabel?: string
 }
 
-/** The panel with just enough caller state to exercise the code field. */
 function Harness({
   primaryLabel = 'Continue',
   secondaryLabel,
@@ -187,8 +174,6 @@ describe('TotpEnrollmentPanel', () => {
 
     const input = screen.getByLabelText(CODE_LABEL)
     expect(input).toHaveAttribute('readonly')
-    // Read-only keeps the field focusable and selectable; the value cannot
-    // change while the answer is in flight.
     input.focus()
     expect(input).toBe(document.activeElement)
     expect(input).not.toBeDisabled()
@@ -233,8 +218,6 @@ describe('TotpEnrollmentPanel', () => {
     )
 
     await user.click(screen.getByRole('button', { name: TOGGLE_LABEL }))
-    // Label in Name needs canvas text measurement, which jsdom lacks; the
-    // named browser case decides it.
     await expectNoAxeViolations({
       decidedInBrowser: 'totpManualDisclosure',
     })

@@ -1,15 +1,3 @@
-/**
- * DataTable in a real browser: the per-column content width cap.
- *
- * The cap is a container query against the table's own root box, so only
- * a browser resolves it. These cases place the table in a fixed-width
- * container and assert the rendered cap: a primary-identity column
- * (`PRIMARY_COLUMN_MAX_WIDTH`) at 160px below the container's md and
- * 200px from it up, and a flat cap that does not grow. The capped cell's
- * `cellFullValue` copy control keeps its own full width inside the cap --
- * the cap bounds content and control together, never clipping the
- * control.
- */
 import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
@@ -33,7 +21,6 @@ interface Row {
 const LONG_ID = 'account-identifier-with-a-long-unbroken-value-0000000001'
 const LONG_TEXT = 'an unbroken descriptive value that is much wider than its cap'
 
-/** The shipped en-US copy-control label for this fixed value. */
 const COPY_LABEL = (
   uiKitResources['en-US'] as unknown as {
     readonly dataTable: { readonly copyValue: string }
@@ -42,8 +29,6 @@ const COPY_LABEL = (
 
 const ROW: Row = { id: LONG_ID, name: LONG_TEXT }
 
-/** One primary-identity column: nowrap, full-value copy control, the
- * shared container-query cap. */
 const PRIMARY_COLUMNS: readonly DataTableColumn<Row>[] = [
   {
     id: 'id',
@@ -55,7 +40,6 @@ const PRIMARY_COLUMNS: readonly DataTableColumn<Row>[] = [
   },
 ]
 
-/** One flat-cap column with no copy control. */
 const FLAT_COLUMNS: readonly DataTableColumn<Row>[] = [
   {
     id: 'name',
@@ -66,13 +50,11 @@ const FLAT_COLUMNS: readonly DataTableColumn<Row>[] = [
   },
 ]
 
-/** Renders the table inside a fixed-width box, the host's placement. */
 function renderInWidth(width: number, columns: readonly DataTableColumn<Row>[]) {
   return renderWithProviders(
     <div style={{ width }}>
       <DataTable rows={[ROW]} columns={columns} rowKey={(row) => row.id} />
     </div>,
-    // en-US keeps the measured text Latin-only under the pinned font.
     { language: 'en-US' },
   )
 }
@@ -91,15 +73,11 @@ describe('DataTable content caps in Chromium', () => {
         expect(text.getBoundingClientRect().width).toBeGreaterThan(0)
       })
 
-      // The inline-flex wrapper is the element the cap is declared on; it
-      // holds the shrinking text and the pinned copy control.
       const wrapper = text.parentElement
       expect(wrapper).not.toBeNull()
       const wrapperWidth = wrapper?.getBoundingClientRect().width ?? Infinity
       expect(wrapperWidth).toBeLessThanOrEqual(cap + 0.5)
 
-      // The copy control keeps its whole width inside that cap instead of
-      // being clipped by it.
       const copy = screen.getByRole('button', { name: COPY_LABEL })
       const copyRect = copy.getBoundingClientRect()
       expect(copyRect.width).toBeGreaterThan(0)
@@ -133,8 +111,6 @@ describe('DataTable content caps in Chromium', () => {
     renderInWidth(600, columns)
 
     const text = await screen.findByText(LONG_TEXT)
-    // The TableContainer is the horizontal scroll fallback: content wider
-    // than the host's container scrolls inside it, never out of the page.
     const wrapper = text.closest<HTMLElement>(
       `.${tableContainerClasses.root}`,
     )
@@ -145,13 +121,8 @@ describe('DataTable content caps in Chromium', () => {
   })
 })
 
-/** One pixel of tolerance for subpixel layout rounding. */
 const PIN_TOLERANCE = 0.5
 
-/**
- * The alpha channel of a computed CSS colour. A hex or rgb() form is
- * opaque; rgba() carries its own alpha as the fourth component.
- */
 function alphaOf(color: string): number {
   const rgba = /^rgba?\(([^)]+)\)$/.exec(color)
   const body = rgba?.[1]
@@ -168,8 +139,6 @@ describe('DataTable row-actions pinning in Chromium', () => {
 
   const PIN_ROW: PinRow = { name: LONG_TEXT, email: LONG_ID }
 
-  /** Two unbroken main columns plus the row-actions column the host
-   * places last, as the accounts page does. */
   const PIN_COLUMNS: readonly DataTableColumn<PinRow>[] = [
     {
       id: 'name',
@@ -221,8 +190,6 @@ describe('DataTable row-actions pinning in Chromium', () => {
       `.${tableContainerClasses.root}`,
     )
     expect(container).not.toBeNull()
-    // The table is genuinely wider than its host box, so the wrapper can
-    // scroll horizontally and the pin is observable.
     expect(container?.scrollWidth).toBeGreaterThan(container?.clientWidth ?? 0)
 
     const box = container?.getBoundingClientRect() as DOMRect
@@ -240,8 +207,6 @@ describe('DataTable row-actions pinning in Chromium', () => {
       expect(container?.scrollLeft ?? 0).toBeGreaterThan(0)
     })
 
-    // The main columns have moved under the pinned column; the pinned
-    // controls have not moved with them.
     await waitFor(() => {
       expect(
         Math.abs(manage.getBoundingClientRect().left - before),
@@ -265,9 +230,6 @@ describe('DataTable row-actions pinning in Chromium', () => {
       </div>,
       {
         language: 'en-US',
-        // The glass preset's container alpha, projected onto the default
-        // tokens: the surface fill no longer guarantees opaqueness, so the
-        // pinned cell must supply an opaque base underneath it.
         projectTokens: { surface: { container: { opacity: 0.4 } } },
       },
     )
@@ -282,7 +244,6 @@ describe('DataTable row-actions pinning in Chromium', () => {
       `.${tableContainerClasses.root}`,
     )
     expect(container).not.toBeNull()
-    // The pin is real only while the table overflows its container.
     expect(container?.scrollWidth).toBeGreaterThan(container?.clientWidth ?? 0)
 
     const headers = Array.from(container?.querySelectorAll('thead th') ?? [])
@@ -299,10 +260,7 @@ describe('DataTable row-actions pinning in Chromium', () => {
 
     for (const cell of [pinnedHeader, pinnedBody]) {
       const computed = getComputedStyle(cell)
-      // The base layer is opaque, so the main columns cannot show through.
       expect(alphaOf(computed.backgroundColor)).toBe(1)
-      // ... while the translucent surface fill stays the visible layer, so
-      // the pinned band still reads as part of the table.
       expect(computed.backgroundImage).toContain('0.4')
     }
   })
@@ -343,7 +301,6 @@ describe('DataTable row-actions pinning in Chromium', () => {
       `.${tableContainerClasses.root}`,
     )
     expect(container).not.toBeNull()
-    // The premise of this case: the table genuinely fits its container.
     await waitFor(() => {
       expect(container?.scrollWidth ?? 0).toBeLessThanOrEqual(
         container?.clientWidth ?? 0,
@@ -359,8 +316,6 @@ describe('DataTable row-actions pinning in Chromium', () => {
     const firstBody = bodyCells[0] as HTMLElement
     const lastBody = bodyCells[bodyCells.length - 1] as HTMLElement
 
-    // A fitting table is unaffected: the last cells sit in normal flow and
-    // read exactly like their row siblings, with no start-edge divider.
     expect(getComputedStyle(lastHeader).position).toBe('static')
     expect(getComputedStyle(lastBody).position).toBe('static')
     expect(getComputedStyle(lastHeader).backgroundColor).toBe(
@@ -376,8 +331,6 @@ describe('DataTable row-actions pinning in Chromium', () => {
   it('carries the row hover highlight into the pinned cell', async () => {
     await page.viewport(1280, 900)
 
-    // A short first column stays clear of the pinned band, so the pointer
-    // can rest on the row without the pinned controls intercepting it.
     const HOVER_ROW: PinRow = { name: 'Ada', email: LONG_ID }
     const HOVER_COLUMNS: readonly DataTableColumn<PinRow>[] = [
       { id: 'name', header: 'Name', cellWrap: 'nowrap', cell: (row) => row.name },
@@ -420,8 +373,6 @@ describe('DataTable row-actions pinning in Chromium', () => {
     const pinned = cells[cells.length - 1] as HTMLElement
     expect(getComputedStyle(pinned).position).toBe('sticky')
 
-    // This tier runs a hovering, fine pointer, which is what turns the row
-    // highlight on in the first place.
     expect(
       window.matchMedia('(hover: hover) and (pointer: fine)').matches,
     ).toBe(true)
@@ -435,26 +386,16 @@ describe('DataTable row-actions pinning in Chromium', () => {
     })
 
     const hovered = getComputedStyle(pinned)
-    // The same layer the row's own highlight paints is present in the
-    // pinned cell, so the highlight no longer stops at the pinned edge.
     expect(hovered.backgroundImage).not.toBe(restingImage)
     expect(hovered.backgroundImage).toContain(
       getComputedStyle(row as HTMLElement).backgroundColor,
     )
-    // ... and the opaque base survives underneath the extra layer.
     expect(alphaOf(hovered.backgroundColor)).toBe(1)
   })
 })
 
 describe('DataTable empty-phase announcement in Chromium', () => {
   it('inserts the region empty beside a tooltip-wrapped action and fills it a frame later', async () => {
-    // The empty result's action is an ActionButton, whose resident MUI
-    // Tooltip updates state during the commit that enters the empty
-    // phase. An effect-armed gate would be flushed inside that same
-    // commit and the region would be born carrying its text. A
-    // MutationObserver records the region's text in every batch after it
-    // appears, so the empty birth frame and the later fill are observed
-    // facts rather than one snapshot taken when the case chose to look.
     const noData = (
       uiKitResources['en-US'] as unknown as {
         readonly dataTable: { readonly noData: string }
@@ -497,14 +438,11 @@ describe('DataTable empty-phase announcement in Chromium', () => {
 
       await page.getByRole('button', { name: 'clear' }).click()
       await waitFor(() => expect(snapshots.length).toBeGreaterThan(0))
-      // The batch that reported the region's insertion read it empty.
       expect(snapshots[0]).toBe('')
 
       await waitFor(() =>
         expect(screen.getByRole('status').textContent).toBe(noData),
       )
-      // Some later batch carried the text, so the change reached an
-      // already-inserted region rather than being born with it.
       expect(snapshots).toContain(noData)
     } finally {
       observer.disconnect()

@@ -1,43 +1,6 @@
 /**
- * FormField: the react-hook-form field adapter of the form family.
- *
- * One field's worth of RHF plumbing, collapsed: a Controller bound to
- * `name` under `control` (or the FormProvider context FormLayout
- * installs), with the validation-error text contract applied at render
- * time -- an error message that is a ui-kit-namespace key renders as its
- * translation in the current language, anything else renders verbatim
- * (see src/internal/validation-error.ts).
- *
- * The component deliberately renders no chrome of its own: the host's
- * control renders through the `render` prop, which receives the bound
- * field state plus the resolved error text, and the host wires them into
- * whatever control fits -- MUI TextField is the common case:
- *
- *   <FormField
- *     name="email"
- *     control={control}
- *     label=...           // labels are host content, not namespace text
- *     required
- *     render={({ field, invalid, errorText }) => (
- *       <TextField
- *         {...field}
- *         label="Email"
- *         error={invalid}
- *         helperText={errorText ?? undefined}
- *       />
- *     )}
- *   />
- *
- * MUI's own form controls (TextField and friends) already render label +
- * helper text with the aria wiring, so painting chrome here would
- * duplicate theirs; the "uniform error display" of the form family is
- * this state contract plus FormLayout's spacing skeleton, not a second
- * label/error renderer.
- *
- * `required` is a convenience switch: it injects the 'form.required'
- * namespace message as the required rule (unless the rules already carry
- * one) and surfaces itself on the render state for host asterisks. Rules
- * errors surface after the host's submit/trigger, per the useForm mode.
+ * The react-hook-form field adapter: a bound Controller plus the resolved
+ * error text, rendered entirely by the host's `render` control.
  */
 
 import { forwardRef, useMemo } from 'react'
@@ -84,10 +47,7 @@ export interface FormFieldProps<
 > extends RootStyleProps {
   /** The field path inside the form values. */
   readonly name: TName
-  /**
-   * The form control. Optional when the field renders inside FormLayout
-   * (its FormProvider supplies the context); otherwise required.
-   */
+  /** The form control; optional inside `FormLayout`, whose provider supplies it. */
   readonly control?: Control<TFieldValues>
   /**
    * Validation rules. Error messages follow the validation-error
@@ -100,24 +60,17 @@ export interface FormFieldProps<
   >
   /** Default value for the field when the form carries none. */
   readonly defaultValue?: FieldPathValue<TFieldValues, TName>
-  /**
-   * Convenience switch: injects the 'form.required' rule (unless rules
-   * already define one) and marks the render state. Mark the host
-   * label's asterisk from the state.
-   */
+  /** Injects the 'form.required' rule unless `rules` already define one. */
   readonly required?: boolean
-  /** Renders the host control from the bound state (see header example). */
+  /** Renders the host control from the bound state. */
   readonly render: (
     state: FormFieldRenderState<TFieldValues, TName>,
   ) => ReactElement
 }
 
 /**
- * The RHF field adapter: Controller plumbing plus the resolved-error
- * state contract for the host control. The component renders no chrome
- * of its own, so `sx`, `className` and the ref apply to a box placed
- * around the host control only when the host passes one of them; with
- * none passed, the rendered tree is exactly the host control.
+ * `sx`, `className` and the ref apply to a box around the host control, and
+ * only when one of them is passed.
  */
 function FormFieldInner<
   TFieldValues extends FieldValues,
@@ -145,8 +98,7 @@ function FormFieldInner<
     )
   }
 
-  // The convenience switch only ever fills an absent required rule; an
-  // explicit host rule (with its own message) always wins.
+  // An explicit host rule always wins.
   const effectiveRules = useMemo(() => {
     if (!required || rules?.required !== undefined) {
       return rules
@@ -177,10 +129,6 @@ function FormFieldInner<
         if (!needsRoot) {
           return controlNode
         }
-        // Only a host that asked for a root prop gets the box; the
-        // ordinary rendering stays the bare host control, so a field's
-        // place in FormLayout's flow never gains an element it did not
-        // have.
         return (
           <Box ref={ref} className={className} sx={sx}>
             {controlNode}
@@ -192,10 +140,8 @@ function FormFieldInner<
 }
 
 /**
- * The RHF field adapter (see `FormFieldInner`). The generic signature is
- * preserved across `forwardRef` by the cast below: React 18 forwards a
- * ref only through `forwardRef`, which erases the component's own type
- * parameters.
+ * The field adapter. `forwardRef` erases the component's type parameters, so
+ * the cast below restores the generic signature.
  */
 export const FormField = forwardRef(FormFieldInner) as <
   TFieldValues extends FieldValues = FieldValues,

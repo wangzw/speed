@@ -1,9 +1,3 @@
-/**
- * AnnouncementRegion contract: one live region that stands for as long as
- * its host mounts it, reaches its text only after a painted empty frame,
- * clears in the commit a message empties in, and cancels a scheduled write
- * when it unmounts.
- */
 
 import { useState } from 'react'
 import { flushSync } from 'react-dom'
@@ -16,7 +10,6 @@ const REGION_ID = 'announcement-under-test'
 const FIRST = 'The first message'
 const SECOND = 'The second message'
 
-/** A host holding the message so the region re-renders in place. */
 function Host({ initial }: { readonly initial: string | null }) {
   const [message, setMessage] = useState(initial)
   return (
@@ -35,7 +28,6 @@ function Host({ initial }: { readonly initial: string | null }) {
   )
 }
 
-/** The region under test, found by the id the host gives it. */
 function region(): HTMLElement {
   const node = document.getElementById(REGION_ID)
   expect(node).not.toBeNull()
@@ -46,15 +38,11 @@ describe('AnnouncementRegion', () => {
   it('is born empty and fills only after a painted frame', async () => {
     renderWithProviders(<AnnouncementRegion id={REGION_ID} message={FIRST} />)
 
-    // The commit that inserted the region left it empty, and its written
-    // marker -- the styling contract a host's visible skin clips on -- is
-    // absent.
     expect(region().textContent).toBe('')
     expect(region()).not.toHaveAttribute('data-announcement-written')
 
     await waitFor(() => expect(region()).toHaveTextContent(FIRST))
     expect(region()).toHaveAttribute('data-announcement-written')
-    // One region throughout, never a second born with its text.
     expect(screen.getAllByRole('status')).toHaveLength(1)
   })
 
@@ -81,8 +69,6 @@ describe('AnnouncementRegion', () => {
       <AnnouncementRegion id={REGION_ID} message={FIRST} politeness="alert" />,
     )
     expect(region()).toHaveAttribute('role', 'alert')
-    // role="alert" already implies assertive; an explicit aria-live as well
-    // makes some screen readers announce the region twice.
     expect(region()).not.toHaveAttribute('aria-live')
     expect(region()).toHaveAttribute('aria-atomic', 'true')
     expect(region().textContent).toBe('')
@@ -108,7 +94,6 @@ describe('AnnouncementRegion', () => {
       flushSync(() => {
         screen.getByRole('button', { name: 'first' }).click()
       })
-      // The commit that changed the message left the region empty.
       expect(region().textContent).toBe('')
     })
 
@@ -123,7 +108,6 @@ describe('AnnouncementRegion', () => {
       flushSync(() => {
         screen.getByRole('button', { name: 'second' }).click()
       })
-      // Cleared in the commit; the new text arrives on a later frame.
       expect(region().textContent).toBe('')
     })
 
@@ -154,7 +138,6 @@ describe('AnnouncementRegion', () => {
       expect(region().textContent).toBe('')
       expect(request).toHaveBeenCalled()
       view.unmount()
-      // The frames armed by the commit are dropped with the node.
       expect(cancel).toHaveBeenCalled()
     } finally {
       request.mockRestore()

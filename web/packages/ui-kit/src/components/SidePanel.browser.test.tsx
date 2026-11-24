@@ -1,12 +1,3 @@
-/**
- * SidePanel in a real browser: turning the panel busy must not take focus
- * away from the close button that holds it.
- *
- * jsdom implements no focus correction for a focused element that becomes
- * natively disabled, so the old `disabled` close button kept focus there;
- * only the browser tier can show the browser moving focus off the control,
- * with the panel's focus trap then landing it on the paper.
- */
 
 import { describe, expect, it } from 'vitest'
 import { useState } from 'react'
@@ -15,7 +6,6 @@ import enUS from '../locales/en-US.json' with { type: 'json' }
 import { renderWithProviders } from '../../test-utils/render.js'
 import { SidePanel } from './SidePanel.js'
 
-/** The panel's host state, driven from the test without a focus-taking control. */
 const controls: { setBusy: (busy: boolean) => void } = {
   setBusy: () => undefined,
 }
@@ -46,9 +36,6 @@ describe('SidePanel in Chromium', () => {
     close.focus()
     expect(close).toHaveFocus()
 
-    // The panel turns busy while its close button holds focus. A natively
-    // disabled close button loses that focus to the body, and the panel's
-    // focus trap then moves it back to the paper.
     act(() => {
       controls.setBusy(true)
     })

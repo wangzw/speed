@@ -1,18 +1,3 @@
-/**
- * The theme-layer touch-target floor, sampled by control category.
- *
- * The layout design asks for every clickable target to reach 44x44 on a
- * coarse pointer -- a global rule, not a per-surface one -- so this suite
- * renders one real control per category (primary and secondary button,
- * icon button, checkbox, radio, switch, input, link, navigation item,
- * clickable chip) and proves each one carries the floor through the
- * theme alone, with no
- * per-control `touchTargetSx` in the fixture. jsdom evaluates no media
- * condition and no layout, so the proof reads the emitted CSS (see
- * @speed/test-utils/emitted-css); the fine-pointer half proves the
- * opposite direction -- none of the floor leaks into the styles a precise
- * pointer sees.
- */
 
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -71,10 +56,6 @@ const inputRoot = (): Element | null =>
     .getByRole('textbox', { name: 'input' })
     .closest(`.${inputBaseClasses.root}`)
 
-// A checkbox's (and radio's) clickable element is its root span; the
-// inner input is the form control, not the hit area. The switch's root is
-// the box that clips (and therefore bounds) its absolutely positioned
-// button.
 const checkboxRoot = (): Element =>
   screen
     .getByRole('checkbox', { name: 'checkbox' })
@@ -87,21 +68,12 @@ const switchRoot = (): Element =>
   screen
     .getByRole('switch', { name: 'switch' })
     .closest(`.${switchClasses.root}`) as Element
-// A Select's trigger is the `div[role=combobox]` that carries the click
-// and its own `min-height`, not the InputBase wrapper or the visually
-// hidden native input.
 const selectTrigger = (): Element =>
   screen
     .getByRole('combobox', { name: 'select' })
     .closest(`.${selectClasses.select}`) as Element
 
-/**
- * The `@media (pointer: coarse)` rules whose selector targets `slotClass`
- * as a compound class (`.MuiSelect-select`, not merely a generated class
- * whose hyphenated name happens to contain it). These are the rules the
- * theme declares for that slot, as opposed to one inherited from a
- * parent component's slot.
- */
+/** Coarse-pointer rules that name `slotClass` itself, not a generated class that merely contains it. */
 function coarseRulesSelecting(slotClass: string): string[] {
   const rules: string[] = []
   for (const block of emittedStyleText()
@@ -157,16 +129,9 @@ describe('theme touch-target floor', () => {
 
   it('carries the floor on the Select trigger div, not only its field wrapper', () => {
     renderWithProviders(<Fixture />)
-    // MUI 9 renders the Select's clickable element as a `div` on the
-    // `select` slot; the InputBase `root`/`input` overrides do not reach
-    // it, and its own base style resets `min-height` to 1.4375em.
     const trigger = selectTrigger()
     expect(trigger).toHaveClass(selectClasses.select)
     expect(trigger.tagName).toBe('DIV')
-    // The InputBase overrides do not settle it: MUI's own
-    // `min-height: 1.4375em` on the select slot wins the cascade, so a
-    // coarse rule that merely matches the wrapper is not enough. The
-    // select slot itself must declare the floor.
     const slotRules = coarseRulesSelecting(`.${selectClasses.select}`)
     expect(slotRules).not.toHaveLength(0)
     expect(
@@ -181,10 +146,6 @@ describe('theme touch-target floor', () => {
 
   it('grows the switch root but pins its track to the stock height', () => {
     renderWithProviders(<Fixture />)
-    // The switch's button is clipped by its root, so the root has to grow
-    // to the floor. Pinning the track height keeps the thicker 100%-height
-    // track out of the coarse rendering: the target grows, the switch
-    // drawing does not.
     const css = emittedStyleText()
     expect(css).toContain(`.${switchClasses.track}{height:14px`)
     expect(css).toContain(
@@ -208,8 +169,6 @@ describe('theme touch-target floor', () => {
 
   it('keeps a fine pointer untouched: the floor never leaves the media feature', () => {
     renderWithProviders(<Fixture />)
-    // jsdom applies no media query, so the computed values here are what
-    // a precise pointer sees. None of them is the touch floor.
     const samples = [
       screen.getByRole('button', { name: 'primary button' }),
       screen.getByRole('button', { name: 'secondary button' }),
@@ -229,20 +188,15 @@ describe('theme touch-target floor', () => {
       expect(style.minWidth).not.toBe(FLOOR)
       expect(style.minHeight).not.toBe(FLOOR)
     }
-    // The link's inline box is left alone outside the media feature.
     expect(getComputedStyle(screen.getByRole('link', { name: 'link' })).display).toBe(
       'inline',
     )
-    // No 44px minimum survives once the coarse-pointer blocks are removed.
     const fine = styleTextOutsideCoarsePointer()
     expect(fine).not.toContain(`min-width:${FLOOR}`)
     expect(fine).not.toContain(`min-height:${FLOOR}`)
   })
 
   it('renders the same fine-pointer sizes as a stock MUI theme', () => {
-    // Differential control: the floor's addition must not move any
-    // computed minimum size or display value on a precise pointer, so the
-    // same controls under MUI's stock theme measure identically.
     const sampled = (): Record<string, [string, string, string]> => {
       const entries: Array<[string, Element]> = [
         ['primary', screen.getByRole('button', { name: 'primary button' })],

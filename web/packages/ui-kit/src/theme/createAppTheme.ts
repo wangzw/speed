@@ -1,107 +1,4 @@
-/**
- * The theme factory: speed tokens into an MUI v9 theme.
- *
- * Layering is the token tree's own discipline applied three deep:
- *
- *   defaultTokens  <-  projectTokens  <-  tenantOverrides
- *
- * Each layer is a diff against the one below it, merged through the
- * tokens package's deepMerge (copy-on-write: untouched branches stay
- * shared with the defaults by identity, no input is ever mutated, hostile
- * "__proto__" override keys land as inert own properties). The defaults
- * themselves are deep-frozen at assembly in @speed/tokens, so a write
- * through any shared branch of the merged tree throws in strict mode
- * rather than polluting the tree every tenant merge starts from. The
- * factory then maps the merged tree onto MUI's createTheme surface:
- *
- * - palette roles: in light mode each semantic role's
- *   main/light/dark/contrastText maps key for key (dark mode remaps them,
- *   see the color-mode paragraph); the neutral ramp aliases the MUI grey
- *   scale (steps 50-900
- *   by number; A100/A200/A400/A700 alias the same-number steps, matching
- *   MUI's own grey aliasing). Tone 950 has no MUI slot and stays a token
- *   only. text/background/divider map directly.
- * - spacing: the token unit IS the MUI spacing unit (probe-verified
- *   against MUI 9.5.0: a numeric spacing option sets the base unit, so
- *   theme.spacing(n) === n x unit).
- * - shape.borderRadius maps directly; breakpoints.values and
- *   zIndex.values map directly (the slot names are MUI's own).
- * - typography: fontFamily.sans becomes the theme font family, and
- *   fontFamily.mono becomes `theme.typography.fontFamilyMono` (module
- *   augmentation, see the declaration below); the named
- *   size steps feed the variant role table, converted to rem on a 16px
- *   base (MUI's default htmlFontSize); fontWeight.regular/medium/bold
- *   fill fontWeightRegular/Medium/Bold (light has no token and keeps
- *   MUI's 300). Role table (all documented in the README):
- *   h1-h6 <- 5xl..lg, tight line height, semibold;
- *   subtitle1/2 <- md/sm, normal line height, medium;
- *   body1/2 <- md/sm, normal line height, regular;
- *   button <- sm, medium; caption <- xs, regular;
- *   overline <- xs, semibold, wide letter spacing.
- * - shadows: MUI themes carry 25 elevations. The six token slots are
- *   floored onto the ramp -- elevation i uses the nearest token slot at
- *   or below i (monotonic, never exceeding the design scale) -- with
- *   'none' at 0. MUI 9 accepts any array length, so the 25-entry ramp is
- *   deliberate: consumers can index theme.shadows like any stock MUI
- *   theme.
- * - components: the clickable-target floor, the surface mapping, the
- *   focus ring, the control boundary, the divider rule, the reduced-motion
- *   gate, the unavailable appearance and the page baseline, merged by
- *   component slot (see touch-floor.ts, surface.ts, focus-ring.ts,
- *   control-borders.ts, divider.ts, reduced-motion.ts, unavailable.ts and
- *   baseline.ts). Every base control
- *   carries a `minWidth`/`minHeight` of 44 nested under
- *   `@media (pointer: coarse)`, so the floor reaches every consuming
- *   package with no per-surface gating; a fine pointer emits none of it.
- *   The surface overrides paint
- *   the container, overlay and header roles and read their values from
- *   `theme.surface`, never from the tokens directly; the baseline paints
- *   the page role on the body, together with the typography glow and the
- *   optional canvas gradient. Every button-like
- *   control and Link carries a 2px `palette.primary.main` outline in its
- *   `focusVisible` state.
- * - motion: `motion.reducedMotion = 'system'` makes every MUI transition
- *   helper (Collapse, Fade, Grow, Slide, Zoom and the menu/drawer
- *   transitions) honour the operating system's reduced-motion
- *   preference. Skeleton paints keyframes rather than transitions, so it
- *   also carries an explicit root rule under the same media feature.
- * - surface: the resolved surface roles (module augmentation, see
- *   surface.ts) ride on the theme, so `useTheme()` and host components
- *   read exactly the values the component overrides paint with. The
- *   omitted token fields resolve through the inheritance contract: page
- *   -> background.default, container/overlay -> background.paper,
- *   borders -> divider, header -> neutral 50 (light) / neutral 800
- *   (dark).
- *
- * The returned theme is locale-free on purpose: AppThemeProvider merges
- * the MUI locale matching the active language on top at render time, and
- * hosts composing their own theme do the same via
- * createTheme(appTheme.theme, muiLocaleFor(i18n.language)).
- *
- * The color mode is the third argument (default 'light'). It sets
- * palette.mode and, for 'dark', swaps background/text/divider onto the
- * neutral ramp's dark end -- the token tree carries one set of surface
- * colors (a light palette), while the neutral ramp is a full scale, so a
- * dark surface is the same tokens read from the other end rather than a
- * second hardcoded palette. The semantic roles follow the same discipline:
- * each role's main tone is chosen for light surfaces and its light tone for
- * dark ones, so the dark mode maps main to the role's light tone and flips
- * contrastText to the dark end of the neutral ramp (neutral 900). MUI's
- * filled controls paint their hover background from the role's dark slot
- * (Button, filled Chip and Fab all read palette[role].dark), so keeping the
- * token's darkest tone there would drop the neutral-900 label below 4.5:1.
- * The dark mode therefore maps dark to the light tone mixed toward white:
- * a hover step that stays readable on the same label. The default is
- * 'light', so every existing caller that omits the argument renders
- * byte-for-byte as before.
- *
- * MUI 9 notes verified against the installed 9.5.0 at implementation
- * time: css variables are off by default (theme.vars is absent), so no
- * cssVariables setup is needed for a plain palette theme; createTheme
- * partial options merge with the defaults (keys left unmapped keep MUI's
- * defaults); the typography option surface is TypographyVariantsOptions
- * with 13 variants (no inherit).
- */
+/** The theme factory: speed tokens, merged in layers, into an MUI v9 theme. */
 
 import { createTheme } from '@mui/material/styles'
 import type {
@@ -136,16 +33,9 @@ import {
 import type { SurfacePaletteSlots, SurfaceTheme } from './surface.js'
 
 /**
- * MUI's typography surface carries no monospace entry, while the token
- * tree does (`typography.fontFamily.mono`). The augmentation adds it
- * under the theme rather than exposing a sibling helper: a consumer
- * reads `theme.typography.fontFamilyMono` exactly like
- * `theme.typography.fontFamily`, including from `sx` callbacks, and a
- * host override of the token reaches it with no second wiring.
- *
- * `fontFamilyMono` is required on the built theme (the factory always
- * sets it) and optional on the theme options (a host composing its own
- * `createTheme` without the factory keeps MUI's shape).
+ * MUI's typography surface has no monospace entry. Required on the built
+ * theme (the factory always fills it), optional on the options so a host
+ * composing its own `createTheme` keeps MUI's shape.
  */
 declare module '@mui/material/styles' {
   interface TypographyVariants {
@@ -159,16 +49,9 @@ declare module '@mui/material/styles' {
 }
 
 /**
- * The surface roles ride on the theme too (see surface.ts for how they are
- * resolved). The augmentation sits here rather than in surface.ts because
- * a consumer compiling against this package's emitted declarations loads
- * only the modules the entry's `.d.ts` graph reaches: surface.ts is
- * internal, and an augmentation declared there is invisible to such a
- * consumer, leaving `theme.surface` an unknown property.
- *
- * `surface` is required on the built theme (the factory always fills it)
- * and optional on the options (a host composing its own `createTheme`
- * without the factory keeps MUI's shape).
+ * The surface roles ride on the theme too. The augmentation must sit here,
+ * not in `surface.ts`: a consumer loading only the entry's `.d.ts` graph
+ * never reaches an internal module, so `theme.surface` would be unknown.
  */
 declare module '@mui/material/styles' {
   interface Theme {
@@ -181,64 +64,51 @@ declare module '@mui/material/styles' {
   }
 }
 
-/** Typography rem base; MUI's default htmlFontSize is 16, keep aligned. */
+/** Typography rem base, aligned with MUI's default htmlFontSize. */
 const REM_BASE = 16
 
 /** The token elevation slots in ascending order (their numeric key order). */
 const ELEVATION_SLOTS = [1, 2, 4, 8, 16, 24] as const
 
 /**
- * The two color modes a speed theme ships. The token tree defines the
- * surface colors for one mode (a light palette); the dark mode reads the
- * neutral ramp from its dark end for background/text/divider, so a mode
- * change needs no second palette.
+ * The two color modes a speed theme ships. Dark mode reads the neutral ramp
+ * from its dark end, so it needs no second palette.
  */
 export type AppThemeMode = 'light' | 'dark'
 
 /**
- * The color-mode preference a host may hold: an explicit resolved mode,
- * or 'system' to follow the device. Only the provider resolves 'system';
- * createAppTheme itself accepts the resolved AppThemeMode alone.
+ * The color-mode preference a host may hold. Only the provider resolves
+ * 'system'; `createAppTheme` accepts the resolved `AppThemeMode` alone.
  */
 export type AppThemeModePreference = AppThemeMode | 'system'
 
 /** What the factory hands back: the merged tokens and the theme built from them. */
 export interface AppTheme {
   /**
-   * The merged token tree (defaults <- project <- tenant layers). Each
-   * untouched branch is shared by identity with defaultTokens, which is
-   * deep-frozen at assembly in @speed/tokens: a write through a shared
-   * branch throws in strict mode and can never reach the default tree.
-   * Branches an override layer rebuilt are plain objects owned by this
-   * result alone -- a write there is local and cannot reach defaultTokens
-   * or another result. Override through the factory's own arguments.
+   * The merged token tree. Untouched branches are shared by identity with
+   * the frozen `defaultTokens` (a write throws in strict mode); rebuilt
+   * branches belong to this result alone.
    */
   readonly tokens: SpeedTokens
   /**
-   * The MUI theme assembled from the merged tokens. Locale-free: compose
-   * with createTheme(appTheme.theme, muiLocaleFor(language)) -- or let
-   * AppThemeProvider do it -- for MUI built-in texts to follow the
-   * active language.
+   * The locale-free MUI theme. Compose it with
+   * `createTheme(appTheme.theme, muiLocaleFor(language))` -- or let
+   * `AppThemeProvider` do it -- for MUI built-in texts to follow the language.
    */
   readonly theme: Theme
 }
 
 /**
- * Build the theme for merged speed tokens.
- *
- * `projectTokens` and `tenantOverrides` are the two override layers on
- * top of the built-in defaults, applied in that order (each diff-only).
- * Both are optional; a layer that is undefined is skipped entirely.
- * `mode` selects the color mode (default 'light'); see the module doc
- * comment for what the dark mode derives.
+ * Builds the theme for merged speed tokens. `projectTokens` and
+ * `tenantOverrides` are diff-only override layers applied in that order; an
+ * undefined layer is skipped. `mode` defaults to 'light'.
  */
 export function createAppTheme(
   projectTokens?: TokensOverride,
   tenantOverrides?: TokensOverride,
   mode: AppThemeMode = 'light',
 ): AppTheme {
-  // deepMerge skips undefined overrides by contract; drop empty layers
-  // before the call so an omitted layer never reaches the type signature.
+  // Drop empty layers so an omitted layer never reaches the type signature.
   const layers = [projectTokens, tenantOverrides].filter(
     (layer): layer is TokensOverride => layer !== undefined,
   )
@@ -251,19 +121,15 @@ function rem(px: number): string {
 }
 
 /**
- * How far a dark-mode role's hover fill moves from its light tone toward
- * white. MUI paints the hover background of contained controls (Button,
- * filled Chip, Fab) from `palette[role].dark`, and in dark mode that fill
- * carries the neutral-900 label. Mixing toward white raises the fill's
- * luminance monotonically, so the label keeps 4.5:1 or better while the
- * hover still steps visibly away from `main` (the same light tone).
+ * How far a dark-mode role's hover fill moves toward white. MUI reads
+ * `palette[role].dark` for that fill, which carries the neutral-900 label:
+ * mixing toward white keeps the label at 4.5:1 or better.
  */
 const DARK_HOVER_WHITE_MIX = 0.2
 
 /**
- * Mix a #RRGGBB color toward white by `weight` (0..1). A value outside
- * that shape is returned unchanged: tokens are hex by contract, and a host
- * overriding with another CSS color keeps it rather than getting "NaN".
+ * Mixes a `#RRGGBB` color toward white by `weight` (0..1); any other CSS
+ * color is returned unchanged.
  */
 function mixWithWhite(hex: string, weight: number): string {
   if (!/^#[0-9a-fA-F]{6}$/.test(hex)) {
@@ -279,15 +145,9 @@ function mixWithWhite(hex: string, weight: number): string {
 }
 
 /**
- * A semantic role's palette entries for a mode. The light mode maps the
- * role key for key onto its tokens. The dark mode reads the same tonal
- * family from its other end: `main` becomes the role's light tone (the
- * tone meant for dark surfaces), `light` keeps that tone, and
- * `contrastText` becomes the dark end of the neutral ramp (neutral 900).
- * MUI's hover surfaces read `dark`; under that label the token's darkest
- * tone is unreadable, so the dark slot is the light tone mixed toward
- * white (see DARK_HOVER_WHITE_MIX) -- a lighter hover fill that keeps the
- * label readable.
+ * A semantic role's palette entries for a mode. Light maps the tokens key
+ * for key. Dark takes the role's light tone as `main` and `light`, neutral
+ * 900 as `contrastText`, and mixes `dark` toward white for a readable hover.
  */
 function roleOptions(
   color: ColorTokens['semantic'][SemanticRole],
@@ -311,9 +171,7 @@ function roleOptions(
 }
 
 function neutralAsGrey(neutral: NeutralScale): PaletteOptions['grey'] {
-  // A-tone aliases repeat the same-number step, mirroring MUI's own grey
-  // scale where A100 === 100, A200 === 200, A400 === 400, A700 === 700.
-  // Tone 950 is not part of MUI's grey and stays token-only.
+  // A-tones repeat the same-number step, mirroring MUI's own grey scale.
   return {
     50: neutral[50],
     100: neutral[100],
@@ -333,13 +191,9 @@ function neutralAsGrey(neutral: NeutralScale): PaletteOptions['grey'] {
 }
 
 /**
- * MUI's theme.shadows is a 25-entry ramp indexed by elevation. The token
- * set only defines six slots; floor every other index onto the nearest
- * token slot at or below it so elevation never exceeds the design scale.
- *
- * MUI 9 types the ramp as a fixed 25-tuple; the loop below provably
- * produces 25 entries ('none' plus one push per elevation 1..24), which
- * the cast asserts on the runtime guarantee, not on faith.
+ * Builds MUI's 25-entry shadow ramp from the six token slots: each elevation
+ * uses the nearest slot at or below it, so it never exceeds the design
+ * scale. The loop produces exactly 25 entries ('none' plus 1..24).
  */
 function shadowRamp(shadows: ShadowTokens): ThemeOptions['shadows'] {
   const ramp: string[] = ['none']
@@ -355,12 +209,8 @@ function shadowRamp(shadows: ShadowTokens): ThemeOptions['shadows'] {
 }
 
 /**
- * The palette surface colors for a mode. The light mode maps the token
- * tree's own text/background/divider values directly; the dark mode reads
- * the same neutral ramp from its dark end (surfaces dark, text light),
- * because the token tree carries a single light palette while the ramp is
- * a full scale. The semantic roles follow the same direction (see
- * roleOptions).
+ * The palette surface colors for a mode: the token values directly in light
+ * mode, the neutral ramp's dark end in dark mode.
  */
 function surfacePalette(
   tokens: SpeedTokens,

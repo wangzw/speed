@@ -1,15 +1,3 @@
-/**
- * DataTable contract: a fully controlled table view -- rows are shown
- * exactly as given (no implicit sorting or slicing), sorting shows
- * state and fires change callbacks only, selection toggles the rendered
- * page's keys and leaves other pages' keys alone, the footer labels
- * interpolate the ui-kit namespace text and follow the language,
- * loading appears as a status row only while rows are empty, an empty
- * table renders the stock EmptyState placeholder with overridable
- * slots, the filter input is a controlled field whose filtering the
- * host owns. Assertions derive every user-facing string from the
- * locale bundles (or English fixtures), never inline translations.
- */
 
 import { act, fireEvent, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -81,10 +69,6 @@ function renderTable(
   )
   return renderWithProviders(
     options.heading !== undefined ? (
-      // The axe scans render under a real page h1 (page-has-heading-one
-      // is determinate in jsdom -- see the axe helper header), the way
-      // a real host page would mount the table. Behavioural tests keep
-      // rendering the bare table; only scans opt into the context.
       <div>
         <h1>{options.heading}</h1>
         {table}
@@ -146,15 +130,6 @@ describe('DataTable', () => {
   })
 
   it('wraps the table in a horizontally scrollable container regardless of column count or width', () => {
-    // Renders deliberately wider than any reasonable host container
-    // (12 columns at 300px each = 3600px) to exercise the contract the
-    // component's own doc comment states: more or wider columns than the
-    // host's container scroll inside the TableContainer wrapper rather
-    // than overflowing the page. jsdom does no real layout, so this
-    // cannot prove a scrollbar renders at any actual width -- it proves
-    // the wrapper MUI gives `overflow-x: auto` by default is genuinely
-    // present, so dropping `TableContainer` (the thing that gives this
-    // for free) would fail this test instead of silently regressing.
     const manyWideColumns: DataTableColumn<Member>[] = Array.from(
       { length: 12 },
       (_, index) => ({
@@ -175,12 +150,6 @@ describe('DataTable', () => {
   })
 
   it('pins the last column only when the host opts in and the table overflows', () => {
-    // The pin is a per-table opt-in, never the default, and it is measured
-    // rather than assumed: an opted-in table that fits its container keeps
-    // its last column in normal flow, while one whose content is wider
-    // makes both the header cell and the body cells stick to the scroll
-    // container's right edge (the browser tier proves the movement and the
-    // measurement against real layout).
     const withActions: readonly DataTableColumn<Member>[] = [
       ...BASE_COLUMNS,
       { id: 'actions', header: 'Actions', cell: () => 'open' },
@@ -193,8 +162,6 @@ describe('DataTable', () => {
     })
     off.unmount()
 
-    // jsdom lays nothing out, so an unmocked container reports equal
-    // scroll and client widths: the fitting case.
     const fitting = renderTable({ columns: withActions, pinLastColumn: true })
     const fittingHeaders = fitting.container.querySelectorAll('thead th')
     expect(fittingHeaders[fittingHeaders.length - 1]).not.toHaveStyle({
@@ -202,8 +169,6 @@ describe('DataTable', () => {
     })
     fitting.unmount()
 
-    // Simulate the one measurement the pin reads: the table is wider than
-    // its scroll container.
     const scrollWidth = vi
       .spyOn(Element.prototype, 'scrollWidth', 'get')
       .mockReturnValue(600)
@@ -242,7 +207,6 @@ describe('DataTable', () => {
   it('renders a status row with the translated loading text while rows are empty', async () => {
     const utils = renderTable({ rows: [], loading: true })
     const status = utils.getByRole('status')
-    // The region is inserted empty; its text arrives on a later frame.
     expect(status.textContent).toBe('')
     await waitFor(() =>
       expect(status.textContent).toContain(zhCN.dataTable.loading),
@@ -266,22 +230,6 @@ describe('DataTable', () => {
   })
 
   it('announces the loading state on the empty-then-refresh path through a live region that already exists (P2-6 regression)', async () => {
-    // The announcement region is mounted for the whole empty phase and
-    // carries that phase's text: on the empty-table refresh path (rows
-    // stay empty, loading flips false -> true) the region must already
-    // exist before the loading text lands, because a live region
-    // announces content changes that follow its own existence, never
-    // text that mounts together with it. Both fills -- the
-    // empty-result wording while not loading, the loading text on
-    // refresh -- are therefore text changes inside a region the screen
-    // reader already knows, each written a frame after its commit. The
-    // same DOM node must survive the transition, which is what makes the
-    // later text change an announcement rather than another mount. A
-    // stateful host drives the flip, the way a control owned by the host
-    // would: its own setState re-renders the table in place, so the same
-    // region node survives the loading flip. RTL's rerender keeps the
-    // providers mounted now too, but the refresh belongs to the host, and
-    // its state update is the transition this case exercises.
     function RefreshHarness() {
       const [loading, setLoading] = useState(false)
       return (
@@ -304,8 +252,6 @@ describe('DataTable', () => {
       expect(region).toHaveTextContent(zhCN.dataTable.noData),
     )
     fireEvent.click(utils.getByRole('button', { name: 'refresh' }))
-    // The commit that flipped loading cleared the region; the text
-    // arrives on a later frame.
     expect(region.textContent).toBe('')
     await waitFor(() =>
       expect(region).toHaveTextContent(zhCN.dataTable.loading),
@@ -314,22 +260,6 @@ describe('DataTable', () => {
   })
 
   it('mounts the loading region empty when the empty phase begins already loading (D5 regression)', async () => {
-    // The empty-then-refresh route above covers a region that already
-    // existed, but the empty phase can also BEGIN already loading: rows
-    // empty out and loading flips in the same host commit (a filter
-    // that clears the current page while the next query runs). A region
-    // born inside that commit would carry its text with it and the
-    // announcement would never fire -- live regions speak about content
-    // changes that follow their own existence, never text that mounts
-    // together with them. AnnouncementRegion therefore spends the
-    // region's first committed frame empty and writes the loading text a
-    // frame later, whatever transition entered the phase. The assertion
-    // between the two writes below is what distinguishes the shapes: the
-    // region's text content must still be empty the moment the node
-    // first appears. A stateful host drives the flip; flushSync lands
-    // its one commit synchronously, and the animation frames that fill
-    // the region have not run yet when the assertion sees the birth
-    // frame.
     function EmptyingRefreshHarness() {
       const [rows, setRows] = useState<readonly Member[]>(MEMBERS)
       const [loading, setLoading] = useState(false)
@@ -371,14 +301,6 @@ describe('DataTable', () => {
   })
 
   it('announces the empty result when a load ends with no rows: the region fills with the empty-result wording (P2-2 regression)', async () => {
-    // The region's text is the empty-result wording once the load
-    // finishes: the stock EmptyState — the empty result's own
-    // presentation — sits outside the region as a sibling, so an
-    // end-of-load that left the region empty would let a screen-reader
-    // user hear the loading text and then silence, with zero rows to
-    // navigate to that would disambiguate still-loading from
-    // finished-and-found-nothing. The terminal state lands as a text
-    // change inside the same region — never a trailing empty string.
     function LoadsEmptyHarness() {
       const [rows, setRows] = useState<readonly Member[]>(MEMBERS)
       const [loading, setLoading] = useState(false)
@@ -417,14 +339,10 @@ describe('DataTable', () => {
     act(() => {
       utils.getByRole('button', { name: 'finish empty' }).click()
     })
-    // The commit cleared the loading text; the empty-result wording
-    // arrives on a later frame.
     expect(region.textContent).toBe('')
     await waitFor(() =>
       expect(region.textContent).toContain(zhCN.dataTable.noData),
     )
-    // The EmptyState visual is untouched: the stock placeholder still
-    // renders beneath the region, its own title and description.
     expect(
       utils.getByRole('heading', { name: zhCN.emptyState.empty.title }),
     ).toBeInTheDocument()
@@ -434,11 +352,6 @@ describe('DataTable', () => {
   })
 
   it('keeps the announced empty wording independent of an overridden visible title (P2-2 regression)', async () => {
-    // The region announces the empty result in the ui-kit's own wording
-    // (the dataTable namespace, like the loading label); a host's
-    // emptyTitle override stays the EmptyState's visible title — the
-    // single visual source — rather than a second copy rendered inside
-    // the live region, which would present the same text twice.
     function OverrideHarness() {
       const [loading, setLoading] = useState(true)
       return (
@@ -476,14 +389,6 @@ describe('DataTable', () => {
   })
 
   it("fills the empty-result wording only after the region's first committed frame (P2-2 regression)", async () => {
-    // The loading fill owes its announcability to the birth discipline
-    // (see the test above): the region's first committed frame is empty
-    // whatever transition enters the empty phase, so any later text
-    // fill is a change. The empty-result fill must spend that same
-    // first frame empty — an empty phase entered not loading may not be
-    // born carrying the empty-result wording, or that wording is never
-    // a change and never announces. The assertion inside the act scope
-    // pins the birth frame; the one after it pins the fill.
     function ShowsEmptyHarness() {
       const [rows, setRows] = useState<readonly Member[]>(MEMBERS)
       return (
@@ -658,9 +563,6 @@ describe('DataTable', () => {
       />,
     )
     const selectAll = utils.getByLabelText(zhCN.dataTable.selectAllRows)
-    // The header checkbox may hold focus when a batch delete empties the
-    // page, so it stays reachable and reports unavailable instead of being
-    // natively disabled.
     expect(selectAll).toHaveAttribute('aria-disabled', 'true')
     expect(selectAll).not.toBeDisabled()
     selectAll.focus()
@@ -797,8 +699,6 @@ describe('DataTable', () => {
 
   it('fires the next-page callback and disables previous on the first page', () => {
     const onPageChange = vi.fn()
-    // The pager buttons' aria-labels come from the MUI locale the theme
-    // merges (English here so no translated string needs inlining).
     const utils = renderWithProviders(
       <DataTable
         rows={MEMBERS}
@@ -886,8 +786,6 @@ describe('DataTable', () => {
   })
 
   it('renders the controlled filter input and fires value changes', async () => {
-    // The input is fully controlled, so the host's value loop must run
-    // for typing to land -- the harness plays the host.
     const recorded: string[] = []
     function FilterHarness() {
       const [value, setValue] = useState('gr')
@@ -942,13 +840,10 @@ describe('DataTable', () => {
     })
     const input = utils.getByLabelText('Filter members')
     expect(input).toHaveAttribute('placeholder', 'Name or credits')
-    // The label is visible and associated, not an accessible-name-only
-    // fallback: the input carries no aria-label of its own.
     expect(input).not.toHaveAttribute('aria-label')
     const label = utils.getByText('Filter members', { selector: 'label' })
     expect(label.tagName).toBe('LABEL')
     expect(label).toHaveAttribute('for', input.id)
-    // The namespace default no longer names the field.
     expect(
       utils.queryByLabelText(zhCN.dataTable.filterLabel),
     ).not.toBeInTheDocument()
@@ -1001,36 +896,13 @@ describe('DataTable', () => {
     expect(cell?.className).toContain(tableCellClasses.sizeSmall)
   })
 
-  // The table is a CSS container: the root box declares
-  // `container-type: inline-size`, and every responsive rule inside is a
-  // container query, not a viewport `@media`. jsdom evaluates neither
-  // real layout nor container queries, so the proof below is
-  // property/snapshot -- the right declarations, and the container that
-  // makes them live, were wired into the render. It cannot prove a real
-  // container hides or shows a column, which this package's jsdom suite
-  // cannot render at all.
   describe('component container (the context every rule below resolves against)', () => {
     it('declares itself a container, so the rules inside it can resolve -- the parent declaration without which no container query fires', () => {
       renderTable()
-      // The failure mode the layout design records: without
-      // `container-type` on an ancestor, every `@container` rule below
-      // matches nothing and the table never reflows. The root box carries
-      // the declaration, so the proof is that it reached the generated
-      // CSS.
       expect(emittedStyleText()).toMatch(/container-type:inline-size/)
     })
   })
 
-  // The cell-wrap policy is per column and opt-in. jsdom does no layout,
-  // so these cases prove the declarations: a column that opts into
-  // 'nowrap' renders its header and every body cell with
-  // `white-space: nowrap` (the declaration that keeps a short value or
-  // an identifier from breaking mid-token), while a column that leaves
-  // the field unset keeps normal text flow so prose can still wrap. The
-  // scroll fallback those declarations feed is the TableContainer
-  // wrapper asserted by the horizontal-scroll case above; together they
-  // are what makes a table wider than its container scroll instead of
-  // squeezing its cells. No assertion here measures a rendered width.
   describe('cell wrap policy (per-column opt-in)', () => {
     const WRAP_COLUMNS: readonly DataTableColumn<Member>[] = [
       {
@@ -1089,11 +961,6 @@ describe('DataTable', () => {
     })
 
     it('keeps the horizontal scroll container that a nowrap column overflows into', () => {
-      // The two halves of the contract: the opted-in cells declare
-      // nowrap (so their content cannot shrink), and the wrapper still
-      // declares the horizontal scroll that catches the resulting
-      // overflow. jsdom cannot prove a scrollbar appears at a real
-      // width -- the declaration pair is the observable proof.
       const utils = renderTable({ columns: WRAP_COLUMNS })
       const container = utils.container.querySelector(
       `.${tableContainerClasses.root}`,
@@ -1105,15 +972,6 @@ describe('DataTable', () => {
     })
   })
 
-  // The full-value affordance is the identifier column's second channel:
-  // the wrap policy keeps the value unbroken, but the complete text can
-  // sit past the container's scroll edge. A column that returns the
-  // complete value through `cellFullValue` renders it as the body cell's
-  // title and beside the cell content as a focusable copy control; a
-  // column without the accessor is untouched. jsdom ships no
-  // `navigator.clipboard`, so the suite stubs it and asserts the value
-  // handed to it, the announcement that follows, and the locale-derived
-  // label the control carries.
   describe('cell full-value affordance (per-column opt-in)', () => {
     const FULL_VALUE_COLUMNS: readonly DataTableColumn<Member>[] = [
       {
@@ -1159,9 +1017,6 @@ describe('DataTable', () => {
     })
 
     it('copies the complete value through a focusable control and announces the copy', async () => {
-      // user-event installs its own clipboard stub at setup, so the spy
-      // must replace it afterwards -- otherwise the component writes to
-      // user-event's stub and the spy sees no call.
       const user = userEvent.setup()
       const writeText = stubClipboard()
       const utils = renderTable({ columns: FULL_VALUE_COLUMNS })
@@ -1199,14 +1054,6 @@ describe('DataTable', () => {
     })
   })
 
-  // `contentMaxWidth` bounds the whole cell -- the rendered text and the
-  // `cellFullValue` copy control together -- so the cap cannot drift wider
-  // than declared by one control's width. jsdom renders no layout, so the
-  // proof is the generated container-query declarations on the wrapper
-  // that holds both, the truncation declarations on the text box alone,
-  // and the control sitting outside that box. The real-browser companion
-  // measurement (the whole-cell scroll width against the cap) lives in the
-  // README's verification record.
   describe('whole-cell content cap (per-column opt-in)', () => {
     const CAPPED_COLUMNS: readonly DataTableColumn<Member>[] = [
       {
@@ -1234,11 +1081,6 @@ describe('DataTable', () => {
         .filter((cell): cell is HTMLTableCellElement => cell !== null)
       const wrapper = cappedCell?.firstElementChild
       expect(wrapper).not.toBeNull()
-      // `belowMd` is the 0px baseline and `fromMd` the 900px rule, so the
-      // two values differ across the md boundary. jsdom neither evaluates
-      // container queries nor lays out, so this pins the generated rules;
-      // the real-browser measurement at 600/900/1200px pins which one is
-      // in force on either side of md.
       expect(containerMaxWidthOf(wrapper as Element)).toEqual(
         new Map([
           [0, 120],
@@ -1263,7 +1105,6 @@ describe('DataTable', () => {
       const cell = utils.getByText('Ada').closest('td') as HTMLElement
       const wrapper = cell.firstElementChild as HTMLElement
       expect(wrapper).toHaveStyle({ maxWidth: '150px' })
-      // No container-query rule was generated: one value at every width.
       expect(containerMaxWidthOf(wrapper)).toEqual(new Map())
     })
 
@@ -1276,9 +1117,6 @@ describe('DataTable', () => {
       const button = within(wrapper).getByRole('button', {
         name: renderTemplate(zhCN.dataTable.copyValue, { value: 'member-1' }),
       })
-      // The text box is the button's sibling and owns the truncation; the
-      // control sits outside it and refuses to shrink, so it is neither
-      // clipped nor counted past the wrapper's cap.
       const textBox = button.previousElementSibling as HTMLElement
       expect(textBox).not.toBeNull()
       expect(textBox).toHaveStyle({
@@ -1309,11 +1147,6 @@ describe('DataTable', () => {
         name: renderTemplate(zhCN.dataTable.copyValue, { value: 'member-1' }),
       })
       const textBox = button.previousElementSibling as HTMLElement
-      // The cap still bounds the text, but the box wraps instead of
-      // truncating: a long value then contributes its longest word (or a
-      // single character, for an unbroken one) to the column's minimum
-      // width, so the table can shrink it to its tier instead of
-      // scrolling.
       expect(textBox).toHaveStyle({
         minWidth: '0px',
         overflow: 'hidden',
@@ -1338,8 +1171,6 @@ describe('DataTable', () => {
       const wrapper = plainCell?.firstElementChild
       expect(wrapper).not.toBeNull()
       expect(containerMaxWidthOf(wrapper as Element)).toEqual(new Map())
-      // The prior inline-flex wrapper shape: the rendered text sits
-      // directly in it (no truncating sub-box) beside the control.
       expect(wrapper).toHaveTextContent('Ada')
       const button = within(wrapper as HTMLElement).getByRole('button', {
         name: renderTemplate(zhCN.dataTable.copyValue, { value: 'plain-1' }),
@@ -1404,23 +1235,14 @@ describe('DataTable', () => {
         columns: fullValueColumns,
         rowVerticalAlign: 'top',
       })
-      // The cell inherits the row's alignment, so one declaration covers
-      // the identity cell and every control beside it.
       const row = utils.getByText('Ada').closest('tr') as HTMLElement
       expect(row).toHaveStyle({ verticalAlign: 'top' })
-      // The copy control sits on the content's first line instead of the
-      // middle of a multi-line cell.
       expect(copyWrapperOf(utils)).toHaveStyle({ alignItems: 'flex-start' })
     })
   })
 
   describe('column priority (container-triggered reflow)', () => {
     it('renders a column with no priority with no visibility override -- unaffected by the feature', () => {
-      // BASE_COLUMNS sets no column's priority; this restates the
-      // existing "applies column alignment and width to cells" contract
-      // as the feature's backward-compatibility proof: a host that sets
-      // no column's priority sees byte-identical rendering, at every
-      // container width.
       const utils = renderTable()
       const creditCells = utils.container.querySelectorAll(
         `tbody td.${tableCellClasses.alignRight}`,
@@ -1436,11 +1258,6 @@ describe('DataTable', () => {
       ]
       renderTable({ columns })
       const css = emittedStyleText()
-      // The default is the container's 0px baseline; the restore is a
-      // container query at sm. Both are `@container`, so the column drops
-      // by the table's own width -- the previous viewport `@media` left
-      // it pinned to the viewport and blind to a narrow panel, which is
-      // exactly what a `@container` assertion here is checking against.
       expect(css).toMatch(/@container \(min-width:0px\)\{[^}]*display:none/)
       expect(css).toMatch(/@container \(min-width:600px\)\{[^}]*display:table-cell/)
     })
@@ -1466,9 +1283,6 @@ describe('DataTable', () => {
     })
 
     it('keys the column display on the container, never a viewport media query', () => {
-      // The same declarations pinned above, asserted from the other
-      // side: the column's hide/show is a container query, so the
-      // viewport-keyed rule the feature used to emit must not be present.
       const columns: DataTableColumn<Member>[] = [
         ...BASE_COLUMNS,
         { id: 'plan', header: 'Plan', priority: 'low', cell: () => 'Pro' },
@@ -1480,11 +1294,6 @@ describe('DataTable', () => {
     })
 
     it('keeps a prioritized column as a real DOM column (CSS-hidden, never conditionally removed)', () => {
-      // Hiding is pure CSS, so the cell stays a genuine column in jsdom
-      // (which does not evaluate the container query either way) -- the
-      // point under test is that the column was never conditionally
-      // rendered away, which the loading/empty rows' colSpan depends on,
-      // and that an always-visible column alongside it is untouched.
       const columns: DataTableColumn<Member>[] = [
         ...BASE_COLUMNS,
         { id: 'plan', header: 'Plan', priority: 'low', cell: () => 'Pro' },
@@ -1509,11 +1318,6 @@ describe('DataTable', () => {
 
   describe('toolbar degradation (container-triggered)', () => {
     it('gives the filter input a full-width row below the container sm and 20rem from it up', () => {
-      // The filter row is the table's toolbar. Its width is a
-      // container-keyed value: no priority column is in this render, so
-      // the only `@container` rule in the generated CSS is the filter's
-      // own (the root box's `container-type` is a declaration, not a
-      // query), which is what makes these strings attributable to it.
       renderTable({ filter: { value: '', onValueChange: vi.fn() } })
       const css = emittedStyleText()
       expect(css).toMatch(/@container \(min-width:0px\)\{[^}]*width:100%/)
@@ -1523,9 +1327,6 @@ describe('DataTable', () => {
 
   describe('pointer capability', () => {
     it('raises the selection controls to the 44x44 touch-target floor under a coarse pointer', () => {
-      // A checkbox's clickable box is its root span, not the inner input,
-      // so each assertion matches the emitted CSS against that span. A
-      // coarse rule for another control on the page cannot satisfy them.
       const utils = renderTable({
         selectedRowKeys: [],
         onSelectionChange: vi.fn(),
@@ -1549,12 +1350,6 @@ describe('DataTable', () => {
     })
 
     it('raises the pagination buttons and the rows-per-page selector to the floor', () => {
-      // The footer is the table's own control surface: its page buttons
-      // and the rows-per-page selector are compact MUI controls, so on a
-      // finger-driven device each one gates up to the 44x44 floor. The
-      // assertions are made against the footer's own elements, so a rule
-      // emitted for another gated control on the page does not satisfy
-      // them.
       const utils = renderWithProviders(
         <DataTable
           rows={MEMBERS}
@@ -1591,10 +1386,6 @@ describe('DataTable', () => {
     it('enables the row hover highlight only under a fine, hovering pointer', () => {
       renderTable()
       const css = emittedStyleText()
-      // The row highlight is a hover affordance (see the component header
-      // note): gated to a fine, hovering pointer, so a coarse pointer --
-      // a touch device, even at a wide viewport -- gets no highlight that
-      // would stick after a tap.
       expect(css).toContain('@media (hover: hover) and (pointer: fine)')
       expect(css).toMatch(
         /@media \(hover: hover\) and \(pointer: fine\)\{[^}]*:hover/,
@@ -1602,11 +1393,6 @@ describe('DataTable', () => {
     })
   })
 
-  // Each scan renders the table under a real page h1 (the renderTable
-  // `heading` option): page-has-heading-one is determinate in jsdom now
-  // (see the axe helper header), so a scan document without an h1 fails
-  // instead of passing by indeterminacy -- the h1 is the page context a
-  // real host page supplies.
   it('passes axe over a fully loaded table', async () => {
     renderTable(
       {
@@ -1635,9 +1421,6 @@ describe('DataTable', () => {
   })
 
   it('passes axe over the empty placeholder state', async () => {
-    // emptyHeadingLevel supplied, as a caller that sets headingLevel
-    // would: the stock placeholder h6 under the real page h1 is a
-    // genuine heading-order skip (pinned by the two tests below).
     renderTable(
       { rows: [], emptyHeadingLevel: 'h2' },
       { heading: 'Members' },
@@ -1646,19 +1429,6 @@ describe('DataTable', () => {
   })
 
   describe('the empty placeholder under a real page heading (P2-3)', () => {
-    // The axe case covering the empty state must render the table
-    // actually empty: a case rendered with loading: true never shows
-    // the stock EmptyState placeholder at all -- and a component-level
-    // render has no ancestor heading anyway -- so the real surface's
-    // h1 -> h6 skip would stay invisible to the package suite. A real
-    // page surface is exactly that shape: a page
-    // h1 above an empty table whose stock placeholder defaults to the
-    // h6 heading level. These two cases supply the h1 themselves (the
-    // same mechanism EmptyState.test.tsx uses) so the skip is
-    // reachable, mirroring that suite's pair: the
-    // stock default under a real h1 still skips (a compatibility floor,
-    // not a claim that h6 is correct), and supplying the level that
-    // continues the page order removes the violation entirely.
 
     it('still skips to the stock h6 default under a real h1 when no emptyHeadingLevel is given', async () => {
       renderWithProviders(

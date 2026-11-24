@@ -1,16 +1,3 @@
-/**
- * The unavailable appearance as Chromium computes it.
- *
- * jsdom proves which declarations the theme emits; it cannot compute a
- * cascade against `:has()`, paint a hover state, or tell whether a real
- * outline is drawn for keyboard focus. This case renders each covered
- * control twice -- once natively `disabled`, once carrying
- * `aria-disabled="true"` -- and holds the second to the first's computed
- * face, then checks the pointer and focus behaviour the appearance must
- * preserve: pointer events stay on (an unavailable reason shows in a
- * tooltip), hover paints no fill, and the focus ring still draws around
- * the keyboard-focused control.
- */
 
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
@@ -39,7 +26,6 @@ const CHECKED_SWITCH_UNAVAILABLE = 'checked switch unavailable'
 
 const PRIMARY_MAIN = createAppTheme().theme.palette.primary.main
 
-/** The properties a button-shaped control's face is compared on. */
 const BUTTON_FACE = [
   'color',
   'background-color',
@@ -226,9 +212,6 @@ describe('the unavailable appearance in Chromium', () => {
   it('paints no hover fill on an unavailable control', async () => {
     renderFixture()
 
-    // MUI's background transition lasts the theme's short duration (150ms);
-    // the wait is wall clock, not a polling budget, and only has to outlast
-    // that transition before the value is compared.
     const SETTLED_MS = 400
     for (const name of [
       TEXT_UNAVAILABLE,

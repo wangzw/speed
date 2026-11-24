@@ -1,16 +1,3 @@
-/**
- * InlineError contract: the banner renders exactly when a code is
- * present, and its text comes only from the injected resolver -- a
- * listed code resolves to its own text, anything else to the family's
- * fallback, and a swapped resolver is what proves the component
- * guesses no namespace of its own. errorCodeOf is pinned beside it: an
- * ApiError-shaped failure keeps its code, anything else -- a bug-shaped
- * throw, a code that is not a non-empty string -- collapses to the
- * code no resolver lists. httpStatusOf reads the status structurally:
- * the numeric field when it is a valid HTTP status, the bare-HTTP code,
- * the field over the code when both are present, and null when neither
- * names one.
- */
 
 import { createRef } from 'react'
 import { describe, expect, it, vi } from 'vitest'
@@ -23,8 +10,6 @@ import {
 } from './InlineError.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 
-/** A resolver in the surface families' convention: the listed code's
- * own text, everything else the family's unknown fallback. */
 function resolverOf(overrides: Record<string, string> = {}) {
   const known: Record<string, string> = {
     'authn.session_revoked': 'authn.session_revoked text',
@@ -95,7 +80,6 @@ describe('InlineError', () => {
       />,
     )
     const alert = screen.getByRole('alert')
-    // The stable sentence is in the accessibility tree but clipped from view.
     const stable = within(alert).getByText('authn.throttled:46s')
     expect(stable).toHaveStyle({
       position: 'absolute',
@@ -103,8 +87,6 @@ describe('InlineError', () => {
       height: '1px',
     })
     expect(stable).not.toHaveAttribute('aria-hidden')
-    // The painted sentence is hidden from assistive technology and carries
-    // the seconds still remaining.
     const visible = alert.querySelector('span[aria-hidden="true"]')
     expect(visible).toHaveTextContent('authn.throttled:45s')
   })
@@ -132,8 +114,6 @@ describe('InlineError', () => {
         liveRetryAfterSeconds={0}
       />,
     )
-    // No stale "0 seconds": the visible sentence is the wait-free one, while
-    // the accessible sentence still names the wait the answer stated.
     const after = view.getByRole('alert')
     expect(after.querySelector('span[aria-hidden="true"]')).toHaveTextContent(
       'authn.throttled:no-wait',
@@ -174,9 +154,6 @@ describe('InlineError', () => {
       <InlineError code="authn.session_revoked" resolve={first} />,
     )
     expect(screen.getByRole('alert')).toHaveTextContent('first source')
-    // The wait the error states rides as the resolver's second argument, so
-    // a surface that names it can; one that ignores it keeps its text. With
-    // no wait stated the code is resolved without a seconds argument.
     expect(first).toHaveBeenCalledWith('authn.session_revoked')
     firstView.unmount()
 
@@ -234,8 +211,6 @@ describe('errorCodeOf', () => {
   })
 
   it('collapse a callable carrying a code, because it is not an object', () => {
-    // `typeof` reports 'function' for a callable, so the object guard keeps
-    // it out of the ApiError branch even when a `code` was assigned to it.
     const callable = Object.assign(() => {}, { code: 'tenant.future' })
     expect(errorCodeOf(callable)).toBe('client.unknown')
   })
@@ -264,8 +239,6 @@ describe('httpStatusOf', () => {
   })
 
   it('treats a transport failure status of 0 as no status', () => {
-    // api-client writes exactly this shape for a network or timeout
-    // failure; a caller branching on `=== null` must not read it as HTTP 0.
     expect(httpStatusOf({ status: 0, code: 'client.network' })).toBeNull()
     expect(httpStatusOf({ status: 0, code: 'client.timeout' })).toBeNull()
     expect(httpStatusOf({ status: 0 })).toBeNull()

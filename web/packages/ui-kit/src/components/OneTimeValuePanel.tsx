@@ -1,33 +1,6 @@
 /**
- * OneTimeValuePanel: the presentation of a value handed out once -- an
- * invitation's acceptance link, a token, a secret.
- *
- * The component holds no state: the caller owns the value's lifetime and
- * decides when the panel closes. It renders the caller's message above
- * the value, the value in the theme's monospace stack (unbroken values
- * break anywhere rather than overflowing), a copy control named by
- * `copyLabel`, and an explicit close control whose accessible name is
- * `closeAriaLabel` (the visible text `closeLabel` may be shorter).
- *
- * A hand-off that carries no value -- a notice that something was sent and
- * there is nothing to copy -- omits `value` (and `copyLabel`): the panel
- * then renders the message and the close control alone, with no empty value
- * line and no copy control.
- *
- * `details` carries further labelled values the same hand-off needs
- * beside the primary one -- a DNS record's name and the value to publish,
- * for example. Each renders under the primary value with its own label,
- * monospace value and copy control; the copy control's visible label and
- * accessible name are that detail's `copyLabel`.
- *
- * The whole panel is one polite live region (`role="status"`): it appears
- * at the moment the value is handed out, so a screen-reader user is told
- * the value exists without the panel stealing focus. The copy controls
- * announce their own copy inside it.
- *
- * The panel deliberately carries no feedback-slot behaviour: closing it
- * is the caller's state change, and a failed write beside it belongs to
- * the caller's feedback scope.
+ * The presentation of a value handed out once. State-free: the caller owns
+ * the value's lifetime and closing it. The panel is one polite live region.
  */
 
 import { forwardRef } from 'react'
@@ -53,11 +26,9 @@ export interface OneTimeValuePanelDetail {
 export interface OneTimeValuePanelProps extends RootStyleProps {
   /** The line describing what was handed out and to whom. */
   readonly message: ReactNode
-  /** The one-time value itself (a link, a token, a secret). Omitted when
-   * nothing is handed out and there is nothing to copy. */
+  /** The one-time value itself; omitted when there is nothing to copy. */
   readonly value?: string
-  /** The copy control's visible label and accessible name. Required with
-   * `value`, and unused without it. */
+  /** The copy control's visible label and accessible name; required with `value`. */
   readonly copyLabel?: string
   /** Further labelled values handed out beside `value`, each with its own copy control. */
   readonly details?: readonly OneTimeValuePanelDetail[]
@@ -182,5 +153,5 @@ function OneTimeValuePanelInner(
   )
 }
 
-/** The presentation-only one-time-value panel (see the file header). */
+/** The presentation-only one-time-value panel. */
 export const OneTimeValuePanel = forwardRef(OneTimeValuePanelInner)

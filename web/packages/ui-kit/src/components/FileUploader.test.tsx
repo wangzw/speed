@@ -1,16 +1,3 @@
-/**
- * Suite for the fully controlled FileUploader.
- *
- * Every queue shape is driven through the `rows` prop and every
- * interaction is asserted on the callbacks it fires — the component holds
- * no queue state of its own, so the tests render hosts that own it. The
- * suite carries three real-browser regression tests jsdom would hide:
- * the live-FileList snapshot (clearing an input empties any FileList
- * captured before the clear), non-finite progress reaching MUI, and the
- * live-region re-announcement rule (a retry must clear the standing
- * announcement text, or an identical repeated failure is never
- * re-announced because the region's text did not change).
- */
 
 import { createRef, useState } from 'react'
 import { act, fireEvent, within } from '@testing-library/react'
@@ -57,18 +44,6 @@ const uploadedAnnouncement = (name: string): string =>
 const failedAnnouncement = (name: string): string =>
   zhCN.fileUploader.announceFailed.replace('{{name}}', name)
 
-/**
- * Mount the component through a stateful host that owns `rows` — the way
- * a host owning the queue would — and expose `setRows` for later
- * commits. The host stands in for a real parent whose own state change
- * re-renders the uploader: it mounts once, and each `setRows` commits a
- * new rows prop on that same instance, so the announcement effect's
- * previous-rows ref and the rest of the component state survive the
- * update. RTL's `rerender` now keeps the providers mounted too
- * (renderWithProviders passes them as the wrapper), but the rows belong
- * to the host here, and its state update is the shape this harness
- * exercises.
- */
 function renderHarness(
   initial: FileUploaderProps,
   options: { heading?: string; removeDropsRow?: boolean } = {},
@@ -81,10 +56,6 @@ function renderHarness(
   function Harness() {
     const [rows, setRows] = useState(initial.rows)
     applyRowsRef.current = setRows
-    // With removeDropsRow the host answers a Remove click the way a real
-    // host does — dropping the row from its own rows state — so a test
-    // can drive a removal through the component's rendered button and
-    // the commit it causes inside one act.
     const onRemove = options.removeDropsRow
       ? (rowId: string) =>
           setRows((current) => current.filter((row) => row.id !== rowId))
@@ -93,11 +64,6 @@ function renderHarness(
   }
   const view = renderWithProviders(
     options.heading !== undefined ? (
-      // The axe scans render under a real page h1 (page-has-heading-one
-      // is determinate in jsdom -- see the axe helper header), the way
-      // a real host page would mount the uploader. Behavioural tests
-      // keep rendering the bare widget; only scans opt into the
-      // context.
       <div>
         <h1>{options.heading}</h1>
         <Harness />
@@ -226,7 +192,6 @@ describe('FileUploader', () => {
       const label = view.container.querySelector('label')
       expect(label).toHaveAttribute('aria-disabled', 'true')
       expect(fileInputOf(view.container).disabled).toBe(true)
-      // The zone is still described, but it accepts no drag while disabled.
       expect(view.getByText(dropOrChoose)).toBeInTheDocument()
       fireEvent.dragEnter(label!, emptyDragInit)
       expect(label).not.toHaveAttribute('data-drop-active')
@@ -273,13 +238,9 @@ describe('FileUploader', () => {
       const input = fileInputOf(view.container)
       const file = makeFile('scan.jpg')
 
-      // A real browser's input.files is a *live* FileList: clearing the
-      // input's value — which FileUploader does after every pick so
-      // choosing the same file again re-fires change — empties any
-      // reference captured before the clear. jsdom hands out snapshot
-      // lists, so emulate the live semantics with instance accessors and
-      // dispatch a plain change with no target props (the test helpers'
-      // target would overwrite the accessors with own data properties).
+      // A real browser's FileList is live, so clearing the input empties it;
+      // jsdom hands out snapshots, hence the accessors. Dispatch a bare change
+      // with no target props: the shared helper's target would overwrite them.
       let live: readonly File[] = [file]
       Object.defineProperty(input, 'files', {
         configurable: true,
@@ -298,7 +259,6 @@ describe('FileUploader', () => {
       fireEvent.change(input)
       expect(onSelectFiles).toHaveBeenCalledTimes(1)
       expect(onSelectFiles.mock.calls[0]![0]![0]).toBe(file)
-      // The input was still reset for the next pick.
       expect(input.value).toBe('')
     })
   })
@@ -325,8 +285,6 @@ describe('FileUploader', () => {
         onSelectFiles,
         allowDrop: true,
       })
-      // One zone, one instruction: the picker and the drop surface no
-      // longer stack as two controls telling the operator the same thing.
       expect(view.container.querySelectorAll('label')).toHaveLength(1)
       expect(view.getAllByText(dropOrChoose)).toHaveLength(1)
       expect(view.queryByText(pickerLabel)).not.toBeInTheDocument()
@@ -334,16 +292,12 @@ describe('FileUploader', () => {
 
       const zone = view.container.querySelector('label')!
       const input = fileInputOf(view.container)
-      // The label wraps the input, so clicking anywhere in the zone opens
-      // the native picker; the input remains the keyboard path.
       expect(zone.contains(input)).toBe(true)
       expect((zone as HTMLLabelElement).control).toBe(input)
 
-      // Keyboard: tab reaches the hidden input and nothing else.
       await user.tab()
       expect(input).toHaveFocus()
 
-      // Drop: the same zone reports files through the same callback.
       fireEvent.dragEnter(zone, emptyDragInit)
       expect(zone).toHaveAttribute('data-drop-active', 'true')
       const file = makeFile('scan.jpg')
@@ -366,8 +320,6 @@ describe('FileUploader', () => {
 
       fireEvent.dragEnter(surface!, emptyDragInit)
       expect(surface).toHaveAttribute('data-drop-active', 'true')
-      // Enter/leave pairs fire per child crossing; one leave keeps the
-      // armed state true, the second disarms.
       fireEvent.dragEnter(surface!, emptyDragInit)
       fireEvent.dragLeave(surface!, emptyDragInit)
       expect(surface).toHaveAttribute('data-drop-active', 'true')
@@ -541,11 +493,6 @@ describe('FileUploader', () => {
   })
 
   describe('responsive layout', () => {
-    // Property assertions only (jsdom does no real layout, so nothing
-    // here proves a long file name plus several buttons actually looks
-    // right at a narrow viewport) -- these prove the flexWrap CSS is
-    // wired onto both row shapes' action groups, so a refactor dropping
-    // it would be caught.
     it('wraps the uploading row action group (progress bar + cancel) instead of overflowing', () => {
       const view = renderHarness({
         rows: [uploadingRow('r1', 'scan.jpg')],
@@ -573,20 +520,12 @@ describe('FileUploader', () => {
         onRemove: vi.fn(),
       })
       const wrapRuleCount = (emittedStyleText().match(/flex-wrap:wrap/g) ?? []).length
-      // At least the two row-action groups (uploading and settled) each
-      // contribute one flex-wrap:wrap declaration.
       expect(wrapRuleCount).toBeGreaterThanOrEqual(2)
     })
   })
 
   describe('pointer capability', () => {
     it('raises the row action controls to the 44px touch-target floor under a coarse pointer', () => {
-      // The per-row action buttons (Cancel / Retry / Remove) are compact;
-      // on a finger-driven device they gate up to the 44x44 floor (the
-      // layout design's pointer rule). jsdom evaluates no media
-      // condition, so the emitted CSS is matched against each rendered
-      // button: a coarse rule elsewhere on the page cannot satisfy these
-      // assertions for them.
       const view = renderHarness({
         rows: [uploadingRow('r1', 'a.jpg'), failedRow('r2', 'b.jpg', 'boom')],
         onCancel: vi.fn(),
@@ -665,9 +604,6 @@ describe('FileUploader', () => {
       })
       view.setRows([failedRow('r1', 'a.jpg', 'The upload answered 503.')])
       expect(view.getByRole('status')).toHaveTextContent(failedAnnouncement('a.jpg'))
-      // The retry puts the row back on uploading; the region must empty,
-      // or the same failure text below would not re-announce (a live
-      // region speaks only when its text changes).
       view.setRows([uploadingRow('r1', 'a.jpg')])
       expect(view.getByRole('status')).toHaveTextContent('')
       view.setRows([failedRow('r1', 'a.jpg', 'The upload answered 503.')])
@@ -684,11 +620,6 @@ describe('FileUploader', () => {
     })
 
     it('announces a row the host appends already failed, with no uploading phase ever rendered (P2-7 regression)', () => {
-      // The upload failed so fast the host never committed an uploading
-      // row for it: the failed row is appended directly. An appended
-      // settled row is still a settle and announces; the quiet cases are
-      // exactly the mount-seeded rows and the rows appended as
-      // `uploading`. Appending an uploading row still announces nothing.
       const view = renderHarness({
         rows: [uploadingRow('r1', 'a.jpg')],
       })
@@ -704,13 +635,6 @@ describe('FileUploader', () => {
     })
 
     it('re-announces when a second same-name row reaches the same outcome as the standing announcement (P2-8 regression)', async () => {
-      // Row b shares row a's name and reaches the same failed outcome.
-      // Its announcement text equals the standing one, and a live region
-      // only speaks when its text changes -- so the region must empty
-      // first and re-fill a beat later, exactly the mechanism the retry
-      // path already relies on (see "clears the region on a retry"). The
-      // intermediate empty state is what proves the re-announcement: the
-      // final text alone is indistinguishable from the standing one.
       const view = renderHarness({ rows: [uploadingRow('a', 'scan.jpg')] })
       view.setRows([failedRow('a', 'scan.jpg', 'boom')])
       expect(view.getByRole('status')).toHaveTextContent(failedAnnouncement('scan.jpg'))
@@ -741,14 +665,6 @@ describe('FileUploader', () => {
     })
 
     it('retires a standing announcement when its row leaves the queue — the region never speaks of a file the queue has let go', () => {
-      // The ordinary multi-file flow ended through the widget's own
-      // Remove button: two files upload and settle in turn (each settle
-      // announced), then the host drops the second — the row whose
-      // settle is the standing announcement. The announcement diff used
-      // to look only for settles inside the commit, so a departed row
-      // never retired its announcement: the visible role="status" region
-      // kept reading "b.jpg uploaded" while b.jpg's card was already
-      // gone from the queue.
       const view = renderHarness(
         {
           rows: [uploadingRow('r1', 'a.jpg'), uploadingRow('r2', 'b.jpg')],
@@ -763,13 +679,9 @@ describe('FileUploader', () => {
       const r2Card = view.getAllByRole('listitem')[1]!
       fireEvent.click(within(r2Card).getByRole('button', { name: actionRemove }))
 
-      // r1 is still in the queue, so the region stays on screen — but it
-      // must no longer mention the departed b.jpg.
       expect(view.getByRole('status')).toHaveTextContent('')
       expect(view.getByText('a.jpg')).toBeInTheDocument()
 
-      // A later file settles normally: the removal silenced the departed
-      // row's announcement only, never the region for good.
       view.setRows([succeededRow('r1', 'a.jpg'), uploadingRow('r3', 'c.jpg')])
       expect(view.getByRole('status')).toHaveTextContent('')
       view.setRows([succeededRow('r1', 'a.jpg'), succeededRow('r3', 'c.jpg')])
@@ -777,28 +689,16 @@ describe('FileUploader', () => {
     })
 
     it('does not resurrect a pending re-announcement for a row retried before it fires (P1-1 regression)', async () => {
-      // The same-name repeat path empties the region and re-announces a
-      // beat later. A host rows update can land between the commit that
-      // armed that deferred re-announcement and its 0ms fire (a
-      // microtask-ordered update overtakes the timer), so the retry of
-      // the row the re-announcement was about may commit first. The
-      // pending timer must then stay silent: the re-announcement
-      // re-checks the row's fate at fire time, so it does not refill the
-      // region with the row's stale failure text while the row is
-      // already uploading again.
       const view = renderHarness({ rows: [uploadingRow('r1', 'scan.jpg')] })
       view.setRows([failedRow('r1', 'scan.jpg', 'boom')])
       expect(view.getByRole('status')).toHaveTextContent(
         failedAnnouncement('scan.jpg'),
       )
-      // A second same-name row settles: identical text is not a change,
-      // so the region empties and defers the re-announcement a tick.
       view.setRows([
         failedRow('r1', 'scan.jpg', 'boom'),
         failedRow('r2', 'scan.jpg', 'boom'),
       ])
       expect(view.getByRole('status')).toHaveTextContent('')
-      // The host retries r2 before the deferred re-announcement fires.
       view.setRows([
         failedRow('r1', 'scan.jpg', 'boom'),
         uploadingRow('r2', 'scan.jpg'),
@@ -811,13 +711,6 @@ describe('FileUploader', () => {
     })
 
     it("never revives a departed row's pending re-announcement when that row comes back (P1-1 regression)", async () => {
-      // The deferred re-announcement's target row can leave the queue
-      // before the timer fires (the Remove path on a commit with no
-      // settle). The pending timer must then leave no record of the
-      // departed row behind: a standing announcement for it would
-      // resurface as stale failure text when the host later re-adds
-      // that row -- uploading this time. The re-announcement re-checks
-      // the row's presence at fire time.
       const view = renderHarness({ rows: [uploadingRow('r1', 'scan.jpg')] })
       view.setRows([failedRow('r1', 'scan.jpg', 'boom')])
       view.setRows([
@@ -825,14 +718,11 @@ describe('FileUploader', () => {
         failedRow('r2', 'scan.jpg', 'boom'),
       ])
       expect(view.getByRole('status')).toHaveTextContent('')
-      // The host removes r2 before the deferred re-announcement fires.
       view.setRows([failedRow('r1', 'scan.jpg', 'boom')])
       expect(view.getByRole('status')).toHaveTextContent('')
       await act(async () => {
         await new Promise<void>((resolve) => setTimeout(resolve, 0))
       })
-      // The host re-adds r2 as uploading: the region must not speak of
-      // the departed row's failure while it uploads.
       view.setRows([
         failedRow('r1', 'scan.jpg', 'boom'),
         uploadingRow('r2', 'scan.jpg'),
@@ -854,8 +744,6 @@ describe('FileUploader', () => {
       const r1Card = view.getAllByRole('listitem')[0]!
       fireEvent.click(within(r1Card).getByRole('button', { name: actionRemove }))
 
-      // The standing announcement belongs to r2, still in the queue: a
-      // removal of a different row must not wipe it.
       expect(view.getByText('b.jpg')).toBeInTheDocument()
       expect(view.getByRole('status')).toHaveTextContent(failedAnnouncement('b.jpg'))
     })
@@ -887,12 +775,6 @@ describe('FileUploader', () => {
 
   describe('accessibility', () => {
     it('declares the queue ul list role explicitly — WebKit strips list semantics from a list-style-none ul (P3-uikit-10 regression)', () => {
-      // jsdom hands a plain ul its implicit list role regardless of
-      // styling, so a role query would pass even unstyled — only the
-      // explicit attribute proves the WebKit remediation: WebKit removes
-      // list semantics from a list-style-none ul's accessibility tree,
-      // and the explicit role="list" is what restores them for assistive
-      // tech.
       const view = renderHarness({
         rows: [uploadingRow('r1', 'a.jpg'), succeededRow('r2', 'b.jpg')],
       })
@@ -902,11 +784,6 @@ describe('FileUploader', () => {
       expect(view.getAllByRole('listitem')).toHaveLength(2)
     })
 
-    // Each scan renders the widget under a real page h1 (the
-    // renderHarness `heading` option): page-has-heading-one is
-    // determinate in jsdom now (see the axe helper header), so a scan
-    // document without an h1 fails instead of passing by indeterminacy
-    // -- the h1 is the page context a real host page supplies.
     it('is axe-clean at idle', async () => {
       renderHarness(
         {
