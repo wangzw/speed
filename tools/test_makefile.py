@@ -93,7 +93,14 @@ GATE = """\
 import json, os, sys
 where = os.path.basename(os.path.dirname(os.path.abspath(__file__)))
 with open(os.environ["STAND_IN_LOG"], "a", encoding="utf-8") as log:
-    log.write(json.dumps({"tool": "gate", "dir": where, "args": [], "gowork": ""}) + "\\n")
+    log.write(json.dumps({
+        "tool": "gate",
+        "dir": where,
+        "args": [],
+        "gowork": "",
+        "gomaxprocs": os.environ.get("GOMAXPROCS", ""),
+        "goflags": os.environ.get("GOFLAGS", ""),
+    }) + "\\n")
 sys.exit(1 if where == "red" else 0)
 """
 
@@ -330,9 +337,12 @@ class LoopingLegTests(unittest.TestCase):
         shellcheck: str | pathlib.Path | None = None,
         uncached: str | None = None,
         gate_jobs: str | None = None,
+        goflags: str | None = None,
         failing_tools: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
+        if goflags is not None:
+            env["GOFLAGS"] = goflags
         first = self.failing_bin if failing_tools else self.bin
         env["PATH"] = f"{first}{os.pathsep}{self.bin}{os.pathsep}{env.get('PATH', '')}"
         env["STAND_IN_LOG"] = str(self.log)
@@ -558,6 +568,58 @@ class LoopingLegTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, "repo-check passed with a workflow finding")
         self.assertIn("gate actionlint", result.stderr)
         self.assertNotIn("check_green.py", result.stderr)
+
+    def test_every_gate_forwards_the_width_to_the_scripts_it_runs(self) -> None:
+        # The gates in tools/ take their width from the environment, not from
+        # a scan of the host. repo-check hands each one GOMAXPROCS and appends
+        # -p to whatever GOFLAGS the caller already set, keeping -count=1.
+        for gate_jobs, width in ((None, "4"), ("7", "7")):
+            with self.subTest(gate_jobs=gate_jobs):
+                self.log.unlink(missing_ok=True)
+                result = self.make(
+                    "repo-check", "green", gate_jobs=gate_jobs, goflags="-count=1"
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                gates = [call for call in self.calls() if call["tool"] == "gate"]
+                self.assertTrue(
+                    gates, f"repo-check ran no gate:\n{result.stdout}{result.stderr}"
+                )
+                for call in gates:
+                    self.assertEqual(call["gomaxprocs"], width, "repo-check: GOMAXPROCS")
+                    flags = call["goflags"].split()
+                    self.assertIn(f"-p={width}", flags, f"repo-check: {call['goflags']}")
+                    self.assertIn("-count=1", flags, "the caller's GOFLAGS is lost")
+                    self.assertLess(
+                        flags.index("-count=1"),
+                        flags.index(f"-p={width}"),
+                        "the width must be appended after the caller's GOFLAGS",
+                    )
+
+    def test_tools_test_forwards_the_same_width_and_flags(self) -> None:
+        # Read the dry run rather than starting the suite: running tools-test
+        # here would run this case again.
+        for gate_jobs, width in ((None, "4"), ("7", "7")):
+            with self.subTest(gate_jobs=gate_jobs):
+                env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
+                env["GOFLAGS"] = "-count=1"
+                argv = [
+                    "make",
+                    "-C",
+                    str(ROOT),
+                    "--no-print-directory",
+                    "-n",
+                    "tools-test",
+                    f"PYTHON={sys.executable}",
+                ]
+                if gate_jobs is not None:
+                    argv.append(f"GATE_JOBS={gate_jobs}")
+                result = subprocess.run(
+                    argv, env=env, capture_output=True, text=True, check=False
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn(f"GOMAXPROCS={width}", result.stdout)
+                self.assertIn(f'GOFLAGS="-count=1 -p={width}"', result.stdout)
+                self.assertIn("-m unittest discover", result.stdout)
 
     def test_the_actionlint_leg_lints_every_workflow_file_in_one_run(self) -> None:
         result = self.make("actionlint")

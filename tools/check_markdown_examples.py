@@ -486,7 +486,15 @@ def check_complete_block(
         # nicksnyder/go-i18n, golang.org/x/text, go-redis, minio-go) on a
         # cold module cache, which would misreport an infrastructure/network
         # problem as a documentation bug.
-        env["GOFLAGS"] = "-mod=mod"
+        #
+        # GOFLAGS and GOMAXPROCS are inherited, never overwritten: the caller
+        # gives this gate its width (Makefile's repo-check runs it under
+        # GOMAXPROCS and a GOFLAGS carrying -p), and the go commands started
+        # below must take it. A go command ignores flags it does not know and
+        # a later occurrence of a flag wins, so appending -mod=mod here keeps
+        # the caller's -p and tags intact and still takes effect.
+        inherited_flags = env.get("GOFLAGS", "").strip()
+        env["GOFLAGS"] = f"{inherited_flags} -mod=mod" if inherited_flags else "-mod=mod"
 
         violations = []
         steps = [

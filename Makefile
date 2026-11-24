@@ -319,15 +319,21 @@ actionlint: ## Lint every workflow and composite action script with actionlint a
 	@failed=; $(call each,workflows,actionlint,GOMAXPROCS=$(GATE_JOBS) env -C '$(REPO_ROOT)' '$(ACTIONLINT)' -shellcheck='$(SHELLCHECK)' $(WORKFLOWS)); \
 	  $(call each,composite-actions,actionlint,$(PYTHON) '$(LINT_COMPOSITE_ACTIONS)' --root '$(REPO_ROOT)' --shellcheck '$(SHELLCHECK)'); $(each-end)
 
+# The gate scripts take their width from the environment rather than working
+# one out: GOMAXPROCS is GATE_JOBS, and GOFLAGS keeps whatever the caller set
+# (CI passes -count=1) with -p=$(GATE_JOBS) appended, so a later flag wins and
+# the caller's own flags survive. The go commands the scripts start inherit
+# both. tools-test runs under the same pair, because its suites run the gate
+# scripts for real.
 # The gates are the scripts in tools/ plus the workflow lint above, which is a
 # target of its own because its linter is a pinned binary, not a script here.
 # Both run to the end, so a red gate does not hide the workflow findings.
 repo-check: python-version ## Run the gates in tools/ and the workflow lint over this tree
-	@failed=; $(call each,$(GATES),gate,$(PYTHON) $$it); \
+	@failed=; $(call each,$(GATES),gate,GOMAXPROCS=$(GATE_JOBS) GOFLAGS="$(GOFLAGS) -p=$(GATE_JOBS)" $(PYTHON) $$it); \
 	  $(call each,actionlint,gate,$(MAKE) --no-print-directory actionlint); $(each-end)
 
 tools-test: python-version ## Run the test suites of the scripts in tools/
-	@$(PYTHON) -m unittest discover -s tools -t tools -p 'test_*.py'
+	@GOMAXPROCS=$(GATE_JOBS) GOFLAGS="$(GOFLAGS) -p=$(GATE_JOBS)" $(PYTHON) -m unittest discover -s tools -t tools -p 'test_*.py'
 
 # Every leg above loops over $(MODULES), and a loop over an empty list is
 # a no-op that exits 0 -- an empty roster would take the whole of `make
