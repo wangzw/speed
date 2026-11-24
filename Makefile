@@ -108,16 +108,42 @@ export GATE_TIME_SCALE
 # Go caches a passing test result and replays it while the test's inputs are
 # unchanged. Those inputs are the package's files, the environment variables
 # the test read and the files it opened under the module root; a file read
-# outside the module root is not tracked. Two things in this tree escape that.
-# The demo program's tests read the committed contracts under ../../../contracts,
-# so editing a contract leaves the cached result standing, and the unit legs run
-# that module uncached. The integration cases read the addresses of the backend
-# stack, and a reused stack on the same addresses replays the earlier run
-# instead of exercising the backends, so both integration legs run every module
-# uncached. The other modules read nothing outside their root and keep the cache
-# on the unit legs, where it is what makes a rerun cheap.
-UNCACHED_MODULES ?= ./starters/demo/server
-uncached = $$([[ ' $(UNCACHED_MODULES) ' == *" $$it "* ]] && echo -count=1)
+# outside the module root is not tracked. The unit legs therefore split each
+# module's packages: a package whose directory UNCACHED_PACKAGES names runs
+# with -count=1 on every pass, and the rest of the module keeps the cache. Only
+# the demo program reads outside its root, in four places: the committed
+# contracts/api.json and contracts/features.json; the hand-written
+# backend-prefixes.json under starters/demo/web; the deployment templates and
+# entrypoint script under starters/demo/deploy, which the entrypoint cases also
+# run through the host's sh and awk; and resources under pkg, the MFA
+# migrations e2e/factorseed reads. The tests that start a child process build
+# its environment from a fixed list, so the host environment cannot change a
+# result the cache key omits. The one gap is the go build TestMain runs to
+# compile the program under test: its environment does not reach the test log,
+# but it is the environment the outer go test compiled the test binary in, and
+# that build's configuration is already part of the test binary's hash.
+# tools/check_out_of_root_reads.py, which repo-check runs, confines a new
+# out-of-root read to these packages. It reads relative path literals only: a
+# path computed at run time from variables, or built by fmt.Sprintf, is
+# invisible to it, so such a read needs its package listed here by hand.
+#
+# The integration cases read the addresses of the backend stack, and a reused
+# stack on the same addresses replays the earlier run instead of exercising the
+# backends, so both integration legs run every module uncached and do not
+# consult this list.
+#
+# A caller whose GOFLAGS already names -count=1, as CI does, turns the cache off
+# for the whole run; each unit leg then makes one go test call per module over
+# ./...
+UNCACHED_PACKAGES ?= ./starters/demo/server/treecheck ./starters/demo/server/e2e/factorseed
+
+# UNCACHED_PACKAGES as the absolute directories go list reports in .Dir, so a
+# package in any module can be matched against them. abspath normalizes every
+# entry: a relative one is resolved from the directory make runs in, the same
+# base the module roster above is read and spelled from, so a run started in
+# the repository root splits the packages go.work names, and an absolute one
+# loses a trailing slash before the comparison.
+uncached-dirs = $(abspath $(UNCACHED_PACKAGES))
 
 # The integration stack's state file and the script that maintains it. The
 # script allocates this checkout's ports and records them with its compose
@@ -221,10 +247,58 @@ deps-down: ## Take this checkout's integration backends down
 # vet-integration below: a leg that stopped at "does not run" would let them rot
 # into not compiling at all.
 test: modules-present ## Test every module (unit cases only)
-	@failed=; $(call each,$(MODULES),test,GOMAXPROCS=$(GATE_JOBS) go -C $$it test -p=$(GATE_JOBS) -parallel=$(GATE_JOBS) $(uncached) -timeout 30m ./...); $(each-end)
+	@failed=; for it in $(MODULES); do \
+	  echo "==> test $$it"; \
+	  if [[ " $(GOFLAGS) " == *" -count=1 "* ]]; then \
+	    GOMAXPROCS=$(GATE_JOBS) go -C $$it test -p=$(GATE_JOBS) -parallel=$(GATE_JOBS) -timeout 30m ./... \
+	      || failed="$${failed:+$$failed; }test $$it"; \
+	    continue; \
+	  fi; \
+	  if ! listing=$$(GOMAXPROCS=$(GATE_JOBS) go -C $$it list -p=$(GATE_JOBS) -f '{{.ImportPath}} {{.Dir}}' ./...); then \
+	    failed="$${failed:+$$failed; }test $$it (go list)"; continue; \
+	  fi; \
+	  cached= uncached=; \
+	  while read -r ip dir; do \
+	    [ -n "$$ip" ] || continue; \
+	    hit=; for u in $(uncached-dirs); do [ "$$dir" = "$$u" ] && hit=1; done; \
+	    if [ -n "$$hit" ]; then uncached="$$uncached $$ip"; else cached="$$cached $$ip"; fi; \
+	  done <<< "$$listing"; \
+	  if [ -n "$$cached" ]; then \
+	    GOMAXPROCS=$(GATE_JOBS) go -C $$it test -p=$(GATE_JOBS) -parallel=$(GATE_JOBS) -timeout 30m $$cached \
+	      || failed="$${failed:+$$failed; }test $$it (cached pass)"; \
+	  fi; \
+	  if [ -n "$$uncached" ]; then \
+	    GOMAXPROCS=$(GATE_JOBS) go -C $$it test -p=$(GATE_JOBS) -parallel=$(GATE_JOBS) -count=1 -timeout 30m $$uncached \
+	      || failed="$${failed:+$$failed; }test $$it (uncached pass)"; \
+	  fi; \
+	done; $(each-end)
 
 test-race: modules-present ## Test every module under the race detector (unit cases only)
-	@failed=; $(call each,$(MODULES),test -race,GOMAXPROCS=$(GATE_JOBS) go -C $$it test -race -p=$(GATE_JOBS) -parallel=$(GATE_JOBS) $(uncached) -timeout 60m ./...); $(each-end)
+	@failed=; for it in $(MODULES); do \
+	  echo "==> test -race $$it"; \
+	  if [[ " $(GOFLAGS) " == *" -count=1 "* ]]; then \
+	    GOMAXPROCS=$(GATE_JOBS) go -C $$it test -race -p=$(GATE_JOBS) -parallel=$(GATE_JOBS) -timeout 60m ./... \
+	      || failed="$${failed:+$$failed; }test -race $$it"; \
+	    continue; \
+	  fi; \
+	  if ! listing=$$(GOMAXPROCS=$(GATE_JOBS) go -C $$it list -p=$(GATE_JOBS) -f '{{.ImportPath}} {{.Dir}}' ./...); then \
+	    failed="$${failed:+$$failed; }test -race $$it (go list)"; continue; \
+	  fi; \
+	  cached= uncached=; \
+	  while read -r ip dir; do \
+	    [ -n "$$ip" ] || continue; \
+	    hit=; for u in $(uncached-dirs); do [ "$$dir" = "$$u" ] && hit=1; done; \
+	    if [ -n "$$hit" ]; then uncached="$$uncached $$ip"; else cached="$$cached $$ip"; fi; \
+	  done <<< "$$listing"; \
+	  if [ -n "$$cached" ]; then \
+	    GOMAXPROCS=$(GATE_JOBS) go -C $$it test -race -p=$(GATE_JOBS) -parallel=$(GATE_JOBS) -timeout 60m $$cached \
+	      || failed="$${failed:+$$failed; }test -race $$it (cached pass)"; \
+	  fi; \
+	  if [ -n "$$uncached" ]; then \
+	    GOMAXPROCS=$(GATE_JOBS) go -C $$it test -race -p=$(GATE_JOBS) -parallel=$(GATE_JOBS) -count=1 -timeout 60m $$uncached \
+	      || failed="$${failed:+$$failed; }test -race $$it (uncached pass)"; \
+	  fi; \
+	done; $(each-end)
 
 # The integration cases: they need the backends above, they are slower by
 # orders of magnitude, and they are run on a schedule rather than on every
