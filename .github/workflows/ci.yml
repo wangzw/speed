@@ -332,9 +332,12 @@ jobs:
       # segments at once and an install target shared by both would install
       # into one web/node_modules from two recipes. The Makefile keeps the
       # install in the static phase, which both segments order themselves
-      # after.
+      # after. The width is the Makefile's: the workspace shares one lockfile,
+      # so --workspace-concurrency does not apply to the install;
+      # --child-concurrency caps that single installation's child processes at
+      # GATE_JOBS, and both flags only write the width out explicitly.
       - name: Install the frontend dependencies
-        run: pnpm -C web install --frozen-lockfile
+        run: pnpm -C web install --frozen-lockfile --workspace-concurrency=1 --child-concurrency="${GATE_JOBS}"
 
       - name: Run the frontend tests
         run: make web-check-test

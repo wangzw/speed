@@ -35,6 +35,11 @@ defaults:
   run:
     shell: bash
 
+env:
+  # The hosted runner's four cores, as ci.yml sets it; the setup action's
+  # frontend install takes its width from here.
+  GATE_JOBS: "4"
+
 jobs:
   browser:
     runs-on: ubuntu-26.04

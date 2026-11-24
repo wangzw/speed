@@ -238,17 +238,21 @@ EMBEDS_FRONTEND_BUILD = (
 # The three phases `web-check` splits into, in order, and the commands each
 # carries. Together they are the whole frontend gate -- install, lint,
 # typecheck and the rule tests; the unit tests and the route-level sweep; the
-# build -- with the width every command takes from GATE_JOBS. One command is an
-# exception to GATE_JOBS as a workspace width: the test leg's package scripts
-# each start their own vitest process, so its workspace width is 1 and each
-# process takes the whole GATE_JOBS: the product of the two widths is what the
-# budget bounds, not either factor alone. The build's `build:self` scripts
-# compile only their own package into its own dist/, so its workspace width is
-# GATE_JOBS too.
+# build -- with the width every command takes from GATE_JOBS. Two commands nest
+# two widths: the test leg's package scripts each start their own vitest
+# process, and the install hands each lifecycle script the whole budget, so
+# both run their projects one at a time and let the inner process take the
+# whole GATE_JOBS. The product of the two widths is what the budget bounds, not
+# either factor alone. The lint leg nests the other way round: pnpm -r runs
+# GATE_JOBS packages at once and each ESLint process is told to lint on one
+# thread. The build's `build:self` scripts compile only their own package into
+# its own dist/, so its workspace width is GATE_JOBS too.
 WEB_CHECK_PHASES = {
     "web-check-static": (
-        "pnpm -C web install --frozen-lockfile",
-        "pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) --no-sort lint",
+        "pnpm -C web install --frozen-lockfile --workspace-concurrency=1 "
+        "--child-concurrency=$(GATE_JOBS)",
+        "pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) --no-sort lint "
+        "--concurrency=off",
         "pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) --no-sort typecheck",
         "pnpm -C web exec vitest run --maxWorkers=$(GATE_JOBS) eslint-rules/ scripts/",
     ),
@@ -929,9 +933,20 @@ class LoopingLegTests(unittest.TestCase):
         for gate_jobs, width in ((None, "4"), ("7", "7")):
             with self.subTest(leg="web-check-static", gate_jobs=gate_jobs):
                 calls = self.leg_calls("web-check-static", gate_jobs)
-                for script in ("lint", "typecheck"):
-                    call = self.pnpm_call(calls, script)
-                    self.assertIn(f"--workspace-concurrency={width}", call["args"])
+                # The install nests its widths the same way the test leg does:
+                # one project at a time, each lifecycle script taking the whole
+                # GATE_JOBS. The lint leg nests the other way round: pnpm -r
+                # runs GATE_JOBS packages at once and each ESLint process is
+                # told to lint on one thread, so neither width is left to the
+                # tool's default.
+                install = self.pnpm_call(calls, "install")
+                self.assertIn("--workspace-concurrency=1", install["args"])
+                self.assertIn(f"--child-concurrency={width}", install["args"])
+                lint = self.pnpm_call(calls, "lint")
+                self.assertIn(f"--workspace-concurrency={width}", lint["args"])
+                self.assertIn("--concurrency=off", lint["args"])
+                typecheck = self.pnpm_call(calls, "typecheck")
+                self.assertIn(f"--workspace-concurrency={width}", typecheck["args"])
                 self.assertIn(f"--maxWorkers={width}", self.pnpm_call(calls, "vitest")["args"])
             with self.subTest(leg="web-check-test", gate_jobs=gate_jobs):
                 # The product of the package width and the per-process worker
