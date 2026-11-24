@@ -27,26 +27,14 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The cases here assemble the real thing: the real registry drives the real
-// board, the real entry point and, where the criterion is about them, the real
-// authentication gateway and the real authorization middleware. A client sends
-// real requests. What a case that builds the board by hand cannot show is that
-// the registrations it makes mean what the gateways read them as.
-
 const (
-	// listening is the record the entry point writes once a listener's address
-	// is bound, the only place outside the process that says which port the
-	// operating system picked for a listener configured on port 0.
 	listening = "an HTTP listener is listening"
 )
 
-// requestBound bounds each request, so one that would hang fails the case.
 func requestBound() time.Duration {
 	return coretest.Scale(5 * time.Second)
 }
 
-// memory is a log handler that keeps what it is handed, so a case can read back
-// where the entry point bound itself.
 type memory struct {
 	mu      sync.Mutex
 	records []slog.Record
@@ -88,7 +76,6 @@ func (m *memory) addressOf(endpoint string) string {
 	return ""
 }
 
-// logging delivers the logging capability over the memory handler.
 type logging struct{ logger *slog.Logger }
 
 func (l logging) Named(string) *slog.Logger { return l.logger }
@@ -99,9 +86,6 @@ type noRules struct{}
 func (noRules) AddKeys(...string)              {}
 func (noRules) AddPattern(string, log.Matcher) {}
 
-// bearer verifies one bearer token. It is a backend of its own, registered the
-// way a backend module registers, because the gateway has to verify a real
-// credential for the criteria about who may read the document.
 type bearer struct{}
 
 func (bearer) Name() string { return "test" }
@@ -133,8 +117,6 @@ func (bearer) Verify(_ context.Context, c authn.Credential) authn.Verdict {
 	return authn.Denied(nil)
 }
 
-// backendModule registers a verifying backend the way a backend subpackage
-// does: its own module, delivering the verification capability.
 func backendModule(name string, v authn.Verifier) core.Module {
 	return core.Module{
 		Name:     name,
@@ -146,33 +128,19 @@ func backendModule(name string, v authn.Verifier) core.Module {
 	}
 }
 
-// anchor stands where the admission layer would: the authorization middleware
-// names its ordering anchor and never calls it.
 type anchor struct{}
 
 func (anchor) AdmissionLayer() {}
 
-// assembly is one drive of the real board, entry point and whatever else the
-// case brings.
 type assembly struct {
-	// body is the whole configuration document.
-	body string
-	// modules take part beside the board and the entry point.
-	modules []core.Module
-	// providers are capabilities delivered by stand-in modules, which join the
-	// drive without being named.
-	providers []authztest.Provider
-	// participants are the further module names taken in at run level.
+	body         string
+	modules      []core.Module
+	providers    []authztest.Provider
 	participants []string
-	// endpoints are the endpoint names the entry point declares, read back to
-	// find the addresses it bound.
-	endpoints []string
-	// atStart stops the drive at Start instead of serving.
-	atStart bool
+	endpoints    []string
+	atStart      bool
 }
 
-// run drives the assembly. use receives the bound address of every endpoint,
-// keyed by endpoint name, once the drive arrives.
 func (a assembly) run(t *testing.T, use func(addresses map[string]string)) error {
 	t.Helper()
 
@@ -230,13 +198,11 @@ func (a assembly) run(t *testing.T, use func(addresses map[string]string)) error
 	})
 }
 
-// reply is what a client got back.
 type reply struct {
 	status int
 	body   string
 }
 
-// ask issues one request against an address.
 func ask(t *testing.T, address, path, credential string) reply {
 	t.Helper()
 	limit := requestBound()
@@ -265,8 +231,6 @@ func ask(t *testing.T, address, path, credential string) reply {
 	return reply{status: resp.StatusCode, body: string(body)}
 }
 
-// serveBody is the configuration of an assembly that serves the document on one
-// guarded endpoint.
 const serveBody = `{
 	"http": {"listeners": {"public": {"address": "127.0.0.1:0"}},
 	         "endpoints": {"public": {"listener": "public"}}},
@@ -274,13 +238,8 @@ const serveBody = `{
 	"feature": {"board": {"endpoint": "public"}}
 }`
 
-// TestTheDocumentIsReadOnlyByAnIdentityAndByAnImpersonatingOneToo holds the
-// three answers criterion d names: anonymous is refused by the gateway, a
-// session reads the document, and an impersonating identity reads it as well.
-//
-// The last is the one that fails if the module stops registering the route as
-// impersonable: the gateway refuses an impersonating identity on a route that
-// does not admit one, and that refusal is what this case would see instead.
+// TestTheDocumentIsReadOnlyByAnIdentityAndByAnImpersonatingOneToo checks that
+// anonymous requests get 401 while a session and an impersonating identity read it.
 func TestTheDocumentIsReadOnlyByAnIdentityAndByAnImpersonatingOneToo(t *testing.T) {
 	a := assembly{
 		body:         serveBody,
@@ -306,10 +265,8 @@ func TestTheDocumentIsReadOnlyByAnIdentityAndByAnImpersonatingOneToo(t *testing.
 	}
 }
 
-// TestAnEndpointTheGatewayDoesNotGuardFailsTheStart holds the host requirement
-// behind the read surface's confidentiality: the endpoint the document is
-// published on has to be one the gateway guards, and the gateway's own Start is
-// what refuses the registration when it is not.
+// TestAnEndpointTheGatewayDoesNotGuardFailsTheStart checks that publishing on an
+// endpoint the gateway does not guard fails the gateway's Start.
 func TestAnEndpointTheGatewayDoesNotGuardFailsTheStart(t *testing.T) {
 	body := `{
 		"http": {"listeners": {"public": {"address": "127.0.0.1:0"}, "ops": {"address": "127.0.0.1:0"}},
@@ -330,9 +287,8 @@ func TestAnEndpointTheGatewayDoesNotGuardFailsTheStart(t *testing.T) {
 	}
 }
 
-// TestAProcessWithoutTheGatewayFailsTheStart holds the failure direction: the
-// document is not published at all when no authentication gateway exists,
-// rather than being published to every caller.
+// TestAProcessWithoutTheGatewayFailsTheStart checks that a process without an
+// authentication gateway fails rather than publishing the document to everyone.
 func TestAProcessWithoutTheGatewayFailsTheStart(t *testing.T) {
 	body := `{
 		"http": {"listeners": {"account": {"address": "127.0.0.1:0"}},
@@ -346,11 +302,8 @@ func TestAProcessWithoutTheGatewayFailsTheStart(t *testing.T) {
 	}
 }
 
-// TestTheRouteIsDeclaredOpenOnTheAuthorizationMiddleware holds the registration
-// criterion g relies on. The endpoint is guarded with undeclared routes closed,
-// so an authenticated request reaches the handler only because the module
-// recorded the route as needing no permission. Without that registration the
-// middleware answers 403 and this case fails.
+// TestTheRouteIsDeclaredOpenOnTheAuthorizationMiddleware checks that an
+// authenticated request reaches the handler on an endpoint refusing undeclared routes.
 func TestTheRouteIsDeclaredOpenOnTheAuthorizationMiddleware(t *testing.T) {
 	body := `{
 		"http": {"listeners": {"public": {"address": "127.0.0.1:0"}},

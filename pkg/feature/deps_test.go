@@ -8,18 +8,13 @@ import (
 	"testing"
 )
 
-// rootPath is the package these checks are about.
 const rootPath = "github.com/vislake/speed/pkg/feature"
 
-// listed is what this check reads about one package: its import path and the
-// imports of its non-test files. go list reports test imports separately and
-// this rule is about production code, so those are not asked for.
 type listed struct {
 	ImportPath string
 	Imports    []string
 }
 
-// goList returns the listing of the package at path.
 func goList(t *testing.T, path string) listed {
 	t.Helper()
 	cmd := exec.Command("go", "list", "-e", "-json=ImportPath,Imports", path)
@@ -36,14 +31,8 @@ func goList(t *testing.T, path string) listed {
 	return l
 }
 
-// TestTheRootPackageImportsTheStandardLibraryAlone holds the one dependency
-// rule this package has. Every module that declares a feature imports it, so a
-// third-party library reached from here would land in each of those modules'
-// closures; the rule is enforced by deps_test.go rather than by convention
-// because a later import looks harmless at the call site.
-//
-// The detector is the import path's first segment: a standard-library package
-// has no dot in it and every module path does.
+// TestTheRootPackageImportsTheStandardLibraryAlone checks that the root package
+// imports no third-party module.
 func TestTheRootPackageImportsTheStandardLibraryAlone(t *testing.T) {
 	pkg := goList(t, rootPath)
 	if pkg.ImportPath != rootPath {
@@ -61,9 +50,8 @@ func TestTheRootPackageImportsTheStandardLibraryAlone(t *testing.T) {
 	}
 }
 
-// TestTheDetectorRejectsAModuleImport makes the rule above discriminating: a
-// run of it that accepted every import would pass this check and every later
-// one without telling anyone anything.
+// TestTheDetectorRejectsAModuleImport checks that the import-path detector tells
+// a standard-library package from a module package.
 func TestTheDetectorRejectsAModuleImport(t *testing.T) {
 	for _, c := range []struct {
 		path string
@@ -80,7 +68,6 @@ func TestTheDetectorRejectsAModuleImport(t *testing.T) {
 	}
 }
 
-// firstSegment returns what precedes the first slash of an import path.
 func firstSegment(path string) string {
 	if i := strings.IndexByte(path, '/'); i >= 0 {
 		return path[:i]
