@@ -12,8 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// resetRegistry is the rig's registry with the optional authn.code.reset
-// template declared in the same shape the required ones carry.
 func resetRegistry() *fakeRegistry {
 	registry := newRegistry()
 	declared := declaredTemplates()
@@ -26,15 +24,11 @@ func resetRegistry() *fakeRegistry {
 	return registry
 }
 
-// newResetRig is the rig whose carrier declares the reset template, so the reset
-// purpose is available.
 func newResetRig(t *testing.T) *rig {
 	t.Helper()
 	return newRigOver(t, openSQLite(t), resetRegistry(), newSender(), testDefaultLocale)
 }
 
-// resetTo sends a delivered reset-purpose code for number. It sets no account:
-// the reset purpose never has one.
 func (r *rig) resetTo(number string) (string, error) {
 	return r.p.Send(context.Background(), authn.SendCode{
 		Purpose: authn.SMSPurposeReset,
@@ -43,9 +37,7 @@ func (r *rig) resetTo(number string) (string, error) {
 	})
 }
 
-// TestTheResetPurposeHasItsOwnGlobalBudget holds the per-purpose global budget:
-// the reset purpose's rows reach authn.sms.global-hourly-reset and refuse the
-// next reset, while the login purpose keeps its own budget and still sends.
+// TestTheResetPurposeHasItsOwnGlobalBudget checks that the reset purpose has its own global budget.
 func TestTheResetPurposeHasItsOwnGlobalBudget(t *testing.T) {
 	r := newResetRig(t)
 	r.allow()
@@ -61,14 +53,12 @@ func TestTheResetPurposeHasItsOwnGlobalBudget(t *testing.T) {
 	if !errors.Is(err, authn.ErrThrottled) {
 		t.Fatalf("the second reset send returned %v, want ErrThrottled (the reset budget)", err)
 	}
-	// The login purpose has its own budget, untouched by the reset one.
 	if _, err := r.sendLogin(); err != nil {
 		t.Fatalf("a login send was refused by the reset budget: %v", err)
 	}
 }
 
-// TestTheLoginBudgetDoesNotRefuseAReset holds the other side of the split: a
-// spent login budget refuses login sends and leaves a reset send alone.
+// TestTheLoginBudgetDoesNotRefuseAReset checks that the login budget does not refuse a reset.
 func TestTheLoginBudgetDoesNotRefuseAReset(t *testing.T) {
 	r := newResetRig(t)
 	r.allow()
@@ -88,10 +78,7 @@ func TestTheLoginBudgetDoesNotRefuseAReset(t *testing.T) {
 	}
 }
 
-// TestTheResetPurposeSharesTheNumberSourceAndResendBudgets holds the dimensions
-// a reset shares with every other purpose: the resend interval, the number's
-// hourly count and the source address's hourly count each refuse a reset send
-// that reaches them.
+// TestTheResetPurposeSharesTheNumberSourceAndResendBudgets checks that reset shares the number, source and resend budgets.
 func TestTheResetPurposeSharesTheNumberSourceAndResendBudgets(t *testing.T) {
 	t.Run("the resend interval", func(t *testing.T) {
 		r := newResetRig(t)
@@ -148,9 +135,7 @@ func TestTheResetPurposeSharesTheNumberSourceAndResendBudgets(t *testing.T) {
 	})
 }
 
-// TestAResetSendFillsNoAccountAndSkipsTheAccountBudget holds the account
-// dimension's absence: a reset row carries no account even when the caller sets
-// one, and per-account-hourly does not count reset sends.
+// TestAResetSendFillsNoAccountAndSkipsTheAccountBudget checks that a reset send fills no account and skips the account budget.
 func TestAResetSendFillsNoAccountAndSkipsTheAccountBudget(t *testing.T) {
 	r := newResetRig(t)
 	r.allow()
@@ -173,8 +158,6 @@ func TestAResetSendFillsNoAccountAndSkipsTheAccountBudget(t *testing.T) {
 		t.Errorf("the reset row carries the account %q, want none", *row.AccountID)
 	}
 
-	// A second reset for another number of the same account is not refused by the
-	// account budget: the purpose has no account dimension.
 	r.clock.advance(31 * time.Second)
 	if _, err := r.p.Send(ctx, authn.SendCode{
 		Purpose: authn.SMSPurposeReset, Phone: "+8613800138041", Account: acct, Deliver: true,
@@ -183,10 +166,7 @@ func TestAResetSendFillsNoAccountAndSkipsTheAccountBudget(t *testing.T) {
 	}
 }
 
-// TestTheResetTemplateIsOptional holds the availability rule: the reset purpose
-// is supported exactly when the carrier declares authn.code.reset, and the
-// login, mfa and enroll purposes are supported either way. A carrier that
-// declares no reset template starts normally.
+// TestTheResetTemplateIsOptional checks that the reset template is optional.
 func TestTheResetTemplateIsOptional(t *testing.T) {
 	t.Run("declared", func(t *testing.T) {
 		r := newResetRig(t)
@@ -221,10 +201,7 @@ func TestTheResetTemplateIsOptional(t *testing.T) {
 	})
 }
 
-// TestACarrierThatDeclaresAResetTemplateItCannotCarryIsRefused holds the shape
-// check on the optional template: declaring it obliges the carrier to satisfy
-// the same parameters, languages and default-language rule as the required
-// templates, and a declaration that does not is a startup failure naming it.
+// TestACarrierThatDeclaresAResetTemplateItCannotCarryIsRefused checks that a carrier declaring an uncarryable reset template is refused.
 func TestACarrierThatDeclaresAResetTemplateItCannotCarryIsRefused(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -274,9 +251,7 @@ func TestACarrierThatDeclaresAResetTemplateItCannotCarryIsRefused(t *testing.T) 
 	}
 }
 
-// TestADeclaredResetTemplateThatCannotBeCarriedStopsTheNewStage holds the
-// startup stage, not only the helper: a registry that declares a broken reset
-// template fails this module's construction and never reaches its action.
+// TestADeclaredResetTemplateThatCannotBeCarriedStopsTheNewStage checks that a declared reset template that cannot be carried stops the new stage.
 func TestADeclaredResetTemplateThatCannotBeCarriedStopsTheNewStage(t *testing.T) {
 	registry := newRegistry()
 	declared := declaredTemplates()
@@ -299,9 +274,7 @@ func TestADeclaredResetTemplateThatCannotBeCarriedStopsTheNewStage(t *testing.T)
 	}
 }
 
-// TestAResetSendCarriesTheResetTemplate holds the purpose mapping on the send
-// path: a reset message is resolved under authn.code.reset with the two
-// parameters the template declares.
+// TestAResetSendCarriesTheResetTemplate checks that a reset send carries the reset template.
 func TestAResetSendCarriesTheResetTemplate(t *testing.T) {
 	r := newResetRig(t)
 	r.allow()

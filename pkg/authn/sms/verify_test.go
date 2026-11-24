@@ -10,8 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// sentCode sends a delivered login code and returns the challenge identifier and
-// the code, read off the queue the send put it on.
 func (r *rig) sentCode() (string, string) {
 	r.t.Helper()
 	id, err := r.sendLogin()
@@ -22,9 +20,7 @@ func (r *rig) sentCode() (string, string) {
 	return id, msg.Params["code"]
 }
 
-// TestVerifyAcceptsTheRightCodeOnce holds the happy path: the code the row was
-// written for passes, the row is consumed, and a second submit of the same
-// correct code fails because the row is spent.
+// TestVerifyAcceptsTheRightCodeOnce checks that Verify accepts the right code once.
 func TestVerifyAcceptsTheRightCodeOnce(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -41,8 +37,7 @@ func TestVerifyAcceptsTheRightCodeOnce(t *testing.T) {
 	}
 }
 
-// TestVerifyRefusesAWrongCodeAndCountsTheAttempt holds the refusal: a wrong code
-// is ErrInvalidCredentials with no distinction, and the attempt is counted.
+// TestVerifyRefusesAWrongCodeAndCountsTheAttempt checks that Verify refuses a wrong code and counts the attempt.
 func TestVerifyRefusesAWrongCodeAndCountsTheAttempt(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -60,9 +55,7 @@ func TestVerifyRefusesAWrongCodeAndCountsTheAttempt(t *testing.T) {
 	}
 }
 
-// TestVerifyRefusesAfterTheAttemptLimit holds the attempt cap: once the row has
-// taken its last comparison, neither a wrong nor the right code passes, and the
-// count does not move past the limit.
+// TestVerifyRefusesAfterTheAttemptLimit checks that Verify refuses after the attempt limit.
 func TestVerifyRefusesAfterTheAttemptLimit(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -82,9 +75,7 @@ func TestVerifyRefusesAfterTheAttemptLimit(t *testing.T) {
 	}
 }
 
-// TestVerifyNeverPassesASuppressedRow holds the suppression at the check: a row
-// marked suppressed fails even with the exact code it was written for, and the
-// attempt is still counted.
+// TestVerifyNeverPassesASuppressedRow checks that Verify never passes a suppressed row.
 func TestVerifyNeverPassesASuppressedRow(t *testing.T) {
 	r := newRigSQLite(t)
 	id := event.NewID()
@@ -101,9 +92,7 @@ func TestVerifyNeverPassesASuppressedRow(t *testing.T) {
 	}
 }
 
-// TestVerifyRefusesAnUnknownExpiredOrConsumedChallenge holds the unified refusal:
-// a challenge that is not there, one past its time, and one already consumed are
-// all ErrInvalidCredentials and are told apart by nothing.
+// TestVerifyRefusesAnUnknownExpiredOrConsumedChallenge checks that Verify refuses an unknown, expired or consumed challenge.
 func TestVerifyRefusesAnUnknownExpiredOrConsumedChallenge(t *testing.T) {
 	r := newRigSQLite(t)
 
@@ -127,8 +116,7 @@ func TestVerifyRefusesAnUnknownExpiredOrConsumedChallenge(t *testing.T) {
 	}
 }
 
-// TestConcurrentSubmitsOfOneCorrectCodeHaveOneWinner holds the conditional
-// consume: two verifications of the same correct code cannot both pass.
+// TestConcurrentSubmitsOfOneCorrectCodeHaveOneWinner checks that concurrent submits of one correct code have one winner.
 func TestConcurrentSubmitsOfOneCorrectCodeHaveOneWinner(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -152,12 +140,7 @@ func TestConcurrentSubmitsOfOneCorrectCodeHaveOneWinner(t *testing.T) {
 	}
 }
 
-// TestASecondVerifyOfTheSameCodeFailsOnTheSpentRow holds the end-to-end
-// consequence of the one-winner gate: once a correct submit has consumed the
-// row, the same correct code no longer passes. What is being asserted is that
-// one correct code has one lifetime, not which gate refuses the second submit —
-// the increment gate does here, and the consume gate is pinned on its own at the
-// register layer.
+// TestASecondVerifyOfTheSameCodeFailsOnTheSpentRow checks that a second verify of the same code fails on the spent row.
 func TestASecondVerifyOfTheSameCodeFailsOnTheSpentRow(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()

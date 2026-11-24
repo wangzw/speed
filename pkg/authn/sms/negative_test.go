@@ -14,8 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// metricLabels returns every attribute key and value of every data point the
-// reader has, so a case can look for a value that must not be in any of them.
 func (r *rig) metricLabels(t *testing.T) []string {
 	t.Helper()
 	var rm metricdata.ResourceMetrics
@@ -39,9 +37,7 @@ func (r *rig) metricLabels(t *testing.T) []string {
 	return out
 }
 
-// TestTheCodeAndTheRootKeyNeverReachTheLog holds the redaction that is this
-// module's own: the code, the number and the root key appear in no line it
-// writes, whatever the outcome.
+// TestTheCodeAndTheRootKeyNeverReachTheLog checks that the code and the root key never reach the log.
 func TestTheCodeAndTheRootKeyNeverReachTheLog(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -54,8 +50,6 @@ func TestTheCodeAndTheRootKeyNeverReachTheLog(t *testing.T) {
 		t.Fatal("the queued message carries no code")
 	}
 
-	// A carrier refusal is the path that logs the carrier's own error text; the
-	// code must not be in the line even though the message carried it.
 	r.sender.setResult(sms.ErrRejected)
 	r.p.deliverOne(context.Background(), msg)
 
@@ -74,9 +68,7 @@ func TestTheCodeAndTheRootKeyNeverReachTheLog(t *testing.T) {
 	}
 }
 
-// TestNoMetricAttributeCarriesASecret holds the metric surface: the closed
-// attribute set is the only thing reported, and no attribute value is the code,
-// the number or the key.
+// TestNoMetricAttributeCarriesASecret checks that no metric attribute carries a secret.
 func TestNoMetricAttributeCarriesASecret(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -87,7 +79,6 @@ func TestNoMetricAttributeCarriesASecret(t *testing.T) {
 	code := msg.Params["code"]
 	r.sender.setResult(sms.ErrRejected)
 	r.p.deliverOne(context.Background(), msg)
-	// A relaxed setting records on the audit-failure counter and writes a Warn.
 	r.bus.deliver(context.Background(), event.Event{
 		Type:    settings.ChangedEventType,
 		Payload: settings.Change{Key: allowedPrefixesPath, New: `["+86"]`},
@@ -110,18 +101,12 @@ func TestNoMetricAttributeCarriesASecret(t *testing.T) {
 	}
 }
 
-// TestTheMetricNamesAndAttributesAreTheDesignsLiterals holds the reporting
-// contract at the wire level: the instruments carry the literal names the
-// design fixes, the counter's attribute key is the literal "outcome", and an
-// outcome value is the literal "sent". Asserting through the constants would
-// follow a rename instead of catching one, and dashboards read these literals.
+// TestTheMetricNamesAndAttributesAreTheDesignsLiterals checks that the metric names and attributes are the design's literals.
 func TestTheMetricNamesAndAttributesAreTheDesignsLiterals(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
-	// A delivered success records outcome=sent on the sends counter.
 	r.sender.setResult(nil)
 	r.p.deliverOne(context.Background(), sms.Resolved{To: phone})
-	// A failed audit write records on the audit-failures counter.
 	r.audit.err = errors.New("the audit is down")
 	r.deliverChange(settings.Change{Key: codeTTLPath, Old: "5m0s", New: "8m0s"})
 
@@ -156,8 +141,7 @@ func TestTheMetricNamesAndAttributesAreTheDesignsLiterals(t *testing.T) {
 	}
 }
 
-// TestTheRefusalsEchoNoSecret holds the error texts: the sentinels a caller sees
-// carry no number and no key.
+// TestTheRefusalsEchoNoSecret checks that refusals echo no secret.
 func TestTheRefusalsEchoNoSecret(t *testing.T) {
 	r := newRigSQLite(t)
 	r.store.set(allowedPrefixesPath, `["+1"]`)

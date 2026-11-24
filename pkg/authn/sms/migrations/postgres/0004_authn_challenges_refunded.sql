@@ -1,14 +1,2 @@
--- A verification message the carrier certainly did not take gives its send
--- budgets back. The worker marks the row refunded once the carrier answers with
--- a rejection, an unroutable message or a throttle. Every budget then stops
--- counting the row, and the deployment-wide one keeps its separate rule of
--- counting only unsuppressed rows.
---
--- The column is nullable and its null is meaningful: a row was refunded only
--- when it is set. Historical rows keep the null with no backfill, because
--- whether a send arrived was never recorded.
---
--- A refund also spends the row (the worker sets consumed_at in the same
--- statement), so a code that never reached the destination cannot pass the
--- check. An uncertain outcome is not refunded and stays counted.
+-- A row the carrier certainly did not take is refunded and spent, so every budget stops counting it. an uncertain outcome is not refunded.
 ALTER TABLE authn_challenges ADD COLUMN IF NOT EXISTS refunded_at TIMESTAMPTZ NULL;

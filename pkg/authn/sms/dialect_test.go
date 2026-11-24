@@ -11,9 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/sms/budget"
 )
 
-// TestSendVerifyAndVoidWorkOnEveryDialect holds the native SQL on both engines:
-// a challenge is written, the code passes once, a replay fails, and the row is
-// consumed.
+// TestSendVerifyAndVoidWorkOnEveryDialect checks that send, verify and void work on every dialect.
 func TestSendVerifyAndVoidWorkOnEveryDialect(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, database db.Database, _ string) {
 		r := newRig(t, database, newSender())
@@ -28,13 +26,7 @@ func TestSendVerifyAndVoidWorkOnEveryDialect(t *testing.T) {
 	})
 }
 
-// TestTheDeploymentBudgetCountsOnlyRealRowsOnEveryDialect holds the global
-// dimension's predicate on both engines: the ledger stores suppressed as an
-// integer on SQLite and a boolean on PostgreSQL, so the predicate has to select
-// the real row and leave the suppressed one out on each. A suppressed send is
-// written through Send, which is the path that writes both the challenge and the
-// ledger row, and the real sends that follow show the suppressed one spent
-// nothing of the purpose's budget.
+// TestTheDeploymentBudgetCountsOnlyRealRowsOnEveryDialect checks that the deployment budget counts only real rows on every dialect.
 func TestTheDeploymentBudgetCountsOnlyRealRowsOnEveryDialect(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, database db.Database, _ string) {
 		r := newRig(t, database, newSender())
@@ -63,10 +55,7 @@ func TestTheDeploymentBudgetCountsOnlyRealRowsOnEveryDialect(t *testing.T) {
 	})
 }
 
-// TestTheWindowCountingHoldsInAnotherLocalZone holds the design's timezone
-// hypothesis on SQLite: with the process's local zone set elsewhere, the module
-// still writes and binds UTC, so a row inside the hour is counted and one outside
-// it is not.
+// TestTheWindowCountingHoldsInAnotherLocalZone checks that window counting holds in another local zone.
 func TestTheWindowCountingHoldsInAnotherLocalZone(t *testing.T) {
 	newYork, err := time.LoadLocation("America/New_York")
 	if err != nil {
@@ -97,16 +86,13 @@ func TestTheWindowCountingHoldsInAnotherLocalZone(t *testing.T) {
 	if n := window(); n != 1 {
 		t.Errorf("a send made in another local zone counts as %d rows within the hour, want 1", n)
 	}
-	// A row older than the hour is outside the window.
 	r.clock.advance(2 * time.Hour)
 	if n := window(); n != 0 {
 		t.Errorf("a row two hours old counts as %d rows within the hour, want 0", n)
 	}
 }
 
-// TestTheBudgetComparesAcrossZones holds that a time read in another zone is
-// still bound and compared as UTC: with the clock in America/New_York, a resend
-// within the interval is throttled and one after it goes through.
+// TestTheBudgetComparesAcrossZones checks that the budget compares across zones.
 func TestTheBudgetComparesAcrossZones(t *testing.T) {
 	ny, err := time.LoadLocation("America/New_York")
 	if err != nil {

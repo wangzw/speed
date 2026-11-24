@@ -14,14 +14,9 @@ import (
 	"github.com/vislake/speed/pkg/sms/budget"
 )
 
-// fakeHuman is the human-verification gate a case scripts. It records every
-// proof it was asked about and spends an accepted token, so a second
-// presentation of the same token is refused the way a real single-use proof is.
 type fakeHuman struct {
-	mu       sync.Mutex
-	required bool
-	// byScope, when set, answers Required per scope instead of the single
-	// required flag, so a case can gate one surface and leave the other off.
+	mu             sync.Mutex
+	required       bool
 	byScope        map[authn.HumanScope]bool
 	provider       string
 	siteKey        string
@@ -88,8 +83,6 @@ func (h *fakeHuman) last() (authn.HumanProof, bool) {
 	return h.calls[len(h.calls)-1], true
 }
 
-// askedScopes is every scope the gate was asked about, through Required and
-// Verify alike, in the order the send asked.
 func (h *fakeHuman) askedScopes() []authn.HumanScope {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -99,9 +92,6 @@ func (h *fakeHuman) askedScopes() []authn.HumanScope {
 	return scopes
 }
 
-// assertOnlyScope holds that every question the gate was asked named want: a
-// send that asks the wrong surface is asking a different gate, and a send that
-// asks both is held to a gate it does not send on.
 func assertOnlyScope(t *testing.T, human *fakeHuman, want authn.HumanScope) {
 	t.Helper()
 	scopes := human.askedScopes()
@@ -115,12 +105,7 @@ func assertOnlyScope(t *testing.T, human *fakeHuman, want authn.HumanScope) {
 	}
 }
 
-// TestSendRefusesAMissingProofBeforeAnyBudget holds the gate's order: a send
-// the deployment requires a proof for, presenting none, is refused with the
-// gate's own error before the prefix table, the challenge row and every budget.
-// The number's row count is what the budgets read, so a zero row count is a
-// budget nothing spent. The shared ledger holds no attempt either, so the
-// refusal spends neither an attempt budget nor a send budget.
+// TestSendRefusesAMissingProofBeforeAnyBudget checks that Send refuses a missing proof before any budget is spent.
 func TestSendRefusesAMissingProofBeforeAnyBudget(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -140,8 +125,6 @@ func TestSendRefusesAMissingProofBeforeAnyBudget(t *testing.T) {
 	if n := r.sender.count(); n != 0 {
 		t.Errorf("the carrier was handed %d messages, want none", n)
 	}
-	// IncludeRefunded and IncludeSuppressed together read every row the ledger
-	// could hold, so a zero here is the absence of any attempt at all.
 	all := budget.Query{
 		Since:             r.clock.read().Add(-time.Hour),
 		IncludeRefunded:   true,
@@ -152,10 +135,7 @@ func TestSendRefusesAMissingProofBeforeAnyBudget(t *testing.T) {
 	}
 }
 
-// TestSendConsumesTheProofOnceAndSendsOnce holds the accepted side and the
-// single-use property: a valid proof passes, the send writes its row and reaches
-// the carrier, and the same proof presented again is refused before a second row
-// is written. The gate's RemoteIP is the send's source.
+// TestSendConsumesTheProofOnceAndSendsOnce checks that Send consumes the proof once and sends once.
 func TestSendConsumesTheProofOnceAndSendsOnce(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -196,10 +176,7 @@ func TestSendConsumesTheProofOnceAndSendsOnce(t *testing.T) {
 	}
 }
 
-// TestSendWithAnOffGateSendsWithoutAProof holds the off mechanism: a gate that
-// requires nothing sends without asking for a proof. The descriptor makes the
-// gate a required dependency, so this is the shape of a deployment that runs it
-// off, not an absence of one.
+// TestSendWithAnOffGateSendsWithoutAProof checks that an off gate sends without a proof.
 func TestSendWithAnOffGateSendsWithoutAProof(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -213,9 +190,7 @@ func TestSendWithAnOffGateSendsWithoutAProof(t *testing.T) {
 	}
 }
 
-// TestSendRefusesAnOverLongProofBeforeTheProviderIsAsked holds the field's own
-// bound: a proof over 8 KiB is a bad request before the provider is asked, and
-// nothing is written or sent.
+// TestSendRefusesAnOverLongProofBeforeTheProviderIsAsked checks that Send refuses an over-long proof before the provider is asked.
 func TestSendRefusesAnOverLongProofBeforeTheProviderIsAsked(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -239,9 +214,7 @@ func TestSendRefusesAnOverLongProofBeforeTheProviderIsAsked(t *testing.T) {
 	}
 }
 
-// TestSendCarriesAGateOutageAsTheProviderSaid holds the third failure: a
-// provider or token store that cannot answer is ErrUnavailable, and nothing is
-// written or sent.
+// TestSendCarriesAGateOutageAsTheProviderSaid checks that Send carries a gate outage as the provider classified it.
 func TestSendCarriesAGateOutageAsTheProviderSaid(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -258,11 +231,7 @@ func TestSendCarriesAGateOutageAsTheProviderSaid(t *testing.T) {
 	}
 }
 
-// TestSendAsksThePhoneScopeAndOnlyThePhoneScope holds the surface a send is
-// gated on. Every SMS purpose reaches a phone number, so each is held to the
-// phone surface: a deployment that gates only the phone surface refuses a
-// proofless send, and one that gates only the other surface lets it through
-// without ever asking the gate about that other surface.
+// TestSendAsksThePhoneScopeAndOnlyThePhoneScope checks that Send asks the phone scope and only that scope.
 func TestSendAsksThePhoneScopeAndOnlyThePhoneScope(t *testing.T) {
 	purposes := []string{
 		authn.SMSPurposeLogin,
@@ -314,8 +283,6 @@ func TestSendAsksThePhoneScopeAndOnlyThePhoneScope(t *testing.T) {
 	}
 }
 
-// sendFor is a delivering send of one purpose, with the account the purposes
-// that count against one require.
 func sendFor(purpose string) authn.SendCode {
 	in := authn.SendCode{Purpose: purpose, Phone: phone, Deliver: true}
 	if purpose == authn.SMSPurposeMFA || purpose == authn.SMSPurposeEnroll {

@@ -11,9 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// TestTheHooksForEnabledDisabledAndRevokedSecretsAreNoOps holds the hooks that
-// touch nothing: an enabled or disabled account keeps its challenges, and a
-// revoked service secret has none.
+// TestTheHooksForEnabledDisabledAndRevokedSecretsAreNoOps checks that the enabled, disabled and revoked-secret hooks are no-ops.
 func TestTheHooksForEnabledDisabledAndRevokedSecretsAreNoOps(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -34,9 +32,7 @@ func TestTheHooksForEnabledDisabledAndRevokedSecretsAreNoOps(t *testing.T) {
 	}
 }
 
-// TestAccountDeletedRemovesTheAccountsMFAAndEnrollRowsOnly holds the deletion: the
-// account's mfa and enroll rows go, a login row and another account's row stay,
-// and a repeated call removes nothing and is not an error.
+// TestAccountDeletedRemovesTheAccountsMFAAndEnrollRowsOnly checks that AccountDeleted removes only the account's mfa and enroll rows.
 func TestAccountDeletedRemovesTheAccountsMFAAndEnrollRowsOnly(t *testing.T) {
 	r := newRigSQLite(t)
 	account := ptr(string(acct))
@@ -61,18 +57,14 @@ func TestAccountDeletedRemovesTheAccountsMFAAndEnrollRowsOnly(t *testing.T) {
 	if _, ok := r.column("other", "id"); !ok {
 		t.Error("another account's row was removed")
 	}
-	// Idempotent: a second call removes nothing and is not an error.
 	if err := r.p.AccountDeleted(context.Background(), acct); err != nil {
 		t.Fatalf("the second AccountDeleted: %v", err)
 	}
 }
 
-// TestTheDeletionEventCompensatesAndIsDeduplicatedByItsID holds the compensation:
-// the subscription cleans the account again, and a redelivery of the same event
-// identifier is dropped so its cleanup does not run twice.
+// TestTheDeletionEventCompensatesAndIsDeduplicatedByItsID checks that the deletion event compensates and is deduplicated by its identifier.
 func TestTheDeletionEventCompensatesAndIsDeduplicatedByItsID(t *testing.T) {
 	r := newRigSQLite(t)
-	// The two subscriptions are registered in Init.
 	types := r.bus.subscribedTypes()
 	if !contains(types, authn.EventAccountDeleted) || !contains(types, settings.ChangedEventType) {
 		t.Fatalf("the module subscribed to %v, want the deletion and the settings change", types)
@@ -88,8 +80,6 @@ func TestTheDeletionEventCompensatesAndIsDeduplicatedByItsID(t *testing.T) {
 		t.Error("the deletion event did not clean the account's rows")
 	}
 
-	// A redelivery of the same identifier is dropped: a row put back after the
-	// first delivery survives the second.
 	r.insert("mfa2", authn.SMSPurposeMFA, "m1", account, false, "mac", 0, 5, base, base.Add(time.Minute), nil)
 	if err := r.bus.deliver(context.Background(), evt); err != nil {
 		t.Fatalf("redelivering the event: %v", err)
@@ -98,7 +88,6 @@ func TestTheDeletionEventCompensatesAndIsDeduplicatedByItsID(t *testing.T) {
 		t.Error("a redelivery of one event identifier ran the cleanup again")
 	}
 
-	// A new identifier cleans again.
 	fresh := event.Event{ID: "evt-2", Type: authn.EventAccountDeleted, Payload: authn.AccountDeleted{AccountID: string(acct)}}
 	if err := r.bus.deliver(context.Background(), fresh); err != nil {
 		t.Fatalf("delivering a fresh event: %v", err)
@@ -108,9 +97,7 @@ func TestTheDeletionEventCompensatesAndIsDeduplicatedByItsID(t *testing.T) {
 	}
 }
 
-// TestAccountDeletedRefusesAnEmptyIdentifier holds the guard: an empty account
-// identifier is malformed and is refused with the sentinel, not run as a delete
-// scoped to the empty string, which would remove rows carrying an empty account.
+// TestAccountDeletedRefusesAnEmptyIdentifier checks that AccountDeleted refuses an empty identifier.
 func TestAccountDeletedRefusesAnEmptyIdentifier(t *testing.T) {
 	r := newRigSQLite(t)
 	if err := r.p.AccountDeleted(context.Background(), ""); !errors.Is(err, authn.ErrInvalidAccountID) {

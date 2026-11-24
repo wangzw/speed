@@ -22,9 +22,6 @@ import (
 	"github.com/vislake/speed/pkg/sms/budget"
 )
 
-// The stand-in modules an assembly drives: the capabilities another module
-// delivers exclusively in a real command, each supplied to a module of its own
-// here because the modules that deliver them are not ones these cases bring in.
 const (
 	dbModule       = "stand-in.db"
 	registryModule = "stand-in.registry"
@@ -32,8 +29,6 @@ const (
 	humanModule    = "stand-in.human"
 )
 
-// standIn is a module that declares the tokens names, exclusively when told to,
-// and delivers instance from its New.
 func standIn(name string, instance any, exclusive bool, tokens ...core.Token) core.Module {
 	provides := make([]core.Provision, len(tokens))
 	for i, tk := range tokens {
@@ -46,39 +41,18 @@ func standIn(name string, instance any, exclusive bool, tokens ...core.Token) co
 	}
 }
 
-// assembly is one drive of a real registry through this module's descriptor. The
-// database, the sending seam and the human-verification gate are supplied as
-// stand-in modules of their own; what the case varies is whether each is present
-// and whether the table and the root key are there.
 type assembly struct {
-	// sender, when non-nil, is supplied to a stand-in for the carrier module.
-	sender sms.Sender
-	// registry, when non-nil, is supplied to a stand-in for the template registry
-	// module.
-	registry sms.Registry
-	// secondSender adds a second carrier stand-in, for the exclusive-conflict
-	// case.
-	secondSender bool
-	// omitHuman leaves the human-verification gate out, for the case that holds a
-	// command naming this module without one to a resolution refusal.
-	omitHuman bool
-	// store is supplied to a stand-in for the settings module.
-	store settings.Store
-	// keyless builds the database without a root key.
-	keyless bool
-	// migrate builds the module's table before the drive.
-	migrate bool
-	// body is the primary configuration source the reader is loaded from; empty
-	// is the empty document, whose defaults are what the module runs on.
-	body string
-	// readerModules are modules whose configuration schemas the reader is also
-	// built with, so a case can declare a namespace this module reads but does not
-	// own — the i18n capability's default-locale item, for one.
+	sender        sms.Sender
+	registry      sms.Registry
+	secondSender  bool
+	omitHuman     bool
+	store         settings.Store
+	keyless       bool
+	migrate       bool
+	body          string
 	readerModules []core.Module
 }
 
-// drive advances the assembly to Start, runs action there, and returns what the
-// drive returned once every Stop and Close has run.
 func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core.Registry) error) error {
 	t.Helper()
 
@@ -94,8 +68,6 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 
 	body := a.body
 	if body == "" {
-		// A named carrier is a deployment that asks for SMS; without one an empty
-		// document is the all-empty configuration the module stands down on.
 		body = `{"sms":{"carrier":"log"}}`
 	}
 	modules := append([]core.Module{Module(), selectionModule()}, a.readerModules...)
@@ -112,10 +84,6 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 	reg.Register(standIn(dbModule, database, true, (*db.Database)(nil)))
 	names = append(names, dbModule)
 
-	// The shared ledger is a required, non-exclusive provider: one process has
-	// one ledger and both sending channels read it. The real descriptor is
-	// registered, so the case proves the requirement resolves against the
-	// module a deployment uses rather than a stand-in.
 	reg.Register(budget.Module())
 	names = append(names, budget.ModuleName)
 
@@ -136,9 +104,6 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 		names = append(names, "stand-in.settings")
 	}
 	if !a.omitHuman {
-		// The gate is a required dependency. An off gate is the composition of the
-		// humanverify module with both surfaces at mode off, which is the
-		// assembly these cases run: none of them asks about a proof.
 		reg.Register(standIn(humanModule, &fakeHuman{required: false, provider: "off"}, true, (*authn.HumanVerifier)(nil)))
 		names = append(names, humanModule)
 	}
@@ -150,12 +115,7 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 	})
 }
 
-// TestTheDescriptorNamesWhatItDeliversAndRequires holds the descriptor's shape:
-// the SMS capability is claimed exclusively, the account lifecycle hook travels
-// with it without being claimed, and the database, the template registry, the
-// sending seam, the shared ledger and the human-verification gate are required
-// — each delivered exclusively by another module except the ledger, so the
-// closure does not pull them in.
+// TestTheDescriptorNamesWhatItDeliversAndRequires checks that the descriptor claims SMSCodes exclusively and requires the ledger, registry, sender and gate.
 func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "authn.sms" {
@@ -200,15 +160,11 @@ func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 	}
 }
 
-// selectionModule declares the carrier selection item, which in a real binary
-// the log carrier declares. A case that configures a carrier needs it in the
-// manifest or the written value would have no declared path.
 func selectionModule() core.Module {
 	return core.Module{Name: "test.selection", Resources: []any{sms.SelectionSchema()}}
 }
 
-// TestPrepareStatesEnabledAndNothingElse holds the stance, given the reader that
-// sizes the pool and a selection that asks for a carrier.
+// TestPrepareStatesEnabledAndNothingElse checks that Prepare states the enabled stance and nothing else.
 func TestPrepareStatesEnabledAndNothingElse(t *testing.T) {
 	reader := authntest.ConfigReaderAll(t, `{"sms":{"carrier":"log"}}`, Module(), selectionModule())
 	reg := core.New()
@@ -224,10 +180,7 @@ func TestPrepareStatesEnabledAndNothingElse(t *testing.T) {
 	}
 }
 
-// TestPrepareStandsDownWhenNeitherCarrierNorTemplateIsConfigured holds the
-// all-empty case: no carrier selection and no template is a deployment that did
-// not configure SMS, so the module stands itself down with the reason instead of
-// failing construction on a template it cannot find.
+// TestPrepareStandsDownWhenNeitherCarrierNorTemplateIsConfigured checks that Prepare stands down when neither a carrier nor a template is configured.
 func TestPrepareStandsDownWhenNeitherCarrierNorTemplateIsConfigured(t *testing.T) {
 	reader := authntest.ConfigReaderAll(t, "{}", Module())
 	reg := core.New()
@@ -243,9 +196,7 @@ func TestPrepareStandsDownWhenNeitherCarrierNorTemplateIsConfigured(t *testing.T
 	}
 }
 
-// TestPrepareRefusesAConfigurationItCannotRunOn holds that Prepare validates the
-// pool sizing: a command whose configuration names no worker fails before
-// anything runs.
+// TestPrepareRefusesAConfigurationItCannotRunOn checks that Prepare refuses a configuration the module cannot run on.
 func TestPrepareRefusesAConfigurationItCannotRunOn(t *testing.T) {
 	reader := authntest.ConfigReaderAll(t, `{"authn":{"sms":{"workers":0}}}`, Module())
 	reg := core.New()
@@ -269,9 +220,7 @@ func TestImportingThePackageRegistersTheModuleWithTheProcess(t *testing.T) {
 	}
 }
 
-// TestARealRegistryDeliversSMSCodesAndTheHook holds the descriptor end to end: a
-// real registry built the module, its Init took up the optional capabilities, and
-// the one instance answers for both the SMS capability and the lifecycle hook.
+// TestARealRegistryDeliversSMSCodesAndTheHook checks that a real registry delivers SMSCodes and the account lifecycle hook.
 func TestARealRegistryDeliversSMSCodesAndTheHook(t *testing.T) {
 	var codes authn.SMSCodes
 	var hook authn.AccountLifecycle
@@ -299,8 +248,7 @@ func TestARealRegistryDeliversSMSCodesAndTheHook(t *testing.T) {
 	}
 }
 
-// TestTheDriveFailsWithoutASender holds the required exclusive dependency: a
-// command that names this module and no carrier fails in resolution.
+// TestTheDriveFailsWithoutASender checks that the drive fails without a sender.
 func TestTheDriveFailsWithoutASender(t *testing.T) {
 	err := assembly{registry: newRegistry(), migrate: true}.drive(t, func(context.Context, *core.Registry) error {
 		t.Error("the drive reached its action with no sending seam")
@@ -314,10 +262,7 @@ func TestTheDriveFailsWithoutASender(t *testing.T) {
 	}
 }
 
-// TestTheDriveFailsWithoutARegistry holds the second required exclusive
-// dependency: a command that names this module and no template registry fails in
-// resolution, because the module has no declaration to check its templates
-// against and no registry to resolve a message through.
+// TestTheDriveFailsWithoutARegistry checks that the drive fails without a registry.
 func TestTheDriveFailsWithoutARegistry(t *testing.T) {
 	err := assembly{sender: newSender(), migrate: true}.drive(t, func(context.Context, *core.Registry) error {
 		t.Error("the drive reached its action with no template registry")
@@ -331,10 +276,7 @@ func TestTheDriveFailsWithoutARegistry(t *testing.T) {
 	}
 }
 
-// TestTheDriveFailsWithoutAHumanVerifier holds the required gate: a command that
-// names this module and no human-verification gate fails in resolution. Before
-// the requirement the drive succeeded, so a deployment whose configuration named
-// a mode ran its sends ungated.
+// TestTheDriveFailsWithoutAHumanVerifier checks that the drive fails without a human-verification gate.
 func TestTheDriveFailsWithoutAHumanVerifier(t *testing.T) {
 	err := assembly{
 		sender:    newSender(),
@@ -356,8 +298,7 @@ func TestTheDriveFailsWithoutAHumanVerifier(t *testing.T) {
 	}
 }
 
-// TestTwoSendersFailInResolution holds the exclusivity: two carriers at once are a
-// declaration the resolution refuses, so a host picks one.
+// TestTwoSendersFailInResolution checks that two senders fail in resolution.
 func TestTwoSendersFailInResolution(t *testing.T) {
 	err := assembly{
 		sender:       newSender(),
@@ -373,8 +314,7 @@ func TestTwoSendersFailInResolution(t *testing.T) {
 	}
 }
 
-// TestStartRefusesWhenTheTableIsMissingThroughTheDrive holds ErrNotMigrated from
-// Start, naming the migration command.
+// TestStartRefusesWhenTheTableIsMissingThroughTheDrive checks that Start refuses when the table is missing.
 func TestStartRefusesWhenTheTableIsMissingThroughTheDrive(t *testing.T) {
 	err := assembly{sender: newSender(), registry: newRegistry()}.drive(t, func(context.Context, *core.Registry) error {
 		t.Error("the drive reached its action with the table missing")
@@ -385,8 +325,7 @@ func TestStartRefusesWhenTheTableIsMissingThroughTheDrive(t *testing.T) {
 	}
 }
 
-// TestStartRefusesWithoutARootKeyThroughTheDrive holds ErrNoEncryptionKey from
-// Start.
+// TestStartRefusesWithoutARootKeyThroughTheDrive checks that Start refuses without a root key.
 func TestStartRefusesWithoutARootKeyThroughTheDrive(t *testing.T) {
 	err := assembly{sender: newSender(), registry: newRegistry(), keyless: true, migrate: true}.drive(t, func(context.Context, *core.Registry) error {
 		t.Error("the drive reached its action with no root key")
@@ -397,21 +336,11 @@ func TestStartRefusesWithoutARootKeyThroughTheDrive(t *testing.T) {
 	}
 }
 
-// TestTheDriveRefusesARegistryWhoseDeclarationDoesNotMatchWhatTheModuleNeeds
-// holds the consumer-side check: this module sends under three templates, each
-// with two languages and exactly the two parameters it builds, and a registry
-// whose declaration does not match — a missing template, a missing language, a
-// missing parameter, or a parameter the module never sends — stops the startup
-// at New with ErrInvalidConfig naming the combination it is about, ahead of any
-// code. A mismatch is named at startup rather than at the first send that needs
-// it.
+// TestTheDriveRefusesARegistryWhoseDeclarationDoesNotMatchWhatTheModuleNeeds checks that the drive refuses a registry whose declaration does not match what the module sends.
 func TestTheDriveRefusesARegistryWhoseDeclarationDoesNotMatchWhatTheModuleNeeds(t *testing.T) {
 	cases := []struct {
-		name string
-		drop func(declared []sms.Template) []sms.Template
-		// mentions is the combination the failure has to name: the missing
-		// template, the missing language, the missing parameter or the surplus
-		// parameter.
+		name     string
+		drop     func(declared []sms.Template) []sms.Template
 		mentions string
 	}{
 		{
@@ -420,9 +349,6 @@ func TestTheDriveRefusesARegistryWhoseDeclarationDoesNotMatchWhatTheModuleNeeds(
 			mentions: templateEnroll,
 		},
 		{
-			// Truncating a template's languages to the first leaves one that misses
-			// the configured default (the set is ordered default-last), which is what
-			// checkSender refuses.
 			name: "a template missing the default language",
 			drop: func(d []sms.Template) []sms.Template {
 				d[0].Locales = d[0].Locales[:1]
@@ -439,11 +365,6 @@ func TestTheDriveRefusesARegistryWhoseDeclarationDoesNotMatchWhatTheModuleNeeds(
 			mentions: "ttl_minutes",
 		},
 		{
-			// A template substituting a parameter this module never sends cannot be
-			// satisfied: Resolve requires every declared parameter and the module
-			// carries only its own two. A subset check passes such a template and
-			// then rejects every send at runtime, where the failure is a metric and
-			// a warn line and never reaches the operator.
 			name: "a template with a parameter the module never sends",
 			drop: func(d []sms.Template) []sms.Template {
 				d[0].Params = append(append([]string(nil), d[0].Params...), "sign")
@@ -470,18 +391,10 @@ func TestTheDriveRefusesARegistryWhoseDeclarationDoesNotMatchWhatTheModuleNeeds(
 	}
 }
 
-// i18nStubDefaults is the carrier struct the stub schema below mounts, with the
-// one item's declared default.
 type i18nStubDefaults struct {
 	DefaultLocale string `config:"default-locale"`
 }
 
-// i18nStubModule declares the i18n capability's configuration namespace with
-// just the shared default-locale item, so a case drives the module's read of the
-// item the i18n capability also reads. It is a stand-in the test file builds
-// rather than the catalog module itself, which a subpackage of pkg/authn may not
-// import; the namespace name and the item name are the root package's own, so
-// the read goes through the same names the real catalog declares either way.
 func i18nStubModule() core.Module {
 	return core.Module{
 		Name: "stand-in.i18n",
@@ -495,17 +408,9 @@ func i18nStubModule() core.Module {
 	}
 }
 
-// TestStartupRefusesARegistryMissingTheConfiguredDefaultLanguage holds the new
-// startup check: the default language is configuration, not a constant, so a
-// registry whose templates do not cover it cannot send a message the module
-// falls back to, and the drive stops with ErrInvalidConfig naming the missing
-// pair.
-//
-// On the pre-change code this drive succeeds: it read no configured default and
-// required only the two hardcoded languages, which this registry declares, so
-// the action ran rather than failing at startup.
+// TestStartupRefusesARegistryMissingTheConfiguredDefaultLanguage checks that the startup refuses a registry missing the configured default language.
 func TestStartupRefusesARegistryMissingTheConfiguredDefaultLanguage(t *testing.T) {
-	registry := newRegistry() // declares zh-CN and en-US only
+	registry := newRegistry()
 	err := assembly{
 		sender:        newSender(),
 		registry:      registry,
@@ -525,14 +430,7 @@ func TestStartupRefusesARegistryMissingTheConfiguredDefaultLanguage(t *testing.T
 	}
 }
 
-// TestASendGoesOutInALanguageTheRegistryDeclaresBesidesChineseAndEnglish holds
-// that the set of languages is the registry's, not a hardcoded pair: a registry
-// declaring en-US and ja-JP satisfies the startup check, and a ja-JP request
-// goes out in ja-JP.
-//
-// On the pre-change code a "ja-JP" send is refused as a caller defect before it
-// reaches the carrier, and the declared set would not satisfy the hardcoded
-// check in the first place.
+// TestASendGoesOutInALanguageTheRegistryDeclaresBesidesChineseAndEnglish checks that a send goes out in another language the registry declares.
 func TestASendGoesOutInALanguageTheRegistryDeclaresBesidesChineseAndEnglish(t *testing.T) {
 	registry := newRegistry()
 	registry.setDeclared(declaredTemplatesFor([]string{"en-US", "ja-JP"}))
@@ -552,13 +450,7 @@ func TestASendGoesOutInALanguageTheRegistryDeclaresBesidesChineseAndEnglish(t *t
 	}
 }
 
-// TestASendWithNoNamedLocaleGoesOutInTheConfiguredDefault holds the end-to-end
-// chain: the shared i18n.default-locale item is read as the run's default, and a
-// send whose caller names no language goes out in it.
-//
-// On the pre-change code the default is the en-US constant, so this send goes
-// out in en-US and the assertion fails; the pre-change check also refuses a
-// declaration of ja-JP.
+// TestASendWithNoNamedLocaleGoesOutInTheConfiguredDefault checks that a send with no named locale uses the configured default.
 func TestASendWithNoNamedLocaleGoesOutInTheConfiguredDefault(t *testing.T) {
 	sender := newSender()
 	registry := newRegistry()

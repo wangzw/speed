@@ -11,8 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// liftBudgets sets every budget that is not the one under test high enough that
-// it cannot be the refusal.
 func (r *rig) liftBudgets() {
 	r.store.set(perPhoneHourlyPath, 1000)
 	r.store.set(perPhoneDailyPath, 1000)
@@ -33,16 +31,13 @@ func (r *rig) liftBudgets() {
 	r.store.set(ceilingHourlyPath, 1000000)
 }
 
-// loginTo sends a delivered login code for number.
 func (r *rig) loginTo(number string) (string, error) {
 	return r.p.Send(context.Background(), authn.SendCode{
 		Purpose: authn.SMSPurposeLogin, Phone: number, Deliver: true,
 	})
 }
 
-// TestTheResendIntervalThrottlesWithARetryAfter holds the first budget: a second
-// send to the same number within the resend interval is ErrThrottled carrying the
-// time left, and the same send after the interval goes through.
+// TestTheResendIntervalThrottlesWithARetryAfter checks that the resend interval throttles with a Retry-After.
 func TestTheResendIntervalThrottlesWithARetryAfter(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -73,9 +68,7 @@ func TestTheResendIntervalThrottlesWithARetryAfter(t *testing.T) {
 	}
 }
 
-// TestThePerPhoneHourlyBudgetThrottles holds the number dimension: the number's
-// sends within an hour reach the limit and the next is refused, whatever its
-// purpose.
+// TestThePerPhoneHourlyBudgetThrottles checks that the per-phone hourly budget throttles.
 func TestThePerPhoneHourlyBudgetThrottles(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -95,8 +88,7 @@ func TestThePerPhoneHourlyBudgetThrottles(t *testing.T) {
 	}
 }
 
-// TestThePerPhoneDailyBudgetThrottles holds the daily dimension on its own: with
-// the hourly budget lifted, the daily count is what refuses.
+// TestThePerPhoneDailyBudgetThrottles checks that the per-phone daily budget throttles.
 func TestThePerPhoneDailyBudgetThrottles(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -116,10 +108,7 @@ func TestThePerPhoneDailyBudgetThrottles(t *testing.T) {
 	}
 }
 
-// TestTheGlobalBudgetIsPerPurposeAndThrottles holds the third dimension: the
-// global budget of the login purpose spent refuses further login sends with a
-// throttled error whose Retry-After is close to the window, while the mfa
-// purpose, with its own budget, still sends.
+// TestTheGlobalBudgetIsPerPurposeAndThrottles checks that the global budget is per purpose and throttles.
 func TestTheGlobalBudgetIsPerPurposeAndThrottles(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -139,11 +128,9 @@ func TestTheGlobalBudgetIsPerPurposeAndThrottles(t *testing.T) {
 	if !errors.As(err, &throttled) {
 		t.Fatalf("the throttled error is %T, want *ThrottledError", err)
 	}
-	// The oldest real row is 31s into the hour, so the window frees in 59m29s.
 	if want := 59*time.Minute + 29*time.Second; throttled.RetryAfter != want {
 		t.Errorf("RetryAfter = %v, want %v", throttled.RetryAfter, want)
 	}
-	// The mfa purpose has its own budget and is not touched by the login one.
 	if _, err := r.p.Send(context.Background(), authn.SendCode{
 		Purpose: authn.SMSPurposeMFA, Phone: "+8613800138001", Account: acct, Deliver: true,
 	}); err != nil {
@@ -151,12 +138,7 @@ func TestTheGlobalBudgetIsPerPurposeAndThrottles(t *testing.T) {
 	}
 }
 
-// TestTheGlobalBudgetCountsOnlyRealSends holds the asymmetry between the global
-// dimension and the rest: a suppressed row spends the number, account and source
-// budgets but not the deployment-wide one, so anonymous requests for numbers
-// nobody registered cannot exhaust the deployment. The number, account and
-// source dimensions still count suppressed rows, which is what keeps the point
-// of refusal from telling a registered number from an unregistered one.
+// TestTheGlobalBudgetCountsOnlyRealSends checks that the global budget counts only real sends.
 func TestTheGlobalBudgetCountsOnlyRealSends(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -173,8 +155,6 @@ func TestTheGlobalBudgetCountsOnlyRealSends(t *testing.T) {
 		r.clock.advance(31 * time.Second)
 	}
 
-	// The first real send is the only row the global budget counts, so it is
-	// admitted and fills the limit.
 	if _, err := r.loginTo("+8613800138012"); err != nil {
 		t.Fatalf("the first real send was refused: %v", err)
 	}
@@ -185,16 +165,7 @@ func TestTheGlobalBudgetCountsOnlyRealSends(t *testing.T) {
 	}
 }
 
-// TestASuppressedSendStillSpendsThePhoneBudget holds the other half of the
-// asymmetry: a suppressed row still counts against the number budget, so a
-// caller meets the same refusal at the same count whether the number is
-// registered or not.
-//
-// It is a pairing guard, not a reproduction: the number dimension counted
-// suppressed rows before the global budget began counting only real sends, so
-// this case passed then too. It guards against over-correcting that change. The
-// reproductions are TestTheGlobalBudgetIsPerPurposeAndThrottles and
-// TestTheGlobalBudgetCountsOnlyRealSends.
+// TestASuppressedSendStillSpendsThePhoneBudget checks that a suppressed send still spends the phone budget.
 func TestASuppressedSendStillSpendsThePhoneBudget(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -214,9 +185,7 @@ func TestASuppressedSendStillSpendsThePhoneBudget(t *testing.T) {
 	}
 }
 
-// TestTheAccountBudgetCountsOnlyMFAAndEnroll holds the account dimension: two
-// numbers of one account reach the account limit for the mfa purpose, while a
-// login send of the same account is not counted by it.
+// TestTheAccountBudgetCountsOnlyMFAAndEnroll checks that the account budget counts only mfa and enroll.
 func TestTheAccountBudgetCountsOnlyMFAAndEnroll(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -229,14 +198,12 @@ func TestTheAccountBudgetCountsOnlyMFAAndEnroll(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("the first mfa send: %v", err)
 	}
-	// A different number of the same account is still the same account.
 	_, err := r.p.Send(context.Background(), authn.SendCode{
 		Purpose: authn.SMSPurposeMFA, Phone: "+8613800138002", Account: acct, Deliver: true,
 	})
 	if !errors.Is(err, authn.ErrThrottled) {
 		t.Fatalf("the second mfa send returned %v, want ErrThrottled (the account budget)", err)
 	}
-	// A login send has no account and is not counted by the account budget.
 	if _, err := r.loginTo("+8613800138003"); err != nil {
 		t.Fatalf("a login send was refused by the account budget: %v", err)
 	}

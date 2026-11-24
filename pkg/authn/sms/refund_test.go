@@ -11,10 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// deliverQueued hands the message the last send queued to the worker's delivery
-// path, with the carrier answering result. The pool is not started, so the case
-// decides when the worker runs and the challenge row is settled when this
-// returns.
 func (r *rig) deliverQueued(t *testing.T, result error) {
 	t.Helper()
 	var msg sms.Resolved
@@ -27,9 +23,6 @@ func (r *rig) deliverQueued(t *testing.T, result error) {
 	r.p.deliverOne(context.Background(), msg)
 }
 
-// refundedAt reports the refund marker of one row, and fails the case when the
-// row is not there. A nil answer is a row that was not refunded, on both
-// engines.
 func (r *rig) refundedAt(t *testing.T, id string) any {
 	t.Helper()
 	v, ok := r.column(id, "refunded_at")
@@ -39,12 +32,7 @@ func (r *rig) refundedAt(t *testing.T, id string) any {
 	return v
 }
 
-// TestACertainCarrierFailureRefundsTheSend holds the refund: a send the carrier
-// certainly did not put into its pipeline — a rejection, a throttle or an
-// unroutable destination — gives its budgets back, so the next send inside the
-// same window is admitted where the spent row would have refused it. The code
-// is invalidated in the same statement, so a code that was never delivered
-// cannot pass Verify.
+// TestACertainCarrierFailureRefundsTheSend checks that a certain carrier failure refunds the send.
 func TestACertainCarrierFailureRefundsTheSend(t *testing.T) {
 	for _, result := range []error{sms.ErrRejected, sms.ErrUnroutable, sms.ErrThrottled} {
 		t.Run(result.Error(), func(t *testing.T) {
@@ -86,13 +74,7 @@ func TestACertainCarrierFailureRefundsTheSend(t *testing.T) {
 	}
 }
 
-// TestAnUncertainCarrierFailureStaysCounted holds the other side: an outcome
-// that leaves it open whether the message went out is read as sent, so its row
-// keeps spending the budget and the next send in the window is refused. An error
-// outside the closed set is read the same way, so the refund never widens past
-// the certain failures. This is a guard rather than a reproduction: it passed
-// before the refund existed, and it is what keeps the refund from silently
-// widening.
+// TestAnUncertainCarrierFailureStaysCounted checks that an uncertain carrier failure stays counted.
 func TestAnUncertainCarrierFailureStaysCounted(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -129,11 +111,7 @@ func TestAnUncertainCarrierFailureStaysCounted(t *testing.T) {
 	}
 }
 
-// TestARegistryRefusalRefundsTheSend holds the first synchronous path that
-// certainly sends nothing: the registry will not build a message, so the row's
-// spend is given back and its code is spent. The answer keeps the shape of a
-// send the carrier later refuses, and the next send inside the same window is
-// admitted where the refused send would have exhausted it.
+// TestARegistryRefusalRefundsTheSend checks that a registry refusal refunds the send.
 func TestARegistryRefusalRefundsTheSend(t *testing.T) {
 	for _, refusal := range []error{sms.ErrRejected, sms.ErrNotSendable} {
 		t.Run(refusal.Error(), func(t *testing.T) {
@@ -163,11 +141,7 @@ func TestARegistryRefusalRefundsTheSend(t *testing.T) {
 	}
 }
 
-// TestADropAfterTheRowIsWrittenRefundsTheSend holds the second synchronous path
-// that certainly sends nothing: the pre-check finds room, the row is written,
-// and the queue fills before the enqueue, so the message is dropped. The
-// registry holds the request open in Resolve so the queue can be filled in that
-// window deterministically.
+// TestADropAfterTheRowIsWrittenRefundsTheSend checks that a drop after the row is written refunds the send.
 func TestADropAfterTheRowIsWrittenRefundsTheSend(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -193,8 +167,6 @@ func TestADropAfterTheRowIsWrittenRefundsTheSend(t *testing.T) {
 	}()
 
 	<-entered
-	// The pre-check already saw room; filling the queue now leaves the enqueue
-	// that follows Resolve with nowhere to put the message.
 	for len(r.p.pool.queue) < cap(r.p.pool.queue) {
 		r.p.pool.queue <- sms.Resolved{}
 	}
@@ -221,10 +193,7 @@ func TestADropAfterTheRowIsWrittenRefundsTheSend(t *testing.T) {
 	}
 }
 
-// TestARefundedRowCountsAgainstNoBudget holds that the refund reaches every
-// dimension: a certain failure gives back the number, source, account and
-// deployment-wide budgets alike, so a later send that shares only the refunded
-// row's dimension is admitted where that row would have refused it.
+// TestARefundedRowCountsAgainstNoBudget checks that a refunded row counts against no budget.
 func TestARefundedRowCountsAgainstNoBudget(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -304,9 +273,7 @@ func TestARefundedRowCountsAgainstNoBudget(t *testing.T) {
 	}
 }
 
-// TestARefundIsWrittenAndCountedOnEveryDialect holds the refund statement and
-// the budget predicate on both engines: the marker is written, the row is
-// spent, and the phone budget stops counting it.
+// TestARefundIsWrittenAndCountedOnEveryDialect checks that a refund is written and counted on every dialect.
 func TestARefundIsWrittenAndCountedOnEveryDialect(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, database db.Database, _ string) {
 		r := newRig(t, database, newSender())
@@ -334,10 +301,7 @@ func TestARefundIsWrittenAndCountedOnEveryDialect(t *testing.T) {
 	})
 }
 
-// TestASuppressedRowKeepsItsCountingRule holds the asymmetry the refund must
-// not disturb: a suppressed row still spends the number budget and still does
-// not spend the deployment-wide one. It is a guard, not a reproduction: the rule
-// predates the refund and these counts must read the same after it.
+// TestASuppressedRowKeepsItsCountingRule checks that a suppressed row keeps its counting rule.
 func TestASuppressedRowKeepsItsCountingRule(t *testing.T) {
 	t.Run("phone", func(t *testing.T) {
 		r := newRigSQLite(t)

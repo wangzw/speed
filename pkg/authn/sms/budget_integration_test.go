@@ -16,21 +16,12 @@ import (
 	"github.com/vislake/speed/pkg/sms/budget"
 )
 
-// integrationSource is the client address the source-dimension cases send from.
 const integrationSource = "203.0.113.7"
 
-// budgetLockKey builds one of the advisory-lock keys the design documents, so a
-// case takes the key the module is supposed to take rather than one derived from
-// its implementation.
 func budgetLockKey(dimension, value string) string {
 	return "authn.sms:lock:" + dimension + ":" + value
 }
 
-// insertCountRow writes one shared-ledger attempt in the transaction it is
-// given, so a case can hold a count row uncommitted while another send runs. The
-// row is a non-refunded, unsuppressed authentication attempt, the shape every
-// send budget counts. sourceMac is the row's source dimension, nil for a row
-// with no source.
 func insertCountRow(t *testing.T, tx *gorm.DB, purpose, phoneMac string, account, sourceMac *string, created time.Time) {
 	t.Helper()
 	if _, err := budget.New(tx).Record(context.Background(), budget.Attempt{
@@ -46,10 +37,6 @@ func insertCountRow(t *testing.T, tx *gorm.DB, purpose, phoneMac string, account
 	}
 }
 
-// holdBudgetLock begins a transaction, takes the documented advisory lock on key
-// with raw SQL, and runs write if it is set, all in that one transaction. The
-// returned function commits, which both releases the lock and makes the row
-// visible. A failure to commit fails the case.
 func holdBudgetLock(t *testing.T, h *gorm.DB, key string, write func(*gorm.DB)) func() {
 	t.Helper()
 	tx := h.Begin()
@@ -70,28 +57,15 @@ func holdBudgetLock(t *testing.T, h *gorm.DB, key string, write func(*gorm.DB)) 
 	}
 }
 
-// TestTheBudgetIsCheckedUnderTheSendsOwnLocks holds that the budget is a hard
-// cap rather than a soft one: the count is read only after the send has taken
-// the documented lock, so a send that overlaps another on a dimension sees the
-// other's row once it is committed and refuses.
-//
-// The case takes the documented advisory-lock key itself and inserts the count
-// row uncommitted in the same transaction. While that transaction is open the
-// send under test must not return; a send that read its budget before taking the
-// lock would see no row (it is uncommitted) and go through. After the commit it
-// must re-read, see the row, and refuse. The limit is set through the settings
-// store, which is where the module reads it, and is not a hardcoded number in
-// the code under test.
+// TestTheBudgetIsCheckedUnderTheSendsOwnLocks checks that the budget is checked under the send's own locks.
 func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 	cases := []struct {
-		name string
-		key  func(*rig) string
-		row  func(*rig, *gorm.DB)
-		tune func(*rig)
-		send func(*rig) error
-		want error
-		// retryAtLeast, when positive, is the least RetryAfter the refusal must
-		// carry; the count row is 31s old, so the window has that much left.
+		name         string
+		key          func(*rig) string
+		row          func(*rig, *gorm.DB)
+		tune         func(*rig)
+		send         func(*rig) error
+		want         error
 		retryAtLeast time.Duration
 	}{
 		{
@@ -109,9 +83,7 @@ func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 		},
 		{
 			name: "phone-daily",
-			// The daily window shares the number's lock with the hourly one, so
-			// this case pins the second window to the same lock as the first.
-			key: func(r *rig) string { return budgetLockKey("phone", r.database.BlindIndex(phone)) },
+			key:  func(r *rig) string { return budgetLockKey("phone", r.database.BlindIndex(phone)) },
 			row: func(r *rig, tx *gorm.DB) {
 				insertCountRow(t, tx, purposeLogin, r.database.BlindIndex(phone), nil, nil, r.clock.read().Add(-31*time.Second))
 			},
@@ -127,8 +99,6 @@ func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 			name: "account",
 			key:  func(r *rig) string { return budgetLockKey("account", string(acct)) },
 			row: func(r *rig, tx *gorm.DB) {
-				// Another number of the same account: the account dimension is the
-				// one this case exercises, and the send's own number stays empty.
 				account := string(acct)
 				insertCountRow(t, tx, authn.SMSPurposeMFA,
 					r.database.BlindIndex("+8613800138002"), &account, nil, r.clock.read().Add(-31*time.Second))
@@ -161,8 +131,6 @@ func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 			name: "source",
 			key:  func(r *rig) string { return budgetLockKey("source", r.database.BlindIndex(integrationSource)) },
 			row: func(r *rig, tx *gorm.DB) {
-				// Another number from the same source: the source dimension is the
-				// one this case exercises, and the send's own number stays empty.
 				sourceMac := r.database.BlindIndex(integrationSource)
 				insertCountRow(t, tx, purposeLogin,
 					r.database.BlindIndex("+8613800138002"), nil, &sourceMac, r.clock.read().Add(-31*time.Second))
@@ -178,9 +146,7 @@ func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 		},
 		{
 			name: "source-daily",
-			// The daily window shares the source's lock with the hourly one, so
-			// this case pins the second window to the same lock as the first.
-			key: func(r *rig) string { return budgetLockKey("source", r.database.BlindIndex(integrationSource)) },
+			key:  func(r *rig) string { return budgetLockKey("source", r.database.BlindIndex(integrationSource)) },
 			row: func(r *rig, tx *gorm.DB) {
 				sourceMac := r.database.BlindIndex(integrationSource)
 				insertCountRow(t, tx, purposeLogin,
@@ -204,8 +170,6 @@ func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 			r := newRig(t, database, newSender())
 			r.allow()
 			r.liftBudgets()
-			// Past the resend interval but inside the hour, so the dimension under
-			// test is the one that refuses.
 			r.store.set(resendIntervalPath, 30*time.Second)
 			c.tune(r)
 
@@ -219,8 +183,6 @@ func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 				release()
 				t.Fatalf("the send did not wait for the %s lock, so its budget was not read under it; it returned %v", c.name, early)
 			}
-			// The backend is seen waiting on the lock, so the send cannot have
-			// returned here.
 			select {
 			case err := <-done:
 				release()
@@ -254,11 +216,7 @@ func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 	}
 }
 
-// TestConcurrentSendsDoNotOverrunTheBudget is the regression guard for the hard
-// cap: many sends of one account race for a small account budget, each on a
-// number of its own and split across the two purposes that count against an
-// account, so the account dimension is what they share. The number accepted is
-// the limit and not one more, and the same number of rows is written.
+// TestConcurrentSendsDoNotOverrunTheBudget checks that concurrent sends do not overrun the budget.
 func TestConcurrentSendsDoNotOverrunTheBudget(t *testing.T) {
 	database := openDialect(t, "postgres")
 	r := newRig(t, database, newSender())
@@ -277,9 +235,6 @@ func TestConcurrentSendsDoNotOverrunTheBudget(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			// A distinct number per send keeps the per-number budgets and the
-			// resend interval out of it; the two purposes give the sends separate
-			// global locks but one account lock.
 			number := fmt.Sprintf("+86138002%05d", i)
 			_, err := r.p.Send(context.Background(), authn.SendCode{
 				Purpose: purposes[i%len(purposes)], Phone: number, Account: acct, Deliver: true,
@@ -296,7 +251,6 @@ func TestConcurrentSendsDoNotOverrunTheBudget(t *testing.T) {
 		case err == nil:
 			accepted++
 		case errors.Is(err, authn.ErrThrottled):
-			// A send over the budget, as it should be.
 		default:
 			t.Errorf("a losing send returned %v, want ErrThrottled", err)
 		}
@@ -309,11 +263,7 @@ func TestConcurrentSendsDoNotOverrunTheBudget(t *testing.T) {
 	}
 }
 
-// TestConcurrentSendsFromOneSourceDoNotOverrunTheBudget is the regression guard
-// for the source dimension: many sends from one address race for a small source
-// budget, each to a number of its own, so the source is what they share. The
-// number accepted is the limit and not one more, and the same number of rows is
-// written.
+// TestConcurrentSendsFromOneSourceDoNotOverrunTheBudget checks that concurrent sends from one source do not overrun the budget.
 func TestConcurrentSendsFromOneSourceDoNotOverrunTheBudget(t *testing.T) {
 	database := openDialect(t, "postgres")
 	r := newRig(t, database, newSender())
@@ -346,7 +296,6 @@ func TestConcurrentSendsFromOneSourceDoNotOverrunTheBudget(t *testing.T) {
 		case err == nil:
 			accepted++
 		case errors.Is(err, authn.ErrThrottled):
-			// A send over the budget, as it should be.
 		default:
 			t.Errorf("a losing send returned %v, want ErrThrottled", err)
 		}

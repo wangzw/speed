@@ -9,9 +9,7 @@ import (
 	"github.com/vislake/speed/pkg/sms/budget"
 )
 
-// TestTheSettingsReadAsTheirDeclaredDefaultWithoutAStore holds the legal
-// assembly: no settings store leaves every setting at its declared default, and
-// the allowed table empty.
+// TestTheSettingsReadAsTheirDeclaredDefaultWithoutAStore checks that settings read as their declared defaults without a store.
 func TestTheSettingsReadAsTheirDeclaredDefaultWithoutAStore(t *testing.T) {
 	r := newReader(nil, (&logBuffer{}).logger())
 	if got := r.codeLength(); got != defaults.CodeLength {
@@ -31,9 +29,7 @@ func TestTheSettingsReadAsTheirDeclaredDefaultWithoutAStore(t *testing.T) {
 	}
 }
 
-// TestAWrittenSettingIsReadAndAnOutOfDomainOneFallsBack holds the read
-// discipline: a written value is served, and a value outside the domain falls
-// back to the declared default.
+// TestAWrittenSettingIsReadAndAnOutOfDomainOneFallsBack checks that a written setting is read and an out-of-domain one falls back.
 func TestAWrittenSettingIsReadAndAnOutOfDomainOneFallsBack(t *testing.T) {
 	store := newStore()
 	r := newReader(store, (&logBuffer{}).logger())
@@ -48,9 +44,7 @@ func TestAWrittenSettingIsReadAndAnOutOfDomainOneFallsBack(t *testing.T) {
 	}
 }
 
-// TestAFailedSettingReadFallsBackToTheDefault holds the failure direction: a read
-// that errors is the declared default and never a zero value that would refuse or
-// admit differently.
+// TestAFailedSettingReadFallsBackToTheDefault checks that a failed setting read falls back to the default.
 func TestAFailedSettingReadFallsBackToTheDefault(t *testing.T) {
 	store := newStore()
 	store.set(resendIntervalPath, 5*time.Minute)
@@ -62,9 +56,7 @@ func TestAFailedSettingReadFallsBackToTheDefault(t *testing.T) {
 	}
 }
 
-// TestTheAllowedTableParsesAndRefusesMalformedText holds the list setting: a JSON
-// array of prefixes is served, and text that is not one reads as empty, which
-// admits no number.
+// TestTheAllowedTableParsesAndRefusesMalformedText checks that the allowed table parses and refuses malformed text.
 func TestTheAllowedTableParsesAndRefusesMalformedText(t *testing.T) {
 	store := newStore()
 	r := newReader(store, (&logBuffer{}).logger())
@@ -79,8 +71,7 @@ func TestTheAllowedTableParsesAndRefusesMalformedText(t *testing.T) {
 	}
 }
 
-// TestTheGlobalBudgetIsChosenByPurpose holds the three per-purpose keys: the read
-// picks the key that matches the purpose.
+// TestTheGlobalBudgetIsChosenByPurpose checks that the global budget is chosen by purpose.
 func TestTheGlobalBudgetIsChosenByPurpose(t *testing.T) {
 	store := newStore()
 	r := newReader(store, (&logBuffer{}).logger())
@@ -102,10 +93,7 @@ func TestTheGlobalBudgetIsChosenByPurpose(t *testing.T) {
 	}
 }
 
-// TestEverySettingDomainAdmitsItsBoundsAndRefusesTheNeighbours holds each domain
-// to its declared range: the minimum and maximum are admitted and the values just
-// outside are refused. The bounds are written as literals, so a change to a bound
-// constant or to a comparison is caught rather than tracked.
+// TestEverySettingDomainAdmitsItsBoundsAndRefusesTheNeighbours checks that every setting domain admits its bounds and refuses its neighbours.
 func TestEverySettingDomainAdmitsItsBoundsAndRefusesTheNeighbours(t *testing.T) {
 	intCases := []struct {
 		name     string
@@ -162,9 +150,7 @@ func TestEverySettingDomainAdmitsItsBoundsAndRefusesTheNeighbours(t *testing.T) 
 	}
 }
 
-// TestTheSettingsSchemaDeclaresEveryKeyUnderTheModuleNamespace holds the
-// declaration: the namespace is the module name and every key the design names is
-// present.
+// TestTheSettingsSchemaDeclaresEveryKeyUnderTheModuleNamespace checks that the schema declares every key under the module namespace.
 func TestTheSettingsSchemaDeclaresEveryKeyUnderTheModuleNamespace(t *testing.T) {
 	s := settingsSchema()
 	if s.Namespace != ModuleName {
@@ -188,19 +174,14 @@ func TestTheSettingsSchemaDeclaresEveryKeyUnderTheModuleNamespace(t *testing.T) 
 	}
 }
 
-// TestTheCeilingIsReadByFullKey holds the cross-channel ceiling's path: the
-// setting is declared by the shared SMS ledger module, and this module reads it
-// by the full key. The value it falls back to is the ledger's own declaration,
-// pinned by TestTheCeilingFallbackIsTheLedgerDefault.
+// TestTheCeilingIsReadByFullKey checks that the ceiling is read by its full key.
 func TestTheCeilingIsReadByFullKey(t *testing.T) {
 	if ceilingHourlyPath != "sms.ceiling-hourly" {
 		t.Errorf("the ceiling's path = %q, want sms.ceiling-hourly", ceilingHourlyPath)
 	}
 }
 
-// TestTheCeilingFallbackIsTheLedgerDefault holds this reader's fallback and the
-// relaxation comparison's fallback to the ledger module's one statement of the
-// ceiling's default, so a literal here cannot drift from the declared value.
+// TestTheCeilingFallbackIsTheLedgerDefault checks that the ceiling fallback is the ledger default.
 func TestTheCeilingFallbackIsTheLedgerDefault(t *testing.T) {
 	r := newReader(nil, (&logBuffer{}).logger())
 	if got := r.ceilingHourly(); got != budget.DefaultCeilingHourly {
@@ -213,9 +194,7 @@ func TestTheCeilingFallbackIsTheLedgerDefault(t *testing.T) {
 	}
 }
 
-// TestTheNewBudgetDefaultsAreWhatSettingsReport holds the values the redesign
-// adds: the distinct-destination and attempt dimensions read their declared
-// defaults when no store is assembled.
+// TestTheNewBudgetDefaultsAreWhatSettingsReport checks that the new budget defaults are what settings report.
 func TestTheNewBudgetDefaultsAreWhatSettingsReport(t *testing.T) {
 	r := newReader(nil, (&logBuffer{}).logger())
 	if got := r.perSourceDistinctHourly(); got != 20 {
@@ -239,9 +218,7 @@ func TestTheNewBudgetDefaultsAreWhatSettingsReport(t *testing.T) {
 	}
 }
 
-// TestTheNewBudgetKeysMatchTheReaderPaths holds the literal paths the behaviour
-// cases write against the paths the reader reads, so the two spellings cannot
-// drift apart.
+// TestTheNewBudgetKeysMatchTheReaderPaths checks that the new budget keys match the reader paths.
 func TestTheNewBudgetKeysMatchTheReaderPaths(t *testing.T) {
 	cases := map[string]string{
 		perSourceAttemptHourlyPathLiteral:  perSourceAttemptHourlyPath,

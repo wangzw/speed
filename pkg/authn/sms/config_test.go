@@ -8,7 +8,6 @@ import (
 	"github.com/vislake/speed/pkg/config"
 )
 
-// stubReader is a configuration reader a case scripts.
 type stubReader struct {
 	cfg moduleConfig
 	err error
@@ -24,9 +23,7 @@ func (s stubReader) Decode(_ string, target any) error {
 
 var _ config.Reader = stubReader{}
 
-// TestThePoolSizingIsHeldToItsDomain holds the two-item configuration: the
-// defaults resolve, zero workers and a queue below one slot are refused as a
-// configuration the module cannot run on, and the values decode through.
+// TestThePoolSizingIsHeldToItsDomain checks that pool sizing is held to its domain.
 func TestThePoolSizingIsHeldToItsDomain(t *testing.T) {
 	if _, err := (moduleConfig{Workers: 4, QueueSize: 1024}).resolve(); err != nil {
 		t.Errorf("the defaults were refused: %v", err)
@@ -37,8 +34,6 @@ func TestThePoolSizingIsHeldToItsDomain(t *testing.T) {
 	if _, err := (moduleConfig{Workers: 1, QueueSize: -1}).resolve(); !errors.Is(err, authn.ErrInvalidConfig) {
 		t.Errorf("a negative queue resolved to %v, want ErrInvalidConfig", err)
 	}
-	// A zero-capacity queue refuses every send before it writes a row, so it is
-	// not a configuration the module can run on.
 	if _, err := (moduleConfig{Workers: 1, QueueSize: 0}).resolve(); !errors.Is(err, authn.ErrInvalidConfig) {
 		t.Errorf("a zero queue resolved to %v, want ErrInvalidConfig", err)
 	}
@@ -56,8 +51,7 @@ func TestThePoolSizingIsHeldToItsDomain(t *testing.T) {
 	}
 }
 
-// TestTheConfigSchemaNamesTheTwoItems holds the declaration: the namespace is the
-// module name and the two items are declared.
+// TestTheConfigSchemaNamesTheTwoItems checks that the config schema names the two items.
 func TestTheConfigSchemaNamesTheTwoItems(t *testing.T) {
 	s := schema()
 	if s.Namespace != ModuleName {

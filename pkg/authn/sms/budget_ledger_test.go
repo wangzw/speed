@@ -13,8 +13,6 @@ import (
 	"github.com/vislake/speed/pkg/sms/budget"
 )
 
-// ledgerCount reads one count from the shared ledger and fails the case if the
-// read errors.
 func (r *rig) ledgerCount(q budget.Query) int64 {
 	r.t.Helper()
 	n, err := r.ledger.Count(context.Background(), q)
@@ -24,7 +22,6 @@ func (r *rig) ledgerCount(q budget.Query) int64 {
 	return n
 }
 
-// ledgerCeiling reads the cross-channel ceiling from the shared ledger.
 func (r *rig) ledgerCeiling(since time.Time) int64 {
 	r.t.Helper()
 	n, err := r.ledger.CountCeiling(context.Background(), since)
@@ -34,10 +31,6 @@ func (r *rig) ledgerCeiling(since time.Time) int64 {
 	return n
 }
 
-// recordNotification writes one notification-channel attempt into the shared
-// ledger, the way the notification capability would. The challenge table holds
-// nothing of it, so a case that is refused over these rows shows the ceiling
-// reads the ledger and nothing else.
 func (r *rig) recordNotification(purpose, destination, tenant string) budget.ID {
 	r.t.Helper()
 	id, err := r.ledger.Record(context.Background(), budget.Attempt{
@@ -54,14 +47,7 @@ func (r *rig) recordNotification(purpose, destination, tenant string) budget.ID 
 	return id
 }
 
-// TestEverySendWritesOneLedgerAttemptAndItsRefund holds the write and the
-// refund: a send that reaches the carrier writes one authentication attempt to
-// the shared ledger and links it from its challenge row, a certain failure
-// refunds that row, and the refund moves it out of the send count while leaving
-// it in the attempt count.
-//
-// On the pre-ledger code there is no ledger row at all, so the first count is
-// zero where this case requires one.
+// TestEverySendWritesOneLedgerAttemptAndItsRefund checks that every send writes one ledger attempt and its refund.
 func TestEverySendWritesOneLedgerAttemptAndItsRefund(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -99,8 +85,6 @@ func TestEverySendWritesOneLedgerAttemptAndItsRefund(t *testing.T) {
 		t.Errorf("the challenge row names no ledger attempt (column present %v, value %v)", ok, v)
 	}
 
-	// The carrier certainly did not take the message: the send count frees the
-	// row and the attempt count keeps it.
 	r.deliverQueued(t, sms.ErrRejected)
 	if got := r.ledgerCount(sends); got != 0 {
 		t.Errorf("the ledger holds %d non-refunded sends after a certain failure, want 0", got)
@@ -113,14 +97,7 @@ func TestEverySendWritesOneLedgerAttemptAndItsRefund(t *testing.T) {
 	}
 }
 
-// TestTheSharedCeilingRefusesCombinedChannels holds the cross-channel ceiling:
-// a notification attempt already in the ledger and one authentication send reach
-// it together, and the next authentication send is refused. The notification row
-// exists only in the ledger, so a refusal that accounts for it shows the ledger
-// is the ceiling's only counting source.
-//
-// On the pre-ledger code no ceiling is consulted, so the second send succeeds
-// where this case requires ErrThrottled.
+// TestTheSharedCeilingRefusesCombinedChannels checks that the shared ceiling refuses combined channels.
 func TestTheSharedCeilingRefusesCombinedChannels(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -128,11 +105,8 @@ func TestTheSharedCeilingRefusesCombinedChannels(t *testing.T) {
 	r.store.set(resendIntervalPath, 30*time.Second)
 	r.store.set(ceilingHourlyPath, 2)
 
-	// One notification attempt is already committed; the challenge table knows
-	// nothing of it.
 	r.recordNotification("alert", "notification-destination", "tenant-1")
 
-	// One authentication send brings the combined count to the ceiling.
 	if _, err := r.sendLogin(); err != nil {
 		t.Fatalf("the send below the ceiling returned %v, want success", err)
 	}
@@ -149,16 +123,12 @@ func TestTheSharedCeilingRefusesCombinedChannels(t *testing.T) {
 	if !errors.Is(err, authn.ErrThrottled) {
 		t.Fatalf("the send that reaches the shared ceiling returned %v, want ErrThrottled", err)
 	}
-	// The refused send wrote nothing: the challenge table holds only the first
-	// send's row, and the ledger holds only that send and the notification.
 	if got := r.rowCount(); got != 1 {
 		t.Errorf("the challenge table holds %d rows after the refused send, want 1", got)
 	}
 }
 
-// TestTheAuthnSendDimensionsStillRefuseAtTheirLimits is the guard that the
-// existing budgets kept their behaviour: the number's own limit still refuses
-// the next send inside its window.
+// TestTheAuthnSendDimensionsStillRefuseAtTheirLimits checks that the authentication send dimensions still refuse at their limits.
 func TestTheAuthnSendDimensionsStillRefuseAtTheirLimits(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -175,10 +145,7 @@ func TestTheAuthnSendDimensionsStillRefuseAtTheirLimits(t *testing.T) {
 	}
 }
 
-// TestARefundFreesTheSendBudgetAndStaysInTheAttemptBudget holds the two counts
-// apart: a send the carrier definitively refused gives its number's send budget
-// back, while the source's attempt budget keeps the refunded attempt and refuses
-// the next one. The ledger's own send and attempt counts tell the same story.
+// TestARefundFreesTheSendBudgetAndStaysInTheAttemptBudget checks that a refund frees the send budget and stays in the attempt budget.
 func TestARefundFreesTheSendBudgetAndStaysInTheAttemptBudget(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -196,8 +163,6 @@ func TestARefundFreesTheSendBudgetAndStaysInTheAttemptBudget(t *testing.T) {
 	r.deliverQueued(t, sms.ErrRejected)
 	r.clock.advance(31 * time.Second)
 
-	// The number's send budget is free again: the same number is admitted from
-	// another source.
 	if _, err := r.p.Send(context.Background(), authn.SendCode{
 		Purpose: authn.SMSPurposeLogin, Phone: phone, Source: "203.0.113.61", Deliver: true,
 	}); err != nil {
@@ -205,7 +170,6 @@ func TestARefundFreesTheSendBudgetAndStaysInTheAttemptBudget(t *testing.T) {
 	}
 	r.clock.advance(31 * time.Second)
 
-	// The source's attempt budget is not free: its one refunded attempt fills it.
 	if _, err := r.p.Send(context.Background(), authn.SendCode{
 		Purpose: authn.SMSPurposeLogin, Phone: "+8613800138001", Source: source, Deliver: true,
 	}); !errors.Is(err, authn.ErrThrottled) {
@@ -226,9 +190,7 @@ func TestARefundFreesTheSendBudgetAndStaysInTheAttemptBudget(t *testing.T) {
 	}
 }
 
-// TestASuppressedAttemptSpendsNoShareOfTheCeiling holds the suppression: a
-// suppressed row never reaches the carrier, so its ledger attempt is written
-// refunded and spends none of the shared ceiling.
+// TestASuppressedAttemptSpendsNoShareOfTheCeiling checks that a suppressed attempt spends no share of the ceiling.
 func TestASuppressedAttemptSpendsNoShareOfTheCeiling(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -252,10 +214,7 @@ func TestASuppressedAttemptSpendsNoShareOfTheCeiling(t *testing.T) {
 	}
 }
 
-// TestTheBudgetUtilizationGaugeCoversTheCeilingAndEachPurpose holds the metric
-// contract: the gauge is named authn.sms.budget.utilization, and its points
-// carry the purpose and dimension attributes, including the shared ceiling and
-// the send's own purpose.
+// TestTheBudgetUtilizationGaugeCoversTheCeilingAndEachPurpose checks that the utilization gauge covers the ceiling and each purpose.
 func TestTheBudgetUtilizationGaugeCoversTheCeilingAndEachPurpose(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()

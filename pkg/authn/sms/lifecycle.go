@@ -8,21 +8,12 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// seenCapacity is how many event identifiers the compensation remembers. The bus
-// delivers an event at least once on some transports, and the cleanup is
-// idempotent either way, so the memory only saves a repeated delete and cannot
-// make the cleanup wrong: it is bounded, and an identifier that has fallen out
-// is simply cleaned again.
 const seenCapacity = 1024
 
-// AccountCreated has nothing to build: a new account has no challenge, and a
-// challenge is stored only when one is asked for. The hook is idempotent and
-// returns nil.
+// AccountCreated changes nothing: a new account has no challenge.
 func (p *product) AccountCreated(context.Context, authn.AccountID) error { return nil }
 
-// AccountDisabled leaves the account's challenges where they are: the login rows
-// carry no account, the mfa and enroll rows belong to an account that may be
-// enabled again, and a disabled account cannot receive or submit a code anyway.
+// AccountDisabled leaves the account's challenges where they are.
 func (p *product) AccountDisabled(context.Context, authn.AccountID) error { return nil }
 
 // AccountEnabled changes nothing: the challenges of a disabled account stayed
@@ -32,10 +23,7 @@ func (p *product) AccountEnabled(context.Context, authn.AccountID) error { retur
 // ServiceSecretRevoked has nothing to do: a service secret is not a challenge.
 func (p *product) ServiceSecretRevoked(context.Context, authn.AccountID, string) error { return nil }
 
-// AccountDeleted removes the account's mfa and enroll challenges. The login
-// rows carry no account and go with the sweep. A call that finds nothing to
-// remove returns nil, which is what makes the cleanup idempotent and the
-// repeated call of a failed one finish the work.
+// AccountDeleted removes the account's mfa and enroll challenges; login challenges carry no account and go with the sweep. It is idempotent.
 func (p *product) AccountDeleted(ctx context.Context, id authn.AccountID) error {
 	if id == "" {
 		return authn.ErrInvalidAccountID
@@ -46,7 +34,6 @@ func (p *product) AccountDeleted(ctx context.Context, id authn.AccountID) error 
 	return nil
 }
 
-// seenEvents is a bounded set of event identifiers a handler has finished with.
 type seenEvents struct {
 	mu    sync.Mutex
 	order *list.List
@@ -57,7 +44,6 @@ func newSeenEvents() *seenEvents {
 	return &seenEvents{order: list.New(), ids: make(map[string]*list.Element, seenCapacity)}
 }
 
-// has reports whether id was marked.
 func (s *seenEvents) has(id string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -65,7 +51,6 @@ func (s *seenEvents) has(id string) bool {
 	return ok
 }
 
-// mark remembers id, forgetting the oldest when the set is full.
 func (s *seenEvents) mark(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

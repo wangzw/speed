@@ -9,10 +9,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestGenerateCodeHasExactlyNDigits holds the length invariant on every draw: a
-// code of n digits is exactly n characters, whatever the random value. Drawing
-// many codes pins the padding, which a length assertion on a single draw would
-// only catch when that draw happened to be short.
+// TestGenerateCodeHasExactlyNDigits checks that GenerateCode has exactly n digits.
 func TestGenerateCodeHasExactlyNDigits(t *testing.T) {
 	for _, n := range []int{6, 7, 8} {
 		for range 2000 {
@@ -30,10 +27,7 @@ func TestGenerateCodeHasExactlyNDigits(t *testing.T) {
 	}
 }
 
-// TestGenerateCodeSpansTheWholeDecimalRange holds the code space: the draw is
-// uniform over [0, 10^n), so a large sample includes codes in the top tenth of
-// the range. A draw over a narrower base — [0, 9^n) or one digit over [0, 9) —
-// can never reach 9·10^(n-1), so this catches a shrunk alphabet.
+// TestGenerateCodeSpansTheWholeDecimalRange checks that GenerateCode spans the whole decimal range.
 func TestGenerateCodeSpansTheWholeDecimalRange(t *testing.T) {
 	const n = 6
 	floor := int64(9) * pow10(n-1)
@@ -56,9 +50,7 @@ func TestGenerateCodeSpansTheWholeDecimalRange(t *testing.T) {
 	}
 }
 
-// TestTTLMinutesRoundsUp holds the message parameter: a code's lifetime in whole
-// minutes is rounded up, so a lifetime that is not a whole number of minutes
-// names the minute it is valid through and never zero.
+// TestTTLMinutesRoundsUp checks that TTLMinutes rounds up.
 func TestTTLMinutesRoundsUp(t *testing.T) {
 	cases := []struct {
 		ttl  time.Duration
@@ -77,12 +69,7 @@ func TestTTLMinutesRoundsUp(t *testing.T) {
 	}
 }
 
-// TestValidPurposeIsTheRootPackageClosedSet binds this package's purpose set to
-// the root package's SMSPurpose constants, so the two cannot drift: the package
-// names no purpose value of its own. The positive probes are the binding — if
-// code.go ever accepts a set that is not exactly the root constants, validPurpose
-// answers false for a root constant here. The near-misses hold the other side:
-// the accepted set carries no member the root package does not name.
+// TestValidPurposeIsTheRootPackageClosedSet checks that ValidPurpose is the root package's closed set.
 func TestValidPurposeIsTheRootPackageClosedSet(t *testing.T) {
 	for _, p := range []string{authn.SMSPurposeLogin, authn.SMSPurposeMFA, authn.SMSPurposeEnroll, authn.SMSPurposeReset} {
 		if !validPurpose(p) {
