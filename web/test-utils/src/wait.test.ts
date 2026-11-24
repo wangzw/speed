@@ -3,10 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ASYNC_UTIL_TIMEOUT_MS } from './gate-time.js'
 import { waitForCondition } from './wait.js'
 
-// This package's own suite runs in the node environment and has no setup
-// file, so nothing has configured Testing Library yet. The helper reads
-// that configuration; these cases configure it the way the workspace
-// setups do and restore it after each case.
 const SETUP_BUDGET_MS = ASYNC_UTIL_TIMEOUT_MS
 
 configure({ asyncUtilTimeout: SETUP_BUDGET_MS })
@@ -27,9 +23,6 @@ describe('waitForCondition', () => {
   })
 
   it('follows a budget configured after the setup ran', async () => {
-    // The browser tier's setup reads the caller's scale from the value its
-    // config injected, not from the environment. Reading the environment
-    // here would keep the quiet default budget and fail this case.
     configure({ asyncUtilTimeout: 75_000 })
     const spy = vi.spyOn(vi, 'waitFor').mockResolvedValue(undefined as never)
     await waitForCondition(() => true)

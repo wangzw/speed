@@ -1,21 +1,3 @@
-/**
- * axe.test.ts -- the pure decisions the axe harness makes without a DOM:
- * the tier the scan runs in, the tags that cannot carry aria-hidden, the
- * overlay family a marker class list names, and the static check that
- * holds each browser determination to the case it names.
- *
- * That check reads the browser source's syntax tree, so the case is located
- * by its full describe path rather than by the first matching text: a name
- * in a comment, a sibling case in a nested describe, and a skipped case
- * are all told apart from the case the declaration means.
- *
- * The tier is read from whether the browser setup installed the real
- * keyboard driver (see axe.ts), so a scan is never handed keys the
- * environment cannot press on the say-so of a user agent a test set for
- * its own subject. The decision is pure over an injected driver, so it is
- * pinned here in the package's node suite.
- */
-
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -29,7 +11,6 @@ import {
 } from './axe'
 import type { AxeAssertionOptions } from './axe'
 
-/** The workspace root (`web/`), the base every declared file is relative to. */
 const WEB_ROOT = fileURLToPath(new URL('../../', import.meta.url))
 
 const driver = async (): Promise<void> => undefined
@@ -95,22 +76,12 @@ describe('overlayKindFromClasses', () => {
   })
 })
 
-/**
- * The browser cases a test source declares, by their full describe path.
- * The tree is parsed with the TypeScript compiler, so a call spelled in a
- * comment, a string or a template literal is not a call, and the path is
- * the one the case really sits under rather than the first text that looks
- * like its name.
- */
 interface CaseRecord {
-  /** The describe names, then the case name, joined by ` > `. */
   readonly path: string
   readonly call: ts.CallExpression
-  /** Whether the case or any describe above it is skipped or todo. */
   readonly skipped: boolean
 }
 
-/** The callee chain of a call, or null. */
 function calleeChain(node: ts.Expression): string[] | null {
   if (ts.isIdentifier(node)) {
     return [node.text]
@@ -122,7 +93,6 @@ function calleeChain(node: ts.Expression): string[] | null {
   return null
 }
 
-/** Whether an object literal sets `skip` or `todo` to true. */
 function optionsSkip(options: ts.ObjectLiteralExpression): boolean {
   return options.properties.some((property) => {
     const name =
@@ -140,17 +110,10 @@ function optionsSkip(options: ts.ObjectLiteralExpression): boolean {
   })
 }
 
-/**
- * The describe or case a call declares, or null for any other call. The
- * modifiers are read off the chain (`it.skip`, `describe.skipIf`, a
- * `test.each` table), and a case skipped by its options object counts as
- * skipped, so a name alone cannot stand in for a case that never runs.
- */
 function declaredCall(
   call: ts.CallExpression,
 ): { head: 'describe' | 'it'; name: string | null; skipped: boolean } | null {
   let expression: ts.Expression = call.expression
-  // `it.each(table)('name', fn)`: the outer call's callee is a call itself.
   while (ts.isCallExpression(expression)) {
     expression = expression.expression
   }
@@ -177,7 +140,6 @@ function declaredCall(
   return { head: head === 'describe' ? 'describe' : 'it', name, skipped }
 }
 
-/** One call's function body: the block or expression that holds its case. */
 function callbackBody(call: ts.CallExpression): ts.ConciseBody | null {
   for (const argument of [...call.arguments].reverse()) {
     if (
@@ -190,7 +152,6 @@ function callbackBody(call: ts.CallExpression): ts.ConciseBody | null {
   return null
 }
 
-/** Every case a source declares, with the describe path it sits under. */
 function declaredCases(source: string, filePath = 'constructed.tsx'): CaseRecord[] {
   const sourceFile = ts.createSourceFile(
     filePath,
@@ -231,7 +192,6 @@ function declaredCases(source: string, filePath = 'constructed.tsx'): CaseRecord
   return cases
 }
 
-/** The axe-assertion call inside a case body, or null when none runs. */
 function axeCallIn(call: ts.CallExpression): ts.CallExpression | null {
   const body = callbackBody(call)
   if (body === null) {
@@ -256,7 +216,6 @@ function axeCallIn(call: ts.CallExpression): ts.CallExpression | null {
   return found
 }
 
-/** Whether the call passes `decidedInBrowser: '<key>'`. */
 function passesDetermination(call: ts.CallExpression, key: string): boolean {
   const [options] = call.arguments
   if (options === undefined || !ts.isObjectLiteralExpression(options)) {
@@ -271,17 +230,8 @@ function passesDetermination(call: ts.CallExpression, key: string): boolean {
   )
 }
 
-/**
- * Holds one declaration to a browser case that runs the axe assertion. The
- * exemption a jsdom scan takes says "the named browser case decides these
- * rules"; a case that never calls the assertion decides nothing, and the
- * jsdom scan would then be exempted by a name alone. The case and every
- * describe above it must run, and the case must pass the determination it
- * is registered under, so the browser tier's own check is wired to it.
- *
- * A call under dead code such as `if (false)` still counts: a static read
- * of the tree does not evaluate conditions (a known limitation).
- */
+// A call under dead code such as `if (false)` still counts: a static read
+// of the tree does not evaluate conditions (a known limitation).
 function assertCaseRunsAxe(
   source: string,
   testName: string,
@@ -329,10 +279,6 @@ describe('BROWSER_DETERMINATIONS', () => {
     BROWSER_DETERMINATIONS,
   )) {
     it(`${key} names a real browser-tier case that runs the axe assertion`, () => {
-      // The exemption a jsdom case takes is only as good as the browser
-      // case behind it: a renamed or deleted case, a skipped one, or one
-      // that never runs the scan must break here rather than leave the
-      // rule unexamined in both tiers.
       expect(determination.file).toMatch(/\.browser\.test\.tsx$/)
       const source = readFileSync(
         join(WEB_ROOT, determination.file),
@@ -343,8 +289,6 @@ describe('BROWSER_DETERMINATIONS', () => {
   }
 
   it('rejects a declaration whose browser case does not run the axe assertion', () => {
-    // A real browser case in the registry's own files that asserts
-    // geometry and never scans: pointing a declaration at it must fail.
     const withoutScan = {
       file: 'packages/admin-ui/src/AccountsPage.browser.test.tsx',
       testName:
@@ -417,9 +361,6 @@ describe('d', () => {
   })
 
   it('accepts a call in a dead branch as a known limitation', () => {
-    // A static read of the tree does not evaluate `if (false)`. This is
-    // the one shape the check cannot tell from a live call; it is recorded
-    // rather than silently claimed to be caught.
     const source = `describe('d', () => {
   it('target', async () => {
     if (false) await expectNoAxeViolations()
@@ -486,10 +427,6 @@ describe('d', () => {
   })
 
   it('accepts only a registered determination key', () => {
-    // A key is a member of BROWSER_DETERMINATIONS, not any string: if the
-    // option were typed as a plain string, a misspelt key would typecheck
-    // and the declaration would silently take no exemption. The directive
-    // below fails to compile as unused once the type is widened.
     // @ts-expect-error -- 'notRegistered' is not a BROWSER_DETERMINATIONS key
     const options: AxeAssertionOptions = { decidedInBrowser: 'notRegistered' }
     expect(options.decidedInBrowser).toBe('notRegistered')
