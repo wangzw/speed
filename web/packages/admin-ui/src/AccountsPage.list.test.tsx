@@ -30,6 +30,17 @@ import {
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
 describe('AccountsPage', () => {
+  it('marks the page behind the status filter menu inert', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts()
+    const { container } = renderWithProviders(<AccountsPage />, {
+      operations,
+    })
+    await user.click(screen.getByLabelText(zhCN.accounts.filter.status))
+    await screen.findByRole('option', { name: zhCN.accounts.filter.all })
+    expect(container).toHaveAttribute('inert')
+  })
+
   it('renders the empty state when no account matches', async () => {
     const operations = withAccounts({
       listAccounts: () => Promise.resolve({ accounts: [], next_cursor: '' }),

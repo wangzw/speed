@@ -810,6 +810,30 @@ describe('SsoPage', () => {
     expect(screen.getByLabelText(zhCN.sso.provider.clientSecretLabel)).toHaveValue('top-secret')
   })
 
+  it('marks the page behind the provider menu inert', async () => {
+    const user = userEvent.setup()
+    const operations = withProviders()
+    const { container } = renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await user.click(screen.getByLabelText(zhCN.sso.provider.editLabel))
+    await screen.findByRole('option', { name: 'Acme IdP' })
+    expect(container).toHaveAttribute('inert')
+  })
+
+  it('marks the page behind a tri-state menu inert', async () => {
+    const user = userEvent.setup()
+    const operations = withProviders()
+    const { container } = renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await user.click(
+      screen.getByRole('combobox', { name: zhCN.sso.provider.enabledLabel }),
+    )
+    await screen.findByRole('option', { name: zhCN.sso.provider.tri.true })
+    expect(container).toHaveAttribute('inert')
+  })
+
   it('updates a provider through the bundle', async () => {
     const user = userEvent.setup()
     const updates: AdminWriteSsoProviderInput[] = []

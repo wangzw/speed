@@ -305,6 +305,28 @@ describe('PermissionsPage', () => {
     expect(description).toHaveValue('')
   })
 
+  it('marks the page behind the grant permission menu inert', async () => {
+    const user = userEvent.setup()
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role()]),
+    })
+    const { container } = renderWithProviders(<PermissionsPage />, {
+      operations,
+    })
+    await pickTenant(user)
+    await screen.findByText('editor')
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }),
+      }),
+    )
+    await user.click(
+      screen.getByLabelText(zhCN.permissions.grants.permissionLabel),
+    )
+    await screen.findByRole('option', { name: 'crm.deal.write' })
+    expect(container).toHaveAttribute('inert')
+  })
+
   it('disables the refresh while the grants scope is in flight', async () => {
     const user = userEvent.setup()
     const pending = deferred<void>()

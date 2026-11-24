@@ -226,6 +226,21 @@ describe('StepUpChallenge', () => {
     expect(style.gap).toBe('16px')
   })
 
+  it('marks the page behind the open dialog inert', async () => {
+    bindFactors([ACTIVE_FACTOR])
+    const { container } = renderWithProviders(
+      <StepUpChallenge
+        open
+        session={flowSession().session}
+        onSuccess={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    )
+    const dialog = await screen.findByRole('dialog')
+    expect(container).toHaveAttribute('inert')
+    expect(dialog).not.toHaveAttribute('inert')
+  })
+
   it('sends the host’s path as the flow’s return_to', async () => {
     const starts: Array<Parameters<AuthSession['startAuthenticatedFlow']>[0]> =
       []

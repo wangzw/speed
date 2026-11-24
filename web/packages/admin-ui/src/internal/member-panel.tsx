@@ -17,6 +17,7 @@ import {
   ListSkeleton,
   SidePanel,
   useFormatInstant,
+  useInertSelectMenu,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { ActionButtonUnavailableExplanation } from '@speed/ui-kit'
@@ -102,6 +103,7 @@ export function MemberPanel({
   // The host names the role a caller may not take away from itself; the panel
   // disables it before the request instead of offering a write bound to fail.
   const protectedRoles = useOrganizationAdminProtectedRoles()
+  const roleMenu = useInertSelectMenu()
 
   const [selectedRole, setSelectedRole] = useState('')
   const {
@@ -588,7 +590,10 @@ export function MemberPanel({
                   label={t('members.panel.roleLabel')}
                   // A write in flight makes the choice read-only: it stays
                   // focusable and the bind button beside it holds the focus.
-                  slotProps={{ input: { readOnly: feedback.pending } }}
+                  slotProps={{
+                    input: { readOnly: feedback.pending },
+                    select: roleMenu,
+                  }}
                   // The roles read and the all-roles-bound state keep the native
                   // `disabled`; neither is caused by an action on this control.
                   disabled={roles.isPending || allRolesBound}

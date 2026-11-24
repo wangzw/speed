@@ -637,6 +637,38 @@ describe('TenantProfilePage ownership', () => {
     })
   })
 
+  it('marks the transfer dialog behind its open target menu inert', async () => {
+    const user = userEvent.setup()
+    attachAccount(OWNER)
+    renderPage({
+      getTenantProfile: () => Promise.resolve(ownerProfile()),
+      backend: {
+        getPendingOrganizationOwner: () => Promise.resolve(null),
+        listMembers: () =>
+          Promise.resolve({
+            members: [ADA, BOB, SUSPENDED],
+            next_cursor: '',
+          }),
+      },
+    })
+    await ready()
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.tenantProfile.ownership.transfer.button,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog', {
+      name: transferTitle(),
+    })
+    await user.click(
+      within(dialog).getByRole('combobox', {
+        name: zhCN.tenantProfile.ownership.transfer.targetLabel,
+      }),
+    )
+    await screen.findByRole('option', { name: 'Bob Stone (bob)' })
+    expect(dialog.closest('[inert]')).not.toBeNull()
+  })
+
   it('asks an active member to take ownership and shows the pending request without changing the owner', async () => {
     const user = userEvent.setup()
     attachAccount(OWNER)

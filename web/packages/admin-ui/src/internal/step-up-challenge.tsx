@@ -16,7 +16,12 @@ import {
 import type { AuthSession, StepUpReason } from '@speed/auth-core'
 import type { AuthnFlowAnswer } from '@speed/auth-core'
 import { useStepUp } from '@speed/auth-core'
-import { ActionButton, ActionRow, HumanVerification } from '@speed/ui-kit'
+import {
+  ActionButton,
+  ActionRow,
+  HumanVerification,
+  useInertBackground,
+} from '@speed/ui-kit'
 import { useAdminAccountHref } from './account-href.js'
 import { useAdminReturnPath } from './return-path.js'
 import { FlowStep } from './flow-step.js'
@@ -77,6 +82,8 @@ export function StepUpChallenge({
   // A restart remounts the flow driver: useStepUp has no restart command.
   const [run, setRun] = useState(0)
   const restart = useCallback(() => setRun((current) => current + 1), [])
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useInertBackground(open, dialogRef)
 
   if (!open) {
     return null
@@ -89,7 +96,14 @@ export function StepUpChallenge({
   }
 
   return (
-    <Dialog open onClose={onCancel} aria-labelledby={titleId} maxWidth="xs" fullWidth>
+    <Dialog
+      ref={dialogRef}
+      open
+      onClose={onCancel}
+      aria-labelledby={titleId}
+      maxWidth="xs"
+      fullWidth
+    >
       <DialogTitle id={titleId}>
         {t(sso ? 'stepUp.ssoTitle' : 'stepUp.title')}
       </DialogTitle>

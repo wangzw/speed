@@ -24,6 +24,7 @@ import {
   PRIMARY_COLUMN_MAX_WIDTH,
   SectionCard,
   useFormatInstant,
+  useInertSelectMenu,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type {
@@ -181,6 +182,10 @@ export function OrganizationMembersPage({
   const relogin = useCallback(() => {
     void session?.logout().catch(() => undefined)
   }, [session])
+  const roleFilterMenu = useInertSelectMenu()
+  const expiryMenu = useInertSelectMenu()
+  const issueRoleMenu = useInertSelectMenu()
+  const invitationStatusFilterMenu = useInertSelectMenu()
 
   const [memberSearch, setMemberSearch] = useState('')
   const debouncedMemberSearch = useDebouncedValue(memberSearch)
@@ -979,6 +984,7 @@ export function OrganizationMembersPage({
           {/* A failed role read keeps the selection addressable and offers a retry. */}
           <TextField
             select
+            slotProps={{ select: roleFilterMenu }}
             size="small"
             value={roleFilter}
             onChange={(event) => changeRoleFilter(event.target.value)}
@@ -1121,6 +1127,7 @@ export function OrganizationMembersPage({
           />
           <TextField
             select
+            slotProps={{ select: expiryMenu }}
             size="small"
             value={String(expiryDays)}
             onChange={(event) => setExpiryDays(Number(event.target.value))}
@@ -1141,6 +1148,7 @@ export function OrganizationMembersPage({
           {canManageRoles && (
             <TextField
               select
+              slotProps={{ select: issueRoleMenu }}
               size="small"
               value={issueRole}
               onChange={(event) => setIssueRole(event.target.value)}
@@ -1308,6 +1316,7 @@ export function OrganizationMembersPage({
         >
           <TextField
             select
+            slotProps={{ select: invitationStatusFilterMenu }}
             size="small"
             value={statusFilter}
             onChange={(event) =>

@@ -127,6 +127,47 @@ describe('StepUpChallenge actions in Chromium', () => {
   })
 })
 
+const WALK_CONTROL_SELECTOR =
+  'a[href], button, input, select, textarea, [tabindex]'
+
+function describeActive(): string {
+  const active = document.activeElement
+  if (!(active instanceof HTMLElement)) {
+    return String(active)
+  }
+  const label = (active.getAttribute('aria-label') ?? active.textContent ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return label === ''
+    ? active.tagName.toLowerCase()
+    : `${active.tagName.toLowerCase()} "${label}"`
+}
+
+async function walkFocusTrap(root: HTMLElement, keys: string): Promise<void> {
+  const controls = [
+    ...root.querySelectorAll<HTMLElement>(WALK_CONTROL_SELECTOR),
+  ].filter(
+    (control) =>
+      control.tabIndex >= 0 &&
+      !control.hasAttribute('disabled') &&
+      control.getClientRects().length > 0,
+  )
+  expect(controls.length).toBeGreaterThan(0)
+  expect(
+    document.activeElement instanceof HTMLElement
+      && root.contains(document.activeElement),
+    `focus should start inside the dialog; document.activeElement is ${describeActive()}`,
+  ).toBe(true)
+  for (let step = 0; step <= controls.length; step += 1) {
+    await userEvent.keyboard(keys)
+    const active = document.activeElement
+    expect(
+      active instanceof HTMLElement && root.contains(active),
+      `step ${step} of the ${keys} walk left the dialog; document.activeElement is ${describeActive()}`,
+    ).toBe(true)
+  }
+}
+
 function isUnavailable(control: HTMLElement): boolean {
   return (
     control.hasAttribute('disabled') ||
@@ -240,5 +281,51 @@ describe('StepUpChallenge focus in Chromium', () => {
     await waitFor(() => expect(isUnavailable(submit)).toBe(true))
 
     expect(document.activeElement).toBe(submit)
+  })
+})
+
+describe('StepUpChallenge inert background in Chromium', () => {
+  it('marks the page inert and holds the Tab cycle inside the dialog', async () => {
+    await page.viewport(900, 900)
+    bindAdminRequest((call) => {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
+        return { factors: [ACTIVE_FACTOR] }
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    })
+    const session: AuthSession = {
+      ...createStepUpSession(),
+      startAuthenticatedFlow: () =>
+        Promise.resolve<AuthnFlowState>({
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'code', kind: 'code', required: true }],
+          },
+        }),
+    }
+    const { container } = renderWithProviders(
+      <StepUpChallenge
+        open
+        session={session}
+        onSuccess={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+      { language: 'en-US' },
+    )
+    const dialog = await screen.findByRole('dialog')
+    await screen.findByLabelText(/code/i)
+
+    await waitFor(() => expect(container).toHaveAttribute('inert'))
+    const root = dialog.closest('.MuiModal-root')
+    expect(root).not.toBeNull()
+    expect(root).not.toHaveAttribute('inert')
+    await waitFor(() =>
+      expect(dialog.contains(document.activeElement)).toBe(true),
+    )
+
+    await walkFocusTrap(dialog, '{Tab}')
+    await walkFocusTrap(dialog, '{Shift>}{Tab}{/Shift}')
   })
 })

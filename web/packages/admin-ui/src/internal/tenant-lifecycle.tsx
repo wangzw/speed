@@ -22,6 +22,7 @@ import {
   errorCodeOf,
   httpStatusOf,
   useFormatInstant,
+  useInertBackground,
 } from '@speed/ui-kit'
 import { AccountSelector } from './account-selector.js'
 import { useAdminUiErrorText } from './error-text.js'
@@ -300,6 +301,8 @@ function TransferOwnerDialog({
   const [confirming, setConfirming] = useState(false)
   const [pending, setPending] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useInertBackground(open, dialogRef)
   // The heading names the organization as its profile does; the request uses the name.
   const name = displayNameOf(tenant.display_name, tenant.name)
 
@@ -352,6 +355,7 @@ function TransferOwnerDialog({
   return (
     <>
       <Dialog
+        ref={dialogRef}
         open={open}
         onClose={() => {
           if (!pending) {

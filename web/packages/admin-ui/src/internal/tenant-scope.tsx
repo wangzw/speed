@@ -8,6 +8,7 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import MenuItem from '@mui/material/MenuItem'
 import TextField from '@mui/material/TextField'
+import { useInertSelectMenu } from '@speed/ui-kit'
 import { isForbidden } from './async-section.js'
 import { SelectorRow } from './selector-row.js'
 import { useAdminUiTranslation } from './translation.js'
@@ -53,6 +54,7 @@ export function TenantScope({
 }: TenantScopeProps) {
   const { t } = useAdminUiTranslation()
   const operations = useAdminOperations()
+  const tenantMenu = useInertSelectMenu()
   const tenants = operations.useTenants()
   const options = tenants.data ?? []
   // A value seeded from the query string shows before the roster read
@@ -91,6 +93,7 @@ export function TenantScope({
   const selector = (
     <TextField
       select
+      slotProps={{ select: tenantMenu }}
       size="small"
       label={t('common.tenant')}
       value={value}

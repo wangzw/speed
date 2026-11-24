@@ -10,7 +10,12 @@ import MenuItem from '@mui/material/MenuItem'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { ActionButton, DataTable, ListSkeleton } from '@speed/ui-kit'
+import {
+  ActionButton,
+  DataTable,
+  ListSkeleton,
+  useInertSelectMenu,
+} from '@speed/ui-kit'
 import type {
   ActionButtonUnavailableExplanation,
   DataTableColumn,
@@ -104,6 +109,7 @@ export function RoleGrantsSection({
   onRevoke,
 }: RoleGrantsSectionProps) {
   const { t } = useAdminUiTranslation()
+  const permissionMenu = useInertSelectMenu()
   const [permission, setPermission] = useState('')
   const grouped = useMemo(() => groupGrantable(catalog), [catalog])
   const byCode = useMemo(() => {
@@ -245,6 +251,7 @@ export function RoleGrantsSection({
                   sx={{ minWidth: 280 }}
                   slotProps={{
                     select: {
+                      ...permissionMenu,
                       // The options carry the readable name above the code; the
                       // closed control keeps the single-line code to avoid a height jump.
                       renderValue: (value) => value as string,

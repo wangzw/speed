@@ -61,4 +61,19 @@ describe('RowActionMenu', () => {
     await user.keyboard(' ')
     expect(screen.queryByRole('menuitem', { name: 'Revoke' })).toBeNull()
   })
+
+  it('marks the page behind the open menu inert', async () => {
+    const user = userEvent.setup()
+    const { container } = renderWithProviders(
+      <RowActionMenu
+        label={TRIGGER}
+        actions={[{ key: 'revoke', label: 'Revoke', onSelect: () => undefined }]}
+      />,
+    )
+
+    await user.click(trigger())
+    const menu = await screen.findByRole('menu')
+    expect(container).toHaveAttribute('inert')
+    expect(menu).not.toHaveAttribute('inert')
+  })
 })
