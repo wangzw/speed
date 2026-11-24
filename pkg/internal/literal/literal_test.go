@@ -16,8 +16,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// maskedBy applies spans to s the way the logging capability does, so a case
-// reads what a reader of the log would read.
 func maskedBy(s string, spans []log.Span) string {
 	covered := make([]bool, len(s))
 	for _, span := range spans {
@@ -36,8 +34,8 @@ func maskedBy(s string, spans []log.Span) string {
 	return b.String()
 }
 
-// TestTheValueIsMaskedWhereverItAppears holds what the matcher finds in a string:
-// every occurrence of the value, and nothing that is not one.
+// TestTheValueIsMaskedWhereverItAppears holds what the matcher finds in a string: every occurrence
+// of the value, and nothing that is not one.
 func TestTheValueIsMaskedWhereverItAppears(t *testing.T) {
 	const secret = "s3cr3t-Value"
 	for _, c := range []struct {
@@ -65,9 +63,8 @@ func TestTheValueIsMaskedWhereverItAppears(t *testing.T) {
 	}
 }
 
-// TestOverlappingOccurrencesAreAllMasked holds that an occurrence that starts
-// inside another is found too: a scan that resumed after each match would leave
-// the tail of the second one readable.
+// TestOverlappingOccurrencesAreAllMasked holds that an occurrence that starts inside another is
+// found too: a scan that resumed after each match would leave the tail of the second one readable.
 func TestOverlappingOccurrencesAreAllMasked(t *testing.T) {
 	match := Matcher("abab")
 	in := "ababab"
@@ -76,10 +73,8 @@ func TestOverlappingOccurrencesAreAllMasked(t *testing.T) {
 	}
 }
 
-// TestTheFormsALogLineCarriesAreMasked holds the forms besides the one written:
-// the value without the whitespace around it, and the value as a URL escapes it
-// for a query and for a path. Each is a way the value reaches a log that the
-// configured text alone would miss.
+// TestTheFormsALogLineCarriesAreMasked holds the forms besides the one written: the value without
+// the whitespace around it, and the value as a URL escapes it for a query and for a path.
 func TestTheFormsALogLineCarriesAreMasked(t *testing.T) {
 	const secret = " pa ss/w+rd=1&2\n"
 	trimmed := strings.TrimSpace(secret)
@@ -106,8 +101,8 @@ func TestTheFormsALogLineCarriesAreMasked(t *testing.T) {
 	}
 }
 
-// TestSeveralValuesAreEachMasked holds that one rule can hold more than one
-// value, which is how a module with a client secret and a signing key registers.
+// TestSeveralValuesAreEachMasked holds that one rule can hold more than one value, which is how a
+// module with a client secret and a signing key registers.
 func TestSeveralValuesAreEachMasked(t *testing.T) {
 	match := Matcher("first-secret", "second-secret")
 	in := "a first-secret b second-secret c"
@@ -116,10 +111,8 @@ func TestSeveralValuesAreEachMasked(t *testing.T) {
 	}
 }
 
-// TestNoUsableValueGivesNoMatcher holds the answer for nothing to match: nil,
-// which Register reads as "register nothing". A matcher built over an empty
-// string would match at every position and mask whole lines, and one that always
-// answered with no spans would look registered and protect nothing.
+// TestNoUsableValueGivesNoMatcher holds the answer for nothing to match: nil, which Register reads
+// as "register nothing".
 func TestNoUsableValueGivesNoMatcher(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -138,8 +131,8 @@ func TestNoUsableValueGivesNoMatcher(t *testing.T) {
 	}
 }
 
-// TestAnEmptyValueBesideARealOneIsSkipped holds that the empty value among others
-// costs nothing and masks nothing it should not.
+// TestAnEmptyValueBesideARealOneIsSkipped holds that the empty value among others costs nothing
+// and masks nothing it should not.
 func TestAnEmptyValueBesideARealOneIsSkipped(t *testing.T) {
 	match := Matcher("", "real-secret")
 	in := "x real-secret y"
@@ -148,15 +141,13 @@ func TestAnEmptyValueBesideARealOneIsSkipped(t *testing.T) {
 	}
 }
 
-// ruleRecorder is a log.Redaction that remembers what was registered.
 type ruleRecorder struct{ patterns *[]string }
 
 func (r ruleRecorder) AddKeys(...string)                     {}
 func (r ruleRecorder) AddPattern(name string, _ log.Matcher) { *r.patterns = append(*r.patterns, name) }
 
-// TestRegisterAddsOneRuleUnderTheNameAndNoneForNothing holds the registration:
-// one pattern under the name given for any usable value, and no call at all for
-// none, since the logging capability panics on a nil matcher.
+// TestRegisterAddsOneRuleUnderTheNameAndNoneForNothing checks that Register adds one rule named
+// after the key and registers nothing for empty or absent values.
 func TestRegisterAddsOneRuleUnderTheNameAndNoneForNothing(t *testing.T) {
 	var got []string
 	rules := ruleRecorder{patterns: &got}
@@ -174,8 +165,6 @@ func TestRegisterAddsOneRuleUnderTheNameAndNoneForNothing(t *testing.T) {
 	}
 }
 
-// holder is a module that holds a secret configuration value the way a backend
-// does: it registers the value in New and only then takes its logger.
 func holder(secret string, logger *log.Logger) core.Module {
 	return core.Module{
 		Name:     "stand-in.holder",
@@ -192,11 +181,8 @@ func holder(secret string, logger *log.Logger) core.Module {
 	}
 }
 
-// TestTheValueDoesNotReachTheLogOutput holds the rule end to end through the real
-// logging module and its output: a record that carries the value in free text, in
-// an error and in the text of a failed request, and one written through a logger
-// that was taken after the registration with the value bound to it, all arrive
-// with the value masked and the rest of the record intact.
+// TestTheValueDoesNotReachTheLogOutput checks that a registered secret is masked in free text, in an
+// error, in a URL and when bound to the logger, while other text survives.
 func TestTheValueDoesNotReachTheLogOutput(t *testing.T) {
 	const secret = "wx-app-secret/0123456789"
 	path := filepath.Join(t.TempDir(), "log.json")
