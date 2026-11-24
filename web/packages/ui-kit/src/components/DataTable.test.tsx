@@ -697,7 +697,7 @@ describe('DataTable', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('fires the next-page callback and disables previous on the first page', () => {
+  it('fires the next-page callback and marks previous unavailable on the first page', () => {
     const onPageChange = vi.fn()
     const utils = renderWithProviders(
       <DataTable
@@ -716,11 +716,79 @@ describe('DataTable', () => {
       { language: 'en-US' },
     )
     const previous = utils.getByRole('button', { name: 'Go to previous page' })
-    expect(previous).toBeDisabled()
+    expect(previous).toHaveAttribute('aria-disabled', 'true')
+    expect(previous).not.toBeDisabled()
     fireEvent.click(previous)
     expect(onPageChange).not.toHaveBeenCalled()
     fireEvent.click(utils.getByRole('button', { name: 'Go to next page' }))
     expect(onPageChange).toHaveBeenLastCalledWith(1)
+  })
+
+  it('marks both directions unavailable while a write is in flight, and swallows activation', () => {
+    const onPageChange = vi.fn()
+    const utils = renderWithProviders(
+      <DataTable
+        rows={MEMBERS}
+        columns={BASE_COLUMNS}
+        rowKey={keyOf}
+        pagination={{
+          page: 1,
+          rowsPerPage: 2,
+          count: 5,
+          rowsPerPageOptions: [2, 5],
+          onPageChange,
+          onRowsPerPageChange: vi.fn(),
+          unavailable: true,
+        }}
+      />,
+      { language: 'en-US' },
+    )
+    const previous = utils.getByRole('button', { name: 'Go to previous page' })
+    const next = utils.getByRole('button', { name: 'Go to next page' })
+    for (const direction of [previous, next]) {
+      expect(direction).toHaveAttribute('aria-disabled', 'true')
+      expect(direction).not.toBeDisabled()
+    }
+
+    fireEvent.click(previous)
+    fireEvent.click(next)
+    expect(onPageChange).not.toHaveBeenCalled()
+  })
+
+  it('keeps the footer wording and the direction states when the new fields are omitted', () => {
+    const utils = renderWithProviders(
+      <DataTable
+        rows={MEMBERS}
+        columns={BASE_COLUMNS}
+        rowKey={keyOf}
+        pagination={{
+          page: 1,
+          rowsPerPage: 2,
+          count: 5,
+          rowsPerPageOptions: [2, 5],
+          onPageChange: vi.fn(),
+          onRowsPerPageChange: vi.fn(),
+        }}
+      />,
+      { language: 'en-US' },
+    )
+
+    expect(utils.getByText(enUS.dataTable.rowsPerPage)).toBeInTheDocument()
+    expect(
+      utils.getByText(
+        renderTemplate(enUS.dataTable.displayedRows, {
+          from: 3,
+          to: 4,
+          count: 5,
+        }),
+      ),
+    ).toBeInTheDocument()
+    for (const name of ['Go to previous page', 'Go to next page']) {
+      const direction = utils.getByRole('button', { name })
+      expect(direction).not.toHaveAttribute('aria-disabled')
+      expect(direction).not.toHaveAttribute('aria-busy')
+      expect(direction).not.toBeDisabled()
+    }
   })
 
   it('fires the rows-per-page callback from the selector', () => {

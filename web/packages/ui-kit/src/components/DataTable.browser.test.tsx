@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { page } from 'vitest/browser'
 import { tableContainerClasses } from '@mui/material/TableContainer'
 import {
@@ -391,6 +392,51 @@ describe('DataTable row-actions pinning in Chromium', () => {
       getComputedStyle(row as HTMLElement).backgroundColor,
     )
     expect(alphaOf(hovered.backgroundColor)).toBe(1)
+  })
+})
+
+describe('DataTable pager focus in Chromium', () => {
+  const PAGED_ROWS: readonly Row[] = [
+    { id: 'a', name: 'Ada' },
+    { id: 'b', name: 'Grace' },
+    { id: 'c', name: 'Katherine' },
+    { id: 'd', name: 'Dorothy' },
+  ]
+
+  function PagedTable() {
+    const [page, setPage] = useState(0)
+    return (
+      <DataTable
+        rows={PAGED_ROWS.slice(page * 2, page * 2 + 2)}
+        columns={FLAT_COLUMNS}
+        rowKey={(row) => row.id}
+        pagination={{
+          page,
+          rowsPerPage: 2,
+          count: PAGED_ROWS.length,
+          rowsPerPageOptions: [2, 5],
+          onPageChange: setPage,
+          onRowsPerPageChange: () => undefined,
+        }}
+      />
+    )
+  }
+
+  it('keeps focus on the next direction when the last page is reached', async () => {
+    await page.viewport(1280, 900)
+    const user = userEvent.setup()
+    renderWithProviders(<PagedTable />, { language: 'en-US' })
+
+    const next = screen.getByRole('button', { name: 'Go to next page' })
+    expect(next).not.toBeDisabled()
+
+    await user.click(next)
+
+    await waitFor(() =>
+      expect(next).toHaveAttribute('aria-disabled', 'true'),
+    )
+    expect(next).not.toBeDisabled()
+    expect(document.activeElement).toBe(next)
   })
 })
 

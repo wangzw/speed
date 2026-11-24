@@ -194,6 +194,8 @@ const PUBLIC_EXPORTS = [
   'SidePanel',
   'SidePanelProps',
   'SidePanelSize',
+  'TablePager',
+  'TablePagerProps',
   'TotpEnrollmentPanel',
   'TotpEnrollmentPanelProps',
   'TotpEnrollmentParameter',
