@@ -332,7 +332,7 @@ describe('AccountsPage', () => {
     expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
   })
 
-  it('keeps focus inside the pagination controls after advancing', async () => {
+  it('keeps focus on the direction that advanced', async () => {
     const user = userEvent.setup()
     const operations = createAdminOperations(
       makeAdminBackend({
@@ -360,15 +360,14 @@ describe('AccountsPage', () => {
     await user.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
     expect(await screen.findByText('Grace Hopper')).toBeInTheDocument()
 
-    // The page branch swapped under the footer; focus must not fall to the
-    // document, or a keyboard operator loses their place.
-    const previous = screen.getByRole('button', { name: PREVIOUS_PAGE_LABEL })
+    // The page branch swapped under the footer; the activated direction
+    // keeps the focus, so a keyboard operator pages again without finding
+    // the control.
     const next = screen.getByRole('button', { name: NEXT_PAGE_LABEL })
-    expect(document.body).not.toBe(document.activeElement)
-    expect([next, previous]).toContain(document.activeElement)
+    expect(document.activeElement).toBe(next)
   })
 
-  it('disables the next-page control on the last page', async () => {
+  it('marks the next-page control unavailable on the last page', async () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         listAccounts: () =>
@@ -380,9 +379,11 @@ describe('AccountsPage', () => {
     )
     renderWithProviders(<AccountsPage />, { operations })
     expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: NEXT_PAGE_LABEL }),
-    ).toBeDisabled()
+    const next = screen.getByRole('button', { name: NEXT_PAGE_LABEL })
+    expect(next).toHaveAttribute('aria-disabled', 'true')
+    // Only the attribute reports the boundary: the control stays reachable
+    // so the operator keeps their place in the Tab order.
+    expect(next).not.toBeDisabled()
   })
 
   it('does not advance while the next page is still loading', async () => {
@@ -416,9 +417,13 @@ describe('AccountsPage', () => {
 
     await user.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
     const next = screen.getByRole('button', { name: NEXT_PAGE_LABEL })
-    // An unsettled page has no cursor to advance from, so the control is
-    // disabled and a click cannot skip a page.
-    expect(next).toBeDisabled()
+    // An unsettled page has no cursor to advance from: the direction stays
+    // focused, reports its read as busy and unavailable, and swallows the
+    // activation, so a click cannot skip a page.
+    expect(document.activeElement).toBe(next)
+    expect(next).toHaveAttribute('aria-busy', 'true')
+    expect(next).toHaveAttribute('aria-disabled', 'true')
+    expect(next).not.toBeDisabled()
     fireEvent.click(next)
 
     const forwardReads = calls.filter(
@@ -436,13 +441,15 @@ describe('AccountsPage', () => {
     expect(await screen.findByText('Grace Hopper')).toBeInTheDocument()
   })
 
-  it('disables paging in both directions while a row write is in flight', async () => {
+  it('marks paging in both directions unavailable while a row write is in flight', async () => {
     const user = userEvent.setup()
     let finishDelete: (() => void) | undefined
+    let reads = 0
     const operations = createAdminOperations(
       makeAdminBackend({
-        listAccounts: (params) =>
-          Promise.resolve(
+        listAccounts: (params) => {
+          reads += 1
+          return Promise.resolve(
             params?.after === undefined
               ? {
                   accounts: [
@@ -456,7 +463,8 @@ describe('AccountsPage', () => {
                   ],
                   next_cursor: 'cursor-2',
                 },
-          ),
+          )
+        },
         deleteAccount: () =>
           new Promise<void>((resolve) => {
             finishDelete = resolve
@@ -487,20 +495,29 @@ describe('AccountsPage', () => {
       expect(screen.queryByRole('dialog')).toBeNull()
     })
 
-    // The in-flight delete owns the list's context: paging away from it is
-    // disabled in both directions until it settles.
+    // The in-flight delete owns the list's context: both directions report
+    // unavailable until it settles, stay reachable, and swallow activation
+    // without a page read.
     const previous = screen.getByRole('button', { name: PREVIOUS_PAGE_LABEL })
     const next = screen.getByRole('button', { name: NEXT_PAGE_LABEL })
-    expect(previous).toBeDisabled()
-    expect(next).toBeDisabled()
+    expect(previous).toHaveAttribute('aria-disabled', 'true')
+    expect(next).toHaveAttribute('aria-disabled', 'true')
+    expect(previous).not.toBeDisabled()
+    expect(next).not.toBeDisabled()
+
+    next.focus()
+    const before = reads
+    fireEvent.click(next)
+    expect(reads).toBe(before)
+    expect(document.activeElement).toBe(next)
 
     await act(async () => {
       finishDelete?.()
     })
     await waitFor(() => {
-      expect(next).toBeEnabled()
+      expect(next).not.toHaveAttribute('aria-disabled')
     })
-    expect(previous).toBeEnabled()
+    expect(previous).not.toHaveAttribute('aria-disabled')
   })
 
   it('returns to the first page when a filter is submitted', async () => {

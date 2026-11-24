@@ -10,10 +10,15 @@
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import type { AuthSession } from '@speed/auth-core'
+import { CONFIRM_ARM_LOCKOUT_MS } from '@speed/ui-kit'
 import Box from '@mui/material/Box'
 import { page, userEvent } from 'vitest/browser'
 import { AccountsPage } from './AccountsPage.js'
-import type { AdminAccount, AdminAccountSecretCreated } from './operations.js'
+import type {
+  AdminAccount,
+  AdminAccountPage,
+  AdminAccountSecretCreated,
+} from './operations.js'
 import { createStepUpSession } from '../test-utils/session.js'
 import {
   accountUsername,
@@ -27,6 +32,13 @@ import {
 } from '../test-utils/operations.js'
 import { expectNoHorizontalOverflow } from '../test-utils/browser-overflow.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import {
+  CONFIRM_AGAIN_LABEL,
+  CONFIRM_LABEL,
+  DELETE_ACCOUNT_NAME,
+  NEXT_PAGE_LABEL,
+  PREVIOUS_PAGE_LABEL,
+} from '../test-utils/accounts-page.js'
 import enUS from './locales/en-US.json' with { type: 'json' }
 
 const FLOOR_WIDTHS = [600, 900, 1200] as const
@@ -205,6 +217,190 @@ describe('AccountsPage row actions at 375 in Chromium', () => {
     const after = manage.getBoundingClientRect()
     expect(after.left).toBeGreaterThanOrEqual(box.left - PIN_TOLERANCE)
     expect(after.right).toBeLessThanOrEqual(box.right + PIN_TOLERANCE)
+  })
+})
+
+/** The list's first and second page, so a case can name the row on each. */
+const FIRST_PAGE = [
+  accountFixture({ id: 'acc-1', display_name: 'Ada Lovelace' }),
+]
+const SECOND_PAGE = [
+  accountFixture({ id: 'acc-2', display_name: 'Grace Hopper' }),
+]
+
+describe('AccountsPage pager focus in Chromium', () => {
+  it('keeps focus on the next-page direction while the page it started is read', async () => {
+    await page.viewport(900, 700)
+    const secondPage = deferred<AdminAccountPage>()
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listAccounts: (params) =>
+          params?.after === undefined
+            ? Promise.resolve({ accounts: FIRST_PAGE, next_cursor: 'cursor-1' })
+            : secondPage.promise,
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    await screen.findByText('Ada Lovelace')
+
+    const previous = screen.getByRole('button', { name: PREVIOUS_PAGE_LABEL })
+    const next = screen.getByRole('button', { name: NEXT_PAGE_LABEL })
+    await userEvent.click(next)
+
+    await waitFor(() =>
+      expect(
+        next,
+        `the activated direction while its page read runs; document.activeElement is ${describeActiveElement()}`,
+      ).toHaveAttribute('aria-busy', 'true'),
+    )
+    expect(next).toHaveAttribute('aria-disabled', 'true')
+    expect(previous).toHaveAttribute('aria-disabled', 'true')
+    expect(next).not.toBeDisabled()
+    expect(previous).not.toBeDisabled()
+    expect(document.activeElement).toBe(next)
+
+    secondPage.resolve({ accounts: SECOND_PAGE, next_cursor: '' })
+    await screen.findByText('Grace Hopper')
+    await waitFor(() => expect(next).not.toHaveAttribute('aria-busy'))
+    expect(document.activeElement).toBe(next)
+  })
+
+  it('keeps focus on the previous-page direction when the page it returns to is read', async () => {
+    await page.viewport(900, 700)
+    const returning = deferred<AdminAccountPage>()
+    let firstPageReads = 0
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listAccounts: (params) => {
+          if (params?.after === 'cursor-1') {
+            return Promise.resolve({
+              accounts: SECOND_PAGE,
+              next_cursor: 'cursor-2',
+            })
+          }
+          firstPageReads += 1
+          return firstPageReads === 1
+            ? Promise.resolve({ accounts: FIRST_PAGE, next_cursor: 'cursor-1' })
+            : returning.promise
+        },
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    await screen.findByText('Ada Lovelace')
+    await userEvent.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
+    await screen.findByText('Grace Hopper')
+
+    const previous = screen.getByRole('button', { name: PREVIOUS_PAGE_LABEL })
+    await userEvent.click(previous)
+
+    await waitFor(() =>
+      expect(
+        previous,
+        `the activated direction while its page read runs; document.activeElement is ${describeActiveElement()}`,
+      ).toHaveAttribute('aria-busy', 'true'),
+    )
+    expect(previous).toHaveAttribute('aria-disabled', 'true')
+    expect(previous).not.toBeDisabled()
+    expect(document.activeElement).toBe(previous)
+
+    returning.resolve({ accounts: FIRST_PAGE, next_cursor: 'cursor-1' })
+  })
+
+  it('keeps focus on the last page direction and starts no read there', async () => {
+    await page.viewport(900, 700)
+    let reads = 0
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listAccounts: (params) => {
+          reads += 1
+          return params?.after === undefined
+            ? Promise.resolve({ accounts: FIRST_PAGE, next_cursor: 'cursor-1' })
+            : Promise.resolve({ accounts: SECOND_PAGE, next_cursor: '' })
+        },
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    await screen.findByText('Ada Lovelace')
+
+    const next = screen.getByRole('button', { name: NEXT_PAGE_LABEL })
+    await userEvent.click(next)
+    await screen.findByText('Grace Hopper')
+
+    await waitFor(() =>
+      expect(
+        next,
+        `the last page direction; document.activeElement is ${describeActiveElement()}`,
+      ).toHaveAttribute('aria-disabled', 'true'),
+    )
+    expect(next).not.toBeDisabled()
+    expect(document.activeElement).toBe(next)
+
+    const before = reads
+    await userEvent.keyboard('{Enter}')
+    await nextFrame()
+    expect(reads).toBe(before)
+    expect(document.activeElement).toBe(next)
+  })
+
+  it('keeps a focused pager direction and starts no read while a row write runs', async () => {
+    await page.viewport(900, 700)
+    const pendingDelete = deferred<void>()
+    let reads = 0
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listAccounts: (params) => {
+          reads += 1
+          return Promise.resolve(
+            params?.after === undefined
+              ? { accounts: FIRST_PAGE, next_cursor: 'cursor-1' }
+              : { accounts: SECOND_PAGE, next_cursor: 'cursor-2' },
+          )
+        },
+        deleteAccount: () => pendingDelete.promise,
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    await screen.findByText('Ada Lovelace')
+
+    await userEvent.click(
+      screen.getByRole('button', { name: DELETE_ACCOUNT_NAME }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: CONFIRM_LABEL }),
+    )
+    await new Promise((resolve) =>
+      setTimeout(resolve, CONFIRM_ARM_LOCKOUT_MS + 300),
+    )
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: CONFIRM_AGAIN_LABEL }),
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    // The dialog's exit hands focus back to the row control; let that land
+    // before this case moves focus to the pager.
+    await nextFrame()
+
+    const previous = screen.getByRole('button', { name: PREVIOUS_PAGE_LABEL })
+    const next = screen.getByRole('button', { name: NEXT_PAGE_LABEL })
+    next.focus()
+    await waitFor(() =>
+      expect(
+        next,
+        `the focused direction while the write runs; document.activeElement is ${describeActiveElement()}`,
+      ).toHaveAttribute('aria-disabled', 'true'),
+    )
+    expect(previous).toHaveAttribute('aria-disabled', 'true')
+    expect(next).not.toBeDisabled()
+    expect(previous).not.toBeDisabled()
+    expect(document.activeElement).toBe(next)
+
+    const before = reads
+    await userEvent.keyboard('{Enter}')
+    await nextFrame()
+    expect(reads).toBe(before)
+    expect(document.activeElement).toBe(next)
+
+    pendingDelete.resolve()
   })
 })
 
