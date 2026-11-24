@@ -20,6 +20,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@speed/test-utils/timers'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import enUS from './locales/en-US.json' with { type: 'json' }
@@ -1146,7 +1147,7 @@ describe('ContactVerificationSection', () => {
         ),
       ).toHaveLength(1)
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
       vi.restoreAllMocks()
     }
   })

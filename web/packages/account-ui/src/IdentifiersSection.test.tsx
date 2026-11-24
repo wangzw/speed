@@ -22,6 +22,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@speed/test-utils/timers'
 import type { ReactElement } from 'react'
 import { useState } from 'react'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
@@ -773,7 +774,7 @@ describe('IdentifiersSection', () => {
         try {
           vi.advanceTimersByTime(100)
         } finally {
-          vi.useRealTimers()
+          await restoreRealTimers()
         }
       }
     },
