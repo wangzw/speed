@@ -31,7 +31,6 @@ import (
 	"github.com/vislake/speed/pkg/observability"
 )
 
-// recordingSpanExporter keeps what the layer ended.
 type recordingSpanExporter struct {
 	mu    sync.Mutex
 	spans []sdktrace.ReadOnlySpan
@@ -67,22 +66,14 @@ func layerUnderTest(t *testing.T) (*providers, *recordingSpanExporter, *sdkmetri
 	return &providers{cfg: prototype(), tp: tp, mp: mp}, rec, reader
 }
 
-// requestDurationName is the instrument a dashboard reads, written as the literal
-// it reads rather than taken from anything the layer is built from.
 const requestDurationName = "http.server.request.duration"
 
-// The literals the tests look attributes up by.
 const otherMethod = "_OTHER"
 
 var attrRoute = attribute.Key("http.route")
 
-// handlerDefectType is the error.type a span carries for a request the entry
-// module's recovery answered. It is the name of the type that layer files in the
-// request's error list — pkg/http's own, unexported — written here as a trace
-// backend reads it rather than taken from anything this module is built from.
 const handlerDefectType = "github.com/vislake/speed/pkg/http.handlerDefect"
 
-// durationHistogram collects the one histogram the layer records.
 func durationHistogram(t *testing.T, reader *sdkmetric.ManualReader) metricdata.Histogram[float64] {
 	t.Helper()
 	var rm metricdata.ResourceMetrics
@@ -105,8 +96,6 @@ func durationHistogram(t *testing.T, reader *sdkmetric.ManualReader) metricdata.
 	return metricdata.Histogram[float64]{}
 }
 
-// durationPoint returns the histogram's data point, for a case that sent
-// requests which all carry the same attributes.
 func durationPoint(t *testing.T, reader *sdkmetric.ManualReader) metricdata.HistogramDataPoint[float64] {
 	t.Helper()
 	hist := durationHistogram(t, reader)
@@ -116,8 +105,6 @@ func durationPoint(t *testing.T, reader *sdkmetric.ManualReader) metricdata.Hist
 	return hist.DataPoints[0]
 }
 
-// durationPoints returns the histogram's data points keyed by the method and the
-// status code they carry, written "GET 404".
 func durationPoints(t *testing.T, reader *sdkmetric.ManualReader) map[string]metricdata.HistogramDataPoint[float64] {
 	t.Helper()
 	points := map[string]metricdata.HistogramDataPoint[float64]{}
@@ -138,10 +125,6 @@ func attributeOf(t *testing.T, attrs attribute.Set, key string) string {
 	return v.String()
 }
 
-// assertNoRequestIdentity holds a histogram's attributes to the ones whose
-// values are bounded by what the host registers or by the protocol. The request's
-// path, its full URL, its client and its user agent take a value per caller, so a
-// series carrying any of them grows with traffic.
 func assertNoRequestIdentity(t *testing.T, what string, attrs attribute.Set) {
 	t.Helper()
 	for _, key := range []attribute.Key{"url.path", "url.full", "url.query", "client.address", "user_agent.original"} {
@@ -151,11 +134,6 @@ func assertNoRequestIdentity(t *testing.T, what string, attrs attribute.Set) {
 	}
 }
 
-// assertNoRequestDuration holds that the layer recorded no request duration.
-// That is the instrumentation's own outcome for a chain that did not return
-// normally: its metrics are recorded after the call that never returns, so a
-// request the caller abandons leaves none, which is deliberate and not a
-// duration of zero.
 func assertNoRequestDuration(t *testing.T, reader *sdkmetric.ManualReader) {
 	t.Helper()
 	var rm metricdata.ResourceMetrics
@@ -188,7 +166,6 @@ func logRecord(logs *syncBuffer, substr string) map[string]any {
 	return found
 }
 
-// routes registers one handler per route, on the endpoint the layer is on.
 type routes map[[2]string]gin.HandlerFunc
 
 func (r routes) register(ep speedhttp.Endpoint) {
@@ -197,12 +174,8 @@ func (r routes) register(ep speedhttp.Endpoint) {
 	}
 }
 
-// TestTheLayerRecordsTheSpanAndTheRequestDuration covers the ordinary path: one
-// span named for the method and the route the request matched, carrying the
-// route and the endpoint, and one data point carrying the method, the status
-// code the handler actually wrote and the route template. The route is
-// parameterised, so the span name and the data point hold the template rather
-// than the path the request asked for.
+// TestTheLayerRecordsTheSpanAndTheRequestDuration covers the ordinary
+// path.
 func TestTheLayerRecordsTheSpanAndTheRequestDuration(t *testing.T) {
 	p, rec, reader := layerUnderTest(t)
 	serve(t, p, routes{
@@ -247,11 +220,8 @@ func TestTheLayerRecordsTheSpanAndTheRequestDuration(t *testing.T) {
 	}
 }
 
-// TestTheRequestDurationBucketsAreInSeconds pins the boundaries the histogram
-// counts into. The values are recorded in seconds, so boundaries meant for
-// milliseconds would put every request under five seconds into one bucket and
-// leave no percentile to read. Two requests an order of magnitude apart have to
-// land in different buckets, and the boundaries are the ones the design names.
+// TestTheRequestDurationBucketsAreInSeconds pins the boundaries the
+// histogram counts into.
 func TestTheRequestDurationBucketsAreInSeconds(t *testing.T) {
 	p, _, reader := layerUnderTest(t)
 	serve(t, p, routes{
@@ -263,8 +233,6 @@ func TestTheRequestDurationBucketsAreInSeconds(t *testing.T) {
 		}
 	})
 
-	// The two routes are two data points of one instrument, so the buckets they
-	// fill are read across both.
 	want := []float64{0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10}
 	filled := make([]uint64, len(want)+1)
 	for _, point := range durationHistogram(t, reader).DataPoints {
@@ -287,13 +255,8 @@ func TestTheRequestDurationBucketsAreInSeconds(t *testing.T) {
 	}
 }
 
-// TestTheRequestDurationInstrumentKeepsItsNameUnitAndSeconds pins the rest of
-// the surface a dashboard reads: the instrument's name, its unit, and the unit
-// the value is really in. The name and the unit are looked for as the literals a
-// dashboard writes, not through the constants the layer is built from, because a
-// constant changed along with its uses would still agree with itself. A request
-// of 30ms is recorded as 0.03, and the same request counted in milliseconds
-// would be 30 under a unit that still says seconds.
+// TestTheRequestDurationInstrumentKeepsItsNameUnitAndSeconds pins the
+// rest of the surface a dashboard reads.
 func TestTheRequestDurationInstrumentKeepsItsNameUnitAndSeconds(t *testing.T) {
 	p, _, reader := layerUnderTest(t)
 	serve(t, p, routes{
@@ -332,10 +295,8 @@ func TestTheRequestDurationInstrumentKeepsItsNameUnitAndSeconds(t *testing.T) {
 	}
 }
 
-// TestTheLayerRecordsTheStatusEvenWhenTheHandlerNeverWritesOne pins the default
-// the response starts from: a handler that only writes a body, or writes nothing
-// at all, has answered 200, and the attribute has to say so rather than report a
-// zero.
+// TestTheLayerRecordsTheStatusEvenWhenTheHandlerNeverWritesOne pins the
+// default the response starts from.
 func TestTheLayerRecordsTheStatusEvenWhenTheHandlerNeverWritesOne(t *testing.T) {
 	for name, handler := range map[string]gin.HandlerFunc{
 		"a body and no status":      func(c *gin.Context) { _, _ = c.Writer.WriteString("body") },
@@ -355,10 +316,8 @@ func TestTheLayerRecordsTheStatusEvenWhenTheHandlerNeverWritesOne(t *testing.T) 
 	}
 }
 
-// TestTheLayerFoldsMethodsOutsideTheStandardSet pins the folding that keeps the
-// method dimension closed. Without it a client could grow the dimension one
-// verb at a time, and the resulting series would be unbounded in a signal that
-// is meant to be cheap.
+// TestTheLayerFoldsMethodsOutsideTheStandardSet pins the folding that
+// keeps the method dimension closed.
 func TestTheLayerFoldsMethodsOutsideTheStandardSet(t *testing.T) {
 	p, _, reader := layerUnderTest(t)
 	serve(t, p, routes{{"PURGE", "/x"}: func(*gin.Context) {}}.register, func(h *entryHost) {
@@ -371,10 +330,8 @@ func TestTheLayerFoldsMethodsOutsideTheStandardSet(t *testing.T) {
 	}
 }
 
-// TestTheLayerContinuesTheCallersTrace is the inbound half of propagation. It
-// is the half that has no call site to forget: a server that does not extract
-// breaks the trace for every caller, and the only way to notice is a trace that
-// stops at the hop.
+// TestTheLayerContinuesTheCallersTrace is the inbound half of
+// propagation.
 func TestTheLayerContinuesTheCallersTrace(t *testing.T) {
 	p, rec, _ := layerUnderTest(t)
 	serve(t, p, routes{{nethttp.MethodGet, "/x"}: func(*gin.Context) {}}.register, func(h *entryHost) {
@@ -391,12 +348,8 @@ func TestTheLayerContinuesTheCallersTrace(t *testing.T) {
 	}
 }
 
-// TestTheLayerBindsTheCorrelationFieldsForDownstreamLogs pins the field names
-// and the fact that they are bound rather than injected. A record written
-// downstream has to carry the trace it belongs to, or a log and a span cannot
-// be put together — and the names are this module's contract with whoever
-// reads them. The logger is the one the entry module injects; the layer adds
-// the fields to the request context the handler reads it from.
+// TestTheLayerBindsTheCorrelationFieldsForDownstreamLogs pins the field
+// names and the fact that they are bound rather than injected.
 func TestTheLayerBindsTheCorrelationFieldsForDownstreamLogs(t *testing.T) {
 	p, rec, _ := layerUnderTest(t)
 	var logs *syncBuffer
@@ -431,14 +384,8 @@ func TestTheLayerBindsTheCorrelationFieldsForDownstreamLogs(t *testing.T) {
 	}
 }
 
-// TestTheLayerRecordsAPanicAndLetsItThrough pins what a handler that panics
-// leaves behind. The entry module's own recovery runs inside the observing
-// layers, so it catches the panic and answers the internal error before the
-// instrumentation returns: the observing layers see a request that returned,
-// whose response is the recovery's 500, and the span and the histogram are built
-// from exactly that. The panic is not recorded on the span as an exception
-// event, because it never passed the span's own end; where its stack survives is
-// the recovery's log record, which a sibling case pins.
+// TestTheLayerRecordsAPanicAndLetsItThrough pins what a handler that
+// panics leaves behind.
 func TestTheLayerRecordsAPanicAndLetsItThrough(t *testing.T) {
 	p, rec, reader := layerUnderTest(t)
 	var answered *nethttp.Response
@@ -497,15 +444,6 @@ func TestTheLayerRecordsAPanicAndLetsItThrough(t *testing.T) {
 
 // TestTheLayerReportsAPanicWithTheStatusTheCallerReceives pins what the
 // histogram says about a request the handler abandoned.
-//
-// A response that has not started has no status yet. The one the writer holds is
-// the 200 it starts from, or whatever the handler had set before it gave up, so
-// reporting it would put a panicking request into the success bucket — the one
-// place an operator most needs it not to be. The caller is answered with the
-// fallback's internal error. A response that has already started is the other
-// way round: the status is on the wire and the fallback's answer cannot change
-// it, so the status the caller received is the committed one. Each case holds
-// the histogram to what the client was told.
 func TestTheLayerReportsAPanicWithTheStatusTheCallerReceives(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -545,9 +483,7 @@ func TestTheLayerReportsAPanicWithTheStatusTheCallerReceives(t *testing.T) {
 			})
 
 			// The span says the request failed whatever status went out: a status
-			// below 500 on the wire does not make a panicked request a success. The
-			// failure reaches the span through the error the recovery files, so the
-			// error type is the one that layer names.
+			// below 500 on the wire does not make a panicked request a success.
 			spans := rec.recorded()
 			if len(spans) != 1 {
 				t.Fatalf("the layer ended %d spans, want 1", len(spans))
@@ -569,16 +505,8 @@ func TestTheLayerReportsAPanicWithTheStatusTheCallerReceives(t *testing.T) {
 	}
 }
 
-// TestTheLayerRecordsAnAbandonedConnectionAndLetsItThrough covers the panic
-// value net/http gives a handler to drop its connection with. The entry module's
-// recovery recognises it and lets it past, so the client sees a connection that
-// was abandoned, not an answer. The sentinel then unwinds through the observing
-// layers and out to net/http, which is what closes the connection: the
-// instrumentation ends the span on its way out and records no request duration,
-// and this module writes no status of its own. A client that asked for its
-// connection to be dropped is not this endpoint's failure, so the span is left
-// unmarked — the exception event the instrumentation's span end adds as the
-// value passes it is that library's own, not a status this module set.
+// TestTheLayerRecordsAnAbandonedConnectionAndLetsItThrough covers the
+// panic value net/http gives a handler to drop its connection with.
 func TestTheLayerRecordsAnAbandonedConnectionAndLetsItThrough(t *testing.T) {
 	p, rec, reader := layerUnderTest(t)
 	serve(t, p, routes{
@@ -604,13 +532,8 @@ func TestTheLayerRecordsAnAbandonedConnectionAndLetsItThrough(t *testing.T) {
 	assertNoRequestDuration(t, reader)
 }
 
-// TestTheLayerFoldsTheMethodInTheSpanNameToo pins that the method dimension is
-// closed in both signals. The histogram folds anything outside the standard set
-// precisely because it is unbounded otherwise, and a span name is indexed by a
-// backend just as a dimension is; leaving the span out of that would move the
-// cardinality from the signal that was guarded to the one that was not. The name
-// carries the upstream convention's placeholder, HTTP, whether a route matched or
-// not, while the histogram's method attribute carries _OTHER.
+// TestTheLayerFoldsTheMethodInTheSpanNameToo pins that the method
+// dimension is closed in both signals.
 func TestTheLayerFoldsTheMethodInTheSpanNameToo(t *testing.T) {
 	p, rec, _ := layerUnderTest(t)
 	serve(t, p, routes{{"PURGE", "/x"}: func(*gin.Context) {}}.register, func(h *entryHost) {
@@ -629,12 +552,8 @@ func TestTheLayerFoldsTheMethodInTheSpanNameToo(t *testing.T) {
 	}
 }
 
-// TestASpanOfAnUnmatchedRequestIsNamedForTheMethodAlone pins the name and the
-// attributes of a span no route matched. A request that matches no route and
-// one whose method the path does not allow are answered by the engine, with no
-// template to name them by; the path they asked for is whatever the caller
-// wrote, so naming the span for it or carrying it as the route would let a
-// caller grow both one path at a time.
+// TestASpanOfAnUnmatchedRequestIsNamedForTheMethodAlone pins the name and
+// the attributes of a span no route matched.
 func TestASpanOfAnUnmatchedRequestIsNamedForTheMethodAlone(t *testing.T) {
 	p, rec, _ := layerUnderTest(t)
 	serve(t, p, routes{{nethttp.MethodGet, "/x"}: func(*gin.Context) {}}.register, func(h *entryHost) {
@@ -654,9 +573,6 @@ func TestASpanOfAnUnmatchedRequestIsNamedForTheMethodAlone(t *testing.T) {
 	for _, span := range spans {
 		names = append(names, span.Name())
 		attrs := attribute.NewSet(span.Attributes()...)
-		// The upstream instrumentation writes the attribute with an empty value
-		// for a request no route matched; what matters is that the path the
-		// caller asked for does not stand in for a template.
 		if route, ok := attrs.Value(attrRoute); ok && route.AsString() != "" {
 			t.Errorf("the span %q carries the route %q, want none for a request no route matched",
 				span.Name(), route.AsString())
@@ -671,11 +587,8 @@ func TestASpanOfAnUnmatchedRequestIsNamedForTheMethodAlone(t *testing.T) {
 	}
 }
 
-// TestASpanOfAMatchedRouteKeepsItsRouteWhateverTheHandlerAnswers pins that the
-// route goes by the match, not by the status. A handler that answers 404 for a
-// resource it does not hold, or 405 of its own accord, still served a
-// registered template, and its span is named and attributed for it just as a
-// 200 would be.
+// TestASpanOfAMatchedRouteKeepsItsRouteWhateverTheHandlerAnswers pins
+// that the route goes by the match, not by the status.
 func TestASpanOfAMatchedRouteKeepsItsRouteWhateverTheHandlerAnswers(t *testing.T) {
 	for _, code := range []int{nethttp.StatusNotFound, nethttp.StatusMethodNotAllowed} {
 		t.Run(strconv.Itoa(code), func(t *testing.T) {
@@ -703,10 +616,8 @@ func TestASpanOfAMatchedRouteKeepsItsRouteWhateverTheHandlerAnswers(t *testing.T
 	}
 }
 
-// TestTwoPathsOfOneRouteShareTheSpanName pins that the name is drawn from the
-// template, not from the path a request asked for. Two requests to one
-// parameterised route are one operation, and a name carrying the path would
-// grow with every identifier a caller sends.
+// TestTwoPathsOfOneRouteShareTheSpanName pins that the name is drawn from
+// the template, not from the path a request asked for.
 func TestTwoPathsOfOneRouteShareTheSpanName(t *testing.T) {
 	p, rec, _ := layerUnderTest(t)
 	serve(t, p, routes{{nethttp.MethodGet, "/orders/:id"}: func(*gin.Context) {}}.register, func(h *entryHost) {
@@ -725,11 +636,8 @@ func TestTwoPathsOfOneRouteShareTheSpanName(t *testing.T) {
 	}
 }
 
-// TestTheStatusAttributeIsTheOneTheCallerReceives pins which WriteHeader counts.
-// The writer keeps the status it will commit: a second WriteHeader before the
-// commit replaces it, and one after the commit is ignored by the server, which
-// answers with the first. Either way the attribute has to be the code the
-// client was answered with, not the first or the last one the handler wrote.
+// TestTheStatusAttributeIsTheOneTheCallerReceives pins which WriteHeader
+// counts.
 func TestTheStatusAttributeIsTheOneTheCallerReceives(t *testing.T) {
 	for name, handler := range map[string]gin.HandlerFunc{
 		"a second status before the commit replaces the first": func(c *gin.Context) {
@@ -757,10 +665,8 @@ func TestTheStatusAttributeIsTheOneTheCallerReceives(t *testing.T) {
 	}
 }
 
-// TestTheLayerKeepsASwitchingProtocolsStatus pins the informational code that is
-// a final one. 101 is the last thing written on a connection before it changes
-// hands, so a handler that answers an upgrade request with it has been answered
-// 101 and the attribute says so.
+// TestTheLayerKeepsASwitchingProtocolsStatus pins the informational code
+// that is a final one.
 func TestTheLayerKeepsASwitchingProtocolsStatus(t *testing.T) {
 	p, _, reader := layerUnderTest(t)
 	serve(t, p, routes{{nethttp.MethodGet, "/upgrade"}: func(c *gin.Context) {
@@ -789,13 +695,8 @@ func TestTheLayerKeepsASwitchingProtocolsStatus(t *testing.T) {
 	}
 }
 
-// TestTheServerSpanCarriesTheOutcome pins what a span says about the request it
-// covers: the same method and status attributes the histogram carries, and an
-// error status when the answer was a server error. A handler that answers 500
-// without panicking failed just as much as one that panicked, and a span left
-// unmarked would file it with the successes at every backend that filters
-// traces by status. A client error is not this endpoint's failure and leaves
-// the status unset.
+// TestTheServerSpanCarriesTheOutcome pins what a span says about the
+// request it covers.
 func TestTheServerSpanCarriesTheOutcome(t *testing.T) {
 	for _, tc := range []struct {
 		code      int
@@ -832,12 +733,8 @@ func TestTheServerSpanCarriesTheOutcome(t *testing.T) {
 	}
 }
 
-// TestTheLayerSeesARequestThatMatchesNoRouteAndOneTheMethodDoesNotAllow pins that
-// the layer covers every request the endpoint takes, not only the ones a route
-// serves, and that the status it reads is the one the engine's own answer wrote.
-// The 404 and the 405 are written after the layers have been entered, so a layer
-// that reported a status of its own making, or only the one a route's handler
-// set, would miss both.
+// TestTheLayerSeesARequestThatMatchesNoRouteAndOneTheMethodDoesNotAllow checks
+// that the layer covers every request and reads the engine's status.
 func TestTheLayerSeesARequestThatMatchesNoRouteAndOneTheMethodDoesNotAllow(t *testing.T) {
 	p, rec, reader := layerUnderTest(t)
 	serve(t, p, routes{{nethttp.MethodGet, "/x"}: func(*gin.Context) {}}.register, func(h *entryHost) {
@@ -875,13 +772,7 @@ func TestTheLayerSeesARequestThatMatchesNoRouteAndOneTheMethodDoesNotAllow(t *te
 }
 
 // TestTheLayerLeavesTheResponseWriterInPlace pins that the layer does not
-// replace c.Writer. A layer outside this one and a handler inside it see the same
-// writer, and the optional interfaces the writer carries reach the connection
-// through the layer: a flush puts the first bytes on the wire while the handler
-// is still running, and a hijack hands the handler the connection. A writer
-// replaced by a wrapper that forwarded nothing would still satisfy the types and
-// would fail the observations, and a wrapper that forwarded everything would
-// still fail the identity.
+// replace c.Writer.
 func TestTheLayerLeavesTheResponseWriterInPlace(t *testing.T) {
 	p, _, _ := layerUnderTest(t)
 
@@ -976,12 +867,8 @@ func TestTheLayerLeavesTheResponseWriterInPlace(t *testing.T) {
 	})
 }
 
-// TestTheLayerStandsForExactlyTheTwoProvidersThisModuleDelivers pins what another
-// layer's After or Before can point at. The layer stands for the two capabilities
-// the module really delivers: a constraint naming either lands on it, and a
-// capability invented for this layer alone would be one no module delivers. A
-// layer missing one of them silently drops the constraints that point at it, and
-// the only trace is an Info line in the startup diagnostics.
+// TestTheLayerStandsForExactlyTheTwoProvidersThisModuleDelivers pins what
+// another layer's After or Before can point at.
 func TestTheLayerStandsForExactlyTheTwoProvidersThisModuleDelivers(t *testing.T) {
 	p, _, _ := layerUnderTest(t)
 	provides := p.layers("api")[0].Provides
@@ -999,9 +886,7 @@ func TestTheLayerStandsForExactlyTheTwoProvidersThisModuleDelivers(t *testing.T)
 }
 
 // TestALayerStatingNoOrderRunsInsideTheInstrumentation pins the Order the
-// instrumentation is registered with. It is at OrderOutermost in the observing
-// stage, so a layer that leaves Order at its zero value runs inside it and the
-// time it spends is in the span.
+// instrumentation is registered with.
 func TestALayerStatingNoOrderRunsInsideTheInstrumentation(t *testing.T) {
 	p, _, _ := layerUnderTest(t)
 	var inside atomic.Bool
@@ -1028,14 +913,8 @@ func TestALayerStatingNoOrderRunsInsideTheInstrumentation(t *testing.T) {
 // a record carries can be searched for the place the panic came from.
 func raiseFromHere() { panic("handler gave up") }
 
-// TestAPanicEndsTheChainAtTheLayerThatRaisedIt pins that a panic in a layer
-// stops the chain at that layer. Each layer is a gin handler, so a panic in one
-// unwinds the loop that called it: no layer registered after it and no route
-// handler runs, and the handlers run on a request that is left unfinished rather
-// than on one whose handler gave up. The panicking layer here is an observing
-// one, which sits outside the entry module's recovery, so the panic reaches
-// net/http and the client is answered with a dropped connection; a panic thrown
-// by a layer the recovery does cover is answered 500 instead.
+// TestAPanicEndsTheChainAtTheLayerThatRaisedIt pins that a panic in a
+// layer stops the chain at that layer.
 func TestAPanicEndsTheChainAtTheLayerThatRaisedIt(t *testing.T) {
 	p, _, _ := layerUnderTest(t)
 	var after, route atomic.Bool
@@ -1068,13 +947,8 @@ func TestAPanicEndsTheChainAtTheLayerThatRaisedIt(t *testing.T) {
 	}
 }
 
-// TestTheStackOfAPanicsOriginSurvivesInTheLog pins where the origin of a panic
-// survives. The entry module's recovery takes the stack at its own frame, while
-// the frames the panic came through are still on it, and writes it to a log
-// record; the span carries no exception event, because the panic was caught
-// inside the observing layers and never reached the span's own end. The record's
-// stack names the function the handler gave up in, which is what a reader needs
-// to find the line.
+// TestTheStackOfAPanicsOriginSurvivesInTheLog pins where the origin of a
+// panic survives.
 func TestTheStackOfAPanicsOriginSurvivesInTheLog(t *testing.T) {
 	p, rec, _ := layerUnderTest(t)
 	var logs *syncBuffer
@@ -1106,10 +980,8 @@ func TestTheStackOfAPanicsOriginSurvivesInTheLog(t *testing.T) {
 	}
 }
 
-// TestAnErrorTheHandlerFilesMarksTheSpanFailed pins what the request's error list
-// does to the span. A handler that files an error and answers with a status below
-// 500 has still failed the request, and a span left unmarked files it with the
-// successes wherever traces are filtered by status.
+// TestAnErrorTheHandlerFilesMarksTheSpanFailed pins what the request's
+// error list does to the span.
 func TestAnErrorTheHandlerFilesMarksTheSpanFailed(t *testing.T) {
 	p, rec, _ := layerUnderTest(t)
 	serve(t, p, routes{{nethttp.MethodGet, "/x"}: func(c *gin.Context) {
@@ -1132,11 +1004,8 @@ func TestAnErrorTheHandlerFilesMarksTheSpanFailed(t *testing.T) {
 	}
 }
 
-// TestTheGuardStandsInsideTheInstrumentationAndStandsForNothing pins how the two
-// layers are placed against each other. The guard has to sit inside the
-// instrumentation, or the panic it stops would already have passed it, and a
-// capability only the instrumentation stands for keeps the guard from being
-// pointed at as a second provider of it.
+// TestTheGuardStandsInsideTheInstrumentationAndStandsForNothing pins how
+// the two layers are placed against each other.
 func TestTheGuardStandsInsideTheInstrumentationAndStandsForNothing(t *testing.T) {
 	p, _, _ := layerUnderTest(t)
 	layers := p.layers("api")
@@ -1154,19 +1023,7 @@ func TestTheGuardStandsInsideTheInstrumentationAndStandsForNothing(t *testing.T)
 }
 
 // TestALayerStatingNoOrderRunsInsideTheGuard pins where the guard stands
-// among the layers other modules register. A layer that leaves Order at its
-// zero value is inside the guard, and the guard is the layer that binds the trace and span
-// identifiers into the request context: a record the layer writes carries them,
-// and the span the instrumentation ends for the layer's request names the
-// endpoint the guard put on it. A guard placed further in would leave the layer
-// outside, and its records would have no trace to name.
-//
-// The layer panics on one of the two paths. That panic is its own, in an
-// observing layer, so it is outside the entry module's recovery: the chain stops
-// there and net/http drops the connection, and the span the instrumentation ends
-// on the way out carries whatever it records for a chain that did not return.
-// The record the layer wrote before it panicked still carries the trace, which
-// is what places the layer inside the guard.
+// among the layers other modules register.
 func TestALayerStatingNoOrderRunsInsideTheGuard(t *testing.T) {
 	p, rec, _ := layerUnderTest(t)
 	var logs *syncBuffer
@@ -1222,15 +1079,8 @@ func TestALayerStatingNoOrderRunsInsideTheGuard(t *testing.T) {
 	}
 }
 
-// TestAHandlerThatEndsItsGoroutineLeavesAnUnmarkedSpan pins what the span says
-// about a runtime.Goexit in a handler. It is not a panic: the entry module's
-// recovery sees a nil recover and the unwind keeps going past it, so the recovery
-// never returns to the instrumentation, whose span end ends the span unmarked and
-// records no request duration. Recovering the unwind here to mark the span would
-// be the wrong trade: the recover that could see it is the one that would also
-// swallow the recovery's own ErrAbortHandler, and the connection would stop being
-// closed. The recovery's own record, naming a handler that stopped without
-// returning, is where the request is accounted for.
+// TestAHandlerThatEndsItsGoroutineLeavesAnUnmarkedSpan pins what the span
+// says about a runtime.Goexit in a handler.
 func TestAHandlerThatEndsItsGoroutineLeavesAnUnmarkedSpan(t *testing.T) {
 	p, rec, reader := layerUnderTest(t)
 	var logs *syncBuffer
@@ -1257,13 +1107,8 @@ func TestAHandlerThatEndsItsGoroutineLeavesAnUnmarkedSpan(t *testing.T) {
 	}
 }
 
-// TestACredentialInThePathIsRedactedFromTheExportedSpan holds the one thing the
-// upstream instrumentation would otherwise publish verbatim: the request's path.
-// An invitation's acceptance token is in the path of the route that redeems it
-// and of the page its link lands on, and it is the whole credential of
-// acceptance; a span backend is not a place for it. The token segment is replaced
-// by the placeholder wherever it appears, and every other path segment — a route
-// segment, another parameter, an opaque identifier — is left as it was.
+// TestACredentialInThePathIsRedactedFromTheExportedSpan holds the one
+// thing the upstream instrumentation would otherwise publish verbatim.
 func TestACredentialInThePathIsRedactedFromTheExportedSpan(t *testing.T) {
 	const token = "spd_inv_s3cr3tValue"
 	const invitationID = "0192f3c4-5d6e-7f80-9a1b-2c3d4e5f6071"
@@ -1327,21 +1172,7 @@ func panicWith(v any) { panic(v) }
 const nilPanicChild = "SPEED_OBSERVABILITY_NILPANIC_CHILD"
 
 // TestANilPanicIsAnsweredByTheRecovery pins the panic(nil) that
-// GODEBUG=panicnil=1 turns back into a recovered nil. Read as a request that
-// returned, it would be stopped by the entry module's recovery: the handlers
-// after the one that panicked would run, the client would be answered 200, the
-// span would be a success and the recovery would write no record. The recovery
-// has to tell the two apart, and it does: a nil recover with the call not
-// returned is a handler that stopped, and it is answered as the defect it is.
-//
-// The panicking layer sits in the guard stage, inside the recovery. A nil panic
-// from an observing layer would pass the recovery and be swallowed by the
-// instrumentation's span end, which recovers a panic to record it and, finding a
-// nil, records nothing and throws nothing on — the observing layers are not where
-// a nil panic is answered.
-//
-// The setting is fixed when a process starts, so the case runs in a copy of this
-// test binary started under it.
+// GODEBUG=panicnil=1 turns back into a recovered nil.
 func TestANilPanicIsAnsweredByTheRecovery(t *testing.T) {
 	if os.Getenv(nilPanicChild) == "" {
 		child := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.count=1")

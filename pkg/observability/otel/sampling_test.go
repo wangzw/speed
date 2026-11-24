@@ -18,7 +18,6 @@ import (
 	"github.com/vislake/speed/pkg/observability/otel"
 )
 
-// ratioConfig gives this module a service name and a sample ratio.
 type ratioConfig struct{ ratio float64 }
 
 func (c ratioConfig) Decode(namespace string, target any) error {
@@ -30,10 +29,6 @@ func (c ratioConfig) Decode(namespace string, target any) error {
 	return nil
 }
 
-// sampledAt runs one assembly at the given ratio and starts three spans the way
-// the request layer does: one continuing a caller that sampled its trace, one
-// continuing a caller that did not, and one with no caller at all. It returns
-// the names of the spans that were recorded and exported, and the module's log.
 func sampledAt(t *testing.T, ratio float64) ([]string, string) {
 	t.Helper()
 	d := &destination{}
@@ -76,12 +71,8 @@ func sampledAt(t *testing.T, ratio float64) ([]string, string) {
 	return names, module.String()
 }
 
-// TestTheRatioDecidesOnlyTheTracesThisProcessStarts pins what sample-ratio
-// governs. The sampler follows a parent's decision, so that a trace is not
-// broken apart by each process sampling it on its own: a request whose caller
-// sampled its trace is recorded even at zero, one whose caller did not is not
-// recorded even at one, and the ratio decides for a request with no caller. The
-// line written at zero has to say that rather than claim nothing is recorded.
+// TestTheRatioDecidesOnlyTheTracesThisProcessStarts pins what
+// sample-ratio governs.
 func TestTheRatioDecidesOnlyTheTracesThisProcessStarts(t *testing.T) {
 	atZero, logged := sampledAt(t, 0)
 	if want := []string{"sampled-caller"}; !slices.Equal(atZero, want) {

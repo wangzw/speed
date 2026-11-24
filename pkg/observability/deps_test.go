@@ -7,14 +7,8 @@ import (
 	"testing"
 )
 
-// repoPrefix is this repository's own module path. Every package of it is
-// inside every budget here.
 const repoPrefix = "github.com/vislake/speed/"
 
-// exportedUpstream is what the interface package re-exports: the two API
-// packages and the two SDK packages whose exporter interfaces it names. Their
-// closure is what naming them costs, and it is the whole of what the interface
-// package may reach upstream.
 var exportedUpstream = []string{
 	"go.opentelemetry.io/otel/trace",
 	"go.opentelemetry.io/otel/metric",
@@ -22,28 +16,12 @@ var exportedUpstream = []string{
 	"go.opentelemetry.io/otel/sdk/metric",
 }
 
-// TestTheInterfacePackageReachesNoBackendLibrary is the executable form of the
-// split the module's documentation draws: the interface package carries the
-// types and the two helpers, and every transport a backend binds belongs to the
-// subpackage that binds it.
-//
-// Nothing holds that split at compile time. The whole capability is one Go
-// module, so its dependency list carries every backend whichever one a host
-// deploys on, and the split is a rule about imports. This is the gate that keeps
-// it: a host that imports only the interface package must not end up compiling
-// gRPC, and the difference between the two would otherwise be invisible until
-// someone read the dependency graph.
-//
-// The budget is the standard library, this repository's modules, and the
-// closure of the four upstream packages named above. It does not distinguish an
-// alias from ordinary use, because that is not a property a dependency scan can
-// see: what it can see is whether a backend's transport is in the graph at all.
+// TestTheInterfacePackageReachesNoBackendLibrary is the executable form
+// of the split the module's documentation draws.
 func TestTheInterfacePackageReachesNoBackendLibrary(t *testing.T) {
 	root := dependenciesOf(t, ".")
-	// The positive control: this package re-exports the upstream API and the
-	// SDK exporter interfaces, so a listing that lost them came from a load
-	// that did not happen, and every assertion below would pass on an empty
-	// list.
+	// The positive control: the package re-exports the upstream API and the SDK
+	// exporter interfaces, so a listing that lost them came from a failed load.
 	for _, pkg := range []string{"go.opentelemetry.io/otel/trace", "go.opentelemetry.io/otel/sdk/metric"} {
 		if !root[pkg] {
 			t.Fatalf("the dependency list does not hold %s, which this package re-exports: what is "+
@@ -57,9 +35,6 @@ func TestTheInterfacePackageReachesNoBackendLibrary(t *testing.T) {
 			budget[reached] = true
 		}
 	}
-	// The negative control: if the budget itself carried a backend's transport,
-	// the loop below could not tell a package that reaches one from a package
-	// that does not.
 	for _, backend := range []string{"google.golang.org/grpc", "google.golang.org/protobuf"} {
 		if budget[backend] {
 			t.Fatalf("the budget includes %s, so this check cannot catch a package that reaches it", backend)
@@ -77,10 +52,6 @@ func TestTheInterfacePackageReachesNoBackendLibrary(t *testing.T) {
 	}
 }
 
-// assemblerUpstream is what the assembler binds beyond the four packages the
-// interface package re-exports: the API and SDK packages it builds the providers
-// and the request instrument with. The budget holds each of them with its
-// closure.
 var assemblerUpstream = []string{
 	"go.opentelemetry.io/otel/attribute",
 	"go.opentelemetry.io/otel/codes",
@@ -89,34 +60,16 @@ var assemblerUpstream = []string{
 	"go.opentelemetry.io/otel/sdk/resource",
 }
 
-// ginPackage is the package the request layer is written against: the layer is
-// a gin.HandlerFunc, so the assembler imports it, and its closure is part of the
-// assembler's budget.
 const ginPackage = "github.com/gin-gonic/gin"
 
-// otelGinPackage is the package the request layer takes its instrumentation from:
-// the layer wraps the handler chain with its middleware, so the assembler imports
-// it. It is bound deliberately, as gin is, and it is in the closure of none of the
-// other roots, so its closure is part of the assembler's budget as a root of its
-// own.
 const otelGinPackage = "go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 
-// TestTheAssemblerStaysInsideItsDependencyBudget is the same rule one level in.
-// The assembler's budget is the interface package's, the library packages it
-// binds itself, and the current closure of gin and of otelgin. The closures are
-// read from the module graph and not written down, so a gin or otelgin release
-// that reaches further moves the budget with it, while a package the assembler
-// starts importing that is in none of these closures is a failure.
-//
-// What is compared is the assembler's own import list, which is the package-level
-// declaration. The third-party packages this repository's own modules reach are
-// those modules' business and are held by their tests.
+// TestTheAssemblerStaysInsideItsDependencyBudget is the same rule one
+// level in.
 func TestTheAssemblerStaysInsideItsDependencyBudget(t *testing.T) {
 	imports := importsOf(t, "./otel")
-	// The positive controls: the layer is a gin handler instrumented by otelgin and
-	// the assembler sits on the interface package, so a listing without any of the
-	// three came from a load that did not happen, and every assertion below would
-	// pass on an empty list.
+	// The positive controls: the layer is an otelgin handler on the interface
+	// package, so a listing without any of them came from a failed load.
 	for _, pkg := range []string{ginPackage, otelGinPackage, repoPrefix + "pkg/observability"} {
 		if !imports[pkg] {
 			t.Fatalf("the import list does not hold %s, which the assembler imports: what is checked "+
@@ -130,8 +83,6 @@ func TestTheAssemblerStaysInsideItsDependencyBudget(t *testing.T) {
 			budget[reached] = true
 		}
 	}
-	// The negative control: if the budget carried a backend's transport, the loop
-	// below could not tell an assembler that imports one from one that does not.
 	for _, backend := range backendTransports {
 		if budget[backend] {
 			t.Fatalf("the budget includes %s, so this check cannot catch an assembler that imports it", backend)
@@ -157,14 +108,8 @@ var backendTransports = []string{
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace",
 }
 
-// TestTheAssemblerReachesNoBackendTransport holds the same split over everything
-// the assembler reaches, this repository's own modules included. The assembler
-// builds the providers and hands them exporters collected from the registry, so
-// it knows no backend — and a host that takes it in together with its own choice
-// of destination must not have been made to compile the others.
-//
-// The protobuf runtime is not among them: gin binds it for request bodies, so it
-// is in the assembler's closure whichever destination a host chooses.
+// TestTheAssemblerReachesNoBackendTransport holds the split over everything the
+// assembler reaches, this repository's modules included.
 func TestTheAssemblerReachesNoBackendTransport(t *testing.T) {
 	deps := dependenciesOf(t, "./otel")
 	if !deps[repoPrefix+"pkg/observability"] {
@@ -180,20 +125,16 @@ func TestTheAssemblerReachesNoBackendTransport(t *testing.T) {
 	}
 }
 
-// dependenciesOf lists the packages a `go list -deps` target reaches.
 func dependenciesOf(t *testing.T, target string) map[string]bool {
 	t.Helper()
 	return listPackages(t, "-deps", target)
 }
 
-// importsOf lists the packages a target imports itself, test files left out.
 func importsOf(t *testing.T, target string) map[string]bool {
 	t.Helper()
 	return listPackages(t, "-f", "{{join .Imports \"\\n\"}}", target)
 }
 
-// listPackages runs `go list` with the arguments given and reads one package
-// path from each line it prints.
 func listPackages(t *testing.T, args ...string) map[string]bool {
 	t.Helper()
 	out, err := exec.Command("go", append([]string{"list"}, args...)...).CombinedOutput()

@@ -19,22 +19,14 @@ import (
 	"github.com/vislake/speed/pkg/observability/otlp"
 )
 
-// unreachableShutdownTimeout is the bound the cases below configure. It is
-// short so that a stop that waits for most of it still finishes quickly, and the
-// ceiling a case allows is built from it, so a faster or slower machine moves
-// neither.
 const unreachableShutdownTimeout = time.Second
 
-// releaseSlack is the time a stop may take beyond the shutdown bound and the
-// release bound: scheduling, the transport's teardown, and a loaded machine.
 const releaseSlack = 5 * time.Second
 
-// stopCeiling is the longest a stop may take: the shutdown bound the cases
-// configure, the bound of the release, and the slack.
 const stopCeiling = unreachableShutdownTimeout + otel.ReleaseTimeout + releaseSlack
 
-// lockedBuffer is a log destination the batch processor's goroutine and the case
-// both touch.
+// The batch processor's goroutine and the reader write to the buffer as well as
+// the case reading it, so it is synchronised.
 type lockedBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -68,9 +60,6 @@ func closedLocalAddress(t *testing.T) string {
 	return addr
 }
 
-// otlpConfig is a reading face that points the OTLP backend at an endpoint and
-// gives this module a short shutdown bound, and leaves every other item at its
-// default: the protocol is whatever the backend defaults to unless one is named.
 type otlpConfig struct {
 	endpoint string
 	protocol string
@@ -92,9 +81,6 @@ func (c otlpConfig) Decode(namespace string, target any) error {
 	return nil
 }
 
-// recordOneMetric is the action the cases here run while the assembly is up: it
-// records one data point and no span, so the tracer provider has nothing queued
-// at the stop and the final export is the meter provider's alone.
 func recordOneMetric(ctx context.Context, reg *core.Registry) error {
 	mp, err := core.Resolve[observability.MeterProvider](reg)
 	if err != nil {
@@ -108,8 +94,6 @@ func recordOneMetric(ctx context.Context, reg *core.Registry) error {
 	return nil
 }
 
-// recordOneMetricAndOneSpan is the action of a run that also leaves a span in
-// the batch processor's queue when the stop begins.
 func recordOneMetricAndOneSpan(ctx context.Context, reg *core.Registry) error {
 	if err := recordOneMetric(ctx, reg); err != nil {
 		return err
@@ -161,17 +145,11 @@ func silentLocalAddress(t *testing.T) string {
 	return ln.Addr().String()
 }
 
-// stopOverAnUnreachableCollector drives the assembler and the real OTLP backend
-// through the action to the end of a run in which the collector's port refuses
-// connections, and reports how long it took, what the module logged, and what
-// the drive returned.
 func stopOverAnUnreachableCollector(t *testing.T, protocol string, action func(context.Context, *core.Registry) error) (time.Duration, string, error) {
 	t.Helper()
 	return stopOverCollectorAt(t, closedLocalAddress(t), protocol, action)
 }
 
-// stopOverCollectorAt is stopOverAnUnreachableCollector with the collector at
-// the given endpoint.
 func stopOverCollectorAt(t *testing.T, endpoint, protocol string, action func(context.Context, *core.Registry) error) (time.Duration, string, error) {
 	t.Helper()
 	logged := &lockedBuffer{}
@@ -189,24 +167,11 @@ func stopOverCollectorAt(t *testing.T, endpoint, protocol string, action func(co
 		Participants: []string{otel.ModuleName, otlp.ModuleName},
 		Action:       action,
 	})
-	// The batch processor's goroutine and the reader write to the buffer as well
-	// as the case reading it, which is why the buffer is a synchronised one.
 	return time.Since(start), logged.String(), err
 }
 
-// TestAStopOverAnUnreachableCollectorSucceeds is the case for the promise that a
-// failed final export is not a failure of the stop, held against the real gRPC
-// exporter, which retries a refused connection. A refused connection is
-// Unavailable to it and it retries until its context ends, its own timeout
-// passes or its retry budget runs out, none of which comes before a bound of a
-// second, so the final export of the meter provider runs until the cutoff or the
-// bound ends it and the wrapper absorbs the failure. With a single reader the
-// cutoff is not what lets this stop succeed — the reader returns at the bound
-// either way — so the case holds the release and the absorption, and the
-// cutoff is held by TestAStopOverTwoMetricBackendsThatWaitIsCutInsideTheBound.
-// The release of the exporters ends inside its own bound here whether or not
-// that bound is the flush's, so the case does not tell the two apart:
-// TestTheReleaseDoesNotReuseTheContextTheFlushExpired does.
+// TestAStopOverAnUnreachableCollectorSucceeds holds that a failed final export
+// is not a failed stop, against the real gRPC exporter.
 func TestAStopOverAnUnreachableCollectorSucceeds(t *testing.T) {
 	elapsed, logged, err := stopOverAnUnreachableCollector(t, otlp.ProtocolGRPC, recordOneMetric)
 	if err != nil {
@@ -225,14 +190,8 @@ func TestAStopOverAnUnreachableCollectorSucceeds(t *testing.T) {
 	}
 }
 
-// TestAStopWithASpanQueuedOverAnUnreachableCollectorSucceeds holds the same stop
-// with a span still queued in the batch processor, over the real gRPC exporter.
-// The processor runs its final export under batch.export-timeout, far past the
-// shutdown bound, and the exporter retries until that context ends or its own
-// timeout of ten seconds passes, so only the cutoff ends the export inside the
-// bound; without it the tracer provider's shutdown reaches the bound and fails
-// the stop with the deadline. Both wrappers write their line, one for each
-// signal's failed export.
+// TestAStopWithASpanQueuedOverAnUnreachableCollectorSucceeds holds the stop with
+// a span queued in the batch processor, over the real gRPC exporter.
 func TestAStopWithASpanQueuedOverAnUnreachableCollectorSucceeds(t *testing.T) {
 	elapsed, logged, err := stopOverAnUnreachableCollector(t, otlp.ProtocolGRPC, recordOneMetricAndOneSpan)
 	if err != nil {
@@ -250,10 +209,8 @@ func TestAStopWithASpanQueuedOverAnUnreachableCollectorSucceeds(t *testing.T) {
 	}
 }
 
-// TestAStopOverAnUnreachableCollectorOverHTTPSucceeds is the same stop over the
-// other protocol: its exporter does not retry a refused connection, so the final
-// export fails at once, without waiting for the cutoff, and is reported and
-// absorbed like the gRPC one.
+// TestAStopOverAnUnreachableCollectorOverHTTPSucceeds is the same stop
+// over the other protocol.
 func TestAStopOverAnUnreachableCollectorOverHTTPSucceeds(t *testing.T) {
 	elapsed, logged, err := stopOverAnUnreachableCollector(t, otlp.ProtocolHTTP, recordOneMetric)
 	if err != nil {
@@ -268,9 +225,8 @@ func TestAStopOverAnUnreachableCollectorOverHTTPSucceeds(t *testing.T) {
 	}
 }
 
-// TestAStopWithASpanQueuedOverAnUnreachableCollectorOverHTTPSucceeds holds a stop
-// with a span still queued over the HTTP exporter, which gives up on a refused
-// connection at once, so the same run, span included, stops cleanly.
+// TestAStopWithASpanQueuedOverAnUnreachableCollectorOverHTTPSucceeds checks that a
+// stop with a span queued over the HTTP exporter succeeds.
 func TestAStopWithASpanQueuedOverAnUnreachableCollectorOverHTTPSucceeds(t *testing.T) {
 	elapsed, logged, err := stopOverAnUnreachableCollector(t, otlp.ProtocolHTTP, recordOneMetricAndOneSpan)
 	if err != nil {
@@ -283,11 +239,7 @@ func TestAStopWithASpanQueuedOverAnUnreachableCollectorOverHTTPSucceeds(t *testi
 }
 
 // TestAStopOverACollectorThatDoesNotAnswerOverHTTPIsCutInsideTheBound holds the
-// HTTP exporter against a collector that accepts the connection and never
-// answers. The exporter waits for the answer until its context ends, and the
-// processor's context is bounded by batch.export-timeout, so the final span
-// export runs until the cutoff ends it; without it the tracer provider's
-// shutdown reaches the bound and fails the stop with the deadline.
+// HTTP exporter against a collector that never answers.
 func TestAStopOverACollectorThatDoesNotAnswerOverHTTPIsCutInsideTheBound(t *testing.T) {
 	elapsed, logged, err := stopOverCollectorAt(t, silentLocalAddress(t), otlp.ProtocolHTTP, recordOneMetricAndOneSpan)
 	if err != nil {

@@ -18,32 +18,19 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The cases that observe the request layer drive the real entry module: its
-// engine, its fallback and a socket it bound. What the layer reads from the
-// response writer, what a panic does on its way out and which requests reach it
-// at all are properties of that assembly, and a router written in a test would
-// only hold what the test already assumed of it.
-
-// entryName is the one endpoint every assembly here declares.
 const entryName = "api"
 
-// jsonConfig is a reading face that answers every decode from one JSON
-// document. The entry module's carrier is not exported, so the document names
-// its keys the way the module's own configuration does.
 type jsonConfig string
 
 func (c jsonConfig) Decode(_ string, target any) error {
 	return json.Unmarshal([]byte(c), target)
 }
 
-// entryLogger is the logging capability over a logger the case holds, which the
-// entry module injects into every request's context.
 type entryLogger struct{ lg *slog.Logger }
 
 func (l entryLogger) Named(string) *slog.Logger { return l.lg }
 func (entryLogger) Redaction() log.Redaction    { return nil }
 
-// syncBuffer is a buffer the request goroutines and the case both touch.
 type syncBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -81,17 +68,12 @@ func listeningAddress(t *testing.T, logs *syncBuffer, listener string) string {
 	return ""
 }
 
-// entryHost is a running entry module as a client sees it.
 type entryHost struct {
-	base string
-	// logs is what the injected logger wrote, which includes the entry
-	// module's own records.
+	base   string
 	logs   *syncBuffer
 	client *nethttp.Client
 }
 
-// do sends one request and returns the response, or the error a client gets
-// when the server gave it no response at all.
 func (h *entryHost) do(t *testing.T, method, path string, header ...string) (*nethttp.Response, error) {
 	t.Helper()
 	req, err := nethttp.NewRequestWithContext(t.Context(), method, h.base+path, nil)
@@ -118,9 +100,6 @@ func (h *entryHost) status(t *testing.T, method, path string, header ...string) 
 	return resp.StatusCode
 }
 
-// serve assembles the entry module with the layer p builds on its endpoint,
-// beside whatever register puts there, binds a real port and runs fn against it.
-// The drive ends, and the endpoint with it, when fn returns.
 func serve(t *testing.T, p *providers, register func(ep speedhttp.Endpoint), fn func(h *entryHost)) {
 	t.Helper()
 	logs := &syncBuffer{}

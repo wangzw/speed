@@ -105,9 +105,6 @@ func (m destinationMetrics) Shutdown(context.Context) error {
 	return nil
 }
 
-// backendModule is an export backend shaped the way the documentation asks one
-// to be: both exporter capabilities, non-exclusive, delivered as one
-// observability.Exporters, and no Close of its own.
 func backendModule(name string, d *destination) core.Module {
 	return core.Module{
 		Name: name,
@@ -137,11 +134,6 @@ func placeholderBackend(name string) core.Module {
 	}
 }
 
-// recordOneOfEach is the action the cases here run while the assembly is up: it
-// records one span and one metric. The configured intervals are the defaults, a
-// batch timeout of seconds and a metric interval of a minute, so nothing is
-// exported while it runs: whatever reaches a destination got there through the
-// shutdown.
 func recordOneOfEach(ctx context.Context, reg *core.Registry) error {
 	mp, err := core.Resolve[observability.MeterProvider](reg)
 	if err != nil {
@@ -162,8 +154,6 @@ func recordOneOfEach(ctx context.Context, reg *core.Registry) error {
 	return nil
 }
 
-// driveAndRecord runs one command through Init with the given backends, records
-// one span and one metric while it is up, and returns what the drive returned.
 func driveAndRecord(t *testing.T, backends map[string]*destination) (*bytes.Buffer, error) {
 	t.Helper()
 	buf := &bytes.Buffer{}
@@ -186,12 +176,8 @@ func driveAndRecord(t *testing.T, backends map[string]*destination) (*bytes.Buff
 	return buf, err
 }
 
-// TestCloseDeliversTheLastBatchOfBothSignals is the case for the flush the
-// module promises at shutdown. A backend hands one product for both
-// capabilities, so the two providers share one Shutdown: releasing the backend
-// when the first provider is done would leave the second provider's final
-// export — the metrics recorded since the last interval — landing on an
-// exporter that has already gone, and the drive would fail with it.
+// TestCloseDeliversTheLastBatchOfBothSignals is the case for the flush
+// the module promises at shutdown.
 func TestCloseDeliversTheLastBatchOfBothSignals(t *testing.T) {
 	d := &destination{}
 	buf, err := driveAndRecord(t, map[string]*destination{"observability.test-backend": d})
@@ -216,9 +202,8 @@ func TestCloseDeliversTheLastBatchOfBothSignals(t *testing.T) {
 	}
 }
 
-// TestCloseDeliversTheLastBatchToEveryBackend is the same promise with two
-// destinations, each of which is collected once per capability and must still
-// receive both signals before either is released.
+// TestCloseDeliversTheLastBatchToEveryBackend holds the promise with two
+// destinations, each still receiving both signals before release.
 func TestCloseDeliversTheLastBatchToEveryBackend(t *testing.T) {
 	first, second := &destination{}, &destination{}
 	buf, err := driveAndRecord(t, map[string]*destination{
@@ -238,12 +223,8 @@ func TestCloseDeliversTheLastBatchToEveryBackend(t *testing.T) {
 	}
 }
 
-// TestASuppliedBackendIsReleasedByTheAssembler is the same promise for a backend
-// whose instance the host supplies instead of naming its module on the command
-// tree. The placeholder module the instance is supplied for has no Close and no
-// New, so the assembler is the only thing that can release what the host
-// supplied: it has to collect the exporters from the supplied instance, make its
-// final export of both signals through them, and release them after that.
+// TestASuppliedBackendIsReleasedByTheAssembler holds the promise for a backend
+// the host supplies instead of naming its module.
 func TestASuppliedBackendIsReleasedByTheAssembler(t *testing.T) {
 	const backend = "observability.test-supplied"
 	d := &destination{}
@@ -284,22 +265,11 @@ func TestASuppliedBackendIsReleasedByTheAssembler(t *testing.T) {
 	}
 }
 
-// metricExportTimeoutPastTheCeiling is the metric reader's export timeout in
-// the one stop case that tells a right implementation from a wrong one by how
-// long the stop took: the stop over two backends whose exports wait for their
-// context. The wrong implementation lets the first reader's final export run to
-// that timeout instead of the cutoff ending it inside the shutdown bound, so
-// the timeout is its time, stated to DeclaredAgainst against the ceiling. The
-// correct implementation never waits for the timeout: the flush context carries
-// the shutdown bound, and the cutoff ends the export inside that bound. The
-// release case is the other case that states a wrong time; it sets this timeout
-// to its own wrong time, and the remaining stop cases leave the reader's
-// default.
+// metricExportTimeoutPastTheCeiling is the reader's export timeout in the stop
+// case that tells a right implementation from a wrong one by the stop's
+// duration.
 const metricExportTimeoutPastTheCeiling = 2 * time.Minute
 
-// boundedConfig gives this module a service name and a short shutdown bound,
-// and optionally a metric export timeout and a batch export timeout for the
-// stop cases that need one.
 type boundedConfig struct {
 	bound         time.Duration
 	metricTimeout time.Duration
@@ -331,15 +301,8 @@ func (s stuckSpans) ExportSpans(context.Context, []sdktrace.ReadOnlySpan) error 
 }
 func (stuckSpans) Shutdown(context.Context) error { return nil }
 
-// TestAShutdownPastItsBoundFailsTheStop pins what a tracer provider's flush
-// that does not finish within shutdown-timeout reports: Close stops waiting at
-// the bound and returns the deadline, so the drive fails and the host sees that
-// the stop did not complete. What was lost is not reported. The span export
-// ignores its context, which is the overrun the cutoff does not reach: an
-// export that honours its context is cut short inside the bound instead. The
-// export is let go only once the case is done, so a shutdown that waited for it
-// would never return, and the drive runs on a goroutine of its own that the
-// case gives up on.
+// TestAShutdownPastItsBoundFailsTheStop pins what a tracer provider's
+// flush that does not finish within shutdown-timeout reports.
 func TestAShutdownPastItsBoundFailsTheStop(t *testing.T) {
 	stuck := stuckSpans{release: make(chan struct{})}
 	t.Cleanup(func() { close(stuck.release) })
@@ -390,22 +353,16 @@ func TestAShutdownPastItsBoundFailsTheStop(t *testing.T) {
 	}
 }
 
-// inFlightConfig gives this module a shutdown bound of a second, a batch that
-// leaves almost at once, and an export timeout far past the bound, so that an
-// export the processor starts while the process serves is still in flight when
-// the stop begins and nothing but the cutoff would end it inside the bound.
+// inFlightConfig gives a one-second shutdown bound and an export timeout far past
+// it, so an export started while serving is still in flight at the stop.
 type inFlightConfig struct{}
 
 const (
 	inFlightBound = time.Second
 	// inFlightExportTimeout is the batch export timeout the case configures,
 	// far past the bound so that nothing but the cutoff ends the export in
-	// flight. It is also the time a stop that waited for that export would take,
-	// so it is stated to DeclaredAgainst against the stop ceiling.
-	inFlightExportTimeout = 3 * time.Minute
-	// inFlightCutoffEarliest is the earliest an export in flight may be cut
-	// under inFlightBound: the cutoff falls at nine tenths of it, and this
-	// leaves room below that for nothing but a cutoff placed too early.
+	// flight.
+	inFlightExportTimeout  = 3 * time.Minute
 	inFlightCutoffEarliest = 800 * time.Millisecond
 )
 
@@ -449,12 +406,8 @@ func (s *heldSpans) ExportSpans(ctx context.Context, _ []sdktrace.ReadOnlySpan) 
 
 func (*heldSpans) Shutdown(context.Context) error { return nil }
 
-// TestAnExportInFlightAtTheStopIsCutShort pins that the cutoff reaches an export
-// already running when the stop begins, not only the final ones. The processor
-// runs that export on a context of its own, bounded by batch.export-timeout, so
-// left alone it holds the tracer provider's shutdown past shutdown-timeout and
-// the stop fails with the deadline. Cut short, the export fails, the wrapper
-// reports and absorbs it, and the stop succeeds inside its bound.
+// TestAnExportInFlightAtTheStopIsCutShort pins that the cutoff reaches an
+// export already running when the stop begins, not only the final ones.
 func TestAnExportInFlightAtTheStopIsCutShort(t *testing.T) {
 	held := &heldSpans{began: make(chan struct{}), ended: make(chan heldEnd, 1)}
 	logged := &lockedBuffer{}
@@ -505,22 +458,14 @@ func TestAnExportInFlightAtTheStopIsCutShort(t *testing.T) {
 		if !errors.Is(end.err, context.Canceled) {
 			t.Errorf("the export in flight ended with %v, want the cancellation of the cutoff", end.err)
 		}
+		// The cutoff sits at nine tenths of the bound; the wrong implementation's
+		// time is inFlightExportTimeout, declared to DeclaredAgainst.
 		took := end.at.Sub(stopBegan)
-		// The window is a behaviour criterion: it tells a cutoff placed at nine
-		// tenths of the bound from one placed at its start or not at all, so it
-		// carries GATE_TIME_SCALE alone. The wrong implementation lets the export
-		// run to inFlightExportTimeout, the batch export timeout the case
-		// configures; that is its time, stated to DeclaredAgainst.
 		if scaledBound := coretest.DeclaredAgainst(t, 0, inFlightBound, inFlightExportTimeout); took >= scaledBound {
 			t.Errorf("the export in flight ended %v into the stop, want inside the bound of %v", took, scaledBound)
 		}
 		// The cutoff sits a tenth of the bound before its end, so an export that
-		// ends before inFlightCutoffEarliest was cut sooner than the stop needs. The
-		// window is written as a time of its own rather than derived from the
-		// module's margin, so a margin that drifts turns the case red. A lower
-		// bound carries no scaler: a slow machine only makes it easier to
-		// satisfy, and scaling it would stop it from holding the cutoff to
-		// having waited at all.
+		// ends before inFlightCutoffEarliest was cut sooner than the stop needs.
 		if took < inFlightCutoffEarliest {
 			t.Errorf("the export in flight ended %v into the stop, want no sooner than %v: the cutoff "+
 				"leaves the exports nine tenths of the bound", took, inFlightCutoffEarliest)
@@ -529,10 +474,7 @@ func TestAnExportInFlightAtTheStopIsCutShort(t *testing.T) {
 		t.Errorf("the export in flight had not ended when the drive returned after %v: it runs on to "+
 			"batch.export-timeout (%v) unless the stop cuts it", stopped, inFlightExportTimeout)
 	}
-	// The stop ceiling is the bound, the release bound and the slack. A shutdown
-	// that waited for the uncut export would take inFlightExportTimeout, the
-	// batch export timeout the case configures; that is the wrong time stated to
-	// DeclaredAgainst.
+	// The stop ceiling is the bound, the release bound and the slack.
 	ceiling := coretest.DeclaredAgainst(t, 0, inFlightBound+otel.ReleaseTimeout+releaseSlack, inFlightExportTimeout)
 	if stopped > ceiling {
 		t.Errorf("the stop took %v, want at most %v", stopped, ceiling)
@@ -542,8 +484,6 @@ func TestAnExportInFlightAtTheStopIsCutShort(t *testing.T) {
 	}
 }
 
-// slowSpans is a destination whose export honours its context and takes the
-// given time to deliver, the way a reachable collector over a slow link does.
 type slowSpans struct {
 	takes     time.Duration
 	mu        sync.Mutex
@@ -572,11 +512,8 @@ func (s *slowSpans) count() int {
 	return s.delivered
 }
 
-// TestAFinalExportThatFitsBeforeTheCutoffIsDelivered pins where the cutoff
-// falls: a final export that takes a fifth of shutdown-timeout, against a
-// destination that honours its context, is delivered and the stop succeeds. A
-// cutoff placed at or near the start of the stop would cut it and lose the
-// batch with no failure of the stop to show for it.
+// TestAFinalExportThatFitsBeforeTheCutoffIsDelivered pins where the
+// cutoff falls.
 func TestAFinalExportThatFitsBeforeTheCutoffIsDelivered(t *testing.T) {
 	const bound = time.Second
 	slow := &slowSpans{takes: bound / 5}
@@ -618,12 +555,6 @@ func TestAFinalExportThatFitsBeforeTheCutoffIsDelivered(t *testing.T) {
 	}
 }
 
-// overrunningMetrics is a destination whose export ignores its context and
-// takes the given time, and whose release answers a context that has already
-// ended with that context's error, the way the upstream exporters do. The
-// reader makes its final export in line, so an export that outlasts the bound
-// holds the meter provider's shutdown past it, and the shutdown then returns the
-// export's outcome, which the wrapper has absorbed.
 type overrunningMetrics struct {
 	unreachableMetrics
 	takes time.Duration
@@ -636,7 +567,6 @@ func (m overrunningMetrics) Export(context.Context, *metricdata.ResourceMetrics)
 
 func (overrunningMetrics) Shutdown(ctx context.Context) error { return ctx.Err() }
 
-// metricBackend is an export backend that delivers the metric capability only.
 func metricBackend(name string, exporter sdkmetric.Exporter) core.Module {
 	return core.Module{
 		Name:     name,
@@ -648,15 +578,10 @@ func metricBackend(name string, exporter sdkmetric.Exporter) core.Module {
 	}
 }
 
-// driveOverMetricBackend runs one command under the module configuration given
-// over the one backend, records a data point while it is up, and returns what
-// the drive returned and how long it took.
 func driveOverMetricBackend(cfg boundedConfig, backend core.Module) (time.Duration, error) {
 	return driveOverMetricBackends(cfg, &bytes.Buffer{}, backend)
 }
 
-// driveOverMetricBackends is driveOverMetricBackend over every backend given,
-// with the module's lines written to logged.
 func driveOverMetricBackends(cfg boundedConfig, logged io.Writer, backends ...core.Module) (time.Duration, error) {
 	reg := core.New()
 	reg.Register(config.Module())
@@ -690,11 +615,8 @@ func driveOverMetricBackends(cfg boundedConfig, logged io.Writer, backends ...co
 	return time.Since(start), err
 }
 
-// TestTheReleaseDoesNotReuseTheContextTheFlushExpired pins that the release of
-// an exporter has a bound of its own. The final export outlasts the whole of
-// shutdown-timeout, so the context the providers flushed with has expired by the
-// time the exporter is released, and an exporter that answers an expired context
-// with its error would fail the stop for that wait alone.
+// TestTheReleaseDoesNotReuseTheContextTheFlushExpired pins that the
+// release of an exporter has a bound of its own.
 func TestTheReleaseDoesNotReuseTheContextTheFlushExpired(t *testing.T) {
 	const bound = 100 * time.Millisecond
 	elapsed, err := driveOverMetricBackend(boundedConfig{bound: bound},
@@ -705,18 +627,13 @@ func TestTheReleaseDoesNotReuseTheContextTheFlushExpired(t *testing.T) {
 	}
 	// The theme is the error above: a release that reused the expired flush
 	// context would answer the stop with that context's error, and a release
-	// with a bound of its own answers nil. The elapsed ceiling cannot tell a
-	// right implementation from a wrong one; it only guards against a stop that
-	// never returns, so it goes through Scale, the way every wait for an event
-	// does.
+	// with a bound of its own answers nil.
 	ceiling := coretest.Scale(5 * time.Second)
 	if elapsed > ceiling {
 		t.Errorf("the stop took %v against a shutdown bound of 100ms, want at most %v", elapsed, ceiling)
 	}
 }
 
-// waitingMetrics is a destination whose export waits for its context to end,
-// the way a transport retrying against a collector that is down does.
 type waitingMetrics struct{ unreachableMetrics }
 
 func (waitingMetrics) Export(ctx context.Context, _ *metricdata.ResourceMetrics) error {
@@ -724,12 +641,8 @@ func (waitingMetrics) Export(ctx context.Context, _ *metricdata.ResourceMetrics)
 	return ctx.Err()
 }
 
-// TestAStopOverTwoMetricBackendsThatWaitIsCutInsideTheBound pins the cutoff on
-// the metric side of an assembly. The meter provider shuts its readers down one
-// after the other on the one flush context, and a reader whose turn comes once
-// that context has expired makes no final export and returns the deadline. The
-// first reader's final export waits for its context, so unless the cutoff ends
-// it the export uses up the bound and the second reader fails the stop.
+// TestAStopOverTwoMetricBackendsThatWaitIsCutInsideTheBound pins the
+// cutoff on the metric side of an assembly.
 func TestAStopOverTwoMetricBackendsThatWaitIsCutInsideTheBound(t *testing.T) {
 	const bound = time.Second
 	logged := &lockedBuffer{}
@@ -744,11 +657,7 @@ func TestAStopOverTwoMetricBackendsThatWaitIsCutInsideTheBound(t *testing.T) {
 	}
 	// The ceiling is a behaviour criterion: it tells a stop that ends inside
 	// the bound and the release bound from one that runs to the metric
-	// reader's own export timeout. That timeout is
-	// metricExportTimeoutPastTheCeiling, the wrong time stated to
-	// DeclaredAgainst. The bound carries no race factor because the race
-	// factor belongs to the program under test, not to the difference this
-	// bound measures.
+	// reader's own export timeout.
 	ceiling := coretest.DeclaredAgainst(t, 0, bound+otel.ReleaseTimeout+releaseSlack, metricExportTimeoutPastTheCeiling)
 	if elapsed > ceiling {
 		t.Errorf("the stop took %v, want at most %v", elapsed, ceiling)
@@ -759,8 +668,6 @@ func TestAStopOverTwoMetricBackendsThatWaitIsCutInsideTheBound(t *testing.T) {
 	}
 }
 
-// slowMetrics is a destination whose export honours its context and takes the
-// given time to deliver, the way a reachable collector over a slow link does.
 type slowMetrics struct {
 	unreachableMetrics
 	takes     time.Duration
@@ -787,12 +694,7 @@ func (m slowMetrics) Export(ctx context.Context, rm *metricdata.ResourceMetrics)
 }
 
 // TestAFinalMetricExportThatFitsBeforeTheCutoffIsDelivered pins where the
-// cutoff falls on the metric side: the reader's final export takes a fifth of
-// shutdown-timeout, against a destination that honours its context, and is
-// delivered while the stop succeeds. A cutoff that ended before the meter
-// provider's shutdown, or near the start of the stop, would cut it, and the
-// metrics recorded since the last interval would be lost with no failure of the
-// stop to show for it.
+// cutoff falls on the metric side.
 func TestAFinalMetricExportThatFitsBeforeTheCutoffIsDelivered(t *testing.T) {
 	const bound = time.Second
 	var (
@@ -806,11 +708,8 @@ func TestAFinalMetricExportThatFitsBeforeTheCutoffIsDelivered(t *testing.T) {
 	if err != nil {
 		t.Errorf("a stop whose final metric export fits inside the bound ended the drive with %v, want nil", err)
 	}
-	// The theme is the delivery below: a cutoff placed at or near the start of
-	// the stop would cut the export and lose the batch. Whether the stop fits
-	// inside a time bound does not tell a right implementation from a wrong
-	// one, so this ceiling only guards against a stop that never returns and
-	// goes through Scale, the way every wait for an event does.
+	// The theme is the delivery below: a cutoff placed at or near the start
+	// of the stop would cut the export and lose the batch.
 	ceiling := coretest.Scale(bound + otel.ReleaseTimeout + releaseSlack)
 	if elapsed > ceiling {
 		t.Errorf("the stop took %v, want at most %v", elapsed, ceiling)
@@ -823,8 +722,6 @@ func TestAFinalMetricExportThatFitsBeforeTheCutoffIsDelivered(t *testing.T) {
 	}
 }
 
-// hangingMetrics is a destination whose release does not return until the
-// context it was handed ends.
 type hangingMetrics struct{ unreachableMetrics }
 
 func (hangingMetrics) Shutdown(ctx context.Context) error {
@@ -832,19 +729,10 @@ func (hangingMetrics) Shutdown(ctx context.Context) error {
 	return ctx.Err()
 }
 
-// releaseWrongTimeout is the time a wrong release needs in
-// TestTheReleaseOfAnExporterThatWaitsForItsContextIsBounded: one that bounds
-// the release with an export timeout instead of the module's own bound takes
-// that timeout. The case configures both export timeouts -- the batch's and
-// the metric reader's -- to it, so whichever one a wrong implementation reads,
-// the wrong time is the same and is the case's own to set rather than a
-// constant no test can move.
 const releaseWrongTimeout = 3 * time.Minute
 
 // TestTheReleaseOfAnExporterThatWaitsForItsContextIsBounded pins that the
-// release has a bound at all: the context it runs under is not the flush's, and
-// the registry imposes no timeout of its own, so without one an exporter whose
-// release waits for its context to end would hold the stop for good.
+// release has a bound at all.
 func TestTheReleaseOfAnExporterThatWaitsForItsContextIsBounded(t *testing.T) {
 	type outcome struct {
 		elapsed time.Duration
@@ -863,15 +751,7 @@ func TestTheReleaseOfAnExporterThatWaitsForItsContextIsBounded(t *testing.T) {
 	}()
 
 	// The window is in absolute terms on purpose: a ceiling built from the
-	// bound's own constant would follow the constant wherever it was set. The
-	// lower bound stays fixed -- a slow machine only makes the stop take
-	// longer -- while the ceiling carries the caller's scale alone. A release
-	// with no bound never returns, and the wait below is its guard; a release
-	// reusing the expired flush context returns before the lower bound. A
-	// release bounded far too long is the finite wrong implementation: one
-	// that takes its bound from an export timeout takes that timeout, while
-	// the module's release bound is a few seconds. That timeout is the wrong
-	// time stated to DeclaredAgainst.
+	// bound's own constant would follow the constant wherever it was set.
 	ceiling := coretest.DeclaredAgainst(t, 0, 6*time.Second, releaseWrongTimeout)
 	select {
 	case got := <-done:
@@ -884,10 +764,7 @@ func TestTheReleaseOfAnExporterThatWaitsForItsContextIsBounded(t *testing.T) {
 				releaseWrongTimeout)
 		}
 	// The wait covers the wrong time as well, so the elapsed check above is
-	// what a finite wrong implementation reports. Ending it sooner would call
-	// that implementation unbounded, which is not the reason this case
-	// distinguishes; an implementation with no bound at all still trips this
-	// guard, a little later.
+	// what a finite wrong implementation reports.
 	case <-time.After(releaseWrongTimeout + coretest.Scale(24*time.Second)):
 		t.Fatal("the stop did not return: the release of an exporter that waits for its context is unbounded")
 	}

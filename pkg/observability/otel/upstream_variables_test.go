@@ -12,9 +12,6 @@ import (
 	"testing"
 )
 
-// leftToUpstream are the standard variables the upstream SDK reads for what
-// this module does not configure, so they still apply and are not on
-// overriddenVariables.
 var leftToUpstream = map[string]string{
 	"OTEL_SERVICE_NAME":                      "the service name, when service-name is not configured",
 	"OTEL_RESOURCE_ATTRIBUTES":               "the resource's own attributes",
@@ -30,8 +27,6 @@ var leftToUpstream = map[string]string{
 	"OTEL_GO_X_CARDINALITY_LIMIT":            "the cardinality limit",
 }
 
-// upstreamSources are the files of the upstream SDK that name the standard
-// variables it reads, by module and path inside the module.
 var upstreamSources = []struct{ module, file string }{
 	{"go.opentelemetry.io/otel/sdk", "trace/sampler_env.go"},
 	{"go.opentelemetry.io/otel/sdk", "trace/internal/env/env.go"},
@@ -40,17 +35,10 @@ var upstreamSources = []struct{ module, file string }{
 	{"go.opentelemetry.io/otel/sdk/metric", "config.go"},
 }
 
-// variableName is a whole standard variable name, which leaves out a prefix
-// such as OTEL_GO_X_ that the upstream joins a name to.
 var variableName = regexp.MustCompile(`^OTEL_[A-Z0-9_]*[A-Z0-9]$`)
 
 // TestNoUpstreamVariableIsLeftOffTheOverriddenList pins overriddenVariables to
-// the upstream SDK of the version this module builds against. Every standard
-// variable named in the files that read them is either on the list or among
-// the ones this module leaves to the upstream, and every name on the list is
-// one those files name, so an upgrade that adds, renames or drops a variable
-// fails here until the list is brought in line. Each name on the list is also
-// one the warning reports when it alone is set.
+// the upstream SDK version this module builds against.
 func TestNoUpstreamVariableIsLeftOffTheOverriddenList(t *testing.T) {
 	read := map[string]bool{}
 	for _, src := range upstreamSources {
@@ -60,8 +48,6 @@ func TestNoUpstreamVariableIsLeftOffTheOverriddenList(t *testing.T) {
 			}
 		}
 	}
-	// The positive control: a scan that found no service name variable read
-	// nothing the assertions below could judge.
 	if !read["OTEL_SERVICE_NAME"] {
 		t.Fatalf("the upstream sources name no OTEL_SERVICE_NAME, so the scan read nothing: %v", read)
 	}
@@ -93,7 +79,6 @@ func TestNoUpstreamVariableIsLeftOffTheOverriddenList(t *testing.T) {
 	}
 }
 
-// moduleDir is the directory of a module in the build list.
 func moduleDir(t *testing.T, module string) string {
 	t.Helper()
 	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", module).CombinedOutput()
@@ -107,7 +92,6 @@ func moduleDir(t *testing.T, module string) string {
 	return dir
 }
 
-// stringLiterals lists the string literals of a Go file.
 func stringLiterals(t *testing.T, path string) map[string]bool {
 	t.Helper()
 	file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)

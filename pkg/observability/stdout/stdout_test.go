@@ -13,17 +13,12 @@ import (
 	"github.com/vislake/speed/pkg/observability/stdout"
 )
 
-// noConfig is the reading face for an assembly whose configuration declares
-// nothing, so every item keeps the default its prototype carries.
 type noConfig struct{}
 
 func (noConfig) Decode(string, any) error { return nil }
 
-// TestTheModuleDeliversBothExportersFromOneProduct is the delivery contract for
-// this backend: the descriptor promises two capabilities, and the registry
-// requires one product to satisfy both. A module that produced two values would
-// deliver neither, and the failure would be named at startup rather than
-// showing up as a capability nobody can take up.
+// TestTheModuleDeliversBothExportersFromOneProduct is the delivery
+// contract for this backend.
 func TestTheModuleDeliversBothExportersFromOneProduct(t *testing.T) {
 	reg := core.New()
 	reg.Register(config.Module())

@@ -1,22 +1,5 @@
-// Package observability declares the runtime telemetry capability: the traces
-// and metrics a process produces while it serves.
-//
-// This is the interface package. It registers no module. What registers are the
-// implementation subpackages: one assembler, which builds the two providers,
-// and one module per export backend, each delivering exporters.
-//
-// The signals themselves are the wrapped library's, and this package adds no
-// vocabulary of its own. It re-exports the four types that carry them — the two
-// providers a consumer takes up, and the two exporter interfaces a backend
-// implements — so that a caller writes the upstream API rather than a parallel
-// one. A module that produces telemetry imports this package, takes the
-// providers up with core.Resolve[observability.TracerProvider](reg), and hands
-// its own instrumentation the upstream types directly.
-//
-// Logs are not here. They are their own module and their own signal; what this
-// package shares with that one is the pair of attribute keys below, which are
-// the names a record is correlated under when it belongs to a request that has
-// a span.
+// Package observability declares the runtime telemetry capability: the
+// traces and metrics a process produces while it serves.
 package observability
 
 import (
@@ -27,13 +10,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// TracerProvider is the capability the assembler delivers exclusively, and the
-// entry point to everything that creates a span.
-//
-// It is an alias rather than a defined type so that a consumer holds the
-// upstream interface: the module is a wrapping of that library, and a parallel
-// interface would only make every caller convert between two spellings of the
-// same method set.
+// TracerProvider is the capability the assembler delivers exclusively,
+// and the entry point to everything that creates a span.
 type TracerProvider = trace.TracerProvider
 
 // MeterProvider is the capability the assembler delivers exclusively, and the
@@ -58,29 +36,10 @@ const (
 	SpanIDKey = "span_id"
 )
 
-// propagator is the format this module extracts and injects with: the W3C trace
-// context, and nothing besides.
-//
-// It is a value of this module's own rather than the library's global one: the
-// upstream default is an empty composite that silently injects and extracts
-// nothing, and installing a global would make one assembly's choice leak into
-// another's. Every place in this module that crosses a process boundary uses
-// this value through Propagator, so the two sides of a link cannot drift onto
-// different formats.
-//
-// Baggage is not carried. The request layer extracts ahead of authentication,
-// so an inbound baggage header is whatever an unauthenticated caller chose to
-// write; extracted, it would sit in the request's context, and Transport would
-// re-emit it to every third party the request calls on, under this service's
-// name. The span context is what continuing a trace needs, and it is all that
-// crosses in either direction.
+// propagator is the format this module extracts and injects with: the W3C
+// trace context, and nothing besides.
 var propagator propagation.TextMapPropagator = propagation.TraceContext{}
 
-// Propagator returns the trace-context propagator this module uses on both
-// sides of a process boundary.
-//
-// It is exported for the same reason it exists as one value: a module that
-// terminates an inbound protocol of its own — a message consumer, a job runner,
-// a gateway — has to extract with the same propagator the server side injects
-// with, and a second construction would be a second thing to keep in step.
+// Propagator returns the trace-context propagator this module uses on
+// both sides of a process boundary.
 func Propagator() propagation.TextMapPropagator { return propagator }

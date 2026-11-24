@@ -20,8 +20,6 @@ import (
 	"github.com/vislake/speed/pkg/observability"
 )
 
-// wiredConfig configures this module to instrument the endpoint the entry module
-// declares, and gives the entry module that endpoint.
 type wiredConfig struct{ address string }
 
 func (c wiredConfig) Decode(namespace string, target any) error {
@@ -35,7 +33,6 @@ func (c wiredConfig) Decode(namespace string, target any) error {
 		`"endpoints":{"`+entryName+`":{"listener":"`+entryName+`"}}}`).Decode(namespace, target)
 }
 
-// recordingMetricExporter keeps the names of the instruments that reached it.
 type recordingMetricExporter struct {
 	mu    sync.Mutex
 	names []string
@@ -63,16 +60,8 @@ func (m *recordingMetricExporter) Export(_ context.Context, rm *metricdata.Resou
 func (*recordingMetricExporter) ForceFlush(context.Context) error { return nil }
 func (*recordingMetricExporter) Shutdown(context.Context) error   { return nil }
 
-// TestTheAssemblerPutsTheLayerOnTheEndpointsTheConfigurationNames is the layer's
-// registration end to end: the assembler, configured with an endpoint name, takes
-// the entry module's router up in Init and registers the layer on that endpoint,
-// and a request to a route another module registered there leaves a server span
-// and a data point of the request histogram at the export backend. Nothing in the
-// case registers the layer by hand, so a layer the entry module refused at
-// registration, or a registration that never happened, ends the case.
-//
-// The batch and the metric interval are the defaults, so nothing is exported while
-// the request is served: what reaches the backend got there through the shutdown.
+// TestTheAssemblerPutsTheLayerOnTheEndpointsTheConfigurationNames is the
+// layer's registration end to end.
 func TestTheAssemblerPutsTheLayerOnTheEndpointsTheConfigurationNames(t *testing.T) {
 	spans := &recordingSpanExporter{}
 	metrics := &recordingMetricExporter{}

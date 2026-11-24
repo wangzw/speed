@@ -15,8 +15,6 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-// flakySpanExporter fails while err is set, so a case can drive a destination
-// in and out of failure without rebuilding the wrapper.
 type flakySpanExporter struct {
 	mu          sync.Mutex
 	err         error
@@ -89,10 +87,8 @@ func logBuffer() (*slog.Logger, *bytes.Buffer) {
 	return slog.New(slog.NewTextHandler(buf, nil)), buf
 }
 
-// TestTheNotifierWritesTheFirstFailureAndTheRecovery pins the shape of the only
-// report an export failure produces. A destination that is down fails every
-// batch; one line per failure would bury the log, and no line at all would
-// leave the failure invisible. The two edges are what is left.
+// TestTheNotifierWritesTheFirstFailureAndTheRecovery pins the shape of
+// the only report an export failure produces.
 func TestTheNotifierWritesTheFirstFailureAndTheRecovery(t *testing.T) {
 	lg, buf := logBuffer()
 	flaky := &flakySpanExporter{}
@@ -123,11 +119,8 @@ func TestTheNotifierWritesTheFirstFailureAndTheRecovery(t *testing.T) {
 	}
 }
 
-// TestTheWrapperForwardsEverythingItDoesNotIntercept is the case that keeps the
-// embedding honest. The metric interface carries the temporality and the
-// aggregation the backend asked for, and a wrapper that answered those itself
-// would change how the data is shaped without anyone asking it to; the flush is
-// what pushes the backend's own buffer out.
+// TestTheWrapperForwardsEverythingItDoesNotIntercept is the case that
+// keeps the embedding honest.
 func TestTheWrapperForwardsEverythingItDoesNotIntercept(t *testing.T) {
 	ctx := context.Background()
 	inner := &stubMetricExporter{
@@ -159,13 +152,8 @@ func TestTheWrapperForwardsEverythingItDoesNotIntercept(t *testing.T) {
 	}
 }
 
-// TestTheWrappersHoldTheProvidersShutdownBack pins the one lifecycle call the
-// wrappers do not forward. A provider shuts down the exporter it holds as the
-// last step of its own shutdown, and a backend's product releases both of its
-// exporters on that one call: forwarded, the first provider to shut down would
-// release the second provider's exporter ahead of its final export. The release
-// is the assembler's, made after both providers are done, and the case for it is
-// TestCloseDeliversTheLastBatchOfBothSignals.
+// TestTheWrappersHoldTheProvidersShutdownBack pins the one lifecycle call
+// the wrappers do not forward.
 func TestTheWrappersHoldTheProvidersShutdownBack(t *testing.T) {
 	ctx := context.Background()
 	lg, _ := logBuffer()
@@ -188,8 +176,6 @@ func TestTheWrappersHoldTheProvidersShutdownBack(t *testing.T) {
 	}
 }
 
-// contextSeen is what an export saw of the context it was handed: whether it
-// had already ended, and the deadline it carried.
 type contextSeen struct {
 	err      error
 	deadline time.Time
@@ -200,8 +186,6 @@ func see(ctx context.Context) contextSeen {
 	return contextSeen{err: ctx.Err(), deadline: deadline}
 }
 
-// seeingSpans and seeingMetrics record the context of their one export and
-// answer with its error, the way an exporter cut short does.
 type seeingSpans struct{ seen contextSeen }
 
 func (s *seeingSpans) ExportSpans(ctx context.Context, _ []sdktrace.ReadOnlySpan) error {
@@ -221,11 +205,8 @@ func (s *seeingMetrics) Export(ctx context.Context, _ *metricdata.ResourceMetric
 	return s.seen.err
 }
 
-// TestAnExportBeforeTheStopRunsOnTheContextItWasGiven pins that the cutoff
-// changes nothing while the process serves: both wrappers hand the exporter a
-// context that has not ended and carries the deadline the upstream set, which
-// is batch.export-timeout or metric.timeout, so the exporter's own retry and
-// timeout apply as they would without the wrapper.
+// TestAnExportBeforeTheStopRunsOnTheContextItWasGiven pins that the
+// cutoff changes nothing while the process serves.
 func TestAnExportBeforeTheStopRunsOnTheContextItWasGiven(t *testing.T) {
 	lg, _ := logBuffer()
 	cut := newCutoff()
@@ -248,10 +229,8 @@ func TestAnExportBeforeTheStopRunsOnTheContextItWasGiven(t *testing.T) {
 	}
 }
 
-// TestAnExportPastTheCutoffIsCutBeforeItStarts pins the cutoff on both wrappers:
-// once it has ended, an export is handed a context that has ended already, so a
-// final export made after the cutoff gives up at once instead of retrying until
-// the provider's bound, and the wrapper writes its line for it.
+// TestAnExportPastTheCutoffIsCutBeforeItStarts pins the cutoff on both
+// wrappers.
 func TestAnExportPastTheCutoffIsCutBeforeItStarts(t *testing.T) {
 	lg, buf := logBuffer()
 	cut := newCutoff()

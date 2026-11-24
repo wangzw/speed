@@ -1,17 +1,4 @@
 // Package otlp exports telemetry to an OpenTelemetry collector over OTLP.
-//
-// It is the backend a deployment uses: one endpoint carries both signals, and
-// the collector decides where they go from there. The exporter is the upstream
-// one for the protocol named in configuration, so the transport's own details —
-// retry, backoff, compression, the per-request timeout — are the library's
-// rather than this module's, and so are the standard OTEL_EXPORTER_OTLP_*
-// variables that set them. What the configuration declares is given to the
-// upstream explicitly, so the standard variables for those settings have no
-// effect, and one of them that is set gets a line at assembly naming it and
-// the item to set instead.
-//
-// It delivers both exporter capabilities, non-exclusively, so that a host can
-// export to a collector and somewhere else at the same time.
 package otlp
 
 import (
@@ -48,7 +35,6 @@ const (
 	ProtocolHTTPProtobuf = "http/protobuf"
 )
 
-// The items as the error text and the warnings name them.
 const (
 	endpointKey       = ModuleName + ".endpoint"
 	protocolKey       = ModuleName + ".protocol"
@@ -77,10 +63,9 @@ var (
 	ErrInvalidHeader = errors.New("observability.otlp: a header must be written key=value, " +
 		"with a key that is not empty and has no whitespace in it")
 
-	// ErrUnreadableCertificate reports a certificate item whose file cannot be
-	// read or does not parse: a ca-file with no PEM certificate in it, or a
-	// client certificate and key that do not load as a pair. The text names
-	// the item and the reason, and repeats nothing the file holds.
+	// ErrUnreadableCertificate reports a certificate item whose file cannot
+	// be read or does not parse: a ca-file with no PEM certificate in it, or
+	// a client certificate and key that do not load as a pair.
 	ErrUnreadableCertificate = errors.New("observability.otlp: a certificate file could not be loaded")
 
 	// ErrUnpairedClientCertificate reports a client certificate given without
@@ -103,55 +88,40 @@ var (
 	ErrInvalidDuration = errors.New("observability.otlp: probe-timeout must be positive")
 )
 
-// defaultProbeTimeout bounds the startup probe. It is shorter than a request
-// timeout on purpose: a probe that hangs holds up a startup.
 const defaultProbeTimeout = 3 * time.Second
 
 // Config is what this module accepts from configuration.
 type Config struct {
 	// Endpoint is the collector's host and optional port, without a scheme or
-	// a path — the form the upstream option takes. An IPv6 address is written
-	// in brackets. A port left out is the one the upstream falls back to: 443,
-	// or 80 for http over plaintext. It is required, which is what catches a
-	// deployment that forgot it, and validateEndpoint refuses a scheme, a path
-	// and whitespace; a wrong host is a different problem, and reachability is
-	// what the probe below is for.
+	// a path — the form the upstream option takes. An IPv6 address is
+	// written in brackets.
 	Endpoint string `config:"endpoint"`
 	// Protocol selects the transport. http/protobuf is read as http.
 	Protocol string `config:"protocol"`
 	// Insecure sends over plaintext rather than TLS. It defaults to true
 	// because the collector usually sits beside the process, on a network the
-	// operator controls. Headers sent this way to a host that is not a
-	// loopback one are reported with a warning line.
+	// operator controls.
 	Insecure bool `config:"insecure"`
 	// Headers are extra headers sent with every request, each written
 	// key=value; whitespace around an element, its key and its value is
-	// dropped. This is where a collector's credentials go, which is why the
-	// item is marked sensitive: it keeps the values out of diagnostics and out
-	// of the help output's default column, and the item takes no command-line
-	// origin, so a value cannot reach the process list.
+	// dropped.
 	Headers []string `config:"headers"`
 	// CAFile is a PEM file of the certificates a collector's certificate is
 	// verified against, in place of the host's root certificates rather than
 	// beside them. Empty is the host's root certificates.
 	CAFile string `config:"ca-file"`
-	// ClientCertFile and ClientKeyFile are the PEM certificate and key the
-	// exporters present to a collector that asks for one. They are given
-	// together or not at all. The certificate files are TLS settings, so
-	// setting one with Insecure true fails the preparation. They are paths rather
-	// than credentials, and are not marked sensitive.
+	// ClientCertFile is the PEM certificate the exporters present to a collector
+	// that asks for one. It is given together with ClientKeyFile or not at all.
 	ClientCertFile string `config:"client-cert-file"`
-	ClientKeyFile  string `config:"client-key-file"`
+	// ClientKeyFile is the PEM key paired with ClientCertFile.
+	ClientKeyFile string `config:"client-key-file"`
 	// ProbeAtStartup makes reachability a deployment premise rather than a
-	// runtime fact. It is off by default: a collector that starts after the
-	// process does is an ordinary deployment, and failing the startup over it
-	// would be this module inventing a requirement the transport does not have.
+	// runtime fact.
 	ProbeAtStartup bool `config:"probe-at-startup"`
 	// ProbeTimeout bounds that probe.
 	ProbeTimeout time.Duration `config:"probe-timeout"`
 }
 
-// prototype carries the defaults.
 func prototype() *Config {
 	return &Config{
 		Protocol:     ProtocolGRPC,
@@ -160,8 +130,6 @@ func prototype() *Config {
 	}
 }
 
-// init registers this module with the process registry, so a host that imports
-// the package has it available.
 func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is this module's descriptor, exported for the registries that do not
@@ -171,17 +139,13 @@ func Module() core.Module {
 		Name: ModuleName,
 		Requires: []core.Requirement{
 			// Optional: the logger carries two warnings, about headers sent over
-			// plaintext and about standard variables that are set and have no
-			// effect, and nothing here needs it to export. The assembler
-			// requires it, so in an assembly that exports at all it is present
-			// and ordered ahead of this module; without it neither warning is
-			// written, rather than written through the process root logger,
-			// where it would miss the destinations configuration named.
+			// plaintext and about standard variables that are set and have no effect,
+			// and nothing here needs it to export.
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
+		// Not exclusive: a destination is not a choice among mutually exclusive
+		// implementations, and a host may export to several.
 		Provides: []core.Provision{
-			// Not exclusive: a destination is not a choice among mutually
-			// exclusive implementations, and a host may export to several.
 			{Token: (*observability.SpanExporter)(nil)},
 			{Token: (*observability.MetricExporter)(nil)},
 		},
@@ -224,13 +188,6 @@ func Module() core.Module {
 	}
 }
 
-// prepare reads this module's own configuration and states that it starts.
-//
-// The probe does not happen here. Prepare runs for every module this command
-// took in (except one the host supplied an instance for), including a command
-// that only collects stances and builds nothing, and a network round trip in
-// this stage would make such a command fail over an endpoint it was never going
-// to use.
 func prepare(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 	cfg, err := read(reg)
 	if err != nil {
@@ -242,7 +199,6 @@ func prepare(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 
-// read decodes this module's namespace into a fresh carrier.
 func read(reg *core.Registry) (*Config, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
@@ -261,7 +217,6 @@ func read(reg *core.Registry) (*Config, error) {
 	return cfg, nil
 }
 
-// validate reports the values this module cannot start with.
 func (c *Config) validate() error {
 	_, err := c.checked()
 	return err
@@ -288,32 +243,11 @@ func (c *Config) checked() (tlsMaterial, error) {
 	return c.loadTLS()
 }
 
-// tlsMaterial is what the certificate items load to.
 type tlsMaterial struct {
-	// roots verifies the collector's certificate; nil is the host's root
-	// certificates.
-	roots *x509.CertPool
-	// client is presented to a collector that asks for a certificate; nil is
-	// none.
+	roots  *x509.CertPool
 	client *tls.Certificate
 }
 
-// loadTLS reads and parses the certificate items.
-//
-// The semantics are the upstream's for OTEL_EXPORTER_OTLP_CERTIFICATE,
-// OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE and OTEL_EXPORTER_OTLP_CLIENT_KEY,
-// which this module keeps out: the CA file becomes a pool of its own, which
-// replaces the host's root certificates rather than adding to them, and needs
-// one PEM certificate that parses; the client certificate and key load as a
-// pair, as tls.X509KeyPair takes them. The upstream ignores a file it cannot
-// load after a line to its own internal logger, and one of the pair given
-// without the other in silence; here both fail the preparation, naming the
-// item.
-//
-// The files are TLS settings, so any of them set with insecure true is a
-// contradiction rather than something to ignore. The text names the items and
-// the reason and repeats nothing a file holds; the reason for a file that
-// cannot be read carries its path, which is not a credential.
 func (c *Config) loadTLS() (tlsMaterial, error) {
 	if c.Insecure {
 		var set []string
@@ -365,8 +299,8 @@ func (c *Config) loadTLS() (tlsMaterial, error) {
 			return tlsMaterial{}, fmt.Errorf("%w: %s cannot be read: %w", ErrUnreadableCertificate,
 				clientKeyFileKey, err)
 		}
-		// The upstream's text is left out: it can quote a PEM block's type
-		// label, which is the file's content.
+		// The upstream's text is left out: it can quote a PEM block's type label,
+		// which is the file's content.
 		pair, err := tls.X509KeyPair(cert, key)
 		if err != nil {
 			return tlsMaterial{}, fmt.Errorf("%w: %s and %s do not load as a PEM certificate and its key",
@@ -377,30 +311,9 @@ func (c *Config) loadTLS() (tlsMaterial, error) {
 	return m, nil
 }
 
-// validateEndpoint refuses the shapes of an endpoint that are not a host and an
-// optional port: the empty string, a scheme, a path and whitespace.
-//
-// Over gRPC the exporters hand the value to the client as its target. A URL,
-// http:// or https://, names no resolver the client has, so the client falls
-// back to its default one, which looks the URL up as a host name; the exporter
-// builds and never delivers, and with the startup probe off, its default,
-// nothing at startup catches it. gRPC's own target forms, dns:///,
-// passthrough:/// and unix://, would deliver, and they are refused with the
-// rest: the item takes one form under both protocols. Over HTTP the URL built
-// from a scheme or a path does not parse, and the construction fails in New
-// with the upstream's own text, which names neither the item nor the form to
-// write. Checking here fails both in Prepare, with the fix. The port is not
-// required: left out, the upstream uses 443, or 80 for http over plaintext,
-// which over TLS is an ordinary way to write a collector behind a load
-// balancer.
-//
-// The check is of those shapes and no more. A port that is not a number or is
-// empty, or an IPv6 address with a port and no brackets, passes, and is left
-// to the upstream, which fails it in New or in the exports.
-//
-// The value is not repeated in the text. An endpoint is not sensitive, but one
-// written as a URL, which is the form refused here, can carry userinfo, and
-// the rule broken is enough to find the mistake.
+// validateEndpoint refuses the shapes of an endpoint that are not a host
+// and an optional port: the empty string, a scheme, a path and
+// whitespace.
 func validateEndpoint(endpoint string) error {
 	var defect string
 	switch {
@@ -419,26 +332,6 @@ func validateEndpoint(endpoint string) error {
 		"that goes with protocol and an IPv6 address in brackets", ErrInvalidEndpoint, endpointKey, defect)
 }
 
-// headerMap parses the header list.
-//
-// The element shape is key=value rather than a mapping because the item has to
-// be able to take its value from the environment: a mapping is a container, and
-// a container cannot be declared with the environment and command-line origins
-// at all. A list of strings can, which is what lets a credential come from the
-// environment rather than from a file.
-//
-// An element that does not parse is reported by its position, and no part of it
-// is repeated in the text. Naming the key would be the useful thing to do and
-// is not safe: an element with no separator has no key to name — the whole
-// string would be echoed, credential included — and a key is not reliably the
-// harmless half either, which is the same reason the redaction design does not
-// treat a key as content-free. The position is enough to find the element in a
-// configuration file or an environment variable.
-//
-// Whitespace around an element, its key and its value is dropped, so that a
-// list written in an environment variable as "a=1, b=2" reads as it looks. A
-// key that still contains whitespace is not a header name, and it is reported
-// like any other element that does not parse.
 func (c *Config) headerMap() (map[string]string, error) {
 	if len(c.Headers) == 0 {
 		return nil, nil

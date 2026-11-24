@@ -15,12 +15,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// readThrough loads a JSON document through the real configuration path and
-// hands back the reader this module's own section decodes from.
-//
-// The declaration this module registers is what is exercised: whether an item
-// is required is the loader's judgement, made from the schema, and a stub reader
-// would prove nothing about it.
 func readThrough(t *testing.T, document string) config.Reader {
 	t.Helper()
 	reader, err := loadThrough(t, document)
@@ -30,8 +24,6 @@ func readThrough(t *testing.T, document string) config.Reader {
 	return reader
 }
 
-// loadThrough is readThrough with the load's failure handed back rather than
-// failing the case.
 func loadThrough(t *testing.T, document string) (config.Reader, error) {
 	t.Helper()
 
@@ -52,10 +44,7 @@ func loadThrough(t *testing.T, document string) (config.Reader, error) {
 	return config.Load(t.Context(), reg, nil)
 }
 
-// TestThePrototypeCarriesTheDefaults pins what an absent item decodes to. The
-// defaults ride on the prototype because Decode leaves a field no source gave a
-// value for as it found it, so a field left at its zero value here is a field
-// whose default is the upstream's rather than one this module restates.
+// TestThePrototypeCarriesTheDefaults pins what an absent item decodes to.
 func TestThePrototypeCarriesTheDefaults(t *testing.T) {
 	cfg := prototype()
 
@@ -76,10 +65,8 @@ func TestThePrototypeCarriesTheDefaults(t *testing.T) {
 	}
 }
 
-// TestAnEventListIsAnUnknownKey pins that this module declares no event list:
-// it subscribes to no event type, so a primary source that names one under this
-// namespace is refused at load as a key no module declares, rather than read
-// and left to do nothing.
+// TestAnEventListIsAnUnknownKey pins that this module declares no event
+// list.
 func TestAnEventListIsAnUnknownKey(t *testing.T) {
 	_, err := loadThrough(t, `{"observability": {"otel": {"events": ["order.placed"]}}}`)
 	if !errors.Is(err, config.ErrUnknownKey) {
@@ -91,11 +78,8 @@ func TestAnEventListIsAnUnknownKey(t *testing.T) {
 	}
 }
 
-// TestTheServiceNameIsNotRequired pins that a configuration which never names
-// the service decodes and validates. Decode refuses a required item no source
-// gave before this module's own checks run, so the declaration is what has to
-// let it through; and the name that comes out is empty, which is how the module
-// knows to leave the choice to the upstream.
+// TestTheServiceNameIsNotRequired pins that a configuration which never
+// names the service decodes and validates.
 func TestTheServiceNameIsNotRequired(t *testing.T) {
 	reader := readThrough(t, `{"observability": {"otel": {"sample-ratio": 0.5}}}`)
 
@@ -111,9 +95,8 @@ func TestTheServiceNameIsNotRequired(t *testing.T) {
 	}
 }
 
-// TestAServiceNameWrittenAsEmptyIsAbsent pins the other way of not naming the
-// service. A source that gives the empty string decodes to the same value as no
-// source at all, and neither is a failure.
+// TestAServiceNameWrittenAsEmptyIsAbsent pins the other way of not naming
+// the service.
 func TestAServiceNameWrittenAsEmptyIsAbsent(t *testing.T) {
 	reader := readThrough(t, `{"observability": {"otel": {"service-name": ""}}}`)
 
@@ -126,10 +109,7 @@ func TestAServiceNameWrittenAsEmptyIsAbsent(t *testing.T) {
 	}
 }
 
-// TestValidateNamesEachFailure walks the sentinels one at a time. Each case
-// perturbs exactly one field of an otherwise valid carrier, so a case that
-// starts failing for another reason shows up as the wrong sentinel rather than
-// passing.
+// TestValidateNamesEachFailure walks the sentinels one at a time.
 func TestValidateNamesEachFailure(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -165,10 +145,8 @@ func TestValidateNamesEachFailure(t *testing.T) {
 	}
 }
 
-// TestValidateAcceptsWhatTheDesignCallsLegal pins the values that look like
-// failures and are not: a zero ratio records no traces, which the module
-// announces rather than refusing, and a zero batch size means the upstream
-// default rather than a queue that holds nothing.
+// TestValidateAcceptsWhatTheDesignCallsLegal checks that a zero sample ratio
+// and zero batch sizes pass validation.
 func TestValidateAcceptsWhatTheDesignCallsLegal(t *testing.T) {
 	cfg := prototype()
 	cfg.SampleRatio = 0
@@ -207,11 +185,8 @@ func TestAStarBesideANameNamesTheKeyAndTheCorrectWriting(t *testing.T) {
 	}
 }
 
-// TestAnEmptyEndpointListIsNotTheDefault pins that the empty list survives
-// decoding, whichever source wrote it, instead of being read as an absent item
-// that keeps the prototype's star: the document's empty array and an
-// environment variable whose value is empty both mean "none". A null is the
-// other way round: it is read as an absent item.
+// TestAnEmptyEndpointListIsNotTheDefault pins that an empty list survives
+// decoding instead of being read as absent.
 func TestAnEmptyEndpointListIsNotTheDefault(t *testing.T) {
 	t.Run("a document", func(t *testing.T) {
 		reader := readThrough(t, `{"observability": {"otel": {"endpoints": []}}}`)
@@ -269,11 +244,8 @@ func TestAnEmptyEndpointListIsNotTheDefault(t *testing.T) {
 	})
 }
 
-// TestZeroBatchSizesTakeTheUpstreamDefault pins the substitution that keeps the
-// documented meaning and the implemented one the same. The upstream reads a
-// zero as a queue of that size, so passing it through would produce a processor
-// that cannot hold a span — while the configuration's own documentation says
-// zero means the upstream's default.
+// TestZeroBatchSizesTakeTheUpstreamDefault pins the substitution that
+// keeps the documented meaning and the implemented one the same.
 func TestZeroBatchSizesTakeTheUpstreamDefault(t *testing.T) {
 	if got := queueSize(0, 512); got != 512 {
 		t.Errorf("a configured zero became %d, want the default it stands for", got)

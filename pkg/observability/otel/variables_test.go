@@ -22,14 +22,8 @@ import (
 	"github.com/vislake/speed/pkg/observability/otel"
 )
 
-// ignoredLineText is a phrase of the line that names the standard variables
-// this module overrides, and of no other line.
 const ignoredLineText = "standard OpenTelemetry variables are set and have no effect"
 
-// assembledLog drives one assembly of this module, with the given export
-// backends beside it, to its construction and hands back what it logged, with
-// the time left out so that a value a case looks for cannot turn up inside a
-// timestamp.
 func assembledLog(t *testing.T, backends ...core.Module) string {
 	t.Helper()
 	buf := &bytes.Buffer{}
@@ -60,7 +54,6 @@ func assembledLog(t *testing.T, backends ...core.Module) string {
 	return buf.String()
 }
 
-// linesWith returns the lines of a log that contain the text.
 func linesWith(logged, text string) []string {
 	var found []string
 	for line := range strings.SplitSeq(logged, "\n") {
@@ -71,10 +64,6 @@ func linesWith(logged, text string) []string {
 	return found
 }
 
-// offTheList are standard variables that are not on this module's list, so no
-// line names them: ones the upstream reads for what this module leaves to it,
-// an exporter's own, and OTEL_SERVICE_NAME, which a configured service-name
-// replaces without a warning.
 var offTheList = map[string]string{
 	"OTEL_SERVICE_NAME":               "named-by-the-environment",
 	"OTEL_RESOURCE_ATTRIBUTES":        "deployment.environment=staging",
@@ -83,15 +72,8 @@ var offTheList = map[string]string{
 	"OTEL_EXPORTER_OTLP_TIMEOUT":      "5000",
 }
 
-// TestASetStandardVariableThisModuleOverridesIsNamedOnce pins the line that
-// tells a deployment its variable has no effect. With every variable the
-// assembler overrides set, and with variables off the list set beside them,
-// the assembly writes exactly one warning, with no export backend and with
-// one that delivers both exporters; it names each overridden variable and the
-// item to set instead, names none of the variables off the list, and repeats
-// no value. The values are ones the upstream accepts,
-// so that it reports nothing of its own, and each carries digits nothing else
-// in the line has.
+// TestASetStandardVariableThisModuleOverridesIsNamedOnce pins the line
+// that tells a deployment its variable has no effect.
 func TestASetStandardVariableThisModuleOverridesIsNamedOnce(t *testing.T) {
 	overridden := []struct{ name, value, item string }{
 		{"OTEL_TRACES_SAMPLER", "parentbased_traceidratio", otel.ModuleName + ".sample-ratio"},
@@ -146,9 +128,7 @@ func TestASetStandardVariableThisModuleOverridesIsNamedOnce(t *testing.T) {
 	}
 }
 
-// TestNoLineWhenNoOverriddenVariableIsSet pins the other side: an assembly in
-// whose environment none of the overridden variables is set, absent or blank
-// once trimmed, writes no such line, whatever the variables off the list say.
+// TestNoLineWhenNoOverriddenVariableIsSet pins the other side.
 func TestNoLineWhenNoOverriddenVariableIsSet(t *testing.T) {
 	for _, name := range []string{
 		"OTEL_TRACES_SAMPLER", "OTEL_BSP_SCHEDULE_DELAY", "OTEL_BSP_EXPORT_TIMEOUT",
@@ -170,8 +150,6 @@ func TestNoLineWhenNoOverriddenVariableIsSet(t *testing.T) {
 	}
 }
 
-// timedDestination is a backend's receiving end that records, for each export,
-// how many spans it carried and how long its context had left to run.
 type timedDestination struct {
 	mu          sync.Mutex
 	spanBatches []int
@@ -220,7 +198,6 @@ func (m timedMetrics) Export(ctx context.Context, _ *metricdata.ResourceMetrics)
 func (timedMetrics) ForceFlush(context.Context) error { return nil }
 func (timedMetrics) Shutdown(context.Context) error   { return nil }
 
-// timedBackend delivers a timedDestination's two exporters as one product.
 func timedBackend(d *timedDestination) core.Module {
 	return core.Module{
 		Name: "observability.timed-backend",
@@ -237,8 +214,6 @@ func timedBackend(d *timedDestination) core.Module {
 	}
 }
 
-// driveTimed runs one command through Init under the given reading face with
-// the destination as the backend, and runs the action while it is up.
 func driveTimed(t *testing.T, d *timedDestination, reader config.Reader,
 	action func(context.Context, *core.Registry) error,
 ) {
@@ -259,20 +234,10 @@ func driveTimed(t *testing.T, d *timedDestination, reader config.Reader,
 	}
 }
 
-// envBound is the export timeout every overridden timeout variable is set to
-// in the cases below. An export context with no more than this left is one the
-// variable bounded; the configured timeouts are many seconds.
 const envBound = time.Millisecond
 
-// TestNoUpstreamVariableOverridesTheProviderConfiguration pins the premise the
-// warning states: under the defaults, every overridden variable set to a value
-// that contradicts the configuration changes nothing. A sampler and ratio that
-// record nothing still leave the spans this process starts recorded; a
-// schedule delay and a metric interval of a millisecond still export nothing
-// while the command runs; a queue and an export batch of one span still deliver
-// three spans as one batch at the flush; and an export timeout of a
-// millisecond still leaves the flush's export the bound the configuration and
-// the shutdown give it.
+// TestNoUpstreamVariableOverridesTheProviderConfiguration pins the
+// premise the warning states.
 func TestNoUpstreamVariableOverridesTheProviderConfiguration(t *testing.T) {
 	t.Setenv("OTEL_TRACES_SAMPLER", "traceidratio")
 	t.Setenv("OTEL_TRACES_SAMPLER_ARG", "0")
@@ -322,11 +287,7 @@ func TestNoUpstreamVariableOverridesTheProviderConfiguration(t *testing.T) {
 }
 
 // TestNoUpstreamVariableOverridesTheMetricTimeout pins the one overridden
-// variable a stop does not reach: the reader applies its own timeout only to a
-// periodic export, a flush running under the shutdown's bound instead. With
-// periods short enough for an export to happen while the command runs, and the
-// timeout variable set to a millisecond, that export still has the configured
-// timeout to run in.
+// variable a stop does not reach.
 func TestNoUpstreamVariableOverridesTheMetricTimeout(t *testing.T) {
 	t.Setenv("OTEL_METRIC_EXPORT_TIMEOUT", "1")
 

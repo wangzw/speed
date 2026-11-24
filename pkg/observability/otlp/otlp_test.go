@@ -13,16 +13,13 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// configured is the prototype with the one required item filled in.
 func configured() *Config {
 	cfg := prototype()
 	cfg.Endpoint = "collector.example:4317"
 	return cfg
 }
 
-// TestThePrototypeCarriesTheDefaults pins the deployable default: a collector
-// beside the process, over plaintext, on the gRPC port it listens on by
-// default.
+// TestThePrototypeCarriesTheDefaults pins the deployable default.
 func TestThePrototypeCarriesTheDefaults(t *testing.T) {
 	cfg := prototype()
 	if cfg.Protocol != ProtocolGRPC {
@@ -41,9 +38,8 @@ func TestThePrototypeCarriesTheDefaults(t *testing.T) {
 	}
 }
 
-// TestValidateNamesEachFailure walks the failures this module judges, one case
-// of each sentinel; the shapes behind ErrInvalidEndpoint and ErrInvalidHeader are
-// walked by the endpoint and header cases below.
+// TestValidateNamesEachFailure covers one case of each sentinel this module
+// judges; endpoint and header shapes are covered below.
 func TestValidateNamesEachFailure(t *testing.T) {
 	unknownProtocol := configured()
 	unknownProtocol.Protocol = "carrier-pigeon"
@@ -74,10 +70,8 @@ func TestValidateNamesEachFailure(t *testing.T) {
 	}
 }
 
-// TestAnUnreadableHeaderNeverPutsTheCredentialInTheError pins the one thing a
-// header error must not do. A header is where a collector's credential goes,
-// and the error text reaches the startup diagnostics, which are written to
-// standard error where anyone with the logs can read them.
+// TestAnUnreadableHeaderNeverPutsTheCredentialInTheError pins the one
+// thing a header error must not do.
 func TestAnUnreadableHeaderNeverPutsTheCredentialInTheError(t *testing.T) {
 	cfg := configured()
 	cfg.Headers = []string{"authorization Bearer sk-live-do-not-print"}
@@ -104,8 +98,6 @@ func TestAnUnreadableHeaderNeverPutsTheCredentialInTheError(t *testing.T) {
 	}
 }
 
-// prepareWith runs Prepare over a registry whose reading face hands this module
-// one configuration.
 func prepareWith(t *testing.T, cfg *Config) error {
 	t.Helper()
 	reg := core.New()
@@ -115,12 +107,8 @@ func prepareWith(t *testing.T, cfg *Config) error {
 	return err
 }
 
-// TestAnEndpointWithASchemeAPathOrWhitespaceFailsThePreparation pins the shape
-// check. A URL builds a gRPC exporter that never delivers, and a scheme or a
-// path fails the HTTP one in New with the upstream's text, so the check is what
-// turns both into a failure that names the item, says which rule the value
-// breaks, and says what to write. The value itself stays out of the text: a URL
-// can carry userinfo.
+// TestAnEndpointWithASchemeAPathOrWhitespaceFailsThePreparation pins the
+// shape check.
 func TestAnEndpointWithASchemeAPathOrWhitespaceFailsThePreparation(t *testing.T) {
 	for name, c := range map[string]struct{ endpoint, defect string }{
 		"a scheme":          {"http://collector.example:4318", "observability.otlp.endpoint carries a scheme"},
@@ -153,10 +141,8 @@ func TestAnEndpointWithASchemeAPathOrWhitespaceFailsThePreparation(t *testing.T)
 	}
 }
 
-// TestAHostWithAnOptionalPortPassesThePreparation pins the forms the shape check
-// lets through: a host and port, a host alone — the upstream's fallback port,
-// the ordinary way to write a collector behind a TLS load balancer — and an
-// IPv6 address in brackets with or without a port.
+// TestAHostWithAnOptionalPortPassesThePreparation pins the forms the
+// shape check lets through.
 func TestAHostWithAnOptionalPortPassesThePreparation(t *testing.T) {
 	for _, endpoint := range []string{
 		"collector.example:4317",
@@ -173,9 +159,8 @@ func TestAHostWithAnOptionalPortPassesThePreparation(t *testing.T) {
 	}
 }
 
-// TestTheSpecificationsNameForHTTPIsAccepted pins http/protobuf, the name the
-// OTLP specification gives the HTTP transport, as a second spelling of http,
-// and the error text that lists it among the accepted names.
+// TestTheSpecificationsNameForHTTPIsAccepted pins http/protobuf as a second
+// spelling of http and the error naming it accepted.
 func TestTheSpecificationsNameForHTTPIsAccepted(t *testing.T) {
 	cfg := configured()
 	cfg.Protocol = "http/protobuf"
@@ -194,11 +179,8 @@ func TestTheSpecificationsNameForHTTPIsAccepted(t *testing.T) {
 	}
 }
 
-// TestHeaderElementsAreReadWithoutTheirSurroundingWhitespace pins the reading of
-// a list written the way a person writes one. The environment's list is split
-// at the commas and nothing more, so "a=1, b=2" arrives with a space in front
-// of the second element; read as written, that space would be part of the key
-// and the collector would see a header name nobody meant.
+// TestHeaderElementsAreReadWithoutTheirSurroundingWhitespace pins the
+// reading of a list written the way a person writes one.
 func TestHeaderElementsAreReadWithoutTheirSurroundingWhitespace(t *testing.T) {
 	cfg := configured()
 	cfg.Headers = []string{"authorization=Bearer token", " x-tenant=acme", "x-region = eu-west ", "\tx-empty="}
@@ -222,12 +204,8 @@ func TestHeaderElementsAreReadWithoutTheirSurroundingWhitespace(t *testing.T) {
 	}
 }
 
-// TestAHeaderKeyWithWhitespaceInsideIsRefusedByPosition pins the other half of
-// the trimming: whitespace left inside a key once the ends are trimmed is not a
-// header name. The refusal is by position, like every other header failure, and
-// the text says how the list is written, because a value with a comma in it,
-// split by the environment's list syntax, is the usual way to get here. It also
-// states the rule on the key, which is the only rule such an element breaks.
+// TestAHeaderKeyWithWhitespaceInsideIsRefusedByPosition pins the other
+// half of the trimming.
 func TestAHeaderKeyWithWhitespaceInsideIsRefusedByPosition(t *testing.T) {
 	for name, element := range map[string]string{
 		"a space": "x api key=sk-live-do-not-print",
@@ -255,8 +233,6 @@ func TestAHeaderKeyWithWhitespaceInsideIsRefusedByPosition(t *testing.T) {
 						"where a value with a comma goes", text, want)
 				}
 			}
-			// The element is literally key=value, so without the rule on the key
-			// the text names no shape the element breaks.
 			if !strings.Contains(text, "no whitespace") {
 				t.Errorf("the text is %q, want it to say a key has no whitespace in it", text)
 			}
@@ -280,11 +256,8 @@ func TestHeaderMapReadsThePairs(t *testing.T) {
 	}
 }
 
-// TestNoInputItemTakesItsValueFromTheCommandLine pins the rule for the whole
-// namespace rather than for a list of items: a value that reached the command
-// line would appear in the process list, and the endpoint and the headers are
-// exactly what a host does not want there. The check is over the declaration, so
-// an item added later without a thought about it fails here.
+// TestNoInputItemTakesItsValueFromTheCommandLine pins the rule for the
+// whole namespace rather than for a list of items.
 func TestNoInputItemTakesItsValueFromTheCommandLine(t *testing.T) {
 	schema, ok := Module().Resources[0].(config.Schema)
 	if !ok {
@@ -310,7 +283,6 @@ func TestNoInputItemTakesItsValueFromTheCommandLine(t *testing.T) {
 	}
 }
 
-// fileHolding writes content to a file of its own and returns the path.
 func fileHolding(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "file.pem")
@@ -320,18 +292,14 @@ func fileHolding(t *testing.T, content string) string {
 	return path
 }
 
-// TestACertificateItemThatCannotLoadFailsThePreparation pins the certificate
-// items' check, which runs in Prepare so that a file that does not load fails
-// the startup rather than every handshake after it: each failure carries its
-// sentinel, names the items involved, and repeats nothing a file holds.
+// TestACertificateItemThatCannotLoadFailsThePreparation pins that an unloadable
+// certificate fails startup in Prepare, not every handshake.
 func TestACertificateItemThatCannotLoadFailsThePreparation(t *testing.T) {
 	ca := newAuthority(t)
 	client := ca.issue(t, "client", x509.ExtKeyUsageClientAuth)
 	other := ca.issue(t, "other", x509.ExtKeyUsageClientAuth)
 	const marker = "marker-content-3f7a"
 	notPEM := fileHolding(t, marker)
-	// PEM whose block type is the marker: the upstream's error for a pair that
-	// does not load lists the block types it skipped.
 	labelled := fileHolding(t, "-----BEGIN "+marker+"-----\nAAAA\n-----END "+marker+"-----\n")
 	missing := filepath.Join(t.TempDir(), "absent.pem")
 
@@ -416,10 +384,8 @@ func TestACertificateItemThatCannotLoadFailsThePreparation(t *testing.T) {
 	}
 }
 
-// TestACertificateItemOverPlaintextFailsThePreparation pins the contradiction:
-// the certificate items configure TLS and insecure turns it off, so setting
-// any of them with insecure true fails Prepare, naming every item set and
-// insecure, whether or not the file would load.
+// TestACertificateItemOverPlaintextFailsThePreparation pins the
+// contradiction.
 func TestACertificateItemOverPlaintextFailsThePreparation(t *testing.T) {
 	ca := newAuthority(t)
 	client := ca.issue(t, "client", x509.ExtKeyUsageClientAuth)
@@ -467,9 +433,8 @@ func TestACertificateItemOverPlaintextFailsThePreparation(t *testing.T) {
 	}
 }
 
-// TestCertificateItemsThatLoadPassThePreparation pins the accepted shapes: an
-// authority alone, a client certificate alone with the host's root
-// certificates, and both.
+// TestCertificateItemsThatLoadPassThePreparation pins the accepted
+// shapes.
 func TestCertificateItemsThatLoadPassThePreparation(t *testing.T) {
 	ca := newAuthority(t)
 	client := ca.issue(t, "client", x509.ExtKeyUsageClientAuth)
@@ -489,9 +454,8 @@ func TestCertificateItemsThatLoadPassThePreparation(t *testing.T) {
 	}
 }
 
-// TestTheCertificateItemsArePathsRatherThanCredentials pins their declaration:
-// each is declared, takes no command-line origin, and is not marked
-// sensitive, because what it holds is where a file is, not what is in it.
+// TestTheCertificateItemsArePathsRatherThanCredentials pins their
+// declaration.
 func TestTheCertificateItemsArePathsRatherThanCredentials(t *testing.T) {
 	schema, ok := Module().Resources[0].(config.Schema)
 	if !ok {

@@ -23,14 +23,6 @@ import (
 	"github.com/vislake/speed/pkg/observability"
 )
 
-// newExporters builds the two exporters, probing the endpoint first when the
-// configuration asks for it.
-//
-// The probe is here rather than in Prepare because New runs only for a command
-// that actually builds this module, while Prepare runs for every module a
-// command took in (except one the host supplied an instance for) — including a
-// command that collects stances and constructs nothing. A round trip in Prepare
-// would make such a command fail over an endpoint it was never going to send to.
 func newExporters(ctx context.Context, reg *core.Registry) (any, error) {
 	cfg, err := read(reg)
 	if err != nil {
@@ -63,19 +55,9 @@ func newExporters(ctx context.Context, reg *core.Registry) (any, error) {
 	return &observability.Exporters{Span: span, Metric: metric}, nil
 }
 
-// registerHeaderSecrets registers each header value as a literal redaction rule
-// with the logging capability, when the assembly carries one and any header has
-// a value.
-//
-// A header value is a collector's credential, and it has no shape to match, so
-// the value itself is what is registered: one that turns up in any log line of
-// the process is masked. The registration runs in New, before the two warnings
-// name a logger.
-//
-// The logger is an optional dependency. Without one the values are not
-// registered, rather than registered with a logger reached some other way: the
-// process root logger does not hold this module's rules, and a header value
-// registered nowhere is the gap the design states.
+// registerHeaderSecrets registers each header value as a literal
+// redaction rule with the logging capability, when the assembly carries
+// one and any header has a value.
 func registerHeaderSecrets(reg *core.Registry, headers map[string]string) {
 	if len(headers) == 0 {
 		return
@@ -91,19 +73,9 @@ func registerHeaderSecrets(reg *core.Registry, headers map[string]string) {
 	literal.Register(delivered.Redaction(), ModuleName+".headers", values...)
 }
 
-// warnPlaintextHeaders writes one line when the headers would cross a network
-// in the clear: there are headers, the exporters are insecure, and the
-// endpoint's host is not a loopback one.
-//
-// It is a warning and not a failure because insecure defaults to true for a
-// collector beside the process, and a collector reached over a network the
-// operator controls is a deployment this module cannot tell apart from one it
-// does not. The headers are where a collector's credential goes, so the line
-// names neither a header nor a value, and not the endpoint either: the line
-// says what to change, and the configuration says where.
-//
-// The logger is an optional dependency. Without one the line is not written,
-// rather than written through the process root logger.
+// warnPlaintextHeaders writes one line when the headers would cross a
+// network in the clear: there are headers, the exporters are insecure,
+// and the endpoint's host is not a loopback one.
 func warnPlaintextHeaders(reg *core.Registry, cfg *Config, headers map[string]string) {
 	if len(headers) == 0 || !cfg.Insecure || loopbackHost(cfg.Endpoint) {
 		return
@@ -116,10 +88,6 @@ func warnPlaintextHeaders(reg *core.Registry, cfg *Config, headers map[string]st
 		ModuleName + ".insecure to false to send them over TLS")
 }
 
-// loopbackHost reports whether an endpoint's host is localhost or a loopback
-// address. The port is optional, and an IPv6 address is in brackets either way.
-// Only those names count: an empty host, as in ":4317", or an unspecified
-// address such as 0.0.0.0 is not one of them, and is warned about.
 func loopbackHost(endpoint string) bool {
 	host := endpoint
 	if h, _, err := net.SplitHostPort(endpoint); err == nil {
@@ -133,37 +101,11 @@ func loopbackHost(endpoint string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// The paths a collector serves the two signals at over OTLP/HTTP.
 const (
 	httpTracesPath  = "/v1/traces"
 	httpMetricsPath = "/v1/metrics"
 )
 
-// build constructs both exporters for the configured protocol.
-//
-// Every setting the configuration declares, and every part of the wire shape
-// the module documents, is given to the upstream explicitly, including the
-// ones whose explicit value is the upstream default. The upstream exporters
-// read the standard OTEL_EXPORTER_OTLP_* variables for whatever they are not
-// given, and they apply those variables first and the options after, so an
-// option is the only way to keep a variable out: left implicit, the endpoint's
-// path, the TLS switch and its certificates, the headers, the encoding, and the
-// metric temporality and aggregation would each have a second source outside
-// this module's prefix, its diagnostics and its sensitive marking — a header
-// variable injecting a credential the configuration never gave, an insecure
-// variable turning TLS off under a configuration that asked for it. Each
-// variable these options keep out is on overriddenVariables, and one that is
-// set is named by warnIgnoredVariables.
-//
-// What the configuration leaves to the library stays the library's, variables
-// included: compression, the per-request timeout, retry and backoff.
-//
-// Both exporters of either protocol carry the one TLS configuration the
-// certificate items loaded to.
-//
-// An exporter that was built before its pair failed is released here rather
-// than left open: the failure returns from New, so no provider exists to shut
-// it down later, and nothing else holds a reference to it.
 func build(ctx context.Context, cfg *Config, headers map[string]string, material tlsMaterial) (sdktrace.SpanExporter, sdkmetric.Exporter, error) {
 	// A nil map would leave the header variables in force; an empty one
 	// replaces them with nothing.
@@ -172,10 +114,8 @@ func build(ctx context.Context, cfg *Config, headers map[string]string, material
 	}
 	switch cfg.Protocol {
 	case ProtocolHTTP:
-		// The scheme in the URL is what sets the upstream's TLS switch either
-		// way; the endpoint is then given verbatim, and the TLS configuration is
-		// replaced outright — with none at all over plaintext, where a
-		// certificate variable would otherwise fail the construction.
+		// The URL scheme sets the upstream's TLS switch; the TLS configuration is
+		// replaced outright, with none over plaintext.
 		scheme, tlsConfig := "https", clientTLS(material)
 		if cfg.Insecure {
 			scheme, tlsConfig = "http", nil
@@ -206,10 +146,8 @@ func build(ctx context.Context, cfg *Config, headers map[string]string, material
 		}
 		return span, metric, nil
 	default:
-		// The transport credentials are given in both modes: credentials
-		// built from a certificate variable take precedence over the
-		// upstream's insecure switch, so only credentials of this module's
-		// own can say plaintext and mean it.
+		// The transport credentials are given in both modes: credentials from a
+		// certificate variable take precedence over the insecure switch.
 		creds := insecure.NewCredentials()
 		if !cfg.Insecure {
 			creds = credentials.NewTLS(clientTLS(material))
@@ -237,11 +175,8 @@ func build(ctx context.Context, cfg *Config, headers map[string]string, material
 	}
 }
 
-// clientTLS is the TLS configuration an exporter that is not insecure uses: the
-// roots and the client certificate the certificate items loaded to, and with
-// none configured the host's root certificates and no client certificate,
-// which is what the upstream uses when it is given nothing. It is given even
-// then so that a certificate variable cannot replace it.
+// clientTLS is the TLS configuration a secure exporter uses: the configured roots
+// and client certificate, or the host's roots and none.
 func clientTLS(material tlsMaterial) *tls.Config {
 	cfg := &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: material.roots}
 	if material.client != nil {
@@ -250,16 +185,6 @@ func clientTLS(material tlsMaterial) *tls.Config {
 	return cfg
 }
 
-// probe opens a TCP connection to the endpoint and closes it again.
-//
-// A transport-level dial is what "reachable" means here, and it is deliberately
-// the weakest thing that answers the question the operator is asking: whether
-// the deployment premise holds. Whether the collector accepts what is sent is a
-// different question, and one this module cannot answer at startup without
-// inventing a request the transport does not otherwise make.
-//
-// The address dialed is the one the exporters connect to, so an endpoint
-// written without a port is probed at the port the upstream falls back to.
 func probe(ctx context.Context, cfg *Config) error {
 	address := dialAddress(cfg)
 	dialer := net.Dialer{Timeout: cfg.ProbeTimeout}
@@ -271,10 +196,8 @@ func probe(ctx context.Context, cfg *Config) error {
 	return nil
 }
 
-// dialAddress is the endpoint with the port the upstream connects to when none
-// is written: 443 over gRPC, whose resolver falls back to it whatever the
-// transport security, and over HTTP the scheme's own port, 80 over plaintext
-// and 443 over TLS. An endpoint with a port is returned as written.
+// dialAddress is the endpoint with the port the upstream uses when none is
+// written: 443 over gRPC, and the scheme's port over HTTP.
 func dialAddress(cfg *Config) string {
 	if _, _, err := net.SplitHostPort(cfg.Endpoint); err == nil {
 		return cfg.Endpoint
