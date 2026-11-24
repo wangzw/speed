@@ -15,7 +15,6 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// object reads a JSON object with the members a case is about.
 func object(t *testing.T, body string) map[string]any {
 	t.Helper()
 	var parsed map[string]any
@@ -25,8 +24,6 @@ func object(t *testing.T, body string) map[string]any {
 	return parsed
 }
 
-// at walks a chain of object keys and reports the value there, failing the case
-// when any of them is absent.
 func at(t *testing.T, doc map[string]any, keys ...string) any {
 	t.Helper()
 	var value any = doc
@@ -40,6 +37,8 @@ func at(t *testing.T, doc map[string]any, keys ...string) any {
 	return value
 }
 
+// TestOpsServesProbesAndTheMergedDocument checks that the health, readiness and
+// document routes answer and that the document carries the configured metadata.
 func TestOpsServesProbesAndTheMergedDocument(t *testing.T) {
 	host := startHost(t, hostOptions{config: `{
 		"http": {"listeners": {"ops": {"address": "127.0.0.1:0"}}, "endpoints": {"ops": {"listener": "ops"}}},
@@ -102,6 +101,8 @@ func TestOpsServesProbesAndTheMergedDocument(t *testing.T) {
 	})
 }
 
+// TestOpsReadinessNamesADatabaseFailure checks that readiness answers 503 naming
+// the database when its handle does not answer.
 func TestOpsReadinessNamesADatabaseFailure(t *testing.T) {
 	host := startHost(t, hostOptions{
 		config: `{
@@ -127,10 +128,9 @@ func TestOpsReadinessNamesADatabaseFailure(t *testing.T) {
 	}
 }
 
+// TestOpsRoutesAndFragmentFollowTheConfiguredEndpoint checks that the routes and
+// the module's own operations move to the configured endpoint.
 func TestOpsRoutesAndFragmentFollowTheConfiguredEndpoint(t *testing.T) {
-	// The endpoint the configuration names is where the routes are mounted and
-	// where the module's own operations are tagged, so the document says which
-	// endpoint answers them.
 	host := startHost(t, hostOptions{config: `{
 		"http": {"listeners": {"internal": {"address": "127.0.0.1:0"}}, "endpoints": {"internal": {"listener": "internal"}}},
 		"ops": {"endpoint": "internal", "title": "t"}
@@ -150,10 +150,9 @@ func TestOpsRoutesAndFragmentFollowTheConfiguredEndpoint(t *testing.T) {
 	}
 }
 
+// TestReadinessNamesEachFailingPart checks that the readiness answer names each
+// failing endpoint and the database, and no healthy one.
 func TestReadinessNamesEachFailingPart(t *testing.T) {
-	// The endpoint-not-accepting path cannot be reached once the entry point is
-	// serving, so it is exercised here against a stand-in router: one endpoint
-	// refuses, one is undeclared, and the database is down.
 	p := &product{
 		router: fakeRouter{
 			names: []string{"api", "ghost", "admin"},
@@ -189,7 +188,6 @@ func TestReadinessNamesEachFailingPart(t *testing.T) {
 			t.Errorf("the failures %v do not name %q", rendered, want)
 		}
 	}
-	// The healthy endpoint is named by nothing.
 	for _, f := range rendered {
 		if strings.Contains(f, `"admin"`) {
 			t.Errorf("the failures %v name the healthy endpoint admin", rendered)
@@ -197,6 +195,8 @@ func TestReadinessNamesEachFailingPart(t *testing.T) {
 	}
 }
 
+// TestInitRejectsAnInstanceItDidNotConstruct checks that Init refuses an instance
+// its New did not build.
 func TestInitRejectsAnInstanceItDidNotConstruct(t *testing.T) {
 	err := initProduct(context.Background(), core.New(), "not a product")
 	if !errors.Is(err, ErrForeignInstance) {
@@ -204,9 +204,9 @@ func TestInitRejectsAnInstanceItDidNotConstruct(t *testing.T) {
 	}
 }
 
+// TestStopAndCloseTolerateAnAbsentInstance checks that Stop and Close tolerate an
+// absent or foreign instance and write one record on a built product.
 func TestStopAndCloseTolerateAnAbsentInstance(t *testing.T) {
-	// A startup failure rolls back instances that were never initialised, so
-	// Stop and Close are called on values this module never built.
 	for _, cb := range []struct {
 		name string
 		call func(context.Context, *core.Registry, any) error
@@ -234,8 +234,6 @@ func TestStopAndCloseTolerateAnAbsentInstance(t *testing.T) {
 	}
 }
 
-// serve calls a readiness handler and records its answer. The handler is bound
-// to the readiness operation, so the case sees exactly what a request would.
 func serve(t *testing.T, handler func(context.Context, struct{}, *speedhttp.Meta) (speedhttp.Reply, error)) response {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
