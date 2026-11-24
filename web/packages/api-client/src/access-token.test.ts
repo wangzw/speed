@@ -1,13 +1,3 @@
-/**
- * Contract tests for the AccessTokenStore seam: the memory store keeps
- * exactly one token, forgets it on sign-out, and never touches any
- * persistence API -- there is no storage seam anywhere in the package
- * (an access token in localStorage is a credential an XSS walks away
- * with). The absence is structural: the
- * store has no browser hooks to call, so the moment anyone adds one the
- * typecheck of this package's consumers stops compiling.
- */
-
 import { describe, expect, it } from 'vitest'
 import {
   createMemoryAccessTokenStore,
@@ -37,9 +27,6 @@ describe('createMemoryAccessTokenStore', () => {
   })
 
   it('is a plain interface hosts implement (sync get/set, string | null)', () => {
-    // The client depends only on the AccessTokenStore shape -- a host
-    // supplies the real store (auth-core's createAuthSession takes one)
-    // -- so drift in the shape breaks compilation.
     let hostToken: string | null = 'host-issued-token'
     const hostStore: AccessTokenStore = {
       get(): string | null {

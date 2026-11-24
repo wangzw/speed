@@ -1,94 +1,3 @@
-/**
- * The request client: createClient wires every seam -- injectable
- * fetch, the access-token store, the refresh hook, retry timing, the
- * timeout and the reporter -- into one request function, which performs
- * the whole request lifecycle on each call:
- *
- *   1. attach `Authorization: Bearer <token>` from the store (per
- *      attempt, so a refreshed token is picked up on retry) -- unless
- *      the request declares `omitAccessToken`, in which case the store
- *      is never read and no store token is attached (a caller-supplied
- *      `authorization` header, when one is given, is the caller's own
- *      and travels untouched). A cookie-delivered session needs none of
- *      this: the browser attaches the session cookie per the
- *      `credentials` mode (the same-origin default carries it), so a
- *      client configured for cookies leaves the store out entirely;
- *   2. send; a caller-supplied signal cancels the request raw (the
- *      AbortError reaches the caller, standard query-cancellation
- *      semantics -- nothing is wrapped or retried). Cancellation
- *      covers the whole attempt, the response body included: the
- *      per-attempt timeout keeps running and the caller's signal
- *      keeps aborting the request until the body has settled (read in
- *      full, failed, or released), so a server that answers headers
- *      and then stalls its body cannot outlive either the timeout or
- *      an abort;
- *   3. on HTTP 401 from a request that presented a credential -- a
- *      bearer token, or, when `credentials` declares cookie sessions,
- *      the ambient cookie -- with a refreshAccessToken hook configured:
- *      run one refresh,
- *      coalescing concurrent 401s onto a single in-flight refresh, and
- *      retry the original request exactly once (any method, outside
- *      the retry budget -- the refresh round performs no transient
- *      retry and never consumes one). The refresh round is a separate
- *      exchange of its own (a host's refresh request travels through
- *      this same client and carries its own timeout): the refused
- *      attempt's timeout is suspended across it, so a refresh that
- *      outlives timeoutMs never fires the attempt timeout into the
- *      401 envelope read that follows a failed refresh -- the real
- *      envelope (code and trace id) survives. A 401 on a
- *      credential-less request
- *      means authentication is required -- refreshing cannot provide
- *      it -- so it surfaces untouched, which also keeps a session's
- *      own refresh request (sent credential-less) from re-entering
- *      the refresh path (and a host that forgot that declaration on
- *      its refresh request is refused the refresh path at runtime the
- *      same way, as is any read the hook issues through the
- *      round-scoped request function it is called with). Caller
- *      cancellation is never muted by the pause: an
- *      abort landing during the refresh round races the round's wait
- *      and rejects the request raw -- the flight itself races no
- *      signal, so only the aborting request detaches, and the waiters
- *      already joined on the round still get the hook's real outcome
- *      when it settles. Refresh failure surfaces the original 401 as
- *      a distinguishable auth ApiError and is reported through the
- *      Reporter;
- *   4. on 429/502/503/504, network failures and timeouts: retry only
- *      idempotent methods (GET/HEAD/OPTIONS), exponential full-jitter
- *      backoff per RetryPolicy, Retry-After honoured on 429 and 503.
- *      The retry budget bounds transient retries, never the refresh
- *      round; a response being discarded for a retry (a retryable
- *      status, a refused 401 whose refresh succeeded) has its body
- *      cancelled first, so the connection is released instead of left
- *      held by an unread response;
- *   5. normalize the outcome: 2xx bodies parse as JSON (empty bodies
- *      resolve undefined -- unless the request declared
- *      `requireJsonBody`, which refuses an empty 2xx as client.protocol
- *      with the exchange's real status and attempts), and every
- *      failure rejects an ApiError -- envelope errors keep the
- *      envelope's code (from its own `code` string or its RFC 9457
- *      problem `type`, `urn:speed:<module>:<code>` -> `<module>.<code>`;
- *      plus its traceId, params, message and details when the backend
- *      sent them), everything else gets the reserved client.* vocabulary
- *      from errors.ts. A binary request body -- a Blob, ArrayBuffer or
- *      typed array -- travels verbatim instead of being JSON-serialized,
- *      and a request declaring `responseType: 'blob'` resolves its 2xx
- *      body as raw bytes (a Blob) rather than parsing JSON. A request
- *      body that cannot be JSON-serialized
- *      (a circular structure, a top-level function or symbol, a
- *      toJSON() that yields nothing) rejects as client.protocol before
- *      anything is sent.
- *
- * The tenant is a transport channel here, not a claim of the access
- * token: the client announces the host's current tenant under the
- * configured tenant header (`X-Tenant` by default), read per attempt
- * from `tenantProvider` -- the routing fact the backend's tenant
- * resolution layer reads off the request surface. A request declaring
- * no provider, or whose provider answers null/empty, carries no tenant
- * header; a caller-supplied header of the configured name is the
- * caller's own and is never overwritten. Nothing in this file reads or
- * stores data beyond the current request.
- */
-
 import {
   ApiError,
   ERROR_CODE_HTML,
@@ -120,47 +29,25 @@ export type HttpMethod =
   | 'PATCH'
   | 'DELETE'
 
-/**
- * Per-request options. Paths and response types come from the spec
- * (the merged platform document -> @speed/api-sdk); this layer stays spec-agnostic.
- */
+/** Per-request options. */
 export interface RequestOptions {
   /** HTTP method; GET when omitted. */
   method?: HttpMethod
   /**
-   * Extra request headers. `accept` defaults to application/json and
-   * `content-type` to application/json when a body is sent -- each
-   * only when the caller did not already set one, so a caller-supplied
-   * value is honoured. `authorization` is reserved whenever the store
-   * is consulted: when the store holds a token it overwrites a
-   * caller-supplied value, because the store is the session's single
-   * source of truth. Declare `omitAccessToken` below to send the
-   * request without the store's token instead -- the store is then
-   * never read, so a caller-supplied `authorization` (when one is
-   * given) is the caller's own and travels untouched.
+   * Extra request headers. `accept` and `content-type` default to application/json
+   * when the caller did not set them; the store's token overwrites a
+   * caller-supplied `authorization` unless `omitAccessToken` is declared.
    */
   headers?: Readonly<Record<string, string>>
   /**
-   * Declares this request store-token-less: the token store is never
-   * read, and no token from it is attached, no matter what it holds --
-   * the request carries only the caller's own headers. Without a
-   * caller-supplied `authorization` that means the request travels
-   * credential-less. A session's own refresh operation is the
-   * canonical user -- it authenticates with the refresh token in its
-   * body, and its 401 must stay terminal under the bearer-only rule
-   * (see `ClientOptions.refreshAccessToken`) -- and declaring this on
-   * the request keeps the store untouched for every concurrent
-   * request, which may still be presenting a perfectly valid token.
+   * Declares this request store-token-less: the store is never read and no
+   * token from it is attached, so the request travels with only the caller's
+   * own headers.
    */
   omitAccessToken?: boolean
   /**
-   * Query parameters, URL-encoded and appended to the path; null and
-   * undefined entries are skipped. Put parameter values here, never in
-   * the path string. An array value is encoded as repeated parameters
-   * -- the form/explode convention a Go `r.URL.Query()` handler parses
-   * (`tag: ['a', 'b']` becomes `?tag=a&tag=b`), never comma-joined
-   * into one parameter; array entries must be scalars, and null or
-   * undefined entries are skipped inside arrays as at the top level.
+   * Query parameters appended to the path; null and undefined entries are
+   * skipped and array values become repeated parameters.
    */
   query?: Readonly<
     Record<
@@ -174,47 +61,26 @@ export interface RequestOptions {
     >
   >
   /**
-   * The request body. A JSON value is serialized to text and sent with
-   * the JSON content type; a binary body -- a Blob, an ArrayBuffer or a
-   * typed array, the raw bytes a byte-moving endpoint like the
-   * objectstore content upload takes -- travels verbatim, never
-   * JSON-serialized, under whatever content type the caller set (the
-   * generated binary operation sets application/octet-stream). Every
-   * other value is JSON-serialized.
+   * The request body. A JSON value is serialized; a Blob, ArrayBuffer or
+   * typed array travels verbatim as raw bytes.
    */
   body?: unknown
-  /**
-   * Read a 2xx body as raw bytes (a Blob) instead of JSON text -- the
-   * shape a byte-returning endpoint like the objectstore content
-   * download answers with; the generated binary operation sets it.
-   * Error responses and non-blob 2xx bodies still parse as JSON.
-   */
+  /** Read a 2xx body as raw bytes (a Blob) instead of JSON. */
   responseType?: 'blob'
   /**
-   * Declares that this request needs a JSON document in its 2xx body:
-   * an empty 2xx body (the client's own 204-style empty-success
-   * shape) then refuses as a client.protocol ApiError carrying the
-   * exchange's real status and attempt count -- never a resolved
-   * `undefined` that passes for the typed document. A consumer that
-   * reads fields off an operation declaring a response body sets it:
-   * the refusal carries the exchange's real status and attempt count,
-   * which only the request itself knows.
+   * Declares that the 2xx body must carry a JSON document; an empty 2xx then
+   * refuses as `client.protocol`, carrying the exchange's real status and
+   * attempt count.
    */
   requireJsonBody?: boolean
-  /**
-   * Caller cancellation: aborting the signal rejects with the raw
-   * AbortError (no ApiError, no retry) so query layers (TanStack Query)
-   * keep standard cancellation semantics.
-   */
+  /** Caller cancellation: aborting rejects with the raw AbortError, no retry. */
   signal?: AbortSignal
 }
 
 /**
- * The request function createClient returns. Generic over the parsed
- * response type: a 2xx JSON body resolves as `T`, an empty 2xx body
- * (204-style) resolves undefined, and every failure rejects an
- * ApiError (see errors.ts). In TSX files annotate calls as
- * `api<T,>(path)` -- the trailing comma disambiguates from JSX.
+ * The request function createClient returns. A 2xx JSON body resolves as `T`,
+ * an empty 2xx as undefined, and every failure rejects an ApiError. In TSX,
+ * annotate calls as `api<T,>(path)`.
  */
 export type RequestFn = <T>(
   path: string,
@@ -222,14 +88,9 @@ export type RequestFn = <T>(
 ) => Promise<T>
 
 /**
- * What createClient returns: the request function plus the server-sent
- * event opener built over the same seams. `RequestFn` remains the type
- * every generated operation's runtime seam and every hand-written layer
- * is written against, so a `SpeedClient` is usable wherever a
- * `RequestFn` is -- the streaming member is additive. Reaching the
- * stream opener goes through this member rather than a second factory,
- * so fetch, the token store, the tenant and language providers and the
- * refresh hook are the client's own and are never wired twice.
+ * What createClient returns: the request function plus the server-sent event
+ * opener built over the same seams. A `SpeedClient` is usable wherever a
+ * `RequestFn` is.
  */
 export type SpeedClient = RequestFn & {
   /** Opens a server-sent event stream (see event-stream.ts). */
@@ -239,238 +100,92 @@ export type SpeedClient = RequestFn & {
 /** Everything createClient needs. */
 export interface ClientOptions {
   /**
-   * Scheme + host + optional prefix, e.g. 'https://api.example.com'.
-   * Request paths must start with '/' and are appended verbatim, so a
-   * prefix composes with paths that do not carry one; the generated
-   * SDK's operation paths already carry their own '/api/v1', which is
-   * why a host wiring them passes the origin alone --
-   * window.location.origin, say. Trailing slashes are stripped.
+   * Scheme + host + optional prefix. Request paths must start with '/' and are
+   * appended verbatim; trailing slashes are stripped.
    */
   baseUrl: string
   /**
-   * The fetch implementation. Defaults to globalThis.fetch captured at
-   * construction -- and construction throws when neither is available,
-   * so an environment without fetch fails fast instead of failing per
-   * request. Tests always inject a deterministic stand-in.
+   * The fetch implementation; defaults to `globalThis.fetch` captured at
+   * construction. Construction throws when neither is available.
    */
   fetch?: typeof fetch
-  /**
-   * The bearer-token store; absent, requests go out without
-   * Authorization (public-config style endpoints).
-   */
+  /** The bearer-token store; absent, requests go out without Authorization. */
   accessTokenStore?: AccessTokenStore
   /**
-   * Silent-401-refresh hook: resolves true when a fresh access token
-   * was stored (via accessTokenStore) and the original request may be
-   * retried once. @speed/auth-core supplies it against the
-   * session-refresh operation (`() => session.refresh()`); hosts
-   * without a session leave it out and every 401 surfaces as an auth
-   * ApiError. The argument is the round-scoped request function: a
-   * function bound to this same client for the work the round itself
-   * performs. A request issued through it belongs to the round, so a
-   * 401 among them surfaces (the hook reads it as the session's own
-   * answer) instead of joining the shared round -- which may be the
-   * very round awaiting the hook, making the request await itself. A
-   * restore-shaped hook that reads GET /api/v1/auth/session and then GET
-   * /api/v1/auth/me is the case that needs it: the second read is issued
-   * after an await, long past the round's synchronous invocation. A
-   * hook that ignores the argument still compiles and runs; one that
-   * issues its round's reads through the client's ordinary request
-   * function can self-await when an endpoint refuses.
-   * Never called more than once per request; concurrent 401s
-   * share one in-flight refresh. A caller abort landing while the
-   * round is in flight rejects the request with the raw AbortError on
-   * the next microtask -- the round's wait races the caller's own
-   * signal like every other wait in the request loop, so each joined
-   * request is bounded by its own signal -- while the flight itself
-   * races no signal: it settles when the hook settles, whatever
-   * happened to the request that started it, so an initiator that gave
-   * up mid round never settles a possibly-successful refresh as a
-   * failure for the waiters already joined on it.
-   *
-   * The hook fires only for a refused request that itself presented a
-   * credential -- a bearer token from the store, or, when `credentials`
-   * declares cookie sessions (`'same-origin'`/`'include'`), the ambient
-   * cookie of a request not declared `omitAccessToken`. A 401 on a
-   * credential-less request means the endpoint demands authentication
-   * that refreshing cannot provide, so it surfaces untouched -- and this
-   * rule is load-bearing for the session wiring: a session's own refresh
-   * operation declares the per-request `omitAccessToken` flag, so its
-   * request travels credential-less with the store never cleared, so
-   * when the refresh endpoint refuses a stale token the refusal surfaces
-   * instead of re-entering the refresh path, which would await the very
-   * refresh it is part of and deadlock. Any other client must keep its
-   * credential-less requests declared the same way for the same
-   * reason: clearing the store instead would momentarily strip the
-   * token from concurrent requests that still hold a valid one,
-   * turning their 401s into spurious auth failures. A host that
-   * forgets the declaration on its own refresh request is caught at
-   * runtime instead: a request born inside the refresh round -- during
-   * the hook's synchronous invocation, or issued through the
-   * round-scoped function the hook is called with -- is refused the
-   * refresh path (its 401 surfaces as the terminal auth error), so the
-   * round ends as a finite failure -- never a self-deadlock and never a
-   * second concurrent refresh.
+   * Silent-401-refresh hook: true means a fresh token was stored and the request
+   * may retry once; concurrent 401s share one refresh, and the argument is the
+   * round-scoped request function.
    */
   refreshAccessToken?: (issue: RequestFn) => Promise<boolean>
-  /** Abort an HTTP exchange that exceeds this many milliseconds;
-   * absent, no internal timeout is armed. The budget bounds one
-   * exchange -- a send plus its body read -- and covers stalled body
-   * reads the way it covers a stalled send. Time spent in the
-   * silent-401-refresh round does not count against it: the refresh
-   * is a separate exchange (a host's refresh request travels through
-   * this same client and carries its own timeout). */
+  /**
+   * Abort one HTTP exchange (send plus body read) after this many milliseconds;
+   * absent, no timeout is armed. Time in the refresh round does not count.
+   */
   timeoutMs?: number
   /**
-   * The fetch `credentials` mode, passed straight to fetch. Absent, the
-   * browser default applies (`same-origin`), which is what a same-origin
-   * deployment relies on for a cookie-delivered session: the session
-   * cookie the server set travels on every same-origin request without
-   * this option. A deployment that serves the API from an origin of its
-   * own sets `'include'` so the cookie travels cross-origin too.
-   *
-   * Declaring it `'same-origin'` or `'include'` additionally marks the
-   * client as cookie-credentialed: a refused (401) request that presented
-   * a cookie -- every request except one declared `omitAccessToken` -- is
-   * then eligible for the `refreshAccessToken` hook, exactly as a
-   * bearer-attached request is. Without this, a cookie session's 401
-   * would never engage the hook, because no bearer token is attached.
-   * `'omit'` sends no credentials and leaves the hook bearer-only, so a
-   * public-config fetch stays out of the session path.
+   * The fetch `credentials` mode, passed straight to fetch; absent, the browser
+   * default (`same-origin`) applies. `'same-origin'` or `'include'` marks the
+   * client cookie-credentialed, making a cookie 401 eligible for the refresh hook.
    */
   credentials?: RequestCredentials
-  /** Transient-retry budget and timing; defaults to
-   * DEFAULT_RETRY_POLICY. */
+  /** Transient-retry budget and timing; defaults to DEFAULT_RETRY_POLICY. */
   retryPolicy?: RetryPolicy
   /** Structured diagnostics sink; defaults to createConsoleReporter(). */
   reporter?: Reporter
   /**
-   * The language requests announce, as the value of the
-   * `accept-language` header: the host returns its i18n instance's
-   * current language (the frontend negotiation chain's resolved
-   * value), or null/empty for "none to announce". This is a transport
-   * channel, not a preference: the backend reads the header for the
-   * content classes whose language the requester speaks for (an SMS
-   * code's requester-language tier, a type directory's transport
-   * value), never to localize the API response itself, which stays
-   * code+params for the client to translate.
-   *
-   * Read per attempt, like the bearer token, so a retry issued after a
-   * language switch carries the language the user is now looking at.
-   * A caller-supplied `accept-language` on the request's own headers
-   * is never overwritten (the same guard the accept/content-type
-   * defaults observe): a request that names its own language -- a
-   * probe, a fixed-copy fetch -- keeps it.
+   * Returns the language requests announce as `accept-language`, or
+   * null/empty for none; read per attempt. A caller-supplied `accept-language`
+   * is never overwritten.
    */
   languageProvider?: () => string | null
   /**
-   * The tenant every request announces: the host returns its current
-   * tenant identifier -- the routing fact the backend's tenant
-   * resolution layer reads on the endpoints it guards -- or
-   * null/empty for "none to announce". The tenant is not a claim
-   * of the access token (the token carries none): the server resolves
-   * it off the request surface (a header, a subdomain label or a path
-   * segment, per its configuration), so a request to a tenant-scoped
-   * endpoint must carry it. This is the transport channel for that
-   * value; the skeleton's stacks resolve the tenant from this header
-   * (`X-Tenant` in the demo configuration, the default name -- see
-   * `tenantHeader` below).
-   *
-   * Read per attempt, like the bearer token and the language, so a
-   * retry issued after a tenant switch carries the tenant the user is
-   * now acting in. A caller-supplied header of the configured name is
-   * never overwritten (the same guard the accept/content-type and
-   * accept-language defaults observe): a request that names its own
-   * tenant keeps it. A null/empty answer leaves the header absent.
+   * Returns the tenant requests announce, or null/empty for none; read per
+   * attempt. A caller-supplied header of the configured name is never
+   * overwritten.
    */
   tenantProvider?: () => string | null
   /**
-   * The header name the tenant travels under; absent or empty means
-   * the `x-tenant` default (`TENANT_HEADER` from seams.ts). A
-   * deployment whose gateway resolves the tenant from another header
-   * sets it here instead of hand-writing the header per request: the
-   * request function and the event-stream opener both announce the
-   * `tenantProvider` value under this name, and both leave a
-   * caller-supplied header of that name untouched. Header names are
-   * case-insensitive, so a caller's own casing matches too.
+   * The header name the tenant travels under; absent or empty means the
+   * `x-tenant` default. The request function and the event-stream opener share
+   * it.
    */
   tenantHeader?: string
 }
 
-/** Statuses transient-retried on idempotent methods. */
 const RETRYABLE_STATUSES = new Set([429, 502, 503, 504])
 
-/** Methods safe to repeat automatically after a lost response. */
 function isIdempotent(method: HttpMethod): boolean {
   return method === 'GET' || method === 'HEAD' || method === 'OPTIONS'
 }
 
-/** A response that arrived, with its status, before any body is read.
- * `attachedToken` records whether the attempt carried a bearer token:
- * the silent-401 refresh only applies to a refused attempt that
- * presented one. The body stays inside the attempt's abort scope --
- * the per-attempt timeout and the caller-abort forwarding keep
- * running until the body settles (see the header) -- so an http
- * outcome carries the three scope operations below. Callers must let
- * the body settle (a completed `readBody`, or `cancelBody` for a
- * response being discarded) and then call `dispose()` exactly once;
- * the request loop guarantees this with a finally. */
+/** A response that arrived before any body was read; let the body settle before disposing of the attempt. */
 interface HttpOutcome {
   kind: 'http'
   status: number
   response: Response
   attachedToken: boolean
-  /** Reads the body to the end, or settles early when this attempt is
-   * aborted mid-read: the attempt's own timeout yields `timeout`, the
-   * caller's signal `aborted`, any other read failure `failed`. The
-   * release of an abandoned read is the controller abort itself --
-   * real fetch ties the response body to the fetch signal -- so the
-   * caller observes an early `timeout`/`aborted` result while the
-   * platform tears the connection down. */
   readBody(): Promise<BodyReadResult>
-  /** Reads the body to the end as raw bytes (a Blob), for a request
-   * that declared `responseType: 'blob'`; settles early the same way
-   * readBody does when the attempt is aborted mid-read. */
   readBlob(): Promise<BlobReadResult>
-  /** Cancels the response body of a response the caller decided not
-   * to consume (a retryable status being retried, a discarded 401):
-   * the connection is released deterministically instead of staying
-   * held by an unread response until garbage collection. Resolves
-   * when the body is gone; a body already errored or absent is a
-   * no-op. */
   cancelBody(): Promise<void>
-  /** Suspends the attempt's timeout timer across a gap that is not
-   * part of this HTTP exchange (the silent-401-refresh round), and
-   * re-arms it for the budget that was left. The caller-abort wiring
-   * is untouched by either. Both are no-ops when no timeout is
-   * configured or the timer is not paused. */
   pauseTimeout(): void
   resumeTimeout(): void
-  /** Ends the attempt's timeout/abort wiring. Idempotent; safe to
-   * call after the body settled by any path. */
   dispose(): void
 }
 
-/** How a body read inside an attempt's abort scope settled. */
 type BodyReadResult =
   | { kind: 'text'; text: string }
   | { kind: 'timeout'; cause: unknown }
   | { kind: 'aborted' }
   | { kind: 'failed'; cause: unknown }
 
-/** How a raw-byte body read inside an attempt's abort scope settled. */
 type BlobReadResult =
   | { kind: 'blob'; blob: Blob }
   | { kind: 'timeout'; cause: unknown }
   | { kind: 'aborted' }
   | { kind: 'failed'; cause: unknown }
 
-/** The serialized request body handed to the send: the JSON text, or
- * the raw bytes of a binary body. Only the string form earns the JSON
- * content-type default. */
 type WireBody = string | Blob | ArrayBuffer | ArrayBufferView
 
-/** The request never reached a usable response. */
 interface FailureOutcome {
   kind: 'network' | 'timeout'
   cause: unknown
@@ -478,12 +193,6 @@ interface FailureOutcome {
 
 type AttemptOutcome = HttpOutcome | FailureOutcome
 
-/** A valid envelope, structurally checked. `code` is resolved from the
- * body's own `code` string or, absent one, from its RFC 9457 problem
- * `type` (`urn:speed:<module>:<code>` -> `<module>.<code>`); it is the one
- * required wire fact. `traceId` is optional (undefined when the backend
- * does not send one -- the problem shape pkg/http writes carries none), as
- * are `message`, `params` and `details`. */
 interface Envelope {
   code: string
   traceId: string | undefined
@@ -492,12 +201,6 @@ interface Envelope {
   details: FieldError[] | undefined
 }
 
-/** The code a parsed error body denotes, or undefined when it denotes
- * none: its own `code` string when it carries one, otherwise the code
- * derived from its RFC 9457 problem `type`
- * (`urn:speed:<module>:<code>`). A `code` wins over a `type`, so a body
- * that carries both is read the legacy way. The reserved-namespace rule
- * is the caller's -- this returns whatever the body denotes. */
 function envelopeCode(candidate: Record<string, unknown>): string | undefined {
   if (typeof candidate.code === 'string') {
     return candidate.code
@@ -508,29 +211,6 @@ function envelopeCode(candidate: Record<string, unknown>): string | undefined {
   return undefined
 }
 
-/**
- * Parses a response body into the ApiError envelope, or undefined when
- * the body is empty, not JSON, not an object, denotes no code (neither a
- * `code` string nor a `urn:speed:` problem `type`), or resolves to a code
- * in the reserved `client.` namespace -- those stay bare and get a
- * client.http.* code. The code is the body's own `code` string when it
- * carries one, otherwise it is derived from the RFC 9457 problem `type`
- * the backend writes (`urn:speed:<module>:<code>` -> `<module>.<code>`,
- * see errors.ts's moduleCodeFromProblemType): the problem shape pkg/http
- * writes every module's refusal with. The namespace rule
- * is what makes the client.* vocabulary's "reserved" claim a mechanism
- * instead of documentation: server codes are module-scoped (errors.ts's
- * header), and `client` is no module's domain, so a `client.*` code
- * inside an envelope -- however it arrived, a literal `code` or a
- * `urn:speed:client:*` type -- is a misbehaving backend or an intermediary
- * borrowing the vocabulary; an HTTP response can only exist with a real
- * status, so an accepted `client.network`/`client.timeout`
- * envelope would masquerade as this client's own transport diagnosis
- * (status 0, the one status no server can answer with) and mislead the
- * surfaces that render those codes. All other fields are optional: a
- * problem object or a `{code, params}` body is a valid envelope even
- * though it carries no traceId.
- */
 function parseEnvelope(text: string | null): Envelope | undefined {
   if (text === null || text.trim() === '') {
     return undefined
@@ -575,13 +255,6 @@ function parseEnvelope(text: string | null): Envelope | undefined {
   return envelope
 }
 
-/**
- * Keeps only the entries of an envelope `details` array that are
- * structurally valid FieldErrors (string `field` and `code`; `params`,
- * when present, a plain object) -- the same strict normalization the
- * envelope applies to its own fields, so consumers never render a
- * typed-but-wrong entry.
- */
 function parseFieldErrors(entries: unknown[]): FieldError[] {
   const fieldErrors: FieldError[] = []
   for (const entry of entries) {
@@ -611,14 +284,6 @@ function parseFieldErrors(entries: unknown[]): FieldError[] {
   return fieldErrors
 }
 
-/** Serializes a JSON body option into wire text. A body that does not
- * serialize to a string refuses with a TypeError -- symmetric with the
- * circular-structure case -- instead of letting the request go out
- * silently bodyless: JSON.stringify yields undefined (the value) for a
- * top-level function, symbol, or a toJSON() that returns undefined,
- * and none of those is a sendable JSON body. (An explicit `undefined`
- * body never reaches this function: the caller's `body !== undefined`
- * guard is the documented "no body" shape.) */
 function serializeBody(body: unknown): string {
   const serialized = JSON.stringify(body)
   if (serialized === undefined) {
@@ -629,11 +294,6 @@ function serializeBody(body: unknown): string {
   return serialized
 }
 
-/** Whether a value is a binary request body: the raw bytes a
- * byte-moving operation sends verbatim instead of JSON-serializing.
- * A Blob, an ArrayBuffer or an ArrayBuffer view (a typed array or a
- * DataView) -- the shapes fetch accepts as a body and that
- * JSON.stringify would otherwise mangle into an object literal. */
 function isBinaryBody(
   value: unknown,
 ): value is Blob | ArrayBuffer | ArrayBufferView {
@@ -646,16 +306,6 @@ function isBinaryBody(
   return ArrayBuffer.isView(value)
 }
 
-/** Builds the wire URL: baseUrl + path, query parameters appended. An
- * array value becomes one repeated parameter per element (URLSearchParams
- * append semantics -- the form/explode convention), so a multi-valued
- * filter survives as `?tag=a&tag=b` instead of collapsing into a
- * comma-joined `?tag=a,b` the backend would read as one literal value.
- * A path that already carries its own query string cannot take an
- * appended `?...` -- the result would be a malformed double-? URL -- so
- * combining one with a query option is refused as a programmer error:
- * request paths are spec paths, and every parameter belongs in the
- * query option. */
 function buildUrl(
   baseUrl: string,
   path: string,
@@ -695,12 +345,10 @@ function buildUrl(
   return `${url}?${encoded}`
 }
 
-/** Programmer-error guard with the package's error prefix. */
 function programmerError(message: string): Error {
   return new Error(`[speed-api-client] ${message}`)
 }
 
-/** Whether a failed outcome qualifies for a transient retry. */
 function retryableOutcome(outcome: AttemptOutcome): boolean {
   if (outcome.kind === 'http') {
     return RETRYABLE_STATUSES.has(outcome.status)
@@ -708,9 +356,6 @@ function retryableOutcome(outcome: AttemptOutcome): boolean {
   return true
 }
 
-/** The delay before a retry of an HTTP failure: Retry-After honoured
- * on 429 and 503 (RFC 9110 carries the header on those), capped by the
- * policy; exponential full-jitter otherwise. */
 function retryDelayFor(
   outcome: HttpOutcome,
   retryIndex: number,
@@ -728,13 +373,6 @@ function retryDelayFor(
   return retryDelayMs(retryIndex, policy)
 }
 
-/** Reads and structurally checks the error envelope from an HTTP
- * failure's body, within the attempt's abort scope; undefined when the
- * body is empty, unreadable, or stalled past the attempt's own
- * timeout. A caller abort during the read rejects the raw AbortError
- * -- cancellation wins over an envelope read. A response body is
- * single-read, so callers that need the envelope twice (a report and
- * the ApiError) read once and reuse it. */
 async function readEnvelope(
   outcome: HttpOutcome,
 ): Promise<Envelope | undefined> {
@@ -745,16 +383,9 @@ async function readEnvelope(
   if (read.kind === 'aborted') {
     throw new DOMException('The operation was aborted.', 'AbortError')
   }
-  // 'timeout' and 'failed': an unreadable error body has always meant
-  // an envelope-less error -- the failure status still dominates.
   return undefined
 }
 
-/** The wait a 429/503 response's Retry-After header asks for, in
- * milliseconds; undefined on any other status, a missing header or an
- * unparseable one. The value survives onto the ApiError a caller
- * receives once retries are exhausted or were never eligible, so a
- * surface can hold its retry control for exactly the server's ask. */
 function retryAfterOf(outcome: HttpOutcome): number | undefined {
   if (outcome.status !== 429 && outcome.status !== 503) {
     return undefined
@@ -764,10 +395,6 @@ function retryAfterOf(outcome: HttpOutcome): number | undefined {
   )
 }
 
-/** The final ApiError for an HTTP failure from an envelope that was
- * already read: the envelope error when one is present,
- * client.http.<status> otherwise. Both carry the response's
- * Retry-After wait when it stated one. */
 function envelopeError(
   outcome: HttpOutcome,
   envelope: Envelope | undefined,
@@ -793,7 +420,6 @@ function envelopeError(
   })
 }
 
-/** The final ApiError for a transport-class failure. */
 function failureError(outcome: FailureOutcome, attempts: number): ApiError {
   return new ApiError({
     status: 0,
@@ -803,11 +429,6 @@ function failureError(outcome: FailureOutcome, attempts: number): ApiError {
   })
 }
 
-/** Sleeps `ms` milliseconds -- or rejects with the raw AbortError the
- * moment `signal` aborts, so a cancelled request never sits out its
- * full backoff: the retry is already moot, and the caller's
- * cancellation should surface as promptly as it would mid-fetch. A
- * signal that is already aborted rejects without arming a timer. */
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted === true) {
     return Promise.reject(
@@ -828,14 +449,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   })
 }
 
-/** Awaits `promise` -- or rejects with the raw AbortError the moment
- * `signal` aborts, the same race `sleep` runs for a timed wait, for a
- * wait that owns no timer of its own (the silent-401-refresh round):
- * a cancelled caller must not stay stuck on a promise the caller's
- * abort cannot otherwise reach. A signal that is already aborted
- * rejects without attaching anything. The awaited promise itself is
- * never cancelled: when the abort wins, its eventual settlement is
- * simply discarded. */
+/** Rejects with the raw AbortError when `signal` aborts; the awaited promise itself is never cancelled. */
 function raceWithAbort<T>(
   promise: Promise<T>,
   signal?: AbortSignal,
@@ -864,9 +478,6 @@ function raceWithAbort<T>(
   })
 }
 
-/** Throws the raw AbortError the moment a cancelled signal is observed
- * after an await, so caller cancellation is never retried, never
- * wrapped, and never delivered as a result (RequestOptions.signal). */
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted === true) {
     throw new DOMException('The operation was aborted.', 'AbortError')
@@ -874,12 +485,9 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
 }
 
 /**
- * Creates the client. Construction is where configuration mistakes
- * surface (bad baseUrl, unusable fetch, malformed policy); every request
+ * Creates the client. Configuration mistakes throw here; every request
  * afterwards rejects ApiError or the caller's own AbortError, never a
- * configuration error. The returned value is the request function
- * (`RequestFn`) with the event-stream opener attached
- * (`SpeedClient.openEventStream`), both built over the same seams.
+ * configuration error.
  */
 export function createClient(options: ClientOptions): SpeedClient {
   if (typeof options.baseUrl !== 'string' || options.baseUrl === '') {
@@ -887,15 +495,8 @@ export function createClient(options: ClientOptions): SpeedClient {
       'createClient requires a non-empty baseUrl (host + optional prefix; see the README).',
     )
   }
-  // CodeQL's js/polynomial-redos alert on this line is a false
-  // positive. /\/+$/ is a single anchored character-class repetition
-  // (one quantifier, no nesting, no alternation) matching a run of
-  // trailing slashes at the end of the string -- there is exactly one
-  // way to decompose a match, so this runs in O(n) even under a naive
-  // backtracking engine; it has none of the nested/overlapping-quantifier
-  // shape catastrophic backtracking needs. options.baseUrl reaches this
-  // line directly from the caller with no intervening transformation,
-  // and no other regex in this file is a plausible alternate target.
+  // CodeQL's js/polynomial-redos alert on this line is a false positive:
+  // /\/+$/ is a single anchored character-class repetition and runs in O(n).
   const baseUrl = options.baseUrl.replace(/\/+$/, '')
   const fetchFn =
     options.fetch ??
@@ -935,20 +536,10 @@ export function createClient(options: ClientOptions): SpeedClient {
   const languageProvider = options.languageProvider
   const tenantProvider = options.tenantProvider
   const tenantHeader = options.tenantHeader
-  // The fetch credential mode (passed through per attempt, below). A mode
-  // that carries cookies marks the client cookie-credentialed: a refused
-  // request that presented the ambient cookie is then eligible for the
-  // session hook, exactly as a bearer-attached request is.
   const credentials = options.credentials
   const cookieCredentialed =
     credentials === 'same-origin' || credentials === 'include'
 
-  /** One HTTP attempt: token attach, timeout abort, caller-abort
-   * passthrough. Rejects raw only for caller cancellation. The
-   * response body is part of the attempt, so for an http outcome the
-   * timeout timer and the caller-abort forwarding stay armed past this
-   * function -- the returned outcome's `readBody`/`cancelBody` run
-   * inside that scope, and `dispose()` (idempotent) ends it. */
   const attemptOnce = async (
     method: HttpMethod,
     url: string,
@@ -957,22 +548,12 @@ export function createClient(options: ClientOptions): SpeedClient {
     signal: AbortSignal | undefined,
   ): Promise<AttemptOutcome> => {
     const headers = new Headers(requestOptions.headers ?? {})
-    // Both content defaults mirror the content-type guard below: set
-    // only when the caller did not already supply the header, so a
-    // caller-supplied accept is honoured rather than overwritten.
     if (!headers.has('accept')) {
       headers.set('accept', 'application/json')
     }
     if (typeof body === 'string' && !headers.has('content-type')) {
       headers.set('content-type', 'application/json')
     }
-    // The language, tenant and bearer-token seam headers are applied by
-    // applySeamHeaders (seams.ts), read per attempt so a retry after a
-    // language or tenant switch or a token refresh announces the value
-    // current at that attempt, and never overwriting a caller-supplied
-    // header. It reports whether a bearer token was attached -- the gate
-    // the 401 refresh path below reads (only a refused attempt that
-    // presented one may refresh).
     const attachedToken = applySeamHeaders(
       headers,
       {
@@ -991,11 +572,7 @@ export function createClient(options: ClientOptions): SpeedClient {
     let timeoutDeadline = 0
     let pausedRemaining: number | undefined
     let notifyAborted: (() => void) | undefined
-    // Settles the moment this attempt is aborted while its body is
-    // still being read -- by its own timeout or the caller's signal.
-    // Real fetch ties the body to the controller's signal and kills
-    // the read itself; this trigger covers environments that do not,
-    // so a stalled body never outlives the abort either way.
+    // Settles when this attempt is aborted while its body is still being read.
     const abortTrigger = new Promise<void>((resolve) => {
       notifyAborted = resolve
     })
@@ -1005,27 +582,12 @@ export function createClient(options: ClientOptions): SpeedClient {
       notifyAborted?.()
     }
     const armTimeout = (delay: number): void => {
-      // Deadline bookkeeping on the clock the timers run on (the fake
-      // timers tests use fake Date too), so a suspended timer can be
-      // re-armed for exactly the budget that was left.
       timeoutDeadline = Date.now() + delay
       timer = setTimeout(fireTimeout, delay)
     }
     if (timeoutMs !== undefined) {
       armTimeout(timeoutMs)
     }
-    // The timeout bounds one HTTP exchange, never the gaps around it:
-    // pauseTimeout suspends the attempt timer (the caller-abort
-    // forwarding stays live -- cancellation wins over everything), and
-    // resumeTimeout re-arms it for exactly the budget that was left at
-    // the pause, so time spent in a paused gap never counts against
-    // the exchange. The silent-401-refresh round is the one paused
-    // gap -- it is a separate exchange of its own (a host's refresh
-    // request travels through this same client and carries its own
-    // timeout), so a refresh that outlives timeoutMs must not fire
-    // this attempt's timeout into the envelope read that follows a
-    // failed refresh, degrading the real 401 envelope to a synthetic
-    // client.http.401.
     const pauseTimeout = (): void => {
       if (timer === undefined) {
         return
@@ -1041,11 +603,6 @@ export function createClient(options: ClientOptions): SpeedClient {
       const delay = pausedRemaining
       pausedRemaining = undefined
       if (delay <= 0) {
-        // A deadline that genuinely passed while paused fires on
-        // resume: the exchange's budget is spent. Unreachable for a
-        // delivered outcome -- the pause runs in the same microtask
-        // chain as the headers' arrival, before any timer macrotask
-        // can fire -- guarded for the bookkeeping's integrity.
         fireTimeout()
         return
       }
@@ -1074,8 +631,6 @@ export function createClient(options: ClientOptions): SpeedClient {
       try {
         await response.body?.cancel()
       } catch {
-        // The body may already be gone (errored by an abort, a
-        // null-body response): nothing left to release.
       }
     }
 
@@ -1085,9 +640,6 @@ export function createClient(options: ClientOptions): SpeedClient {
         headers,
         body: body as BodyInit,
         signal: controller.signal,
-        // Only set when the host declared a mode: absent, fetch's own
-        // default (same-origin) applies, and the options object keeps the
-        // exact shape hosts assert on.
         ...(credentials === undefined ? {} : { credentials }),
       })
       const outcome: HttpOutcome = {
@@ -1101,10 +653,6 @@ export function createClient(options: ClientOptions): SpeedClient {
             reading.then(
               (text): BodyReadResult => ({ kind: 'text', text }),
               (cause: unknown): BodyReadResult => {
-                // The read itself rejected. Real fetch rejects a body
-                // read when the controller's signal aborts, so
-                // classify by what aborted -- a platform-killed read
-                // carries the same meaning as the trigger below.
                 if (timedOut) {
                   return {
                     kind: 'timeout',
@@ -1132,12 +680,8 @@ export function createClient(options: ClientOptions): SpeedClient {
                 : { kind: 'aborted' },
             ),
           ])
-          // A read abandoned mid-stream ('timeout'/'aborted') releases
-          // nothing further here by hand: response.text() holds the
-          // body's lock, so a direct cancel would fail -- the release
-          // is the controller abort itself, which conforming platforms
-          // (real fetch) tie to the response body. The pending read is
-          // simply dropped.
+          // A read abandoned mid-stream releases nothing by hand: response.text()
+          // holds the body's lock, so the controller abort is the release.
           return result
         },
         readBlob: async (): Promise<BlobReadResult> => {
@@ -1146,8 +690,6 @@ export function createClient(options: ClientOptions): SpeedClient {
             reading.then(
               (blob): BlobReadResult => ({ kind: 'blob', blob }),
               (cause: unknown): BlobReadResult => {
-                // The read rejected: classify by what aborted it, the
-                // same way readBody does for the text path.
                 if (timedOut) {
                   return {
                     kind: 'timeout',
@@ -1184,43 +726,24 @@ export function createClient(options: ClientOptions): SpeedClient {
       }
       return outcome
     } catch (error) {
-      // The fetch itself failed: no body exists, so the wiring ends
-      // here.
       dispose()
       if (timedOut) {
         return { kind: 'timeout', cause: error }
       }
       if (signal?.aborted === true) {
-        // Caller cancellation: surface the raw AbortError, standard
-        // query-layer semantics -- never wrapped, never retried.
         throw error
       }
       return { kind: 'network', cause: error }
     }
   }
 
-  // Single-flight refresh: at most one refresh in flight across all
-  // concurrent requests. A completed refresh (success or failure) is
-  // not memoized -- the next 401 starts a fresh attempt, so a session
-  // restored by another tab can be picked up.
+  // Single-flight refresh: at most one refresh in flight; a completed refresh
+  // is not memoized, so the next 401 starts a fresh attempt.
   const refreshHook = options.refreshAccessToken
   let refreshInFlight: Promise<boolean> | null = null
-  // True only while the refresh hook's own synchronous invocation is
-  // on the stack -- the instant the refresh operation issues its
-  // request through this same client (a host hook calls it straight
-  // away, through however many synchronous wrappers). A request born
-  // in that instant is the round's own request, and the 401 guard in
-  // the request loop refuses it the refresh path exactly like the
-  // bearer-only rule refuses a credential-less 401 -- a host that
-  // forgot the `omitAccessToken` declaration on its refresh request
-  // gets a finite failure, never a self-await. The marker is
-  // deliberately dropped once the hook has returned its promise: a
-  // request born later in the round's pending window is an
-  // independent request and must still be able to join the flight.
-  // The round's own reads issued after an await (a restore-shaped hook
-  // reading GET /api/v1/auth/session and then GET /api/v1/auth/me) cannot be caught
-  // by this marker; the hook reaches them through the round-scoped
-  // request function instead, whose requests carry `roundOwned`.
+  // True only while the refresh hook's own synchronous invocation is on the
+  // stack; a request born then is the round's own and is refused the refresh
+  // path.
   let inRefreshHookCall = false
   const refreshOnce =
     refreshHook === undefined
@@ -1236,38 +759,14 @@ export function createClient(options: ClientOptions): SpeedClient {
                     try {
                       return (await refreshHook(issueInRound)) === true
                     } catch {
-                      // A throwing refresh hook is a failed refresh:
-                      // the session is still gone and the request must
-                      // not retry.
                       return false
                     }
                   })()
                 } finally {
                   inRefreshHookCall = false
                 }
-                // The flight is shared by every request whose 401
-                // joins it -- the initiator and each waiter alike --
-                // and no signal races the flight itself: it settles
-                // when the hook settles, and its outcome is the hook's
-                // real one. Every joining request races the flight
-                // against its OWN signal at its own call site (the
-                // request loop below), so an abort detaches only the
-                // request that aborted and every waiter with a live
-                // signal is still bounded by that signal. Binding the
-                // round to the request that started it would be a
-                // conflation, not a trade-off: an initiator that gave
-                // up mid round must not settle the round as a failed
-                // refresh for the requests already joined on it -- the
-                // hook may succeed and write a fresh token into the
-                // store while the waiters were told it failed (an
-                // auth:true answer -- the host's basis for judging the
-                // session ended -- for a session the refresh just
-                // saved). The slot is freed the moment the hook
-                // settles; a 401 that arrives before then joins the
-                // in-flight round rather than firing a sibling
-                // invocation -- a second simultaneous presentation of
-                // the same refresh token, which the authn server reads
-                // as theft.
+                // The flight races no signal; each joining request races it
+                // against its own signal.
                 return await hookOutcome
               } finally {
                 refreshInFlight = null
@@ -1282,14 +781,8 @@ export function createClient(options: ClientOptions): SpeedClient {
     requestOptions: RequestOptions = {},
     roundOwned = false,
   ): Promise<T> => {
-    // A request born inside the refresh hook's own synchronous
-    // invocation (see refreshOnce's marker), or issued through the
-    // round-scoped request function the hook is called with, is the
-    // refresh round's own request: the refresh operation travelling
-    // through this client without its credential-less declaration, or
-    // a read the hook issues after an await. Captured at entry for the
-    // 401 guard below -- the live marker is gone long before this
-    // request's own 401 can arrive.
+    // Captured at entry for the 401 guard: a request born inside the refresh
+    // hook's invocation is the round's own.
     const bornInsideRefresh = inRefreshHookCall
     if (typeof path !== 'string' || !path.startsWith('/')) {
       throw programmerError(
@@ -1300,18 +793,8 @@ export function createClient(options: ClientOptions): SpeedClient {
     const idempotent = isIdempotent(method)
     const url = buildUrl(baseUrl, path, requestOptions.query)
     const signal = requestOptions.signal
-    // Real fetch rejects an already-aborted signal; stand-ins in
-    // tests may not, so normalize before sending.
     throwIfAborted(signal)
 
-    // The body does not change between attempts: settle its wire form
-    // once, up front. A binary body (a Blob, ArrayBuffer or typed
-    // array) travels verbatim. Everything else is JSON-serialized, and
-    // a body that cannot be JSON-serialized (a circular structure, a
-    // top-level function or symbol, a toJSON() that yields nothing)
-    // fails as a coded client.protocol ApiError -- a request the client
-    // can never send -- instead of surfacing a bare TypeError out of
-    // the retry machinery or going out silently bodyless.
     let body: WireBody | undefined
     if (requestOptions.body !== undefined) {
       if (isBinaryBody(requestOptions.body)) {
@@ -1332,11 +815,7 @@ export function createClient(options: ClientOptions): SpeedClient {
     }
 
     let attempts = 0
-    // Transient retries performed so far: retryPolicy.maxAttempts
-    // bounds these (maxAttempts - 1 retries from a fresh request). The
-    // silent-401-refresh round -- a refused send plus its one
-    // post-refresh retry -- is not a transient retry and never counts
-    // toward the budget: it is bounded by its own exactly-once rule.
+    // maxAttempts bounds transient retries; the refresh round never counts.
     let transientRetries = 0
     let refreshed = false
     for (;;) {
@@ -1350,19 +829,12 @@ export function createClient(options: ClientOptions): SpeedClient {
       )
       if (outcome.kind === 'http') {
         try {
-          // The caller may have aborted while the request was in
-          // flight: cancellation wins over any outcome -- release the
-          // response the caller no longer wants, then nothing below
-          // may retry or deliver on behalf of a caller that gave up.
           if (signal?.aborted === true) {
             await outcome.cancelBody()
             throwIfAborted(signal)
           }
 
           if (isSuccessStatus(outcome.status)) {
-            // A request that declared a raw-byte response resolves its
-            // 2xx body as a Blob, bypassing the JSON parse below; the
-            // same abort/retry discipline the text path runs applies.
             if (requestOptions.responseType === 'blob') {
               const read = await outcome.readBlob()
               if (read.kind === 'aborted') {
@@ -1390,23 +862,13 @@ export function createClient(options: ClientOptions): SpeedClient {
             }
             const read = await outcome.readBody()
             if (read.kind === 'aborted') {
-              // The abort trigger only fires from the caller's signal;
-              // cancellation surfaces raw, never as a delivery.
               throwIfAborted(signal)
               throw new DOMException('The operation was aborted.', 'AbortError')
             }
             if (read.kind !== 'text') {
-              // The headers said 2xx but the body never settled: a
-              // timeout or a dead read is a transport-class failure of
-              // this attempt, retried like any other.
               const kind = read.kind === 'timeout' ? 'timeout' : 'network'
               if (idempotent && transientRetries < retryPolicy.maxAttempts - 1) {
                 transientRetries += 1
-                // The signal-aware sleep rejects the raw AbortError
-                // the moment the caller cancels, so a cancelled
-                // request never sits out its backoff and no retry
-                // fires for it; the check after the sleep guards the
-                // instant between it settling and this continuation.
                 await sleep(retryDelayMs(transientRetries - 1, retryPolicy), signal)
                 throwIfAborted(signal)
                 continue
@@ -1414,19 +876,10 @@ export function createClient(options: ClientOptions): SpeedClient {
               throw failureError({ kind, cause: read.cause }, attempts)
             }
             const body = read.text
-            // The body arrived; an abort during the read cancels the
-            // delivery instead of resolving a 2xx for a cancelled
-            // caller.
             throwIfAborted(signal)
             if (isHtmlDocument(outcome.response.headers.get('content-type'))) {
-              // An operation declares a JSON answer, so an HTML document
-              // is not a delivery: it is what a deployment that serves
-              // the front end from this endpoint answers for a path no
-              // API route claims (the entry document), where an
-              // API-only deployment answers 404. Refusing it here gives
-              // that shape a code of its own, so a caller can tell the
-              // absent surface from a JSON contract violation and can
-              // do so before parsing a document it never wanted.
+              // An HTML document where JSON was declared is what a
+              // front-end-serving deployment answers for an unclaimed path.
               throw new ApiError({
                 status: outcome.status,
                 code: ERROR_CODE_HTML,
@@ -1435,12 +888,6 @@ export function createClient(options: ClientOptions): SpeedClient {
             }
             if (body.trim() === '') {
               if (requestOptions.requireJsonBody === true) {
-                // A declared need for a JSON document turns the
-                // client's own 204-style empty-success shape into a
-                // protocol violation -- refused here, inside the
-                // exchange, so the error carries the exchange's real
-                // status and attempt count (a wrapper around the
-                // RequestFn could only synthesize both).
                 throw new ApiError({
                   status: outcome.status,
                   code: ERROR_CODE_PROTOCOL,
@@ -1449,10 +896,6 @@ export function createClient(options: ClientOptions): SpeedClient {
                     'The endpoint answered an empty 2xx body; expected a JSON document.',
                 })
               }
-              // 204-style: no content is a valid, empty success. Blank
-              // counts as empty (some servers pad the bodyless response
-              // with whitespace), symmetric with parseEnvelope treating
-              // a whitespace-only error body as envelope-less.
               return undefined as T
             }
             let data: unknown
@@ -1467,10 +910,6 @@ export function createClient(options: ClientOptions): SpeedClient {
               })
             }
             if (typeof data !== 'object' || data === null) {
-              // The branch refuses JSON that is not an object or an
-              // array (a JSON string or number parses fine but is not a
-              // usable response document) -- the cause names exactly
-              // what is refused.
               throw new ApiError({
                 status: outcome.status,
                 code: ERROR_CODE_PROTOCOL,
@@ -1482,18 +921,8 @@ export function createClient(options: ClientOptions): SpeedClient {
           }
 
           if (outcome.status === 401) {
-            // The hook is for a request that presented a credential: a
-            // bearer token, or -- when `credentials` declares cookie
-            // sessions -- the ambient cookie of a request not declared
-            // omitAccessToken. A credential-less 401 means authentication
-            // is required, which the hook cannot provide -- and a
-            // session's own restore request (sent credential-less) must
-            // never re-enter the hook path or it awaits itself. The
-            // born-inside-refresh marker enforces the same rule at
-            // runtime: a hook request whose host forgot the
-            // credential-less declaration presents the stale credential,
-            // is refused, and would otherwise join -- and await -- the
-            // very flight it is part of.
+            // The hook is for a request that presented a credential: a bearer
+            // token, or the ambient cookie when cookie sessions are declared.
             const presentedCredential =
               outcome.attachedToken ||
               (cookieCredentialed && requestOptions.omitAccessToken !== true)
@@ -1505,52 +934,13 @@ export function createClient(options: ClientOptions): SpeedClient {
               !roundOwned
             ) {
               refreshed = true
-              // The refresh round is not part of this attempt's HTTP
-              // exchange: suspend the attempt timer across it so a
-              // refresh that outlives timeoutMs cannot fire the
-              // timeout into the envelope read below and degrade the
-              // real 401 envelope to a synthetic client.http.401 (its
-              // code and traceId lost). The caller-abort forwarding
-              // stays live across the pause, but with the attempt's
-              // fetch already settled and its timer suspended there is
-              // nothing left for it to abort: an abort landing during
-              // the round has to race the refresh wait itself. The
-              // await below therefore runs the same signal race the
-              // backoff sleeps run -- this request's cancellation
-              // rejects it with the raw AbortError on the next
-              // microtask, never wrapped, never retried, detaching
-              // only this request: the flight itself races no signal,
-              // so the requests already joined on it still get the
-              // hook's real outcome when it settles (see refreshOnce).
               outcome.pauseTimeout()
               const refreshedOk = await raceWithAbort(refreshOnce(), signal)
-              // The caller may have aborted while the refresh was in
-              // flight: cancellation wins -- never send the
-              // post-refresh retry, never deliver an auth error
-              // either. (The race above already rejects for the
-              // cancelling caller; this check guards the instant
-              // between the flight settling and this continuation.)
               throwIfAborted(signal)
               if (refreshedOk) {
-                // Retry once with whatever token the store holds now
-                // (the token is re-read at send time). Orthogonal to
-                // the retry budget and to method idempotency. The
-                // refused 401's body is not wanted: release it
-                // deterministically instead of leaving the connection
-                // held by an unread response.
                 await outcome.cancelBody()
                 continue
               }
-              // Refresh failed: read the 401 body once and reuse it
-              // for the report and the error, so the warning carries
-              // the envelope's code (and trace id, when the backend
-              // sent one) -- correlating it to server logs -- instead
-              // of firing blind. The read stays inside the attempt's
-              // abort scope: the timer is re-armed for the budget that
-              // was left at the pause, so a stalled body still cannot
-              // outlive the attempt's own timeout (the error degrades
-              // to an envelope-less one), and a caller abort mid-read
-              // surfaces raw.
               outcome.resumeTimeout()
               const envelope = await readEnvelope(outcome)
               reporter.warn('access token refresh failed', {
@@ -1566,10 +956,6 @@ export function createClient(options: ClientOptions): SpeedClient {
               })
               throw envelopeError(outcome, envelope, attempts)
             }
-            // No hook, no bearer token, the retried request was
-            // refused again, or a request born inside the refresh
-            // round itself (see the marker guard above): the session
-            // is over, surface the auth error.
             throw envelopeError(outcome, await readEnvelope(outcome), attempts)
           }
 
@@ -1578,18 +964,9 @@ export function createClient(options: ClientOptions): SpeedClient {
             transientRetries < retryPolicy.maxAttempts - 1 &&
             retryableOutcome(outcome)
           ) {
-            // A retryable status (429/502/503/504) whose body is not
-            // wanted: release the response body deterministically
-            // before the backoff, instead of leaving the connection
-            // held by an unread response.
             await outcome.cancelBody()
             const delay = retryDelayFor(outcome, transientRetries, retryPolicy)
             transientRetries += 1
-            // The signal-aware sleep rejects the raw AbortError the
-            // moment the caller cancels, so a cancelled request never
-            // sits out its backoff and no retry fires for it; the
-            // check after the sleep guards the instant between it
-            // settling and this continuation.
             await sleep(delay, signal)
             throwIfAborted(signal)
             continue
@@ -1597,25 +974,14 @@ export function createClient(options: ClientOptions): SpeedClient {
 
           throw envelopeError(outcome, await readEnvelope(outcome), attempts)
         } finally {
-          // The body settled (read, released, or abandoned): end this
-          // attempt's timeout and abort wiring. Idempotent, so a
-          // branch that already ended it early stays safe.
           outcome.dispose()
         }
       }
 
-      // Transport-class failure (network or timeout): no response
-      // body exists, so there is nothing to release. The caller may
-      // have aborted after the fetch rejected: cancellation wins.
       throwIfAborted(signal)
       if (idempotent && transientRetries < retryPolicy.maxAttempts - 1) {
         const delay = retryDelayMs(transientRetries, retryPolicy)
         transientRetries += 1
-        // The signal-aware sleep rejects the raw AbortError the
-        // moment the caller cancels, so a cancelled request never
-        // sits out its backoff and no retry fires for it; the check
-        // after the sleep guards the instant between it settling and
-        // this continuation.
         await sleep(delay, signal)
         throwIfAborted(signal)
         continue
@@ -1629,10 +995,8 @@ export function createClient(options: ClientOptions): SpeedClient {
     requestOptions?: RequestOptions,
   ): Promise<T> => runRequest<T>(path, requestOptions)
 
-  // The hook's own request function: a request issued through it belongs
-  // to the refresh round, so its 401 surfaces instead of joining (or
-  // starting) the shared round -- the round may be the one awaiting the
-  // hook that issued the request.
+  // The hook's own request function: requests through it belong to the
+  // refresh round.
   const issueInRound: RequestFn = <T>(
     path: string,
     requestOptions?: RequestOptions,
@@ -1656,9 +1020,6 @@ function isSuccessStatus(status: number): boolean {
   return status >= 200 && status <= 299
 }
 
-/** Whether a content-type header names an HTML document. The comparison is
- * on the media type alone: parameters such as `charset` are not part of
- * what the header says the body is. */
 function isHtmlDocument(contentType: string | null): boolean {
   const mediaType = (contentType ?? '').split(';', 1)[0]?.trim().toLowerCase()
   return mediaType === 'text/html' || mediaType === 'application/xhtml+xml'

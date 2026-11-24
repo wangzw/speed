@@ -1,21 +1,7 @@
 /**
- * @speed/api-client -- the hand-written HTTP runtime under the speed
- * frontend.
- *
- * createClient wires the seams (injectable fetch, memory-only access
- * token store, refresh hook, retry policy, timeout, reporter) into one
- * request function; every failure rejects an ApiError carrying the
- * envelope's code/traceId or a reserved client.* code. @speed/api-sdk
- * (the orval-generated surface) calls this layer; no other package
- * hand-writes HTTP -- enforced by the speed/no-direct-http ESLint
- * rule, whose single whitelist this package is.
- *
- * No i18n resources ship here: ApiError codes map to user-facing text
- * in the consuming package's own catalogs, and nothing in this package
- * emits user-facing text. No storage API exists anywhere in this
- * package -- tokens live in memory only (see access-token.ts). The
- * entry has no React dependency: it exports no hooks and declares no
- * React peer.
+ * @speed/api-client -- the hand-written HTTP runtime under the speed frontend.
+ * createClient wires the injectable seams into one request function that rejects
+ * an ApiError; the package ships no i18n resources, no storage and no React.
  */
 
 export { createClient } from './client.js'

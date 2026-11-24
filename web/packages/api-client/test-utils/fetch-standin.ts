@@ -1,39 +1,19 @@
-/**
- * Deterministic fetch stand-ins for api-client tests.
- *
- * Every test injects one through ClientOptions.fetch -- the package
- * never touches a real network and never relies on an implicit global
- * fetch. A stand-in answers a scripted sequence of steps (Response,
- * Error for a network failure, or `hang` for a response that only ends
- * when the client's timeout or the caller's signal aborts it -- like a
- * real fetch that never answers). It rejects on abort the way real
- * fetch does, records every call, and fails loudly when the client
- * makes an unscripted request, so a retry-count mistake surfaces as a
- * test failure instead of a silent pass.
- */
-
 /** One recorded request, as the client sent it. */
 export interface StandinCall {
-  /** The exact URL the client sent. */
   readonly url: string
   /** The HTTP method as sent (uppercased by the client). */
   readonly method: string
-  /** The headers as sent. */
   readonly headers: Headers
   /** Raw body text, when the client sent a string body. */
   readonly bodyText: string | undefined
-  /** The body, when the client sent a binary (Blob) body -- the
-   * byte-moving operation's raw bytes, never JSON-serialized. */
+  /** The body, when the client sent a binary (Blob) body. */
   readonly bodyBlob: Blob | null
   /** The body parsed as JSON, when bodyText carried JSON. */
   readonly bodyJson: unknown
-  /** The abort signal the client passed (its internal timeout
-   * controller or the caller's own signal). */
   readonly signal: AbortSignal | null
 }
 
-/** What one scripted step may be: an answered response, a network
- * failure, or a promise (hang) that only ends by abort. */
+/** An answered response, a network failure, or a promise that only ends by abort. */
 export type StandinStep = Response | Error | Promise<Response | Error>
 
 /** The per-call decision function behind a stand-in. */
@@ -46,10 +26,7 @@ export interface StandinFetch {
   readonly calls: readonly StandinCall[]
 }
 
-/** A JSON response with the content type the client expects. An
- * omitted body produces a body-less response (204-style: the Response
- * constructor forbids a body on null-body statuses, and real fetch
- * delivers those as body: null). */
+/** A JSON response; an omitted body produces a body-less (204-style) response. */
 export function jsonResponse(
   status: number,
   body?: unknown,
@@ -83,13 +60,10 @@ export function blobResponse(
   })
 }
 
-/** A step that never answers on its own: only the client's timeout or
- * a caller abort ends it, exactly like a real fetch to a dead peer. */
+/** A step that never answers on its own; only a timeout or abort ends it. */
 export const hang: StandinStep = new Promise<Response>(() => {})
 
-/** Responds with each step in order; a further call is unscripted and
- * throws, surfacing an unexpected request (a wrong retry count, an
- * extra refresh attempt...) as a loud failure. */
+/** Responds with each step in order; a further call throws as unscripted. */
 export function sequence(...steps: StandinStep[]): StandinResponder {
   let index = 0
   return () => {
@@ -119,12 +93,7 @@ function waitForAbort(signal: AbortSignal): Promise<never> {
   })
 }
 
-/**
- * Builds a stand-in around a responder. Call shape mirrors real fetch:
- * sync responder throws and Error steps reject (network failures), the
- * returned promise rejects on signal abort, everything is recorded in
- * `calls`.
- */
+/** Builds a stand-in around a responder that records every call. */
 export function createStandinFetch(responder: StandinResponder): StandinFetch {
   const calls: StandinCall[] = []
 

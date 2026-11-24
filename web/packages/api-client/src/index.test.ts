@@ -1,11 +1,3 @@
-/**
- * Pins the public entry of @speed/api-client: the runtime surface is
- * exactly the documented exports (a drift changes this list and fails
- * the test), and the type surface is compile-checked -- the
- * shape-drift guards below are @ts-expect-error lines that fail the
- * package typecheck the moment the constraint they pin stops erroring.
- */
-
 import { describe, expect, it } from 'vitest'
 import * as apiClientModule from './index'
 import {
@@ -29,7 +21,6 @@ import type {
   SpeedClient,
 } from './index'
 
-/** The runtime exports, sorted for comparison. */
 const RUNTIME_EXPORTS = [
   'ApiError',
   'DEFAULT_RETRY_POLICY',
@@ -52,12 +43,6 @@ describe('public entry', () => {
     expect(Object.keys(apiClientModule).sort()).toEqual(RUNTIME_EXPORTS)
   })
 })
-
-/* ------------------------------------------------------------------ */
-/* Type-surface pins: every line below compiles and keeps the          */
-/* documented shapes honest. Removing or renaming an exported field or */
-/* loosening a type breaks the typecheck -- loudly, in CI.             */
-/* ------------------------------------------------------------------ */
 
 /** Valid, fully-typed values against each documented type. */
 const accessTokenStore: AccessTokenStore = createMemoryAccessTokenStore()
@@ -118,9 +103,6 @@ const eventStreamOpener: EventStreamOpener = (path, options) => {
   void options
   return eventStreamHandle
 }
-// A SpeedClient is a RequestFn (the streaming member is additive), so a
-// host that only issues requests keeps its existing typing. Returning a
-// SpeedClient where a RequestFn is expected must typecheck.
 const speedClientAsRequestFn: (client: SpeedClient) => RequestFn = (client) =>
   client
 void accessTokenStore
@@ -138,9 +120,7 @@ void eventStreamOptions
 void eventStreamOpener
 void speedClientAsRequestFn
 
-/** Shape-drift guards: each must keep erroring as long as the pinned
- * constraint holds. The @ts-expect-error comment turns a guard that
- * silently stops erroring into a typecheck failure. */
+/** Shape-drift guards: each must keep erroring as long as the pinned constraint holds. */
 // @ts-expect-error -- guard: ClientOptions.baseUrl is required
 const missingBaseUrl: ClientOptions = {}
 

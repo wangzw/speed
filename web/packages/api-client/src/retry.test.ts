@@ -1,12 +1,3 @@
-/**
- * Contract tests for the retry backoff maths: exponential full-jitter
- * delay formula (injected random source), the Retry-After header parser
- * (delta-seconds and HTTP-date, explicit now), and the frozen default
- * policy. These are the pure functions the client's transient-retry
- * timing is built on, so every branch is pinned here rather than
- * indirectly through client tests.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_RETRY_POLICY,
@@ -15,7 +6,6 @@ import {
   type RetryPolicy,
 } from './index'
 
-/** A random source that always draws the same value, for determinism. */
 const almostOne: () => number = () => 0.999
 
 describe('DEFAULT_RETRY_POLICY', () => {
@@ -46,12 +36,10 @@ describe('retryDelayMs', () => {
   })
 
   it('draws near the cap for a random value near one', () => {
-    // Math.floor(0.999 * cap) === cap - 1 for integer caps.
     expect(retryDelayMs(0, policy, almostOne)).toBe(99)
   })
 
   it('doubles the delay ceiling per retry, capped by maxDelayMs', () => {
-    // Caps: 100, 200, 400, 800, then the 1000ms ceiling holds.
     const caps = [99, 199, 399, 799, 999, 999]
     for (let attempt = 0; attempt < caps.length; attempt += 1) {
       expect(retryDelayMs(attempt, policy, almostOne)).toBe(caps[attempt])
@@ -64,9 +52,7 @@ describe('retryDelayMs', () => {
       initialDelayMs: 100,
       maxDelayMs: 1000,
     }
-    // -2 floors to 0: first-retry range [0, 100).
     expect(retryDelayMs(-2, policyWithCeiling, almostOne)).toBe(99)
-    // 2.7 floors to 2: third-retry range [0, 400).
     expect(retryDelayMs(2.7, policyWithCeiling, almostOne)).toBe(399)
   })
 
@@ -83,7 +69,6 @@ describe('retryDelayMs', () => {
   it('defaults the random source to Math.random', () => {
     const spy = vi.spyOn(Math, 'random').mockReturnValue(0.5)
     try {
-      // 0.5 * 200 -> 100, deterministic only via the stub.
       expect(retryDelayMs(0, DEFAULT_RETRY_POLICY)).toBe(100)
     } finally {
       spy.mockRestore()
@@ -107,7 +92,6 @@ describe('retryAfterDelayMs', () => {
   it('parses delta-seconds as milliseconds', () => {
     expect(retryAfterDelayMs('120', NOW)).toBe(120000)
     expect(retryAfterDelayMs('0', NOW)).toBe(0)
-    // Surrounding whitespace is tolerated per RFC 9110 field parsing.
     expect(retryAfterDelayMs(' 45 ', NOW)).toBe(45000)
   })
 
@@ -120,9 +104,6 @@ describe('retryAfterDelayMs', () => {
   })
 
   it('returns null for anything unparseable', () => {
-    // The fixture strings must be NaN for Date.parse in every engine --
-    // V8 legacy-parses surprising inputs (partial dates, '12.5'), so
-    // keep them clearly date-free words.
     expect(retryAfterDelayMs('later', NOW)).toBeNull()
     expect(retryAfterDelayMs('not a date', NOW)).toBeNull()
     expect(retryAfterDelayMs('garbage', NOW)).toBeNull()

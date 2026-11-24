@@ -1,11 +1,3 @@
-/**
- * Contract tests for the reporter seam: createConsoleReporter delegates
- * to console.error/console.warn with the constant message plus the
- * attribute object (undefined when the caller omitted it). The console
- * sink is the default; a real app-shell diagnostics pipeline is host
- * territory, wired through ClientOptions.reporter.
- */
-
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createConsoleReporter } from './index'
 
