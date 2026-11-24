@@ -12,13 +12,8 @@ import (
 	"time"
 )
 
-// archiveNamePattern is the shape this module writes: the base name, a
-// timestamp to the second, an optional sequence number, and the extension.
 var archiveNamePattern = regexp.MustCompile(`^app-\d{8}-\d{6}(-\d+)?\.log$`)
 
-// newTestFile opens a rotating file with the size in bytes and the clock given
-// outright, so that a test need not write a megabyte or wait out a retention
-// period. It is closed when the test ends.
 func newTestFile(t *testing.T, path string, maxSize int64, maxFiles, maxAgeDays int, now func() time.Time) *rotatingFile {
 	t.Helper()
 	rf, err := newRotatingFile(path, maxSize, maxFiles, maxAgeDays, now, time.Hour)
@@ -32,8 +27,6 @@ func newTestFile(t *testing.T, path string, maxSize int64, maxFiles, maxAgeDays 
 	return rf
 }
 
-// write puts one record into the file, as a handler would: one call, one
-// complete record.
 func write(t *testing.T, rf *rotatingFile, record string) {
 	t.Helper()
 	if _, err := rf.Write([]byte(record)); err != nil {
@@ -41,10 +34,6 @@ func write(t *testing.T, rf *rotatingFile, record string) {
 	}
 }
 
-// otherFilesIn lists everything in the directory apart from the named file,
-// sorted. It reads the directory itself rather than going through this module's
-// own archive parser, so a parser that recognised nothing would not hide a
-// missing archive.
 func otherFilesIn(t *testing.T, dir, current string) []string {
 	t.Helper()
 	entries, err := os.ReadDir(dir)
@@ -61,7 +50,6 @@ func otherFilesIn(t *testing.T, dir, current string) []string {
 	return names
 }
 
-// read returns a file's contents.
 func read(t *testing.T, path string) string {
 	t.Helper()
 	content, err := os.ReadFile(path)
@@ -71,13 +59,7 @@ func read(t *testing.T, path string) string {
 	return string(content)
 }
 
-// TestAFailedRenameKeepsWritingToTheActiveFile pins what a rotation that cannot
-// rename does. The active file is still where it was and still writable, so
-// records go on into it past the limit rather than being dropped; the failure
-// is reported once, and rotation resumes as soon as the rename can happen.
-//
-// A directory the process may not write to is what refuses the rename here,
-// while the active file inside it stays open to appends.
+// TestAFailedRenameKeepsWritingToTheActiveFile pins what a rotation that cannot rename does.
 func TestAFailedRenameKeepsWritingToTheActiveFile(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("the superuser renames inside a directory without write permission")
@@ -122,13 +104,8 @@ func TestAFailedRenameKeepsWritingToTheActiveFile(t *testing.T) {
 	}
 }
 
-// TestRotateRenamesCurrentAndRecreatesPath pins what a rotation is: the current
-// file is renamed to an archive and the configured path is created anew.
-//
-// An implementation that instead opened a new timestamped file and carried on
-// writing there would leave the configured path holding the records from before
-// the rotation, and tail, a collector and the next restart would all follow the
-// wrong file.
+// TestRotateRenamesCurrentAndRecreatesPath pins what a rotation is: the current file is renamed to
+// an archive and the configured path is created anew.
 func TestRotateRenamesCurrentAndRecreatesPath(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "app.log")
@@ -164,16 +141,13 @@ func TestRotateRenamesCurrentAndRecreatesPath(t *testing.T) {
 	}
 }
 
-// TestActiveFilePathIsStableAcrossRotations pins that the path an operator
-// configured is always the file being written to, however many rotations have
-// happened.
+// TestActiveFilePathIsStableAcrossRotations pins that the path an operator configured is always
+// the file being written to, however many rotations have happened.
 func TestActiveFilePathIsStableAcrossRotations(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "app.log")
 	rf := newTestFile(t, path, 24, 0, 0, time.Now)
 
-	// The first record goes into an empty file, which is not rotated; the
-	// loop below is what rotates.
 	write(t, rf, "the record that fills the first file\n")
 	previous, err := os.Stat(path)
 	if err != nil {
@@ -198,9 +172,7 @@ func TestActiveFilePathIsStableAcrossRotations(t *testing.T) {
 	}
 }
 
-// TestRecordIsNeverSplitAcrossFiles pins that the rotation decision is taken on
-// the call boundary. Half a record in each of two files is a pair of fragments
-// neither of which parses on its own.
+// TestRecordIsNeverSplitAcrossFiles pins that the rotation decision is taken on the call boundary.
 func TestRecordIsNeverSplitAcrossFiles(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "app.log")
@@ -240,9 +212,8 @@ func TestRecordIsNeverSplitAcrossFiles(t *testing.T) {
 	}
 }
 
-// TestOversizedRecordGetsItsOwnArchive pins the precedence: a record longer
-// than the limit rotates first and is then written whole, past the limit. Not
-// splitting a record comes before not exceeding the size.
+// TestOversizedRecordGetsItsOwnArchive pins the precedence: a record longer than the limit rotates
+// first and is then written whole, past the limit.
 func TestOversizedRecordGetsItsOwnArchive(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "app.log")
@@ -259,7 +230,6 @@ func TestOversizedRecordGetsItsOwnArchive(t *testing.T) {
 		t.Error("the oversized record was not written whole")
 	}
 
-	// One more record pushes the oversized one into an archive of its own.
 	write(t, rf, "the next record\n")
 	archives := otherFilesIn(t, dir, "app.log")
 	if len(archives) != 2 {
@@ -276,9 +246,8 @@ func TestOversizedRecordGetsItsOwnArchive(t *testing.T) {
 	}
 }
 
-// TestEmptyActiveFileIsNotRotated pins that an empty file is not rotated away
-// for a record that would not fit it anyway: the archive would be empty, and it
-// would count against the retention limit while holding nothing.
+// TestEmptyActiveFileIsNotRotated checks that writing more than the size limit to an empty active
+// file leaves it whole and creates no archive.
 func TestEmptyActiveFileIsNotRotated(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "app.log")
@@ -295,9 +264,8 @@ func TestEmptyActiveFileIsNotRotated(t *testing.T) {
 	}
 }
 
-// TestSecondRotationInSameSecondGetsSequence pins that an archive is never
-// overwritten by the next one. The timestamp is only accurate to the second,
-// and a busy destination rotates more often than that.
+// TestSecondRotationInSameSecondGetsSequence pins that an archive is never overwritten by the next
+// one.
 func TestSecondRotationInSameSecondGetsSequence(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "app.log")
@@ -323,9 +291,7 @@ func TestSecondRotationInSameSecondGetsSequence(t *testing.T) {
 	}
 }
 
-// TestRotationDisabledWhenMaxSizeZero pins that 0 switches rotation off. It is
-// the configured meaning of an explicit 0, and the default of 100 MB is only
-// applied when the host wrote nothing.
+// TestRotationDisabledWhenMaxSizeZero pins that 0 switches rotation off.
 func TestRotationDisabledWhenMaxSizeZero(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "app.log")

@@ -17,22 +17,11 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The cases run the host as a real child process. What they have to prove is
-// what a real assembly does: which destination a record reached, what the
-// startup wrote to standard error, and the exit status a second provider of
-// the capability produces. None of the three exists inside a test binary, and
-// a real assembly cannot be started in one at all — the command tree takes the
-// process's own arguments, which go test has already filled with arguments of
-// its own, and the way to put another list in their place is not exported.
-
-// hostBinary is the compiled host every case runs. It is built once, in
-// TestMain, because building it is by far the slowest thing here.
 var hostBinary string
 
-// runLimit bounds one run of the host. It is generous: exceeding it means the
-// host hung, and the case says so with both streams attached.
 const runLimit = 60 * time.Second
 
+// TestMain builds the loghost binary once and runs the end-to-end cases against it.
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "loghost")
 	if err != nil {
@@ -50,16 +39,12 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// outcome is what one run of the host produced.
 type outcome struct {
 	stdout string
 	stderr string
 	code   int
 }
 
-// logConfig is the configuration document a case writes, in the shape the log
-// module's schema declares. It is marshalled rather than written as text so a
-// path never has to be escaped by hand.
 type logConfig struct {
 	Log logSection `json:"log"`
 }
@@ -74,8 +59,6 @@ type logOutput struct {
 	Path   string `json:"path,omitempty"`
 }
 
-// writeConfig writes a config document and returns the locator the file
-// transport serves it under.
 func writeConfig(t *testing.T, doc any) string {
 	t.Helper()
 	body, err := json.Marshal(doc)
@@ -89,11 +72,6 @@ func writeConfig(t *testing.T, doc any) string {
 	return (&url.URL{Scheme: "file", Path: path}).String()
 }
 
-// runHost runs one scenario to completion.
-//
-// The environment is exactly what the case gives and never the ambient one: a
-// LOGHOST variable on the machine running the tests would otherwise change
-// what a case observes.
 func runHost(t *testing.T, scenarioName string, args ...string) outcome {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), runLimit)
@@ -117,8 +95,6 @@ func runHost(t *testing.T, scenarioName string, args ...string) outcome {
 	return outcome{stdout: stdout.String(), stderr: stderr.String(), code: code}
 }
 
-// requireSuccess asserts that the run left cleanly, printing both streams when
-// it did not.
 func requireSuccess(t *testing.T, got outcome) {
 	t.Helper()
 	if got.code != 0 {
@@ -127,7 +103,6 @@ func requireSuccess(t *testing.T, got outcome) {
 	}
 }
 
-// countOccurrences reports how many lines of a stream carry a piece of text.
 func countOccurrences(stream, text string) int {
 	n := 0
 	for line := range strings.SplitSeq(strings.TrimRight(stream, "\n"), "\n") {
@@ -138,8 +113,6 @@ func countOccurrences(stream, text string) int {
 	return n
 }
 
-// readFileConfigured reads back a destination file a case configured, failing
-// when the assembly never created it.
 func readFileConfigured(t *testing.T, path string) string {
 	t.Helper()
 	body, err := os.ReadFile(path) //nolint:gosec // the path is the one this case just handed the host.
@@ -149,12 +122,9 @@ func readFileConfigured(t *testing.T, path string) string {
 	return string(body)
 }
 
-// Scenario one: no log section in the config source at all.
-
+// TestAbsentLogSectionYieldsOneStdoutTextOutputAtInfo checks that a host with no log section writes
+// one text record to stdout at info, drops the debug one and masks the sensitive value.
 func TestAbsentLogSectionYieldsOneStdoutTextOutputAtInfo(t *testing.T) {
-	// The document is valid and carries no log section, which is a stronger
-	// statement than having no config source: the section is absent, not
-	// the file. What fills it in is the carrier struct the module declared.
 	locator := writeConfig(t, struct{}{})
 	got := runHost(t, caseDefault, "--config="+locator)
 	requireSuccess(t, got)
@@ -162,22 +132,15 @@ func TestAbsentLogSectionYieldsOneStdoutTextOutputAtInfo(t *testing.T) {
 	if n := countOccurrences(got.stdout, "msg="+infoMessage); n != 1 {
 		t.Errorf("the Info record appears %d times on stdout, want 1:\n%s", n, got.stdout)
 	}
-	// Text, not JSON: the default format is the one the carrier struct
-	// carries, and a JSON record would render the message as "msg":"...".
 	if strings.Contains(got.stdout, `"msg"`) {
 		t.Errorf("stdout carries JSON records although the default format is text:\n%s", got.stdout)
 	}
 	if !strings.Contains(got.stdout, "level=INFO") {
 		t.Errorf("stdout carries no text-rendered level:\n%s", got.stdout)
 	}
-	// The default level is info, so the Debug record of the same run is not
-	// written anywhere.
 	if strings.Contains(got.stdout, debugMessage) {
 		t.Errorf("the Debug record reached stdout although the default level is info:\n%s", got.stdout)
 	}
-	// The rules the application registered in its own New govern the
-	// attribute it bound afterwards, on the configured chain of a real
-	// assembly.
 	if strings.Contains(got.stdout, plaintextValue) {
 		t.Errorf("the sensitive value reached stdout in plaintext:\n%s", got.stdout)
 	}
@@ -186,11 +149,6 @@ func TestAbsentLogSectionYieldsOneStdoutTextOutputAtInfo(t *testing.T) {
 	}
 }
 
-// Scenario two: the only configured destination is a file, and a call site
-// with no logger in its context logs anyway.
-
-// fallbackRun assembles a file-only configuration and runs the fallback
-// scenario, returning the outcome and the path of the configured file.
 func fallbackRun(t *testing.T) (outcome, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "app.log")
@@ -202,37 +160,34 @@ func fallbackRun(t *testing.T) (outcome, string) {
 	return got, path
 }
 
+// TestFallbackDoesNotReachTheConfiguredFile checks that a record written with no logger in context
+// does not reach the configured file.
 func TestFallbackDoesNotReachTheConfiguredFile(t *testing.T) {
 	got, path := fallbackRun(t)
 
-	// The fallback goes to the process logger, which writes to standard
-	// output and knows nothing about this assembly. An implementation that
-	// fell back to "the chain most recently assembled" would put the record
-	// in the file — the most plausible-looking way to get this wrong.
 	if n := countOccurrences(readFileConfigured(t, path), orphanMessage); n != 0 {
 		t.Errorf("the record written with no logger in context reached the configured file %d times\nstdout:\n%s",
 			n, got.stdout)
 	}
 }
 
+// TestFallbackAppearsOnStdout checks that a record written with no logger in context appears once
+// on stdout.
 func TestFallbackAppearsOnStdout(t *testing.T) {
 	got, _ := fallbackRun(t)
 
-	// Together with the case above this is the whole answer to where the
-	// record went: one says it did not reach the configured destination,
-	// this one says where it did go.
 	if n := countOccurrences(got.stdout, orphanMessage); n != 1 {
 		t.Errorf("the record written with no logger in context appears %d times on stdout, want 1:\n%s",
 			n, got.stdout)
 	}
 }
 
+// TestNamedLoggerReachesTheConfiguredFile checks that an injected named logger writes its record
+// once to the configured file with the module name and not to stdout.
 func TestNamedLoggerReachesTheConfiguredFile(t *testing.T) {
 	got, path := fallbackRun(t)
 	body := readFileConfigured(t, path)
 
-	// The positive control. Without it the two cases above could both pass
-	// because the chain was never connected at all.
 	if n := countOccurrences(body, injectedMessage); n != 1 {
 		t.Errorf("the injected logger's record appears %d times in the configured file, want 1:\n%s",
 			n, body)
@@ -246,16 +201,13 @@ func TestNamedLoggerReachesTheConfiguredFile(t *testing.T) {
 	}
 }
 
-// Scenario three: an output list that is there and empty.
-
+// TestExplicitEmptyOutputsWritesOneNotice checks that an explicit empty output list writes one
+// log-module notice to stderr and no record anywhere.
 func TestExplicitEmptyOutputsWritesOneNotice(t *testing.T) {
 	locator := writeConfig(t, logConfig{Log: logSection{Outputs: []logOutput{}}})
 	got := runHost(t, caseEmptyOutputs, "--config="+locator)
 	requireSuccess(t, got)
 
-	// An empty list is legal and means no records are written anywhere.
-	// Said out loud once, because a logging module producing nothing is
-	// indistinguishable from a broken one when seen from outside.
 	if n := countOccurrences(got.stderr, "log: "); n != 1 {
 		t.Errorf("the startup wrote %d notices from the log module, want exactly 1:\n%s",
 			n, got.stderr)
@@ -263,17 +215,13 @@ func TestExplicitEmptyOutputsWritesOneNotice(t *testing.T) {
 	if strings.Contains(got.stdout, silencedMessage) {
 		t.Errorf("a record reached stdout although the output list is empty:\n%s", got.stdout)
 	}
-	// The distinction this case exists for: an absent outputs key keeps the
-	// default output and writes no notice, and only the real decoding path
-	// can tell the two apart.
 	if strings.Contains(got.stderr, silencedMessage) {
 		t.Errorf("a record reached stderr although the output list is empty:\n%s", got.stderr)
 	}
 }
 
-// Scenario four: a second provider of the logging capability that stays
-// enabled.
-
+// TestSecondEnabledLoggerProviderFailsTheStartup checks that two enabled providers of the logging
+// capability fail the startup with the exclusive marker and the rival's name.
 func TestSecondEnabledLoggerProviderFailsTheStartup(t *testing.T) {
 	got := runHost(t, caseRivalProvider)
 
@@ -281,23 +229,17 @@ func TestSecondEnabledLoggerProviderFailsTheStartup(t *testing.T) {
 		t.Fatalf("the startup succeeded with two enabled providers of the logging capability\nstdout:\n%s\nstderr:\n%s",
 			got.stdout, got.stderr)
 	}
-	// errors.Is does not survive the process boundary, so the host judged
-	// the error itself and printed a fixed word.
 	if !strings.Contains(got.stdout, exclusiveMarker) {
 		t.Errorf("the startup failed for another reason than two enabled providers\nstdout:\n%s\nstderr:\n%s",
 			got.stdout, got.stderr)
 	}
-	// This is the only end-to-end evidence of the stance: a module claiming
-	// exclusivity and stating StateAuto would have stood down here, and the
-	// run would have succeeded with the rival's logger in place.
 	if !strings.Contains(got.stderr, rivalModuleName) {
 		t.Errorf("the failure does not name the rival provider:\n%s", got.stderr)
 	}
 }
 
-// Scenario five: the process logger and the configured chain write to the same
-// file descriptor at the same time.
-
+// TestConcurrentDefaultAndConfiguredWritesDoNotInterleave checks that interleaved writes through the
+// bootstrap chain and a JSON chain arrive as whole lines of their own shape.
 func TestConcurrentDefaultAndConfiguredWritesDoNotInterleave(t *testing.T) {
 	locator := writeConfig(t, logConfig{Log: logSection{Outputs: []logOutput{
 		{To: "stdout", Format: "json"},
@@ -325,7 +267,6 @@ func TestConcurrentDefaultAndConfiguredWritesDoNotInterleave(t *testing.T) {
 			}
 			continue
 		}
-		// The other writer is the process logger, which renders text.
 		if !strings.HasPrefix(line, "time=") || !strings.HasSuffix(line, "payload="+payload) {
 			t.Fatalf("line %d is not a whole text record:\n%.200s", i, line)
 		}

@@ -9,11 +9,8 @@ import (
 	"testing"
 )
 
-// TestRuleSetSnapshotIsReadWithoutLock pins the two properties of the snapshot:
-// a judgement never blocks a registration, and a record is judged against one
-// snapshot from end to end. A layer that reads the pointer per attribute
-// instead of per record produces records that are masked in part, which is the
-// shape this case rules out.
+// TestRuleSetSnapshotIsReadWithoutLock pins the two properties of the snapshot: a judgement never
+// blocks a registration, and a record is judged against one snapshot from end to end.
 func TestRuleSetSnapshotIsReadWithoutLock(t *testing.T) {
 	isolateRules(t)
 	const key = "snapshot-consistency-key"
@@ -62,8 +59,6 @@ func TestRuleSetSnapshotIsReadWithoutLock(t *testing.T) {
 		}
 	}
 
-	// The registration has completed by now, so the next record is fully
-	// masked; without this the case would pass on a rule set nobody wrote to.
 	logger.LogAttrs(context.Background(), slog.LevelInfo, "judge", attrs...)
 	last := capture.state.last(t)
 	last.Attrs(func(a slog.Attr) bool {
@@ -74,8 +69,8 @@ func TestRuleSetSnapshotIsReadWithoutLock(t *testing.T) {
 	})
 }
 
-// TestAddKeysIsAppendOnly pins that a registration adds to the rule set rather
-// than replacing it: a key registered earlier still matches afterwards.
+// TestAddKeysIsAppendOnly pins that a registration adds to the rule set rather than replacing it:
+// a key registered earlier still matches afterwards.
 func TestAddKeysIsAppendOnly(t *testing.T) {
 	isolateRules(t)
 	processRedaction.AddKeys("first-registered-key")
@@ -97,9 +92,8 @@ func TestAddKeysIsAppendOnly(t *testing.T) {
 	}
 }
 
-// TestPatternMasksOnlyTheMatchedSpans pins that a value-shape rule masks what it
-// reported and leaves the rest of the text alone, which is what makes the rule
-// usable on a message-like value.
+// TestPatternMasksOnlyTheMatchedSpans pins that a value-shape rule masks what it reported and
+// leaves the rest of the text alone, which is what makes the rule usable on a message-like value.
 func TestPatternMasksOnlyTheMatchedSpans(t *testing.T) {
 	isolateRules(t)
 	processRedaction.AddPattern("live-key", prefixMatcher("sk-live-"))
@@ -114,8 +108,8 @@ func TestPatternMasksOnlyTheMatchedSpans(t *testing.T) {
 	}
 }
 
-// TestKeyPathMatchesAnySegment pins that a registered name is compared against
-// every segment of the key path, so a group name matches as well as a leaf key.
+// TestKeyPathMatchesAnySegment pins that a registered name is compared against every segment of
+// the key path, so a group name matches as well as a leaf key.
 func TestKeyPathMatchesAnySegment(t *testing.T) {
 	for _, registered := range []string{"a-path-segment", "token-path-leaf"} {
 		t.Run(registered, func(t *testing.T) {
@@ -134,10 +128,8 @@ func TestKeyPathMatchesAnySegment(t *testing.T) {
 	}
 }
 
-// TestMalformedSpansAreIgnored pins that a matcher from another module cannot
-// take the logging path of the whole process down with a bad offset. The spans
-// here are the four ways to be out of range; none of them may panic, and none
-// of them may mask anything.
+// TestMalformedSpansAreIgnored pins that a matcher from another module cannot take the logging
+// path of the whole process down with a bad offset.
 func TestMalformedSpansAreIgnored(t *testing.T) {
 	isolateRules(t)
 	const value = "0123456789"
@@ -156,8 +148,8 @@ func TestMalformedSpansAreIgnored(t *testing.T) {
 	}
 }
 
-// TestOverlappingSpansAreMaskedOnce pins that two rules reporting overlapping
-// spans of one value produce one mask over the union, not a mask per rule.
+// TestOverlappingSpansAreMaskedOnce pins that two rules reporting overlapping spans of one value
+// produce one mask over the union, not a mask per rule.
 func TestOverlappingSpansAreMaskedOnce(t *testing.T) {
 	isolateRules(t)
 	processRedaction.AddPattern("left", func(string) []Span { return []Span{{Start: 5, End: 12}} })
@@ -173,20 +165,9 @@ func TestOverlappingSpansAreMaskedOnce(t *testing.T) {
 	}
 }
 
-// TestUnusableRegistrationsPanic pins that a registration carrying no rule
-// fails at the call site instead of being dropped. An empty key name would
-// have to be compared against the empty segments of a key path, and a nil
-// matcher would panic on the first record that reached it; both are
-// programming errors at the registering call site.
-//
-// Dropping one quietly is the failure shape redaction can least afford: a
-// registration returns nothing, so the registrant goes on believing it holds a
-// protection it does not have, and the difference shows up only once something
-// has leaked.
+// TestUnusableRegistrationsPanic pins that a registration carrying no rule fails at the call site
+// instead of being dropped.
 func TestUnusableRegistrationsPanic(t *testing.T) {
-	// The assertions name the position of the unusable argument, not its
-	// value: the value is the empty string, and AddKeys is variadic, so only
-	// the index says which of the names a caller passed is at fault.
 	t.Run("empty key name", func(t *testing.T) {
 		isolateRules(t)
 		got := panicText(t, func() { processRedaction.AddKeys("") })
@@ -205,11 +186,6 @@ func TestUnusableRegistrationsPanic(t *testing.T) {
 		}
 	})
 
-	// The whole call is checked before anything is registered, so a call that
-	// carries one usable name and one unusable one registers neither. An
-	// implementation that wrote each name as it walked them, and panicked only
-	// on reaching the empty one, passes the two cases above and leaves half a
-	// registration behind.
 	t.Run("nothing is registered before the check", func(t *testing.T) {
 		isolateRules(t)
 		panicText(t, func() { processRedaction.AddKeys("kept", "") })
@@ -219,8 +195,6 @@ func TestUnusableRegistrationsPanic(t *testing.T) {
 	})
 }
 
-// panicText runs fn and renders what it panicked with, for an assertion on the
-// message. It fails the test when fn returns normally.
 func panicText(t *testing.T, fn func()) string {
 	t.Helper()
 	var recovered any

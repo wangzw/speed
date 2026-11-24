@@ -11,18 +11,11 @@ import (
 	"testing"
 )
 
-// recordingSink stands in for a destination in the tests that are about the
-// writer rather than about where the bytes end up.
 type recordingSink struct {
-	// err, when set, is what every write fails with.
-	err error
-	// taken is what reached the sink.
-	taken []string
-	// started counts the calls to startBackground.
-	started int
-	// stopped counts the calls to stopBackground.
-	stopped int
-	// released counts the calls to release.
+	err      error
+	taken    []string
+	started  int
+	stopped  int
 	released int
 }
 
@@ -38,9 +31,6 @@ func (s *recordingSink) startBackground(sync.Locker) { s.started++ }
 func (s *recordingSink) stopBackground()             { s.stopped++ }
 func (s *recordingSink) release() error              { s.released++; return nil }
 
-// captureStderr collects what this package writes to os.Stderr while fn runs.
-// Reporting goes there directly, so the test swaps the stream rather than
-// reaching for a hook in the product code.
 func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
 	r, w, err := os.Pipe()
@@ -64,7 +54,6 @@ func captureStderr(t *testing.T, fn func()) string {
 	return text
 }
 
-// refsFor reads a destination's reference count, 0 when it is not registered.
 func refsFor(id string) int {
 	rootMu.Lock()
 	defer rootMu.Unlock()
@@ -76,7 +65,6 @@ func refsFor(id string) int {
 	return entry.refs
 }
 
-// registered reports whether a destination has an entry at all.
 func registered(id string) bool {
 	rootMu.Lock()
 	defer rootMu.Unlock()
@@ -85,8 +73,6 @@ func registered(id string) bool {
 	return ok
 }
 
-// openOne takes the writer of a single output and releases it when the test
-// ends, so that no test leaves a reference behind for the next one.
 func openOne(t *testing.T, o resolvedOutput) *destWriter {
 	t.Helper()
 	writers, release, err := openWriters([]resolvedOutput{o})
@@ -97,20 +83,12 @@ func openOne(t *testing.T, o resolvedOutput) *destWriter {
 	return writers[0]
 }
 
-// fileOutput is a file output with the rotation and pruning switched off,
-// which is what the tests about the registration want: they are about which
-// writer an output gets, not about what it does with the bytes.
 func fileOutput(path string) resolvedOutput {
 	return resolvedOutput{to: destFile, format: formatJSON, path: path}
 }
 
-// TestBootstrapStdoutWriterIsRegisteredAtInit pins that the root package takes
-// the standard output writer while the package initialises, and holds exactly
-// one reference to it.
-//
-// That reference is what makes fd 1 carry a single writer: the bootstrap chain
-// and a configured stdout output share it, and no Close can take it away,
-// because the count never reaches zero.
+// TestBootstrapStdoutWriterIsRegisteredAtInit pins that the root package takes the standard output
+// writer while the package initialises, and holds exactly one reference to it.
 func TestBootstrapStdoutWriterIsRegisteredAtInit(t *testing.T) {
 	id := destinationID(resolvedOutput{to: destStdout})
 	if !registered(id) {
@@ -128,16 +106,8 @@ func TestBootstrapStdoutWriterIsRegisteredAtInit(t *testing.T) {
 	}
 }
 
-// TestDefaultConfigOpensTheBootstrapStdoutWriter is the structural half of
-// "one writer per destination": the configuration a host gets by writing no log
-// section at all is one output to standard output, and opening it hands back
-// the very object the bootstrap chain writes through.
-//
-// The assertion is object identity and the reference count, not behaviour: one
-// writer and two writers produce the same output in a test that simply writes
-// a few records. The interleaving two of them cause only shows up on a pipe,
-// under concurrency, for a record longer than PIPE_BUF — which is to say it
-// would pass every time while the defect was there.
+// TestDefaultConfigOpensTheBootstrapStdoutWriter checks that the default configuration opens the
+// bootstrap stdout writer, holding one more reference, and release leaves it registered and open.
 func TestDefaultConfigOpensTheBootstrapStdoutWriter(t *testing.T) {
 	cfg, err := configDefaults.resolve()
 	if err != nil {
@@ -162,8 +132,6 @@ func TestDefaultConfigOpensTheBootstrapStdoutWriter(t *testing.T) {
 		t.Errorf("standard output has %d references after the assembly, want %d", got, before+1)
 	}
 
-	// Releasing the assembly leaves the root package's reference, so
-	// Default() goes on writing where it always did.
 	release()
 	if got := refsFor(id); got != before {
 		t.Errorf("standard output has %d references after the release, want %d", got, before)
@@ -176,12 +144,8 @@ func TestDefaultConfigOpensTheBootstrapStdoutWriter(t *testing.T) {
 	}
 }
 
-// TestTwoOutputsToOneFileShareOneWriter pins the identity of a file
-// destination: a relative path, an absolute one and a symbolic link pointing at
-// the file all name one destination, and one destination has one writer.
-//
-// Two writers over one file would each rotate and each prune, deleting the
-// other's archives.
+// TestTwoOutputsToOneFileShareOneWriter checks that relative, absolute and symlinked spellings of
+// one file share a single writer with one reference each.
 func TestTwoOutputsToOneFileShareOneWriter(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -205,10 +169,8 @@ func TestTwoOutputsToOneFileShareOneWriter(t *testing.T) {
 	}
 }
 
-// TestStdoutDedupIgnoresUnusedFileParams pins that the parameter comparison
-// covers what the destination uses. A stream uses no rotation parameter, so two
-// stdout outputs that disagree on one still share a writer rather than failing
-// the startup over a field neither of them reads.
+// TestStdoutDedupIgnoresUnusedFileParams pins that the parameter comparison covers what the
+// destination uses.
 func TestStdoutDedupIgnoresUnusedFileParams(t *testing.T) {
 	first := openOne(t, resolvedOutput{to: destStdout, format: formatText, maxSizeMB: 100, maxFiles: 10})
 	second := openOne(t, resolvedOutput{to: destStdout, format: formatJSON, maxSizeMB: 5, maxFiles: 1})
@@ -222,9 +184,8 @@ func TestStdoutDedupIgnoresUnusedFileParams(t *testing.T) {
 	}
 }
 
-// TestConflictingFileParamsOnOneDestination pins that one writer has one set of
-// parameters: a second output over the same file with different rotation
-// parameters fails the startup instead of quietly inheriting the first set.
+// TestConflictingFileParamsOnOneDestination checks that a second output with different parameters
+// fails as ErrConflictingOutput, naming the destination and only the disagreeing field.
 func TestConflictingFileParamsOnOneDestination(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "app.log")
 	openOne(t, resolvedOutput{to: destFile, format: formatJSON, path: path, maxSizeMB: 100, maxFiles: 10, maxAgeDays: 30})
@@ -246,11 +207,7 @@ func TestConflictingFileParamsOnOneDestination(t *testing.T) {
 	}
 }
 
-// TestOpenFailureIsUnavailableAndLeavesNoEntry pins the rollback of a failed
-// assembly. The references taken for the outputs ahead of the failing one are
-// given back, and the destination that could not be opened leaves no entry: a
-// leak there would have the next assembly of the same destination report
-// ErrConflictingOutput over parameters nobody holds.
+// TestOpenFailureIsUnavailableAndLeavesNoEntry pins the rollback of a failed assembly.
 func TestOpenFailureIsUnavailableAndLeavesNoEntry(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "no-such-directory", "app.log")
 	stdoutID := destinationID(resolvedOutput{to: destStdout})
@@ -266,10 +223,6 @@ func TestOpenFailureIsUnavailableAndLeavesNoEntry(t *testing.T) {
 	if !strings.Contains(err.Error(), missing) {
 		t.Errorf("the error %q does not name the path that could not be opened", err)
 	}
-	// The cause travels with the class. ErrOutputUnavailable covers a missing
-	// directory, a mode that forbids the write and a path already taken, and
-	// the host's remedy differs for each; flattening the error underneath into
-	// text would leave it reading the message to tell them apart.
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("the error %q does not carry fs.ErrNotExist, so the host cannot tell a missing directory from a permission denial", err)
 	}
@@ -282,10 +235,8 @@ func TestOpenFailureIsUnavailableAndLeavesNoEntry(t *testing.T) {
 	}
 }
 
-// TestWriterCanBeReopenedWithNewParamsAfterRelease pins the other side of the
-// parameter comparison: its scope is the writer's lifetime. Once the last
-// reference is gone and the writer is deregistered, another assembly opens the
-// same file with parameters of its own.
+// TestWriterCanBeReopenedWithNewParamsAfterRelease pins the other side of the parameter
+// comparison: its scope is the writer's lifetime.
 func TestWriterCanBeReopenedWithNewParamsAfterRelease(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "app.log")
 	first := resolvedOutput{to: destFile, format: formatJSON, path: path, maxSizeMB: 100, maxFiles: 10, maxAgeDays: 30}
@@ -316,9 +267,8 @@ func TestWriterCanBeReopenedWithNewParamsAfterRelease(t *testing.T) {
 	}
 }
 
-// TestClosedWriterDropsAndCounts pins that a record arriving after the close is
-// dropped rather than written. The descriptor may already have been reused by
-// another open in the process, and the bytes would land in an unrelated file.
+// TestClosedWriterDropsAndCounts pins that a record arriving after the close is dropped rather
+// than written.
 func TestClosedWriterDropsAndCounts(t *testing.T) {
 	sink := &recordingSink{}
 	w := &destWriter{id: "test", sink: sink}
@@ -346,10 +296,8 @@ func TestClosedWriterDropsAndCounts(t *testing.T) {
 	}
 }
 
-// TestFailureIsReportedOnceUntilRecovery pins the reporting rule: one line for
-// the first of a run of failures, and one when a write gets through again. A
-// full disk fails every record, and a line each would flood the stream an
-// operator reads at that very moment.
+// TestFailureIsReportedOnceUntilRecovery pins the reporting rule: one line for the first of a run
+// of failures, and one when a write gets through again.
 func TestFailureIsReportedOnceUntilRecovery(t *testing.T) {
 	sink := &recordingSink{err: errors.New("no space left on device")}
 	w := &destWriter{id: "file:/var/log/app.log", sink: sink}
@@ -390,9 +338,8 @@ func TestFailureIsReportedOnceUntilRecovery(t *testing.T) {
 	}
 }
 
-// TestStderrDestinationFailureDoesNotRecurse pins that the writer of the
-// standard error destination stays quiet when it fails: the report would travel
-// the way the write that just failed did.
+// TestStderrDestinationFailureDoesNotRecurse checks that the silent stderr writer reports nothing on
+// stderr while still counting every failure.
 func TestStderrDestinationFailureDoesNotRecurse(t *testing.T) {
 	sink := &recordingSink{err: errors.New("broken pipe")}
 	w := &destWriter{id: "stderr", silent: true, sink: sink}
@@ -411,8 +358,8 @@ func TestStderrDestinationFailureDoesNotRecurse(t *testing.T) {
 	}
 }
 
-// TestStderrDestinationGetsItsOwnWriter pins that standard error is a
-// destination of its own: it does not share the bootstrap writer over fd 1.
+// TestStderrDestinationGetsItsOwnWriter pins that standard error is a destination of its own: it
+// does not share the bootstrap writer over fd 1.
 func TestStderrDestinationGetsItsOwnWriter(t *testing.T) {
 	w := openOne(t, resolvedOutput{to: destStderr, format: formatText})
 	if w == bootstrapStdoutWriter {
@@ -423,9 +370,8 @@ func TestStderrDestinationGetsItsOwnWriter(t *testing.T) {
 	}
 }
 
-// TestReleaseIsIdempotent pins that a second release does not take another
-// assembly's reference away. Close runs on the rollback path as well as on the
-// shutdown one, so it can be called twice over one assembly.
+// TestReleaseIsIdempotent pins that a second release does not take another assembly's reference
+// away.
 func TestReleaseIsIdempotent(t *testing.T) {
 	id := destinationID(resolvedOutput{to: destStdout})
 	before := refsFor(id)
@@ -440,14 +386,9 @@ func TestReleaseIsIdempotent(t *testing.T) {
 	}
 }
 
-// lockProbeSink records whether the writer's lock was free when the writer
-// stopped its background work.
 type lockProbeSink struct {
 	recordingSink
-	// mu is the writer's own lock.
-	mu *sync.Mutex
-	// lockWasFree says the lock was not held at the moment the background
-	// work was stopped.
+	mu          *sync.Mutex
 	lockWasFree bool
 }
 
@@ -459,13 +400,8 @@ func (s *lockProbeSink) stopBackground() {
 	}
 }
 
-// TestCloseStopsBackgroundBeforeTakingTheLock pins the order inside the close:
-// the background work is stopped first, and only then is the lock taken.
-//
-// A file destination's background prune takes that same lock for each pass, so
-// waiting for it from under the lock deadlocks whenever a pass happens to be
-// in flight. That is a window rather than a certainty, which is why this is
-// asserted structurally rather than by hoping a shutdown hangs.
+// TestCloseStopsBackgroundBeforeTakingTheLock pins the order inside the close: the background work
+// is stopped first, and only then is the lock taken.
 func TestCloseStopsBackgroundBeforeTakingTheLock(t *testing.T) {
 	sink := &lockProbeSink{}
 	w := &destWriter{id: "file:/var/log/app.log", sink: sink}

@@ -15,17 +15,12 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// stubReader is a config.Reader that hands back a Config the test wrote. The
-// real reader comes from a run of the command tree, which reads the process's
-// own arguments and refuses the ones go test passes to a test binary, so the
-// callbacks are driven through the interface instead.
 type stubReader struct {
 	cfg  Config
 	err  error
-	path string // the path the caller asked for, recorded for the assertion
+	path string
 }
 
-// Decode writes the stubbed configuration into target.
 func (s *stubReader) Decode(path string, target any) error {
 	s.path = path
 	if s.err != nil {
@@ -41,36 +36,25 @@ func (s *stubReader) Decode(path string, target any) error {
 
 var _ config.Reader = (*stubReader)(nil)
 
-// registryWithoutReader is what a host that forgot to supply the reader leaves
-// behind: the config module is registered, as the process registry has it from
-// the config package's init, and holds no instance.
 func registryWithoutReader() *core.Registry {
 	reg := core.New()
 	reg.Register(config.Module())
 	return reg
 }
 
-// registryWithReader is that registry with the reader supplied to the config
-// module by name, the way Execute supplies the one it loads.
 func registryWithReader(reader config.Reader) *core.Registry {
 	reg := registryWithoutReader()
 	reg.Supply(reader, config.ModuleName)
 	return reg
 }
 
-// keepBootstrapLevel restores the bootstrap level after a test that sets it.
-// The variable is process-level and shared with every other test in the binary.
 func keepBootstrapLevel(t *testing.T) {
 	t.Helper()
 	previous := bootstrapLevel.Level()
 	t.Cleanup(func() { bootstrapLevel.Set(previous) })
 }
 
-// TestPrepareStatesEnabledNotAuto pins the stance. Resolution only disables a
-// provider that claims exclusivity and states StateAuto; this module claims
-// exclusivity and must not stand down, so that a second enabled provider fails
-// the startup instead of quietly replacing it. Written as StateAuto, every
-// other test here still passes and the module gives way.
+// TestPrepareStatesEnabledNotAuto pins the stance.
 func TestPrepareStatesEnabledNotAuto(t *testing.T) {
 	keepBootstrapLevel(t)
 	got, err := prepare(&stubReader{cfg: Config{Level: "info"}})
@@ -83,10 +67,8 @@ func TestPrepareStatesEnabledNotAuto(t *testing.T) {
 	}
 }
 
-// TestPrepareSetsBootstrapLevelFromConfig pins that the configured level
-// reaches the chain that is already writing records. The bootstrap chain hands
-// out loggers before this module is constructed, so the level has to be applied
-// to the variable those loggers read, not stored for later.
+// TestPrepareSetsBootstrapLevelFromConfig pins that the configured level reaches the chain that is
+// already writing records.
 func TestPrepareSetsBootstrapLevelFromConfig(t *testing.T) {
 	keepBootstrapLevel(t)
 	bootstrapLevel.Set(slog.LevelInfo)
@@ -98,10 +80,7 @@ func TestPrepareSetsBootstrapLevelFromConfig(t *testing.T) {
 	}
 }
 
-// TestPrepareReadsTheModuleOwnPath pins the path the module decodes from. It
-// assembles the path itself out of what it declared, so a namespace change that
-// misses one of the two sites reads an empty section and silently takes the
-// defaults.
+// TestPrepareReadsTheModuleOwnPath pins the path the module decodes from.
 func TestPrepareReadsTheModuleOwnPath(t *testing.T) {
 	keepBootstrapLevel(t)
 	reader := &stubReader{cfg: Config{Level: "info"}}
@@ -113,8 +92,8 @@ func TestPrepareReadsTheModuleOwnPath(t *testing.T) {
 	}
 }
 
-// TestPrepareRejectsAnUnknownLevel keeps a misspelled level from starting the
-// process on a level nobody asked for.
+// TestPrepareRejectsAnUnknownLevel keeps a misspelled level from starting the process on a level
+// nobody asked for.
 func TestPrepareRejectsAnUnknownLevel(t *testing.T) {
 	keepBootstrapLevel(t)
 	bootstrapLevel.Set(slog.LevelWarn)
@@ -127,8 +106,8 @@ func TestPrepareRejectsAnUnknownLevel(t *testing.T) {
 	}
 }
 
-// TestPrepareFailsWhenTheReaderFails keeps a configuration failure from being
-// read as a level nobody configured.
+// TestPrepareFailsWhenTheReaderFails keeps a configuration failure from being read as a level
+// nobody configured.
 func TestPrepareFailsWhenTheReaderFails(t *testing.T) {
 	keepBootstrapLevel(t)
 	sentinel := errors.New("the primary source could not be read")
@@ -138,13 +117,8 @@ func TestPrepareFailsWhenTheReaderFails(t *testing.T) {
 	}
 }
 
-// TestNoSuppliedReaderFailsPrepare pins that a registry nobody supplied a
-// reader to stops the startup. The level is a configured value, and falling
-// back to a default here would hide an assembly that cannot read any
-// configuration at all.
-//
-// The config module is registered and has no instance, so the supply is the one
-// thing left out: the reader is that module's instance.
+// TestNoSuppliedReaderFailsPrepare pins that a registry nobody supplied a reader to stops the
+// startup.
 func TestNoSuppliedReaderFailsPrepare(t *testing.T) {
 	keepBootstrapLevel(t)
 	m := Module()
@@ -154,9 +128,8 @@ func TestNoSuppliedReaderFailsPrepare(t *testing.T) {
 	}
 }
 
-// TestDescriptorDeclaresExclusiveLoggerAndSchema pins the declaration surface:
-// one capability, claimed exclusively, plus the input items. The exclusivity is
-// what turns a second logging module into a startup failure.
+// TestDescriptorDeclaresExclusiveLoggerAndSchema pins the declaration surface: one capability,
+// claimed exclusively, plus the input items.
 func TestDescriptorDeclaresExclusiveLoggerAndSchema(t *testing.T) {
 	m := Module()
 	if m.Name != "log" {
@@ -190,9 +163,8 @@ func TestDescriptorDeclaresExclusiveLoggerAndSchema(t *testing.T) {
 	}
 }
 
-// TestModuleRegistersItselfWithTheProcessRegistry pins that importing the
-// package is all a host does: the registration happens in init, so the host
-// does not name the descriptor.
+// TestModuleRegistersItselfWithTheProcessRegistry pins that importing the package is all a host
+// does: the registration happens in init, so the host does not name the descriptor.
 func TestModuleRegistersItselfWithTheProcessRegistry(t *testing.T) {
 	registered, ok := core.ProcessRegistry.Lookup("log")
 	if !ok {
@@ -204,14 +176,10 @@ func TestModuleRegistersItselfWithTheProcessRegistry(t *testing.T) {
 	}
 }
 
-// fileConfig is a configuration with one JSON file output, which is what the
-// product tests read their assertions back from.
 func fileConfig(path string) Config {
 	return Config{Level: "info", Outputs: []Output{{To: destFile, Format: formatJSON, Path: path}}}
 }
 
-// newTestLogger builds the product from a stubbed reader and releases its
-// references when the test ends.
 func newTestLogger(t *testing.T, cfg Config) *logger {
 	t.Helper()
 	product, err := newLogger(&stubReader{cfg: cfg})
@@ -222,9 +190,8 @@ func newTestLogger(t *testing.T, cfg Config) *logger {
 	return product
 }
 
-// TestNamedLoggerCarriesTheModuleAttribute pins that a logger taken by name
-// says which module wrote the record. Without it a destination holds records
-// from every module with nothing to tell them apart by.
+// TestNamedLoggerCarriesTheModuleAttribute pins that a logger taken by name says which module
+// wrote the record.
 func TestNamedLoggerCarriesTheModuleAttribute(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "named.log")
 	product := newTestLogger(t, fileConfig(path))
@@ -242,9 +209,8 @@ func TestNamedLoggerCarriesTheModuleAttribute(t *testing.T) {
 	}
 }
 
-// TestProductWritesThroughTheConfiguredChain pins that the product's loggers
-// reach the configured destination and are filtered by the configured level —
-// the positive control the fallback tests are read against.
+// TestProductWritesThroughTheConfiguredChain checks that the product's chain drops a record below
+// the configured level and writes one above it.
 func TestProductWritesThroughTheConfiguredChain(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "chain.log")
 	product := newTestLogger(t, fileConfig(path))
@@ -262,9 +228,8 @@ func TestProductWritesThroughTheConfiguredChain(t *testing.T) {
 	}
 }
 
-// TestRedactionHandsOutTheProcessRegistry pins that the registration interface
-// is the process-wide one: a sensitive key name is a fact about the process,
-// and the bootstrap chain has to be covered by it as well.
+// TestRedactionHandsOutTheProcessRegistry checks that a product's Redaction returns the process-wide
+// registry.
 func TestRedactionHandsOutTheProcessRegistry(t *testing.T) {
 	product := newTestLogger(t, fileConfig(filepath.Join(t.TempDir(), "rules.log")))
 	if product.Redaction() != processRedaction {
@@ -272,10 +237,7 @@ func TestRedactionHandsOutTheProcessRegistry(t *testing.T) {
 	}
 }
 
-// TestEmptyOutputsWritesOneNoticeToStderr pins the notice an explicitly empty
-// output list gets. It is legal and means nothing is written anywhere, which
-// from outside is indistinguishable from a broken logging module — so it is
-// said once, at construction, and not once per record.
+// TestEmptyOutputsWritesOneNoticeToStderr pins the notice an explicitly empty output list gets.
 func TestEmptyOutputsWritesOneNoticeToStderr(t *testing.T) {
 	var product *logger
 	var stdout string
@@ -302,8 +264,8 @@ func TestEmptyOutputsWritesOneNoticeToStderr(t *testing.T) {
 	}
 }
 
-// TestCloseReleasesThisAssemblysReferences pins that Close gives up what New
-// took, and no more: standard output keeps the bootstrap reference.
+// TestCloseReleasesThisAssemblysReferences pins that Close gives up what New took, and no more:
+// standard output keeps the bootstrap reference.
 func TestCloseReleasesThisAssemblysReferences(t *testing.T) {
 	product, err := newLogger(&stubReader{cfg: Config{
 		Level:   "info",
@@ -324,9 +286,8 @@ func TestCloseReleasesThisAssemblysReferences(t *testing.T) {
 	}
 }
 
-// TestCloseToleratesNilInstance pins the rollback path: a startup that fails
-// part-way closes every module whatever stage it reached, so Close runs on
-// modules whose New never returned a product.
+// TestCloseToleratesNilInstance pins the rollback path: a startup that fails part-way closes every
+// module whatever stage it reached, so Close runs on modules whose New never returned a product.
 func TestCloseToleratesNilInstance(t *testing.T) {
 	for _, instance := range []any{nil, (*logger)(nil), "not this module's product"} {
 		if err := closeLogger(instance); err != nil {
@@ -335,9 +296,8 @@ func TestCloseToleratesNilInstance(t *testing.T) {
 	}
 }
 
-// TestNewRejectsAConfigurationDefect pins that a defect in the output list
-// aborts the startup naming its sentinel, rather than assembling a chain that
-// silently drops the offending output.
+// TestNewRejectsAConfigurationDefect pins that a defect in the output list aborts the startup
+// naming its sentinel, rather than assembling a chain that silently drops the offending output.
 func TestNewRejectsAConfigurationDefect(t *testing.T) {
 	_, err := newLogger(&stubReader{cfg: Config{
 		Level:   "info",
@@ -348,9 +308,8 @@ func TestNewRejectsAConfigurationDefect(t *testing.T) {
 	}
 }
 
-// TestNoSuppliedReaderFailsNew pins the same stance New's sibling takes: a
-// registry nobody supplied a reader to has no configuration, and this module
-// says so rather than assembling something the host did not ask for.
+// TestNoSuppliedReaderFailsNew checks that New without a supplied configuration reader fails as
+// ErrMissingProvider.
 func TestNoSuppliedReaderFailsNew(t *testing.T) {
 	if _, err := Module().New(context.Background(), registryWithoutReader()); !errors.Is(err, core.ErrMissingProvider) {
 		t.Fatalf("New on a registry nobody supplied a reader to gave %v, "+
@@ -358,10 +317,8 @@ func TestNoSuppliedReaderFailsNew(t *testing.T) {
 	}
 }
 
-// TestNewAssemblesFromTheReaderTheHostSupplied is the control of the case
-// above: the same registry with the reader supplied to the config module, which
-// New takes up and builds the chain from. The record written through the
-// product's logger lands in the file the supplied configuration names.
+// TestNewAssemblesFromTheReaderTheHostSupplied is the control of the case above: the same registry
+// with the reader supplied to the config module, which New takes up and builds the chain from.
 func TestNewAssemblesFromTheReaderTheHostSupplied(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "supplied.log")
 	instance, err := Module().New(context.Background(), registryWithReader(&stubReader{cfg: fileConfig(path)}))

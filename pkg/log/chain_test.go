@@ -10,9 +10,6 @@ import (
 	"testing"
 )
 
-// fileOutputs is a resolved output per path, in JSON so a test can read a
-// record back line by line. Rotation and pruning are off: these tests are
-// about the chain, not about what a destination does with the bytes.
 func fileOutputs(paths ...string) []resolvedOutput {
 	outputs := make([]resolvedOutput, 0, len(paths))
 	for _, p := range paths {
@@ -21,9 +18,6 @@ func fileOutputs(paths ...string) []resolvedOutput {
 	return outputs
 }
 
-// newTestChain assembles a chain over the given files and releases its
-// references when the test ends, so no reference outlives the test that took
-// it.
 func newTestChain(t *testing.T, level slog.Level, paths ...string) *chain {
 	t.Helper()
 	assembled, err := newChain(resolvedConfig{level: level, outputs: fileOutputs(paths...)})
@@ -34,8 +28,6 @@ func newTestChain(t *testing.T, level slog.Level, paths ...string) *chain {
 	return assembled
 }
 
-// branchesOf walks a chain down to its branches, asserting the layer order on
-// the way: the level at the head, then redaction, then the fan-out.
 func branchesOf(t *testing.T, assembled *chain) []slog.Handler {
 	t.Helper()
 	head, ok := assembled.handler.(*levelHandler)
@@ -53,14 +45,8 @@ func branchesOf(t *testing.T, assembled *chain) []slog.Handler {
 	return fanout.branches
 }
 
-// TestDefaultConfigChainSharesTheBootstrapStdoutWriter pins the deduplication
-// at its most common case: the configuration a host gets by writing no log
-// section at all is exactly one output to standard output, and that output
-// must join the writer the bootstrap chain already holds.
-//
-// The judgement is identity and reference count, not similar behaviour: two
-// writers over fd 1 look identical until two records longer than PIPE_BUF
-// interleave on the pipe a container's standard output is.
+// TestDefaultConfigChainSharesTheBootstrapStdoutWriter checks that the default configuration reuses
+// the bootstrap stdout writer and adds one reference to it.
 func TestDefaultConfigChainSharesTheBootstrapStdoutWriter(t *testing.T) {
 	resolved, err := configDefaults.resolve()
 	if err != nil {
@@ -85,9 +71,8 @@ func TestDefaultConfigChainSharesTheBootstrapStdoutWriter(t *testing.T) {
 	}
 }
 
-// TestReleaseKeepsTheBootstrapReference pins that closing an assembly does not
-// take the default logger away. The root package's reference is never given
-// up, so the count never reaches zero and the writer is never marked closed.
+// TestReleaseKeepsTheBootstrapReference pins that closing an assembly does not take the default
+// logger away.
 func TestReleaseKeepsTheBootstrapReference(t *testing.T) {
 	resolved, err := configDefaults.resolve()
 	if err != nil {
@@ -119,14 +104,8 @@ func TestReleaseKeepsTheBootstrapReference(t *testing.T) {
 	}
 }
 
-// TestBranchHandlersDoNotFilterByLevel pins that the level is judged once, at
-// the head, and that no branch carries a threshold of its own.
-//
-// The assertion has to reach the branch's own Enabled: slog never re-checks the
-// level inside Handle, so a branch built with a level would filter nothing
-// today and start filtering the moment the fan-out honoured its branches'
-// Enabled — a chain with two places a record can be dropped, and the debug
-// records a host asked for depending on which one the assembly set.
+// TestBranchHandlersDoNotFilterByLevel pins that the level is judged once, at the head, and that
+// no branch carries a threshold of its own.
 func TestBranchHandlersDoNotFilterByLevel(t *testing.T) {
 	dir := t.TempDir()
 	first, second := filepath.Join(dir, "first.log"), filepath.Join(dir, "second.log")
@@ -148,10 +127,8 @@ func TestBranchHandlersDoNotFilterByLevel(t *testing.T) {
 	}
 }
 
-// TestRecordIsRedactedOnceForManyOutputs pins the order of the layers:
-// redaction above the fan-out, so a record is judged once however many outputs
-// there are. A layer per branch would multiply the cost of every registered
-// matcher by the number of destinations.
+// TestRecordIsRedactedOnceForManyOutputs pins the order of the layers: redaction above the
+// fan-out, so a record is judged once however many outputs there are.
 func TestRecordIsRedactedOnceForManyOutputs(t *testing.T) {
 	isolateRules(t)
 	var calls atomic.Int64
@@ -171,12 +148,8 @@ func TestRecordIsRedactedOnceForManyOutputs(t *testing.T) {
 	}
 }
 
-// TestFormalChainLevelIsImmuneToBootstrapLevelVar pins that a chain's level is
-// settled when it is assembled.
-//
-// A chain built over the package-level LevelVar passes every other level test
-// here, and then a second module's Prepare — or this module's own, in a second
-// assembly — silently re-filters a chain that is already running.
+// TestFormalChainLevelIsImmuneToBootstrapLevelVar pins that a chain's level is settled when it is
+// assembled.
 func TestFormalChainLevelIsImmuneToBootstrapLevelVar(t *testing.T) {
 	keepBootstrapLevel(t)
 	path := filepath.Join(t.TempDir(), "immune.log")
@@ -197,9 +170,8 @@ func TestFormalChainLevelIsImmuneToBootstrapLevelVar(t *testing.T) {
 	}
 }
 
-// TestTwoChainsFilterByTheirOwnConfiguredLevel pins the other side of the
-// same rule: two assemblies coexist, each filtering by the level it was built
-// with.
+// TestTwoChainsFilterByTheirOwnConfiguredLevel pins the other side of the same rule: two
+// assemblies coexist, each filtering by the level it was built with.
 func TestTwoChainsFilterByTheirOwnConfiguredLevel(t *testing.T) {
 	dir := t.TempDir()
 	debugPath, warnPath := filepath.Join(dir, "debug.log"), filepath.Join(dir, "warn.log")
@@ -217,10 +189,8 @@ func TestTwoChainsFilterByTheirOwnConfiguredLevel(t *testing.T) {
 	}
 }
 
-// TestUnknownDestinationOrFormatFailsAssembly pins that a name outside a closed
-// set fails the startup naming the sentinel, and that the failure leaves no
-// writer behind: a leaked reference would have the next assembly of that
-// destination report a parameter conflict against parameters nobody uses.
+// TestUnknownDestinationOrFormatFailsAssembly checks that an output naming an unknown format or
+// destination fails assembly with that sentinel and leaves no writer registered.
 func TestUnknownDestinationOrFormatFailsAssembly(t *testing.T) {
 	dir := t.TempDir()
 	good := filepath.Join(dir, "good.log")
@@ -261,10 +231,7 @@ func TestUnknownDestinationOrFormatFailsAssembly(t *testing.T) {
 	}
 }
 
-// TestChainLayerOrderIsLevelThenRedactionThenFanout pins the order the layers
-// sit in. Redaction below the fan-out would judge a record once per output, and
-// the level below redaction would pay for judging records that are filtered out
-// anyway.
+// TestChainLayerOrderIsLevelThenRedactionThenFanout pins the order the layers sit in.
 func TestChainLayerOrderIsLevelThenRedactionThenFanout(t *testing.T) {
 	dir := t.TempDir()
 	assembled := newTestChain(t, slog.LevelInfo, filepath.Join(dir, "a.log"), filepath.Join(dir, "b.log"))
@@ -280,9 +247,8 @@ func TestChainLayerOrderIsLevelThenRedactionThenFanout(t *testing.T) {
 	}
 }
 
-// TestEmptyOutputListAssemblesAnEmptyFanout pins what an explicitly empty
-// output list becomes: a chain with no branches, which writes nothing anywhere
-// rather than falling back to a stream of its own.
+// TestEmptyOutputListAssemblesAnEmptyFanout checks that a chain with no outputs opens no writer and
+// writes nothing.
 func TestEmptyOutputListAssemblesAnEmptyFanout(t *testing.T) {
 	assembled, err := newChain(resolvedConfig{level: slog.LevelInfo})
 	if err != nil {
@@ -299,19 +265,8 @@ func TestEmptyOutputListAssemblesAnEmptyFanout(t *testing.T) {
 	}
 }
 
-// TestEmptyOutputListDisablesTheChainHead pins the short circuit an explicitly
-// empty output list gets: the head reports the chain disabled, so a record is
-// neither built nor judged.
-//
-// Whether there is anywhere to write is settled when the chain is assembled, so
-// the head does not ask the fan-out at run time — that would add a call per
-// record to every ordinary configuration to serve a configuration that writes
-// nothing.
-//
-// Seeing no output does not distinguish a short circuit from a chain that
-// simply has no destination, which is why the second assertion reaches the
-// redaction layer: without a short circuit the record is built, judged against
-// every registered matcher, and only then handed to nobody.
+// TestEmptyOutputListDisablesTheChainHead pins the short circuit an explicitly empty output list
+// gets: the head reports the chain disabled, so a record is neither built nor judged.
 func TestEmptyOutputListDisablesTheChainHead(t *testing.T) {
 	isolateRules(t)
 	var calls atomic.Int64
@@ -341,14 +296,8 @@ func TestEmptyOutputListDisablesTheChainHead(t *testing.T) {
 	}
 }
 
-// TestEmptyOutputListKeepsDerivedLoggersDisabled pins that the short circuit
-// survives derivation, which is the only way the product takes a logger:
-// Named binds the module name, and slog.Logger.With calls WithAttrs without
-// consulting Enabled at all.
-//
-// It registers no matcher and builds its own chain: WithAttrs judges the
-// attributes it binds as it binds them, so a counting matcher here would be
-// called by the derivation itself and say nothing about the short circuit.
+// TestEmptyOutputListKeepsDerivedLoggersDisabled checks that loggers derived with With or WithGroup
+// from an output-less chain report every level disabled.
 func TestEmptyOutputListKeepsDerivedLoggersDisabled(t *testing.T) {
 	assembled, err := newChain(resolvedConfig{level: slog.LevelDebug})
 	if err != nil {

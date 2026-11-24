@@ -9,51 +9,26 @@ import (
 	"sync/atomic"
 )
 
-// MaskedText is what a rule leaves behind: it replaces the value of an
-// attribute whose key path carries a registered name, and the spans a
-// value-shape rule reports inside a string.
-//
-// It is part of this module's observable surface, and that is why it is
-// exported: a destination carries this text where a value was masked, and a
-// dependant asserting that a credential was masked compares against it, so it
-// is a contract whether this module states one or not. A dependant taking the
-// replacement from this constant rather than restating the literal is what
-// lets a change to it reach every reader instead of breaking them.
+// MaskedText is what a rule leaves behind: it replaces the value of an attribute whose key path
+// carries a registered name, and the spans a value-shape rule reports inside a string.
 const MaskedText = "[REDACTED]"
 
-// rootMu is the root package's mutex over the process-level state this package
-// holds. It covers the construction of a new redaction snapshot and the pointer
-// swap that publishes it; a judgement does not take it, because a judgement
-// only reads the snapshot pointer.
 var rootMu sync.Mutex
 
-// pattern is one registered value-shape rule. The name has no bearing on the
-// judgement: registrations only accumulate, so two rules sharing a name simply
-// both run.
 type pattern struct {
 	name  string
 	match Matcher
 }
 
-// ruleSet is an immutable snapshot of the registered rules. Nothing reachable
-// from a published snapshot is ever written again, so a judgement that has read
-// the pointer can go on reading the snapshot without synchronisation.
 type ruleSet struct {
 	keys     map[string]struct{}
 	patterns []pattern
 }
 
-// rules points at the current snapshot. It is read once per judgement — once
-// per record, and once per attribute binding — so a record is judged against
-// one snapshot throughout, never against a half-updated rule set.
 var rules atomic.Pointer[ruleSet]
 
-// emptyRuleSet is what a judgement reads before the first registration. The
-// rule set starts empty: this package holds the mechanism and none of the
-// rules, so a process where nobody registers masks nothing.
 var emptyRuleSet = &ruleSet{}
 
-// currentRules reads the snapshot a single judgement works against.
 func currentRules() *ruleSet {
 	if rs := rules.Load(); rs != nil {
 		return rs
@@ -61,9 +36,6 @@ func currentRules() *ruleSet {
 	return emptyRuleSet
 }
 
-// matchesKey reports whether one segment of a key path carries a registered
-// name. An empty segment never matches: the empty string is not registrable, so
-// an anonymous inline group does not turn every attribute under it into a hit.
 func (rs *ruleSet) matchesKey(key string) bool {
 	if key == "" || len(rs.keys) == 0 {
 		return false
@@ -72,9 +44,6 @@ func (rs *ruleSet) matchesKey(key string) bool {
 	return ok
 }
 
-// matchesAny reports whether any of the segments carries a registered name. It
-// is how the group names a handler opened with WithGroup enter the judgement:
-// those names live in the handler's state, not in the record.
 func (rs *ruleSet) matchesAny(segments []string) bool {
 	for _, s := range segments {
 		if rs.matchesKey(s) {
@@ -84,13 +53,6 @@ func (rs *ruleSet) matchesAny(segments []string) bool {
 	return false
 }
 
-// maskString applies the value-shape rules to a string and reports whether
-// anything was masked. Every matcher judges the original string, so the spans
-// one matcher reports are not shifted by the masking another one asked for.
-//
-// A span outside the string, or one that ends where it starts, is dropped: the
-// matchers come from other modules, and a judgement runs on the logging path of
-// the whole process, which is no place to panic over a bad offset.
 func (rs *ruleSet) maskString(s string) (string, bool) {
 	if len(rs.patterns) == 0 || s == "" {
 		return s, false
@@ -130,25 +92,10 @@ func (rs *ruleSet) maskString(s string) (string, bool) {
 	return b.String(), true
 }
 
-// redactionRegistry is the registration interface this module's product hands
-// out. It carries no state of its own: the rules live in the process-level
-// snapshot, which the bootstrap chain and every formal chain read, because a
-// sensitive key name is a fact about the process rather than about one chain.
 type redactionRegistry struct{}
 
-// processRedaction is the single registration interface. Registrations are
-// append-only, so it needs no lifecycle of its own.
 var processRedaction Redaction = redactionRegistry{}
 
-// AddKeys registers sensitive key names. An empty name panics: it is a
-// programming error at the call site, unrelated to data, and it shows up
-// deterministically on first execution. Dropping it instead would leave the
-// registrant — which gets nothing back — believing it holds a protection it
-// does not have, and that difference only becomes visible once something has
-// leaked.
-//
-// The whole call is checked before anything is registered, so a call carrying
-// an unusable name registers none of its names rather than half of them.
 func (redactionRegistry) AddKeys(keys ...string) {
 	for i, key := range keys {
 		if key == "" {
@@ -182,10 +129,6 @@ func (redactionRegistry) AddKeys(keys ...string) {
 	rules.Store(next)
 }
 
-// AddPattern registers a value-shape rule. A nil matcher panics here, for the
-// reason an empty key name does: it is a programming error at the call site,
-// and stored it would crash instead on the first record that reached it, on
-// the logging path of the whole process.
 func (redactionRegistry) AddPattern(name string, match Matcher) {
 	if match == nil {
 		panic(fmt.Sprintf("log: AddPattern(%q): the matcher is nil. A rule needs the "+
