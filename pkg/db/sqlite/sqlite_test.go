@@ -18,22 +18,11 @@ import (
 	"github.com/vislake/speed/pkg/db/sqlite"
 )
 
-// twoStatements is the shape of a migration that builds a table and the index
-// over it in one file. Splitting it into two files would be the same change
-// scattered over two migrations.
 const twoStatements = `CREATE TABLE widgets (id INTEGER NOT NULL, PRIMARY KEY (id));
 CREATE INDEX widgets_by_id ON widgets (id)`
 
-// TestSQLiteRollsBackDDL holds this engine to the first admission condition the
-// design sets for an implementation subpackage, through the dialector this
-// subpackage exports.
-//
-// A migration's execution and its record are written in one transaction, so
-// that "executed but not recorded" cannot happen. That rests entirely on the
-// engine rolling DDL back with the rest of the transaction. On an engine where
-// it does not, the CREATE TABLE survives while the record rolls away, the next
-// startup runs it again, and it fails on an object that already exists — one
-// startup after the one that caused it.
+// TestSQLiteRollsBackDDL holds this engine to the first admission condition of an
+// implementation subpackage, through the dialector this subpackage exports.
 func TestSQLiteRollsBackDDL(t *testing.T) {
 	handle := open(t, filepath.Join(t.TempDir(), "rolled-back.db"))
 
@@ -43,9 +32,6 @@ func TestSQLiteRollsBackDDL(t *testing.T) {
 			return err
 		}
 		if !tx.Migrator().HasTable("rolled_back") {
-			// Without this the case would pass on an engine that
-			// refused the statement outright, which is a different
-			// thing from rolling it back.
 			t.Error("the table is not there inside the transaction that created it")
 		}
 		return rollback
@@ -59,14 +45,8 @@ func TestSQLiteRollsBackDDL(t *testing.T) {
 	}
 }
 
-// TestSQLiteRunsAMigrationFileWithSeveralStatements holds this engine to the
-// second admission condition, through the dialector this subpackage exports.
-//
-// The file goes to the driver whole: pkg/db does not split it, because splitting
-// would mean parsing SQL — string literals, the semicolons inside a function
-// body — which is not this module's work. A driver with no path for a text of
-// several statements therefore fails here first, and a migration set holding
-// such a file would stop working on a change of engine.
+// TestSQLiteRunsAMigrationFileWithSeveralStatements holds this engine to the second admission
+// condition, through the dialector this subpackage exports.
 func TestSQLiteRunsAMigrationFileWithSeveralStatements(t *testing.T) {
 	handle := open(t, filepath.Join(t.TempDir(), "several-statements.db"))
 
@@ -82,14 +62,8 @@ func TestSQLiteRunsAMigrationFileWithSeveralStatements(t *testing.T) {
 	}
 }
 
-// TestSQLiteDeclaresNoMigrationLockTimeout pins that this implementation offers
-// no cross-process mutex.
-//
-// The Spec is not exported, and the timeout item is exactly what supplying a
-// mutex adds to the declaration (see db's schema), so the two observable forms
-// are the item's absence and what a host that sets it is told: the key is not
-// one this implementation accepts. Accepting it and doing nothing would leave
-// the host believing it bounded a wait that does not exist.
+// TestSQLiteDeclaresNoMigrationLockTimeout pins that this implementation offers no cross-process
+// mutex.
 func TestSQLiteDeclaresNoMigrationLockTimeout(t *testing.T) {
 	schema := firstSchema(t)
 	if _, declared := schema.Items[db.MigrationLockTimeoutKey]; declared {
@@ -105,16 +79,8 @@ func TestSQLiteDeclaresNoMigrationLockTimeout(t *testing.T) {
 	}
 }
 
-// TestSQLiteModuleShape pins what this subpackage registers: the name, the
-// namespace its input items hang under, the capability it delivers exclusively,
-// the capability it takes up optionally, and the stages it is driven through.
-//
-// The four stage callbacks come from pkg/db's module factory rather than from
-// this subpackage, and a descriptor written out by hand here would leave a host
-// with a module that is registered, delivers nothing, and applies nothing —
-// visible only as tables that never appear. The registration itself is the other
-// half: init is what makes importing the package enough, and a host that imports
-// two implementations relies on both being there before it configures one.
+// TestSQLiteModuleShape pins what this subpackage registers: the name, the namespace its input
+// items hang under, the capability it delivers exclusively, the capability it takes up optionally.
 func TestSQLiteModuleShape(t *testing.T) {
 	module := sqlite.Module()
 
@@ -182,10 +148,8 @@ func TestSQLiteModuleShape(t *testing.T) {
 	dbsuite.RequireOptionalLogging(t, "the module this subpackage registers", registered)
 }
 
-// TestSQLiteDoesNotImportThePostgresDriver is the manual gate on the boundary
-// between the two implementations. Nothing in the compiler enforces it: both
-// subpackages live in one Go module, so an import of the other engine's driver
-// builds cleanly and lands that driver in every host that deploys on this one.
+// TestSQLiteDoesNotImportThePostgresDriver is the manual gate on the boundary between the two
+// implementations.
 func TestSQLiteDoesNotImportThePostgresDriver(t *testing.T) {
 	out, err := exec.Command("go", "list", "-deps", ".").CombinedOutput()
 	if err != nil {
@@ -208,15 +172,11 @@ func TestSQLiteDoesNotImportThePostgresDriver(t *testing.T) {
 		}
 	}
 	if !sawOwnDriver {
-		// Without this the case would pass on an empty listing, which is
-		// what a mistyped argument or a failed load produces.
 		t.Errorf("the dependency listing does not contain this engine's own driver, so it did not load "+
 			"the package and the assertions above checked nothing (%d lines)", len(deps))
 	}
 }
 
-// firstSchema takes the input item declaration out of the module's resources,
-// which is where the module factory puts it.
 func firstSchema(t *testing.T) config.Schema {
 	t.Helper()
 	module := sqlite.Module()
@@ -231,13 +191,6 @@ func firstSchema(t *testing.T) config.Schema {
 	return schema
 }
 
-// open opens a handle on a database this package's cases own, using the
-// dialector this subpackage exports, and closes it when the test ends.
-//
-// The GORM logger is discarded: the rollback case ends a transaction with an
-// error on purpose, and the default logger prints that as an error line which
-// reads like a test failure. Nothing is lost, because the error itself travels
-// back through the call and the cases assert on it.
 func open(t *testing.T, dsn string) *gorm.DB {
 	t.Helper()
 	handle, err := gorm.Open(sqlite.Dialector(dsn), &gorm.Config{Logger: logger.Discard})

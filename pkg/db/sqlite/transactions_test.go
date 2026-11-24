@@ -12,11 +12,8 @@ import (
 	"testing"
 )
 
-// TestBeginStatementReadsTheLocatorTheWayTheDriverDocumentsIt pins the mode a
-// transaction on each locator begins in: IMMEDIATE unless the locator's
-// _txlock names another — the first one, in any letter case, whatever else the
-// locator carries — or the locator opens its database read-only; and DEFERRED
-// for a transaction begun read-only.
+// TestBeginStatementReadsTheLocatorTheWayTheDriverDocumentsIt pins the mode a transaction on each
+// locator begins in: IMMEDIATE unless the locator's _txlock names another — the first one.
 func TestBeginStatementReadsTheLocatorTheWayTheDriverDocumentsIt(t *testing.T) {
 	cases := []struct {
 		dsn       string
@@ -41,9 +38,7 @@ func TestBeginStatementReadsTheLocatorTheWayTheDriverDocumentsIt(t *testing.T) {
 		{"file:/var/lib/app/app.db?mode=rw&mode=ro", false, "BEGIN DEFERRED"},
 		{"file:/var/lib/app/app.db#?mode=ro", false, "BEGIN IMMEDIATE"},
 		{"file:/var/lib/app/app.db?mode=ro&_txlock=immediate", false, "BEGIN IMMEDIATE"},
-		// Outside a file: URI the parameters are the driver's, and mode is none.
 		{"/var/lib/app/app.db?mode=ro", false, "BEGIN IMMEDIATE"},
-		// A transaction begun read-only is deferred, as the driver begins one.
 		{"/var/lib/app/app.db", true, "BEGIN DEFERRED"},
 		{"/var/lib/app/app.db?_txlock=exclusive", true, "BEGIN DEFERRED"},
 	}
@@ -60,19 +55,16 @@ func TestBeginStatementReadsTheLocatorTheWayTheDriverDocumentsIt(t *testing.T) {
 	}
 }
 
-// The locks a transaction on the first connection holds, as a second connection
-// on the same file observes them.
+// The locks a transaction on the first connection holds, as a second connection on the
+// same file observes them.
 const (
 	holdsNothing   = "nothing"
 	holdsWriteLock = "the write lock"
 	holdsExclusive = "the database"
 )
 
-// TestATransactionBeginsInTheModeItsLocatorGives holds a transaction begun
-// through this engine's driver to the lock it holds from its first statement
-// on, observed from a second connection on the file that does not wait: a
-// deferred transaction holds nothing yet, an immediate one the write lock and
-// an exclusive one the whole database, which a reader cannot read either.
+// TestATransactionBeginsInTheModeItsLocatorGives holds a transaction begun through this engine's
+// driver to the lock it holds from its first statement on.
 func TestATransactionBeginsInTheModeItsLocatorGives(t *testing.T) {
 	dir := t.TempDir()
 	cases := []struct {
@@ -104,9 +96,6 @@ func TestATransactionBeginsInTheModeItsLocatorGives(t *testing.T) {
 	}
 }
 
-// observeBegin creates the database file, begins a transaction on a pool of
-// this engine's driver over dsn, and reports what a second connection on the
-// file is then refused.
 func observeBegin(t *testing.T, file, dsn string, options *sql.TxOptions) string {
 	t.Helper()
 	ctx := context.Background()
@@ -146,11 +135,8 @@ func observeBegin(t *testing.T, file, dsn string, options *sql.TxOptions) string
 	return holdsNothing
 }
 
-// TestABeginRefusedTheWriteLockIsReported holds the DEFERRED begin to the
-// connections whose query_only is on: on any other connection a BEGIN SQLite
-// refuses — here for the write lock another connection holds, with no busy
-// timeout to wait it out — is the error the caller gets, and no transaction
-// is begun in its place.
+// TestABeginRefusedTheWriteLockIsReported holds the DEFERRED begin to the connections whose
+// query_only is on.
 func TestABeginRefusedTheWriteLockIsReported(t *testing.T) {
 	ctx := context.Background()
 	file := filepath.Join(t.TempDir(), "held.db")
@@ -183,9 +169,6 @@ func TestABeginRefusedTheWriteLockIsReported(t *testing.T) {
 	}
 }
 
-// stubConn is a driver connection as the SQLite driver's own behaves on a
-// connection whose query_only is on: it refuses BEGIN IMMEDIATE with refused
-// and runs every other statement, recording each one in the order it was run.
 type stubConn struct {
 	statements []string
 	refused    error
@@ -203,9 +186,6 @@ func (c *stubConn) ExecContext(_ context.Context, statement string, _ []driver.N
 	return driver.RowsAffected(0), nil
 }
 
-// answeringConn is a stubConn that answers a query, the way a connection
-// answers PRAGMA query_only: with the one row it holds, with none, or with an
-// error.
 type answeringConn struct {
 	*stubConn
 	values []driver.Value
@@ -219,7 +199,6 @@ func (c answeringConn) QueryContext(context.Context, string, []driver.NamedValue
 	return &stubRows{values: c.values}, nil
 }
 
-// stubRows is a result set of the one row a case gives it, or of no row.
 type stubRows struct {
 	values []driver.Value
 	read   bool
@@ -237,22 +216,13 @@ func (r *stubRows) Next(dest []driver.Value) error {
 	return nil
 }
 
-// TestARefusedBeginIsRetriedOnlyWhenTheConnectionSaysQueryOnlyIsOn holds the
-// fallback for a BEGIN SQLite refused to the connection's answer about
-// query_only: a connection that answers that it is on begins the transaction
-// DEFERRED instead, and every other answer leaves the refusal as the error the
-// caller gets, with no second BEGIN run. The answers that are not "on" are the
-// connection that answers no query at all, the one whose read fails, the one
-// that reads no row, the one that answers something other than a number, and
-// the one that answers off.
+// TestARefusedBeginIsRetriedOnlyWhenTheConnectionSaysQueryOnlyIsOn holds the fallback for a BEGIN
+// SQLite refused to the connection's answer about query_only.
 func TestARefusedBeginIsRetriedOnlyWhenTheConnectionSaysQueryOnlyIsOn(t *testing.T) {
 	refused := errors.New("attempt to write a readonly database (8)")
 	locator, _ := readLocator("")
 	cases := []struct {
-		name string
-		// answer wraps the stub the case's connection runs on; a stubConn as
-		// it is answers no query, so the connection implements no
-		// driver.QueryerContext.
+		name           string
 		answer         func(*stubConn) driver.Conn
 		wantStatements []string
 		wantRefused    bool
@@ -320,9 +290,8 @@ func TestARefusedBeginIsRetriedOnlyWhenTheConnectionSaysQueryOnlyIsOn(t *testing
 	}
 }
 
-// TestALocatorWithATxlockTheDriverDoesNotKnowIsNotOpened covers the one
-// reading of _txlock that is refused: a value the driver does not know, which
-// the driver itself lets through beside _time_format.
+// TestALocatorWithATxlockTheDriverDoesNotKnowIsNotOpened covers the one reading of _txlock that is
+// refused: a value the driver does not know.
 func TestALocatorWithATxlockTheDriverDoesNotKnowIsNotOpened(t *testing.T) {
 	dir := t.TempDir()
 	for _, parameters := range []string{"?_txlock=eventually", "?_time_format=sqlite&_txlock=eventually"} {

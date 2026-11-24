@@ -15,9 +15,8 @@ import (
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
-// TestOpenIsBoundByItsContext pins the same bound on a connection a caller
-// builds at run time: the context handed to Open is where a request puts its
-// deadline, and the connection attempt is held to it.
+// TestOpenIsBoundByItsContext pins the same bound on a connection a caller builds at run time: the
+// context handed to Open is where a request puts its deadline.
 func TestOpenIsBoundByItsContext(t *testing.T) {
 	capability, err := runAssembly(t, pgtest.Acquire(t))
 	if err != nil {
@@ -50,9 +49,8 @@ func TestOpenIsBoundByItsContext(t *testing.T) {
 	}
 }
 
-// TestAConnectFailureDoesNotEchoThePassword pins the part of a locator the
-// failure text must never carry, on this engine's own driver: a refused login
-// reports the dialect, the step and the driver's reason, and not the password.
+// TestAConnectFailureDoesNotEchoThePassword pins the part of a locator the failure text must never
+// carry, on this engine's own driver: a refused login reports the dialect.
 func TestAConnectFailureDoesNotEchoThePassword(t *testing.T) {
 	parsed, err := url.Parse(pgtest.Acquire(t))
 	if err != nil {

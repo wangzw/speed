@@ -21,10 +21,6 @@ import (
 	"github.com/vislake/speed/pkg/db/postgres"
 )
 
-// sharedItems are the input items every implementation declares, written out
-// here rather than read from the root package so that this case states what the
-// design gives a namespace instead of restating whatever the code happens to
-// build.
 var sharedItems = []string{
 	"dsn",
 	"max-open-conns",
@@ -35,18 +31,7 @@ var sharedItems = []string{
 }
 
 // TestPostgresModuleShape holds the descriptor this subpackage registers to the
-// shape the design gives an implementation module.
-//
-// Three of the assertions are the ones a host's behaviour turns on, and none of
-// them is visible from any other subpackage case. The exclusivity is what makes
-// a host that configured two engines fail its startup rather than run one of
-// them silently; the namespace is where this implementation's items are
-// mounted, and a shared one conflicts with the neighbour's declaration before
-// exclusivity is ever resolved; and the migration-lock-timeout item is declared
-// if and only if the mutex was handed over, so its absence is how a forgotten
-// mutex would read. The optional requirement of the log capability is what has
-// the logging module constructed ahead of the database in an assembly that took
-// it in.
+// shape of an implementation module.
 func TestPostgresModuleShape(t *testing.T) {
 	module := postgres.Module()
 
@@ -123,19 +108,6 @@ func TestPostgresModuleShape(t *testing.T) {
 }
 
 // TestTheProcessRegistrationCarriesTheModule pins the init registration.
-//
-// A host's available set is decided by what it imports, and importing this
-// package is the whole gesture: the module reaches the registry the host runs
-// on, not a registry built by hand in a case. Without the registration a host
-// would get no database at all, and nothing else in this package would notice.
-//
-// What is compared is the registered descriptor against the one Module builds,
-// field by content. The name is deliberately not asserted: a lookup by a name
-// returns the descriptor filed under it, so its name equals that key by
-// construction and an assertion about it would hold for any registration,
-// including one that registered something else entirely. The optional
-// requirement of the log capability is held to its shape on the registered
-// descriptor itself, since that is the one a host's database is ordered by.
 func TestTheProcessRegistrationCarriesTheModule(t *testing.T) {
 	registered, ok := core.ProcessRegistry.Lookup(postgres.ModuleName)
 	if !ok {
@@ -156,8 +128,6 @@ func TestTheProcessRegistrationCarriesTheModule(t *testing.T) {
 	}
 }
 
-// schemaOf takes the input item declaration out of a descriptor, and reports
-// the shapes that would leave a case looking at nothing.
 func schemaOf(t *testing.T, module core.Module) config.Schema {
 	t.Helper()
 	if len(module.Resources) != 1 {
@@ -172,19 +142,10 @@ func schemaOf(t *testing.T, module core.Module) config.Schema {
 	return schema
 }
 
-// dependantName is the module that declares the migration set below. Its name
-// reaches the record table, so a row recorded under it is this run's work.
 const dependantName = "postgres_test.dependant"
 
-// dependantFile is the migration that module declares.
 const dependantFile = "0001_widgets.sql"
 
-// widgetsMigrations is the declaration the dependant hands over. The
-// subdirectory is written out rather than taken from postgres.Dialect: a
-// fixture that read the constant would agree with whatever it happened to be,
-// and an engine whose dialect sent the run looking elsewhere would still find
-// these files. The file holds two statements, the shape a migration carrying a
-// table and its index has.
 func widgetsMigrations() fstest.MapFS {
 	return fstest.MapFS{
 		"postgres/" + dependantFile: &fstest.MapFile{Data: []byte(
@@ -193,15 +154,11 @@ func widgetsMigrations() fstest.MapFS {
 	}
 }
 
-// dependant is the module runAssembly registers beside the implementation: it
-// requires the capability, declares one migration set for this engine, and
-// reports what it resolved and when the run has been through Migrate.
 type dependant struct {
 	delivered chan db.Database
 	migrated  chan struct{}
 }
 
-// module is the dependant's descriptor.
 func (d *dependant) module() core.Module {
 	return core.Module{
 		Name:      dependantName,
@@ -216,25 +173,12 @@ func (d *dependant) module() core.Module {
 			return struct{}{}, nil
 		},
 		Init: func(context.Context, *core.Registry, any) error {
-			// Migrate is behind this stage, and no migration is applied
-			// after it.
 			close(d.migrated)
 			return nil
 		},
 	}
 }
 
-// runAssemblySupplying runs a real host around the module this subpackage
-// registers over the section the case writes, driven under a context the case
-// hands in, and gives the case a say in what the registry holds when the command
-// tree is started: before is called on it with every module registered, which is
-// where a case supplies an instance for the module.
-//
-// Everything about it is real: the configuration loader over a JSON primary
-// source, the registry, and the lifecycle driver. The point is what a host that
-// imports this package gets, and that is only observable through the whole of
-// it — a call to a callback in isolation would not show whether the stages were
-// wired to one another.
 func runAssemblySupplying(t *testing.T, parent context.Context, section map[string]any,
 	before func(*core.Registry),
 ) (db.Database, error) {
@@ -271,8 +215,6 @@ func runAssemblySupplying(t *testing.T, parent context.Context, section map[stri
 	previous := os.Args
 	os.Args = []string{"postgres.test"}
 
-	// One command taking every registered module in and driving the whole
-	// lifecycle, which is the tree a host with a single command writes.
 	app := config.NewApp(reg)
 	app.Root().IncludeAll()
 	app.Root().Do(core.StageServe, nil)
@@ -290,9 +232,6 @@ func runAssemblySupplying(t *testing.T, parent context.Context, section map[stri
 	case instance = <-d.delivered:
 		os.Args = previous
 	}
-	// The capability is in hand, but Migrate is still ahead of the run, and
-	// returning here would let the case read the database under a migration
-	// that is still in flight.
 	select {
 	case err := <-done:
 		cancel()
@@ -308,9 +247,6 @@ func runAssemblySupplying(t *testing.T, parent context.Context, section map[stri
 	return instance, nil
 }
 
-// hostDatabase is an implementation of db.Database that the host wrote. It
-// carries no handle: the case it serves is about what the module does with an
-// instance it did not build, which needs no database behind it.
 type hostDatabase struct{}
 
 func (hostDatabase) DB() *gorm.DB                       { return nil }
@@ -323,14 +259,8 @@ func (hostDatabase) Open(context.Context, string) (*gorm.DB, error) {
 
 var _ db.Database = hostDatabase{}
 
-// TestAForeignInstanceSuppliedForThisModuleFailsTheStartup holds this engine's
-// module to the refusal the root package gives every implementation: an
-// implementation of db.Database the host wrote, supplied under the name this
-// package exports, fails the startup with db.ErrForeignInstance.
-//
-// The configuration names no locator, so no database is involved and the case
-// needs no server: a Prepare or a New that ran for the module would have failed
-// on the missing key before the refusal was reached.
+// TestAForeignInstanceSuppliedForThisModuleFailsTheStartup checks that an instance of db.Database
+// the host wrote fails the startup.
 func TestAForeignInstanceSuppliedForThisModuleFailsTheStartup(t *testing.T) {
 	_, err := runAssemblySupplying(t, context.Background(), map[string]any{}, func(reg *core.Registry) {
 		reg.Supply(hostDatabase{}, postgres.ModuleName)

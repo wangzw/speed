@@ -10,19 +10,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// These cases hold the sealing and the read guard to the column a name reaches
-// in the database rather than to the name as GORM resolves it. GORM writes a
-// name it cannot resolve as it stands, and the database then decides which
-// column it is: SQLite matches identifiers without regard to the case of ASCII
-// letters, and takes a name that arrives already quoted as its quoted content.
-// A key GORM leaves unresolved can therefore still reach a sealed column, and a
-// write that sealed only what GORM resolved would store that value in clear.
-// The cases in pkg/db/postgres hold the same judgement to PostgreSQL's
-// resolution, which differs.
-
-// TestAKeyTheDatabaseResolvesToTheSealedColumnIsSealed covers every write path
-// whose column is named by the caller, with a name GORM does not resolve and
-// the database does: the email column under another letter case, or quoted.
+// TestAKeyTheDatabaseResolvesToTheSealedColumnIsSealed covers every write path whose column is
+// named by the caller, with a name GORM does not resolve and the database does.
 func TestAKeyTheDatabaseResolvesToTheSealedColumnIsSealed(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -79,8 +68,8 @@ func TestAKeyTheDatabaseResolvesToTheSealedColumnIsSealed(t *testing.T) {
 	}
 }
 
-// TestAnInsertKeyTheDatabaseResolvesToTheSealedColumnIsSealed covers Create
-// over a map whose key reaches the sealed column in another letter case.
+// TestAnInsertKeyTheDatabaseResolvesToTheSealedColumnIsSealed covers Create over a map whose key
+// reaches the sealed column in another letter case.
 func TestAnInsertKeyTheDatabaseResolvesToTheSealedColumnIsSealed(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)
@@ -96,11 +85,8 @@ func TestAnInsertKeyTheDatabaseResolvesToTheSealedColumnIsSealed(t *testing.T) {
 	}
 }
 
-// TestARawColumnThisModuleCannotReadIsRefused covers the assignment whose
-// column is raw text that is not an identifier. Which column it reaches is the
-// database's to decide and nothing this module reads, so on a model with sealed
-// fields the write is refused, and the column keeps what it held; a raw column
-// that is a plain identifier still goes through.
+// TestARawColumnThisModuleCannotReadIsRefused covers the assignment whose column is raw text that
+// is not an identifier.
 func TestARawColumnThisModuleCannotReadIsRefused(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)
@@ -134,17 +120,12 @@ type titledModel struct {
 	Email string `gorm:"serializer:encrypted"`
 }
 
-// titlePatch writes its Title field into the column EMAIL. GORM finds the field
-// by the model's column name Title and writes the field's own column, and
-// SQLite resolves EMAIL to the model's sealed email column.
 type titlePatch struct {
 	Title string `gorm:"column:EMAIL"`
 }
 
-// TestAnUpdateFromAnotherStructIsJudgedByTheColumnItWrites covers the struct
-// update whose field reaches the sealed column under a name that differs from
-// it only in letter case: the value would be stored in clear, and the update is
-// refused as the exact name is.
+// TestAnUpdateFromAnotherStructIsJudgedByTheColumnItWrites covers the struct update whose field
+// reaches the sealed column under a name that differs from it only in letter case.
 func TestAnUpdateFromAnotherStructIsJudgedByTheColumnItWrites(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	if err := product.DB().AutoMigrate(&titledModel{}); err != nil {
@@ -169,22 +150,14 @@ func TestAnUpdateFromAnotherStructIsJudgedByTheColumnItWrites(t *testing.T) {
 	}
 }
 
-// spelledFirstModel declares, before its sealed email, a field without the
-// serializer on the column EMAIL, which SQLite reads as email. GORM writes the
-// two fields as two columns of one statement; SQLite keeps the first value an
-// insert gives a column, so this model's insert stores the unsealed field.
 type spelledFirstModel struct {
 	ID     uint
 	Shadow string `gorm:"column:EMAIL"`
 	Email  string `gorm:"serializer:encrypted"`
 }
 
-// TableName is the one table the spelled models write into.
 func (spelledFirstModel) TableName() string { return "spelled_models" }
 
-// spelledLastModel declares the same two fields the other way round. SQLite
-// keeps the last value an update assigns a column, so this model's full update
-// stores the unsealed field.
 type spelledLastModel struct {
 	ID     uint
 	Email  string `gorm:"serializer:encrypted"`
@@ -218,14 +191,8 @@ func storedEmail(t *testing.T, product *database, id uint) string {
 	return stored[0].String
 }
 
-// TestAWriteOfTheModelSpellingASealedColumnAnotherWayIsRefused covers a model
-// that declares, beside a sealed field, a field without the serializer whose
-// column the database reads as the sealed one. A write through the model's own
-// struct writes that column twice, once sealed and once in clear, and which of
-// the two the database keeps depends on the statement and on the order the
-// fields are declared in. Each write through the struct that writes the
-// unsealed field is refused, naming both fields, and the column keeps what it
-// held.
+// TestAWriteOfTheModelSpellingASealedColumnAnotherWayIsRefused covers a model that declares, beside
+// a sealed field.
 func TestAWriteOfTheModelSpellingASealedColumnAnotherWayIsRefused(t *testing.T) {
 	const clear = "clear@example.com"
 	cases := []struct {
@@ -288,11 +255,8 @@ func TestAWriteOfTheModelSpellingASealedColumnAnotherWayIsRefused(t *testing.T) 
 	}
 }
 
-// TestAWriteOfTheModelThatLeavesTheOtherSpellingOutGoesThrough keeps that
-// refusal to the writes it is about: one whose selection leaves the unsealed
-// field out, an update from the struct that leaves it empty, and a write by
-// key, which gives the column one value and is sealed like any key the
-// database reads as the sealed column.
+// TestAWriteOfTheModelThatLeavesTheOtherSpellingOutGoesThrough keeps that refusal to the writes it
+// is about: one whose selection leaves the unsealed field out.
 func TestAWriteOfTheModelThatLeavesTheOtherSpellingOutGoesThrough(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createSpelledTable(t, product)
@@ -321,19 +285,14 @@ func TestAWriteOfTheModelThatLeavesTheOtherSpellingOutGoesThrough(t *testing.T) 
 	}
 }
 
-// accentedModel declares a sealed column and an unsealed one whose names differ
-// only in the case of a letter outside ASCII. SQLite folds the case of ASCII
-// letters alone, so the two are two columns of the table.
 type accentedModel struct {
 	ID     uint
 	Shadow string `gorm:"column:ÉMAIL"`
 	Email  string `gorm:"column:émail;serializer:encrypted"`
 }
 
-// TestNamesThatDifferOutsideASCIIAreTwoColumnsOnSQLite holds the judgement to
-// SQLite's own rule: a write of the model writes each of the two columns once
-// and goes through, a value written by the unsealed field's name reaches its
-// column in clear, and a read of that column alone goes through.
+// TestNamesThatDifferOutsideASCIIAreTwoColumnsOnSQLite holds the judgement to SQLite's own rule: a
+// write of the model writes each of the two columns once and goes through.
 func TestNamesThatDifferOutsideASCIIAreTwoColumnsOnSQLite(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	h := product.DB()
@@ -365,30 +324,24 @@ func TestNamesThatDifferOutsideASCIIAreTwoColumnsOnSQLite(t *testing.T) {
 	}
 }
 
-// titleView is a struct whose text field takes whatever a query names title.
 type titleView struct {
 	ID    uint
 	Title string
 }
 
-// lowerView takes the result column PostgreSQL names after an unaliased call.
 type lowerView struct {
 	ID    uint
 	Lower string
 }
 
-// lengthView takes a number computed from the sealed column.
 type lengthView struct {
 	ID          uint
 	EmailLength int
 	Missing     bool
 }
 
-// TestAReadUnderAnotherNameIsRefused covers the reads that rename the sealed
-// column, or compute from it, into a text field without the serializer — the
-// model's own unmarked field among them. GORM scans a result column into the
-// field its name resolves to, so each of these would hand back the ciphertext
-// as that field's value.
+// TestAReadUnderAnotherNameIsRefused covers the reads that rename the sealed column, or compute
+// from it, into a text field without the serializer — the model's own unmarked field among them.
 func TestAReadUnderAnotherNameIsRefused(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)
@@ -450,10 +403,8 @@ func TestAReadUnderAnotherNameIsRefused(t *testing.T) {
 	}
 }
 
-// TestAReadUnderAnotherNameThatCannotCarryTheTextGoesThrough keeps that
-// refusal to the fields it is about: a number or a truth value computed from
-// the sealed column is not its text, the model reads the column under its own
-// name, and a sealed column renamed onto another sealed field is opened by it.
+// TestAReadUnderAnotherNameThatCannotCarryTheTextGoesThrough keeps that refusal to the fields it is
+// about: a number or a truth value computed from the sealed column is not its text.
 func TestAReadUnderAnotherNameThatCannotCarryTheTextGoesThrough(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)

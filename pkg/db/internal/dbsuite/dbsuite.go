@@ -1,22 +1,12 @@
 // Package dbsuite hands the migration tests one database per dialect, so the
-// same cases run against every engine an implementation subpackage supports,
-// and carries the cases each engine's own tests run on the handle its module
-// delivers: the constraint refusals (see ConstraintRefusals), the COMMIT the
-// database refuses (see RefusedCommit and RefusedCommitBy), concurrent
-// transactions that read before they write (see ReadThenWriteCommits), and what
-// db.Connection does with a connection (see ConnectionWait and the cases beside
-// it), what the module's logger writes and where (see
-// BoundValuesReachNoOutput), and the shape of a descriptor's logging requirement
-// (see RequireOptionalLogging).
+// same cases run against every engine an implementation subpackage supports, and
+// carries the cases each engine's own tests run on the handle its module
+// delivers.
 //
-// It does not import pkg/db. The migration engine's entry point is unexported,
-// so the cases that drive it live in pkg/db's own test package, and a package
-// those tests import cannot import pkg/db back. That is why a fixture names its
-// dialect with a plain string rather than with db.Dialect; the value is the
-// same one, and it is also the migration subdirectory name.
-//
-// A dialect that needs more than a file on disk contributes its fixture from
-// its own file here through Contribute, rather than by editing this one.
+// It does not import pkg/db: the migration engine's entry point is unexported,
+// so the cases driving it live in pkg/db's own test package, and a package those
+// tests import cannot import pkg/db back. A fixture names its dialect with a
+// plain string for the same reason.
 package dbsuite
 
 import (
@@ -30,16 +20,14 @@ import (
 
 // Fixture is one dialect's test environment.
 type Fixture struct {
-	// Dialect is the dialect's value, which is also the name of the
-	// subdirectory a migration set keeps that engine's files in.
+	// Dialect is the dialect's value, also the name of the subdirectory a
+	// migration set keeps that engine's files in.
 	Dialect string
-	// Open hands back a handle on a database with nothing in it. Every call
-	// gets its own database: the cases assert on which tables exist and on
-	// what the record table holds, and neither survives sharing.
+	// Open hands back a handle on a database with nothing in it; every call
+	// gets its own.
 	Open func(t *testing.T) *gorm.DB
 }
 
-// contributed holds the fixtures other files in this package add.
 var contributed []func(t *testing.T) Fixture
 
 // Contribute registers a fixture, normally from an init function.
@@ -47,9 +35,8 @@ func Contribute(fixture func(t *testing.T) Fixture) {
 	contributed = append(contributed, fixture)
 }
 
-// Fixtures gives every dialect this build runs the suite on. SQLite needs a
-// temporary file and nothing else; PostgreSQL is contributed only by the
-// integration build, so a unit run neither lists it nor can reach it.
+// Fixtures gives every dialect this build runs the suite on. PostgreSQL is
+// contributed only by the integration build.
 func Fixtures(t *testing.T) []Fixture {
 	t.Helper()
 	out := []Fixture{{Dialect: "sqlite", Open: OpenSQLite}}
@@ -60,20 +47,10 @@ func Fixtures(t *testing.T) []Fixture {
 }
 
 // OpenSQLite opens a handle on an empty SQLite database in a temporary
-// directory, and closes it when the test ends.
-//
-// It is a file rather than an in-memory database because an in-memory one
-// belongs to a single connection, and the pool would hand different cases
-// different databases under the same handle.
-//
-// The pool is held to one connection. SQLite takes a write lock on the whole
-// file, so a second connection reaching a migration's transaction would report
-// a locked database instead of what the case is about.
-//
-// The GORM logger is discarded: several cases fail a migration on purpose, and
-// the default logger would print each one as an error line that reads like a
-// test failure. Nothing is lost, because the error itself travels back through
-// the call and the cases assert on it.
+// directory, with its pool held to one connection, and closes it when the test
+// ends. SQLite locks the whole file for a write, so a second connection would
+// report a locked database instead of what the case is about. The logger is
+// discarded because several cases fail a migration on purpose.
 func OpenSQLite(t *testing.T) *gorm.DB {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "migrations.db")

@@ -9,17 +9,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// These cases cover a model on which two fields carry one column name exactly,
-// the shape an embedded struct gives when it declares a field the model also
-// declares. GORM binds such a column to one of the two — the field on the
-// shorter path, or the first declared at equal length — and reads and writes
-// the column through that field alone. What is judged is what GORM writes: the
-// other field is not written, so it is not a second value for the column, and
-// when the field GORM binds lacks the serializer the column is written and read
-// in clear whatever the other field declares.
-
-// contactDetails is a struct a model embeds, with an unsealed field of its own
-// on the email column.
 type contactDetails struct {
 	Email string
 }
@@ -33,17 +22,12 @@ type embeddingModel struct {
 	Contact contactDetails `gorm:"embedded"`
 }
 
-// TableName is the one table the embedding models write into.
 func (embeddingModel) TableName() string { return "embedding_models" }
 
-// defaultedDetails is contactDetails with the column's default left to the
-// database. GORM writes such a field whenever a row gives it a value, whichever
-// field the column is bound to.
 type defaultedDetails struct {
 	Email string `gorm:"default:null"`
 }
 
-// defaultedEmbeddingModel embeds defaultedDetails beside its sealed email.
 type defaultedEmbeddingModel struct {
 	ID      uint
 	Email   string           `gorm:"serializer:encrypted"`
@@ -53,8 +37,6 @@ type defaultedEmbeddingModel struct {
 // TableName is the one table the embedding models write into.
 func (defaultedEmbeddingModel) TableName() string { return "embedding_models" }
 
-// createEmbeddingTable brings up the table the embedding models write into:
-// one email column, which is all their two fields name.
 func createEmbeddingTable(t *testing.T, product *database) {
 	t.Helper()
 	if err := product.DB().Exec("CREATE TABLE embedding_models (id INTEGER PRIMARY KEY, email TEXT, note TEXT, secret TEXT)").Error; err != nil {
@@ -80,17 +62,12 @@ func embeddedEmail(t *testing.T, product *database, id uint) string {
 	}
 }
 
-// TestAWriteOfTheModelIsNotJudgedByAFieldGORMDoesNotWrite covers the writes
-// through the model's own struct when an embedded field duplicates the sealed
-// column. GORM writes the column once, through the sealed field, so the write
-// goes through and the column holds the seal of the model's own Email, not the
-// embedded field's value.
+// TestAWriteOfTheModelIsNotJudgedByAFieldGORMDoesNotWrite covers the writes through the model's own
+// struct when an embedded field duplicates the sealed column.
 func TestAWriteOfTheModelIsNotJudgedByAFieldGORMDoesNotWrite(t *testing.T) {
 	const embedded = "embedded@example.com"
 	cases := []struct {
-		name string
-		// existing is whether the row the write reaches is there before it,
-		// put there with native SQL so that no write of the model is needed.
+		name     string
 		existing bool
 		write    func(h *gorm.DB) error
 	}{
@@ -155,11 +132,7 @@ func TestAWriteOfTheModelIsNotJudgedByAFieldGORMDoesNotWrite(t *testing.T) {
 	}
 }
 
-// TestAnEmbeddedFieldGORMWritesAsWellIsJudged keeps the refusal to the field
-// GORM writes: an embedded field whose default is the database's is written as
-// a second value for the column whenever the row gives it one, and that insert
-// is refused, naming both fields by their place in the model; the same insert
-// with the field left empty writes the column once and goes through.
+// TestAnEmbeddedFieldGORMWritesAsWellIsJudged keeps the refusal to the field GORM writes.
 func TestAnEmbeddedFieldGORMWritesAsWellIsJudged(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEmbeddingTable(t, product)
@@ -191,11 +164,8 @@ func TestAnEmbeddedFieldGORMWritesAsWellIsJudged(t *testing.T) {
 	}
 }
 
-// TestAnEmbeddedFieldTheSelectionLeavesOutIsNotJudged keeps that refusal to
-// what Select and Omit leave GORM writing: the embedded field whose default is
-// the database's is written when Select names its column or nothing leaves it
-// out, and not otherwise, whatever value the row gives it. An insert that
-// leaves the column out goes through and writes nothing into it.
+// TestAnEmbeddedFieldTheSelectionLeavesOutIsNotJudged keeps that refusal to what Select and Omit
+// leave GORM writing.
 func TestAnEmbeddedFieldTheSelectionLeavesOutIsNotJudged(t *testing.T) {
 	row := func() *defaultedEmbeddingModel {
 		return &defaultedEmbeddingModel{
@@ -241,7 +211,6 @@ func TestAnEmbeddedFieldTheSelectionLeavesOutIsNotJudged(t *testing.T) {
 	}
 }
 
-// sealedDetails is a struct a model embeds whose field seals the email column.
 type sealedDetails struct {
 	Email string `gorm:"serializer:encrypted"`
 }
@@ -262,13 +231,7 @@ type shadowingModel struct {
 // TableName is the one table the embedding models write into.
 func (shadowingModel) TableName() string { return "embedding_models" }
 
-// TestAStatementOverASealedColumnGORMBindsToAnUnsealedFieldIsRefused covers
-// that model. Every write that reaches the email column would store its value
-// in clear, or, sealed here, leave a seal the model then reads back as the
-// value through its unsealed field; every read of the column would hand back
-// whatever the column holds, a seal included. Each is refused, naming both
-// fields, and the column keeps what it held. A statement that stays off the
-// column goes through.
+// TestAStatementOverASealedColumnGORMBindsToAnUnsealedFieldIsRefused covers that model.
 func TestAStatementOverASealedColumnGORMBindsToAnUnsealedFieldIsRefused(t *testing.T) {
 	const clear = "clear@example.com"
 	var rows []shadowingModel
@@ -355,8 +318,8 @@ func TestAStatementOverASealedColumnGORMBindsToAnUnsealedFieldIsRefused(t *testi
 	}
 }
 
-// TestAStatementOverTheShadowingModelThatStaysOffTheColumnGoesThrough keeps
-// that refusal to the column it is about.
+// TestAStatementOverTheShadowingModelThatStaysOffTheColumnGoesThrough keeps that refusal to the
+// column it is about.
 func TestAStatementOverTheShadowingModelThatStaysOffTheColumnGoesThrough(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEmbeddingTable(t, product)

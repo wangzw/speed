@@ -6,40 +6,30 @@ import (
 	"gorm.io/gorm"
 )
 
-// refusedCommitSchema is the pair of tables the refused-commit cases write
-// into. A pet names its owner under a foreign key checked at COMMIT rather than
-// at the statement, so a transaction over a missing owner runs every statement
-// and is refused by its commit alone.
+// refusedCommitSchema is the pair of tables the refused-commit cases write into.
+// The foreign key is checked at COMMIT, so a transaction over a missing owner
+// runs every statement and is refused by its commit alone.
 var refusedCommitSchema = []string{
 	"CREATE TABLE commit_owners (id INTEGER PRIMARY KEY)",
 	"CREATE TABLE commit_pets (id INTEGER PRIMARY KEY, " +
 		"owner_id INTEGER REFERENCES commit_owners (id) DEFERRABLE INITIALLY DEFERRED)",
 }
 
-// Refusal has the database refuse one COMMIT on a handle: it runs a
-// transaction on the handle that writes the owner with id 1 into
-// commit_owners, the COMMIT of which the database refuses, and returns the
-// error the transaction reported once whatever made the database refuse it has
-// let go. A statement of the transaction refused before its commit fails the
-// test instead, since the case is about the COMMIT.
+// Refusal has the database refuse one COMMIT on a handle and returns the error
+// the transaction reported. A statement refused before the commit fails the
+// test instead.
 type Refusal func(t *testing.T, handle *gorm.DB) error
 
-// RefusedCommit holds a handle an engine's module delivered to what the
-// database capability states for a COMMIT the database refuses, over the
-// refusal every engine gives: a deferred foreign key found violated at the
-// COMMIT. SQLite keeps the transaction open when it refuses a COMMIT while
-// database/sql hands the connection back regardless, and PostgreSQL ends the
-// transaction itself; the contract is the same on both, so every engine runs
-// this case. The handle must enforce foreign keys; SQLite does so only on a
-// connection that turned them on.
+// RefusedCommit holds a handle an engine's module delivered to what the database
+// capability states for a COMMIT the database refuses, over a deferred foreign
+// key found violated at the COMMIT. The handle must enforce foreign keys.
 func RefusedCommit(t *testing.T, handle, observer *gorm.DB) {
 	t.Helper()
 	RefusedCommitBy(t, handle, observer, deferredForeignKey)
 }
 
-// deferredForeignKey is the refusal RefusedCommit brings about: a pet whose
-// owner does not exist, which the deferred foreign key lets every statement
-// write and the COMMIT refuses.
+// deferredForeignKey is a pet whose owner does not exist: every statement
+// writes, and the COMMIT refuses.
 func deferredForeignKey(t *testing.T, handle *gorm.DB) error {
 	t.Helper()
 	var early error
@@ -60,21 +50,14 @@ func deferredForeignKey(t *testing.T, handle *gorm.DB) error {
 	return err
 }
 
-// RefusedCommitBy holds a handle to that contract over a refusal the caller
-// brings about: the transaction took no effect, and the connection it ran on
-// goes back to the pool outside any transaction. A database refuses a COMMIT
-// for more than one reason and the contract covers each of them, so an engine
-// with a refusal of its own runs the case over that one too.
-//
-// The handle must be held to one connection, so that every statement after the
-// refusal lands on the connection the refused transaction ran on.
+// RefusedCommitBy holds a handle to the contract over a refusal the caller
+// brings about: the transaction took no effect, and the connection goes back to
+// the pool outside any transaction. The handle must be held to one connection.
 //
 // observer is another pool on the same database, through which a write made
-// after the refusal must be seen: that is what tells a committed write from one
-// taken into a transaction left open, which the connection itself reads back
-// either way. It is nil for a database that belongs to the one connection
-// opening it, which no other pool reaches; the other two observations still
-// hold that connection to the contract.
+// after the refusal must be seen; that tells a committed write from one taken
+// into a transaction left open. It is nil for a database private to its one
+// connection.
 func RefusedCommitBy(t *testing.T, handle, observer *gorm.DB, refuse Refusal) {
 	t.Helper()
 	for _, statement := range refusedCommitSchema {

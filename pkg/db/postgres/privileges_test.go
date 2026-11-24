@@ -14,14 +14,8 @@ import (
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
-// TestARoleWithoutDDLPrivilegeStartsOnAnAppliedDatabase pins the deployment
-// that splits the credentials: migrations applied by a role that owns the
-// schema, the service run by one that may only read and write rows. Every
-// command whose depth reaches the migration stage runs the migration engine,
-// the service's included, and with every migration already applied that run
-// has nothing to change — so it must not need a privilege that changes
-// anything. The role here has no CREATE on the schema, which PostgreSQL has
-// given no role by default since version 15.
+// TestARoleWithoutDDLPrivilegeStartsOnAnAppliedDatabase pins the deployment that splits the
+// credentials: migrations applied by a role that owns the schema.
 func TestARoleWithoutDDLPrivilegeStartsOnAnAppliedDatabase(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	if _, err := runAssembly(t, dsn); err != nil {

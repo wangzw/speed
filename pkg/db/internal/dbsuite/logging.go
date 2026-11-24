@@ -13,12 +13,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// LoggingChild marks the copy of a test binary BoundValuesReachNoOutput has
-// started, and carries the locator that copy runs its statements on.
+// LoggingChild marks the copy of a test binary BoundValuesReachNoOutput started,
+// carrying the locator that copy runs its statements on.
 const LoggingChild = "SPEED_DB_LOGGING_CHILD"
 
-// The values the logged statements bind or read, each one a mark the output
-// is searched for. None of them may appear in it.
+// The values the logged statements bind or read. None of them may appear in the
+// output.
 const (
 	boundKey       = "bound-value-unique-key"
 	boundNote      = "bound-value-refused-note"
@@ -30,32 +30,20 @@ const (
 	boundScanDebug = "bound-value-scan-debugged"
 )
 
-// The messages of the records the module's logger writes for a statement, which
-// are the words a host reads them by. This package does not import the package
-// that holds the logger, so they are spelled out here and the case holds the
-// logger to them.
+// The messages of the records the module's logger writes, spelled out here
+// because this package does not import the package that holds the logger.
 const (
-	// messageFailed is the message of a statement that failed, written at ERROR
-	// with the classes of its error.
-	messageFailed = "statement failed"
-	// messageSlow is the message of a statement that ran longer than the
-	// logger's threshold, written at WARN.
-	messageSlow = "slow statement"
-	// messageStatement is the message of every other statement, written at INFO,
-	// which only a Debug session asks for.
+	messageFailed    = "statement failed"
+	messageSlow      = "slow statement"
 	messageStatement = "statement"
 )
 
-// loggerMessages are the messages of every record the module's logger writes
-// about what runs on a handle: its statements, and GORM's own messages.
 var loggerMessages = []string{
 	messageFailed, messageSlow, messageStatement, "gorm info", "gorm warning", "gorm error",
 }
 
-// withheldStatement is how the statement attribute of a record begins where the
-// text of a statement GORM's Scan finisher ran would be. It is the start of the
-// logger's own text, spelled out here because this package does not import the
-// package that holds it.
+// withheldStatement begins the statement attribute of a record whose text the
+// logger withholds.
 const withheldStatement = "statement withheld"
 
 // Record is one record in the text form the process default logger writes to
@@ -64,19 +52,14 @@ const withheldStatement = "statement withheld"
 type Record struct {
 	// Line is the record as written.
 	Line string
-	// Level and Message are the record's level, spelled as the handler spells it
-	// (INFO, WARN, ERROR), and its message.
+	// Level and Message are the record's level (INFO, WARN, ERROR) and message.
 	Level, Message string
-	// Attrs holds the record's other attributes by key, the time among them, with
-	// their values unquoted.
+	// Attrs holds the record's other attributes by key, values unquoted.
 	Attrs map[string]string
 }
 
-// Records reads the records out of what a process wrote to one stream. A line
-// that opens with a time attribute is a record, and every other line, the test
-// binary's own PASS among them, is not. A line that opens like a record and
-// cannot be read as one fails the case, naming the stream: a record dropped
-// here would leave every check that looks for it with nothing to look at.
+// Records reads the records out of what a process wrote to one stream; a line
+// that opens like a record and cannot be read as one fails the case.
 func Records(t testing.TB, stream, output string) []Record {
 	t.Helper()
 	var records []Record
@@ -94,10 +77,6 @@ func Records(t testing.TB, stream, output string) []Record {
 	return records
 }
 
-// parseRecord reads one line the standard library's text handler wrote. The
-// pairs are separated by single spaces, and a value is a Go quoted string
-// exactly when it needs quoting, so a value that starts with a quote is read as
-// one and any other value runs to the next space.
 func parseRecord(line string) (Record, error) {
 	attrs := make(map[string]string)
 	for rest := line; rest != ""; {
@@ -139,7 +118,6 @@ func parseRecord(line string) (Record, error) {
 	return Record{Line: line, Level: level, Message: message, Attrs: attrs}, nil
 }
 
-// loggedRow is a row of logged_rows.
 type loggedRow struct {
 	ID     uint
 	Secret string
@@ -148,60 +126,17 @@ type loggedRow struct {
 
 func (loggedRow) TableName() string { return "logged_rows" }
 
-// runs is the most times the child is run in one case: a run in which a
-// statement the case runs was written as a slow statement is repeated, and the
-// last run is judged as it stands.
+// runs is the most times the child is run in one case: a run with a slow
+// statement is repeated, and the last run is judged as it stands.
 const runs = 3
 
-// BoundValuesReachNoOutput holds the GORM logger on a handle an engine's
-// module opens to what it writes and where.
-//
-// The child process this case runs the statements in has no logging module in
-// its registry, so the module's logger writes through the process default
-// logger, whose records arrive on standard output, the stream a host reads
-// them on, one line each. The case holds those records to the following.
-//
-//   - No value a statement binds or reads reaches either stream, not in any
-//     line, not in any attribute.
-//   - Each statement that is written is exactly one record. A statement that
-//     fails is a "statement failed" record at ERROR: the one that is refused
-//     for a unique key carries the classes of the refusal, GORM's
-//     duplicated-key sentinel and the engine's own code (uniqueCode); the one
-//     that finds no row carries the not-found sentinel; one whose rows fail to
-//     scan is written, without the error's text, which quotes a value. The
-//     statements of a Debug session are "statement" records at INFO, the read
-//     with its text and its table name.
-//   - The statements GORM's Scan finisher runs are written like any other, with
-//     the note that the statement is withheld in place of its text: GORM fills
-//     their values into the text before the logger sees it. The one that fails
-//     carries the classes of its refusal as well, and the one in a Debug
-//     session is a "statement" record.
-//   - A statement that succeeds outside a Debug session is not a "statement"
-//     record, so a logger that ignores GORM's level does not pass.
-//   - Every record the logger writes carries module=<module>, the name the
-//     engine's module registers under. Every statement record carries a caller
-//     written file:line, and the record of each statement the case runs names a
-//     line of the file that runs it.
-//   - Nothing the logger writes reaches standard error, and nothing that names
-//     the table the statements run on reaches standard output except as a
-//     record.
-//
-// A statement the case runs that takes longer than the logger's threshold is
-// written as a "slow statement" record in place of the one the case looks for.
-// That says how busy the machine was and nothing about the logger, so the child
-// is run again while one of its statements was written that way, runs runs in
-// all, and the last run is judged as it stands. A statement the module itself
-// runs, a migration among them, is written as slow on a slow machine as well,
-// and none of the checks looks at it.
-//
-// The logger writes to the process's standard output, which only another
-// process can read apart from its standard error, so the case has the calling
-// test run again alone in a copy of the test binary: uniqueCode is how the
-// logger writes the engine's own code for a unique key's refusal, the SQLSTATE
-// or the result code; locate gives the parent a database for the child; rerun
-// starts the copy with the environment variable it is handed added, and returns
-// what the copy wrote to each stream, apart; open gives the child a handle the
-// engine's module opened on the database.
+// BoundValuesReachNoOutput holds the GORM logger on a handle an engine's module
+// opens to what it writes and where, in a child process with no logging module:
+// no value a statement binds or reads reaches either stream, each statement is
+// exactly one record, a statement the Scan finisher runs is written with its
+// text withheld, every record carries the module's name and a caller, nothing
+// reaches standard error, and a statement outside a Debug session is not written
+// as a "statement" record.
 func BoundValuesReachNoOutput(t *testing.T, module, uniqueCode string, locate func(t *testing.T) string,
 	rerun func(t *testing.T, variable string) (stdout, stderr []byte, err error),
 	open func(t *testing.T, dsn string) *gorm.DB,
@@ -252,16 +187,15 @@ func BoundValuesReachNoOutput(t *testing.T, module, uniqueCode string, locate fu
 	}
 }
 
-// suiteFile is the path of this file, which holds the code that runs the
-// statements the case looks for, so it is the file their call sites are lines of.
+// suiteFile is this file, whose lines are the call sites of the statements the
+// case looks for.
 func suiteFile() string {
 	_, file, _, _ := runtime.Caller(0)
 	return file
 }
 
-// ranSlowly reports whether one of the statements the case runs was written as
-// a "slow statement" record. A statement the module runs on its own is not one of
-// them: its call site is not a line of this file.
+// ranSlowly reports whether a statement the case runs was written as slow. A
+// statement the module runs on its own has a call site outside this file.
 func ranSlowly(records []Record) bool {
 	suite := suiteFile()
 	return slices.ContainsFunc(records, func(r Record) bool {
@@ -269,8 +203,8 @@ func ranSlowly(records []Record) bool {
 	})
 }
 
-// nothingOnStandardError fails the case when the child's standard error carries
-// a record of the logger or names the table the statements ran on.
+// nothingOnStandardError fails the case when standard error carries a record or
+// names the table the statements ran on.
 func nothingOnStandardError(t *testing.T, stderr []byte) {
 	t.Helper()
 	for _, record := range Records(t, "the child's standard error", string(stderr)) {
@@ -285,10 +219,8 @@ func nothingOnStandardError(t *testing.T, stderr []byte) {
 	}
 }
 
-// nothingBesideTheRecords fails the case when a line of the child's standard
-// output that is not a record names the table the statements ran on: a
-// statement written as a plain line next to its record is not caught by a check
-// that reads the records only.
+// nothingBesideTheRecords fails the case when a line that is not a record names
+// the table the statements ran on.
 func nothingBesideTheRecords(t *testing.T, stdout []byte) {
 	t.Helper()
 	for line := range strings.SplitSeq(string(stdout), "\n") {
@@ -299,17 +231,10 @@ func nothingBesideTheRecords(t *testing.T, stdout []byte) {
 	}
 }
 
-// statementsOnStandardOutput holds the records on the child's standard output to
-// what each statement issueLoggedStatements runs is written as.
-//
-// A statement is picked out of the records by what its own record carries, and
-// the record has to be the only one that does: a logger that writes a statement
-// twice, or writes one the case never asked it to, is told apart from one that
-// writes each statement once. The statements that fail are picked out by the
-// text they carry, or by the withheld note where the text is withheld, and the
-// two statements the note stands for are told apart by their level and message.
-// What the module's own statements are written as is not judged, apart from the
-// module they are stamped with and the form of their call site.
+// statementsOnStandardOutput holds the records to what each statement
+// issueLoggedStatements runs is written as. Each statement's record has to be
+// the only one matching it, which tells a logger that writes a statement twice
+// from one that writes each once.
 func statementsOnStandardOutput(t *testing.T, module, uniqueCode string, records []Record) {
 	t.Helper()
 	if len(records) == 0 {
@@ -344,9 +269,8 @@ func statementsOnStandardOutput(t *testing.T, module, uniqueCode string, records
 	}
 	debuggedScan := func(r Record) bool { return debugged(r) && withheld(r) }
 
-	// found is the one record of a statement the case runs, which has to name a
-	// line of this file as its call site: the logger reports the first frame
-	// outside GORM, which is the code that runs the statement.
+	// found is the one record of a statement the case runs; its caller has to
+	// name a line of this file.
 	found := func(what string, match func(Record) bool) (Record, bool) {
 		record, ok := exactlyOne(t, what, records, match)
 		if ok && !namesLineOf(record.Attrs["caller"], suite) {
@@ -356,9 +280,8 @@ func statementsOnStandardOutput(t *testing.T, module, uniqueCode string, records
 		return record, ok
 	}
 
-	// The unique key's refusal is written twice: the insert issued with Create,
-	// with its text, and the one run through Scan, without it. Both carry the
-	// same classes, the sentinel and the engine's own code.
+	// The unique key's refusal is written twice, by Create and by Scan; both
+	// carry the same classes.
 	refusal := gorm.ErrDuplicatedKey.Error()
 	if record, ok := found("the refused Create", func(r Record) bool {
 		return failed(r) && strings.Contains(text(r), "INSERT INTO")
@@ -392,8 +315,8 @@ func statementsOnStandardOutput(t *testing.T, module, uniqueCode string, records
 	}
 }
 
-// exactlyOne is the single record that match accepts. It fails the case, naming
-// what the record is of, and reports false when none does or more than one does.
+// exactlyOne is the single record match accepts, or a failure naming what the
+// record is of.
 func exactlyOne(t *testing.T, what string, records []Record, match func(Record) bool) (Record, bool) {
 	t.Helper()
 	var found []Record
@@ -412,9 +335,8 @@ func exactlyOne(t *testing.T, what string, records []Record, match func(Record) 
 	return found[0], true
 }
 
-// sameClasses reports whether the classes of a record are exactly want, in any
-// order. They are written joined by a comma and a space, and a record of an
-// error that carries none has no classes attribute at all.
+// sameClasses reports whether a record's classes are exactly want, in any order;
+// a record with none has no classes attribute.
 func sameClasses(record Record, want ...string) bool {
 	classes, carried := record.Attrs["classes"]
 	if !carried {
@@ -426,8 +348,8 @@ func sameClasses(record Record, want ...string) bool {
 	return slices.Equal(got, want)
 }
 
-// namesLineOf reports whether caller is a line, written file:line, of file, or of
-// any file when file is empty.
+// namesLineOf reports whether caller is a file:line of file, or of any file when
+// file is empty.
 func namesLineOf(caller, file string) bool {
 	colon := strings.LastIndex(caller, ":")
 	if colon <= 0 {
@@ -437,8 +359,8 @@ func namesLineOf(caller, file string) bool {
 	return err == nil && line > 0 && (file == "" || caller[:colon] == file)
 }
 
-// issueLoggedStatements runs, on handle, each statement the logger writes, and
-// fails the case unless each one met the outcome that has it written.
+// issueLoggedStatements runs each statement the logger writes and fails the case
+// unless each met the outcome that has it written.
 func issueLoggedStatements(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	if err := handle.Exec(`CREATE TABLE logged_rows (id INTEGER PRIMARY KEY, secret TEXT NOT NULL UNIQUE,
@@ -456,8 +378,7 @@ func issueLoggedStatements(t *testing.T, handle *gorm.DB) {
 	if err := handle.First(&found, "secret = ?", boundMissing).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Errorf("looking up a key no row has gave %v, want no row", err)
 	}
-	// The scan's error quotes the value it could not convert, so output that
-	// lacks the value shows the logger did not write the error's text.
+	// The scan's error quotes the value it could not convert.
 	var unscanned []struct{ Note int }
 	switch err := handle.Model(&loggedRow{}).Select("note").Where("id = ?", 1).Find(&unscanned).Error; {
 	case err == nil:
@@ -466,8 +387,7 @@ func issueLoggedStatements(t *testing.T, handle *gorm.DB) {
 		t.Errorf("the scan's error does not quote the value it could not convert, so output without that "+
 			"value says nothing about whether the logger writes the error's text: %v", err)
 	}
-	// PostgreSQL refuses the cast and quotes the value in its message, as the
-	// scan's error does; SQLite casts it to 0, and the statement is not written.
+	// PostgreSQL refuses the cast and quotes the value; SQLite casts it to 0.
 	if err := handle.Exec("SELECT CAST(? AS INTEGER) FROM logged_rows", boundCast).Error; err != nil &&
 		!strings.Contains(err.Error(), boundCast) {
 		t.Errorf("an engine refused the cast without quoting the value, so output without that value says "+
@@ -478,8 +398,7 @@ func issueLoggedStatements(t *testing.T, handle *gorm.DB) {
 		t.Errorf("a debugged read failed: %v", err)
 	}
 	// A statement the Scan finisher runs has its values filled into the text
-	// before the logger sees it: a refused one and one in a Debug session each
-	// bind a mark that text would carry.
+	// before the logger sees it.
 	var scannedID uint
 	if err := handle.Raw("INSERT INTO logged_rows (id, secret, note) VALUES (?, ?, ?) RETURNING id", 3, boundKey,
 		boundScanned).Scan(&scannedID).Error; !errors.Is(err, gorm.ErrDuplicatedKey) {

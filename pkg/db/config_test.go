@@ -19,18 +19,11 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// The two namespaces the shipped implementations mount under. The cases below
-// need two of them to observe that the paths stay apart; each implementation
-// pins its own value in its own subpackage, which is where a change to it
-// would have to be made.
 const (
 	postgresNamespace = "db.postgres"
 	sqliteNamespace   = "db.sqlite"
 )
 
-// specWithMutex is the shape of an implementation whose engine appears in
-// multi-replica deployments: it supplies a migration mutex and therefore
-// declares the timeout that bounds waiting for it.
 func specWithMutex() Spec {
 	return Spec{
 		ModuleName:                  postgresNamespace,
@@ -43,8 +36,6 @@ func specWithMutex() Spec {
 	}
 }
 
-// specWithoutMutex is the shape of an implementation that needs no
-// cross-process mutex.
 func specWithoutMutex() Spec {
 	return Spec{
 		ModuleName:          sqliteNamespace,
@@ -55,8 +46,6 @@ func specWithoutMutex() Spec {
 	}
 }
 
-// writeConfig writes the primary config source one case runs on and returns
-// the path to it.
 func writeConfig(t *testing.T, body string) string {
 	t.Helper()
 	locator := filepath.Join(t.TempDir(), "config.json")
@@ -66,21 +55,6 @@ func writeConfig(t *testing.T, body string) string {
 	return locator
 }
 
-// readerOver builds the reader a real assembly would hand these modules: the
-// actual configuration loader, over a JSON primary source holding body.
-//
-// It is the loader itself rather than a stand-in because most of what these
-// cases observe belongs to it — the defaults come from the mounted prototype
-// through the base layer, the refusal of a bare number comes from the type of
-// the field, and an undeclared key is refused by the manifest. A stand-in
-// reader handing back a struct the test wrote would agree with any declaration
-// at all.
-//
-// It is the loading step on its own, which is what these cases want: the
-// values, with no lifecycle driven to get at them. The command line is given
-// as empty and the prefix is one no machine carries variables under, so the
-// locator is the host identity's default and nothing outside the case reaches
-// the values.
 func readerOver(t *testing.T, body string, modules ...core.Module) (config.Reader, error) {
 	t.Helper()
 	locator := writeConfig(t, body)
@@ -99,8 +73,6 @@ func readerOver(t *testing.T, body string, modules ...core.Module) (config.Reade
 	return config.Load(t.Context(), reg, nil)
 }
 
-// readerFor builds the reader for one implementation and fails the test if the
-// configuration would not load at all.
 func readerFor(t *testing.T, spec Spec, body string) config.Reader {
 	t.Helper()
 	reader, err := readerOver(t, body, NewModule(spec))
@@ -110,15 +82,7 @@ func readerFor(t *testing.T, spec Spec, body string) config.Reader {
 	return reader
 }
 
-// TestPoolDefaults pins the values an assembly that configured nothing but a
-// locator runs on.
-//
-// They are not decoration. Left at the zero value, database/sql reads
-// MaxOpenConns 0 as no limit at all and ConnMaxLifetime 0 as a connection that
-// is never replaced, so a declaration that forgot to carry the defaults gives
-// a pool that grows without bound and holds connections past anything the
-// server or a proxy between them is willing to keep — and it does that without
-// a word anywhere.
+// TestPoolDefaults pins the values an assembly that configured nothing but a locator runs on.
 func TestPoolDefaults(t *testing.T) {
 	cfg, err := specWithMutex().read(readerFor(t, specWithMutex(), `{"db":{"postgres":{"dsn":"x"}}}`))
 	if err != nil {
@@ -135,10 +99,7 @@ func TestPoolDefaults(t *testing.T) {
 	}
 }
 
-// TestConfiguredPoolParametersOverrideTheDefaults is the other half of the
-// case above: a declaration that carried the defaults but was never mounted
-// would pass that one from the prototype alone and lose every configured
-// value here.
+// TestConfiguredPoolParametersOverrideTheDefaults is the other half of the case above.
 func TestConfiguredPoolParametersOverrideTheDefaults(t *testing.T) {
 	spec := specWithMutex()
 	body := `{"db":{"postgres":{"dsn":"x","max-open-conns":7,"max-idle-conns":2,` +
@@ -153,17 +114,7 @@ func TestConfiguredPoolParametersOverrideTheDefaults(t *testing.T) {
 	}
 }
 
-// TestDurationItemsRejectBareNumber pins that a duration is written with a
-// unit. A bare 1800 is half an hour to whoever wrote it and 1.8 microseconds
-// to the machine, and a pool that replaces every connection after 1.8
-// microseconds does not fail — it reconnects on every statement and looks like
-// a slow database.
-//
-// The refusal comes from the type of the field, so this is an observation
-// about the declaration: declared as a count of seconds, the value below would
-// be accepted and mean something else. It lands where this module reads its
-// own section, which in an assembly is Prepare, so the value is refused before
-// anything is built on it.
+// TestDurationItemsRejectBareNumber pins that a duration is written with a unit.
 func TestDurationItemsRejectBareNumber(t *testing.T) {
 	for _, c := range []struct {
 		item string
@@ -186,17 +137,6 @@ func TestDurationItemsRejectBareNumber(t *testing.T) {
 }
 
 // TestSensitiveItemsAreMarked pins the three items that carry a secret.
-//
-// Marking keeps the value out of the logs and the default out of the help
-// output, and an unmarked one is a credential in a startup diagnostic that
-// nobody notices until it is in a log aggregator. The description is mandatory
-// beside it: with the default withheld, it is all the help output has left to
-// say what the item is.
-//
-// The locator is checked for not being required in the same place, because the
-// two would be set together by whoever thought a database is mandatory.
-// Required turns the stance this module takes — disabled, with a reason — into
-// a startup failure for every assembly that does not use a database.
 func TestSensitiveItemsAreMarked(t *testing.T) {
 	items := specWithMutex().schema().Items
 	for _, key := range []string{dsnKey, encryptionKeyKey, encryptionRetiredKeysKey} {
@@ -220,9 +160,7 @@ func TestSensitiveItemsAreMarked(t *testing.T) {
 	}
 }
 
-// TestEveryDeclaredItemIsDescribed keeps the help output complete. An item
-// with no description is a name and a default, which says nothing about what
-// setting it does.
+// TestEveryDeclaredItemIsDescribed keeps the help output complete.
 func TestEveryDeclaredItemIsDescribed(t *testing.T) {
 	for _, spec := range []Spec{specWithMutex(), specWithoutMutex()} {
 		schema := spec.schema()
@@ -234,10 +172,6 @@ func TestEveryDeclaredItemIsDescribed(t *testing.T) {
 	}
 }
 
-// itemPaths expands a schema into the complete paths it claims: the namespace,
-// the mount path and the key of every leaf the mounted carrier carries. It is
-// what the configuration manifest does with a declaration, cut down to the one
-// level these carriers have.
 func itemPaths(t *testing.T, schema config.Schema) map[string]bool {
 	t.Helper()
 	out := map[string]bool{}
@@ -254,8 +188,6 @@ func itemPaths(t *testing.T, schema config.Schema) map[string]bool {
 	return out
 }
 
-// collectPaths walks one carrier, inlining an embedded struct the way config
-// and encoding/json both do.
 func collectPaths(t *testing.T, into map[string]bool, carrier reflect.Type, prefix string) {
 	t.Helper()
 	for i := range carrier.NumField() {
@@ -273,20 +205,8 @@ func collectPaths(t *testing.T, into map[string]bool, carrier reflect.Type, pref
 	}
 }
 
-// TestTwoImplementationsDeclareDisjointConfigPaths pins the separation the
-// design puts the implementations' input items under.
-//
-// The manifest is collected from every registered module, this run's disabled
-// ones included, so two implementations declaring an item on one path conflict
-// as soon as a host imports both — and the conflict is raised while the
-// manifest is being collected, before exclusivity resolution would have stood
-// one of them down. A host that imports two engines and configures one is the
-// intended shape, and it is the separate namespaces that make it work.
-//
-// Both halves are observed: the paths of the two shipped shapes do not meet,
-// and a third implementation that mounted under a namespace already taken
-// really does fail the load. Without the second half this case would be
-// asserting that two different strings are different.
+// TestTwoImplementationsDeclareDisjointConfigPaths pins that the two implementations
+// declare their input items on separate paths.
 func TestTwoImplementationsDeclareDisjointConfigPaths(t *testing.T) {
 	withMutex, withoutMutex := specWithMutex(), specWithoutMutex()
 	if got := withMutex.schema().Namespace; got != postgresNamespace {
@@ -318,14 +238,7 @@ func TestTwoImplementationsDeclareDisjointConfigPaths(t *testing.T) {
 	}
 }
 
-// TestOnlyAnImplementationWithAMutexDeclaresTheTimeout pins that the timeout
-// follows the mutex.
-//
-// An engine that needs no cross-process mutex has nothing to wait for, so the
-// item would be a dial that changes nothing — and a dial that changes nothing
-// is worse than none, because a host that sets it is told nothing and goes on
-// believing it did something. Here the host is told: the key is not one this
-// implementation accepts.
+// TestOnlyAnImplementationWithAMutexDeclaresTheTimeout pins that the timeout follows the mutex.
 func TestOnlyAnImplementationWithAMutexDeclaresTheTimeout(t *testing.T) {
 	if _, declared := specWithoutMutex().schema().Items[MigrationLockTimeoutKey]; declared {
 		t.Errorf("an implementation with no mutex declares %s", MigrationLockTimeoutKey)
@@ -342,9 +255,8 @@ func TestOnlyAnImplementationWithAMutexDeclaresTheTimeout(t *testing.T) {
 	}
 }
 
-// TestTheMutexTimeoutDefaultsToTheImplementationValue pins that the default
-// reaching the mutex is the one the implementation gave, not a zero that would
-// have the run give up before it waited.
+// TestTheMutexTimeoutDefaultsToTheImplementationValue pins that the default reaching the mutex is
+// the one the implementation gave, not a zero that would have the run give up before it waited.
 func TestTheMutexTimeoutDefaultsToTheImplementationValue(t *testing.T) {
 	spec := specWithMutex()
 	cfg, err := spec.read(readerFor(t, spec, `{"db":{"postgres":{"dsn":"x"}}}`))
@@ -367,11 +279,8 @@ func TestTheMutexTimeoutDefaultsToTheImplementationValue(t *testing.T) {
 	}
 }
 
-// TestANonPositiveMutexTimeoutFailsTheStartup pins the configured timeout to
-// the rule the Spec's default is held to. A timeout of zero or less makes the
-// wait for the mutex a single attempt, so on a first start every replica but
-// the one that took the mutex gives up at once — the collision the mutex is
-// there to queue. The stance refuses it, naming the key.
+// TestANonPositiveMutexTimeoutFailsTheStartup pins the configured timeout to the rule the Spec's
+// default is held to.
 func TestANonPositiveMutexTimeoutFailsTheStartup(t *testing.T) {
 	spec := specWithMutex()
 	for _, timeout := range []string{"0s", "-5s"} {
@@ -392,9 +301,7 @@ func TestANonPositiveMutexTimeoutFailsTheStartup(t *testing.T) {
 	}
 }
 
-// TestRetiredKeysReadBackAsAList pins that the retired keys are a list rather
-// than one string. Read as a single value, a host rotating a second time would
-// silently lose the ability to decrypt what the first key wrote.
+// TestRetiredKeysReadBackAsAList pins that the retired keys are a list rather than one string.
 func TestRetiredKeysReadBackAsAList(t *testing.T) {
 	spec := specWithMutex()
 	body := `{"db":{"postgres":{"dsn":"x","encryption-key":"new",` +
@@ -412,11 +319,7 @@ func TestRetiredKeysReadBackAsAList(t *testing.T) {
 	}
 }
 
-// TestAnUndeclaredKeyInThisSectionIsRefused pins that the section is closed. A
-// misspelled key that is accepted silently leaves the item it was meant to set
-// on its default, and a pool parameter or a retired key that quietly stayed
-// behind is exactly the class of defect this whole declaration exists to
-// prevent.
+// TestAnUndeclaredKeyInThisSectionIsRefused pins that the section is closed.
 func TestAnUndeclaredKeyInThisSectionIsRefused(t *testing.T) {
 	body := `{"db":{"postgres":{"dsn":"x","max-open-connections":7}}}`
 	_, err := readerOver(t, body, NewModule(specWithMutex()))
@@ -425,10 +328,7 @@ func TestAnUndeclaredKeyInThisSectionIsRefused(t *testing.T) {
 	}
 }
 
-// TestTheReaderIsAskedForThisImplementationOwnSection pins the path the module
-// decodes from. It assembles the path itself out of what it declared, so a
-// namespace change that misses one of the two sites reads an empty section and
-// takes every default without a word.
+// TestTheReaderIsAskedForThisImplementationOwnSection pins the path the module decodes from.
 func TestTheReaderIsAskedForThisImplementationOwnSection(t *testing.T) {
 	spec := specWithMutex()
 	asked := &pathRecordingReader{}
@@ -440,13 +340,12 @@ func TestTheReaderIsAskedForThisImplementationOwnSection(t *testing.T) {
 	}
 }
 
-// pathRecordingReader records the path it was asked for and writes nothing.
 type pathRecordingReader struct {
 	path string
 }
 
-// Decode records the path. The target keeps what the caller put in it, which
-// is what config's own reader does for a path no module declared.
+// Decode records the path. The target keeps what the caller put in it, which is what
+// config's own reader does for a path no module declared.
 func (r *pathRecordingReader) Decode(path string, _ any) error {
 	r.path = path
 	return nil
@@ -454,10 +353,8 @@ func (r *pathRecordingReader) Decode(path string, _ any) error {
 
 var _ config.Reader = (*pathRecordingReader)(nil)
 
-// TestDefaultsSurviveAReaderThatGivesNothing pins that the defaults are in the
-// struct the module decodes into, not only in the layer the loader builds. The
-// two are the same values from the same function, and the seed is what keeps a
-// section nobody declared from landing on a pool with no limits.
+// TestDefaultsSurviveAReaderThatGivesNothing pins that the defaults are in the struct the module
+// decodes into, not only in the layer the loader builds.
 func TestDefaultsSurviveAReaderThatGivesNothing(t *testing.T) {
 	cfg, err := specWithMutex().read(&pathRecordingReader{})
 	if err != nil {

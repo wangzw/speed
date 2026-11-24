@@ -7,32 +7,14 @@ import (
 	"gorm.io/gorm"
 )
 
-// softDeletedRow is a model carrying what soft delete rests on: a DeletedAt
-// field. GORM reads that field as the instruction to turn a delete into an
-// update of the column and to leave the row out of the ordinary queries, which
-// is a behaviour of the handle rather than of this module.
 type softDeletedRow struct {
 	ID        uint `gorm:"primarykey"`
 	Name      string
 	DeletedAt gorm.DeletedAt `gorm:"index"`
 }
 
-// TestSoftDeleteRoundTripsThroughTheDeliveredHandle pins the delivery the design
-// lists as a capability of this module: a row deleted through the handle stops
-// appearing, and what the delete did is mark it rather than remove it.
-//
-// Nothing here is this module's own code — GORM implements soft delete — and
-// that is the reason to observe it at all. The handle a dependant holds is
-// assembled by this module, so a plugin installed on it or a session setting
-// changed on it takes the behaviour away, and the shape of that failure is a
-// query answering with the wrong rows rather than with an error.
-//
-// Every step is read: the row is found before the delete, which a handle that
-// never wrote anything would fail; the default scope no longer finds it, which a
-// handle whose delete did nothing would fail; the unscoped read and the row
-// count over the pool find it with the marker set, which a handle whose delete
-// removed the row would fail; and a delete past the scope removes it for good,
-// which a handle whose deletes are all no-ops would fail.
+// TestSoftDeleteRoundTripsThroughTheDeliveredHandle pins soft deletion through the
+// delivered handle: a row deleted through it stops appearing.
 func TestSoftDeleteRoundTripsThroughTheDeliveredHandle(t *testing.T) {
 	h, err := startHost(t, sqliteSpec(), hostConfig(t))
 	if err != nil {
@@ -71,9 +53,6 @@ func TestSoftDeleteRoundTripsThroughTheDeliveredHandle(t *testing.T) {
 			"record the deletion")
 	}
 
-	// The storage itself, read over the pool rather than through the query
-	// builder the two reads above went through: the row is still there, and
-	// the marker column is set on it.
 	var rows, marked int
 	if err := poolOf(t, handle).QueryRowContext(t.Context(),
 		`SELECT COUNT(*), COUNT(deleted_at) FROM soft_deleted_rows`).Scan(&rows, &marked); err != nil {

@@ -1,22 +1,10 @@
-// Package db carries database access: the capability modules take up from each
-// other, the resource types they declare migrations and plugins through, and
-// the connection, plugin, encryption and migration logic the implementation
+// Package db provides database access: the capability modules take up, the
+// resource types they declare migrations and plugins through, and the
+// connection, plugin, encryption and migration logic the implementation
 // subpackages share.
 //
-// This package registers no module of its own. The implementations do:
-// pkg/db/postgres and pkg/db/sqlite each register one, bind their own dialect's
-// driver, and declare the same capability exclusively. A host imports the one
-// it deploys on, or several, and the configuration decides which of them runs.
-// The package does import pkg/log, whose initialisation registers the module
-// named log, so every binary that imports it carries that registered module,
-// which takes part where a command tree names it and on entries that take every
-// registered module.
-//
-// The calling surface is GORM's *gorm.DB. This package wraps GORM rather than
-// abstracting it, so query building, model mapping, association loading and
-// transactions are GORM's own API and nothing here sits on top of them. GORM
-// therefore reaches every dependant, which is what taking up a wrapping module
-// costs.
+// The calling surface is GORM's *gorm.DB: this package wraps GORM rather than
+// abstracting it.
 package db
 
 import (
@@ -41,96 +29,43 @@ const (
 	SQLite Dialect = "sqlite"
 )
 
-// Database is what this capability directory delivers. It is an interface
-// because a capability token's element type must be one, while *gorm.DB is a
-// concrete type and cannot designate a capability; the handle comes out of it
-// through DB.
-//
-// A host can implement it itself and supply that implementation for an engine's
-// module, but only a drive that stops before Migrate carries it that far:
-// Migrate accepts an instance only when the module's own New built it, and
-// refuses any other with ErrForeignInstance, because the plugins and the
-// serializer that DB's handle is promised to carry are installed in New. A test
-// that needs a stand-in supplies it to a module that declares only this
-// capability.
-//
-// Declaring a dependency on it orders the dependant after the database module
-// in every stage, so the dependant's own Migrate runs after the migrations have
-// been applied. Its New does not: every module's New runs before the first
-// Migrate callback, so a dependant reading or writing its tables in New finds
-// them missing on a first start, and the tables are there from its own Migrate
-// on.
-//
-// Take it up with core.Resolve[db.Database](reg), and declare the dependency as
-// core.Requirement{Token: (*db.Database)(nil)}.
+// Database is the capability this directory delivers, the handle coming out of
+// it through DB. Take it up with core.Resolve[db.Database](reg) and declare the
+// dependency as core.Requirement{Token: (*db.Database)(nil)}.
 type Database interface {
-	// DB returns the handle to the database the configuration names. Every
-	// declared plugin and the encryption serializer are already installed on
-	// it: the handle is delivered after assembly, never during it.
+	// DB returns the handle to the database the configuration names, with
+	// every declared plugin and the encryption serializer installed.
 	DB() *gorm.DB
 	// Dialect reports which engine is behind the handle. Callers writing
 	// native SQL branch on it, because placeholder syntax and function names
-	// differ between engines; GORM's query builder hides that difference and
-	// statements written around it do not.
+	// differ between engines.
 	Dialect() Dialect
 	// BlindIndex returns the deterministic digest of a plaintext, for a
-	// column that an equality query can match. A field encrypted with the
-	// encrypted serializer cannot be queried by equality — the same
-	// plaintext encrypts differently every time — so a model that has to be
-	// found by such a field carries a second column holding this digest.
+	// column an equality query can match: a field encrypted with the
+	// encrypted serializer cannot be matched by equality, so a model found by
+	// such a field carries a second column holding this digest.
 	//
-	// Two obligations sit with the caller, and missing either one is silent:
+	// The digest is computed over the plaintext as given, with no
+	// normalisation, and the caller fills the column: a row written without it
+	// is still written, but an equality query against that column finds
+	// nothing instead of failing.
 	//
-	// The blind index column is filled by the caller, not by this module. A
-	// serializer acts on a single field and cannot write a second column, so
-	// nothing here fills it. A row written without it is still written
-	// correctly; only the equality query against that column finds nothing.
-	// The failure shows up as a missing row, not as an error.
-	//
-	// The digest is computed over the string as given, with no normalisation
-	// of any kind. Case, surrounding whitespace, the punctuation in a phone
-	// number: whatever of that has to be ignored, the caller flattens the
-	// same way when writing and when querying. Flattening one side only
-	// yields a different digest, and again the query finds nothing rather
-	// than failing.
-	//
-	// It is a method rather than a package-level function because it needs
-	// the key, and the key arrives with the instance.
+	// It panics when the instance holds no encryption key.
 	BlindIndex(plaintext string) string
-	// Open establishes an additional connection to another database, for a
-	// read replica, another system's database or a one-off source. It is
-	// assembled like the delivered handle — same dialect, same declared
-	// plugins, same encryption serializer, same logger for its statements —
-	// and it shares the same connection pool parameters, except that a locator
-	// naming a database private to one connection, such as SQLite's :memory:,
-	// gets a pool of one. Its statements are therefore written where the
-	// delivered handle's are, and without the values they bind. The connection
-	// attempt is bound to ctx. A blank locator is refused with
-	// ErrConnectFailed: a driver handed one connects to a database nobody
-	// named rather than failing.
+	// Open establishes an additional connection to another database,
+	// assembled like the delivered handle: same dialect, declared plugins,
+	// encryption serializer and logger, and the same connection pool
+	// parameters, except that a locator naming a database private to one
+	// connection, such as SQLite's :memory:, gets a pool of one.
 	//
 	// It carries no migrations and this module does not hold it: the caller
-	// closes it with Close in its own Close stage. Leaking it leaks
-	// connections, and nothing here can release them on the caller's behalf.
-	//
-	// OpenedFrom answers the delivered handle for every session on it, which
-	// is how a declared plugin keeping a table of its own reaches that table
-	// from a database no migration was applied to.
+	// closes it with Close in its own Close stage. A blank locator is refused
+	// with ErrConnectFailed. The connection attempt is bound to ctx.
 	Open(ctx context.Context, dsn string) (*gorm.DB, error)
 }
 
-// Close releases a handle's connection pool.
-//
-// It is a package-level function rather than a method on Database because
-// closing a handle uses none of this module's state, and a handle from Open has
-// to be closable by a caller that may not hold the instance.
-//
-// It is reentrant: closing an already closed handle reports no error, and a nil
-// handle reports none either. A caller that took a handle from Open gives the
-// close to a defer, and that defer runs when Open failed as well — so reporting
-// an error on nothing would ask every call site to test for nil first, over an
-// error with no remedy behind it: there is no connection left to release, which
-// is the state closing is trying to reach.
+// Close releases a handle's connection pool. It is reentrant: closing an already
+// closed handle, or nil, reports no error.
 func Close(handle *gorm.DB) error {
 	if handle == nil {
 		return nil

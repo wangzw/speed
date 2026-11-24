@@ -18,127 +18,54 @@ import (
 )
 
 // Spec is what an implementation subpackage hands this package to become a
-// module. It is the whole of what an implementation contributes: a name, an
-// engine, the namespace its input items hang under, the driver binding, how
-// its driver reports a constraint refusal, which locators name a database
-// private to one connection, and a cross-process migration mutex when its
-// engine appears in multi-replica deployments.
-//
-// Everything else — the input item declaration, the stance it states in
-// Prepare, the connection, the plugins, the encryption serializer, the logging
-// of statements (the logger the statements of the implementation's handles are
-// written through, taken up in New), the migration run and the release of the
-// pool — is this package's, shared by every implementation. That split is what
-// keeps the implementations from drifting apart in the behaviour a host sees:
-// an engine that put its own Prepare together would be one edit away from
-// failing the startup on a different condition than its neighbour.
+// module: its name, engine, configuration namespace, driver binding, how its
+// driver reports a constraint refusal, which locators name a database private
+// to one connection, and a cross-process migration mutex when its engine
+// appears in multi-replica deployments.
 type Spec struct {
-	// ModuleName is this implementation's name in the registry: its identity
-	// in the startup diagnostics and in an enablement lookup. It is also what
-	// marks a product as this implementation's own: a product carries the name
-	// of the Spec its New was built from, and Migrate accepts an instance that
-	// carries this one.
+	// ModuleName is this implementation's name in the registry, its identity in
+	// startup diagnostics and enablement lookups. A product carries the name of
+	// the Spec its New was built from, and Migrate accepts only that one.
 	ModuleName string
-	// ConfigNamespace is where this implementation's input items are mounted
-	// in the config data. Implementations give it the module name, so a
-	// diagnostic naming the module and an error naming a key read as the same
-	// thing; each pins that for itself.
+	// ConfigNamespace is where this implementation's input items are mounted in
+	// the config data. Implementations give it the module name.
 	ConfigNamespace string
 	// Dialect is the engine behind the driver. It reaches dependants through
-	// Database.Dialect, and it names the subdirectory of a migration set this
+	// Database.Dialect and names the subdirectory of a migration set this
 	// implementation reads.
 	Dialect Dialect
-	// Dialector binds this engine's driver to a connection locator. It is the
-	// one place a third-party driver enters, which is what lets a host move
-	// between engines without touching the code that uses the database.
+	// Dialector binds this engine's driver to a connection locator.
 	Dialector func(dsn string) gorm.Dialector
-	// ConstraintViolation classifies an error this engine's driver reports:
-	// gorm.ErrDuplicatedKey when a unique constraint refused the statement —
-	// a primary key is one — gorm.ErrForeignKeyViolated when a foreign key
-	// did, and nil for anything else. It looks through wrapping, the way
-	// errors.As does. Every handle this package opens attaches that class to
-	// the driver's error, which stays in the chain beside it, so a host tells
-	// the two refusals apart with errors.Is on either engine.
-	//
-	// It is mandatory: an engine without it would report those refusals as
-	// its driver's raw error, and the same check would find a duplicate on
-	// one engine and nothing on the other.
+	// ConstraintViolation returns gorm.ErrDuplicatedKey when a unique
+	// constraint refused the statement, gorm.ErrForeignKeyViolated when a
+	// foreign key did, and nil for anything else, looking through wrapping as
+	// errors.As does. It is mandatory.
 	ConstraintViolation func(err error) error
-	// ConnectionScoped reports whether a locator names a database that
-	// belongs to the one connection opening it — SQLite's in-memory and
-	// temporary databases are — so that over a pool of several connections
-	// one handle would stand for several databases. Every connection this
-	// package opens on such a locator, the delivered one and each one Open
-	// builds, is held to a single connection that is never replaced. The
-	// locator it is handed is the trimmed one the driver receives. An
-	// implementation whose engine has no such locator leaves it nil.
+	// ConnectionScoped reports whether a locator names a database that belongs
+	// to the one connection opening it, such as SQLite's in-memory and
+	// temporary databases. Every handle opened on such a locator is held to a
+	// single connection that is never replaced. The locator handed in is the
+	// trimmed one the driver receives. An engine with no such locator leaves it
+	// nil.
 	ConnectionScoped func(dsn string) bool
-	// NewMigrationLock builds the cross-process mutex the migration run is
-	// held under, bounded by the configured timeout. An implementation whose
-	// engine does not appear in multi-replica deployments leaves it nil, and
-	// the run proceeds without a mutex.
-	//
-	// Leaving it nil also keeps migration-lock-timeout out of this
-	// implementation's input items: a dial that changes nothing is worse than
-	// no dial, because setting it looks like it did something.
+	// NewMigrationLock builds the cross-process mutex the migration run is held
+	// under, bounded by the configured timeout. Leaving it nil runs without a
+	// mutex and keeps migration-lock-timeout out of the input items.
 	NewMigrationLock func(timeout time.Duration) MigrationLock
-	// DefaultMigrationLockTimeout is what migration-lock-timeout takes when
-	// the configuration gives none. It is mandatory alongside
-	// NewMigrationLock: the value travels into the mutex, and a zero one
-	// would give up before it had waited at all.
+	// DefaultMigrationLockTimeout is what migration-lock-timeout takes when the
+	// configuration gives none. It is mandatory alongside NewMigrationLock and
+	// has to be positive.
 	DefaultMigrationLockTimeout time.Duration
 }
 
-// NewModule builds an implementation's module descriptor.
-//
-// A defective Spec panics here rather than being reported: a subpackage fills
-// it in at init, so the fault is in this repository's own code, shows up
-// deterministically on the first run of any host that imports it, and leaves a
-// host nothing to handle. It is the treatment core gives an illegal token, for
-// the same reason.
-//
-// The reading face the callbacks take up is absent from Requires, and that is
-// the rule rather than an omission: it is the instance of the config module,
-// which the host supplies before assembly begins, so it exists before the first
-// Prepare runs and an edge to it would have nothing to order. What Requires
-// does carry is the logging capability, as an optional requirement. It is
-// optional because a database has to work in an assembly that never took
-// logging in. It is declared because an assembly that did take it in has to have
-// it constructed first, so that New finds the logger every statement of the
-// handles it opens is written through. Prepare does not take it up: it opens no
-// handle, and a logging module that is constructed has no instance until its own
-// New has run.
-//
-// A host may supply an instance for this module in place of the one its New
-// builds, and neither Prepare nor New then runs. Migrate accepts such an
-// instance only when this module's own New built it, and refuses any other with
-// ErrForeignInstance: the plugins and the encryption serializer are installed in
-// New, so a handle that did not come through it has none of them. An instance
-// built by this module's New in another registry keeps the logger that registry
-// gave it: its statements, and those of the connections its Open builds, are
-// written through that one and not through the logger of the registry the
-// instance is supplied to. Once that registry's log module has been released,
-// the records the instance writes are dropped by the log module and reach
-// neither that registry's destinations nor those of the registry that received
-// it. Close releases the pool behind the handle any
-// instance reports, and leaves alone one that gives it no pool to release.
+// NewModule builds an implementation's module descriptor. A defective Spec
+// panics here: a subpackage fills it in at init, so the fault is deterministic
+// and leaves a host nothing to handle.
 func NewModule(spec Spec) core.Module {
 	spec.check()
 	return core.Module{
-		Name: spec.ModuleName,
-		// Optional, because a database has to work in an assembly that never
-		// took logging in, and the example hosts' migrate commands name only
-		// the engine; declared, because an assembly that did take it in has to
-		// have it constructed first. Without the edge nothing orders the two
-		// but their names, which put the database ahead of the logging module,
-		// and the lookup in New would find no logger and fall back to the
-		// process default without a sign.
-		Requires: []core.Requirement{{Token: (*log.Logger)(nil), Optional: true}},
-		// Exclusive, because two engines behind one capability is not a
-		// configuration this module could serve: the dependants would each
-		// take up whichever one resolution happened to leave standing, and
-		// their tables would be split across two databases. Two configured
-		// implementations therefore fail the startup instead.
+		Name:      spec.ModuleName,
+		Requires:  []core.Requirement{{Token: (*log.Logger)(nil), Optional: true}},
 		Provides:  []core.Provision{{Token: (*Database)(nil), Exclusive: true}},
 		Resources: []any{spec.schema()},
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
@@ -153,10 +80,8 @@ func NewModule(spec Spec) core.Module {
 			if err != nil {
 				return nil, err
 			}
-			// The declarations and the logger are taken up before the
-			// connection is opened: taking them up is not a database action,
-			// so a defective declaration or a failed lookup fails the startup
-			// with nothing yet opened to release.
+			// Taken up before the connection is opened, so a failure here
+			// leaves nothing to release.
 			plugins, err := collectPlugins(reg)
 			if err != nil {
 				return nil, err
@@ -172,10 +97,6 @@ func NewModule(spec Spec) core.Module {
 			return spec.newDatabase(ctx, reader, plugins, logger)
 		},
 		Migrate: func(ctx context.Context, reg *core.Registry, instance any) error {
-			// The instance is judged before anything else is read or issued:
-			// a refusal is about what the host supplied, and a registry that
-			// also lacks the reading face should be told about the instance,
-			// which is the mistake to undo first.
 			product, err := spec.ownProduct(instance)
 			if err != nil {
 				return err
@@ -192,10 +113,6 @@ func NewModule(spec Spec) core.Module {
 	}
 }
 
-// check refuses a Spec that cannot produce a working module. Each condition is
-// one this package would otherwise meet much later and much further from its
-// cause: a missing driver binding as a nil call inside New, a mutex with no
-// default timeout as a startup that gives up on the mutex before it has waited.
 func (s Spec) check() {
 	switch {
 	case s.ModuleName == "":
@@ -221,9 +138,6 @@ func (s Spec) check() {
 	}
 }
 
-// reader takes up the configuration. what names the thing being read, so a
-// host that supplied no reading face is told which of this module's decisions
-// it broke rather than that something was unavailable.
 func (s Spec) reader(reg *core.Registry, what string) (config.Reader, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
@@ -235,24 +149,8 @@ func (s Spec) reader(reg *core.Registry, what string) (config.Reader, error) {
 }
 
 // logger takes up the logger the statements of this implementation's handles
-// are written through: the logging capability's, named after this module, when
-// the assembly delivers one, and the process default logger otherwise. Before
-// the delivered logger is named, the credentials the section carries are
-// registered with it as literal redaction rules.
-//
-// The absence of the capability is a legal assembly and is told apart from a
-// failed lookup by the sentinel: anything other than "no provider" is the
-// lookup itself failing, two providers of the capability among them, and that,
-// like a provider that names no logger, terminates the startup rather than quietly sending the statements somewhere
-// the host did not configure.
-//
-// The fallback carries the module attribute Named would have bound. The
-// records this module writes — "statement", "slow statement", "gorm warning" —
-// are common words that name no writer on their own, so a record that reached
-// the process default without the attribute would be anonymous. There is
-// nothing to register with the fallback: the process root logger takes the
-// process-wide rules the logging capability's product holds, and this module
-// registers into that set only through a delivered capability.
+// are written through, naming it after this module, and falls back to the
+// process default logger when no logging capability is delivered.
 func (s Spec) logger(reg *core.Registry, cfg Config) (*slog.Logger, error) {
 	delivered, err := core.Resolve[log.Logger](reg)
 	if err != nil {
@@ -262,8 +160,7 @@ func (s Spec) logger(reg *core.Registry, cfg Config) (*slog.Logger, error) {
 		return nil, fmt.Errorf("%s: taking up the logger the statements of this implementation's handles "+
 			"are written through: %w", s.ModuleName, err)
 	}
-	// Registered before Named, whose result binds the module attribute: a rule
-	// governs what is bound after it is registered and not what came before.
+	// Registered before Named: a redaction rule governs what is bound after it.
 	literal.Register(delivered.Redaction(), s.ModuleName+".credentials", secretValues(cfg)...)
 	named := delivered.Named(s.ModuleName)
 	if named == nil {
@@ -273,33 +170,12 @@ func (s Spec) logger(reg *core.Registry, cfg Config) (*slog.Logger, error) {
 	return named, nil
 }
 
-// secretValues are the values a section carries that are registered as literal
-// redaction rules: the connection locator, which carries credentials, and the
-// root key of the field encryption with the retired keys that still decrypt
-// what they wrote.
 func secretValues(cfg Config) []string {
 	values := make([]string, 0, 2+len(cfg.EncryptionRetiredKeys))
 	values = append(values, cfg.DSN, cfg.EncryptionKey)
 	return append(values, cfg.EncryptionRetiredKeys...)
 }
 
-// prepare states this implementation's stance, or reports what it cannot start
-// without, judging by its own section.
-//
-// A configured locator states StateEnabled rather than StateAuto, and the
-// difference is the whole point of the stance here. Resolution stands down an
-// exclusive provider that states StateAuto, so with StateAuto a host that
-// configured two engines would get one of them silently, with half its tables
-// in a database nobody mentioned. Stating enabled makes that assembly fail.
-//
-// An absent or blank locator fails the startup, naming the key. This
-// implementation is in the run because the command tree named it, and a module
-// taken in at run level has to start: it has no stance that takes it back out,
-// so a database it cannot be pointed at is a startup failure rather than an
-// assembly that goes on without one. A host that wants no database leaves this
-// implementation out of the command tree — the capability is delivered
-// exclusively, so the dependency closure does not pull a provider in on its own
-// (ADR-dependency-resolution, ADR-module-enablement).
 func (s Spec) prepare(reader config.Reader) (core.Enablement, error) {
 	cfg, err := s.read(reader)
 	if err != nil {
@@ -310,11 +186,8 @@ func (s Spec) prepare(reader config.Reader) (core.Enablement, error) {
 			"taken in at run level has to start: set it to run on %s, or leave %s out of the "+
 			"command tree", s.ModuleName, s.ConfigNamespace, dsnKey, s.Dialect, s.ModuleName)
 	}
-	// A configured timeout is held to the rule check holds the Spec's default
-	// to, for the same reason: a wait bounded by zero or less is a single
-	// attempt, so on a first start every replica but the one holding the
-	// mutex would give up at once — the collision the mutex exists to turn
-	// into a queue.
+	// A zero or negative wait is a single attempt, so on a first start every
+	// replica but the one holding the mutex would give up at once.
 	if s.NewMigrationLock != nil && cfg.MigrationLockTimeout <= 0 {
 		return core.Enablement{}, fmt.Errorf("%s: %s.%s is %s, and a replica given no time to wait "+
 			"gives up on the migration mutex at its first attempt, so on a first start every replica "+
@@ -324,20 +197,6 @@ func (s Spec) prepare(reader config.Reader) (core.Enablement, error) {
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 
-// ownProduct returns the instance as the product of this module's own New, or
-// refuses it with ErrForeignInstance.
-//
-// What is judged is where the instance came from, not what its handle carries.
-// New is the one place that installs plugins on a handle and registers the
-// encryption serializer, so an instance it built is the only kind this module
-// vouches for. An implementation of Database the host wrote, a test's stand-in
-// and the product of another implementation's New are all refused, and the name
-// a product carries is what says whose New built it. A typed nil pointer is not
-// something New returns, so it is refused with the rest rather than dereferenced.
-//
-// The plugins on the handle are not compared with what this run declares: an
-// instance built in another registry carries what that registry declared, and
-// answering for that registry is the host's, who built the instance.
 func (s Spec) ownProduct(instance any) (*database, error) {
 	product, ok := instance.(*database)
 	if ok && product != nil && product.spec.ModuleName == s.ModuleName {
@@ -356,13 +215,9 @@ func (s Spec) ownProduct(instance any) (*database, error) {
 		"that one", ErrForeignInstance, s.ModuleName, what, s.ModuleName)
 }
 
-// migrate applies the declared migration sets to the handle of a product this
-// module's New built, under this implementation's mutex when it has one.
-//
-// The timeout is read here, from the reader of the run being migrated, rather
-// than taken from the section the product was built from: a product the host
-// built in another registry carries that registry's section, and the bound on
-// waiting for the mutex belongs to this run.
+// migrate reads the timeout from the run being migrated, not from the section
+// the product was built from: the bound on waiting for the mutex belongs to
+// this run.
 func (s Spec) migrate(ctx context.Context, reg *core.Registry, reader config.Reader, product *database) error {
 	cfg, err := s.read(reader)
 	if err != nil {
@@ -371,7 +226,6 @@ func (s Spec) migrate(ctx context.Context, reg *core.Registry, reader config.Rea
 	return applyMigrations(ctx, reg, product.handle, s.Dialect, s.lock(cfg))
 }
 
-// lock builds the mutex the migration run is held under, or reports none.
 func (s Spec) lock(cfg lockingConfig) MigrationLock {
 	if s.NewMigrationLock == nil {
 		return nil
@@ -379,24 +233,6 @@ func (s Spec) lock(cfg lockingConfig) MigrationLock {
 	return s.NewMigrationLock(cfg.MigrationLockTimeout)
 }
 
-// closeInstance releases the connection pool behind an instance of the
-// capability, whoever built it.
-//
-// A rollback hands it more than this module's own product. A startup that
-// failed part-way closes every module whatever stage it reached, so this runs
-// on a module whose New never returned a product and on one that returned a nil
-// product of its own type. It also runs on an instance the host supplied that
-// this module's New did not build: Migrate refuses such an instance and the
-// rollback that follows reaches Close with it, as does a drive that ended
-// before Migrate. The pool behind the handle it reports through Database is
-// released, since the drive has begun and nothing else will release it. An
-// instance that reports no handle, or a handle with no pool to reach, is left
-// alone, and so is one whose DB, or whose handle when asked for its pool,
-// panics: none of them gives this module a pool to release, and a pool the
-// host's own code holds behind them is the host's. Reporting an error on any of
-// them would bury the failure that started the rollback under one about the
-// cleanup — and an unguarded type assertion or method call would panic there
-// and lose it outright.
 func closeInstance(instance any) error {
 	handle, ok := deliveredHandle(instance)
 	if !ok {
@@ -405,25 +241,11 @@ func closeInstance(instance any) error {
 	return Close(handle)
 }
 
-// deliveredHandle takes the handle out of an instance of the capability, and
-// reports whether there is a pool behind it to release.
-//
-// The nil test is by reflection because a typed nil pointer in an interface is
-// not the nil interface: an instance that came back as a nil pointer of its own
-// type satisfies the assertion and panics on the method call.
-//
-// An instance this module's New did not build runs the host's code in DB, and
-// that code may panic: a stand-in that embeds the interface and overrides only
-// some of its methods has a nil interface behind the rest, DB among them. The
-// handle it reports is the host's too, built however the host built it: one
-// written as a literal has no configuration to ask for a pool, and one opened on
-// a driver that reaches no database has a configuration and no pool. So the
-// handle is asked for its pool here, under the same guard as DB, and only a
-// handle that answers is handed to Close. A DB or a handle that panics, and a
-// handle with no pool, are an instance with nothing to release, and the panic
-// goes no further: the rollback this runs in is already carrying the error the
-// host has to read, and a panic out of the cleanup would take that error with
-// it.
+// deliveredHandle takes the handle out of an instance of the capability, or
+// reports nothing to release. The nil test is by reflection because a typed nil
+// pointer in an interface is not the nil interface. The host's DB may panic, and
+// a panic out of this cleanup would take the rollback's own error with it, so
+// it is guarded here.
 func deliveredHandle(instance any) (handle *gorm.DB, ok bool) {
 	product, isDatabase := instance.(Database)
 	if !isDatabase {

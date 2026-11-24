@@ -15,10 +15,6 @@ import (
 	sqlite3 "modernc.org/sqlite/lib"
 )
 
-// sqliteViolation is the classification the cases here open SQLite with. It
-// answers by the driver's result codes, the way the SQLite implementation's own
-// does; that one is held to the engine in its own package, and these cases hold
-// the machinery that carries whatever an implementation answers.
 func sqliteViolation(err error) error {
 	var refusal *gosqlite.Error
 	if !errors.As(err, &refusal) {
@@ -34,14 +30,11 @@ func sqliteViolation(err error) error {
 	}
 }
 
-// uniqueRow is a table with a unique column beside its key.
 type uniqueRow struct {
 	ID   uint
 	Code string `gorm:"uniqueIndex"`
 }
 
-// constrainedHandle opens a handle the way the module opens every one, on a
-// SQLite file with foreign keys enforced, with the uniqueRow table in place.
 func constrainedHandle(t *testing.T) *gorm.DB {
 	t.Helper()
 	dsn := filepath.Join(t.TempDir(), "constraints.db") + "?_pragma=foreign_keys(1)"
@@ -63,10 +56,8 @@ func constrainedHandle(t *testing.T) *gorm.DB {
 	return handle
 }
 
-// TestAConstraintRefusalKeepsTheDriversError pins what the classification adds
-// and what it leaves alone: the class is found by errors.Is, and the driver's
-// own error — with the constraint it names — is still found by errors.As and
-// is still what the error reads as.
+// TestAConstraintRefusalKeepsTheDriversError pins what the classification adds and what it leaves
+// alone: the class is found by errors.Is.
 func TestAConstraintRefusalKeepsTheDriversError(t *testing.T) {
 	handle := constrainedHandle(t)
 
@@ -86,10 +77,8 @@ func TestAConstraintRefusalKeepsTheDriversError(t *testing.T) {
 	}
 }
 
-// TestARefusalRaisedAgainIsClassifiedOnce covers a refusal that reaches a
-// statement's error a second time — a plugin handing on the failure of a
-// statement it ran on another session with %w. The class is already in the
-// chain, and the error is handed on as it is rather than wrapped again.
+// TestARefusalRaisedAgainIsClassifiedOnce covers a refusal that reaches a statement's error a
+// second time — a plugin handing on the failure of a statement it ran on another session with %w.
 func TestARefusalRaisedAgainIsClassifiedOnce(t *testing.T) {
 	handle := constrainedHandle(t)
 	refused := handle.Create(&uniqueRow{ID: 2, Code: "taken"}).Error
@@ -107,10 +96,8 @@ func TestARefusalRaisedAgainIsClassifiedOnce(t *testing.T) {
 	}
 }
 
-// TestOnlyTheTwoClassesAreAttached pins that an implementation's answer is
-// taken only when it is one of the two classes the contract names. An engine
-// that answered with another of GORM's classes would otherwise report a refusal
-// its neighbour reports as the driver's own error.
+// TestOnlyTheTwoClassesAreAttached pins that an implementation's answer is taken only when it is
+// one of the two classes the contract names.
 func TestOnlyTheTwoClassesAreAttached(t *testing.T) {
 	driver := errors.New("the driver refused the statement")
 	for _, class := range []error{gorm.ErrCheckConstraintViolated, gorm.ErrInvalidField, driver} {
@@ -129,12 +116,8 @@ func TestOnlyTheTwoClassesAreAttached(t *testing.T) {
 	}
 }
 
-// TestTheDialectorKeepsEveryMethodOfTheEngines holds the wrapper every handle
-// is opened with to the engines' own dialectors. GORM asserts optional
-// interfaces on the dialector it holds, and a method the wrapper does not
-// carry is one GORM silently stops calling: PostgreSQL's identifier length
-// comes in through Apply, and a nested transaction's savepoint through
-// SavePoint. A driver upgrade that adds a method shows up here.
+// TestTheDialectorKeepsEveryMethodOfTheEngines holds the wrapper every handle is opened with to the
+// engines' own dialectors.
 func TestTheDialectorKeepsEveryMethodOfTheEngines(t *testing.T) {
 	wrapper := reflect.TypeFor[classifyingDialector]()
 	for _, engine := range []gorm.Dialector{sqlite.Open("engine.db"), pgdriver.Open("host=engine")} {
@@ -149,9 +132,8 @@ func TestTheDialectorKeepsEveryMethodOfTheEngines(t *testing.T) {
 	}
 }
 
-// TestTheEnginesAdjustmentsReachTheHandle observes one forwarded method at
-// work: PostgreSQL's dialector sets the identifier length its engine allows
-// when the handle is opened, and GORM asks for it only through Apply.
+// TestTheEnginesAdjustmentsReachTheHandle observes one forwarded method at work: PostgreSQL's
+// dialector sets the identifier length its engine allows when the handle is opened.
 func TestTheEnginesAdjustmentsReachTheHandle(t *testing.T) {
 	handle, err := gorm.Open(classifyingDialector{Dialector: pgdriver.Open("host=unreached"), classify: sqliteViolation},
 		&gorm.Config{DisableAutomaticPing: true, TranslateError: true})

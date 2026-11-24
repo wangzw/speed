@@ -20,22 +20,13 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// encryptedRootKey is the root key the cases below configure. It is a value
-// rather than a secret: what they observe is behaviour, and a secret in the
-// file would say nothing more about it.
 const encryptedRootKey = "the-root-key-of-the-cases"
 
-// encryptedRootKeyItem is that key as the configuration declares it.
 const encryptedRootKeyItem = `"encryption-key":"` + encryptedRootKey + `"`
 
-// encryptedModel is a model whose address is encrypted and indexed by the
-// digest beside it.
 type encryptedModel struct {
-	ID    uint
-	Email string `gorm:"serializer:encrypted"`
-	// EmailIndex is the blind index column. Nothing here fills it: on both
-	// the write and the query side it is the caller's, and a row written
-	// without it is still written correctly.
+	ID         uint
+	Email      string `gorm:"serializer:encrypted"`
 	EmailIndex string
 	// Nickname is a pointer, which is how a model says a column may be
 	// absent. A serializer that reads and writes one has to keep NULL
@@ -49,8 +40,6 @@ type intEncryptedModel struct {
 	Age int `gorm:"serializer:encrypted"`
 }
 
-// sectionBody is the primary configuration source one case runs on: a SQLite
-// database at dsn, plus whatever items the case configures beside it.
 func sectionBody(dsn string, items ...string) string {
 	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q`, dsn)
 	for _, item := range items {
@@ -66,15 +55,6 @@ func encryptedDSN(t *testing.T) string {
 	return filepath.Join(t.TempDir(), "encrypted.db")
 }
 
-// assembleEncrypted runs the module's New over a SQLite database at dsn, with
-// the given items configured, and returns the product it built. Without
-// encryptedRootKeyItem among them, the assembly has no key material.
-//
-// These cases go through the assembly rather than calling the serializer or the
-// derivation directly: what has to hold is the assembly's behaviour — a
-// serializer registered and a key installed before the product exists — and a
-// case that wired the two together itself would agree with an implementation
-// that never wires them at all.
 func assembleEncrypted(t *testing.T, dsn string, items ...string) *database {
 	t.Helper()
 	spec := sqliteSpec()
@@ -90,8 +70,6 @@ func assembleEncrypted(t *testing.T, dsn string, items ...string) *database {
 	return product
 }
 
-// createEncryptedTable brings the model's table up through the handle the
-// product carries, which is the handle a dependant would use.
 func createEncryptedTable(t *testing.T, product *database) {
 	t.Helper()
 	if err := product.DB().AutoMigrate(&encryptedModel{}); err != nil {
@@ -99,9 +77,6 @@ func createEncryptedTable(t *testing.T, product *database) {
 	}
 }
 
-// storedColumn reads one column of one row with native SQL, around GORM and
-// around the serializer: it is the only way to see what the database holds
-// rather than what a model makes of it.
 func storedColumn(t *testing.T, product *database, id uint, column string) sql.NullString {
 	t.Helper()
 	query := "SELECT " + column + " FROM encrypted_models WHERE id = ?"
@@ -112,8 +87,8 @@ func storedColumn(t *testing.T, product *database, id uint, column string) sql.N
 	return stored
 }
 
-// TestEncryptedFieldRoundTrips pins the one thing a caller writes such a model
-// expecting: what it stored is what it reads back.
+// TestEncryptedFieldRoundTrips pins the one thing a caller writes such a model expecting: what it
+// stored is what it reads back.
 func TestEncryptedFieldRoundTrips(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)
@@ -135,10 +110,8 @@ func TestEncryptedFieldRoundTrips(t *testing.T) {
 	}
 }
 
-// TestCiphertextDiffersForSamePlaintext pins that the sealed column carries the
-// nonce, and with it what the blind index exists for: one plaintext has no one
-// ciphertext, so an equality query against the encrypted column matches
-// nothing, however it is written.
+// TestCiphertextDiffersForSamePlaintext pins that the sealed column carries the nonce, and with it
+// what the blind index exists for: one plaintext has no one ciphertext.
 func TestCiphertextDiffersForSamePlaintext(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)
@@ -170,13 +143,8 @@ func TestCiphertextDiffersForSamePlaintext(t *testing.T) {
 	}
 }
 
-// TestEncryptedColumnIsNotStoredInClear pins the promise the whole mechanism
-// exists for, on the bytes the database actually holds.
-//
-// The comparison against the plaintext alone would be satisfied by a column
-// that carried the plaintext inside a wrapper, so the text is searched for the
-// plaintext as well: the column holds a nonce and a sealed value, and neither
-// of them contains the address.
+// TestEncryptedColumnIsNotStoredInClear pins the promise the whole mechanism exists for, on the
+// bytes the database actually holds.
 func TestEncryptedColumnIsNotStoredInClear(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)
@@ -197,13 +165,8 @@ func TestEncryptedColumnIsNotStoredInClear(t *testing.T) {
 	}
 }
 
-// TestRetiredKeyStillDecrypts pins the rotation the design promises: a root key
-// that is no longer current still reads what it wrote.
-//
-// The second half is what makes the first one mean something: the same rows,
-// read by an assembly that does not list the old key, do not come back — so the
-// case is about the retired key being consulted rather than about the read
-// path never failing.
+// TestRetiredKeyStillDecrypts pins that a root key no longer current still reads
+// what it wrote.
 func TestRetiredKeyStillDecrypts(t *testing.T) {
 	dsn := encryptedDSN(t)
 	before := assembleEncrypted(t, dsn, encryptedRootKeyItem)
@@ -239,14 +202,7 @@ func TestRetiredKeyStillDecrypts(t *testing.T) {
 	}
 }
 
-// TestBlindIndexDoesNotNormalize pins that the digest is computed over the
-// string as it was given.
-//
-// Flattening is the caller's, on both sides. A digest that folded case or
-// trimmed whitespace would match one spelling and not the other depending on
-// which side the caller happened to flatten, and the difference shows up as an
-// empty result rather than as an error — which is exactly why neither default
-// is safe here and neither is taken.
+// TestBlindIndexDoesNotNormalize pins that the digest is computed over the string as it was given.
 func TestBlindIndexDoesNotNormalize(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 
@@ -264,13 +220,8 @@ func TestBlindIndexDoesNotNormalize(t *testing.T) {
 	}
 }
 
-// TestBlindIndexColumnIsNotFilledAutomatically pins the documented shape of a
-// model that forgets its digest column: the row is written, the write reports
-// nothing, and only the equality query comes back empty.
-//
-// The control is the query itself. Without a row found through a digest the
-// caller did write, a broken query would report an empty result too, and the
-// case would agree with an implementation that filled the column in.
+// TestBlindIndexColumnIsNotFilledAutomatically pins the documented shape of a model that forgets
+// its digest column: the row is written, the write reports nothing.
 func TestBlindIndexColumnIsNotFilledAutomatically(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)
@@ -302,19 +253,6 @@ func TestBlindIndexColumnIsNotFilledAutomatically(t *testing.T) {
 	}
 }
 
-// startedRun drives one real lifecycle over the modules given and returns the
-// error it ended with, which is nil when the startup itself succeeded: a
-// registry whose modules all came up then runs until it is stopped.
-//
-// It stops the run once the probe has reached its Init, which is after the
-// database module applied its migrations — stopping it at delivery instead
-// would cancel the context under a migration still in flight and report the
-// interruption as a failed startup. A run that fails returns on its own, before
-// the probe is reached at all.
-//
-// The shape follows the host fixture the external test package keeps, which a
-// case in this package cannot use: what is observed here — the registration of
-// the serializer and the key on the handle — is not exported.
 func startedRun(t *testing.T, body string, modules ...core.Module) error {
 	t.Helper()
 	locator := writeConfig(t, body)
@@ -344,8 +282,6 @@ func startedRun(t *testing.T, body string, modules ...core.Module) error {
 		},
 	})
 
-	// The command line is the process's and a test binary carries arguments
-	// of its own, so they are taken away while the tree reads them.
 	previous := os.Args
 	os.Args = []string{"db.test"}
 	defer func() { os.Args = previous }()
@@ -369,18 +305,10 @@ func startedRun(t *testing.T, body string, modules ...core.Module) error {
 	}
 }
 
-// TestMissingEncryptionKeyStartsUpAndFailsAtUse pins the stance an assembly
-// with no root key takes, in both directions.
-//
-// It starts up: whether any model carries an encrypted field is not known until
-// one is used, so there is nothing to judge at startup. The first write that
-// reaches such a field then fails, naming the item that would turn encryption
-// on, and it fails instead of sealing under a subkey nobody chose — which would
-// write a column nothing can open, with no error anywhere near it.
+// TestMissingEncryptionKeyStartsUpAndFailsAtUse pins the stance an assembly with no root key takes,
+// in both directions.
 func TestMissingEncryptionKeyStartsUpAndFailsAtUse(t *testing.T) {
 	dsn := encryptedDSN(t)
-	// The whole lifecycle, not only the construction, so that "starts up" is
-	// the run that reached delivery.
 	if err := startedRun(t, sectionBody(dsn), NewModule(sqliteSpec())); err != nil {
 		t.Fatalf("a startup with no encryption key failed: %v", err)
 	}
@@ -397,12 +325,8 @@ func TestMissingEncryptionKeyStartsUpAndFailsAtUse(t *testing.T) {
 	}
 }
 
-// TestABlankRootKeyFailsTheAssembly pins a root key of whitespace to the
-// treatment an unusable one gets. It is not absent — the item was written —
-// and used as it stands it is a key anyone can guess, so every column sealed
-// under it is as good as clear while every write reports success. The
-// assembly refuses it naming the item, for the current key and for a retired
-// one alike.
+// TestABlankRootKeyFailsTheAssembly pins a root key of whitespace to the treatment an unusable one
+// gets.
 func TestABlankRootKeyFailsTheAssembly(t *testing.T) {
 	cases := []struct {
 		item string
@@ -427,12 +351,8 @@ func TestABlankRootKeyFailsTheAssembly(t *testing.T) {
 	}
 }
 
-// TestAShortRootKeyFailsTheAssembly pins the floor under the current root key:
-// shorter than 112 bits, the key every column is sealed under from now on can
-// be found by trying them all, while every write reports success. The assembly
-// refuses it naming the item, and accepts a key at the floor. A retired key
-// below it still opens what it sealed, because refusing it would strand the
-// rows of a deployment moving off such a key.
+// TestAShortRootKeyFailsTheAssembly pins the floor under the current root key: shorter than 112
+// bits, the key every column is sealed under from now on can be found by trying them all.
 func TestAShortRootKeyFailsTheAssembly(t *testing.T) {
 	for _, key := range []string{"k", "thirteen-byte"} {
 		spec := sqliteSpec()
@@ -476,16 +396,8 @@ func TestAShortRootKeyFailsTheAssembly(t *testing.T) {
 	}
 }
 
-// TestKeyInjectionIsRegisteredOnTheDeliveredHandle pins the assembly's timing
-// from the handle itself.
-//
-// The key reaches a statement through a callback of the handle the statement
-// runs on, so a handle assembled without it reaches every encrypted field with
-// no key at all — and the failure of the second half is silent in the way that
-// matters: the statement runs, the row is written, and only a later read
-// disagrees. A connection built with Open has to carry it too; the alternative
-// is that moving a query to another database loses the encryption with nothing
-// said.
+// TestKeyInjectionIsRegisteredOnTheDeliveredHandle pins the assembly's timing from the handle
+// itself.
 func TestKeyInjectionIsRegisteredOnTheDeliveredHandle(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 
@@ -522,15 +434,8 @@ func TestKeyInjectionIsRegisteredOnTheDeliveredHandle(t *testing.T) {
 	}
 }
 
-// TestASelfBuiltConnectionCarriesTheSameEncryption pins the same assembly for
-// the second half of the connection surface, on the behaviour rather than on
-// the callback.
-//
-// A handle opened for another database encrypts and decrypts with the key the
-// configuration gave — not with one of its own, and not with none. The second
-// assembly over the same database is what separates those: a per-handle key
-// would round-trip through its own handle and fail to read what was written
-// here.
+// TestASelfBuiltConnectionCarriesTheSameEncryption pins the same assembly for the second half of
+// the connection surface, on the behaviour rather than on the callback.
 func TestASelfBuiltConnectionCarriesTheSameEncryption(t *testing.T) {
 	dsn := encryptedDSN(t)
 	product := assembleEncrypted(t, dsn, encryptedRootKeyItem)
@@ -570,16 +475,8 @@ func TestASelfBuiltConnectionCarriesTheSameEncryption(t *testing.T) {
 	}
 }
 
-// TestTheSerializerIsRegisteredByTheAssembly pins that the registration happens
-// inside the assembly, which is what puts it before the handle is handed out.
-//
-// The registration is process-wide and written by every assembly, so in a
-// binary where an earlier case assembled anything, a round trip through a
-// handle says nothing about what this assembly did — that observation is the
-// same for an implementation that registers late. Clearing the table first is
-// what gives this case something to see: the control below shows the cleared
-// state is one in which a model naming the serializer cannot be parsed, and the
-// assertion after it shows one assembly puts the registration in place.
+// TestTheSerializerIsRegisteredByTheAssembly pins that the registration happens inside the
+// assembly, which is what puts it before the handle is handed out.
 func TestTheSerializerIsRegisteredByTheAssembly(t *testing.T) {
 	schema.RegisterSerializer(encryptedSerializerName, nil)
 	t.Cleanup(func() {
@@ -606,18 +503,10 @@ func TestTheSerializerIsRegisteredByTheAssembly(t *testing.T) {
 	}
 }
 
-// contextMarker is a value a case puts on a statement's context to see whether
-// the context the caller gave survived the key injection.
 type contextMarker struct{}
 
-// TestTheKeyInjectionKeepsTheContextTheCallerGave pins what the injection does
-// to the context it finds.
-//
-// db.WithContext(requestCtx) is the ordinary call, and it replaces the
-// statement's context. Everything the request put there — its deadline, its
-// identifiers, its cancellation — has to reach the statement, with the key
-// added to it rather than put in its place. An injection that built a fresh
-// context would leave the write succeeding and the request's deadline behind.
+// TestTheKeyInjectionKeepsTheContextTheCallerGave pins what the injection does to the context it
+// finds.
 func TestTheKeyInjectionKeepsTheContextTheCallerGave(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)
@@ -648,13 +537,8 @@ func TestTheKeyInjectionKeepsTheContextTheCallerGave(t *testing.T) {
 	}
 }
 
-// TestAPointerFieldRoundTripsAndStaysNil pins the two states a nullable
-// encrypted column has, and that the absent one stays absent.
-//
-// A serializer that sealed the absence would read it back as an allocated empty
-// value, and the model would report a value where the caller stored none. The
-// NULL in the column is the check on that: it is about the bytes the database
-// holds rather than about what a read makes of them.
+// TestAPointerFieldRoundTripsAndStaysNil pins the two states a nullable encrypted column has, and
+// that the absent one stays absent.
 func TestAPointerFieldRoundTripsAndStaysNil(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)
@@ -687,13 +571,8 @@ func TestAPointerFieldRoundTripsAndStaysNil(t *testing.T) {
 	}
 }
 
-// TestAFieldTypeTheSerializerCannotEncryptIsRefused pins that the refusal
-// reaches the caller that wrote the model.
-//
-// The alternative to naming the field is a value that goes in as something else
-// — a byte slice of a formatting, an empty string — and the model that declared
-// an int reads back whatever that was, or fails on a type it cannot assign. The
-// failure is put where the declaration is wrong, and it names it.
+// TestAFieldTypeTheSerializerCannotEncryptIsRefused pins that the refusal reaches the caller that
+// wrote the model.
 func TestAFieldTypeTheSerializerCannotEncryptIsRefused(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	if err := product.DB().AutoMigrate(&intEncryptedModel{}); err != nil {

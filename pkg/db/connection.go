@@ -12,56 +12,23 @@ import (
 )
 
 // Connection runs fn, under ctx, on one connection of the handle's pool, taken
-// within wait.
+// within wait. It is for statements a module issues on its own account, which
+// can be reached from a caller already holding connections of the same pool.
 //
-// It is for statements a module issues on its own account: a plugin writing a
-// row of its own, a subscriber reading a table, a call that reads through a
-// handle on behalf of whoever made it. Such a statement can be reached from a
-// caller that already holds connections of the same pool — inside its
-// transaction on the handle, or while it iterates a result set of it — and a
-// pool with none left over then has the statement wait for the caller, which
-// waits for the statement. A handle held to one connection is always in that
-// position while its caller holds the connection; a larger pool is in it once
-// every connection is held that way. The wait ends with the statement's context
-// and, without a deadline on it, never. Taken through here, the connection is
-// waited for no longer than wait, and the failure says what held it.
+// Only the wait for the connection is bounded; fn's statements wait for locks
+// as the engine makes them wait. The session fn receives is pinned to the
+// connection, and so are the sessions and transactions derived from it. When fn
+// returns or panics, every transaction and result set it left open on the
+// connection is closed and the connection goes back to the pool; fn's own error
+// is returned as it is.
 //
-// Only the wait for the connection is bounded. fn's statements run under ctx
-// and wait for a lock another connection holds as the engine makes them wait,
-// with whatever the connection carries: on SQLite, the connection's busy
-// timeout, which the locator sets and an ending context does not cut short; on
-// PostgreSQL, until ctx ends or the session's lock_timeout or
-// statement_timeout, set by the locator or the server, ends the wait first,
-// and with neither for as long as the lock is held. Nothing here reads or
-// changes those settings.
+// A handle already on a connection — a transaction, a pinned session — or on a
+// pool this package cannot name runs fn on the handle itself, with nothing
+// waited for.
 //
-// The session fn receives is pinned to the connection, and so are the sessions
-// and transactions derived from it — WithContext, Session, Begin, Transaction
-// and a transaction's savepoints; its Statement.ConnPool is this package's
-// wrapper of the connection, not the *sql.Conn. What GORM builds on the pool
-// the handle was opened on is not pinned: a session derived with PrepareStmt,
-// and the *sql.DB a transaction's DB reports. Their statements take a
-// connection of that pool as any statement on the handle does, with nothing
-// bounding the wait, and on a database held to one connection they wait for
-// the one fn holds. When fn returns, or panics, every transaction it left open
-// on the connection is rolled back and every result set it left open is
-// closed, and the connection goes back to the pool; a panic then carries on up
-// to the caller. fn's own error is returned as it is.
-//
-// A handle on a pool is one whose ConnPool is a *sql.DB or answers
-// gorm.GetDBConnector, as GORM's prepared-statement pool does, whether this
-// module opened it or not. Any other handle gives Connection no connection to
-// hand out: a transaction, or a session already pinned to one connection, fn's
-// own among them, and a ConnPool that wraps a pool without naming it through
-// GetDBConnector. fn then runs on the handle itself, under ctx, and nothing is
-// waited for — on a wrapped pool, the wait for a connection its statements
-// make is not bounded either, so a host that wraps its pool answers GetDBConn
-// to have Connection bound it.
-//
-// No connection within wait reports an error that wraps
-// context.DeadlineExceeded while ctx itself has not ended; that is how a caller
-// tells the bound from its own context. A wait that is not positive is refused,
-// and so is a nil handle.
+// No connection within wait reports an error wrapping
+// context.DeadlineExceeded while ctx has not ended. A wait that is not positive,
+// and a nil handle, are refused.
 func Connection(ctx context.Context, handle *gorm.DB, wait time.Duration, fn func(session *gorm.DB) error) error {
 	if wait <= 0 {
 		return fmt.Errorf("db: Connection was given a wait of %v, and a bound on waiting has to be positive", wait)
@@ -100,9 +67,7 @@ func Connection(ctx context.Context, handle *gorm.DB, wait time.Duration, fn fun
 }
 
 // pooledOn is the pool a handle's statements take their connection from, or
-// false for a handle already on one connection — a transaction, a session
-// pinned to a connection — or on a ConnPool that is neither a *sql.DB nor a
-// gorm.GetDBConnector naming one, which this package knows no pool behind.
+// false for a handle already on one connection or on a pool it cannot name.
 func pooledOn(handle *gorm.DB) (*sql.DB, bool) {
 	on := handle.ConnPool
 	if handle.Statement != nil && handle.Statement.ConnPool != nil {
@@ -121,46 +86,33 @@ func pooledOn(handle *gorm.DB) (*sql.DB, bool) {
 	}
 }
 
-// pinnedConn is the connection Connection took, as fn's session reaches it. It
-// keeps what fn could leave open on the connection within reach of the call:
-// each transaction begun on it, and each result set opened on it outside a
-// transaction, whose context ends once released does.
-//
-// It answers GORM's TxBeginner rather than TxCommitter, so a session on it is
-// outside any transaction and GORM begins one through BeginTx; the
-// transaction's statements, its savepoints included, run on the *sql.Tx that
-// returns, as they would on any other.
+// pinnedConn is the connection Connection took, keeping within reach of the call
+// what fn could leave open on it. It answers GORM's TxBeginner rather than
+// TxCommitter, so a session on it is outside any transaction.
 type pinnedConn struct {
 	conn     *sql.Conn
 	released context.Context
 
-	// mu guards begun: fn may run statements on its session from more than
-	// one goroutine, and database/sql serialises them on the connection.
 	mu    sync.Mutex
 	begun []*sql.Tx
 }
 
-// PrepareContext prepares a statement on the connection.
 func (p *pinnedConn) PrepareContext(ctx context.Context, query string) (*sql.Stmt, error) {
 	return p.conn.PrepareContext(ctx, query)
 }
 
-// ExecContext runs a statement on the connection.
 func (p *pinnedConn) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return p.conn.ExecContext(ctx, query, args...)
 }
 
-// QueryContext runs a query on the connection.
 func (p *pinnedConn) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	return p.conn.QueryContext(p.untilReleased(ctx), query, args...)
 }
 
-// QueryRowContext runs a query for one row on the connection.
 func (p *pinnedConn) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
 	return p.conn.QueryRowContext(p.untilReleased(ctx), query, args...)
 }
 
-// BeginTx begins a transaction on the connection.
 func (p *pinnedConn) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
 	tx, err := p.conn.BeginTx(ctx, opts)
 	if err != nil {
@@ -172,9 +124,8 @@ func (p *pinnedConn) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx,
 	return tx, nil
 }
 
-// untilReleased is ctx, ended as well once the connection is released. A result
-// set left open on the connection holds it until the set is closed, and
-// database/sql closes a set whose context ends.
+// untilReleased ends with the connection: a result set left open holds the
+// connection until its context ends.
 func (p *pinnedConn) untilReleased(ctx context.Context) context.Context {
 	bounded, cancel := context.WithCancel(ctx)
 	context.AfterFunc(p.released, cancel)
@@ -182,14 +133,7 @@ func (p *pinnedConn) untilReleased(ctx context.Context) context.Context {
 }
 
 // end rolls back every transaction begun on the connection that is still open,
-// on the connection it runs on and before the connection goes back; one
-// already committed or rolled back is left as it is. Under a context that never
-// ends database/sql rolls such a transaction back never, and the connection's
-// release waits for it for good. Under one that ends it rolls it back on a
-// goroutine of its own and, for a driver that cannot reset a session, asks for
-// the connection to be dropped — on a database held to one connection, the
-// database itself — whether it is turning on which of that goroutine and the
-// release gets there first.
+// before the connection goes back.
 func (p *pinnedConn) end() {
 	p.mu.Lock()
 	begun := p.begun
@@ -200,27 +144,19 @@ func (p *pinnedConn) end() {
 	}
 }
 
-// engineMarkerName is the name the engine marker is installed under in a
-// handle's plugin table. Like the mark Open installs, it is this package's own
-// path with a suffix no declared plugin takes.
 const engineMarkerName = "github.com/vislake/speed/pkg/db#engine"
 
-// engineMarker is what every handle this package opens carries in its plugin
-// table, ahead of the declared plugins: the engine behind the handle. It is how
-// a callback handed nothing but a statement reads the statement's identifiers
-// by that engine's rules (namesColumn) — from a transaction or any other
-// session derived from the handle, since each of them shares the table.
+// engineMarker is the engine behind the handle, carried in the plugin table so a
+// callback handed nothing but a statement can read the statement's identifiers
+// by that engine's rules (namesColumn).
 type engineMarker struct {
 	dialect Dialect
 }
 
-// Name is the marker's key in the plugin table.
 func (*engineMarker) Name() string { return engineMarkerName }
 
-// Initialize registers nothing: the marker is read, not run.
 func (*engineMarker) Initialize(*gorm.DB) error { return nil }
 
-// markEngine installs the engine marker on a handle openHandle opened.
 func markEngine(session *gorm.DB, spec Spec) error {
 	if err := session.Use(&engineMarker{dialect: spec.Dialect}); err != nil {
 		return fmt.Errorf("db: marking a %s connection with its engine failed: %w", spec.Dialect, err)
@@ -228,7 +164,6 @@ func markEngine(session *gorm.DB, spec Spec) error {
 	return nil
 }
 
-// engineOf reads the engine marker of a session.
 func engineOf(session *gorm.DB) (*engineMarker, bool) {
 	if session == nil || session.Config == nil {
 		return nil, false

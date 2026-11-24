@@ -17,19 +17,8 @@ import (
 	"github.com/vislake/speed/pkg/db"
 )
 
-// TestEveryFailurePathKeepsTheChain is the executable form of the rule every
-// wrap in this module follows: an error goes on with %w, so the sentinel stays
-// reachable with errors.Is and the error from the layer below stays a node of
-// the tree.
-//
-// The text is not the observation. A %v leaves the message all but identical and
-// takes both out of the chain, which is why every path below is built for real
-// and what is read is the tree under the error that came back: the class that
-// matches, the classes that must not, and the error from below.
-//
-// The five classes are the whole of the sentinel table, and each is reached the
-// way a host reaches it — through the lifecycle, from a module that was really
-// assembled and really failed.
+// TestEveryFailurePathKeepsTheChain is the executable form of the rule every wrap in this module
+// follows: an error goes on with %w.
 func TestEveryFailurePathKeepsTheChain(t *testing.T) {
 	t.Run("connect", func(t *testing.T) {
 		locator := unopenableLocator(t)
@@ -44,8 +33,6 @@ func TestEveryFailurePathKeepsTheChain(t *testing.T) {
 			pluginModule("auditing", refusingPlugin{err: refusal}))
 		assertReportsOnly(t, err, "ErrPluginFailed")
 
-		// The plugin's own error is reached by type rather than by text, so
-		// this half holds whichever words the plugin chose.
 		var recovered *pluginRefusal
 		if !errors.As(err, &recovered) {
 			t.Fatalf("the tree under %v does not hold the error the plugin reported, so what the "+
@@ -67,11 +54,6 @@ func TestEveryFailurePathKeepsTheChain(t *testing.T) {
 	})
 
 	t.Run("migration mutex", func(t *testing.T) {
-		// The mutex is the one seam a run takes from its implementation, and
-		// the genuine timeout needs a second replica holding it — that path is
-		// pinned against a real server in pkg/db/postgres. Here the mutex is
-		// this case's own: it waits out the configured allowance and reports
-		// the timeout, with an error of its own underneath.
 		holder := errors.New("the other replica had not finished applying its migrations")
 		spec := sqliteSpec()
 		spec.NewMigrationLock = func(allowance time.Duration) db.MigrationLock {
@@ -96,20 +78,11 @@ func TestEveryFailurePathKeepsTheChain(t *testing.T) {
 	})
 
 	t.Run("foreign instance", func(t *testing.T) {
-		// An implementation of Database the host wrote, supplied for the module,
-		// and a startup that gets as far as Migrate. No error lies under the
-		// sentinel: the instance is refused for what it is, and nothing below
-		// reported anything.
 		_, _, err := startWithForeignInstance(t)
 		assertReportsOnly(t, err, "ErrForeignInstance")
 	})
 }
 
-// assertReportsOnly pins that err reports exactly one class of failure, and
-// which one — named as the design's table names it, so what the case checks is
-// the table rather than a list written out a second time here. A host decides
-// what to do from the class, so an error matching two of them leaves it with two
-// responses and no way to choose between them.
 func assertReportsOnly(t *testing.T, err error, name string) {
 	t.Helper()
 	want, known := sentinels[name]
@@ -133,13 +106,6 @@ func assertReportsOnly(t *testing.T, err error, name string) {
 	}
 }
 
-// assertHoldsNodeReading pins that some error in the tree under err reads
-// exactly as cause does.
-//
-// It compares text because a driver reports a fresh error for every call: the
-// same mistake made twice produces two values that no errors.Is can pair. What a
-// node reading as the driver's error establishes is that the error itself
-// travelled — a %v in place of a %w keeps the text and puts no such node there.
 func assertHoldsNodeReading(t *testing.T, err, cause error) {
 	t.Helper()
 	want := cause.Error()
@@ -155,14 +121,6 @@ func assertHoldsNodeReading(t *testing.T, err, cause error) {
 		"under %v reads: %q", want, err, walked)
 }
 
-// errorTree lists every error reachable from err, through a single Unwrap and
-// through the slice an errors.Join reports.
-//
-// A node is walked once, so an error a tree holds twice is listed twice rather
-// than walked away with. The dedup is by value and not by text: a join of one
-// error reads exactly as that error does, and a text key would take the child
-// for the parent and stop there. The guard is on the type's comparability,
-// because an error carrying a slice or a map cannot be a map key.
 func errorTree(err error) []error {
 	var tree []error
 	seen := map[error]bool{}
@@ -186,9 +144,6 @@ func errorTree(err error) []error {
 	return tree
 }
 
-// childrenOf reports what one error unwraps to, in both shapes an error in this
-// module's trees takes: the single error a wrap reports and the slice a join
-// reports.
 func childrenOf(node error) []error {
 	if joined, ok := any(node).(interface{ Unwrap() []error }); ok {
 		return joined.Unwrap()
@@ -201,9 +156,6 @@ func childrenOf(node error) []error {
 	return nil
 }
 
-// driverRefusal produces the driver's own error for a locator, by asking for a
-// connection the way an attempt reaches it: open the session, and if that
-// answered, ask the database whether it is there.
 func driverRefusal(t *testing.T, locator string) error {
 	t.Helper()
 	session, err := gorm.Open(sqlite.Open(locator), &gorm.Config{})
@@ -223,9 +175,6 @@ func driverRefusal(t *testing.T, locator string) error {
 	return refusal
 }
 
-// statementRefusal produces the driver's own error for a statement, on a
-// connection of the case's own and through the same call a migration goes
-// through.
 func statementRefusal(t *testing.T, statement string) error {
 	t.Helper()
 	session, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "refusal.db")), &gorm.Config{})
@@ -251,19 +200,13 @@ type pluginRefusal struct{ reason string }
 
 func (e *pluginRefusal) Error() string { return "the audit plugin will not install: " + e.reason }
 
-// refusingPlugin is a declared plugin whose installation fails.
 type refusingPlugin struct{ err error }
 
 func (p refusingPlugin) Name() string { return "auditing" }
 
 func (p refusingPlugin) Initialize(*gorm.DB) error { return p.err }
 
-// refusingLock is a migration mutex held by another replica for the whole
-// allowance the run configured, which it then reports together with an error of
-// its own.
 type refusingLock struct {
-	// allowance is the configured bound on the wait, handed to the mutex the
-	// way an implementation receives it.
 	allowance time.Duration
 	// holder is what the mutex puts underneath the sentinel, standing for what
 	// a real one says about the replica it waited for.
@@ -281,6 +224,6 @@ func (l *refusingLock) Acquire(ctx context.Context, _ *sql.Conn) error {
 		db.MigrationLockTimeoutKey, l.holder)
 }
 
-// Release gives the mutex up. The run never calls it on this path — it releases
-// only a mutex it took — and its own half is pinned in pkg/db/postgres.
+// Release gives the mutex up. The run never calls it on this path — it releases only a
+// mutex it took — and its own half is pinned in pkg/db/postgres.
 func (l *refusingLock) Release(context.Context, *sql.Conn) error { return nil }

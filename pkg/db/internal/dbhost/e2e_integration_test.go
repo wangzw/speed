@@ -18,19 +18,8 @@ import (
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
-// The case about what a refused connection leaves on the process's streams.
-
-// TestARefusedConnectionIsReportedOnceOnTheDiagnosticStream starts on a server
-// that refuses the login. The startup fails with the database module's own
-// error on standard error, and nothing else reports it: a connectivity check of
-// GORM's own, which gorm.Open runs unless told not to, reports its failure
-// through the handle's logger, and the module's logger writes that as a "gorm
-// error" record on standard output, with the driver's reason in its detail — the
-// user, the database and the address it tried — on the stream a host's log
-// pipeline reads. The module opens its handles without that check, and standard
-// output is searched for the words of GORM's message and of the driver's reason,
-// whichever attribute of a record would carry them. Neither stream carries the
-// password.
+// TestARefusedConnectionIsReportedOnceOnTheDiagnosticStream starts on a server that refuses the
+// login.
 func TestARefusedConnectionIsReportedOnceOnTheDiagnosticStream(t *testing.T) {
 	parsed, err := url.Parse(pgtest.Acquire(t))
 	if err != nil {
@@ -58,26 +47,8 @@ func TestARefusedConnectionIsReportedOnceOnTheDiagnosticStream(t *testing.T) {
 	}
 }
 
-// The concurrency cases: two replicas of one deployment starting at once
-// against an empty database.
-
-// applyDuration is how long the migration the replicas apply keeps the applier
-// inside its transaction, and therefore how wide the window the other replica has
-// to reach its own acquisition in is. It is the pg_sleep in
-// migrations/postgres/0001_widgets.sql, and the overlap case asserts the applier
-// really spent this long inside, so that a fixture that stopped widening the
-// window fails loudly instead of turning the overlap assertion into a coin toss.
 const applyDuration = 3 * time.Second
 
-// concurrentRun holds the one pair of replicas both concurrency cases read.
-//
-// They are one run rather than two because the two properties only mean anything
-// together: the division says the replicas were serialised, and the overlap says
-// the second one was there while the first was working. A second replica that
-// arrived late reads a complete record table and reports noop — with a mutex or
-// without one — so a run whose two processes never overlapped proves nothing
-// about the mutex and would still pass a division assertion. Reading the overlap
-// off a different run than the division would leave exactly that hole open.
 var concurrentRun struct {
 	once    sync.Once
 	results []replicaRun
@@ -93,12 +64,8 @@ func runReplicas(t *testing.T) []replicaRun {
 	return concurrentRun.results
 }
 
-// startReplicas runs the pair, and returns what each of them did.
 func startReplicas(t *testing.T) []replicaRun {
 	t.Helper()
-	// The fixture fails the case rather than skipping it when the server is not
-	// there: this is the gate the cross-process mutex is held by, and a gate that
-	// is skipped wherever it is meant to run is not a gate.
 	dsn := pgtest.Acquire(t)
 	rendezvous := t.TempDir()
 	roles := []string{"replica-0", "replica-1"}
@@ -130,15 +97,6 @@ func startReplicas(t *testing.T) []replicaRun {
 	return results
 }
 
-// replicaConfig writes one replica's configuration.
-//
-// The locator carries the replica's own application_name, and that is what the
-// migration records: one file is applied by one of the two, and the row it
-// writes is the only thing about the finished database that says which. The pool
-// is held to a single connection, which is the smallest a host can configure and
-// therefore the widest statement of what the migration run needs: the mutex, the
-// record table and every statement travel on one connection, so a replica that
-// needed a second one anywhere would stop here instead of passing quietly.
 func replicaConfig(t *testing.T, dsn, role string) string {
 	t.Helper()
 	return writeConfig(t, dbConfig{DB: dbSection{Postgres: &engineSection{
@@ -148,7 +106,6 @@ func replicaConfig(t *testing.T, dsn, role string) string {
 	}}})
 }
 
-// replicaRun is what one replica process did.
 type replicaRun struct {
 	role     string
 	exit     int
@@ -157,13 +114,11 @@ type replicaRun struct {
 	startErr error
 }
 
-// marked reports whether the replica printed a marker.
 func (r replicaRun) marked(name string) bool {
 	_, err := r.at(name)
 	return err == nil
 }
 
-// at reads the moment the replica reached a marker.
 func (r replicaRun) at(name string) (time.Time, error) {
 	for _, line := range strings.Split(r.stdout, "\n") {
 		marker, stamp, found := strings.Cut(strings.TrimSpace(line), "\t")
@@ -180,7 +135,6 @@ func (r replicaRun) at(name string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("%s printed no %q marker", r.role, name)
 }
 
-// runReplica starts one replica as a separate process and collects what it did.
 func runReplica(role, locator, rendezvous string) replicaRun {
 	ctx, cancel := context.WithTimeout(context.Background(), runLimit)
 	defer cancel()
@@ -207,13 +161,6 @@ func runReplica(role, locator, rendezvous string) replicaRun {
 	return run
 }
 
-// refusedStatements are the records on a replica's standard output of a
-// statement the database refused, the "statement failed" records, whatever
-// classes they carry. A correct run refuses none: the migration mutex lets one
-// replica apply the migration while the other waits, so a statement that fails
-// is the collision the mutex is there to prevent. Without the mutex the failure
-// is whichever the race produces, a duplicate key in the catalogue as often as
-// an object that already exists, so no one SQLSTATE stands for it.
 func refusedStatements(t *testing.T, run replicaRun) []dbsuite.Record {
 	t.Helper()
 	var refused []dbsuite.Record
@@ -225,8 +172,6 @@ func refusedStatements(t *testing.T, run replicaRun) []dbsuite.Record {
 	return refused
 }
 
-// divide sorts the replicas by what they reported, and fails when the pair did
-// not come out as exactly one applier and one no-op.
 func divide(t *testing.T, results []replicaRun) (applier, noop replicaRun) {
 	t.Helper()
 	var appliers, noops []replicaRun
@@ -235,14 +180,6 @@ func divide(t *testing.T, results []replicaRun) (applier, noop replicaRun) {
 			t.Errorf("%s exited %d, and both replicas have to start successfully:\nstdout:\n%s\nstderr:\n%s",
 				result.role, result.exit, result.stdout, result.stderr)
 		}
-		// Each stream is read for what it carries of the collision. The driver's
-		// report of it, the words "already exists", reaches standard error with
-		// the startup failure it causes. The database module's logger writes
-		// the failed statement to standard output, on the stream the markers
-		// arrive on, as a "statement failed" record: this assembly names no
-		// log module, so the records go through the process default logger,
-		// which writes to standard output. A correct run has no such record,
-		// so any one is the collision, whatever the classes it carries.
 		if strings.Contains(result.stderr, "already exists") {
 			t.Errorf("%s failed on an object that already exists, which is the collision the migration "+
 				"mutex is there to prevent:\nstdout:\n%s\nstderr:\n%s",
@@ -272,16 +209,6 @@ func divide(t *testing.T, results []replicaRun) (applier, noop replicaRun) {
 	return appliers[0], noops[0]
 }
 
-// requireSlowMigrationRecord asserts that the replica that applied the migration
-// wrote the migration as a "slow statement" record on standard output, stamped
-// with the module that ran it. The file holds the replica's session for the
-// seconds it sleeps, far beyond the logger's threshold, so the record is there on
-// every run.
-//
-// It is what gives the search for refused statements in divide something to
-// find: a correct run has none, so a logger that wrote its records to another
-// stream, or in another form, would leave that search reading nothing and a run
-// that collided would look the same as one that did not.
 func requireSlowMigrationRecord(t *testing.T, applier replicaRun) {
 	t.Helper()
 	for _, record := range dbsuite.Records(t, applier.role+"'s standard output", applier.stdout) {
@@ -295,29 +222,15 @@ func requireSlowMigrationRecord(t *testing.T, applier replicaRun) {
 		applier.role, postgres.ModuleName, applier.stdout)
 }
 
-// TestConcurrentFirstMigrationElectsOneApplier is the hard gate on the
-// cross-process mutex, seen from a real assembly: two hosts, each importing both
-// implementations and configured on PostgreSQL, go for the same empty database at
-// the same moment after meeting at a rendezvous.
-//
-// Exactly one of them has to apply the migration, and the other has to find the
-// work already done — not fail on an object that already exists, which is what
-// happens with no mutex and is the failure a real deployment hits on its first
-// multi-replica start.
+// TestConcurrentFirstMigrationElectsOneApplier checks that two hosts starting at once against an
+// empty PostgreSQL database elect one applier.
 func TestConcurrentFirstMigrationElectsOneApplier(t *testing.T) {
 	applier, noop := divide(t, runReplicas(t))
 	t.Logf("%s applied the migration and %s found it already applied", applier.role, noop.role)
 }
 
-// TestConcurrentFirstMigrationProvesTheWindowOverlapped asserts, in the same run
-// the division is read from, that the two replicas were in flight together.
-//
-// Without it the gate above is empty rather than merely weak. The fixture only
-// guarantees that the applying replica is slow; nothing guarantees that the
-// other one was there while it was working. A cold stack, the second
-// integration leg, a slow exec — any of them make the second replica late, and a late
-// replica reads a complete record table and prints noop whether there is a mutex
-// or not.
+// TestConcurrentFirstMigrationProvesTheWindowOverlapped asserts, in the same run the division is
+// read from, that the two replicas were in flight together.
 func TestConcurrentFirstMigrationProvesTheWindowOverlapped(t *testing.T) {
 	results := runReplicas(t)
 	applier, noop := divide(t, results)

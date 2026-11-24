@@ -13,24 +13,21 @@ import (
 	"github.com/vislake/speed/pkg/db/internal/dbsuite"
 )
 
-// TestConnectionBoundsTheWaitForTheOneConnectionOfAnInMemoryDatabase runs the
-// engine-neutral case on the handle this engine holds to one connection
-// whatever the pool parameters say: the shape on which a module's statement,
-// issued from inside its caller's transaction, waits for that caller.
+// TestConnectionBoundsTheWaitForTheOneConnectionOfAnInMemoryDatabase runs the engine- neutral case
+// on the handle this engine holds to one connection whatever the pool parameters say.
 func TestConnectionBoundsTheWaitForTheOneConnectionOfAnInMemoryDatabase(t *testing.T) {
 	dbsuite.ConnectionWait(t, deliver(t, ":memory:").DB(), db.Connection)
 }
 
-// TestConnectionBoundsTheWaitForAConnectionOfAFullPool runs it on a database
-// file whose pool the configuration holds to one connection.
+// TestConnectionBoundsTheWaitForAConnectionOfAFullPool runs it on a database file whose pool the
+// configuration holds to one connection.
 func TestConnectionBoundsTheWaitForAConnectionOfAFullPool(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "full-pool.db")
 	dbsuite.ConnectionWait(t, deliver(t, dsn, `"max-open-conns":1`, `"max-idle-conns":1`).DB(), db.Connection)
 }
 
-// TestConnectionBoundsTheWaitOnAHandleThisModuleDidNotOpen runs it on a handle
-// a host opened itself with gorm.Open, whose pool it holds to one connection:
-// Connection takes its connection from whatever pool a handle is on.
+// TestConnectionBoundsTheWaitOnAHandleThisModuleDidNotOpen runs it on a handle a host opened itself
+// with gorm.Open, whose pool it holds to one connection.
 func TestConnectionBoundsTheWaitOnAHandleThisModuleDidNotOpen(t *testing.T) {
 	handle, err := gorm.Open(sqlitedriver.Open(filepath.Join(t.TempDir(), "host.db")),
 		&gorm.Config{Logger: logger.Discard})
@@ -46,10 +43,8 @@ func TestConnectionBoundsTheWaitOnAHandleThisModuleDidNotOpen(t *testing.T) {
 	dbsuite.ConnectionWait(t, handle, db.Connection)
 }
 
-// TestConnectionBoundsTheWaitOnAHandleThatPreparesItsStatements runs it on a
-// handle a host opened with PrepareStmt, whose pool GORM keeps behind a
-// prepared-statement pool that answers gorm.GetDBConnector: Connection takes
-// its connection from the pool behind that, as from any other.
+// TestConnectionBoundsTheWaitOnAHandleThatPreparesItsStatements runs it on a handle a host opened
+// with PrepareStmt.
 func TestConnectionBoundsTheWaitOnAHandleThatPreparesItsStatements(t *testing.T) {
 	handle, err := gorm.Open(sqlitedriver.Open(filepath.Join(t.TempDir(), "prepared.db")),
 		&gorm.Config{Logger: logger.Discard, PrepareStmt: true})
@@ -68,16 +63,10 @@ func TestConnectionBoundsTheWaitOnAHandleThatPreparesItsStatements(t *testing.T)
 	dbsuite.ConnectionWait(t, handle, db.Connection)
 }
 
-// busyTimeout is the busy timeout the cases below give their locators: not the
-// driver's default of five seconds, and far short of the wait they give
-// Connection.
 const busyTimeout = 500 * time.Millisecond
 
-// TestAStatementThroughConnectionWaitsForALockForTheBusyTimeout runs the
-// engine-neutral lock case on a database file whose locator sets the busy
-// timeout, while a second pool's transaction holds the write lock: the
-// statement waits for the lock for the busy timeout, whatever wait Connection
-// was given.
+// TestAStatementThroughConnectionWaitsForALockForTheBusyTimeout runs the engine-neutral lock case
+// on a database file whose locator sets the busy timeout.
 func TestAStatementThroughConnectionWaitsForALockForTheBusyTimeout(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "locked.db")
 	capability := deliver(t, dsn+"?_pragma=busy_timeout(500)")
@@ -89,10 +78,8 @@ func TestAStatementThroughConnectionWaitsForALockForTheBusyTimeout(t *testing.T)
 	dbsuite.LockWait(t, capability.DB(), other, busyTimeout, db.Connection)
 }
 
-// TestConnectionLeavesTheBusyTimeoutTheLocatorSet holds the connection
-// Connection takes to the busy timeout it was opened with, inside fn and once
-// it is back in the pool. The locator's is not the driver's default, so a
-// connection whose busy timeout was replaced by anything is told apart.
+// TestConnectionLeavesTheBusyTimeoutTheLocatorSet holds the connection Connection takes to the busy
+// timeout it was opened with, inside fn and once it is back in the pool.
 func TestConnectionLeavesTheBusyTimeoutTheLocatorSet(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "busy-timeout.db") + "?_pragma=busy_timeout(7000)"
 	handle := deliver(t, dsn, `"max-open-conns":1`, `"max-idle-conns":1`).DB()
@@ -116,27 +103,26 @@ func TestConnectionLeavesTheBusyTimeoutTheLocatorSet(t *testing.T) {
 	}
 }
 
-// TestConnectionRunsFnOnATransactionItIsHanded runs the engine-neutral case on
-// the handle this engine holds to one connection.
+// TestConnectionRunsFnOnATransactionItIsHanded runs the engine-neutral case on the handle this
+// engine holds to one connection.
 func TestConnectionRunsFnOnATransactionItIsHanded(t *testing.T) {
 	dbsuite.OnATransaction(t, deliver(t, ":memory:").DB(), db.Connection)
 }
 
-// TestAPanicInFnHandsTheConnectionBack runs the engine-neutral case on an
-// in-memory database, which is the one connection this engine holds its
-// handle to: a connection dropped from the pool takes the database with it.
+// TestAPanicInFnHandsTheConnectionBack runs the engine-neutral case on an in-memory database, which
+// is the one connection this engine holds its handle to.
 func TestAPanicInFnHandsTheConnectionBack(t *testing.T) {
 	dbsuite.PanicReleasesTheConnection(t, deliver(t, ":memory:").DB(), db.Connection)
 }
 
-// TestAReturnFromFnHandsTheConnectionBack runs the engine-neutral case on an
-// in-memory database, for the reason the panic case above does.
+// TestAReturnFromFnHandsTheConnectionBack runs the engine-neutral case on an in-memory database,
+// for the reason the panic case above does.
 func TestAReturnFromFnHandsTheConnectionBack(t *testing.T) {
 	dbsuite.ReturnReleasesTheConnection(t, deliver(t, ":memory:").DB(), db.Connection)
 }
 
-// TestANestedTransactionThroughConnectionRollsBackToItsSavepoint runs the
-// engine-neutral case on a database file.
+// TestANestedTransactionThroughConnectionRollsBackToItsSavepoint runs the engine- neutral case on a
+// database file.
 func TestANestedTransactionThroughConnectionRollsBackToItsSavepoint(t *testing.T) {
 	dbsuite.SavepointRecovers(t, deliver(t, filepath.Join(t.TempDir(), "savepoint.db")).DB(), db.Connection)
 }

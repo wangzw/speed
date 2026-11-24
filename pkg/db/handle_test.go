@@ -20,18 +20,8 @@ import (
 	"github.com/vislake/speed/pkg/db"
 )
 
-// hostNamespace is the namespace the cases below configure. It is not either
-// shipped implementation's, so a case about the delivery this package owns does
-// not read as a statement about which engine is behind it.
 const hostNamespace = "db.testhost"
 
-// sqliteSpec is an implementation of the shape every subpackage has, bound to
-// the pure-Go SQLite driver — the one engine that needs no container.
-//
-// The driver is the real one rather than a stand-in, and the implementation
-// subpackage is not imported: its init registers a module in the process
-// registry, which would take part in every case in this binary. No case here
-// runs into a constraint, so the classification answers none.
 func sqliteSpec() db.Spec {
 	return db.Spec{
 		ModuleName:          hostNamespace,
@@ -42,8 +32,6 @@ func sqliteSpec() db.Spec {
 	}
 }
 
-// hostConfig is the primary configuration source one case runs on: a locator
-// for a database of its own, and whatever else the case configures beside it.
 func hostConfig(t *testing.T, extra ...string) string {
 	t.Helper()
 	body := fmt.Sprintf(`{"db":{"testhost":{"dsn":%q`, filepath.Join(t.TempDir(), "host.db"))
@@ -60,7 +48,6 @@ func unopenableLocator(t *testing.T) string {
 	return filepath.Join(t.TempDir(), "no-such-directory", "db.sqlite")
 }
 
-// poolOf reaches the connection pool behind a session.
 func poolOf(t *testing.T, handle *gorm.DB) *sql.DB {
 	t.Helper()
 	pool, err := handle.DB()
@@ -70,16 +57,6 @@ func poolOf(t *testing.T, handle *gorm.DB) *sql.DB {
 	return pool
 }
 
-// probe is a module that takes up the database capability the way a dependant
-// does, and holds the lifecycle open while a case looks at what it took up.
-//
-// It takes the capability in its own New, which is where a dependant's first
-// use of it sits — a capability that arrived without something installed on its
-// handle is caught there and nowhere later. It then reports reaching Init, and
-// waits: Init runs after Migrate, so a host whose Init has been reached has its
-// migrations applied and its pool open, and a case that closed the pool while a
-// migration was in flight would be interrupting a statement rather than
-// observing a delivery.
 type probe struct {
 	delivered chan db.Database
 	migrated  chan struct{}
@@ -114,10 +91,7 @@ func (p *probe) module() core.Module {
 	}
 }
 
-// host is one running assembly.
 type host struct {
-	// Instance is the capability as a dependant takes it up: what the module
-	// the Spec describes delivered.
 	Instance db.Database
 
 	migrated chan struct{}
@@ -127,10 +101,6 @@ type host struct {
 	once     sync.Once
 }
 
-// finish lets the lifecycle run to its end and waits for it to return, which is
-// also what releases the connection pool the module delivered. It is
-// idempotent, so a case may finish the host itself and leave the cleanup that
-// already covers it in place.
 func (h *host) finish(t *testing.T) {
 	t.Helper()
 	h.once.Do(func() {
@@ -142,30 +112,11 @@ func (h *host) finish(t *testing.T) {
 	})
 }
 
-// startHost assembles a real host around one implementation and runs it until
-// the database capability has been delivered.
-//
-// Everything about it is real: the command tree, the configuration loader over
-// a JSON primary source, the registry, the lifecycle driver, and the probe
-// above. Going through all of it is the point — what these cases observe is
-// the contract a dependant meets, and a callback called in isolation would not
-// show whether the stages were wired to each other at all.
-//
-// A host that could not start reports the error the run returned, which is what
-// a process would print and exit on. A host that started is finished by the
-// cleanup this leaves behind.
-//
-// Anything in extra is registered beside the implementation, which is how a
-// case assembles the module a declaration comes from — a plugin, or a migration
-// set — without this helper having to grow a parameter per declaration kind.
 func startHost(t *testing.T, spec db.Spec, body string, extra ...core.Module) (*host, error) {
 	t.Helper()
 	return startHostWith(t, spec, body, nil, extra...)
 }
 
-// startHostWith is startHost with a say in what the registry holds when the
-// command tree is started: before is called on it with every module registered,
-// which is where a case supplies an instance for one of them.
 func startHostWith(t *testing.T, spec db.Spec, body string, before func(*core.Registry),
 	extra ...core.Module,
 ) (*host, error) {
@@ -199,10 +150,6 @@ func startHostWith(t *testing.T, spec db.Spec, body string, before func(*core.Re
 	previous := os.Args
 	os.Args = []string{"db.test"}
 
-	// One command that takes every registered module in and drives the whole
-	// lifecycle, which is the tree a host with a single command writes. Naming
-	// the modules one by one would leave whatever a case registered in extra
-	// out of the run.
 	app := config.NewApp(reg)
 	app.Root().IncludeAll()
 	app.Root().Do(core.StageServe, nil)
@@ -220,9 +167,6 @@ func startHostWith(t *testing.T, spec db.Spec, body string, before func(*core.Re
 	case h.Instance = <-p.delivered:
 		os.Args = previous
 	}
-	// The capability is in hand, but the run has Migrate ahead of it, and
-	// returning here would let a case cancel the context under a migration
-	// that is still in flight.
 	select {
 	case err := <-done:
 		cancel()
@@ -233,12 +177,8 @@ func startHostWith(t *testing.T, spec db.Spec, body string, before func(*core.Re
 	return h, nil
 }
 
-// TestPoolParametersReachTheHandle pins that the connection a module delivers
-// is sized by the configuration the host wrote.
-//
-// The value travels the whole way — configuration file, loader, carrier,
-// delivery — so a module that read the section and opened with something else
-// is caught here and not by a case that handed the carrier in directly.
+// TestPoolParametersReachTheHandle pins that the connection a module delivers is sized by the
+// configuration the host wrote.
 func TestPoolParametersReachTheHandle(t *testing.T) {
 	h, err := startHost(t, sqliteSpec(), hostConfig(t, `"max-open-conns":7`))
 	if err != nil {
@@ -249,8 +189,8 @@ func TestPoolParametersReachTheHandle(t *testing.T) {
 	}
 }
 
-// TestTheDeliveredInstanceReportsItsEngine pins the one thing a dependant
-// branching on native SQL needs: which engine is behind the handle it took up.
+// TestTheDeliveredInstanceReportsItsEngine pins the one thing a dependant branching on native SQL
+// needs: which engine is behind the handle it took up.
 func TestTheDeliveredInstanceReportsItsEngine(t *testing.T) {
 	h, err := startHost(t, sqliteSpec(), hostConfig(t))
 	if err != nil {
@@ -261,9 +201,8 @@ func TestTheDeliveredInstanceReportsItsEngine(t *testing.T) {
 	}
 }
 
-// TestStartupOnAnUnreachableDatabaseIsErrConnectFailed pins that a locator the
-// driver refuses fails the startup with the sentinel the design names for it,
-// rather than somewhere later or as a missing capability.
+// TestStartupOnAnUnreachableDatabaseIsErrConnectFailed pins that a locator the driver refuses fails
+// the startup with ErrConnectFailed.
 func TestStartupOnAnUnreachableDatabaseIsErrConnectFailed(t *testing.T) {
 	_, err := startHost(t, sqliteSpec(),
 		fmt.Sprintf(`{"db":{"testhost":{"dsn":%q}}}`, unopenableLocator(t)))
@@ -272,10 +211,7 @@ func TestStartupOnAnUnreachableDatabaseIsErrConnectFailed(t *testing.T) {
 	}
 }
 
-// TestOpenFailureIsErrConnectFailed pins the same sentinel on the other side of
-// the delivery. A connection a caller builds at run time fails for the same
-// reasons a startup one does, and the fixing action is the same, so it is the
-// same class rather than a second sentinel.
+// TestOpenFailureIsErrConnectFailed pins the same sentinel on the other side of the delivery.
 func TestOpenFailureIsErrConnectFailed(t *testing.T) {
 	h, err := startHost(t, sqliteSpec(), hostConfig(t))
 	if err != nil {
@@ -287,13 +223,8 @@ func TestOpenFailureIsErrConnectFailed(t *testing.T) {
 	}
 }
 
-// TestOpenSharesPoolParameters pins what a second connection keeps from the
-// delivered one, and what it must not keep.
-//
-// The shape is the same, because the pool parameters describe this module's
-// connections rather than the configured database. The pool is not: a handle
-// that shared one would close the module's connections along with the caller's,
-// and the caller closing its own would take the delivered handle down with it.
+// TestOpenSharesPoolParameters pins what a second connection keeps from the delivered one, and what
+// it must not keep.
 func TestOpenSharesPoolParameters(t *testing.T) {
 	h, err := startHost(t, sqliteSpec(), hostConfig(t, `"max-open-conns":7`))
 	if err != nil {
@@ -323,15 +254,8 @@ func TestOpenSharesPoolParameters(t *testing.T) {
 	}
 }
 
-// TestCloseIsReentrant pins both halves of the package-level Close at once: the
-// first call really releases the pool, and a second one on the same handle is
-// not an error.
-//
-// Only the pair together says anything. A Close that reported no error without
-// releasing anything passes the second half alone, and every caller gives the
-// close to a defer that runs whether or not the handle arrived — so a Close
-// that failed on an already closed pool would turn a failed startup, which is
-// the error worth reading, into a complaint about the cleanup.
+// TestCloseIsReentrant pins both halves of the package-level Close at once: the first call really
+// releases the pool, and a second one on the same handle is not an error.
 func TestCloseIsReentrant(t *testing.T) {
 	h, err := startHost(t, sqliteSpec(), hostConfig(t))
 	if err != nil {

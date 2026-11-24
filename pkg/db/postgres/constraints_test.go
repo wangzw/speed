@@ -13,17 +13,13 @@ import (
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
-// carriesPostgresError reports whether an error still carries this engine's
-// driver error.
 func carriesPostgresError(err error) bool {
 	var refusal *pgconn.PgError
 	return errors.As(err, &refusal)
 }
 
-// TestConstraintRefusalsOnTheDeliveredHandle runs the engine-neutral cases on
-// the handle this engine's module delivers. The INSERT with RETURNING among
-// them is where this engine differs: its driver reports the refusal as the
-// result set is opened, on a path GORM does not hand to the translation.
+// TestConstraintRefusalsOnTheDeliveredHandle runs the engine-neutral cases on the handle this
+// engine's module delivers.
 func TestConstraintRefusalsOnTheDeliveredHandle(t *testing.T) {
 	capability, err := runAssembly(t, pgtest.Acquire(t))
 	if err != nil {
@@ -32,8 +28,8 @@ func TestConstraintRefusalsOnTheDeliveredHandle(t *testing.T) {
 	dbsuite.ConstraintRefusals(t, capability.DB(), carriesPostgresError)
 }
 
-// TestConstraintRefusalsOnAnOpenedHandle runs them on a connection built with
-// Open, which is assembled the way the delivered one is.
+// TestConstraintRefusalsOnAnOpenedHandle runs them on a connection built with Open, which is
+// assembled the way the delivered one is.
 func TestConstraintRefusalsOnAnOpenedHandle(t *testing.T) {
 	capability, err := runAssembly(t, pgtest.Acquire(t))
 	if err != nil {

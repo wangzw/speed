@@ -19,23 +19,11 @@ import (
 	"github.com/vislake/speed/pkg/db/internal/dbsuite"
 )
 
-// These cases live in package db rather than beside the others in db_test: the
-// migration engine's entry point is unexported, and exporting it to reach it
-// from outside would widen the module's contract for the tests' convenience.
-
-// unrelatedAssets stands for what a module that embeds assets declares — an
-// i18n bundle, a template set. The type is embed.FS, the same type a migration
-// set's FS usually is, which is the whole reason Migrations is a struct.
-//
 //go:embed testdata/assets
 var unrelatedAssets embed.FS
 
-// createWidgets is a migration that fails loudly if it is ever applied twice:
-// there is no IF NOT EXISTS on it.
 const createWidgets = `CREATE TABLE widgets (id INTEGER NOT NULL, PRIMARY KEY (id))`
 
-// forEachDialect runs a case against every dialect available on this machine,
-// each on a database of its own.
 func forEachDialect(t *testing.T, run func(t *testing.T, dialect Dialect, handle *gorm.DB)) {
 	t.Helper()
 	for _, fixture := range dbsuite.Fixtures(t) {
@@ -45,13 +33,10 @@ func forEachDialect(t *testing.T, run func(t *testing.T, dialect Dialect, handle
 	}
 }
 
-// migrationSet builds a declaration holding the given files under the
-// dialect's subdirectory.
 func migrationSet(dialect Dialect, files map[string]string) Migrations {
 	return Migrations{FS: filesUnder(string(dialect), files)}
 }
 
-// filesUnder builds an in-memory tree with the files under one directory.
 func filesUnder(dir string, files map[string]string) fstest.MapFS {
 	tree := fstest.MapFS{}
 	for name, body := range files {
@@ -60,8 +45,6 @@ func filesUnder(dir string, files map[string]string) fstest.MapFS {
 	return tree
 }
 
-// declaring is a module that brings migrations and nothing else, which is the
-// shape of most modules with tables.
 func declaring(name string, sets ...Migrations) core.Module {
 	resources := make([]any, 0, len(sets))
 	for _, set := range sets {
@@ -70,7 +53,6 @@ func declaring(name string, sets ...Migrations) core.Module {
 	return core.Module{Name: name, Resources: resources}
 }
 
-// registryOf builds a registry holding the given modules, undriven.
 func registryOf(modules ...core.Module) *core.Registry {
 	reg := core.New()
 	for _, m := range modules {
@@ -79,18 +61,6 @@ func registryOf(modules ...core.Module) *core.Registry {
 	return reg
 }
 
-// settledRegistry is registryOf with the drive's sets already settled and
-// every module it holds taking part in them.
-//
-// The collection reads the declaring set, and that is a property of a drive:
-// a registry that has never been driven has none, so a case calling a
-// collecting function directly has to settle one first. A drive stopping at
-// StagePrepare settles both sets and constructs nothing, which is the whole of
-// what these cases need -- they are about what gets collected and applied, not
-// about who took part.
-//
-// Cases that go through driveWith keep using registryOf: the drive they
-// perform is the thing they observe, and it settles the sets on its own terms.
 func settledRegistry(t *testing.T, modules ...core.Module) *core.Registry {
 	t.Helper()
 	reg := registryOf(modules...)
@@ -104,13 +74,11 @@ func settledRegistry(t *testing.T, modules ...core.Module) *core.Registry {
 	return reg
 }
 
-// hasTable reports whether a table exists, the same way in every dialect.
 func hasTable(t *testing.T, handle *gorm.DB, name string) bool {
 	t.Helper()
 	return handle.Migrator().HasTable(name)
 }
 
-// recordRow is one row of the migration record table.
 type recordRow struct {
 	Module string
 	File   string
@@ -126,21 +94,8 @@ func recordedMigrations(t *testing.T, handle *gorm.DB) []recordRow {
 	return rows
 }
 
-// TestMigrationExecutionAndRecordShareOneTransaction is the observation that
-// tells a one-transaction implementation apart from one that executes first and
-// records second.
-//
-// The record table is created by hand beforehand with a fourth column that is
-// NOT NULL and has no default. The engine's CREATE TABLE IF NOT EXISTS is
-// therefore a no-op, its SELECT still works, and its INSERT cannot succeed. A
-// migration that creates a table then runs against a record that will not
-// write.
-//
-// With one transaction around both, the created table is rolled back with the
-// record: nothing exists and nothing is recorded, so the next start applies it
-// again. Executing first and recording second leaves the table behind, and that
-// half-applied state only shows up on the following start, as a CREATE TABLE
-// against an object that already exists — far from what caused it.
+// TestMigrationExecutionAndRecordShareOneTransaction is the observation that tells a one-
+// transaction implementation apart from one that executes first and records second.
 func TestMigrationExecutionAndRecordShareOneTransaction(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		blocked := fmt.Sprintf(`CREATE TABLE %s (
@@ -174,9 +129,7 @@ func TestMigrationExecutionAndRecordShareOneTransaction(t *testing.T) {
 	})
 }
 
-// TestSecondRunAppliesNothing pins idempotence. The migration carries no IF NOT
-// EXISTS, so an implementation that re-applies it fails outright on the second
-// run rather than quietly doing the work twice.
+// TestSecondRunAppliesNothing pins idempotence.
 func TestSecondRunAppliesNothing(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		reg := settledRegistry(t, declaring("catalog", migrationSet(dialect, map[string]string{
@@ -201,12 +154,6 @@ func TestSecondRunAppliesNothing(t *testing.T) {
 	})
 }
 
-// mutedCapability stands for whatever capability two modules deliver
-// exclusively, one of them explicitly enabled. A case about a module that is
-// out of the enabled set needs it: no module may state that it does not run, so
-// the only disabled verdict left is the one resolution gives, and resolution
-// only stands a provider down when it claims a capability exclusively while
-// stating StateAuto beside an explicitly enabled provider of it.
 type mutedCapability interface{ muted() }
 
 // rivalProduct is what the module holding the capability against the muted one
@@ -216,9 +163,7 @@ type rivalProduct struct{}
 
 func (rivalProduct) muted() {}
 
-// TestDisabledModuleMigrationsAreNotApplied pins the enablement filter. It runs
-// the real lifecycle, because a module's verdict only exists after resolution
-// and the registry reports nothing before that.
+// TestDisabledModuleMigrationsAreNotApplied pins the enablement filter.
 func TestDisabledModuleMigrationsAreNotApplied(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		muted := declaring("muted", migrationSet(dialect, map[string]string{
@@ -252,19 +197,8 @@ func TestDisabledModuleMigrationsAreNotApplied(t *testing.T) {
 	})
 }
 
-// TestAnUnincludedModuleMigrationsAreNotApplied pins the other half of the
-// filter: the participating set of the command that drives the run.
-//
-// A registered module a command did not take in never took a stance, and the
-// registry reports it disabled for that reason, so the collection drops it
-// through the same query a stood-down module goes through. Nothing in this
-// package holds that — it is a property of the registry — and without a case
-// on it the day it stops holding is the day a command applies the migrations
-// of a module it was written not to assemble.
-//
-// What is observed is the database rather than the length of the collected
-// list: a run that applied the outsider's file would leave its table and its
-// record row behind, and neither is there.
+// TestAnUnincludedModuleMigrationsAreNotApplied pins the other half of the filter: the
+// participating set of the command that drives the run.
 func TestAnUnincludedModuleMigrationsAreNotApplied(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		outsider := declaring("outsider", migrationSet(dialect, map[string]string{
@@ -291,28 +225,13 @@ func TestAnUnincludedModuleMigrationsAreNotApplied(t *testing.T) {
 	})
 }
 
-// silentPlugin is a gorm.Plugin that does nothing, so a case can observe
-// whether it was installed without the installation doing anything else.
 type silentPlugin string
 
 func (p silentPlugin) Name() string              { return string(p) }
 func (p silentPlugin) Initialize(*gorm.DB) error { return nil }
 
-// TestAModuleReachedForItsDeclarationsIsMigratedWithoutRunning pins the split
-// between what a command runs and whose declarations it collects.
-//
-// A command whose work is applying migrations runs the engine and nothing
-// else. The modules owning the tables depend on the engine, so the dependency
-// closure never reaches them: they cannot be participants without being
-// constructed, and constructing one makes it answer for configuration this
-// command has no use for -- an address to listen on, a credential it never
-// presents. Their tables arrive through the declaring set instead, and the
-// case reads both halves off one drive.
-//
-// Collected by the participating set alone, this command applies nothing at
-// all: the modules that own the tables are outside that set by construction,
-// so the run creates the record table, takes the mutex, applies no migration,
-// releases the mutex and exits successfully.
+// TestAModuleReachedForItsDeclarationsIsMigratedWithoutRunning pins the split between what a
+// command runs and whose declarations it collects.
 func TestAModuleReachedForItsDeclarationsIsMigratedWithoutRunning(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		built := false
@@ -350,19 +269,8 @@ func TestAModuleReachedForItsDeclarationsIsMigratedWithoutRunning(t *testing.T) 
 	})
 }
 
-// TestADeclarationLevelModuleKeepsItsPluginOutOfTheRun pins the one place the
-// two collections disagree, on the module shape where it shows: one that both
-// owns a table and declares a plugin.
-//
-// The table is created and the plugin is not installed. Both halves come from
-// one drive, so an implementation that unified the two filters again -- either
-// way round -- fails here whichever way it unified them: on the declaring set
-// and the plugin shows up, on enablement and the table goes missing.
-//
-// The split follows from what each one describes. A table outlives the command
-// that created it, so a command that did not take its owner in still creates
-// it. A plugin acts on the statements this run issues, so a module that is not
-// part of the run has nothing for it to act on.
+// TestADeclarationLevelModuleKeepsItsPluginOutOfTheRun pins the one place the two collections
+// disagree, on the module shape where it shows: one that both owns a table and declares a plugin.
 func TestADeclarationLevelModuleKeepsItsPluginOutOfTheRun(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		outsider := declaring("outsider", migrationSet(dialect, map[string]string{
@@ -397,14 +305,8 @@ func TestADeclarationLevelModuleKeepsItsPluginOutOfTheRun(t *testing.T) {
 	})
 }
 
-// TestAllResourcesPutsADeclarationLevelModulesPluginInForce pins the host's
-// override of the collection's own domain.
-//
-// It is the same module and the same drive as the case above, with one
-// adjustment, and the plugin that was left out is installed. Nothing about the
-// module changed: what changed is that the host asked for its declarations
-// regardless of whether it runs, and a consumption point reading the enabled
-// set takes it.
+// TestAllResourcesPutsADeclarationLevelModulesPluginInForce pins the host's override of the
+// collection's own domain.
 func TestAllResourcesPutsADeclarationLevelModulesPluginInForce(t *testing.T) {
 	outsider := declaring("outsider")
 	outsider.Resources = append(outsider.Resources, Plugin{Plugin: silentPlugin("outsider")})
@@ -426,10 +328,8 @@ func TestAllResourcesPutsADeclarationLevelModulesPluginInForce(t *testing.T) {
 	}
 }
 
-// TestOnlyCurrentDialectSubdirectoryIsRead pins that a declaration covering
-// several engines contributes only the running one's files. The subdirectories
-// that are not the running dialect hold statements no engine accepts, so
-// reading one of them fails the run rather than passing unnoticed.
+// TestOnlyCurrentDialectSubdirectoryIsRead pins that a declaration covering several engines
+// contributes only the running one's files.
 func TestOnlyCurrentDialectSubdirectoryIsRead(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		tree := fstest.MapFS{}
@@ -451,9 +351,8 @@ func TestOnlyCurrentDialectSubdirectoryIsRead(t *testing.T) {
 	})
 }
 
-// TestMissingDialectSubdirectoryIsZeroMigrations pins that a module which does
-// not support the running engine says so by leaving the subdirectory out, and
-// that this is not a failure.
+// TestMissingDialectSubdirectoryIsZeroMigrations pins that a module which does not support the
+// running engine says so by leaving the subdirectory out, and that this is not a failure.
 func TestMissingDialectSubdirectoryIsZeroMigrations(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		reg := settledRegistry(t, declaring("catalog", migrationSet("mysql", map[string]string{
@@ -472,17 +371,8 @@ func TestMissingDialectSubdirectoryIsZeroMigrations(t *testing.T) {
 	})
 }
 
-// TestUnrelatedEmbedFSIsNotApplied is the end-to-end form of why Migrations is
-// a struct rather than an fs.FS.
-//
-// Two modules declare embedded assets without wrapping them: one as the
-// embed.FS an //go:embed directive produces, one as the fs.Sub view of it a
-// module takes when its assets sit under a prefix. The second is the one with
-// teeth — its top level is dialect-named directories, so an engine collecting
-// bare fs.FS values would find a file for the running dialect and run it.
-//
-// The genuine declaration is there so that "nothing unrelated was applied"
-// cannot pass on a run that applied nothing at all.
+// TestUnrelatedEmbedFSIsNotApplied is the end-to-end form of why Migrations is a struct rather than
+// an fs.FS.
 func TestUnrelatedEmbedFSIsNotApplied(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		assetRoot, err := fs.Sub(unrelatedAssets, "testdata/assets")
@@ -515,19 +405,11 @@ func TestUnrelatedEmbedFSIsNotApplied(t *testing.T) {
 	})
 }
 
-// TestMigrationFailureNamesModuleAndFile pins what the error has to carry: the
-// module is who has to change the statement, and the file is which one. This
-// module cannot know how to fix either.
-//
-// It also pins the chain. A %v in place of any %w along the way leaves the text
-// all but identical while the sentinel and the driver's own error both become
-// unreachable.
+// TestMigrationFailureNamesModuleAndFile pins what the error has to carry: the module is who has to
+// change the statement, and the file is which one.
 func TestMigrationFailureNamesModuleAndFile(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		const broken = `THIS IS NOT SQL IN ANY DIALECT`
-		// What the driver says about this statement, taken straight from
-		// it, so the case can look for that very error inside the chain
-		// rather than for its text inside a message.
 		reference := handle.Exec(broken).Error
 		if reference == nil {
 			t.Fatal("the fixture accepted a statement that is not SQL, so there is no failure to inspect")
@@ -560,9 +442,7 @@ func TestMigrationFailureNamesModuleAndFile(t *testing.T) {
 	})
 }
 
-// TestRecordTableFailureIsAlsoErrMigrationFailed pins the second trigger of the
-// sentinel. The record table is prepared without the file column, so reading it
-// fails while the reentrant create statement passes over it.
+// TestRecordTableFailureIsAlsoErrMigrationFailed pins the second trigger of the sentinel.
 func TestRecordTableFailureIsAlsoErrMigrationFailed(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		unusable := fmt.Sprintf(`CREATE TABLE %s (module TEXT NOT NULL)`, recordTableName)
@@ -587,17 +467,10 @@ func TestRecordTableFailureIsAlsoErrMigrationFailed(t *testing.T) {
 	})
 }
 
-// probeCapability stands for whatever capability one module takes up from
-// another. Its only job here is to carry a dependency edge.
 type probeCapability interface{ probe() }
 
-// TestModulesMigrateInDependencyOrder pins that the order comes from the
-// Requires declarations rather than from the module names.
-//
-// The dependency runs against the names: "alpha" depends on "zeta", so zeta's
-// migration has to be applied first. zeta creates a table, alpha inserts into
-// it. Ordered by name, alpha's insert hits a table that does not exist yet and
-// the run fails — which is what makes this case tell the two apart.
+// TestModulesMigrateInDependencyOrder pins that the order comes from the Requires declarations
+// rather than from the module names.
 func TestModulesMigrateInDependencyOrder(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		zeta := declaring("zeta", migrationSet(dialect, map[string]string{
@@ -626,8 +499,8 @@ func TestModulesMigrateInDependencyOrder(t *testing.T) {
 	})
 }
 
-// TestFileOrderWithinAModuleIsLexical pins that file name is the whole of the
-// order inside one module: the second file depends on the first having run.
+// TestFileOrderWithinAModuleIsLexical pins that file name is the whole of the order inside one
+// module: the second file depends on the first having run.
 func TestFileOrderWithinAModuleIsLexical(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		reg := settledRegistry(t, declaring("catalog", migrationSet(dialect, map[string]string{
@@ -645,11 +518,7 @@ func TestFileOrderWithinAModuleIsLexical(t *testing.T) {
 	})
 }
 
-// TestDuplicateFileNameWithinOneModuleIsRejected pins the hole the record
-// table's key leaves open. It is keyed by module and file name, so a module
-// declaring the same file name in two migration sets would have the second one
-// counted as applied the moment the first one is recorded — it would never run,
-// and nothing would say so.
+// TestDuplicateFileNameWithinOneModuleIsRejected pins the hole the record table's key leaves open.
 func TestDuplicateFileNameWithinOneModuleIsRejected(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		reg := settledRegistry(t, declaring("catalog",
@@ -666,11 +535,6 @@ func TestDuplicateFileNameWithinOneModuleIsRejected(t *testing.T) {
 				t.Errorf("the error text %q does not name %q", err, want)
 			}
 		}
-		// Rejected while the set is being collected, before anything ran.
-		// An engine that took the pair as it found them would apply the
-		// first file and only trip over the duplicate key the second one
-		// writes — leaving the first migration behind, and on the next
-		// start counting the second one as applied without ever running it.
 		if hasTable(t, handle, "widgets") {
 			t.Error("the first of the two declarations was applied before the duplicate was caught: " +
 				"the clash has to be found while the set is collected, not by the record table's key")
@@ -681,9 +545,7 @@ func TestDuplicateFileNameWithinOneModuleIsRejected(t *testing.T) {
 	})
 }
 
-// TestDirectoryInsideADialectDirectoryIsRejected pins that nothing is passed
-// over without a word. The engine does not descend, so a directory there would
-// take its migrations out of the run silently.
+// TestDirectoryInsideADialectDirectoryIsRejected pins that nothing is passed over without a word.
 func TestDirectoryInsideADialectDirectoryIsRejected(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		reg := settledRegistry(t, declaring("catalog", migrationSet(dialect, map[string]string{
@@ -702,18 +564,7 @@ func TestDirectoryInsideADialectDirectoryIsRejected(t *testing.T) {
 	})
 }
 
-// TestAFileThatIsNotSQLIsRejected pins the other half of the same rule. Only
-// .sql files are migrations, and anything else in the directory is an error
-// rather than something to pass over.
-//
-// Both of the wider rules hide a failure. Applying every regular file sends a
-// note somebody left in there to the database to be executed. Applying the .sql
-// files and ignoring the rest turns a migration whose name was typed wrong into
-// a table that is never created — and that is found at run time, a long way
-// from the start that skipped it.
-//
-// The legal migration sorts before the rejected entry, so an engine that
-// checked each entry as it reached it would have applied it before refusing.
+// TestAFileThatIsNotSQLIsRejected pins the other half of the same rule.
 func TestAFileThatIsNotSQLIsRejected(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		reg := settledRegistry(t, declaring("catalog", migrationSet(dialect, map[string]string{
@@ -732,13 +583,6 @@ func TestAFileThatIsNotSQLIsRejected(t *testing.T) {
 	})
 }
 
-// assertNothingWasApplied checks that a rejected entry stopped the run before it
-// reached the database.
-//
-// The declaration under test holds one legal migration beside the rejected
-// entry. An engine that refused the entry only when it got to it would have
-// applied that migration first and recorded it, and the next start would take a
-// half-applied set for a complete one.
 func assertNothingWasApplied(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	if hasTable(t, handle, "widgets") {
@@ -752,14 +596,8 @@ func assertNothingWasApplied(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// TestTheDialectPutsDDLInsideATransaction pins the admission condition every
-// implementation subpackage has to meet, and it is what stands in for a
-// cross-process case on a dialect that needs no mutex.
-//
-// A migration's execution and its record are atomic only if the engine rolls
-// DDL back with the transaction around it. On a dialect where DDL takes effect
-// outside the transaction, a failed record would leave the schema change behind
-// and the record table's idempotence would be broken from then on.
+// TestTheDialectPutsDDLInsideATransaction pins the admission condition every implementation
+// subpackage has to meet.
 func TestTheDialectPutsDDLInsideATransaction(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		rollback := errors.New("rolled back on purpose")
@@ -780,10 +618,6 @@ func TestTheDialectPutsDDLInsideATransaction(t *testing.T) {
 	})
 }
 
-// probeLock records what the migration run looks like from the mutex's two
-// ends. It is the only way a single process can observe the seam the
-// cross-process case depends on: the real failure needs several replicas
-// starting at once, and no test inside one process reproduces it.
 type probeLock struct {
 	handle     *gorm.DB
 	acquireErr error
@@ -795,10 +629,8 @@ type probeLock struct {
 	recordsAtRelease     int
 }
 
-// Both halves look at the database through the connection they are handed,
-// which is the connection the run itself is on. Reaching for the pool instead
-// would ask it for a second connection, and a pool of one has none to give:
-// the observation would wait for the connection the run is holding.
+// Both halves look at the database through the connection they are handed, which is the
+// connection the run itself is on.
 
 func (l *probeLock) Acquire(ctx context.Context, conn *sql.Conn) error {
 	l.acquires++
@@ -824,17 +656,6 @@ func (l *probeLock) Release(ctx context.Context, conn *sql.Conn) error {
 var _ MigrationLock = (*probeLock)(nil)
 
 // TestTheMutexSpansTheWholeRun pins where the mutex is taken and released.
-//
-// The design puts it around everything from creating the record table to the
-// last migration being applied, and that span is the whole of its value: taken
-// any later, every replica has already read an empty record table and they all
-// run the same statements — which is exactly the failure that shows up only on
-// a first start of a multi-replica deployment.
-//
-// Both ends are observed from inside the mutex itself: the record table must
-// not exist yet when it is taken, and every migration must be recorded by the
-// time it is released. A run that took the mutex after reading the record
-// table, or released it between migrations, differs in one of those two.
 func TestTheMutexSpansTheWholeRun(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		lock := &probeLock{handle: handle}
@@ -861,9 +682,7 @@ func TestTheMutexSpansTheWholeRun(t *testing.T) {
 	})
 }
 
-// TestTheMutexIsReleasedAfterAFailedMigration pins the other end of the span. A
-// run that keeps the mutex after failing blocks every other replica's startup
-// until its connection drops.
+// TestTheMutexIsReleasedAfterAFailedMigration pins the other end of the span.
 func TestTheMutexIsReleasedAfterAFailedMigration(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		lock := &probeLock{handle: handle}
@@ -881,9 +700,8 @@ func TestTheMutexIsReleasedAfterAFailedMigration(t *testing.T) {
 	})
 }
 
-// TestReleaseFailureIsReported pins that a mutex left held is not swallowed: it
-// blocks every other replica, and a run that reported success would leave the
-// host with nothing to go on.
+// TestReleaseFailureIsReported pins that a mutex left held is not swallowed: it blocks every other
+// replica, and a run that reported success would leave the host with nothing to go on.
 func TestReleaseFailureIsReported(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		lock := &probeLock{handle: handle, releaseErr: errors.New("the connection went away")}
@@ -902,11 +720,6 @@ func TestReleaseFailureIsReported(t *testing.T) {
 }
 
 // TestLockTimeoutKeepsItsOwnSentinel pins that a timeout is not reclassified.
-//
-// The two sentinels exist apart because the responses differ: a timeout sends
-// the host to the replica holding the mutex, a migration failure to the module
-// that declared the statement. Wrapping the timeout in ErrMigrationFailed would
-// make both match and point at the wrong thing.
 func TestLockTimeoutKeepsItsOwnSentinel(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		lock := &probeLock{
@@ -935,8 +748,6 @@ func TestLockTimeoutKeepsItsOwnSentinel(t *testing.T) {
 }
 
 // TestFailingToTakeTheMutexIsErrMigrationFailed pins the other acquire failure.
-// A mutex that could not be taken for any reason other than the timeout is a
-// startup failure of the migration kind.
 func TestFailingToTakeTheMutexIsErrMigrationFailed(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		lock := &probeLock{handle: handle, acquireErr: errors.New("no connection to take it on")}
@@ -954,34 +765,16 @@ func TestFailingToTakeTheMutexIsErrMigrationFailed(t *testing.T) {
 	})
 }
 
-// startupWith drives the real lifecycle over the given modules, with a stand-in
-// for the database module applying the migrations in its Migrate stage. It is
-// how a case reaches a module's enablement verdict, which only exists after
-// resolution has run. Every registered module takes part.
 func startupWith(t *testing.T, handle *gorm.DB, dialect Dialect, modules ...core.Module) error {
 	t.Helper()
 	return driveWith(t, handle, dialect, nil, modules...)
 }
 
-// driveWith is startupWith with a say in which modules the drive takes in.
-//
-// included names them, beside the two fixtures below, which are always in it;
-// a nil list takes every registered module in. The distinction is what a case
-// about the participating set needs and nothing else does: a command that
-// leaves a registered module out is the shape a drive has, and there is no way
-// to reach it through a drive that includes everything.
 func driveWith(t *testing.T, handle *gorm.DB, dialect Dialect, included []string, modules ...core.Module) error {
 	t.Helper()
 	return driveSpec(t, handle, dialect, included, nil, modules...)
 }
 
-// driveSpec is driveWith with the declaration-level half of the drive as well.
-//
-// declared names the modules the drive reaches for their declarations alone.
-// That is the shape of a command whose work is applying migrations: it runs
-// the engine and cannot run the modules owning the tables, since those are the
-// engine's dependants and taking them in would construct them, so their tables
-// arrive through the declaring set instead.
 func driveSpec(t *testing.T, handle *gorm.DB, dialect Dialect, included []string,
 	declared []core.Declaration, modules ...core.Module,
 ) error {
@@ -1036,8 +829,6 @@ func driveSpec(t *testing.T, handle *gorm.DB, dialect Dialect, included []string
 	}
 }
 
-// allErrors flattens an error tree, following both the single-error and the
-// multi-error form of Unwrap.
 func allErrors(err error) []error {
 	if err == nil {
 		return nil
@@ -1055,21 +846,11 @@ func allErrors(err error) []error {
 	return out
 }
 
-// createWidgetsAndIndex is one migration holding two statements: a table and
-// the index that belongs with it. Written as two files it would be the same
-// change scattered over two migrations.
 const createWidgetsAndIndex = createWidgets + ";\n" +
 	`CREATE INDEX widgets_by_id ON widgets (id);`
 
-// TestEveryStatementInAMigrationFileIsExecuted pins that a migration file may
-// hold more than one statement, and that all of them run.
-//
-// Two failures are ruled out at once. An engine that executed only the first
-// statement leaves the index out and says nothing: the table is there, the
-// migration is recorded, and the missing index turns up as a slow query
-// months later. An engine that refused the file outright leaves the table out
-// as well, which at least fails loudly, and this case tells the two apart by
-// looking for both objects.
+// TestEveryStatementInAMigrationFileIsExecuted pins that a migration file may hold more than one
+// statement, and that all of them run.
 func TestEveryStatementInAMigrationFileIsExecuted(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		reg := settledRegistry(t, declaring("catalog", migrationSet(dialect, map[string]string{
@@ -1092,12 +873,8 @@ func TestEveryStatementInAMigrationFileIsExecuted(t *testing.T) {
 	})
 }
 
-// TestTheDialectRunsAMigrationFileWithSeveralStatements is the admission
-// condition under the case above, and it belongs to the engine and its driver
-// rather than to this module: the file goes to the driver whole, because
-// splitting it here would mean parsing SQL. A driver with no path for a text of
-// several statements fails this case first, with none of the engine in the way,
-// and a migration set that holds such a file would stop working on it.
+// TestTheDialectRunsAMigrationFileWithSeveralStatements is the admission condition under the case
+// above, and it belongs to the engine and its driver rather than to this module.
 func TestTheDialectRunsAMigrationFileWithSeveralStatements(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		if err := handle.Exec(createWidgetsAndIndex).Error; err != nil {
@@ -1113,12 +890,8 @@ func TestTheDialectRunsAMigrationFileWithSeveralStatements(t *testing.T) {
 	})
 }
 
-// TestReleaseFailureSaysTheMigrationsWereApplied pins what the run reports when
-// every migration went in and only the release failed.
-//
-// The sentinel on its own reads as a migration that would not apply, and an
-// operator following it goes through migration files that have nothing wrong
-// with them. The text has to say where the failure fell.
+// TestReleaseFailureSaysTheMigrationsWereApplied pins what the run reports when every migration
+// went in and only the release failed.
 func TestReleaseFailureSaysTheMigrationsWereApplied(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		lock := &probeLock{handle: handle, releaseErr: errors.New("the connection went away")}
@@ -1149,8 +922,6 @@ func TestReleaseFailureSaysTheMigrationsWereApplied(t *testing.T) {
 }
 
 // TestReleaseFailureAfterAFailedRunDoesNotClaimSuccess is the other direction.
-// A run that failed and then could not give the mutex up must not report that
-// the migrations were applied, and both reasons have to stay in the chain.
 func TestReleaseFailureAfterAFailedRunDoesNotClaimSuccess(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		lock := &probeLock{handle: handle, releaseErr: errors.New("the connection went away")}
@@ -1176,16 +947,7 @@ func TestReleaseFailureAfterAFailedRunDoesNotClaimSuccess(t *testing.T) {
 	})
 }
 
-// TestAPoolOfOneConnectionCarriesTheWholeRun pins that a run needs one
-// connection and not two.
-//
-// max-open-conns is an input item a host writes, and one is a value it may
-// legitimately write. The mutex is scoped to a session, so it has to be taken
-// on the connection the migrations travel on; an implementation that took it on
-// a second connection would leave every statement of the run waiting for one
-// that cannot come free until the run finishes — no error, no log line, a
-// startup that simply stops. The deadline below is what turns that hang into a
-// failure this case can report.
+// TestAPoolOfOneConnectionCarriesTheWholeRun pins that a run needs one connection and not two.
 func TestAPoolOfOneConnectionCarriesTheWholeRun(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		pool, err := handle.DB()
@@ -1216,16 +978,8 @@ func TestAPoolOfOneConnectionCarriesTheWholeRun(t *testing.T) {
 	})
 }
 
-// pinnedSchema is where the schema probe sends everything the run issues.
 const pinnedSchema = "pinned_to_the_mutex"
 
-// schemaProbeLock observes which connection the run is on, by setting session
-// state on the connection it is handed and looking for the consequences.
-//
-// A schema search path set without LOCAL belongs to the session, and a session
-// is one connection. Every object that lands in pinnedSchema afterwards was
-// created by a statement issued on that connection, and every object that lands
-// anywhere else was not.
 type schemaProbeLock struct {
 	schemaAtRelease string
 }
@@ -1244,19 +998,8 @@ func (l *schemaProbeLock) Release(ctx context.Context, conn *sql.Conn) error {
 
 var _ MigrationLock = (*schemaProbeLock)(nil)
 
-// TestTheWholeRunStaysOnOnePhysicalConnection is the structural half of the
-// case above: not that the run fits in one connection, but that all four of its
-// parts are on the same one.
-//
-// Taking the mutex sets the session's schema. The record table and the
-// migration's own table are then looked for twice — in that schema, where a run
-// on the same connection puts them, and in public, where a run that reached the
-// database on a second connection would have put them. Giving the mutex up
-// reads the schema back, which is the fourth part.
-//
-// Only PostgreSQL runs it. SQLite has no session setting of this kind to hang
-// the observation on, and its fixture allows one connection anyway, so there
-// would be nothing to tell apart.
+// TestTheWholeRunStaysOnOnePhysicalConnection is the structural half of the case above: not that
+// the run fits in one connection, but that all four of its parts are on the same one.
 func TestTheWholeRunStaysOnOnePhysicalConnection(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		if dialect != Postgres {

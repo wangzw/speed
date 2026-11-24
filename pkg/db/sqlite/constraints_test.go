@@ -11,22 +11,20 @@ import (
 	"github.com/vislake/speed/pkg/db/internal/dbsuite"
 )
 
-// carriesSQLiteError reports whether an error still carries this engine's
-// driver error.
 func carriesSQLiteError(err error) bool {
 	var refusal *gosqlite.Error
 	return errors.As(err, &refusal)
 }
 
-// TestConstraintRefusalsOnTheDeliveredHandle runs the engine-neutral cases on
-// the handle this engine's module delivers.
+// TestConstraintRefusalsOnTheDeliveredHandle runs the engine-neutral cases on the handle this
+// engine's module delivers.
 func TestConstraintRefusalsOnTheDeliveredHandle(t *testing.T) {
 	capability := deliver(t, enforcingLocator(t, "delivered.db"))
 	dbsuite.ConstraintRefusals(t, capability.DB(), carriesSQLiteError)
 }
 
-// TestConstraintRefusalsOnAnOpenedHandle runs them on a connection built with
-// Open, which is assembled the way the delivered one is.
+// TestConstraintRefusalsOnAnOpenedHandle runs them on a connection built with Open, which is
+// assembled the way the delivered one is.
 func TestConstraintRefusalsOnAnOpenedHandle(t *testing.T) {
 	capability := deliver(t, enforcingLocator(t, "delivered.db"))
 	opened, err := capability.Open(t.Context(), enforcingLocator(t, "opened.db"))
@@ -37,9 +35,8 @@ func TestConstraintRefusalsOnAnOpenedHandle(t *testing.T) {
 	dbsuite.ConstraintRefusals(t, opened, carriesSQLiteError)
 }
 
-// TestADuplicateRowidIsADuplicatedKey covers the uniqueness refusal of a table
-// without an INTEGER PRIMARY KEY written with an explicit rowid, which this
-// engine reports under a result code of its own.
+// TestADuplicateRowidIsADuplicatedKey covers the uniqueness refusal of a table without an INTEGER
+// PRIMARY KEY written with an explicit rowid.
 func TestADuplicateRowidIsADuplicatedKey(t *testing.T) {
 	handle := deliver(t, enforcingLocator(t, "rowid.db")).DB()
 	if err := handle.Exec("CREATE TABLE notes (body TEXT)").Error; err != nil {

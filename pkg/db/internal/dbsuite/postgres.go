@@ -12,17 +12,10 @@ import (
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
-// init contributes the PostgreSQL fixture, so that every dialect-neutral
-// migration case runs against this engine too without any of them being
-// touched.
-//
-// This file is the seam, and the build tag is why it is a file of its own: the
-// unit run's suite is SQLite alone — PostgreSQL is absent from the list rather
-// than skipped within it — while the integration run adds it. The cross-process
-// behaviour PostgreSQL carries has no other cover, so the engine may not be
-// dropped from a run that is meant to exercise it: there the fixture comes from
-// the repository's compose stack, and a case that cannot reach the server
-// fails.
+// init contributes the PostgreSQL fixture, so every dialect-neutral case runs
+// against this engine too. The build tag keeps it out of the unit run, which is
+// SQLite alone; the integration run's fixture comes from the compose stack, and
+// a case that cannot reach the server fails.
 func init() {
 	Contribute(func(t *testing.T) Fixture {
 		t.Helper()
@@ -30,17 +23,9 @@ func init() {
 	})
 }
 
-// OpenPostgres opens a handle on an empty PostgreSQL database, and closes it
-// when the test ends.
-//
-// Every call gets a database of its own on the shared server. The cases
-// assert on which tables exist and on what the record table holds, and neither
-// survives being shared with the packages go test runs in parallel or with make
-// check's second test leg.
-//
-// The GORM logger is discarded for the reason the SQLite fixture discards it:
-// several cases fail a migration on purpose, and the default logger prints each
-// one as an error line that reads like a test failure.
+// OpenPostgres opens a handle on an empty PostgreSQL database and closes it when
+// the test ends. Every call gets a database of its own on the shared server, and
+// the logger is discarded for the reason the SQLite fixture discards it.
 func OpenPostgres(t *testing.T) *gorm.DB {
 	t.Helper()
 	dsn := pgtest.Acquire(t)

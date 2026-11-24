@@ -16,25 +16,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// These cases live in package db rather than beside the others in db_test: the
-// opener is unexported, and the text it produces has to be read on its own. A
-// host's wrap around it prefixes the module name, and the module name is where
-// the dialect would appear, so a case reading that text from outside would
-// agree with an implementation that named no dialect at all.
+// These cases live in package db because the opener is unexported.
 
 // locatorSecret stands where a locator carries credentials. Nothing this
 // package reports may contain it: these errors reach the startup diagnostics,
 // and the diagnostics are written to a stream the host cannot redirect.
 const locatorSecret = "hunter2-must-not-be-echoed"
 
-// sqliteSpec is an implementation of the shape every subpackage has, bound to
-// the pure-Go SQLite driver.
-//
-// The driver is the real one rather than a stand-in: what these cases observe
-// is the driver's behaviour — that it refuses a locator, and what its refusal
-// says — and a stub would agree with any expectation. The implementation
-// subpackage is not imported, because its init registers a module in the
-// process registry and would take part in every other case in this binary.
 func sqliteSpec() Spec {
 	return Spec{
 		ModuleName:          sqliteNamespace,
@@ -45,8 +33,6 @@ func sqliteSpec() Spec {
 	}
 }
 
-// sqliteSection is the configuration this implementation runs on, with the
-// pool parameters an assembly that configured only a locator has.
 func sqliteSection(dsn string) lockingConfig {
 	return lockingConfig{Config: Config{
 		DSN:             dsn,
@@ -61,14 +47,11 @@ func sqliteSection(dsn string) lockingConfig {
 // accepts every record and keeps none.
 func discardingLogger() *slog.Logger { return slog.New(slog.DiscardHandler) }
 
-// unopenableDSN is a locator the driver refuses: the directory it names does
-// not exist. The secret stands where a locator carries its credentials.
 func unopenableDSN(t *testing.T) string {
 	t.Helper()
 	return filepath.Join(t.TempDir(), locatorSecret, "db.sqlite")
 }
 
-// poolOf reaches the connection pool behind a session.
 func poolOf(t *testing.T, handle *gorm.DB) *sql.DB {
 	t.Helper()
 	pool, err := handle.DB()
@@ -89,8 +72,7 @@ func releaseAtEnd(t *testing.T, pool *sql.DB) {
 	})
 }
 
-// TestConnectFailureIsErrConnectFailed pins the sentinel a locator the driver
-// cannot open reports.
+// TestConnectFailureIsErrConnectFailed pins the sentinel a locator the driver cannot open reports.
 func TestConnectFailureIsErrConnectFailed(t *testing.T) {
 	_, err := openHandle(t.Context(), sqliteSpec(), sqliteSection(unopenableDSN(t)), discardingLogger())
 	if !errors.Is(err, ErrConnectFailed) {
@@ -98,13 +80,8 @@ func TestConnectFailureIsErrConnectFailed(t *testing.T) {
 	}
 }
 
-// TestConnectFailureDoesNotEchoTheLocator keeps the credentials a locator
-// carries out of the error text, which is written to the startup diagnostics
-// and which the host cannot redirect.
-//
-// The dialect and the step are what has to be in the text instead: without
-// them the reader knows a connection failed and nothing about which one or
-// where to look.
+// TestConnectFailureDoesNotEchoTheLocator keeps the credentials a locator carries out of the error
+// text, which is written to the startup diagnostics and which the host cannot redirect.
 func TestConnectFailureDoesNotEchoTheLocator(t *testing.T) {
 	_, err := openHandle(t.Context(), sqliteSpec(), sqliteSection(unopenableDSN(t)), discardingLogger())
 	if err == nil {
@@ -123,16 +100,8 @@ func TestConnectFailureDoesNotEchoTheLocator(t *testing.T) {
 	}
 }
 
-// TestConnectFailureNamesTheConnectivityStep pins the second step a connection
-// establishment has, and that it is bound to the context the stage received.
-//
-// A cancelled context is what makes the step observable: the driver's own open
-// answers an already-cancelled context — SQLite is opened through a file, with
-// no round trip to bind — so an implementation that hands the session back
-// without checking that the database answers passes every other case here and
-// fails this one. Where a host wants a bound on the wait, that context is the
-// only place to put it: the driver's timeouts are written in the locator and
-// this package declares no input item for them.
+// TestConnectFailureNamesTheConnectivityStep pins the second step a connection establishment has,
+// and that it is bound to the context the stage received.
 func TestConnectFailureNamesTheConnectivityStep(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -146,15 +115,7 @@ func TestConnectFailureNamesTheConnectivityStep(t *testing.T) {
 	}
 }
 
-// TestTheLocatorReachesTheDriverTrimmed is the half the stance cannot hold on
-// its own. prepare reads a trimmed locator, so one written with surrounding
-// whitespace passes it; the driver has to be handed that same value. Handing it
-// the text as written would refuse a locator prepare had just accepted, and the
-// refusal would land in New rather than in Prepare.
-//
-// What the dialector was given is recorded rather than inferred from what the
-// driver does with it: SQLite opens a path with a space in the name rather than
-// refusing it, so the driver's own behaviour cannot tell the two apart.
+// TestTheLocatorReachesTheDriverTrimmed is the half the stance cannot hold on its own.
 func TestTheLocatorReachesTheDriverTrimmed(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "trimmed.db")
 	var seen string
@@ -177,12 +138,8 @@ func TestTheLocatorReachesTheDriverTrimmed(t *testing.T) {
 	}
 }
 
-// TestPoolParametersReachTheConnection pins that the largest number of
-// connections the pool opens is the configured one.
-//
-// Left unset it is not a conservative default: database/sql reads 0 as no limit
-// at all, so a handle that dropped the parameter grows a connection per
-// concurrent statement and holds each one for good.
+// TestPoolParametersReachTheConnection pins that the largest number of connections the pool opens
+// is the configured one.
 func TestPoolParametersReachTheConnection(t *testing.T) {
 	cfg := sqliteSection(filepath.Join(t.TempDir(), "pool.db"))
 	cfg.MaxOpenConns = 7
@@ -198,18 +155,8 @@ func TestPoolParametersReachTheConnection(t *testing.T) {
 	}
 }
 
-// TestIdleConnectionsReachTheConnection pins the other end of the pool: how
-// many connections are kept once they are no longer in use.
-//
-// It is observed by holding more connections at once than the configuration
-// keeps, then giving them all back: what stays idle is the configured number,
-// and an implementation that dropped the parameter keeps the number
-// database/sql defaults to, which is neither the configured value nor a safe
-// one to leave in its place.
-//
-// The value is deliberately not 2: that is the default an unset pool carries,
-// and a case that configured it would pass on an implementation that never
-// touched the parameter.
+// TestIdleConnectionsReachTheConnection pins the other end of the pool: how many connections are
+// kept once they are no longer in use.
 func TestIdleConnectionsReachTheConnection(t *testing.T) {
 	ctx := t.Context()
 	cfg := sqliteSection(filepath.Join(t.TempDir(), "idle.db"))
@@ -241,13 +188,8 @@ func TestIdleConnectionsReachTheConnection(t *testing.T) {
 	}
 }
 
-// TestConnMaxLifetimeReachesTheConnection pins the third parameter: how long a
-// connection is reused before it is replaced.
-//
-// A lifetime of a nanosecond expires every connection the moment it is given
-// back, so a ping is enough to replace one. An implementation that dropped the
-// parameter replaces nothing, ever: the connection stays for the life of the
-// process, past whatever the server or a proxy between them is willing to keep.
+// TestConnMaxLifetimeReachesTheConnection pins the third parameter: how long a connection is reused
+// before it is replaced.
 func TestConnMaxLifetimeReachesTheConnection(t *testing.T) {
 	ctx := t.Context()
 	cfg := sqliteSection(filepath.Join(t.TempDir(), "lifetime.db"))
@@ -271,20 +213,10 @@ func TestConnMaxLifetimeReachesTheConnection(t *testing.T) {
 	}
 }
 
-// openedValue is the value the statements of the case below bind: a mark the
-// records are searched for.
 const openedValue = "logged-value-opened"
 
-// TestAHandleWritesItsStatementsThroughTheLoggerItIsOpenedWith holds the one
-// place that builds the statement logger to building it over the logger it is
-// handed. A statement of the handle that fails is a record of that logger's
-// handler, with the classes of the error the handle reports — for a duplicate
-// key, the sentinel and the engine's result code, since the handle is opened
-// with the engine's classification of what it refuses — and without the value it
-// bound; a statement that ran as any other is not written at the level a handle
-// is opened at, which is Warn. A statement the machine made slow is written as
-// "slow statement", and those records are left out of the counts (see
-// withoutSlowStatements); the redaction is still asserted over every record.
+// TestAHandleWritesItsStatementsThroughTheLoggerItIsOpenedWith holds the one place that builds the
+// statement logger to building it over the logger it is handed.
 func TestAHandleWritesItsStatementsThroughTheLoggerItIsOpenedWith(t *testing.T) {
 	rec := &recordingHandler{}
 	handle, err := openHandle(t.Context(), sqliteSpec(), sqliteSection(filepath.Join(t.TempDir(), "logged.db")),
@@ -333,12 +265,8 @@ func TestAHandleWritesItsStatementsThroughTheLoggerItIsOpenedWith(t *testing.T) 
 	}
 }
 
-// TestAHandleOpenedWithNoLoggerIsRefusedBeforeAnythingIsOpened holds openHandle
-// to refusing a nil logger with a message. A handle whose statements went
-// nowhere would work and say nothing, and every caller hands the logger it took
-// up, so a nil one is a defect in this repository's own code. The refusal comes
-// before the connection is made: the locator names a file the driver creates
-// when it connects, and none exists once the refusal has been reported.
+// TestAHandleOpenedWithNoLoggerIsRefusedBeforeAnythingIsOpened holds openHandle to refusing a nil
+// logger with a message.
 func TestAHandleOpenedWithNoLoggerIsRefusedBeforeAnythingIsOpened(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "unlogged.db")
 

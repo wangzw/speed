@@ -10,9 +10,8 @@ import (
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
-// TestConcurrentTransactionsThatReadBeforeTheyWriteAllCommit runs the
-// engine-neutral case on the handle this engine delivers, whose pool gives each
-// transaction a connection of its own.
+// TestConcurrentTransactionsThatReadBeforeTheyWriteAllCommit runs the engine-neutral case on the
+// handle this engine delivers, whose pool gives each transaction a connection of its own.
 func TestConcurrentTransactionsThatReadBeforeTheyWriteAllCommit(t *testing.T) {
 	capability, err := runAssemblyWith(t, context.Background(), map[string]any{"dsn": pgtest.Acquire(t)})
 	if err != nil {

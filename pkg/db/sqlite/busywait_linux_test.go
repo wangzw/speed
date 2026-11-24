@@ -13,14 +13,8 @@ import (
 	"time"
 )
 
-// A statement that meets a lock another connection holds waits for it for the
-// busy timeout its locator sets even when the thread it waits on is signalled
-// meanwhile. The Go runtime signals threads with SIGURG to preempt goroutines,
-// and SQLite's busy handler sleeps in nanosleep(2), which a signal ends early on
-// Linux whatever SA_RESTART says; a sleep that is not resumed for the time left
-// lets the handler give up before the timeout has passed. The case signals the
-// waiting thread every millisecond, so a wait whose sleeps are cut short ends
-// far inside the timeout.
+// A statement that meets a lock another connection holds waits for it for the busy timeout its
+// locator sets even when the thread it waits on is signalled meanwhile.
 func TestALockWaitLastsTheBusyTimeoutWhileItsThreadIsSignalled(t *testing.T) {
 	const busyTimeout = time.Second
 	ctx := context.Background()

@@ -18,8 +18,6 @@ import (
 	"github.com/vislake/speed/pkg/db"
 )
 
-// pluginRecorder records the order the plugins were initialised in, which is
-// the order they were installed: GORM calls Initialize as part of Use.
 type pluginRecorder struct {
 	mu    sync.Mutex
 	order []string
@@ -31,15 +29,12 @@ func (r *pluginRecorder) record(name string) {
 	r.order = append(r.order, name)
 }
 
-// recorded copies the order out.
 func (r *pluginRecorder) recorded() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return slices.Clone(r.order)
 }
 
-// recordingPlugin is a plugin that reports when it is installed. Reporting is
-// optional: a case about which plugins arrived has nothing to say about order.
 type recordingPlugin struct {
 	name string
 	into *pluginRecorder
@@ -54,9 +49,6 @@ func (p recordingPlugin) Initialize(*gorm.DB) error {
 	return nil
 }
 
-// pluginModule is a module that declares plugins and nothing else, which is the
-// shape of a module bringing a cross-cutting capability that needs a concept
-// from higher up the dependency graph.
 func pluginModule(name string, plugins ...gorm.Plugin) core.Module {
 	resources := make([]any, 0, len(plugins))
 	for _, plugin := range plugins {
@@ -65,10 +57,6 @@ func pluginModule(name string, plugins ...gorm.Plugin) core.Module {
 	return core.Module{Name: name, Resources: resources}
 }
 
-// installedOn lists the declared plugins on a handle, sorted, so a case compares
-// sets rather than the map's iteration order. The marks this package keeps in
-// the same table — the one every handle carries, and the one on a connection
-// built with Open — are left out: they are its own, and no module declared them.
 func installedOn(handle *gorm.DB) []string {
 	names := make([]string, 0, len(handle.Plugins))
 	for name := range handle.Plugins {
@@ -81,8 +69,6 @@ func installedOn(handle *gorm.DB) []string {
 	return names
 }
 
-// migrationSet builds a migration declaration holding the given files under the
-// dialect's subdirectory.
 func migrationSet(dialect db.Dialect, files map[string]string) db.Migrations {
 	tree := fstest.MapFS{}
 	for name, body := range files {
@@ -91,15 +77,6 @@ func migrationSet(dialect db.Dialect, files map[string]string) db.Migrations {
 	return db.Migrations{FS: tree}
 }
 
-// pluginObserver is a module that takes up the database capability the way a
-// dependant does, and reports the plugins on the handle at the moment it
-// resolves it.
-//
-// The moment is the whole point. A dependant reads the handle inside its own
-// New, so an implementation that installed the plugins later — after the
-// capability was delivered, or in a stage after construction — is caught here,
-// where a case that looked at the handle once the host had started would see
-// them whichever way round it was.
 type pluginObserver struct {
 	seen chan []string
 }
@@ -119,16 +96,8 @@ func (o *pluginObserver) module() core.Module {
 	}
 }
 
-// TestDependantSeesEveryPluginAtResolveTime pins the timing of the
-// installation: a dependant that takes the capability up has a handle whose
-// declared plugins are already installed on it.
-//
-// GORM keeps the plugin table per handle, so an implementation that installed
-// them after delivery leaves a dependant holding a handle with an empty one —
-// and a statement issued through it runs unfiltered, unaudited, and reports
-// nothing. "A statement still runs" is exactly what such an implementation
-// looks like from the outside, which is why this case reads the plugin table
-// itself, at resolve time rather than after the startup.
+// TestDependantSeesEveryPluginAtResolveTime pins the timing of the installation: a dependant that
+// takes the capability up has a handle whose declared plugins are already installed on it.
 func TestDependantSeesEveryPluginAtResolveTime(t *testing.T) {
 	observer := &pluginObserver{seen: make(chan []string, 1)}
 	h, err := startHost(t, sqliteSpec(), hostConfig(t),
@@ -150,18 +119,8 @@ func TestDependantSeesEveryPluginAtResolveTime(t *testing.T) {
 	}
 }
 
-// TestOpenedHandleCarriesTheSameAssembly pins that a connection built with Open
-// carries the declared plugins too.
-//
-// A handle that came back from a plain gorm.Open would satisfy every observable
-// the delivered one does — the same pool parameters, a pool of its own, and
-// statements that run — and be missing exactly the part that does not announce
-// itself: tenant filtering and audit capture go away, and the query that
-// follows returns rows it should not.
-//
-// The expectation is the declared set rather than the delivered handle's, so
-// that installing nothing at all cannot satisfy the case by making both sides
-// agree on an empty list.
+// TestOpenedHandleCarriesTheSameAssembly pins that a connection built with Open carries the
+// declared plugins too.
 func TestOpenedHandleCarriesTheSameAssembly(t *testing.T) {
 	h, err := startHost(t, sqliteSpec(), hostConfig(t),
 		pluginModule("audit", recordingPlugin{name: "audit-plugin"}),
@@ -191,9 +150,6 @@ func TestOpenedHandleCarriesTheSameAssembly(t *testing.T) {
 	}
 }
 
-// originProbe is a plugin that records, each time it is installed, whether the
-// handle it is installed on answers OpenedFrom — the question a plugin keeping a
-// table of its own asks.
 type originProbe struct {
 	mu      sync.Mutex
 	answers []bool
@@ -215,16 +171,8 @@ func (p *originProbe) seen() []bool {
 	return slices.Clone(p.answers)
 }
 
-// OpenedFrom answers the delivered handle on every session derived from a
-// connection built with Open, and nothing on the delivered handle or on a handle
-// this module did not build.
-//
-// Every derived shape is asked because each is one a caller reaches for, and a
-// mark that did not survive one of them would fail silently: a context value is
-// gone at the first WithContext, a statement setting at the first new
-// statement, and a plugin reading either would take a second connection for the
-// delivered one. The Initialize half holds that the mark is in place before the
-// declared plugins go on.
+// TestOpenedFromAnswersTheDeliveredHandle checks that every session derived from a connection
+// built with Open answers the delivered handle, and a handle this module did not build does not.
 func TestOpenedFromAnswersTheDeliveredHandle(t *testing.T) {
 	probe := &originProbe{}
 	h, err := startHost(t, sqliteSpec(), hostConfig(t), pluginModule("probe-plugin", probe))
@@ -288,9 +236,6 @@ func TestOpenedFromAnswersTheDeliveredHandle(t *testing.T) {
 	requireNone("no handle at all", nil)
 }
 
-// orderingCapability stands for whatever capability one module takes up from
-// another. It carries the dependency edge that decides which of two plugins is
-// installed first.
 type orderingCapability interface{ ordered() }
 
 // orderingProduct is what the module providing it constructs.
@@ -299,13 +244,6 @@ type orderingProduct struct{}
 func (orderingProduct) ordered() {}
 
 // TestPluginsInstallInDependencyOrder pins the order the plugins go on in.
-//
-// Install order is callback order in GORM: two plugins registered to the same
-// processor run in the order they were installed, so which of two modules acts
-// first on a statement has to be decidable, and the dependency declarations are
-// what decide it. The second case runs against the names on purpose — "alpha"
-// depends on "zeta", so zeta's plugin goes on first even though its name comes
-// last.
 func TestPluginsInstallInDependencyOrder(t *testing.T) {
 	t.Run("a dependency decides, even against the module names", func(t *testing.T) {
 		order := &pluginRecorder{}
@@ -321,8 +259,6 @@ func TestPluginsInstallInDependencyOrder(t *testing.T) {
 			t.Fatalf("starting a host with dependent declarations: %v", err)
 		}
 
-		// Both on the handle, so the order below is an order between two
-		// installations rather than between one and nothing.
 		if got, want := installedOn(h.Instance.DB()), []string{"alpha-plugin", "zeta-plugin"}; !slices.Equal(got, want) {
 			t.Fatalf("the delivered handle carries the plugins %v, want %v", got, want)
 		}
@@ -352,15 +288,7 @@ func TestPluginsInstallInDependencyOrder(t *testing.T) {
 	})
 }
 
-// TestDuplicatePluginNameIsErrPluginFailed pins what two modules declaring one
-// plugin name get.
-//
-// A handle installs one plugin per name, so the second declaration can never
-// take effect and GORM refuses it. The refusal is right and the reason is not
-// in it: it does not say whose name was taken, and the operator has two
-// declarations in front of them and has to drop one. Both are named, and the
-// GORM error stays in the chain — this is a decision about which declaration to
-// remove, not a diagnosis this module is entitled to make on its own.
+// TestDuplicatePluginNameIsErrPluginFailed pins what two modules declaring one plugin name get.
 func TestDuplicatePluginNameIsErrPluginFailed(t *testing.T) {
 	_, err := startHost(t, sqliteSpec(), hostConfig(t),
 		pluginModule("audit", recordingPlugin{name: "cross-cutting"}),
@@ -384,15 +312,6 @@ func TestDuplicatePluginNameIsErrPluginFailed(t *testing.T) {
 	}
 }
 
-// disabledModule declares the two things a module can declare, and claims the
-// database capability exclusively without stating that it is enabled.
-//
-// That is how a case reaches the disabled verdict: no module may state that it
-// does not run, so one that has to be out of the enabled set has to lose a
-// resolution — and a provider that claims a capability exclusively while
-// stating StateAuto stands down beside the host implementation, which is
-// explicitly enabled. Its declarations are then the ones the module that did
-// not run left behind.
 func disabledModule(name string, plugin gorm.Plugin, set db.Migrations) core.Module {
 	return core.Module{
 		Name:      name,
@@ -401,20 +320,8 @@ func disabledModule(name string, plugin gorm.Plugin, set db.Migrations) core.Mod
 	}
 }
 
-// TestTheDeclarationsOfADisabledModuleAreNotInForce pins both halves of what a
-// module resolution stood down leaves behind: its migrations are not applied,
-// and its plugin is not installed.
-//
-// The two halves are one ruling, and an implementation that filtered one kind
-// of declaration and not the other would pass a case holding only one. A module
-// that does not run has nothing in force, whatever kind of declaration it is,
-// and keeping the plugin would put a declaration of a module that was never
-// constructed into force: a hole in "not enabled, not in force" that reports
-// nothing.
-//
-// The positives sit beside the negatives. Without them, "the migration was not
-// applied" would hold for a run that applied nothing at all, and "the plugin is
-// not installed" for a handle that installs none.
+// TestTheDeclarationsOfADisabledModuleAreNotInForce pins both halves of what a module resolution
+// stood down leaves behind: its migrations are not applied, and its plugin is not installed.
 func TestTheDeclarationsOfADisabledModuleAreNotInForce(t *testing.T) {
 	h, err := startHost(t, sqliteSpec(), hostConfig(t),
 		pluginModule("audit", recordingPlugin{name: "audit-plugin"}),
@@ -422,8 +329,6 @@ func TestTheDeclarationsOfADisabledModuleAreNotInForce(t *testing.T) {
 			migrationSet(db.SQLite, map[string]string{
 				"0001_create_optout_rows.sql": `CREATE TABLE optout_rows (id INTEGER NOT NULL, PRIMARY KEY (id))`,
 			})),
-		// A module that does run, so neither negative below can pass on a run
-		// that applied no migration and installed no plugin.
 		core.Module{Name: "ledger", Resources: []any{
 			migrationSet(db.SQLite, map[string]string{
 				"0001_create_ledger_rows.sql": `CREATE TABLE ledger_rows (id INTEGER NOT NULL, PRIMARY KEY (id))`,
@@ -453,26 +358,11 @@ func TestTheDeclarationsOfADisabledModuleAreNotInForce(t *testing.T) {
 	}
 }
 
-// TestOnlyTheEnabledModulesPluginReachesTheHandle pins the plugin side of the
-// ruling at the handles a caller looks at: the one the capability delivered, and
-// a second one built with Open.
-//
-// The delivered handle's plugin table is checked for being non-empty before it
-// is checked for what is absent from it: "the plugin of the module that did not
-// run is not on the handle" holds just as well for a handle that carries
-// nothing, which is what an implementation that installed no plugin at all
-// would deliver.
-//
-// Open is read too because the two handles are installed from one collection —
-// the set the delivered handle got is the set the product kept. An
-// implementation that filtered at the install site of the delivered handle alone
-// would pass the first assertion and install the other module's plugin on the
-// second, which is the handle a caller moves a query to.
+// TestOnlyTheEnabledModulesPluginReachesTheHandle pins the plugin side of the ruling at the handles
+// a caller looks at: the one the capability delivered, and a second one built with Open.
 func TestOnlyTheEnabledModulesPluginReachesTheHandle(t *testing.T) {
 	h, err := startHost(t, sqliteSpec(), hostConfig(t),
 		pluginModule("audit", recordingPlugin{name: "audit-plugin"}),
-		// This case is about the plugin side, so the module declares no
-		// migration of its own beyond what every module may declare.
 		disabledModule("optout", recordingPlugin{name: "optout-plugin"}, migrationSet(db.SQLite, nil)),
 	)
 	if err != nil {
@@ -506,7 +396,6 @@ func TestOnlyTheEnabledModulesPluginReachesTheHandle(t *testing.T) {
 	}
 }
 
-// failingPlugin refuses to install, reporting why itself.
 type failingPlugin struct {
 	name  string
 	cause error
@@ -516,14 +405,8 @@ func (p failingPlugin) Name() string { return p.name }
 
 func (p failingPlugin) Initialize(*gorm.DB) error { return p.cause }
 
-// TestAFailingPluginIsErrPluginFailed pins the sentinel on the plugin's own
-// refusal, which is the way a plugin that needs a model convention or a column
-// it cannot find fails.
-//
-// The plugin's error stays in the chain. It is the only account of what the
-// plugin wanted: this module does not know the plugin's content, so a text that
-// replaced it with "the plugin failed" would leave the operator with a name and
-// nothing to fix.
+// TestAFailingPluginIsErrPluginFailed pins the sentinel on the plugin's own refusal, which is the
+// way a plugin that needs a model convention or a column it cannot find fails.
 func TestAFailingPluginIsErrPluginFailed(t *testing.T) {
 	cause := errors.New("the model this plugin filters by has no tenant column")
 	_, err := startHost(t, sqliteSpec(), hostConfig(t),
@@ -554,8 +437,6 @@ type nilPlugin struct{}
 func (nilPlugin) Name() string              { return "nil-plugin" }
 func (nilPlugin) Initialize(*gorm.DB) error { return nil }
 
-// rawGuard is a plugin of the shape a statement guard for native SQL takes: it
-// registers on the raw chain and refuses every statement it sees there.
 type rawGuard struct{}
 
 func (rawGuard) Name() string { return "raw-guard" }
@@ -566,11 +447,8 @@ func (rawGuard) Initialize(handle *gorm.DB) error {
 	})
 }
 
-// TestTheMigrationRunPassesThroughTheInstalledPlugins pins what the design
-// says about a plugin on the native SQL chain: the migration run issues its
-// statements on the delivered handle, after the plugins are installed, so such
-// a plugin sees the record table's statements and every migration body — and
-// one that refuses them fails the startup under ErrMigrationFailed.
+// TestTheMigrationRunPassesThroughTheInstalledPlugins pins that the migration run
+// issues its statements on the delivered handle, through its plugins.
 func TestTheMigrationRunPassesThroughTheInstalledPlugins(t *testing.T) {
 	tables := core.Module{Name: "catalog", Resources: []any{migrationSet(db.SQLite, map[string]string{
 		"0001_widgets.sql": `CREATE TABLE widgets (id INTEGER PRIMARY KEY)`,
@@ -584,14 +462,8 @@ func TestTheMigrationRunPassesThroughTheInstalledPlugins(t *testing.T) {
 	}
 }
 
-// TestAPluginDeclarationWithNothingInItIsRefused pins the two shapes of an
-// empty declaration against what they would otherwise do.
-//
-// A nil interface panics on the first call inside GORM, and a typed nil pointer
-// is not the nil interface, so it passes a plain nil test and panics one frame
-// further in. Both are defects in the declaring module, and both are reported
-// against the module that holds them rather than as a panic somewhere in a
-// third-party call.
+// TestAPluginDeclarationWithNothingInItIsRefused pins the two shapes of an empty declaration
+// against what they would otherwise do.
 func TestAPluginDeclarationWithNothingInItIsRefused(t *testing.T) {
 	cases := map[string]core.Module{
 		"the nil interface": {Name: "audit", Resources: []any{db.Plugin{}}},
