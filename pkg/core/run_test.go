@@ -17,13 +17,15 @@ import (
 )
 
 // Reader stands in for the configuration reading face a host supplies.
-type Reader interface{ Value(key string) string }
+type Reader interface {
+	// Value is the value the reader produced.
+	Value(key string) string
+}
 
 type reader struct{}
 
 func (reader) Value(key string) string { return "value:" + key }
 
-// probe records the callbacks the driver made, in order.
 type probe struct {
 	mu     sync.Mutex
 	events []string
@@ -65,7 +67,6 @@ func (p *probe) indexOf(t *testing.T, event string) int {
 	return i
 }
 
-// module builds a module that records every stage it takes part in.
 func (p *probe) module(name string) core.Module {
 	return core.Module{
 		Name: name,
@@ -100,7 +101,6 @@ func (p *probe) module(name string) core.Module {
 	}
 }
 
-// count returns how many times the event was recorded.
 func (p *probe) count(event string) int {
 	n := 0
 	for _, recorded := range p.snapshot() {
@@ -111,8 +111,6 @@ func (p *probe) count(event string) int {
 	return n
 }
 
-// eventsOf returns what was recorded for one module, in order. Every event the
-// recording modules write ends in the module's name.
 func (p *probe) eventsOf(name string) []string {
 	var events []string
 	for _, recorded := range p.snapshot() {
@@ -123,14 +121,8 @@ func (p *probe) eventsOf(name string) []string {
 	return events
 }
 
-// readerFace names the module that carries the reading face in a registry
-// assembled by hand.
 const readerFace = "reader-face"
 
-// probeReader is a configuration reader a host builds itself and hands in
-// with Supply. It carries the shutdown shape a module's product is driven
-// through, and the module that owns it calls the two from its Stop and Close,
-// so a drive that reached the supplied instance leaves a record.
 type probeReader struct{ p *probe }
 
 func (r probeReader) Value(key string) string { return "value:" + key }
@@ -145,10 +137,6 @@ func (r probeReader) Close() error {
 	return nil
 }
 
-// supplyReader hands the reader in the way a host does: built before the
-// drive begins, to the module that declares the capability. That module has no
-// New, so the reader is the only way it gets an instance, and its Stop and
-// Close pass the instance on to the shutdown shape the reader carries.
 func (p *probe) supplyReader(reg *core.Registry) {
 	reg.Register(core.Module{
 		Name:     readerFace,
@@ -175,8 +163,6 @@ func register(reg *core.Registry, mods ...core.Module) {
 	}
 }
 
-// runUntilServed drives a registry to the point where every named event has
-// happened, then cancels and returns what Run returned.
 func runUntilServed(t *testing.T, reg *core.Registry, p *probe, events ...string) error {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -203,7 +189,6 @@ func runUntilServed(t *testing.T, reg *core.Registry, p *probe, events ...string
 	}
 }
 
-// runToFailure drives a registry that is expected to fail during startup.
 func runToFailure(t *testing.T, reg *core.Registry) error {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -222,8 +207,6 @@ func runToFailure(t *testing.T, reg *core.Registry) error {
 	}
 }
 
-// driveUntilServed drives a registry that is expected to stay up, waits for
-// every named event, then cancels and returns what Drive returned.
 func driveUntilServed(t *testing.T, reg *core.Registry, p *probe, d core.Drive, events ...string) error {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -250,14 +233,6 @@ func driveUntilServed(t *testing.T, reg *core.Registry, p *probe, d core.Drive, 
 	}
 }
 
-// driveToEnd drives a registry that is expected to come back on its own and
-// fails the test if it does not.
-//
-// The judgement is a deadline rather than an awaited event, because what is
-// being pinned is that nothing blocks: an implementation that does block has
-// no event to offer, and waiting for one would hang the suite instead of
-// failing it. The context is never cancelled here, so a drive that comes back
-// did so because it ran out of work.
 func driveToEnd(t *testing.T, reg *core.Registry, d core.Drive) error {
 	t.Helper()
 	done := make(chan error, 1)
@@ -271,7 +246,6 @@ func driveToEnd(t *testing.T, reg *core.Registry, d core.Drive) error {
 	}
 }
 
-// captureStderr collects what core writes to os.Stderr while fn runs.
 func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
 	r, w, err := os.Pipe()
@@ -295,6 +269,8 @@ func captureStderr(t *testing.T, fn func()) string {
 	return text
 }
 
+// TestPhaseOrderNewMigrateInitStartServe checks that the phases run New, Migrate, Init, Start,
+// Serve, Stop and Close for every module.
 func TestPhaseOrderNewMigrateInitStartServe(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -309,6 +285,8 @@ func TestPhaseOrderNewMigrateInitStartServe(t *testing.T) {
 	}
 }
 
+// TestMigrateRunsAfterEveryNewAndBeforeAnyInit checks that no Migrate starts before the last New
+// and no Init before the last Migrate.
 func TestMigrateRunsAfterEveryNewAndBeforeAnyInit(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -333,6 +311,8 @@ func TestMigrateRunsAfterEveryNewAndBeforeAnyInit(t *testing.T) {
 	}
 }
 
+// TestMigrateFollowsDependencyOrder checks that Migrate runs in dependency order even when
+// registration is reversed.
 func TestMigrateFollowsDependencyOrder(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -350,8 +330,8 @@ func TestMigrateFollowsDependencyOrder(t *testing.T) {
 	}
 }
 
-// TestServeRunsAfterEveryStart pins what dependency order cannot express: an
-// entry point needs "after everyone", not "after my dependencies".
+// TestServeRunsAfterEveryStart pins what dependency order cannot express: an entry point needs
+// "after everyone", not "after my dependencies".
 func TestServeRunsAfterEveryStart(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -376,8 +356,8 @@ func TestServeRunsAfterEveryStart(t *testing.T) {
 	}
 }
 
-// TestRunBlocksOnlyAfterEveryServeReturned pins that Serve must not block: a
-// Serve that never returned would starve every entry point after it.
+// TestRunBlocksOnlyAfterEveryServeReturned pins that Serve must not block: a Serve that never
+// returned would starve every entry point after it.
 func TestRunBlocksOnlyAfterEveryServeReturned(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -388,6 +368,8 @@ func TestRunBlocksOnlyAfterEveryServeReturned(t *testing.T) {
 	}
 }
 
+// TestCancelReturnsNil checks that a cancelled context ends the run with nil, since cancellation is
+// the normal way to stop.
 func TestCancelReturnsNil(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -398,11 +380,8 @@ func TestCancelReturnsNil(t *testing.T) {
 	}
 }
 
-// TestDrainingStopSeesALiveContext pins that a module whose Stop drains
-// against its context is not cut short by the cancellation that started the
-// shutdown. Cancellation is the normal way to stop, so a Stop shaped like
-// http.Server.Shutdown(ctx) has to get a context it can still drain on, and
-// Run has to come back nil.
+// TestDrainingStopSeesALiveContext pins that a module whose Stop drains against its context is not
+// cut short by the cancellation that started the shutdown.
 func TestDrainingStopSeesALiveContext(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -423,6 +402,7 @@ func TestDrainingStopSeesALiveContext(t *testing.T) {
 	}
 }
 
+// TestCloseFailureReturned checks that a Close failure is returned from the run.
 func TestCloseFailureReturned(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -440,8 +420,8 @@ func TestCloseFailureReturned(t *testing.T) {
 	}
 }
 
-// TestRollbackCoversAllConstructedInstances pins that rollback reaches the
-// instances constructed earlier that never got as far as the failing stage.
+// TestRollbackCoversAllConstructedInstances pins that rollback reaches the instances constructed
+// earlier that never got as far as the failing stage.
 func TestRollbackCoversAllConstructedInstances(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -470,16 +450,12 @@ func TestRollbackCoversAllConstructedInstances(t *testing.T) {
 		}
 	}
 	if slices.Contains(events, "init m1") && !slices.Contains(events, "start m1") {
-		// m1 was initialised but never started, and still gets both
-		// callbacks: that is the contract Stop and Close carry.
 		t.Log("m1 rolled back from an initialised but unstarted state")
 	}
 }
 
-// TestDependencyFailureConstructsNothing pins that resolution is the
-// preliminary to construction rather than a step inside it: an unmet
-// requirement stops the drive before anything is constructed, so the only
-// instance the rollback has to reach is the one the host supplied.
+// TestDependencyFailureConstructsNothing checks that an unresolved requirement fails before any New
+// runs and still releases the supplied instance once.
 func TestDependencyFailureConstructsNothing(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -505,12 +481,8 @@ func TestDependencyFailureConstructsNothing(t *testing.T) {
 	}
 }
 
-// TestMissingProviderNamesTheRequiringModuleAndItsSite pins that the failure
-// carries who asked and where that module was registered, through Run rather
-// than through the planner alone. The available set is decided by imports, so
-// the module left unsatisfied may be one a dependency pulled in, and a host
-// that never wrote it down can act on neither a bare capability name nor a
-// module name with no package behind it.
+// TestMissingProviderNamesTheRequiringModuleAndItsSite pins that the failure carries who asked and
+// where that module was registered, through Run rather than through the planner alone.
 func TestMissingProviderNamesTheRequiringModuleAndItsSite(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -531,9 +503,8 @@ func TestMissingProviderNamesTheRequiringModuleAndItsSite(t *testing.T) {
 	}
 }
 
-// TestPrepareErrorAbortsBeforeConstruction pins that a stance that cannot be
-// stated terminates the drive where it stands. No product exists yet, so the
-// other participants are left unbuilt rather than built and torn down.
+// TestPrepareErrorAbortsBeforeConstruction pins that a stance that cannot be stated terminates the
+// drive where it stands.
 func TestPrepareErrorAbortsBeforeConstruction(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -553,6 +524,8 @@ func TestPrepareErrorAbortsBeforeConstruction(t *testing.T) {
 	}
 }
 
+// TestUndeliveredCapability checks that a module declaring a capability without delivering it fails
+// as ErrUndeliveredCapability, naming the module and capability after rolling back its instance.
 func TestUndeliveredCapability(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -574,9 +547,8 @@ func TestUndeliveredCapability(t *testing.T) {
 	}
 }
 
-// TestASuppliedInstanceIsAvailableInPrepare pins the bootstrap: the host hands
-// the configuration reader in before the drive, so every module reads its own
-// configuration while stating whether it is enabled.
+// TestASuppliedInstanceIsAvailableInPrepare checks that a Prepare can resolve the instance the host
+// supplied.
 func TestASuppliedInstanceIsAvailableInPrepare(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -601,10 +573,8 @@ func TestASuppliedInstanceIsAvailableInPrepare(t *testing.T) {
 	}
 }
 
-// TestTheDriveStopsAndClosesASuppliedInstance pins that a supplied instance
-// leaves through the same shutdown as one the drive constructed: its module's
-// Stop runs once, after every Serve, and its Close runs once, after every
-// Stop.
+// TestTheDriveStopsAndClosesASuppliedInstance checks that a supplied instance is stopped after
+// every Serve and closed after every Stop.
 func TestTheDriveStopsAndClosesASuppliedInstance(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -633,9 +603,8 @@ func TestTheDriveStopsAndClosesASuppliedInstance(t *testing.T) {
 	}
 }
 
-// TestRegistryWithNothingSuppliedStillRuns pins that supplying is not a
-// precondition of assembly: a registry that holds a small group of modules and
-// nothing else drives as usual.
+// TestRegistryWithNothingSuppliedStillRuns pins that supplying is not a precondition of assembly:
+// a registry that holds a small group of modules and nothing else drives as usual.
 func TestRegistryWithNothingSuppliedStillRuns(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -646,10 +615,8 @@ func TestRegistryWithNothingSuppliedStillRuns(t *testing.T) {
 	}
 }
 
-// TestRunDrivesASuppliedModuleThroughEveryStageButPrepareAndNew pins the
-// sequence a module takes when the host built its instance: the same stages as
-// any other, minus the two that produce the instance. The module is not named
-// anywhere, and Run takes in every registered module.
+// TestRunDrivesASuppliedModuleThroughEveryStageButPrepareAndNew checks that a module the host
+// supplied runs Migrate, Init, Start, Serve, Stop and Close, skipping only Prepare and New.
 func TestRunDrivesASuppliedModuleThroughEveryStageButPrepareAndNew(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -665,13 +632,7 @@ func TestRunDrivesASuppliedModuleThroughEveryStageButPrepareAndNew(t *testing.T)
 	}
 }
 
-// TestRunFailsWhenTheHostSuppliedNothingToAModuleThatHasNoNew pins what Run
-// leaves to its caller. It takes in every registered module and loads nothing,
-// so a module that declares a capability and builds no instance of it — the
-// shape of the configuration module — fails the startup naming the one way to
-// give it an instance, until the caller supplies one. Which sentinel comes
-// first depends on whether anything took the capability up before the module's
-// turn to be constructed.
+// TestRunFailsWhenTheHostSuppliedNothingToAModuleThatHasNoNew pins what Run leaves to its caller.
 func TestRunFailsWhenTheHostSuppliedNothingToAModuleThatHasNoNew(t *testing.T) {
 	reg := core.New()
 	register(reg, placeholder(readerFace, (*Reader)(nil)))
@@ -687,9 +648,8 @@ func TestRunFailsWhenTheHostSuppliedNothingToAModuleThatHasNoNew(t *testing.T) {
 	}
 }
 
-// TestNothingSuppliedYieldsMissingProviderOnReader pins that a missed supply
-// surfaces as a named failure rather than as a quietly absent piece of
-// functionality.
+// TestNothingSuppliedYieldsMissingProviderOnReader pins that a missed supply surfaces as a named
+// failure rather than as a quietly absent piece of functionality.
 func TestNothingSuppliedYieldsMissingProviderOnReader(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -709,9 +669,8 @@ func TestNothingSuppliedYieldsMissingProviderOnReader(t *testing.T) {
 	}
 }
 
-// TestModuleWithoutNewGetsNilInstance pins the contract for a module that only
-// declares resources and was handed no instance: every later stage receives
-// nil.
+// TestModuleWithoutNewGetsNilInstance pins the contract for a module that only declares resources
+// and was handed no instance: every later stage receives nil.
 func TestModuleWithoutNewGetsNilInstance(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -744,9 +703,8 @@ func TestModuleWithoutNewGetsNilInstance(t *testing.T) {
 	}
 }
 
-// TestPrepareSeesNoModuleProductButSeesSuppliedOnes pins the two halves of
-// what a stance can reach: no instance a module constructs exists yet, while a
-// supplied instance was there before the drive began.
+// TestPrepareSeesNoModuleProductButSeesSuppliedOnes checks that Prepare cannot resolve a module's
+// own product but can resolve a supplied instance.
 func TestPrepareSeesNoModuleProductButSeesSuppliedOnes(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -776,6 +734,7 @@ func TestPrepareSeesNoModuleProductButSeesSuppliedOnes(t *testing.T) {
 	}
 }
 
+// TestSecondRunPanics checks that a second Run panics and explains that Run is single-use.
 func TestSecondRunPanics(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -794,13 +753,8 @@ func TestSecondRunPanics(t *testing.T) {
 	}
 }
 
-// TestRunEmitsDiagnosticsAfterResolution pins the one observable surface this
-// framework has: a module resolution stood down says so on stderr.
-//
-// Standing down is the only way an included module misses the enabled set. The
-// pair below is that case: an exclusive default stating StateAuto, and an
-// exclusive implementation beside it stating StateEnabled, which propagation
-// prefers.
+// TestRunEmitsDiagnosticsAfterResolution pins the one observable surface this framework has: a
+// module resolution stood down says so on stderr.
 func TestRunEmitsDiagnosticsAfterResolution(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -836,12 +790,8 @@ func TestRunEmitsDiagnosticsAfterResolution(t *testing.T) {
 	}
 }
 
-// TestProvidesWithoutNewFailsUndelivered pins the consequence of the two rules
-// meeting: a module with no New has nil for its instance in every later stage,
-// so one that declares Provides delivers nothing and must fail unless the host
-// supplied an instance for it. A module carrying resources alone cannot
-// declare a capability on the side, because what is delivered is the instance
-// and it builds none. The text names the one way out the module has.
+// TestProvidesWithoutNewFailsUndelivered checks that a module declaring a capability with no New
+// and no supplied instance fails as ErrUndeliveredCapability naming New and Supply.
 func TestProvidesWithoutNewFailsUndelivered(t *testing.T) {
 	reg := core.New()
 	register(reg, core.Module{

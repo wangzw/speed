@@ -9,14 +9,12 @@ import (
 	"testing"
 )
 
-// recorder collects the callbacks a rollback made, in order.
 type recorder struct{ calls []string }
 
 func (r *recorder) note(format string, args ...any) {
 	r.calls = append(r.calls, fmt.Sprintf(format, args...))
 }
 
-// closer builds a module that records its Stop and Close, optionally failing.
 func closer(rec *recorder, name string, stopErr, closeErr error) Module {
 	return Module{
 		Name: name,
@@ -44,6 +42,8 @@ func constructAll(t *testing.T, reg *Registry, mods ...Module) {
 	}
 }
 
+// TestRollbackIsReverseDependencyOrderStopsBeforeCloses checks that a rollback stops modules in
+// reverse construction order, all before any Close runs.
 func TestRollbackIsReverseDependencyOrderStopsBeforeCloses(t *testing.T) {
 	rec := &recorder{}
 	reg := New()
@@ -58,10 +58,8 @@ func TestRollbackIsReverseDependencyOrderStopsBeforeCloses(t *testing.T) {
 	}
 }
 
-// TestEntryPointsStopFirstAndCloseIgnoresTheGrouping pins the whole shutdown
-// order: every module that declares Serve is stopped before any module that
-// does not, each group in reverse construction order, and the Close beat that
-// follows every Stop runs in reverse construction order across both groups.
+// TestEntryPointsStopFirstAndCloseIgnoresTheGrouping checks that Stop reaches entry points first in
+// reverse order while Close runs in plain reverse order.
 func TestEntryPointsStopFirstAndCloseIgnoresTheGrouping(t *testing.T) {
 	rec := &recorder{}
 	serving := func(name string) Module {
@@ -90,8 +88,8 @@ func TestEntryPointsStopFirstAndCloseIgnoresTheGrouping(t *testing.T) {
 	}
 }
 
-// TestStopFailureDoesNotAbortStopPhase pins that a failed drain notice cannot
-// hold back the rest of the stage or the Close that follows.
+// TestStopFailureDoesNotAbortStopPhase pins that a failed drain notice cannot hold back the rest
+// of the stage or the Close that follows.
 func TestStopFailureDoesNotAbortStopPhase(t *testing.T) {
 	rec := &recorder{}
 	reg := New()
@@ -111,8 +109,8 @@ func TestStopFailureDoesNotAbortStopPhase(t *testing.T) {
 	}
 }
 
-// TestPrimaryErrorSurvivesCleanupFailure pins that what terminated the startup
-// is the first failure, not a secondary one on the way out.
+// TestPrimaryErrorSurvivesCleanupFailure pins that what terminated the startup is the first
+// failure, not a secondary one on the way out.
 func TestPrimaryErrorSurvivesCleanupFailure(t *testing.T) {
 	rec := &recorder{}
 	cleanupErr := errors.New("close refused")
@@ -131,6 +129,8 @@ func TestPrimaryErrorSurvivesCleanupFailure(t *testing.T) {
 	}
 }
 
+// TestCleanCancelReturnsNil checks that a cancelled context does not turn a clean shutdown into an
+// error.
 func TestCleanCancelReturnsNil(t *testing.T) {
 	rec := &recorder{}
 	reg := New()
@@ -143,9 +143,8 @@ func TestCleanCancelReturnsNil(t *testing.T) {
 	}
 }
 
-// TestShutdownKeepsContextValues pins the other half of detaching the
-// cancellation: what the host attached to the context still reaches Stop and
-// Close, so only the cancellation is dropped.
+// TestShutdownKeepsContextValues pins the other half of detaching the cancellation: what the host
+// attached to the context still reaches Stop and Close, so only the cancellation is dropped.
 func TestShutdownKeepsContextValues(t *testing.T) {
 	type key struct{}
 	var seen []any
@@ -174,9 +173,8 @@ func TestShutdownKeepsContextValues(t *testing.T) {
 	}
 }
 
-// TestRollbackCallsNeverInitializedInstances pins the contract: a startup
-// failure rolls back everything constructed, so Stop and Close reach instances
-// that were never initialised or started.
+// TestRollbackCallsNeverInitializedInstances checks that Stop and Close reach a constructed module
+// whose Init never ran, with its instance.
 func TestRollbackCallsNeverInitializedInstances(t *testing.T) {
 	rec := &recorder{}
 	reg := New()
@@ -212,10 +210,6 @@ func TestRollbackCallsNeverInitializedInstances(t *testing.T) {
 	}
 }
 
-// suppliedCloser registers a module that records its Stop and Close together
-// with the id of the instance each receives, and supplies an instance for it,
-// the way a host does before a drive. The module has no New callback, so what
-// reaches its callbacks is what the host handed in.
 func suppliedCloser(t *testing.T, rec *recorder, reg *Registry, name string, adjust ...func(*Module)) Module {
 	t.Helper()
 	idOf := func(instance any) string {
@@ -243,14 +237,8 @@ func suppliedCloser(t *testing.T, rec *recorder, reg *Registry, name string, adj
 	return m
 }
 
-// TestShutdownReleasesASuppliedInstanceTheDriveNeverReached pins the rule that
-// makes a drive answerable for an instance it did not build: the instance counts
-// as constructed from the start of the drive, so a drive that ends before
-// construction reaches its module -- one that fails in Prepare, one that stops at
-// StagePrepare, one that fails while constructing an earlier module -- still
-// stops and closes it. It is released as though constructed last, so before the
-// modules the drive did construct, and what its callbacks receive is the instance
-// the host supplied.
+// TestShutdownReleasesASuppliedInstanceTheDriveNeverReached checks that a supplied instance nobody
+// constructed is still stopped and closed.
 func TestShutdownReleasesASuppliedInstanceTheDriveNeverReached(t *testing.T) {
 	rec := &recorder{}
 	reg := New()
@@ -269,11 +257,8 @@ func TestShutdownReleasesASuppliedInstanceTheDriveNeverReached(t *testing.T) {
 	}
 }
 
-// TestShutdownReleasesSuppliedInstancesInDependencyOrder pins how the instances
-// the drive never reached are ordered among themselves: by Requires and
-// Provides, like construction, so the module that requires another is released
-// before it. The names are chosen against that, so that releasing by name, which
-// is what an order nobody thought about would come to, gives the other answer.
+// TestShutdownReleasesSuppliedInstancesInDependencyOrder checks that a supplied requirer is
+// released before the supplied module it requires.
 func TestShutdownReleasesSuppliedInstancesInDependencyOrder(t *testing.T) {
 	rec := &recorder{}
 	reg := New()
@@ -297,13 +282,8 @@ func TestShutdownReleasesSuppliedInstancesInDependencyOrder(t *testing.T) {
 	}
 }
 
-// TestShutdownReleasesSuppliedInstancesOnACycleAlike pins that a dependency cycle
-// among instances nobody constructed does not keep them from being released.
-// Planning is what fails over a cycle, and a drive that fails there has
-// constructed nothing: the instances the host supplied are still the drive's to
-// release, and a drive that never got as far as looking for the cycle holds them
-// just the same. The order among the modules on the cycle is not promised, so
-// only that each runs once is checked.
+// TestShutdownReleasesSuppliedInstancesOnACycleAlike pins that a dependency cycle among instances
+// nobody constructed does not keep them from being released.
 func TestShutdownReleasesSuppliedInstancesOnACycleAlike(t *testing.T) {
 	rec := &recorder{}
 	reg := New()
@@ -330,10 +310,8 @@ func TestShutdownReleasesSuppliedInstancesOnACycleAlike(t *testing.T) {
 	}
 }
 
-// TestShutdownReleasesASuppliedInstanceOnceWhereConstructionPutIt pins that an
-// instance the drive did reach is not released a second time as one it did not:
-// it entered the lifecycle when construction got to its module, and it is
-// released from there, between the modules constructed before and after it.
+// TestShutdownReleasesASuppliedInstanceOnceWhereConstructionPutIt checks that a supplied instance
+// released in construction order is stopped once and then closed once.
 func TestShutdownReleasesASuppliedInstanceOnceWhereConstructionPutIt(t *testing.T) {
 	rec := &recorder{}
 	reg := New()
@@ -356,11 +334,8 @@ func TestShutdownReleasesASuppliedInstanceOnceWhereConstructionPutIt(t *testing.
 	}
 }
 
-// TestShutdownStopsASuppliedEntryPointWithTheEntryPoints pins that the
-// entry-point grouping reads the descriptor and nothing else: a module the host
-// supplied an instance for that declares Serve is stopped ahead of the other
-// modules, wherever it sits in the construction order, and closed in the
-// order construction gives it.
+// TestShutdownStopsASuppliedEntryPointWithTheEntryPoints checks that a supplied entry point is
+// stopped with the entry points and then closed in reverse order.
 func TestShutdownStopsASuppliedEntryPointWithTheEntryPoints(t *testing.T) {
 	rec := &recorder{}
 	reg := New()
@@ -385,10 +360,8 @@ func TestShutdownStopsASuppliedEntryPointWithTheEntryPoints(t *testing.T) {
 	}
 }
 
-// TestConstructLeavesAModuleWithASuppliedInstanceAlone pins what construction
-// does for such a module: its New does not run, the instance it already has is
-// the one the lifecycle and the later stages carry, and the module still enters
-// the lifecycle, so the delivery assertion and the release both see it.
+// TestConstructLeavesAModuleWithASuppliedInstanceAlone checks that constructing a module whose
+// instance the host supplied runs no New and keeps the supplied instance in the lifecycle.
 func TestConstructLeavesAModuleWithASuppliedInstanceAlone(t *testing.T) {
 	built := false
 	reg := New()
@@ -418,10 +391,8 @@ func TestConstructLeavesAModuleWithASuppliedInstanceAlone(t *testing.T) {
 	}
 }
 
-// TestPrepareStatesEnabledForAModuleWithASuppliedInstance pins the stance stage
-// for such a module: its Prepare does not run, and the stance that goes into
-// resolution is StateEnabled, as though that callback returned it. Another
-// module's Prepare is untouched by it.
+// TestPrepareStatesEnabledForAModuleWithASuppliedInstance checks that Prepare runs only for modules
+// nobody supplied, while a supplied module's stance is StateEnabled.
 func TestPrepareStatesEnabledForAModuleWithASuppliedInstance(t *testing.T) {
 	var ran []string
 	prepared := func(name string) Module {

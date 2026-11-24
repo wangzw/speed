@@ -10,8 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// preparing builds a recording module whose stance is recorded too, so a
-// drive that stops at the stance stage still leaves a trace.
 func preparing(p *probe, name string) core.Module {
 	m := p.module(name)
 	m.Prepare = func(context.Context, *core.Registry) (core.Enablement, error) {
@@ -21,10 +19,10 @@ func preparing(p *probe, name string) core.Module {
 	return m
 }
 
-// noAction is an action that does nothing, which is how a drive is kept from
-// blocking at StageServe while something else is being pinned.
 func noAction(context.Context, *core.Registry) error { return nil }
 
+// TestStageStringNamesTheCallbackItDrives checks that each stage renders as the name of the callback
+// a stage failure blames.
 func TestStageStringNamesTheCallbackItDrives(t *testing.T) {
 	for stage, want := range map[core.Stage]string{
 		core.StagePrepare: "Prepare",
@@ -41,10 +39,8 @@ func TestStageStringNamesTheCallbackItDrives(t *testing.T) {
 	}
 }
 
-// TestDepthStopsEveryCallbackBeyondIt pins the whole of what a depth means:
-// the stages up to it run as they always do, the ones past it do not run at
-// all, and whatever was constructed on the way is stopped and then closed
-// regardless.
+// TestDepthStopsEveryCallbackBeyondIt checks that a drive stops at its depth, with Stop and Close
+// still running for what was constructed.
 func TestDepthStopsEveryCallbackBeyondIt(t *testing.T) {
 	cases := []struct {
 		depth core.Stage
@@ -88,10 +84,8 @@ func TestDepthStopsEveryCallbackBeyondIt(t *testing.T) {
 	}
 }
 
-// TestDepthPrepareSkipsDependencyResolution pins that resolution is the
-// preliminary to construction rather than a step of its own. A command that
-// only collects stances builds nothing, so it must not fail over a provider
-// it was never going to build.
+// TestDepthPrepareSkipsDependencyResolution pins that resolution is the preliminary to
+// construction rather than a step of its own.
 func TestDepthPrepareSkipsDependencyResolution(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -112,9 +106,8 @@ func TestDepthPrepareSkipsDependencyResolution(t *testing.T) {
 	}
 }
 
-// TestActionRunsAtTheDepthAndReachesTheRegistry pins where the action sits:
-// after the last stage the depth includes, before the shutdown, with every
-// instance that stage left behind still reachable.
+// TestActionRunsAtTheDepthAndReachesTheRegistry checks that the action runs after the depth's last
+// stage, can resolve constructed instances, and runs before shutdown begins.
 func TestActionRunsAtTheDepthAndReachesTheRegistry(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -151,9 +144,8 @@ func TestActionRunsAtTheDepthAndReachesTheRegistry(t *testing.T) {
 	}
 }
 
-// TestActionFailureIsPrimaryAndStillRollsBack pins that the release of what a
-// drive built does not depend on the action succeeding, and that the action's
-// own failure is what comes back rather than something the cleanup added.
+// TestActionFailureIsPrimaryAndStillRollsBack checks that an action error is returned unchanged and
+// the constructed modules are still stopped and closed.
 func TestActionFailureIsPrimaryAndStillRollsBack(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -181,9 +173,8 @@ func TestActionFailureIsPrimaryAndStillRollsBack(t *testing.T) {
 	}
 }
 
-// TestShallowDriveWithoutAnActionDoesNotBlock pins that arriving is the whole
-// of a shallow command's work. Blocking there, as serving does, would hang a
-// command whose end point is to exit.
+// TestShallowDriveWithoutAnActionDoesNotBlock pins that arriving is the whole of a shallow
+// command's work.
 func TestShallowDriveWithoutAnActionDoesNotBlock(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -201,9 +192,8 @@ func TestShallowDriveWithoutAnActionDoesNotBlock(t *testing.T) {
 	}
 }
 
-// TestServeWithoutAnActionBlocksUntilCancelled pins the other side of the
-// same rule: at the deepest stage a missing action is the shape of serving
-// traffic, and cancellation is the normal way out of it.
+// TestServeWithoutAnActionBlocksUntilCancelled checks that a drive to Serve without an action
+// blocks until its context is cancelled, and then returns nil.
 func TestServeWithoutAnActionBlocksUntilCancelled(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -218,6 +208,8 @@ func TestServeWithoutAnActionBlocksUntilCancelled(t *testing.T) {
 	}
 }
 
+// TestServeWithAnActionDoesNotBlock checks that an action after Serve runs and the drive returns
+// without waiting for a cancellation.
 func TestServeWithAnActionDoesNotBlock(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -239,8 +231,8 @@ func TestServeWithAnActionDoesNotBlock(t *testing.T) {
 	}
 }
 
-// TestZeroDriveDoesNothing pins the zero value of the whole struct: no depth
-// past the stances, nobody taking part, nothing to do on arrival.
+// TestZeroDriveDoesNothing pins the zero value of the whole struct: no depth past the stances,
+// nobody taking part, nothing to do on arrival.
 func TestZeroDriveDoesNothing(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -255,13 +247,8 @@ func TestZeroDriveDoesNothing(t *testing.T) {
 	}
 }
 
-// TestEmptyParticipantSetIncludesNothing pins the most dangerous reading a
-// zero value could be given. A command that assembles nothing is an ordinary
-// command; reading its empty list as "everything" would turn it into the one
-// that assembles the most, and it would do so silently.
-//
-// The registry holds modules the drive did not list, so a correct
-// implementation and one that inverted the empty list are told apart here.
+// TestEmptyParticipantSetIncludesNothing pins the most dangerous reading a zero value could be
+// given.
 func TestEmptyParticipantSetIncludesNothing(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -284,11 +271,8 @@ func TestEmptyParticipantSetIncludesNothing(t *testing.T) {
 	}
 }
 
-// TestModulesOutsideTheParticipantSetTakeNoPart pins that the enabled set is a
-// subset of the participating one: a registered module the command left out
-// states nothing, is constructed never, and reports the exclusion as its
-// verdict so that a mechanism collecting declarations across the registry
-// drops it.
+// TestModulesOutsideTheParticipantSetTakeNoPart checks that a module the command left out runs no
+// callback and is reported disabled with a participation reason.
 func TestModulesOutsideTheParticipantSetTakeNoPart(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -337,15 +321,8 @@ func TestModulesOutsideTheParticipantSetTakeNoPart(t *testing.T) {
 	}
 }
 
-// TestADeclarationLevelModuleContributesDeclarationsAndNothingElse pins what
-// the second level of inclusion reaches and what it leaves alone.
-//
-// The module is in the declaring set, so a collection reading that set finds
-// it. It is not a participant, so it states no stance and is not constructed.
-// The two queries have to answer differently for that to be expressible at
-// all: one verdict reported the same thing either way, and a command whose
-// work is applying migrations had no way to collect the tables of modules it
-// must not build.
+// TestADeclarationLevelModuleContributesDeclarationsAndNothingElse pins what the second level of
+// inclusion reaches and what it leaves alone.
 func TestADeclarationLevelModuleContributesDeclarationsAndNothingElse(t *testing.T) {
 	p := &probe{}
 	constructed := false
@@ -384,13 +361,8 @@ func TestADeclarationLevelModuleContributesDeclarationsAndNothingElse(t *testing
 	}
 }
 
-// TestANameNoModuleRegisteredIsRefusedAtEitherLevel pins that the second level
-// is checked the way the first is.
-//
-// A declaration-level name that matches nothing leaves declarations out with
-// nobody the wiser, and that is the failure the level exists to make
-// preventable: the command runs, collects less than it was written to collect,
-// and reports success.
+// TestANameNoModuleRegisteredIsRefusedAtEitherLevel pins that the second level is checked the way
+// the first is.
 func TestANameNoModuleRegisteredIsRefusedAtEitherLevel(t *testing.T) {
 	reg := core.New()
 	register(reg, core.Module{Name: "registered"})
@@ -405,12 +377,8 @@ func TestANameNoModuleRegisteredIsRefusedAtEitherLevel(t *testing.T) {
 	}
 }
 
-// TestTheSetsAreUnsettledUntilADriveSettlesThem pins that neither query
-// invents an answer before there is a command to answer about.
-//
-// A registry holds registrations until it is driven, and until then no command
-// has taken anything in. Answering "yes" for a registered module would be the
-// reading that treats the available set as if it were a decision.
+// TestTheSetsAreUnsettledUntilADriveSettlesThem pins that neither query invents an answer before
+// there is a command to answer about.
 func TestTheSetsAreUnsettledUntilADriveSettlesThem(t *testing.T) {
 	reg := core.New()
 	register(reg, core.Module{Name: "registered"})
@@ -429,17 +397,8 @@ func TestTheSetsAreUnsettledUntilADriveSettlesThem(t *testing.T) {
 	}
 }
 
-// TestTheSetsAreFinalFromTheFirstPrepareCallback pins when the participating and
-// declaring sets can be asked about: from the first Prepare callback on, with the
-// answer the action gets later, and not only once the stances are in and
-// resolution has run. A module's Prepare reads them to tell what its drive is
-// made of before it states anything.
-//
-// Four modules stand for the four things a module can be to a drive: one taken
-// in at run level, which does the asking in its Prepare; one the host supplied an
-// instance for and no command names; one reached for its declarations alone; and
-// one nothing takes in. The verdict is not among the answers that are final, since
-// it is resolution's and resolution follows the last Prepare.
+// TestTheSetsAreFinalFromTheFirstPrepareCallback checks that participation and declaration are
+// settled before the first Prepare and the verdicts fill in by the action.
 func TestTheSetsAreFinalFromTheFirstPrepareCallback(t *testing.T) {
 	type answers struct{ participating, declaring, verdict bool }
 	names := []string{"aa-asking", "bb-supplied", "cc-declared", "dd-left-out"}
@@ -487,8 +446,7 @@ func TestTheSetsAreFinalFromTheFirstPrepareCallback(t *testing.T) {
 	}
 
 	for _, c := range []struct {
-		name string
-		// The sets, as they stand in Prepare and in the action alike.
+		name                     string
 		participating, declaring bool
 	}{
 		{"aa-asking", true, true},
@@ -496,9 +454,6 @@ func TestTheSetsAreFinalFromTheFirstPrepareCallback(t *testing.T) {
 		{"cc-declared", false, true},
 		{"dd-left-out", false, false},
 	} {
-		// No stance has been resolved when Prepare runs, and every one has by the
-		// action, a module left out of the drive included: it is reported as
-		// disabled there.
 		if got, want := inPrepare[c.name], (answers{c.participating, c.declaring, false}); got != want {
 			t.Errorf("in Prepare, %s is answered %+v, want %+v", c.name, got, want)
 		}
@@ -508,12 +463,8 @@ func TestTheSetsAreFinalFromTheFirstPrepareCallback(t *testing.T) {
 	}
 }
 
-// TestAllResourcesInForceFollowsTheHostsAdjustment pins the override the host
-// can set, and that it is off unless set.
-//
-// It says a module's declarations are in force whether or not it runs, which
-// is the one thing a consumption point cannot work out on its own: its own
-// domain is a decision of its own, and this is the host answering for it.
+// TestAllResourcesInForceFollowsTheHostsAdjustment pins the override the host can set, and that it
+// is off unless set.
 func TestAllResourcesInForceFollowsTheHostsAdjustment(t *testing.T) {
 	for name, declared := range map[string]core.Declaration{
 		"without the adjustment": {Name: "declares"},
@@ -533,9 +484,8 @@ func TestAllResourcesInForceFollowsTheHostsAdjustment(t *testing.T) {
 	}
 }
 
-// TestRepeatedParticipantCountsOnce pins what a module included at two levels
-// of one command path produces: the same name twice, and one run of its
-// stages.
+// TestRepeatedParticipantCountsOnce pins what a module included at two levels of one command path
+// produces: the same name twice, and one run of its stages.
 func TestRepeatedParticipantCountsOnce(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -555,6 +505,8 @@ func TestRepeatedParticipantCountsOnce(t *testing.T) {
 	}
 }
 
+// TestUnknownParticipantIsAnError checks that naming an unregistered participant fails as
+// ErrUnknownParticipant naming it.
 func TestUnknownParticipantIsAnError(t *testing.T) {
 	reg := core.New()
 	register(reg, core.Module{Name: "known"})
@@ -573,10 +525,8 @@ func TestUnknownParticipantIsAnError(t *testing.T) {
 	}
 }
 
-// TestAParticipantStatingDisabledSitsOutTheDrive pins the runtime enablement
-// mechanism through the driver: a module that states StateDisabled with a
-// reason leaves the enabled set without failing the startup, the diagnostic
-// carries the reason the module gave, and a module beside it starts normally.
+// TestAParticipantStatingDisabledSitsOutTheDrive checks that a module that states disabled is
+// reported on stderr with its reason and is never constructed, while its neighbour runs.
 func TestAParticipantStatingDisabledSitsOutTheDrive(t *testing.T) {
 	const reason = "GitHub app credentials not configured"
 	p := &probe{}
@@ -612,11 +562,8 @@ func TestAParticipantStatingDisabledSitsOutTheDrive(t *testing.T) {
 	}
 }
 
-// TestRequiringADisabledModuleNamesItAndItsReason pins what a dependent sees
-// when a module it requires stood itself down: the startup fails over the unmet
-// requirement, and the failure names both the dependency and the reason it
-// gave. It is an error rather than a silent skip because the dependent cannot
-// run without the capability.
+// TestRequiringADisabledModuleNamesItAndItsReason checks that a requirement whose only provider
+// disabled fails as ErrMissingProvider naming both and the reason.
 func TestRequiringADisabledModuleNamesItAndItsReason(t *testing.T) {
 	const reason = "no connection address configured"
 	p := &probe{}
@@ -648,15 +595,8 @@ func TestRequiringADisabledModuleNamesItAndItsReason(t *testing.T) {
 	}
 }
 
-// TestDisabledParticipantIsDiagnosed and the test below it pin the two sides
-// of what the startup diagnostics are for: a module that was included and is
-// not running is the surprise worth reporting, while one the command never
-// listed is the host's own writing.
-//
-// A participant misses the enabled set either by standing itself down or by
-// losing resolution. This case is the second: an exclusive default that states
-// StateAuto, and an exclusive implementation beside it that states StateEnabled,
-// so propagation stands the default down.
+// TestDisabledParticipantIsDiagnosed checks that a module stood down for an exclusive provider
+// writes a diagnostic naming it and the cause, while the enabled one writes none.
 func TestDisabledParticipantIsDiagnosed(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -691,6 +631,8 @@ func TestDisabledParticipantIsDiagnosed(t *testing.T) {
 	}
 }
 
+// TestModuleOutsideTheParticipantSetIsNotDiagnosed checks that a module the command never listed
+// writes no diagnostic line.
 func TestModuleOutsideTheParticipantSetIsNotDiagnosed(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -713,9 +655,7 @@ func TestModuleOutsideTheParticipantSetIsNotDiagnosed(t *testing.T) {
 	}
 }
 
-// TestDriveRejectsADepthBeyondServe pins the depth as a Stage constant. The
-// call alone decides it, which is the criterion the registration-time panics
-// use.
+// TestDriveRejectsADepthBeyondServe pins the depth as a Stage constant.
 func TestDriveRejectsADepthBeyondServe(t *testing.T) {
 	reg := core.New()
 
@@ -727,9 +667,8 @@ func TestDriveRejectsADepthBeyondServe(t *testing.T) {
 	}
 }
 
-// TestSecondDrivePanics pins that a shallow drive spends the one use a
-// registry has: it went in and came out, and the instances it built cannot be
-// reused.
+// TestSecondDrivePanics pins that a shallow drive spends the one use a registry has: it went in
+// and came out, and the instances it built cannot be reused.
 func TestSecondDrivePanics(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -747,6 +686,8 @@ func TestSecondDrivePanics(t *testing.T) {
 	}
 }
 
+// TestRunAfterAShallowDrivePanics checks that Run after a drive that did not go all the way panics,
+// explaining that Run and Drive share the one drive.
 func TestRunAfterAShallowDrivePanics(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -766,8 +707,8 @@ func TestRunAfterAShallowDrivePanics(t *testing.T) {
 	}
 }
 
-// TestRunIsDriveOverEverythingToServe pins Run as one value of Drive rather
-// than a second driver: the same modules yield the same sequence either way.
+// TestRunIsDriveOverEverythingToServe pins Run as one value of Drive rather than a second driver:
+// the same modules yield the same sequence either way.
 func TestRunIsDriveOverEverythingToServe(t *testing.T) {
 	viaRun := &probe{}
 	runReg := core.New()
@@ -792,9 +733,6 @@ func TestRunIsDriveOverEverythingToServe(t *testing.T) {
 	}
 }
 
-// closureRegistry builds the dependency chain the closure tests expand:
-// charlie needs what bravo delivers, bravo needs what alpha delivers, and
-// lone stands apart.
 func closureRegistry() *core.Registry {
 	reg := core.New()
 	register(reg,
@@ -810,8 +748,8 @@ func closureRegistry() *core.Registry {
 	return reg
 }
 
-// TestClosureExpandsRequirementsTransitively pins what including a module
-// means: including what it takes to build it, all the way down.
+// TestClosureExpandsRequirementsTransitively pins what including a module means: including what it
+// takes to build it, all the way down.
 func TestClosureExpandsRequirementsTransitively(t *testing.T) {
 	got, err := closureRegistry().Closure([]string{"charlie"})
 	if err != nil {
@@ -822,6 +760,8 @@ func TestClosureExpandsRequirementsTransitively(t *testing.T) {
 	}
 }
 
+// TestClosureDeduplicatesAndSortsByName checks that Closure returns the transitive set once each,
+// in name order.
 func TestClosureDeduplicatesAndSortsByName(t *testing.T) {
 	got, err := closureRegistry().Closure([]string{"charlie", "lone", "bravo", "charlie"})
 	if err != nil {
@@ -832,8 +772,8 @@ func TestClosureDeduplicatesAndSortsByName(t *testing.T) {
 	}
 }
 
-// TestClosureOfNothingIsNothing pins the same reading of an empty list that
-// the participating set has, one step earlier.
+// TestClosureOfNothingIsNothing pins the same reading of an empty list that the participating set
+// has, one step earlier.
 func TestClosureOfNothingIsNothing(t *testing.T) {
 	got, err := closureRegistry().Closure(nil)
 	if err != nil {
@@ -844,6 +784,8 @@ func TestClosureOfNothingIsNothing(t *testing.T) {
 	}
 }
 
+// TestClosureRejectsAnUnregisteredName checks that Closure fails as ErrUnknownParticipant naming
+// the unregistered module.
 func TestClosureRejectsAnUnregisteredName(t *testing.T) {
 	_, err := closureRegistry().Closure([]string{"ghost"})
 	if !errors.Is(err, core.ErrUnknownParticipant) {
@@ -854,9 +796,7 @@ func TestClosureRejectsAnUnregisteredName(t *testing.T) {
 	}
 }
 
-// TestClosureLeavesAnUndeliveredRequirementToTheDrive pins where a missing
-// provider is reported. The closure has nothing to add for it, and the drive
-// is where the failure can name the module that required it.
+// TestClosureLeavesAnUndeliveredRequirementToTheDrive pins where a missing provider is reported.
 func TestClosureLeavesAnUndeliveredRequirementToTheDrive(t *testing.T) {
 	reg := core.New()
 	register(reg, core.Module{
@@ -873,8 +813,8 @@ func TestClosureLeavesAnUndeliveredRequirementToTheDrive(t *testing.T) {
 	}
 }
 
-// TestClosureFeedsTheParticipantSet pins the division of labour: the command
-// tree expands the dependencies and hands the drive the literal result.
+// TestClosureFeedsTheParticipantSet pins the division of labour: the command tree expands the
+// dependencies and hands the drive the literal result.
 func TestClosureFeedsTheParticipantSet(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -903,12 +843,8 @@ func TestClosureFeedsTheParticipantSet(t *testing.T) {
 	}
 }
 
-// TestClosureLeavesOutAnOptionalRequirementsProviders pins that an optional
-// requirement does not pull its providers into the participating set. Going
-// without it is what Optional means, and a provider the host never listed,
-// added here on the module's behalf, would leave the requirement no way to be
-// absent — the command tree would then include a module the host cannot see
-// in its own code.
+// TestClosureLeavesOutAnOptionalRequirementsProviders pins that an optional requirement does not
+// pull its providers into the participating set.
 func TestClosureLeavesOutAnOptionalRequirementsProviders(t *testing.T) {
 	reg := core.New()
 	reg.Register(core.Module{
@@ -939,11 +875,7 @@ func TestClosureLeavesOutAnOptionalRequirementsProviders(t *testing.T) {
 	}
 }
 
-// TestClosureLeavesOutAnExclusiveProvider pins the exception to expansion. Two
-// implementations may each claim a capability alone, and hauling one of them in
-// on the requiring module's behalf would be the expansion rule making a
-// decision. It makes none: the host names which implementation runs, and only
-// the named one joins the command.
+// TestClosureLeavesOutAnExclusiveProvider pins the exception to expansion.
 func TestClosureLeavesOutAnExclusiveProvider(t *testing.T) {
 	reg := core.New()
 	register(reg,
@@ -969,9 +901,6 @@ func TestClosureLeavesOutAnExclusiveProvider(t *testing.T) {
 }
 
 // TestClosureLeavesOutOnlyTheExclusiveProviders pins where the exception stops.
-// A provider that does not claim the capability alone is added exactly as
-// before, so a set of interchangeable backends behind one interface keeps
-// coming along without the host listing each of them.
 func TestClosureLeavesOutOnlyTheExclusiveProviders(t *testing.T) {
 	reg := core.New()
 	register(reg,
@@ -992,10 +921,8 @@ func TestClosureLeavesOutOnlyTheExclusiveProviders(t *testing.T) {
 	}
 }
 
-// TestClosureOfAConsumerOfAnExclusiveCapabilityIsItself pins what the exception
-// leaves behind: with no implementation named, the command has no provider for a
-// required capability at all, and dependency resolution is where that is
-// reported, together with the fix.
+// TestClosureOfAConsumerOfAnExclusiveCapabilityIsItself checks that an exclusive provider is not
+// pulled into the closure of its consumer.
 func TestClosureOfAConsumerOfAnExclusiveCapabilityIsItself(t *testing.T) {
 	reg := core.New()
 	register(reg,
@@ -1026,7 +953,6 @@ func (closureRouterImpl) route() {}
 
 func (closureTracerImpl) trace() {}
 
-// providing declares that m delivers the capabilities the tokens designate.
 func providing(m core.Module, tokens ...core.Token) core.Module {
 	for _, token := range tokens {
 		m.Provides = append(m.Provides, core.Provision{Token: token})
@@ -1034,8 +960,6 @@ func providing(m core.Module, tokens ...core.Token) core.Module {
 	return m
 }
 
-// receiving wraps the callbacks of m that take an instance so that each one
-// fails the test unless it is handed want.
 func receiving(t *testing.T, m core.Module, want any) core.Module {
 	t.Helper()
 	wrap := func(stage string, next func(context.Context, *core.Registry, any) error) func(context.Context, *core.Registry, any) error {
@@ -1055,8 +979,6 @@ func receiving(t *testing.T, m core.Module, want any) core.Module {
 	return m
 }
 
-// rival builds a recording module that delivers Cache, claims it exclusively
-// or not, and states the given stance.
 func rival(p *probe, name string, exclusive bool, state core.EnablementState) core.Module {
 	m := preparing(p, name)
 	m.Provides = []core.Provision{{Token: (*Cache)(nil), Exclusive: exclusive}}
@@ -1067,11 +989,8 @@ func rival(p *probe, name string, exclusive bool, state core.EnablementState) co
 	return m
 }
 
-// TestASuppliedModuleTakesPartWithoutBeingNamed pins the way a supplied module
-// joins a drive: it is in the participating set from the start, whatever the
-// list of participants says, and takes the stages from Migrate on with Prepare
-// and New left out. A module that was neither named nor supplied an instance
-// takes no part.
+// TestASuppliedModuleTakesPartWithoutBeingNamed checks that a supplied module runs whatever the
+// participant list says, while an unlisted unsupplied module runs nothing.
 func TestASuppliedModuleTakesPartWithoutBeingNamed(t *testing.T) {
 	want := []string{"migrate only", "init only", "start only", "serve only", "stop only", "close only"}
 	for _, c := range []struct {
@@ -1107,10 +1026,8 @@ func TestASuppliedModuleTakesPartWithoutBeingNamed(t *testing.T) {
 	}
 }
 
-// TestADriveLeavesTheListOfParticipantsAsTheCallerWroteIt pins that adding the
-// supplied modules to the participants does not write into the list the caller
-// gave. The list is the host's, and one with room to spare would otherwise come
-// back carrying the name of a module the host never listed.
+// TestADriveLeavesTheListOfParticipantsAsTheCallerWroteIt pins that adding the supplied modules to
+// the participants does not write into the list the caller gave.
 func TestADriveLeavesTheListOfParticipantsAsTheCallerWroteIt(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -1132,10 +1049,8 @@ func TestADriveLeavesTheListOfParticipantsAsTheCallerWroteIt(t *testing.T) {
 	}
 }
 
-// TestASuppliedModuleNeverRunsItsPrepareOrNew pins that the instance the host
-// built stands in for what the module's Prepare and New produce: a Prepare
-// that would fail or state StateDisabled and a New that would fail leave the
-// drive untouched, because neither runs.
+// TestASuppliedModuleNeverRunsItsPrepareOrNew checks that a supplied module's failing or disabling
+// Prepare and its New never run, and its stance is StateEnabled.
 func TestASuppliedModuleNeverRunsItsPrepareOrNew(t *testing.T) {
 	ran := errors.New("the module's own Prepare or New ran")
 	for _, c := range []struct {
@@ -1169,10 +1084,8 @@ func TestASuppliedModuleNeverRunsItsPrepareOrNew(t *testing.T) {
 	}
 }
 
-// TestEveryCallbackOfASuppliedModuleReceivesTheSuppliedInstance pins what the
-// callbacks that take an instance are handed: the instance the host supplied,
-// at every stage the module declares, Stop and Close included. The sequence
-// asserted at the end shows that each callback ran and so was checked.
+// TestEveryCallbackOfASuppliedModuleReceivesTheSuppliedInstance checks that every stage callback of
+// a supplied module is handed the supplied instance.
 func TestEveryCallbackOfASuppliedModuleReceivesTheSuppliedInstance(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -1189,11 +1102,8 @@ func TestEveryCallbackOfASuppliedModuleReceivesTheSuppliedInstance(t *testing.T)
 	}
 }
 
-// TestADepthStopsASuppliedModuleLikeAnyOther pins what a depth means for a
-// module whose instance already exists: the stages past it do not run, and the
-// instance is stopped and then closed at every depth. StagePrepare ends before
-// construction reaches the module and StageNew ends right after it, so at those
-// two depths Stop and Close are the only callbacks of the module that run.
+// TestADepthStopsASuppliedModuleLikeAnyOther checks that a depth stops a supplied module after the
+// same stages as a constructed one, with Stop and Close always running.
 func TestADepthStopsASuppliedModuleLikeAnyOther(t *testing.T) {
 	cases := []struct {
 		depth core.Stage
@@ -1226,11 +1136,7 @@ func TestADepthStopsASuppliedModuleLikeAnyOther(t *testing.T) {
 	}
 }
 
-// TestASuppliedModuleIsInEverySetAndStatesEnabled pins what the queries say of
-// a supplied module. Nothing is settled before a drive, so every answer is
-// negative then, supplied or not; once the drive has settled the sets the module
-// is a participant and in the declaring set, its stance is the fixed
-// StateEnabled, and the host's adjustment does not apply to it.
+// TestASuppliedModuleIsInEverySetAndStatesEnabled pins what the queries say of a supplied module.
 func TestASuppliedModuleIsInEverySetAndStatesEnabled(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -1268,10 +1174,8 @@ func TestASuppliedModuleIsInEverySetAndStatesEnabled(t *testing.T) {
 	}
 }
 
-// TestANameAtDeclarationLevelDoesNotMakeASuppliedModuleDeclarationOnly pins
-// that a supplied module is always a participant: the command tree names it at
-// the static level knowing nothing of the supply, and the registry treats it
-// at run level, where the host's adjustment lapses.
+// TestANameAtDeclarationLevelDoesNotMakeASuppliedModuleDeclarationOnly checks that a supplied module
+// named for declarations alone still participates, and AllResourcesInForce does not apply to it.
 func TestANameAtDeclarationLevelDoesNotMakeASuppliedModuleDeclarationOnly(t *testing.T) {
 	want := []string{"migrate only", "init only", "start only", "serve only", "stop only", "close only"}
 	for _, c := range []struct {
@@ -1312,11 +1216,8 @@ func TestANameAtDeclarationLevelDoesNotMakeASuppliedModuleDeclarationOnly(t *tes
 	}
 }
 
-// TestASuppliedProviderMeetsARivalUnderTheOrdinaryResolutionRules pins that a
-// supplied module has no rules of its own in resolution beyond its fixed
-// stance. Its stance is StateEnabled, so an exclusive rival that states
-// StateAuto stands down, and any other meeting that leaves two providers
-// enabled with an exclusive claim among them fails the startup.
+// TestASuppliedProviderMeetsARivalUnderTheOrdinaryResolutionRules pins that a supplied module has
+// no rules of its own in resolution beyond its fixed stance.
 func TestASuppliedProviderMeetsARivalUnderTheOrdinaryResolutionRules(t *testing.T) {
 	type outcome int
 	const (
@@ -1381,10 +1282,6 @@ func TestASuppliedProviderMeetsARivalUnderTheOrdinaryResolutionRules(t *testing.
 						t.Errorf("error %q does not name the conflicting module %q", err, name)
 					}
 				}
-				// The supplied provider cannot be disabled from the command tree
-				// and does not stand down, so the failure says which party it is
-				// and that taking its instance away is the way out; the rival has
-				// no instance of this kind and is not described as having one.
 				for _, want := range []string{`"fake" has a supplied instance`, "stop supplying an instance"} {
 					if !strings.Contains(err.Error(), want) {
 						t.Errorf("error %q does not say %q", err, want)
@@ -1430,12 +1327,8 @@ func TestASuppliedProviderMeetsARivalUnderTheOrdinaryResolutionRules(t *testing.
 	}
 }
 
-// TestAnInstanceSuppliedToOneProviderIsTheOnlyOneUntilTheOthersAreConstructed
-// pins how a single-valued lookup changes as the drive builds the other
-// providers of a capability that is not exclusive. A Prepare sees the supplied
-// instance alone, since nothing else exists yet, and succeeds; once the other
-// provider is constructed the same lookup has two instances to choose from and
-// fails as any lookup does with two.
+// TestAnInstanceSuppliedToOneProviderIsTheOnlyOneUntilTheOthersAreConstructed checks that a supplied
+// instance answers alone before construction and the lookup turns ambiguous after.
 func TestAnInstanceSuppliedToOneProviderIsTheOnlyOneUntilTheOthersAreConstructed(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -1472,12 +1365,8 @@ func TestAnInstanceSuppliedToOneProviderIsTheOnlyOneUntilTheOthersAreConstructed
 	}
 }
 
-// TestARequirerFollowsASuppliedModuleAndWhatItRequiresPrecedesIt pins that a
-// supplied module takes its place in the dependency order like any other: after
-// what it requires, before what requires it, at every stage that is ordered and
-// in the reverse at shutdown. The names run against the order the
-// requirements give, and so does the order of registration, so neither can pass
-// for it.
+// TestARequirerFollowsASuppliedModuleAndWhatItRequiresPrecedesIt checks that stages run in
+// dependency order and Stop and Close in reverse, with a supplied module in the middle.
 func TestARequirerFollowsASuppliedModuleAndWhatItRequiresPrecedesIt(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -1515,10 +1404,8 @@ func TestARequirerFollowsASuppliedModuleAndWhatItRequiresPrecedesIt(t *testing.T
 	}
 }
 
-// TestSuppliedModulesAreOrderedByWhatTheyRequireOfEachOther pins the
-// dependency order for a drive in which no module is constructed at all: every
-// instance is supplied, and the requirement alone orders them at each stage and
-// at shutdown. The names run against that order.
+// TestSuppliedModulesAreOrderedByWhatTheyRequireOfEachOther checks that supplied modules still run in
+// dependency order and are released in reverse.
 func TestSuppliedModulesAreOrderedByWhatTheyRequireOfEachOther(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -1545,12 +1432,8 @@ func TestSuppliedModulesAreOrderedByWhatTheyRequireOfEachOther(t *testing.T) {
 	}
 }
 
-// TestASuppliedModulesRequirementsAreNotPulledIn pins that the registry adds
-// the supplied module to the participating set and nothing more. What it
-// requires has to be in the set already, by being named or by being supplied,
-// or the dependency resolution fails naming the module; a requirement marked
-// Optional is skipped when nothing provides it and orders the module as usual
-// when something does.
+// TestASuppliedModulesRequirementsAreNotPulledIn pins that the registry adds the supplied module
+// to the participating set and nothing more.
 func TestASuppliedModulesRequirementsAreNotPulledIn(t *testing.T) {
 	cases := []struct {
 		name         string
@@ -1607,10 +1490,8 @@ func TestASuppliedModulesRequirementsAreNotPulledIn(t *testing.T) {
 	}
 }
 
-// TestClosureTreatsASuppliedModuleLikeAnyOther pins that expansion knows
-// nothing of supplies: a module that requires a capability brings in every
-// provider of it, the supplied one among them, and a supplied module that
-// itself requires something is expanded as any module is.
+// TestClosureTreatsASuppliedModuleLikeAnyOther checks that the closure expands a supplied provider
+// and a supplied requirer exactly as it does constructed ones.
 func TestClosureTreatsASuppliedModuleLikeAnyOther(t *testing.T) {
 	reg := core.New()
 	register(reg,
@@ -1636,11 +1517,8 @@ func TestClosureTreatsASuppliedModuleLikeAnyOther(t *testing.T) {
 	}
 }
 
-// TestASuppliedExclusiveProviderMeetsAConsumerThatNamesNoImplementation pins
-// the supplied way out of a capability whose providers all claim it
-// exclusively. The closure brings in none of them, and the module that has an
-// instance supplied joins the participating set by itself, so the requirement
-// has its provider and the other implementation is left out.
+// TestASuppliedExclusiveProviderMeetsAConsumerThatNamesNoImplementation pins the supplied way out
+// of a capability whose providers all claim it exclusively.
 func TestASuppliedExclusiveProviderMeetsAConsumerThatNamesNoImplementation(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -1676,10 +1554,8 @@ func TestASuppliedExclusiveProviderMeetsAConsumerThatNamesNoImplementation(t *te
 	}
 }
 
-// TestRunTakesInEveryRegisteredModuleAtRunLevel pins the sets Run settles:
-// every registered module is a participant and so in the declaring set, and the
-// host's adjustment has nothing to apply to, because no module is taken in at
-// the static level.
+// TestRunTakesInEveryRegisteredModuleAtRunLevel checks that Run counts every registered module as
+// both participating and declaring, with no declaration-level adjustment in force.
 func TestRunTakesInEveryRegisteredModuleAtRunLevel(t *testing.T) {
 	p := &probe{}
 	reg := core.New()

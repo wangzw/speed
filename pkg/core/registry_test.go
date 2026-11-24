@@ -12,13 +12,24 @@ import (
 	"github.com/vislake/speed/pkg/core/internal/regprobe"
 )
 
-// The capability fixtures for the black-box suites in this file and in
-// run_test.go.
-type Cache interface{ CacheID() string }
+// Cache is a capability fixture the black-box suites in this file and in
+// run_test.go declare structurally.
+type Cache interface {
+	// CacheID satisfies the tests' Cache capability.
+	CacheID() string
+}
 
-type Store interface{ StoreID() string }
+// Store is a second capability the registry cases declare structurally.
+type Store interface {
+	// StoreID satisfies the tests' Store capability.
+	StoreID() string
+}
 
-type Greeter interface{ Greet() string }
+// Greeter is a capability the registry cases declare structurally.
+type Greeter interface {
+	// Greet satisfies the tests' Greeter capability.
+	Greet() string
+}
 
 type box struct{ id string }
 
@@ -43,10 +54,8 @@ func recoverMessage(t *testing.T, fn func()) string {
 	return msg
 }
 
-// TestRegisterDuplicateNamePanicsNamingBothPackagePaths pins the requirement
-// that the panic locates both sides: the available set is decided by imports,
-// so the other registrant may sit in a dependency rather than in the host's
-// own code.
+// TestRegisterDuplicateNamePanicsNamingBothPackagePaths checks that registering a name twice
+// panics, naming the module and both registration sites.
 func TestRegisterDuplicateNamePanicsNamingBothPackagePaths(t *testing.T) {
 	reg := core.New()
 	regprobe.Register(reg, core.Module{Name: "duplicated"})
@@ -65,9 +74,8 @@ func TestRegisterDuplicateNamePanicsNamingBothPackagePaths(t *testing.T) {
 	}
 }
 
-// TestRegisterRefusesAnEmptyName pins what an empty module name given to Supply
-// rests on: no module is registered under the empty string, so that name never
-// finds one and the call is refused rather than falling back to claiming.
+// TestRegisterRefusesAnEmptyName checks that registering a module with no name panics, naming the
+// site, and records nothing.
 func TestRegisterRefusesAnEmptyName(t *testing.T) {
 	reg := core.New()
 
@@ -81,13 +89,8 @@ func TestRegisterRefusesAnEmptyName(t *testing.T) {
 	}
 }
 
-// TestRegisterNamesTheRegistrationPackageWhateverFunctionRegisters pins that the
-// package a registration is attributed to is the package path the package is
-// imported under, however the call that registers is written: from a function,
-// from a method or from a function literal, in a package whose path ends in an
-// ordinary element and in one whose path ends in an element that contains a
-// dot. The linker escapes that dot in the symbol names of the package's
-// functions, and what a panic names is where a host looks for the module.
+// TestRegisterNamesTheRegistrationPackageWhateverFunctionRegisters checks that the panic naming the
+// registration site reports the package of whichever function called Register.
 func TestRegisterNamesTheRegistrationPackageWhateverFunctionRegisters(t *testing.T) {
 	for _, route := range registrationRoutes() {
 		t.Run(route.name, func(t *testing.T) {
@@ -101,11 +104,7 @@ func TestRegisterNamesTheRegistrationPackageWhateverFunctionRegisters(t *testing
 	}
 }
 
-// TestRegisterAfterTheDriveStartedPanics pins that the descriptors are fixed
-// before the drive. A module registered once it began, from a stage, from the
-// action or after it returned, would change what Modules and Resources answer
-// under the run that asked, and Supply is held to the same boundary. The call
-// below is accepted on a registry nothing has driven.
+// TestRegisterAfterTheDriveStartedPanics pins that the descriptors are fixed before the drive.
 func TestRegisterAfterTheDriveStartedPanics(t *testing.T) {
 	late := core.Module{Name: "late"}
 	core.New().Register(late)
@@ -166,11 +165,8 @@ func TestRegisterAfterTheDriveStartedPanics(t *testing.T) {
 	}
 }
 
-// TestRegisterDoesNotReviewWhatWasSupplied pins that the owner of a supplied
-// instance is decided once, by the call that supplied it. A module registered
-// afterwards declares what it likes, a capability the instance already
-// delivers included, and registration neither refuses it nor weighs it
-// against the instance.
+// TestRegisterDoesNotReviewWhatWasSupplied pins that the owner of a supplied instance is decided
+// once, by the call that supplied it.
 func TestRegisterDoesNotReviewWhatWasSupplied(t *testing.T) {
 	reg := core.New()
 	register(reg, placeholder("first", (*Cache)(nil)))
@@ -183,6 +179,8 @@ func TestRegisterDoesNotReviewWhatWasSupplied(t *testing.T) {
 	}
 }
 
+// TestRegisterPanicsOnConcreteProvisionToken checks that a provision token pointing to a concrete
+// type panics and the module is not registered.
 func TestRegisterPanicsOnConcreteProvisionToken(t *testing.T) {
 	reg := core.New()
 	msg := recoverMessage(t, func() {
@@ -199,6 +197,8 @@ func TestRegisterPanicsOnConcreteProvisionToken(t *testing.T) {
 	}
 }
 
+// TestRegisterPanicsOnUntypedNilRequirementToken checks that a requirement token given as an
+// untyped nil panics, naming the untyped nil.
 func TestRegisterPanicsOnUntypedNilRequirementToken(t *testing.T) {
 	reg := core.New()
 	msg := recoverMessage(t, func() {
@@ -212,11 +212,9 @@ func TestRegisterPanicsOnUntypedNilRequirementToken(t *testing.T) {
 	}
 }
 
-// TestNewRegistryDoesNotInheritProcessRegistrations pins the property that
-// makes a hand-built registry the way to assemble a small group of modules.
+// TestNewRegistryDoesNotInheritProcessRegistrations pins the property that makes a hand-built
+// registry the way to assemble a small group of modules.
 func TestNewRegistryDoesNotInheritProcessRegistrations(t *testing.T) {
-	// Registering only when absent keeps the test idempotent under -count>1:
-	// the process registry outlives an individual test run.
 	if _, ok := core.ProcessRegistry.Lookup("registry_test.process-probe"); !ok {
 		core.ProcessRegistry.Register(core.Module{Name: "registry_test.process-probe"})
 	}
@@ -228,6 +226,8 @@ func TestNewRegistryDoesNotInheritProcessRegistrations(t *testing.T) {
 	}
 }
 
+// TestLookup checks that a registered module is returned by name and an unknown
+// name is not.
 func TestLookup(t *testing.T) {
 	reg := core.New()
 	reg.Register(core.Module{Name: "present", Provides: []core.Provision{{Token: (*Cache)(nil)}}})
@@ -244,8 +244,8 @@ func TestLookup(t *testing.T) {
 	}
 }
 
-// TestModulesReturnsEveryRegistration compares as a set: the design pins a
-// name order on ResolveAll and Resources only, and Modules promises none.
+// TestModulesReturnsEveryRegistration checks that Modules returns every registered module,
+// whatever order they were registered in.
 func TestModulesReturnsEveryRegistration(t *testing.T) {
 	reg := core.New()
 	for _, name := range []string{"zeta", "alpha", "mid"} {

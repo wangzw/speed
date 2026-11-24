@@ -6,65 +6,17 @@ import (
 	"strings"
 )
 
-// suppliedInstance is what the registry keeps about an instance the host
-// supplied, besides the instance itself.
 type suppliedInstance struct {
-	site string // package path of the caller of Supply
+	site string
 }
 
-// objectKey is the identity of the object an instance refers to: the dynamic
-// type of the reference together with the address it points at. The type is
-// part of it because two references of different types can share an address,
-// a struct and a pointer to its first field being the usual pair, and they are
-// not the same object.
 type objectKey struct {
 	typ  reflect.Type
 	addr uintptr
 }
 
-// Supply hands the registry an instance the host built itself, as the instance
-// of one registered module. It stands where the instance that module's New
-// would construct stands: the module's Prepare and New do not run, its stance
-// is fixed at StateEnabled, and the module joins the participating set when the
-// drive begins, whether or not the command tree names it. Everything else about
-// the module is as it is for any other: its descriptor, Requires and Resources,
-// and the callbacks from Migrate to Close, which receive this instance. The
-// instance exists from this call on, so Resolve finds it in any stage, Prepare
-// included, and the drive counts it as constructed from its first step:
-// whatever stage the drive ends in, the module's Stop and Close run on it.
-//
-// Which module the instance belongs to is settled in one of two ways. Given a
-// module name, the constant the package that registers the module exports, the
-// name decides: the module has to be registered and the instance has to
-// implement every capability the module declares in Provides, the test the
-// registry makes of a constructed instance too. A module that declares none can
-// be supplied this way as well. Without a name, the instance is claimed. The
-// candidates are the registered modules that declare at least one capability
-// and whose every capability the instance implements. A single candidate is the
-// module. Among several, it is the one registered from the package that defines
-// the instance's type, provided there is exactly one: that package defines the
-// named type left once pointers are stripped from the dynamic type, and a
-// module is registered from the package that called Register for it. Claiming
-// by package rests on a packaging convention, that a module's product is
-// defined in the package that registers it. Where it does not hold, the host
-// names the module.
-//
-// An instance belongs to one module and a module has one instance. The same
-// object cannot be supplied for two modules; an object is the same when it is
-// a non-nil pointer to a type of non-zero size, a non-nil map or a non-nil
-// channel, and the dynamic type and the address both match. Any other instance
-// has no identity to compare and is not checked. The check covers one registry.
-// Register does not revisit an instance already supplied, so a module is
-// registered before an instance is supplied for it.
-//
-// Supply panics, naming the package of the caller, when the drive has started,
-// when instance is nil, when more than one module is named, when the named
-// module is not registered, when the instance does not implement what the
-// module declares, when no module can be claimed or the candidates cannot be
-// told apart by package, when the module already has a supplied instance, and
-// when the same object was supplied for another module. Each is decided by this
-// one call against what is already registered and supplied, which is the
-// criterion the registration-time panics use.
+// Supply hands the registry an instance the host built itself, as the instance of one registered
+// module.
 func (r *Registry) Supply(instance any, module ...string) {
 	site := callerPackage(3)
 
@@ -124,13 +76,6 @@ func (r *Registry) Supply(instance any, module ...string) {
 	}
 }
 
-// namedModuleLocked checks the module the host named against the instance and
-// returns its name. The caller holds the lock.
-//
-// The name is the host's decision and is not cross-checked against the type of
-// the instance, so a module that declares no capability can be named like any
-// other. What the instance still has to do is deliver everything the module
-// declares.
 func (r *Registry) namedModuleLocked(name string, it reflect.Type, site string) string {
 	reg, ok := r.mods[name]
 	if !ok {
@@ -150,11 +95,6 @@ func (r *Registry) namedModuleLocked(name string, it reflect.Type, site string) 
 	return name
 }
 
-// claimedModuleLocked finds the module an instance belongs to when the host
-// named none, and returns its name. The caller holds the lock.
-//
-// Registered modules are visited in name order so that the answer and the
-// message do not depend on the order they were registered in.
 func (r *Registry) claimedModuleLocked(it reflect.Type, site string) string {
 	type partial struct {
 		name    string
@@ -237,15 +177,10 @@ func (r *Registry) claimedModuleLocked(it reflect.Type, site string) string {
 		site, instanceTypeName(it), strings.Join(listed, ", "), why))
 }
 
-// implements reports whether an instance of dynamic type it delivers the
-// capability ct. It is the one test the registry applies to an instance, whether
-// the module's New constructed it or the host supplied it.
 func implements(it, ct reflect.Type) bool {
 	return it != nil && it.AssignableTo(ct)
 }
 
-// missingCapabilities lists, in declaration order, the capabilities an instance
-// of dynamic type it does not deliver.
 func missingCapabilities(it reflect.Type, declared []reflect.Type) []reflect.Type {
 	var missing []reflect.Type
 	for _, ct := range declared {
@@ -256,10 +191,6 @@ func missingCapabilities(it reflect.Type, declared []reflect.Type) []reflect.Typ
 	return missing
 }
 
-// typePackage reports the import path of the package that defines the named
-// type an instance's dynamic type leads to once pointers are stripped. It is
-// empty for a type no package defines: a built-in type, or one written out in
-// place such as a slice, a map or a function type.
 func typePackage(it reflect.Type) string {
 	for it.Kind() == reflect.Pointer && it.Name() == "" {
 		it = it.Elem()
@@ -267,13 +198,6 @@ func typePackage(it reflect.Type) string {
 	return it.PkgPath()
 }
 
-// objectOf reports the identity of the object an instance refers to. Only a
-// non-nil pointer to a type of non-zero size, a non-nil map and a non-nil channel
-// refer to an object whose identity an address tells. A value is copied each
-// time it is passed, so it has none to compare; a slice and a function value
-// can share state while their addresses differ or coincide; a zero-size type
-// has no storage, and the addresses of its variables may coincide; a nil
-// reference refers to nothing.
 func objectOf(instance any) (objectKey, bool) {
 	v := reflect.ValueOf(instance)
 	switch v.Kind() {
@@ -291,9 +215,6 @@ func objectOf(instance any) (objectKey, bool) {
 	return objectKey{typ: v.Type(), addr: v.Pointer()}, true
 }
 
-// instanceTypeName renders the dynamic type of an instance for a message. A
-// pointer is followed to the named type it leads to, which is printed with its
-// import path: that package is what claiming by type goes by.
 func instanceTypeName(it reflect.Type) string {
 	if it.Kind() == reflect.Pointer && it.Name() == "" {
 		return "*" + instanceTypeName(it.Elem())
@@ -301,8 +222,6 @@ func instanceTypeName(it reflect.Type) string {
 	return typeName(it)
 }
 
-// capabilityList renders capabilities for a message: "capability A", or
-// "capabilities A, B and C".
 func capabilityList(cts []reflect.Type) string {
 	names := make([]string, 0, len(cts))
 	for _, ct := range cts {

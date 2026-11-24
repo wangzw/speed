@@ -9,20 +9,15 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// Intake is the capability an entry point in these tests delivers: the seat
-// its registrants put a handler into, the way a router takes routes.
+// Intake is the capability an entry point in these tests delivers: the seat its registrants put a
+// handler into, the way a router takes routes.
 type Intake interface {
+	// Handle records the instance it is handed.
 	Handle(h func(context.Context) error)
 }
 
-// errNotAccepting is what a worker answers once its Stop has run.
 var errNotAccepting = errors.New("the worker is not accepting work")
 
-// entryPoint admits one request in Serve and keeps it in flight until its Stop
-// begins; Stop then drains, returning only once that request's handler has.
-// It is the shape an HTTP module's Stop has: close the listener, then wait out
-// what is already inside. An entry point whose Serve never ran admitted
-// nothing, and its Stop has nothing to wait for.
 type entryPoint struct {
 	mu      sync.Mutex
 	handler func(context.Context) error
@@ -41,8 +36,6 @@ func (e *entryPoint) Handle(h func(context.Context) error) {
 	e.handler = h
 }
 
-// worker refuses work once its Stop has run, the way a module that stops
-// taking records or publications does.
 type worker struct {
 	mu      sync.Mutex
 	stopped bool
@@ -63,8 +56,6 @@ func (w *worker) stop() {
 	w.stopped = true
 }
 
-// entryModule builds an entry point that records how the request it held in
-// flight at shutdown came out.
 func entryModule(p *probe, name string) core.Module {
 	return core.Module{
 		Name:     name,
@@ -106,9 +97,6 @@ func entryModule(p *probe, name string) core.Module {
 	}
 }
 
-// registerEntry registers the entry point module and, when supplied is set,
-// gives it an instance the host built instead of leaving the construction to
-// the drive. The two are the same entry point to everything that follows.
 func registerEntry(t *testing.T, reg *core.Registry, p *probe, name string, supplied bool) {
 	t.Helper()
 	register(reg, entryModule(p, name))
@@ -117,9 +105,6 @@ func registerEntry(t *testing.T, reg *core.Registry, p *probe, name string, supp
 	}
 }
 
-// assertEntryOrigin checks that the entry point's instance came from where the
-// case says: constructed by the module's New, or supplied and so never built by
-// it.
 func assertEntryOrigin(t *testing.T, p *probe, name string, supplied bool) {
 	t.Helper()
 	built := p.has("new " + name)
@@ -131,9 +116,6 @@ func assertEntryOrigin(t *testing.T, p *probe, name string, supplied bool) {
 	}
 }
 
-// workerModule builds a module whose work an in-flight request reaches. It
-// puts its handler into the entry point in Init, the way a registrant takes a
-// router up, and refuses work from its Stop on.
 func workerModule(p *probe, name string, requires []core.Requirement) core.Module {
 	return core.Module{
 		Name:     name,
@@ -158,17 +140,8 @@ func workerModule(p *probe, name string, requires []core.Requirement) core.Modul
 	}
 }
 
-// TestAnEntryPointDrainsBeforeAnyOtherModuleStops pins the order the shutdown
-// owes a request in flight: the module its handler reaches is still taking
-// work until the entry point has drained, whichever side of the entry point
-// that module was constructed on. It holds whether the entry point's instance
-// was constructed by the drive or supplied by the host.
-//
-// A worker that requires the entry point's capability is constructed after it,
-// and so is one ordered by nothing whose name sorts later; reverse construction
-// order alone would stop either of them first, and the request in flight would
-// have its work refused. The worker whose name sorts earlier is constructed
-// before the entry point, and is there to show that the side does not matter.
+// TestAnEntryPointDrainsBeforeAnyOtherModuleStops checks that an in-flight request completes before
+// a worker stops, for a constructed or supplied entry point and any worker placement.
 func TestAnEntryPointDrainsBeforeAnyOtherModuleStops(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -210,26 +183,14 @@ func TestAnEntryPointDrainsBeforeAnyOtherModuleStops(t *testing.T) {
 	}
 }
 
-// TestEveryWayOutOfADriveStopsTheEntryPointsFirst pins that the shutdown order
-// belongs to the drive and not to its ordinary end alone. A startup that fails
-// part-way and an action that fails leave through the same shutdown as a
-// cancelled run: the entry points are stopped before every other module, and a
-// request an entry point admitted before the failure still has its work taken
-// by the module it reaches. The entry point is the same whether the drive
-// constructed its instance or the host supplied it.
-//
-// The worker requires the entry point's capability, so it is constructed after
-// it, and reverse construction order alone would stop it first. The startup
-// that fails in Start has served nothing, so there the order is all there is
-// to see; it is there to show that the failing stage does not change it.
+// TestEveryWayOutOfADriveStopsTheEntryPointsFirst pins that the shutdown order belongs to the
+// drive and not to its ordinary end alone.
 func TestEveryWayOutOfADriveStopsTheEntryPointsFirst(t *testing.T) {
 	failure := errors.New("the drive could not go on")
 	afterEntry := []core.Requirement{{Token: (*Intake)(nil)}}
 
 	cases := []struct {
-		name string
-		// admitted says whether the entry point served before the failure,
-		// which puts a request in flight when the shutdown begins.
+		name     string
 		admitted bool
 		drive    func(t *testing.T, p *probe, supplied bool) error
 	}{
@@ -313,12 +274,8 @@ func TestEveryWayOutOfADriveStopsTheEntryPointsFirst(t *testing.T) {
 	}
 }
 
-// TestSuppliedInstancesNobodyConstructedStillStopEntryPointsFirst pins the
-// order for a drive that ends before it constructs anything. Both instances
-// below are supplied, so both are put at the end of the construction order
-// with the dependency between them intact: the worker requires the entry
-// point's capability, so reverse construction order would stop the worker
-// first, and the entry point stops first anyway, being an entry point.
+// TestSuppliedInstancesNobodyConstructedStillStopEntryPointsFirst pins the order for a drive that
+// ends before it constructs anything.
 func TestSuppliedInstancesNobodyConstructedStillStopEntryPointsFirst(t *testing.T) {
 	failure := errors.New("a stance could not be stated")
 	p := &probe{}
@@ -348,7 +305,6 @@ func TestSuppliedInstancesNobodyConstructedStillStopEntryPointsFirst(t *testing.
 	}
 }
 
-// failingAt builds a recording module that fails in the given stage.
 func failingAt(p *probe, name string, stage core.Stage, failure error) core.Module {
 	m := preparing(p, name)
 	switch stage {
@@ -370,21 +326,13 @@ func failingAt(p *probe, name string, stage core.Stage, failure error) core.Modu
 	return m
 }
 
-// TestEveryWayOutOfADriveReleasesASuppliedInstanceOnce pins that a supplied
-// instance is released whichever way the drive ends. Each case ends the drive
-// in a different place — the end of a run, a depth that builds nothing, a
-// failure in each stage, a failure in resolution or in dependency planning, an
-// action that fails, and the supplied module's own Migrate refusing its
-// instance — and in each the module's Stop and Close run exactly once and in
-// that order, whether or not the drive got as far as the point where the
-// instance would have been constructed.
+// TestEveryWayOutOfADriveReleasesASuppliedInstanceOnce pins that a supplied instance is released
+// whichever way the drive ends.
 func TestEveryWayOutOfADriveReleasesASuppliedInstanceOnce(t *testing.T) {
 	failure := errors.New("the drive could not go on")
 	type scenario struct {
 		name    string
 		wantErr error
-		// refuses makes the supplied module's own Migrate fail, the way a
-		// module that turns away an instance it did not build does.
 		refuses bool
 		drive   func(t *testing.T, p *probe, reg *core.Registry) error
 	}
@@ -431,8 +379,6 @@ func TestEveryWayOutOfADriveReleasesASuppliedInstanceOnce(t *testing.T) {
 				})
 			},
 		},
-		// The two that follow end the drive before the participating set is
-		// settled, so nothing that set records can be what a release goes by.
 		{
 			name:    "a participant no module registered",
 			wantErr: core.ErrUnknownParticipant,
@@ -516,10 +462,7 @@ func TestEveryWayOutOfADriveReleasesASuppliedInstanceOnce(t *testing.T) {
 	}
 }
 
-// TestSuppliedModulesThatRequireEachOtherAreStillReleased pins the instance on a
-// dependency cycle. The drive that finds the cycle in its dependency planning
-// fails with it, and the drive that ends before planning never sees it and
-// succeeds; both release every supplied instance, in no order between the two.
+// TestSuppliedModulesThatRequireEachOtherAreStillReleased pins the instance on a dependency cycle.
 func TestSuppliedModulesThatRequireEachOtherAreStillReleased(t *testing.T) {
 	for _, c := range []struct {
 		name    string
@@ -557,11 +500,8 @@ func TestSuppliedModulesThatRequireEachOtherAreStillReleased(t *testing.T) {
 	}
 }
 
-// TestSuppliedInstancesNobodyConstructedAreReleasedInDependencyOrder pins how
-// the instances a drive never reaches the construction of are ordered among
-// themselves: by what they require of each other, the way constructed
-// instances are, so that the one that requires the other is released first.
-// The names run against that order.
+// TestSuppliedInstancesNobodyConstructedAreReleasedInDependencyOrder checks that a required supplied
+// instance is stopped and closed before the instance that requires it.
 func TestSuppliedInstancesNobodyConstructedAreReleasedInDependencyOrder(t *testing.T) {
 	failure := errors.New("a stance could not be stated")
 	for _, c := range []struct {

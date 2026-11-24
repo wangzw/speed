@@ -2,8 +2,8 @@ package core
 
 import "testing"
 
-// TestSentinelSetMatchesDesignTable pins the sentinel set to the design's
-// error table: one entry per row, each distinct, each reachable by name.
+// TestSentinelSetMatchesDesignTable checks that the seven sentinels are non-nil, have distinct
+// non-empty messages, and are exactly the seven errors this package exports.
 func TestSentinelSetMatchesDesignTable(t *testing.T) {
 	sentinels := map[string]error{
 		"ErrMissingProvider":       ErrMissingProvider,

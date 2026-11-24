@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+// TestReadScaleAnswersOneForAnUnsetOrEmptyVariable checks that an unset, empty or whitespace-only
+// variable reads as 1.
 func TestReadScaleAnswersOneForAnUnsetOrEmptyVariable(t *testing.T) {
 	t.Setenv(envVar, "")
 	os.Unsetenv(envVar)
@@ -22,6 +24,8 @@ func TestReadScaleAnswersOneForAnUnsetOrEmptyVariable(t *testing.T) {
 	}
 }
 
+// TestReadScaleAnswersAParsedValue checks that decimal, fractional and exponent forms parse, with
+// surrounding whitespace ignored.
 func TestReadScaleAnswersAParsedValue(t *testing.T) {
 	for raw, want := range map[string]float64{
 		"1":     1,
@@ -42,9 +46,8 @@ func TestReadScaleAnswersAParsedValue(t *testing.T) {
 	}
 }
 
-// TestReadScaleRefusesAValueThatIsNotAFiniteNumberAtLeastOne carries the whole
-// table of values the variable refuses, "NaN" and "Inf" included: ParseFloat
-// accepts both, neither is below 1, and either would travel on as a bound.
+// TestReadScaleRefusesAValueThatIsNotAFiniteNumberAtLeastOne checks that non-numbers, values below
+// one, infinities, hex floats and underscores are refused naming the requirement.
 func TestReadScaleRefusesAValueThatIsNotAFiniteNumberAtLeastOne(t *testing.T) {
 	for _, raw := range []string{
 		"abc",
@@ -65,6 +68,8 @@ func TestReadScaleRefusesAValueThatIsNotAFiniteNumberAtLeastOne(t *testing.T) {
 	}
 }
 
+// TestMustReadScaleStopsTheRunOnARefusedValue checks that a refused value panics with an error
+// naming the requirement.
 func TestMustReadScaleStopsTheRunOnARefusedValue(t *testing.T) {
 	defer func() {
 		r := recover()
@@ -82,12 +87,16 @@ func TestMustReadScaleStopsTheRunOnARefusedValue(t *testing.T) {
 	mustReadScale("abc")
 }
 
+// TestMustReadScaleAnswersTheParsedValue checks that mustReadScale returns the parsed number for an
+// accepted value.
 func TestMustReadScaleAnswersTheParsedValue(t *testing.T) {
 	if got := mustReadScale("2.5"); got != 2.5 {
 		t.Errorf("mustReadScale(2.5) = %v, want 2.5", got)
 	}
 }
 
+// TestScaleNeverLowersTheRaceBound checks that Scale keeps at least the race factor's multiple and
+// leaves zero at zero.
 func TestScaleNeverLowersTheRaceBound(t *testing.T) {
 	const d = 3 * time.Second
 	if got, floor := Scale(d), time.Duration(float64(d)*float64(raceFactor)); got < floor {
@@ -98,9 +107,8 @@ func TestScaleNeverLowersTheRaceBound(t *testing.T) {
 	}
 }
 
-// TestDeclaredCarriesTheCallersScaleAlone holds the second factor set apart: a
-// detection bound grows with the caller's declaration and not with the race
-// detector, so the time a wrong implementation needs stays measurable above it.
+// TestDeclaredCarriesTheCallersScaleAlone checks that Declared multiplies by GATE_TIME_SCALE alone
+// and leaves zero at zero.
 func TestDeclaredCarriesTheCallersScaleAlone(t *testing.T) {
 	const d = 3 * time.Second
 	declared, err := readScale(os.Getenv(envVar))
@@ -115,9 +123,8 @@ func TestDeclaredCarriesTheCallersScaleAlone(t *testing.T) {
 	}
 }
 
-// TestBothFactorsApplyTheCallersScale sets a scale other than the run's own, so
-// that a function that forgot to multiply by it is seen: at the default of 1 a
-// missing multiply and a correct one answer the same.
+// TestBothFactorsApplyTheCallersScale checks that Declared and Scale both apply the declared scale,
+// and Scale adds the race factor.
 func TestBothFactorsApplyTheCallersScale(t *testing.T) {
 	const d = 2 * time.Second
 	const declared = 2.5
@@ -131,9 +138,6 @@ func TestBothFactorsApplyTheCallersScale(t *testing.T) {
 	}
 }
 
-// recordingFataler records the failure a case is stopped with instead of
-// stopping the run, so the points around the margin can be read. Like
-// testing.T.Fatalf, only the first failure is the one a run reports.
 type recordingFataler struct {
 	failed  bool
 	message string
@@ -149,16 +153,13 @@ func (r *recordingFataler) Fatalf(format string, args ...any) {
 	r.message = fmt.Sprintf(format, args...)
 }
 
-// atScale runs body with GATE_TIME_SCALE set to declared.
 func atScale(t *testing.T, declared string, body func()) {
 	t.Helper()
 	t.Setenv(envVar, declared)
 	body()
 }
 
-// TestDeclaredAgainstReturnsABoundBelowTheMargin holds the passing side. The
-// whole bound, the fixed part included, stays below nine tenths of the wrong
-// time, so the case is still told apart and the function returns the bound.
+// TestDeclaredAgainstReturnsABoundBelowTheMargin holds the passing side.
 func TestDeclaredAgainstReturnsABoundBelowTheMargin(t *testing.T) {
 	atScale(t, "1", func() {
 		rec := &recordingFataler{}
@@ -171,12 +172,8 @@ func TestDeclaredAgainstReturnsABoundBelowTheMargin(t *testing.T) {
 	})
 }
 
-// TestDeclaredAgainstPassesJustBelowNineTenths holds the passing edge of the
-// guard band: a bound one millisecond below nine tenths of the wrong time is
-// still told apart, so the function returns it and does not fail the case. The
-// wrong time is 900ms so that the margin, 900ms - 900ms/10, is the exact 810ms
-// a reader can check against the integer arithmetic rather than a truncated
-// share.
+// TestDeclaredAgainstPassesJustBelowNineTenths checks that a bound below nine tenths of the wrong
+// time passes and returns the scaled bound.
 func TestDeclaredAgainstPassesJustBelowNineTenths(t *testing.T) {
 	atScale(t, "1", func() {
 		rec := &recordingFataler{}
@@ -189,10 +186,8 @@ func TestDeclaredAgainstPassesJustBelowNineTenths(t *testing.T) {
 	})
 }
 
-// TestDeclaredAgainstFailsAtExactlyNineTenths holds the failing edge of the
-// guard band: a bound exactly at nine tenths of the wrong time is no longer
-// below it, so the case fails rather than passing a bound both implementations
-// satisfy.
+// TestDeclaredAgainstFailsAtExactlyNineTenths checks that a bound at exactly nine tenths of the
+// wrong time fails the case.
 func TestDeclaredAgainstFailsAtExactlyNineTenths(t *testing.T) {
 	atScale(t, "1", func() {
 		rec := &recordingFataler{}
@@ -203,10 +198,8 @@ func TestDeclaredAgainstFailsAtExactlyNineTenths(t *testing.T) {
 	})
 }
 
-// TestDeclaredAgainstFailureNamesTheFourElements holds what a caller reads when
-// the guard fires: the scale, the bound, the wrong implementation's time and
-// the meeting point. The scale is well past the margin, so the wording says the
-// bound has passed nine tenths of the wrong time rather than sitting at it.
+// TestDeclaredAgainstFailureNamesTheFourElements holds what a caller reads when the guard fires:
+// the scale, the bound, the wrong implementation's time and the meeting point.
 func TestDeclaredAgainstFailureNamesTheFourElements(t *testing.T) {
 	atScale(t, "2", func() {
 		rec := &recordingFataler{}
@@ -222,8 +215,8 @@ func TestDeclaredAgainstFailureNamesTheFourElements(t *testing.T) {
 	})
 }
 
-// TestDeclaredAgainstFailsPastTheMargin holds the failing side, at a scale
-// other than 1 so that the failure is seen to carry the scale the run declared.
+// TestDeclaredAgainstFailsPastTheMargin holds the failing side, at a scale other than 1 so that
+// the failure is seen to carry the scale the run declared.
 func TestDeclaredAgainstFailsPastTheMargin(t *testing.T) {
 	atScale(t, "5", func() {
 		rec := &recordingFataler{}
@@ -239,8 +232,8 @@ func TestDeclaredAgainstFailsPastTheMargin(t *testing.T) {
 	})
 }
 
-// TestBoundsReadTheVariableWhenTheCaseRuns checks that a scale set after
-// startup applies to each bound the case computes.
+// TestBoundsReadTheVariableWhenTheCaseRuns checks that a scale set after startup applies to each
+// bound the case computes.
 func TestBoundsReadTheVariableWhenTheCaseRuns(t *testing.T) {
 	const d = 2 * time.Second
 	t.Setenv(envVar, "2.5")
@@ -268,8 +261,8 @@ func TestBoundsReadTheVariableWhenTheCaseRuns(t *testing.T) {
 	}
 }
 
-// TestEveryBoundRefusesAValueTheVariableCannotMean checks that each value
-// function panics on a refused GATE_TIME_SCALE.
+// TestEveryBoundRefusesAValueTheVariableCannotMean checks that each value function panics on a
+// refused GATE_TIME_SCALE.
 func TestEveryBoundRefusesAValueTheVariableCannotMean(t *testing.T) {
 	t.Setenv(envVar, "abc")
 	for _, tc := range []struct {
@@ -299,9 +292,8 @@ func TestEveryBoundRefusesAValueTheVariableCannotMean(t *testing.T) {
 	}
 }
 
-// TestDeclaredAgainstNeedsPositiveArguments holds the guard: a bound or a wrong
-// time that is not positive is a caller's mistake and stops the case rather
-// than being scaled into a bound nothing checks.
+// TestDeclaredAgainstNeedsPositiveArguments checks that a non-positive argument fails the case with
+// a message naming the positive requirement.
 func TestDeclaredAgainstNeedsPositiveArguments(t *testing.T) {
 	atScale(t, "1", func() {
 		for _, args := range [][3]time.Duration{
