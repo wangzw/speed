@@ -12,9 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// fakeAccounts is the account store the bridge reads through. It embeds the
-// interface so a method nobody overrode panics rather than answering, and it
-// serves Get from a fixed account and error.
 type fakeAccounts struct {
 	authn.Accounts
 	account authn.Account
@@ -25,8 +22,8 @@ func (f *fakeAccounts) Get(_ context.Context, _ authn.AccountID) (authn.Account,
 	return f.account, f.err
 }
 
-// The descriptor names the account store as a required dependency and delivers
-// the profile and the provisioning hook, neither exclusively.
+// TestModuleDescriptorNamesTheStoreAndTheTwoSeams checks that the descriptor
+// requires the account store and delivers the profile and the provisioning hook.
 func TestModuleDescriptorNamesTheStoreAndTheTwoSeams(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName {
@@ -36,8 +33,6 @@ func TestModuleDescriptorNamesTheStoreAndTheTwoSeams(t *testing.T) {
 	if !slices.Equal(m.Requires, wantRequires) {
 		t.Fatalf("the module requires %+v, want the account store required", m.Requires)
 	}
-	// Non-exclusive: a host may stand its own profile in the engine's place and
-	// the login engine takes every provisioner, so Exclusive must stay false.
 	wantProvides := []core.Provision{
 		{Token: (*i18n.Profile)(nil)},
 		{Token: (*authn.Provisioner)(nil)},
@@ -47,16 +42,9 @@ func TestModuleDescriptorNamesTheStoreAndTheTwoSeams(t *testing.T) {
 	}
 }
 
-// LocaleFor reads the account's stored i18n.locale attribute. A malformed
-// identifier, an account that does not exist, and an attribute that is absent
-// or empty read as none. Any other store failure is reported as an error, which
-// is how a caller tells a failed read from an account that stores no
-// preference.
+// TestLocaleForReadsTheStoredAttribute checks that LocaleFor reads the stored
+// attribute and reports each missing case as none.
 func TestLocaleForReadsTheStoredAttribute(t *testing.T) {
-	// The account the fake answers with carries both preferences, so a case
-	// that must read as "none" fails whenever the bridge skipped the step that
-	// keeps it away from that value: the identifier's shape or the lookup's
-	// error.
 	full := authn.Account{Attributes: map[string]string{
 		i18n.LocaleAttributeKey:   "zh-CN",
 		i18n.TimeZoneAttributeKey: "Asia/Shanghai",
@@ -89,11 +77,8 @@ func TestLocaleForReadsTheStoredAttribute(t *testing.T) {
 	}
 }
 
-// TimeZoneFor reads the account's stored i18n.tz attribute. A malformed
-// identifier, an absent account and an attribute that is absent or empty all
-// read as "none, no failure": they are the same answer the caller falls back
-// from. A store failure is reported, because "the preference could not be
-// read" and "no preference is stored" must not collapse into one answer.
+// TestTimeZoneForReadsTheStoredAttribute checks that TimeZoneFor reads the
+// stored attribute and reports a store failure.
 func TestTimeZoneForReadsTheStoredAttribute(t *testing.T) {
 	full := authn.Account{Attributes: map[string]string{
 		i18n.LocaleAttributeKey:   "zh-CN",
@@ -128,9 +113,8 @@ func TestTimeZoneForReadsTheStoredAttribute(t *testing.T) {
 	}
 }
 
-// Provision seeds the locale and time zone the request carried into the account
-// about to be created, changes no other field, and leaves the attribute set
-// untouched when the context names neither.
+// TestProvisionSeedsTheContextPreferences checks that Provision seeds the
+// context's locale and zone and leaves every other field alone.
 func TestProvisionSeedsTheContextPreferences(t *testing.T) {
 	localeCtx := i18n.WithLocale(context.Background(), i18n.Locale("zh-CN"))
 	zoneCtx := i18n.WithTimeZone(context.Background(), "Asia/Shanghai")
@@ -191,7 +175,6 @@ func TestProvisionSeedsTheContextPreferences(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Provision returned an error: %v", err)
 			}
-			// Every field but Attributes must come back as it went in.
 			want := newBase(c.wantAttr)
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("Provision returned %+v, want %+v", got, want)
