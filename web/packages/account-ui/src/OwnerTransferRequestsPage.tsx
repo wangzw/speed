@@ -29,7 +29,7 @@
  * keeps one sentence because the answer cannot separate its causes.
  */
 
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { formatInstant } from '@speed/i18n'
 import Box from '@mui/material/Box'
@@ -52,6 +52,7 @@ import {
 import type { MyTransferView } from '@speed/api-sdk'
 import { tenantQueryKey } from '@speed/auth-core'
 import {
+  ActionButton,
   ConfirmDialog,
   errorCodeOf,
   httpStatusOf,
@@ -328,6 +329,57 @@ function RequestDetail({
   const feedback = useWriteFeedback()
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [declineOpen, setDeclineOpen] = useState(false)
+  // Which decision this scope started: only that control reports busy while
+  // the write runs; its sibling reports unavailable without a reason.
+  const [pendingAction, setPendingAction] = useState<
+    'confirm' | 'decline' | null
+  >(null)
+  // The card is the control group's focus landing once a landed decision
+  // takes both actions out of the document; the group element is captured
+  // when the write starts so the landing can tell a lost focus from one the
+  // operator moved elsewhere.
+  const cardRegion = useRef<HTMLDivElement | null>(null)
+  const actionGroup = useRef<HTMLDivElement | null>(null)
+  const pendingLanding = useRef<{
+    readonly group: HTMLElement | null
+  } | null>(null)
+
+  // A landed decision leaves the request in a terminal state, which unmounts
+  // the action group. Focus goes to the request card in the commit that
+  // removes the group, but only when the removal is what took focus: a
+  // connected control outside the group means the operator chose that place
+  // during the write, and it is left alone. A decision that settled with the
+  // request still in place (a refusal, an answer that still carries it)
+  // removed nothing, so its landing is dropped once the write is no longer
+  // in flight; a later terminal read of its own must not move focus.
+  useLayoutEffect(() => {
+    const target = pendingLanding.current
+    if (target === null || request === undefined) {
+      return
+    }
+    if (request.status === 'pending') {
+      // Settled without removing the request (a refusal, or an answer that
+      // still carries it): there is nothing to land from. Judged on the
+      // read's settled answer rather than this render's, so a re-read that
+      // has already reported a terminal state is not mistaken for one that
+      // still carries the request before its own render commits.
+      const reread = queryClient.getQueryData<{
+        readonly request: MyTransferView
+      }>(getTenantAdminMeTransferRequestQueryKey(request.id))
+      if (
+        pendingAction === null &&
+        (reread === undefined || reread.request.status === 'pending')
+      ) {
+        pendingLanding.current = null
+      }
+      return
+    }
+    pendingLanding.current = null
+    if (!focusFellWith(target.group)) {
+      return
+    }
+    cardRegion.current?.focus()
+  }, [request, pendingAction])
 
   if (request === undefined) {
     return null
@@ -348,11 +400,16 @@ function RequestDetail({
     }
   }
 
-  const invalidate = (tenant: string): void => {
+  /**
+   * Re-reads every read a decision moves, resolving once the detail read
+   * has settled: that answer is what reports the decision, so the write
+   * stays in flight -- and its controls out of reach -- until it lands.
+   */
+  const invalidate = (tenant: string): Promise<void> => {
     void queryClient.invalidateQueries({
       queryKey: getTenantAdminMeTransferRequestsQueryKey(),
     })
-    void queryClient.invalidateQueries({
+    const reread = queryClient.invalidateQueries({
       queryKey: getTenantAdminMeTransferRequestQueryKey(request.id),
     })
     // The organization's profile read lives on the tenant surface, whose
@@ -364,6 +421,7 @@ function RequestDetail({
     void queryClient.invalidateQueries({
       queryKey: tenantQueryKey(tenant, ...getTenantProfileGetQueryKey(tenant)),
     })
+    return reread
   }
 
   /** The refusal as this page words it; a conflict re-reads the detail. */
@@ -393,109 +451,132 @@ function RequestDetail({
   }
 
   const runConfirm = (): void => {
-    void feedback.run(async () => {
-      try {
-        await confirm.mutateAsync({ request: request.id })
-      } catch (error) {
-        throw await requestFailure(error)
-      }
-      invalidate(request.tenant)
-      return t('transferRequests.confirmed', { tenant: request.tenant })
-    })
+    pendingLanding.current = { group: actionGroup.current }
+    setPendingAction('confirm')
+    void feedback
+      .run(async () => {
+        try {
+          await confirm.mutateAsync({ request: request.id })
+        } catch (error) {
+          throw await requestFailure(error)
+        }
+        await invalidate(request.tenant)
+        return t('transferRequests.confirmed', { tenant: request.tenant })
+      })
+      .finally(() => setPendingAction(null))
   }
 
   const runDecline = (): void => {
-    void feedback.run(async () => {
-      try {
-        await decline.mutateAsync({ request: request.id })
-      } catch (error) {
-        throw await requestFailure(error)
-      }
-      invalidate(request.tenant)
-      return t('transferRequests.declined', { tenant: request.tenant })
-    })
+    pendingLanding.current = { group: actionGroup.current }
+    setPendingAction('decline')
+    void feedback
+      .run(async () => {
+        try {
+          await decline.mutateAsync({ request: request.id })
+        } catch (error) {
+          throw await requestFailure(error)
+        }
+        await invalidate(request.tenant)
+        return t('transferRequests.declined', { tenant: request.tenant })
+      })
+      .finally(() => setPendingAction(null))
   }
 
   const pending = request.status === 'pending'
-  const busy = confirm.isPending || decline.isPending || feedback.pending
+  const confirming = pendingAction === 'confirm'
+  const declining = pendingAction === 'decline'
 
   return (
     <SectionCard
       title={request.tenant}
       description={t('transferRequests.detailDescription')}
     >
-      {listHref !== undefined ? (
-        <Button component="a" href={listHref} size="small" sx={{ mb: 2 }}>
-          {t('transferRequests.back')}
-        </Button>
-      ) : null}
-      <Stack spacing={1}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Typography variant="body2">
-            {t('transferRequests.status')}
-          </Typography>
-          <Chip size="small" variant="outlined" label={statusLabel(t, request.status)} />
-        </Box>
-        <RequestFacts
-          request={request}
-          language={i18n.language}
-          timeZone={timeZone}
-        />
-      </Stack>
-      {pending ? (
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mt: 2 }}>
-          <Button
-            type="button"
-            variant="contained"
-            disabled={busy}
-            onClick={() => {
-              feedback.reset()
-              setConfirmOpen(true)
-            }}
-          >
-            {t('transferRequests.confirm')}
+      <Box
+        // The request card is the action group's focus landing when a
+        // landed decision removes both controls: named by the section's
+        // title, and reachable by script without joining the Tab order.
+        ref={cardRegion}
+        role="group"
+        aria-label={request.tenant}
+        tabIndex={-1}
+      >
+        {listHref !== undefined ? (
+          <Button component="a" href={listHref} size="small" sx={{ mb: 2 }}>
+            {t('transferRequests.back')}
           </Button>
-          <Button
-            type="button"
-            variant="outlined"
-            disabled={busy}
-            onClick={() => {
-              feedback.reset()
-              setDeclineOpen(true)
-            }}
+        ) : null}
+        <Stack spacing={1}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="body2">
+              {t('transferRequests.status')}
+            </Typography>
+            <Chip size="small" variant="outlined" label={statusLabel(t, request.status)} />
+          </Box>
+          <RequestFacts
+            request={request}
+            language={i18n.language}
+            timeZone={timeZone}
+          />
+        </Stack>
+        {pending ? (
+          <Box
+            ref={actionGroup}
+            sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mt: 2 }}
           >
-            {t('transferRequests.decline')}
-          </Button>
-        </Box>
-      ) : (
-        <>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-            {t('transferRequests.terminal')}
-          </Typography>
-          {request.status === 'confirmed' &&
-          onOpenOrganization !== undefined ? (
-            <Button
+            <ActionButton
               type="button"
-              variant="outlined"
-              sx={{ mt: 1.5 }}
+              emphasis="primary"
+              busy={confirming}
+              unavailable={declining}
               onClick={() => {
-                void onOpenOrganization(request.tenant)
+                feedback.reset()
+                setConfirmOpen(true)
               }}
             >
-              {t('transferRequests.openOrganization')}
-            </Button>
-          ) : null}
-        </>
-      )}
-      <SharedWriteFeedbackRegion
-        outcome={feedback.outcome}
-        resolve={(code) =>
-          code === 'authn.contact_required'
-            ? resolveError(code)
-            : resolve(code)
-        }
-        sx={{ mt: 2 }}
-      />
+              {t('transferRequests.confirm')}
+            </ActionButton>
+            <ActionButton
+              type="button"
+              busy={declining}
+              unavailable={confirming}
+              onClick={() => {
+                feedback.reset()
+                setDeclineOpen(true)
+              }}
+            >
+              {t('transferRequests.decline')}
+            </ActionButton>
+          </Box>
+        ) : (
+          <>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+              {t('transferRequests.terminal')}
+            </Typography>
+            {request.status === 'confirmed' &&
+            onOpenOrganization !== undefined ? (
+              <Button
+                type="button"
+                variant="outlined"
+                sx={{ mt: 1.5 }}
+                onClick={() => {
+                  void onOpenOrganization(request.tenant)
+                }}
+              >
+                {t('transferRequests.openOrganization')}
+              </Button>
+            ) : null}
+          </>
+        )}
+        <SharedWriteFeedbackRegion
+          outcome={feedback.outcome}
+          resolve={(code) =>
+            code === 'authn.contact_required'
+              ? resolveError(code)
+              : resolve(code)
+          }
+          sx={{ mt: 2 }}
+        />
+      </Box>
 
       <ConfirmDialog
         open={confirmOpen}
@@ -507,7 +588,7 @@ function RequestDetail({
         })}
         confirmLabel={t('transferRequests.confirm')}
         cancelLabel={t('transferRequests.cancel')}
-        confirmLoading={busy}
+        confirmLoading={confirming}
         onCancel={() => setConfirmOpen(false)}
         onConfirm={() => {
           setConfirmOpen(false)
@@ -522,7 +603,7 @@ function RequestDetail({
         })}
         confirmLabel={t('transferRequests.decline')}
         cancelLabel={t('transferRequests.cancel')}
-        confirmLoading={busy}
+        confirmLoading={declining}
         onCancel={() => setDeclineOpen(false)}
         onConfirm={() => {
           setDeclineOpen(false)
@@ -531,6 +612,18 @@ function RequestDetail({
       />
     </SectionCard>
   )
+}
+
+/** Whether focus was lost when the action group left the document. */
+function focusFellWith(removed: HTMLElement | null): boolean {
+  const active = document.activeElement
+  if (active === null || active === document.body) {
+    return true
+  }
+  if (!(active instanceof HTMLElement) || !active.isConnected) {
+    return true
+  }
+  return removed !== null && removed.contains(active)
 }
 
 /** A synthetic failure the feedback scope classifies by its code. */
