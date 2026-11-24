@@ -13,6 +13,7 @@
 
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@speed/test-utils/timers'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -1016,7 +1017,7 @@ describe('adminOperations write invalidation', () => {
       })
       expect(reads()).toBe(1)
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 

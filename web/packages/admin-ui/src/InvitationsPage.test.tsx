@@ -8,6 +8,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@speed/test-utils/timers'
 import { waitForCondition } from '@speed/test-utils/wait'
 import type { FeatureName } from '@speed/api-sdk/features'
 import { act, fireEvent, screen, within } from '@testing-library/react'
@@ -1731,7 +1732,7 @@ describe('InvitationsPage', () => {
         new Date(frozen + 30 * 24 * 60 * 60 * 1000).toISOString(),
       )
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
@@ -1772,7 +1773,7 @@ describe('InvitationsPage', () => {
         new Date(frozen + 7 * 24 * 60 * 60 * 1000).toISOString(),
       )
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 

@@ -51,6 +51,7 @@
       "@speed/test-utils/emitted-css": ["../../test-utils/src/emitted-css.ts"],
       "@speed/test-utils/matchMedia": ["../../test-utils/src/matchMedia.ts"],
       "@speed/test-utils/render": ["../../test-utils/src/render.tsx"],
+      "@speed/test-utils/timers": ["../../test-utils/src/timers.ts"],
       "@speed/test-utils/turnstile": ["../../test-utils/src/turnstile.ts"],
       "@speed/test-utils/wait": ["../../test-utils/src/wait.ts"],
       "@speed/test-utils/setup": ["../../test-utils/src/setup.ts"]
