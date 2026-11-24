@@ -80,6 +80,7 @@ import { expect, test } from '../fixtures/demo'
 import { e2eImpersonationFactors } from '../fixtures/config'
 import { waitForVerificationCode } from '../fixtures/log'
 import type { E2EServer } from '../fixtures/server'
+import { scaledTimeout } from '../fixtures/time-scale'
 import { copy, copyPattern } from '../helpers/i18n'
 import { chooseSelectOption } from '../helpers/select-option'
 import { switchToTenant } from '../helpers/switch-tenant'
@@ -238,6 +239,28 @@ function searchButton(page: Page): Locator {
     name: copy('adminUi', 'accounts.search'),
     exact: true,
   })
+}
+
+/**
+ * Walks the tab order forward until the element carrying `label` holds
+ * focus. A natively disabled direction is skipped by Tab, so the walk never
+ * reaches it and the caller's focus assertion is what fails.
+ */
+async function tabUntilFocused(page: Page, label: string): Promise<void> {
+  for (let step = 0; step < 200; step += 1) {
+    await page.keyboard.press('Tab')
+    // When a native `disabled` drops the direction from the tab order and
+    // Tab lands nowhere, no `:focus` element exists and the default wait
+    // would stall each step. The short bound makes that failure path fail
+    // fast; the assertion the caller makes is still what reports it.
+    const focusedLabel = await page
+      .locator(':focus')
+      .getAttribute('aria-label', { timeout: scaledTimeout(1_000) })
+      .catch(() => null)
+    if (focusedLabel === label) {
+      return
+    }
+  }
 }
 
 /** The accounts page's empty state, shown when the applied filter matches none. */
@@ -953,4 +976,96 @@ test('account-offboarding: the save control keeps keyboard focus through its wri
     // This write is the only one the case sends.
     expect(statusWrites).toHaveLength(1)
   })
+})
+
+/**
+ * Checks that both paging directions stay in the tab order at a list
+ * boundary, announce unavailable, and send no read when activated.
+ */
+test('account-offboarding: the pager directions stay reachable at the list boundary and start no read', async ({
+  demo,
+}) => {
+  const { page, server, accounts } = demo
+
+  // The accounts list read, observed rather than faked: the unavailable
+  // activation must add none.
+  const listReads: string[] = []
+  page.on('request', (outgoing) => {
+    if (outgoing.method() !== 'GET') return
+    if (new URL(outgoing.url()).pathname === '/api/v1/system/auth/accounts') {
+      listReads.push(outgoing.url())
+    }
+  })
+
+  await test.step('the operator signs in with a factor, proves the address and opens the accounts list', async () => {
+    await signInOperatorWithFactor(page, accounts)
+    await proveOperatorEmail(page, server)
+    await openConsole(page)
+    await adminNav(page)
+      .getByRole('link', {
+        name: copy('adminUi', 'accounts.title'),
+        exact: true,
+      })
+      .click()
+    await expect(accountsTable(page)).toBeVisible()
+  })
+
+  // MUI's en-US locale object is empty: English is the component's own
+  // default. The labels are read from the rendered directions, so the spec
+  // carries no English source of its own. The actions slot holds exactly
+  // the two directions.
+  const actions = page.locator('.MuiTablePagination-actions')
+  const previous = actions.getByRole('button').first()
+  const next = actions.getByRole('button').last()
+  const previousLabel = (await previous.getAttribute('aria-label')) ?? ''
+  const nextLabel = (await next.getAttribute('aria-label')) ?? ''
+  expect(previousLabel).not.toBe('')
+  expect(nextLabel).not.toBe('')
+  // The footer's range readout is MUI's own text node; no role names it.
+  const displayedRows = page.locator('.MuiTablePagination-displayedRows')
+
+  // The opened roster sent its own read. Without this, a listener that never
+  // fired would make every "sends no read" check below pass for the wrong
+  // reason.
+  await expect
+    .poll(() => listReads.length, { timeout: scaledTimeout(10_000) })
+    .toBeGreaterThan(0)
+
+  await test.step('both boundary directions announce themselves unavailable and stay focusable', async () => {
+    await expect(previous).toHaveAttribute('aria-disabled', 'true')
+    await expect(next).toHaveAttribute('aria-disabled', 'true')
+    // The aria state, not a native `disabled` that would drop them from the
+    // tab order. Playwright's `toBeDisabled` reads `aria-disabled` too, so
+    // it cannot tell the two apart.
+    await expect(previous).not.toHaveAttribute('disabled')
+    await expect(next).not.toHaveAttribute('disabled')
+  })
+
+  for (const [direction, name, label] of [
+    [previous, 'previous', previousLabel],
+    [next, 'next', nextLabel],
+  ] as const) {
+    await test.step(`the ${name} direction is Tab-reachable, and Enter keeps the page and sends no read`, async () => {
+      // From the toolbar, so the walk proves the direction really is in the
+      // tab order rather than being focused directly.
+      await searchButton(page).focus()
+      await tabUntilFocused(page, label)
+      await expect(direction).toBeFocused()
+      await expect(direction).toHaveAttribute('aria-disabled', 'true')
+
+      const pageText = await displayedRows.textContent()
+      const readsBefore = listReads.length
+      await page.keyboard.press('Enter')
+
+      await expect(direction).toBeFocused()
+      await expect(displayedRows).toHaveText(pageText ?? '')
+      // Give a read the activation did start time to reach the listener
+      // before the count is compared.
+      await page.waitForTimeout(scaledTimeout(250))
+      expect(
+        listReads,
+        'the unavailable activation sent no list read',
+      ).toHaveLength(readsBefore)
+    })
+  }
 })
