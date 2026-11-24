@@ -1,46 +1,5 @@
-/**
- * The impersonation notice's shared surface: the provider that ties the
- * banner, the header indicator and the account-menu end item to one
- * dismissal state and one end-impersonation write attempt.
- *
- * The host mounts ImpersonationNoticeProvider around its shell and feeds
- * it what it already knows: the current impersonation (null when none),
- * the effective identity (`identityKey`), the one attempt's callbacks and
- * state (`onEnd`, `pending`, `failureCode`, `successMessage`). The three
- * consumers then render from that one source:
- *
- *  - ImpersonationBanner (the banner slot) renders the facts and the end
- *    control, and its close control hides the visible notice.
- *  - ImpersonationIndicator (the user-menu slot, before the account
- *    menu) is the compact "impersonating" chip. It is a disclosure
- *    control: `aria-expanded` reports whether the notice is visible,
- *    `aria-controls` names the banner's region, and activating it
- *    toggles the notice without moving focus off the chip. It renders
- *    for the whole impersonation, dismissed or not -- the persistent
- *    visible indication that an impersonation is in force.
- *  - ImpersonationEndMenuItem (inside the account menu) starts the same
- *    attempt, disabled and labelled busy while it is in flight.
- *
- * A dismissal is memory state on this provider, never storage: a reload
- * clears it. It resets when the impersonation notice keyed here changes
- * -- a new grant (`grantId`), a new effective identity (`identityKey`),
- * the impersonation ending -- and when the shared attempt reports a
- * failure, because the failure is rendered inside the banner and the
- * notice must come back to show it. Status re-reads that keep the same
- * grant, route changes and focus re-reads do not reset it.
- *
- * When the close control hides the notice, focus moves to the indicator
- * chip rather than being lost to the document body; the chip is already
- * mounted, so the focus transfer is immediate.
- *
- * Two consumers read the provider themselves so a host does not have to
- * wire the controlled props by hand: ImpersonationNoticeBanner renders the
- * banner from the notice's state (with the provider's region id, and the
- * close control unless `dismissible` is false), and
- * ImpersonationNoticeIndicator renders the header chip bound to the same
- * disclosure state and focus target. Both render nothing outside the
- * provider.
- */
+/** The provider that ties the impersonation banner, the header indicator and
+ * the account-menu end item to one dismissal state and one end attempt. */
 
 import {
   createContext,
@@ -60,14 +19,13 @@ import { useAuthUiTranslation } from './internal/translation.js'
 import { ImpersonationBanner } from './ImpersonationBanner.js'
 import type { ImpersonationBannerState } from './ImpersonationBanner.js'
 
+/** The host supplies the impersonation status and the shared end attempt; the
+ * provider owns the dismissal state and the region id. */
 export interface ImpersonationNoticeProviderProps {
   /** The current impersonation, or null when none is active. */
   readonly impersonation: ImpersonationBannerState | null
-  /**
-   * The effective identity's stable value (the acting account id, plus
-   * whatever the host counts as an identity change). A change resets a
-   * dismissal, so a different identity's notice is shown again.
-   */
+  /** The effective identity's stable value. A change resets a dismissal, so a
+   * different identity's notice is shown again. */
   readonly identityKey?: string
   /** Starts the host's one end-impersonation write attempt. */
   readonly onEnd: () => void
@@ -77,6 +35,7 @@ export interface ImpersonationNoticeProviderProps {
   readonly failureCode?: string | null
   /** The attempt's success message, announced in the banner's live region. */
   readonly successMessage?: string | null
+  /** The subtree the provider wraps. */
   readonly children: ReactNode
 }
 
@@ -110,6 +69,11 @@ const ImpersonationNoticeContext = createContext<ImpersonationNotice | null>(
   null,
 )
 
+/**
+ * Holds the dismissal state and exposes the shared end attempt to the banner,
+ * the header indicator and the account-menu item; a failure of that attempt
+ * resets a dismissal so the banner can show it.
+ */
 export function ImpersonationNoticeProvider({
   impersonation,
   identityKey = '',
@@ -122,11 +86,9 @@ export function ImpersonationNoticeProvider({
   const regionId = useId()
   const indicatorRef = useRef<HTMLDivElement | null>(null)
 
-  // The notice the dismissal belongs to. Only a change between two KNOWN
-  // grant ids is a new impersonation: a grant id arriving after the
-  // dismissal (the dismissal was made while the status read was still
-  // pending) must not pop the notice back open. A grant id that is
-  // unknown on either side is treated as the same notice.
+  // Only a change between two KNOWN grant ids is a new impersonation: a grant
+  // id arriving after the dismissal (made while the status read was pending)
+  // must not pop the notice back open.
   const currentGrantId = impersonation?.grantId ?? null
   const [dismissal, setDismissal] = useState<{
     readonly grantId: string | null
@@ -139,10 +101,8 @@ export function ImpersonationNoticeProvider({
       currentGrantId === null ||
       dismissal.grantId === currentGrantId)
 
-  // A failed end attempt must be visible: the failure renders inside the
-  // banner, so the notice comes back. Tracked as the null -> code edge,
-  // because the attempt clears its outcome when it starts and a second
-  // failure of the same code is still a new failure.
+  // The failure renders inside the banner, so the notice comes back. Tracked
+  // as the null -> code edge: a repeated failure of the same code is still new.
   const previousFailure = useRef<string | null>(null)
   useEffect(() => {
     if (failureCode !== null && previousFailure.current === null) {
@@ -151,8 +111,6 @@ export function ImpersonationNoticeProvider({
     previousFailure.current = failureCode
   }, [failureCode])
 
-  // Any identity change resets the dismissal. The key the host passes
-  // covers the acting account and its identity generation.
   const previousIdentity = useRef(identityKey)
   useEffect(() => {
     if (previousIdentity.current !== identityKey) {
@@ -175,7 +133,6 @@ export function ImpersonationNoticeProvider({
     previousGrantId.current = currentGrantId
   }, [currentGrantId])
 
-  // An end resets it, so the next impersonation starts visible.
   useEffect(() => {
     if (impersonation === null) {
       setDismissal(null)
@@ -240,6 +197,8 @@ export function useImpersonationNotice(): ImpersonationNotice | null {
   return useContext(ImpersonationNoticeContext)
 }
 
+/** The host supplies the impersonation and the disclosure state; the chip
+ * renders them and holds no state. */
 export interface ImpersonationIndicatorProps {
   /** The current impersonation; null renders nothing. */
   readonly impersonation: ImpersonationBannerState | null
@@ -251,24 +210,12 @@ export interface ImpersonationIndicatorProps {
   readonly onToggle: () => void
   /** The chip's element, so the host can move focus to it on dismissal. */
   readonly ref?: Ref<HTMLDivElement>
-  /** Renders the chip as an icon-only control for chrome too narrow for its
-   * label, such as a collapsed navigation rail. The accessible name stays
-   * the label the text chip shows, and `aria-expanded` / `aria-controls`
-   * behave the same. */
+  /** Renders the chip as an icon-only control, keeping the text chip's
+   * accessible name and its `aria-expanded` / `aria-controls`. */
   readonly compact?: boolean
 }
 
-/**
- * The compact "impersonating" chip. It renders for the whole
- * impersonation and is the focus target the banner's close control moves
- * to, so a dismissal never drops focus into the document. Its name is
- * its visible text; `aria-expanded` makes the notice's state explicit and
- * `aria-controls` names the visible region while it exists.
- */
-/**
- * The compact chip's glyph: a person seeing through a frame, drawn
- * decorative -- the chip's accessible name is the impersonating label.
- */
+/** The compact chip's glyph, drawn decorative; the chip carries the name. */
 function ImpersonatingGlyph() {
   return (
     <svg
@@ -289,6 +236,11 @@ function ImpersonatingGlyph() {
   )
 }
 
+/**
+ * The compact "impersonating" chip: a disclosure control that renders for the
+ * whole impersonation and is the focus target the banner's close control moves
+ * to. Its accessible name is its visible text.
+ */
 export function ImpersonationIndicator({
   impersonation,
   expanded,
@@ -302,11 +254,9 @@ export function ImpersonationIndicator({
     return null
   }
   const label = t('impersonation.impersonating')
-  // describeChild: the tooltip becomes the chip's description, not its
-  // accessible name. The name is the visible "Impersonating" text, as
-  // WCAG 2.5.3 requires; MUI would otherwise put the hint into aria-label
-  // and replace it. The compact form has no visible text, so there the
-  // label becomes the name and the tooltip stays the description.
+  // describeChild keeps the tooltip a description, not the accessible name;
+  // the name is the visible text, as WCAG 2.5.3 requires. The compact form
+  // has no visible text, so the label becomes the name.
   return (
     <Tooltip
       describeChild
@@ -332,6 +282,8 @@ export function ImpersonationIndicator({
   )
 }
 
+/** The host supplies the activation and divider options; the item reads the
+ * notice provider for the impersonation and the shared end attempt. */
 export interface ImpersonationEndMenuItemProps {
   /** Called after the item activates, typically to close the menu. */
   readonly onActivate?: () => void
@@ -339,12 +291,9 @@ export interface ImpersonationEndMenuItemProps {
   readonly divider?: boolean
 }
 
-/**
- * The account menu's way back to the impersonation: it starts the same
- * shared end attempt the banner's control does, so both are disabled and
- * marked busy together. Renders nothing when no impersonation is active
- * or when the menu is mounted outside the notice provider.
- */
+/** The account menu's way back to the impersonation: it starts the same shared
+ * end attempt the banner's control does. Renders nothing without an active
+ * impersonation or outside the notice provider. */
 export function ImpersonationEndMenuItem({
   onActivate,
   divider = false,
@@ -368,23 +317,18 @@ export function ImpersonationEndMenuItem({
   )
 }
 
+/** The host chooses whether the banner's own close control renders; the
+ * banner reads the notice provider for everything else. */
 export interface ImpersonationNoticeBannerProps {
-  /** Whether the banner's own close control renders. Defaults to true.
-   * False removes that control only: the provider's shared hidden state
-   * is still toggled by `ImpersonationNoticeIndicator`'s click, so a host
-   * that needs the notice to stay visible throughout renders neither the
-   * indicator nor a dismissible banner. */
+  /** Whether the banner's own close control renders. Defaults to true; false
+   * removes that control only, while the indicator can still toggle the shared
+   * hidden state. */
   readonly dismissible?: boolean
 }
 
-/**
- * The banner bound to the enclosing notice provider: it renders the
- * provider's impersonation, shared end attempt and dismissal state, with
- * the provider's own region id so the indicator's `aria-controls` names
- * it. Renders nothing outside the provider; inside one it renders the
- * banner's permanent live region even while no impersonation is active
- * (that is the controlled component's own contract).
- */
+/** The banner bound to the enclosing notice provider: renders its
+ * impersonation, shared end attempt and dismissal state, and nothing outside
+ * the provider. */
 export function ImpersonationNoticeBanner({
   dismissible = true,
 }: ImpersonationNoticeBannerProps): ReactElement | null {
@@ -406,13 +350,9 @@ export function ImpersonationNoticeBanner({
   )
 }
 
-/**
- * The header chip bound to the enclosing notice provider: expanded while
- * the notice is visible, controlling the provider's region, toggling the
- * same dismissal state, and carrying the provider's indicator ref so a
- * dismissal moves focus here. Renders nothing outside the provider or
- * while no impersonation is active.
- */
+/** The header chip bound to the enclosing notice provider: expanded while the
+ * notice is visible, controlling its region, and carrying the indicator ref.
+ * Renders nothing outside the provider or while no impersonation is active. */
 export function ImpersonationNoticeIndicator(): ReactElement | null {
   const notice = useImpersonationNotice()
   if (notice === null) {

@@ -1,14 +1,3 @@
-/**
- * InlineError contract tests: the family's banner (ui-kit's shared
- * InlineError bound to this namespace's error-text resolver) renders
- * exactly when a code is present, resolves whitelisted and unlisted codes
- * through the resolver (dedicated text vs the unknown fallback, in this
- * namespace only), and re-renders in the switched language. The failure
- * classifier's own contract lives beside the classifier, in ui-kit's
- * InlineError suite. Text expectations read the zh-CN and en-US bundle
- * values, never inline language.
- */
-
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import { switchLanguage } from '@speed/i18n'
@@ -30,9 +19,6 @@ describe('InlineError', () => {
     )
   })
 
-  // The login-flow problem set: each code resolves to its own bundle text,
-  // so a whitelist or locale typo in any one fails here even when the
-  // component tests only render representatives.
   const flowCodes = [
     ['authn.flow_invalid', zhCN.errors.authn.flow_invalid],
     ['authn.link_required', zhCN.errors.authn.link_required],

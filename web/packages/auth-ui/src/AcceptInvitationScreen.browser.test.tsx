@@ -1,13 +1,3 @@
-/**
- * AcceptInvitationScreen focus in a real browser: an acceptance in flight
- * keeps focus on the control that started it.
- *
- * jsdom does not apply the spec's focus fixup when a focused control
- * becomes unfocusable, so a natively disabled button can keep
- * `document.activeElement` there and hide the defect. Chromium moves focus
- * to the document body the moment the button drops out of the tab order,
- * which is exactly what a keyboard user loses.
- */
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import { userEvent } from 'vitest/browser'
@@ -34,7 +24,6 @@ function operations(
   }
 }
 
-/** A promise the test settles by hand, for observing an in-flight write. */
 function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((settle) => {
@@ -71,9 +60,6 @@ describe('AcceptInvitationScreen focus in Chromium', () => {
   })
 
   it('moves focus to the completion heading when the acceptance lands', async () => {
-    // The action area unmounts with the control that started the
-    // acceptance, so Chromium drops focus to the body. The confirmation
-    // heading is the new content's starting point and takes it instead.
     const pending = deferred<void>()
     const acceptInvitation = vi.fn(() => pending.promise)
     renderWithProviders(

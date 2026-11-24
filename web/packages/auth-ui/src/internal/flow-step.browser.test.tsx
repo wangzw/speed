@@ -1,12 +1,3 @@
-/**
- * FlowStepFields in a real browser: axe's label-content-name-mismatch (WCAG
- * 2.5.3 Label in Name) over the manual-entry disclosure.
- *
- * The rule reads a control's visible text through the canvas text
- * measurement API, which jsdom answers with null; the unit suite's scan
- * therefore cannot decide it, and this case is that unit case's deciding
- * verdict (see @speed/test-utils/axe's BROWSER_DETERMINATIONS).
- */
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
@@ -55,10 +46,6 @@ describe('FlowStepFields Label in Name in Chromium', () => {
 
 describe('FlowStepFields passkey waiting in Chromium', () => {
   it('inserts the waiting region empty and fills it a frame later', async () => {
-    // The waiting phase's region and its cancellation row mount in one
-    // commit. A MutationObserver records the region's text in every batch
-    // after it appears, so the empty birth frame and the later fill are
-    // observed facts.
     const get = vi.fn().mockReturnValue(new Promise(() => {}))
     const original = Object.getOwnPropertyDescriptor(
       window.navigator,
@@ -96,7 +83,6 @@ describe('FlowStepFields passkey waiting in Chromium', () => {
       )
 
       await waitFor(() => expect(snapshots.length).toBeGreaterThan(0))
-      // The batch that reported the region's insertion read it empty.
       expect(snapshots[0]).toBe('')
       await waitFor(() =>
         expect(screen.getByRole('status')).toHaveTextContent(
@@ -115,8 +101,6 @@ describe('FlowStepFields passkey waiting in Chromium', () => {
   })
 })
 
-/** A promise the case settles by hand, so one answer can be held in flight
- * across frames. */
 function deferred<T>(): {
   readonly promise: Promise<T>
   readonly resolve: (value: T) => void
@@ -131,15 +115,12 @@ function deferred<T>(): {
   return { promise, resolve, reject }
 }
 
-/** One animation frame: the component's updated state has reached the DOM
- * and the browser has had its chance to react to it. */
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => {
     requestAnimationFrame(() => resolve())
   })
 }
 
-/** What currently holds focus, for a failure message. */
 function describeActiveElement(): string {
   const active = document.activeElement
   if (active === null) {
@@ -157,7 +138,6 @@ function describeActiveElement(): string {
   return parts.join(' ')
 }
 
-/** Installs a `navigator.credentials` stub and returns its restorer. */
 function installCredentials(credentials: unknown): () => void {
   const original = Object.getOwnPropertyDescriptor(
     window.navigator,
@@ -176,7 +156,6 @@ function installCredentials(credentials: unknown): () => void {
   }
 }
 
-/** A factor step offering a sending choice and a non-sending sibling. */
 const FACTOR_STEP: OpenFlowState = {
   seq: 2,
   state: 'second',
@@ -198,9 +177,6 @@ const ACCOUNT_FIELDS: AuthnField[] = [
   { name: 'password', kind: 'password', secret: true, required: true },
 ]
 
-/** The initiating control keeps focus while its own answer is in flight and
- * after that answer is refused. The native `disabled` attribute drops a
- * focused button's focus to the document body, which these cases rule out. */
 describe('FlowStepFields focus retention in Chromium', () => {
   it('keeps focus on the challenge submit in flight and after the answer is refused', async () => {
     const answer = deferred<void>()
@@ -365,8 +341,6 @@ describe('FlowStepFields focus retention in Chromium', () => {
 
     await user.click(sms)
     await waitFor(() => expect(sms).toHaveAttribute('aria-busy', 'true'))
-    // The sibling is held, not busy, and does not take the focus a click
-    // would otherwise move to it.
     expect(totp).toHaveAttribute('aria-disabled', 'true')
     await nextFrame()
     expect(
@@ -415,8 +389,6 @@ describe('FlowStepFields focus retention in Chromium', () => {
       const cancel = await screen.findByRole('button', {
         name: zhCN.signInFlow.passkeyCancel,
       })
-      // The waiting state moves focus to cancel, the control that replaced
-      // the start button.
       await waitFor(() => expect(cancel).toHaveFocus())
 
       act(() => setBusy?.(true))
@@ -463,8 +435,6 @@ describe('FlowStepFields focus retention in Chromium', () => {
   })
 })
 
-/** A gate whose phone surface runs Turnstile: choosing the SMS factor is a
- * send that needs a proof. */
 const PHONE_TURNSTILE: AuthnHumanGate = {
   phone: { required: true, provider: 'turnstile', site_key: 'site-1' },
   other: { required: false, provider: 'off' },
@@ -472,10 +442,6 @@ const PHONE_TURNSTILE: AuthnHumanGate = {
 
 describe('HumanGatedFlowStep held-answer focus in Chromium', () => {
   it('returns focus to the answer control when the held answer is cancelled', async () => {
-    // The cancel control that dropped the wait unmounts with it; the answer
-    // control the viewer activated is still in the step and takes focus
-    // back. Activation goes through the keyboard, the path this defect
-    // belongs to.
     const fake = installFakeTurnstile()
     try {
       const onAnswer = vi.fn()

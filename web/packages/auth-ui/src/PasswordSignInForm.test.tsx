@@ -1,20 +1,3 @@
-/**
- * PasswordSignInForm behaviour: the happy path begins a password login
- * flow with the entered identifier and password, takes the ready step's
- * result and fires onSignedIn (scripted through the bindRequestFn harness,
- * asserted on the request bodies and the store token), a busy submit
- * marks the button busy (focusable, aria-disabled, aria-busy) for the
- * flight's duration and keeps its focus through a refusal, a login-failed answer
- * attaches the password channel's own text to the password field (invalid,
- * described by the message, focused) and changes nothing, an empty
- * submit never reaches the network, a forced password change renders the
- * shared step renderer's new-password field and completes the flow, a login
- * that a tenant's requirement makes register a factor drives enroll ->
- * reprove -> second and completes with the new factor, the en-US bundle
- * renders on an English-starting instance, and the tree passes axe. Text
- * expectations read the bundle values, never inline language.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -61,7 +44,6 @@ const ZH_LABELS: SignInLabels = {
   passwordLabel: zhCN.passwordSignIn.passwordLabel,
 }
 
-/** Installs a `navigator.credentials` stub, answering the restorer. */
 function installCredentials(credentials: unknown): () => void {
   const original = Object.getOwnPropertyDescriptor(
     window.navigator,
@@ -108,7 +90,6 @@ describe('PasswordSignInForm', () => {
       binding: 'cookie',
       input: { identifier: 'alice@example.com', password: 's3cret-pass' },
     })
-    // The ready step's result is taken with step: 'complete'.
     expect(harness.calls[1]?.options?.body).toMatchObject({
       step: 'complete',
     })
@@ -116,10 +97,6 @@ describe('PasswordSignInForm', () => {
   })
 
   it('name no token delivery on the login start -- the session delivery is auth-core’s', async () => {
-    // auth-core forces the cookie session (`delivery: 'session'`) on
-    // startFlow, so this surface names no delivery of its own. A `'token'`
-    // here would be dead today (masked by that override) and a live
-    // contradiction to the cookie model the moment the override lifted.
     const harness = makeHarness({
       [LOGIN_START]: () => completeFlow(1),
       [LOGIN_ANSWER]: () => authenticatedCompletion(),
@@ -187,14 +164,9 @@ describe('PasswordSignInForm', () => {
     await user.click(submit)
     await waitFor(() => expect(harness.calls).toHaveLength(1))
 
-    // The submit control is the one that started this write: it stays
-    // focusable and marked busy for the flight's duration instead of
-    // being natively disabled, which would drop its focus.
     expect(submit).toHaveFocus()
     expect(submit).toHaveAttribute('aria-busy', 'true')
 
-    // The refusal lands through the whole-attempt banner: the control
-    // that started the attempt is idle again and still holds focus.
     await act(async () => {
       rejectStart(apiError(429, 'client.http.429'))
     })
@@ -204,10 +176,6 @@ describe('PasswordSignInForm', () => {
   })
 
   it('refuse an implicit resubmission while the login is in flight', async () => {
-    // Enter in a field (or a programmatic submit) reaches the form's own
-    // onSubmit without going through the submit button's guard: the form
-    // must be guarded by the same busy state so one login never starts
-    // twice.
     let resolveStart: (value: unknown) => void = () => {}
     const harness = makeHarness({
       [LOGIN_START]: () =>
@@ -258,18 +226,13 @@ describe('PasswordSignInForm', () => {
     await fillAndSubmit('alice@example.com', 'wrong-password', ZH_LABELS)
 
     const message = zhCN.passwordSignIn.loginFailed
-    // This surface has no code field, so its refusal never names one: the
-    // code label the SMS step uses is the bundle's own word for it.
     expect(message).not.toContain(zhCN.smsSignIn.codeLabel)
     const password = screen.getByLabelText(zhCN.passwordSignIn.passwordLabel)
     await waitFor(() => expect(password).toHaveAttribute('aria-invalid', 'true'))
-    // The message is the field's description, and the field holds focus, so
-    // the refusal is announced with the field it is about.
     const description = screen.getByText(message)
     expect(description.id).not.toBe('')
     expect(password.getAttribute('aria-describedby')).toContain(description.id)
     expect(password).toHaveFocus()
-    // The refusal is the field's, not a second whole-attempt banner.
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(harness.store.get()).toBeNull()
     expect(harness.calls).toHaveLength(1)
@@ -297,11 +260,6 @@ describe('PasswordSignInForm', () => {
   })
 
   it('advertise only the identifiers a password login accepts', () => {
-    // The account contract defines a password login name as a username or
-    // email; a phone is not one (it is the SMS channel's identifier), and a
-    // phone plus a password always ends in the collapsed refusal. The
-    // identifier label and the refusal copy must not offer the SMS
-    // channel's phone label.
     expect(zhCN.passwordSignIn.identifierLabel).not.toContain(
       zhCN.smsSignIn.phoneLabel,
     )
@@ -324,9 +282,6 @@ describe('PasswordSignInForm', () => {
   })
 
   it('render a forced password change step and complete the flow through it', async () => {
-    // The password method answers a must-change account with a challenge
-    // step asking for a new password; the shared step renderer renders it
-    // and the answer advances the same flow to completion.
     const harness = makeHarness({
       [LOGIN_START]: () =>
         openFlow({
@@ -370,12 +325,6 @@ describe('PasswordSignInForm', () => {
   })
 
   it('register a required factor, prove the password again, and finish with the new factor', async () => {
-    // A tenant's require-mfa makes this login register a factor inside the
-    // same flow. Completing the registration does not complete the login:
-    // the server holds the flow at `reprove` (the password proved again) and
-    // only then offers the factor just registered as the second factor. The
-    // channel's shared step renderer drives every one of those steps to the
-    // multi-factor session.
     const harness = makeHarness({
       [LOGIN_START]: () =>
         openFlow({
@@ -451,8 +400,6 @@ describe('PasswordSignInForm', () => {
     const user = userEvent.setup()
     await fillAndSubmit('alice@example.com', 's3cret-pass', ZH_LABELS)
 
-    // The proved account has no factor and the tenant requires one: the
-    // flow parks on the registration, then on the TOTP setup.
     await user.click(
       await screen.findByRole('button', {
         name: zhCN.signInFlow.factorKind.totp,
@@ -466,9 +413,6 @@ describe('PasswordSignInForm', () => {
       screen.getByRole('button', { name: zhCN.signInFlow.submit }),
     )
 
-    // Completing the registration leaves the flow at the password step, not
-    // at a completion: the login must prove the password again before the
-    // factor it just created can strengthen it.
     await screen.findByLabelText(zhCN.passwordSignIn.identifierLabel)
     await user.type(
       screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
@@ -482,8 +426,6 @@ describe('PasswordSignInForm', () => {
       screen.getByRole('button', { name: zhCN.signInFlow.submit }),
     )
 
-    // The second factor is the factor just registered, and its challenge
-    // completes the flow.
     await user.click(
       await screen.findByRole('button', {
         name: zhCN.signInFlow.factorKind.totp,
@@ -529,9 +471,6 @@ describe('PasswordSignInForm', () => {
   })
 
   it('return to the credentials fields from a step this channel cannot render', async () => {
-    // A redirect step belongs to the host's navigation, so a channel form
-    // cannot complete it: the notice carries an exit back to this
-    // channel's own first fields instead of leaving the viewer stranded.
     const harness = makeHarness({
       [LOGIN_START]: () =>
         openFlow({
@@ -595,11 +534,6 @@ describe('PasswordSignInForm', () => {
       [LOGIN_ANSWER]: () => authenticatedCompletion(),
       [PROFILE_GET]: () => principal(),
     })
-    // Rendered under the page h1 a real host page supplies: the form
-    // renders no heading of its own (the page above it is host content),
-    // and page-has-heading-one is determinate in jsdom now (see the axe
-    // helper header) -- a scan without that context fails instead of
-    // passing by indeterminacy.
     renderWithProviders(
       <div>
         <h1>Sign in</h1>
@@ -610,10 +544,6 @@ describe('PasswordSignInForm', () => {
   })
 
   it('contain a throwing onSignedIn: the committed login never looks like a failure', async () => {
-    // A host callback that throws is not a login failure (the login
-    // committed -- the store holds the issued token): it must not paint
-    // the failure banner, and the containment keeps the throw out of the
-    // submit promise as an unhandled rejection.
     const harness = makeHarness({
       [LOGIN_START]: () => completeFlow(1),
       [LOGIN_ANSWER]: () => authenticatedCompletion(),
@@ -632,12 +562,6 @@ describe('PasswordSignInForm', () => {
   })
 
   it('treat a superseded submit as the lost race it is, rendering no error', async () => {
-    // A concurrent sign-in commits to the session while this form's own
-    // login is still in flight, so auth-core rejects this submit with
-    // OperationSupersededError when its answer arrives: the losing submit
-    // must not render the generic failure banner -- it is not a failure,
-    // and the session being authenticated now is the host's own snapshot
-    // to observe.
     let releaseFirst: (value: unknown) => void = () => {}
     const firstGate = new Promise((resolve) => {
       releaseFirst = resolve
@@ -671,14 +595,10 @@ describe('PasswordSignInForm', () => {
     await waitFor(() =>
       expect(submit).toHaveAttribute('aria-disabled', 'true'),
     )
-    // The winning sign-in commits while the first answer is in flight.
     await act(async () => {
       await harness.session.answerFlow({ seq: 1, step: 'complete', input: {} })
     })
     expect(harness.store.get()).toBe('access-race')
-    // The password answer arrives after the winner committed: auth-core
-    // rejects it as superseded, and the form treats that as the lost race
-    // it is -- quiet, no error banner.
     await act(async () => {
       releaseFirst(authenticatedCompletion())
     })
@@ -698,7 +618,6 @@ describe('PasswordSignInForm', () => {
     )
     await fillAndSubmit('alice@example.com', 's3cret-pass', ZH_LABELS)
     await waitFor(() => expect(beforeStart).toHaveBeenCalledTimes(1))
-    // A standalone form has no presentational mode to report.
     expect(beforeStart).toHaveBeenCalledWith({ method: 'password' })
     expect(harness.calls).toHaveLength(0)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
@@ -746,9 +665,6 @@ describe('PasswordSignInForm', () => {
         's3cret-pass',
       )
       await user.click(screen.getByRole('button', { name: SUBMIT_ZH }))
-      // The flow parks on an SMS second factor. Choosing that factor is an
-      // answer that may send, so the choice is held while the gate is read
-      // and its proof obtained; the block appears only for that held answer.
       await user.click(
         screen.getByRole('button', { name: zhCN.signInFlow.factorKind.sms }),
       )
@@ -781,9 +697,6 @@ describe('PasswordSignInForm', () => {
   })
 
   it('render an SMS second factor refused for a missing phone with its own sentence', async () => {
-    // The account's phone was removed elsewhere while the sign-in was in
-    // flight: choosing the SMS factor cannot send, and the refusal names the
-    // missing verified phone instead of falling back to the unknown sentence.
     const harness = makeHarness({
       [LOGIN_START]: () =>
         openFlow({
@@ -812,8 +725,6 @@ describe('PasswordSignInForm', () => {
   })
 
   it('clear the failure banner when a parked step is answered again', async () => {
-    // Answering a step is a new attempt: the previous refusal's banner must
-    // not stay beside the step the next answer parks.
     let answers = 0
     const challenge = openFlow({
       seq: 1,
@@ -857,9 +768,6 @@ describe('PasswordSignInForm', () => {
   })
 
   it('render the TOTP enrollment as a QR symbol, never as text', async () => {
-    // The enrollment step's otpauth_uri feeds the shared enrolment panel:
-    // the viewer scans the symbol or enters the code by hand, and the URI
-    // itself is never spilled into the page.
     const harness = makeHarness({
       [LOGIN_START]: () =>
         openFlow({
@@ -884,9 +792,6 @@ describe('PasswordSignInForm', () => {
   })
 
   it('word an already-registered passkey as its own remedy', async () => {
-    // The creation ceremony rejects with InvalidStateError when the
-    // authenticator already holds one of the account's excluded credentials;
-    // the banner names the remedy instead of the generic failure.
     const create = vi
       .fn()
       .mockRejectedValue(
@@ -926,8 +831,6 @@ describe('PasswordSignInForm', () => {
   })
 
   it('name the ceremony a generic passkey failure interrupted', async () => {
-    // A registration and a sign-in that fail the same way read differently:
-    // the sentence names the ceremony that did not complete.
     const boom = (): Promise<never> => Promise.reject(new Error('boom'))
     const restore = installCredentials({
       create: vi.fn().mockImplementation(boom),
@@ -960,8 +863,6 @@ describe('PasswordSignInForm', () => {
       )
       register.unmount()
 
-      // An assertion step starts its ceremony on arrival; a passkey second
-      // factor the password flow parks on is that sign-in.
       const signInHarness = makeHarness({
         [LOGIN_START]: () =>
           openFlow({

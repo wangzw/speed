@@ -1,14 +1,3 @@
-/**
- * SessionEndedScreen behaviour: the screen renders the session-ended
- * title, description and sign-in action from the auth-ui namespace --
- * every ui-kit EmptyState text slot overridden, so a built-in ui-kit
- * string can never leak through -- re-renders in the switched language,
- * fires onSignIn once per action click, renders its en-US bundle on an
- * English-starting instance, and passes axe. Pure presentation: no
- * session, no network, no props beyond the action. Text expectations
- * read the bundle values, never inline language.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import { act, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -21,18 +10,12 @@ import enUS from './locales/en-US.json' with { type: 'json' }
 
 describe('SessionEndedScreen', () => {
   it('state both ways a session ends, so neither reads as a verdict', () => {
-    // The screen cannot tell a deliberate sign-out from an expiry, so its
-    // copy has to hold for both; naming only the expiry misreports a
-    // viewer who just signed out. The sign-out half is pinned through the
-    // bundle's own action label; the expiry half on the en-US leaf.
     expect(zhCN.sessionEnded.description).toContain(zhCN.signOut.label)
     expect(enUS.sessionEnded.description).toContain('signed out')
     expect(enUS.sessionEnded.description).toContain('no longer valid')
   })
 
   it('name the same action in the description as in the button', () => {
-    // The description tells the viewer to sign in again with the wording
-    // the button itself uses, in both bundles.
     expect(zhCN.sessionEnded.description).toContain(
       zhCN.sessionEnded.signInAction,
     )
@@ -103,11 +86,6 @@ describe('SessionEndedScreen', () => {
   })
 
   it('render the title as a real whole-page h1 heading by default', () => {
-    // The screen replaces the whole authenticated page (product-shell's
-    // ended branch mounts it with no AppShell frame and no ancestor
-    // heading), so its title must not stay an h6 -- the page's main
-    // heading level is h1 unless a host embeds the screen under a
-    // heading of its own and says so.
     renderWithProviders(<SessionEndedScreen onSignIn={() => {}} />)
     expect(
       screen.getByRole('heading', {

@@ -1,57 +1,4 @@
-/**
- * PasswordResetScreen: the anonymous password reset surface.
- *
- * The screen drives the host-bound `PasswordResetOperations`, not a
- * session: the host maps the deployment's published reset channels from
- * the discovery document into `channels`, binds the generated reset
- * operations, and navigates on `onDone` / `onBackToSignIn`. The session
- * prop is used only for the deployment's human-verification gate and
- * proof, because a send may have to present one. The block appears only
- * once the viewer asks for a send the gate holds for a proof, and that send
- * leaves by itself when the proof arrives; a send waiting on its proof
- * holds back the control that asked and nothing else, so the code submit
- * beside it and the back-to-sign-in exit stay reachable, and an edit that
- * changes the target abandons the wait.
- *
- * The surface has four states. In `request` the viewer picks one of the
- * published channels, enters that channel's identifier and asks for a
- * code. In `sent` the code, the new password and the confirmation are
- * shown together: one submit verifies the code and then writes the
- * password, so the server's two requests stay behind one action. In
- * `verified` -- a resumed proved ticket, or the state a policy refusal
- * leaves behind -- only the password and confirmation remain, and a
- * retry writes no code again. `done` reports the settled reset and hands
- * the viewer back. The write that lands `done` removes the form with the
- * focused submit, so it hands focus to the done surface's heading, whose
- * text is the completion assistive technology reads; a host that navigates
- * on `onDone` owns that move. A send that leaves `request` replaces the
- * identifier field, so it hands focus to the sent surface's first control,
- * under the same rule a step switch uses. A `currentReset` operation lets a
- * page reload resume the bound flow; a sent record names no channel or
- * identifier, so a resumed surface offers no resend.
- *
- * A sent notice names no account and no address: it says a code was sent
- * if the details match an account that can be reset, which is the same
- * sentence for every identifier. A wrong or expired code, a suppressed
- * record and an exhausted attempt budget all answer one collapsed
- * refusal, which the code field carries. A password-policy refusal stays
- * on the verified surface with the new-password field, and a closed
- * deployment, an unavailable dependency or an invalidated flow render
- * through the family's error banner. A stated Retry-After wait holds the
- * send control unavailable until it elapses and counts down in the banner;
- * the control stays focusable and is described by that countdown, as is the
- * resend control while the same wait holds it. Once it elapses, the control
- * is available again and the banner stays with the wait-free sentence. The
- * resend control states its own remaining interval.
- * Switching channels in the request state drops the
- * previous channel's whole-attempt failure, its stated wait and its field
- * errors, so no channel's error crosses to the next face.
- *
- * Leaving through `onBackToSignIn` abandons an in-flight record through
- * `abandonReset` (best-effort: a failed abandon does not keep the viewer
- * on the surface). A flow-invalid or account-unavailable refusal offers a
- * start-over exit, which does the same and returns to the request state.
- */
+/** The anonymous password reset surface. */
 
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
@@ -90,75 +37,73 @@ import type { HeadingLevel } from './internal/heading.js'
 import { retryWaitMs } from './internal/retry-wait.js'
 import { firstControl } from './internal/step-focus.js'
 
-/** One reset request: the channel, its identifier, and the human proof a
- * gated send presents. */
+/** One reset request. */
 export interface PasswordResetRequest {
+  /** The channel the identifier belongs to. */
   readonly channel: PasswordResetChannel
+  /** The channel's identifier: an email address, or an E.164 phone number. */
   readonly identifier: string
+  /** The human-verification proof a gated send presents. */
   readonly humanProof?: string
 }
 
-/** The answer to a code request: how long the code lives and how soon
- * another may be asked for, both in whole seconds. */
+/** The answer to a code request. */
 export interface PasswordResetSent {
+  /** A code was sent for the identifier. */
   readonly state: 'sent'
+  /** How long the code lives, in whole seconds. */
   readonly expiresIn: number
+  /** How soon another code may be asked for, in whole seconds. */
   readonly resendAfter: number
 }
 
-/** The answer to a proved code: how long the proved ticket lives, in
- * whole seconds. */
+/** The answer to a proved code. */
 export interface PasswordResetVerified {
+  /** The code was proved. */
   readonly state: 'verified'
+  /** How long the proved ticket lives, in whole seconds. */
   readonly expiresIn: number
 }
 
 /**
- * The reset operations the screen drives. The host binds them to the
- * generated @speed/api-sdk reset operations; auth-ui ships no HTTP of its
- * own and references no api-sdk type on its public surface. `currentReset`
- * and `abandonReset` are optional: a host without them gets a surface
- * that starts fresh and cannot resume or abandon server-side.
+ * The reset operations the screen drives, bound by the host to the generated
+ * reset operations. `currentReset` and `abandonReset` are optional: without
+ * them the surface starts fresh and cannot resume or abandon server-side.
  */
 export interface PasswordResetOperations {
-  /** Sends a code, or a suppressed record, for the identifier
-   * (POST /api/v1/auth/password-reset). */
+  /** Sends a code, or a suppressed record, for the identifier. */
   readonly requestReset: (input: PasswordResetRequest) => Promise<PasswordResetSent>
-  /** Proves the code held for the bound record
-   * (POST /api/v1/auth/password-reset/verify). */
+  /** Proves the code held for the bound record. */
   readonly verifyReset: (input: { readonly code: string }) => Promise<PasswordResetVerified>
-  /** Writes the new password for the proved record
-   * (POST /api/v1/auth/password-reset/complete). */
+  /** Writes the new password for the proved record. */
   readonly completeReset: (input: {
     readonly newPassword: string
   }) => Promise<void>
-  /** Reads the bound record on mount
-   * (GET /api/v1/auth/password-reset/current). */
+  /** Reads the bound record on mount. */
   readonly currentReset?: () => Promise<PasswordResetSent | PasswordResetVerified>
-  /** Drops the bound record (DELETE /api/v1/auth/password-reset/current). */
+  /** Drops the bound record. */
   readonly abandonReset?: () => Promise<void>
 }
 
+/** The host supplies the session, the channels and the bound reset
+ * operations; the screen owns the reset record's stage state. */
 export interface PasswordResetScreenProps {
   /** The session the human-verification gate and proof come from. */
   readonly session: AuthSession
-  /** The reset channels the deployment publishes, in its order. An empty
-   * list renders the unavailable notice. */
+  /** The reset channels the deployment publishes, in its order. An empty list
+   * renders the unavailable notice. */
   readonly channels: readonly PasswordResetChannel[]
   /** The host-bound reset operations. */
   readonly operations: PasswordResetOperations
-  /**
-   * The human-verification gate the host already read, when it has one.
-   * Omitted, the screen reads it through the session before a send.
-   */
+  /** The human-verification gate the host already read. Omitted, the screen
+   * reads it through the session before a send. */
   readonly humanGate?: AuthnHumanGate
-  /** The heading element the screen's titles render as; `'h1'` by default
-   * (the screen is normally the page). */
+  /** The heading element the screen's titles render as; `'h1'` by default. */
   readonly headingLevel?: HeadingLevel
   /** Fired once after the password write lands; the host navigates. */
   readonly onDone?: () => void
-  /** Fired when the viewer asks to return to the sign-in surface. The
-   * screen abandons an in-flight record first. */
+  /** Fired when the viewer asks to return to sign-in; an in-flight record is
+   * abandoned first. */
   readonly onBackToSignIn?: () => void
 }
 
@@ -173,17 +118,12 @@ type Stage =
   | { readonly kind: 'verified' }
   | { readonly kind: 'done' }
 
-/** One whole-attempt failure: a reachable problem code, or a sentence the
- * screen words itself (the invalidated flow). A throttle is the code with
- * the wait the answer stated, so the banner counts it down.
- * `restart` marks the refusals after which the bound record cannot
- * continue, so the surface offers a start-over exit with the banner. */
 interface Failure {
   readonly kind: 'code' | 'text'
   readonly value: string
+  /** Whether the bound record cannot continue, so a start-over exit is
+   * offered with the banner. */
   readonly restart: boolean
-  /** The wait a throttled answer stated, in whole seconds: the stable
-   * sentence assistive technology reads while the visible one counts down. */
   readonly retryAfterSeconds?: number
 }
 
@@ -194,43 +134,35 @@ interface ResetFields {
   confirmPassword: string
 }
 
-/** The control a write attempt belongs to: the request form's send, the
- * resend control, or the primary submit (verify and/or write). */
 type BusyAction = 'send' | 'resend' | 'submit'
 
-/** A send asked for and waiting on its human proof, with the control that
- * asked for it. */
 interface PendingSend {
   readonly channel: PasswordResetChannel
   readonly identifier: string
   readonly origin: 'send' | 'resend'
 }
 
-/** The collapsed wrong-code refusal: a wrong or expired code, a suppressed
- * record and an exhausted attempt budget all answer under this one code. */
+/** The server's one collapsed refusal: a wrong or expired code, a suppressed
+ * record and an exhausted attempt budget all answer under this code. */
 const LOGIN_FAILED = 'authn.login_failed'
 
-/** The password write's only 400 is the password policy. */
 const BAD_REQUEST = 'authn.bad_request'
 
-/** The code a throttled send answers with: its sentence names the wait the
- * response stated, and stays as the generic sentence once the wait ends. */
 const THROTTLED = 'authn.throttled'
 
-/** The failure value that marks an invalidated flow, whose dedicated text
- * is the reset surface's own (the generic flow-invalid sentence speaks of
- * a sign-in attempt). */
+/** The reset surface's own text for an invalidated flow: the generic
+ * flow-invalid sentence speaks of a sign-in attempt. */
 const FLOW_INVALID_TEXT = 'flow-invalid'
 
-/** The ui-kit namespace key FormField renders for a missing required
- * value; the screen sets it on the values its own trim would empty. */
 const REQUIRED_KEY = 'form.required'
 
-/** The refusals after which the bound record cannot continue and a
- * start-over exit is offered. The invalidated flow is worded separately
- * (see FLOW_INVALID_TEXT) and carries the same exit. */
 const RESTART_CODES = new Set<string>(['authn.password_reset_unavailable'])
 
+/**
+ * The anonymous reset surface: drives the host-bound reset operations through
+ * request, sent, verified and done states, using the session only for the
+ * human-verification gate and proof a send may present.
+ */
 export function PasswordResetScreen({
   session,
   channels,
@@ -249,100 +181,66 @@ export function PasswordResetScreen({
       confirmPassword: '',
     },
   })
-  // The SMS channel takes the identifier the same way the SMS sign-in does:
-  // a country/region selector and the local number, assembled to E.164 only
-  // at submit. The country starts on the host's preferred one when it gives
-  // one, else the browser locale's own region.
   const preferredCountry = usePhoneCountryDefault()
   const [country, setCountry] = useState(() => preferredCountry)
   const [nationalNumber, setNationalNumber] = useState('')
   const [phoneAttempted, setPhoneAttempted] = useState(false)
-  // The resume read is captured once at mount: a host that binds the
-  // operations inline hands a new function identity on every render, and
-  // re-running the resume on each one would read the bound record again
-  // after every field change.
+  // Captured once: a host binding operations inline hands a new function
+  // identity each render, which would re-read the bound record on every field
+  // change.
   const [resume] = useState(() => operations.currentReset)
   const initialStage: Stage =
     resume === undefined ? { kind: 'request' } : { kind: 'checking' }
   const [stage, setStage] = useState<Stage>(initialStage)
   const [busy, setBusy] = useState(false)
-  // Which control started the in-flight write: the request form's send, the
-  // resend control, or the primary submit. Only that control reports the
-  // attempt; its siblings are held without a reason.
   const [busyAction, setBusyAction] = useState<
     BusyAction | null
   >(null)
   const [failure, setFailure] = useState<Failure | null>(null)
   const [retryUntil, setRetryUntil] = useState<number | null>(null)
   const [resendAt, setResendAt] = useState<number | null>(null)
-  // The tick the resend countdown re-renders on; it is only a clock, never
-  // a second source of the deadline.
   const [now, setNow] = useState(() => Date.now())
-  // The tick the throttle banner re-renders on: also only a clock.
   const [, setRetryTick] = useState(0)
   const [chosenChannel, setChosenChannel] =
     useState<PasswordResetChannel | null>(channels[0] ?? null)
   const identifierInput = useRef<HTMLInputElement>(null)
   const codeInput = useRef<HTMLInputElement>(null)
   const newPasswordInput = useRef<HTMLInputElement>(null)
-  // The request form's container: the sent surface replaces its fields, so
-  // the first control of that surface is where a step switch lands focus.
   const formRef = useRef<HTMLDivElement>(null)
   // The control that held focus when the viewer asked for the code. The
-  // send replaces the request surface while the action row -- the back
-  // entry and the submit key -- stays mounted across both stages, so only
-  // focus still at this origin (or dropped to the body with it) belongs to
-  // the switch; focus the operator moved to a control both stages keep is
-  // where they put it.
+  // action row stays mounted across both stages, so only focus still at this
+  // origin (or dropped to the body) belongs to the switch.
   const sendFocusOrigin = useRef<Element | null>(null)
   // The stage the previous commit rendered, so the send that leaves the
-  // request state is told apart from the resume read that lands on a later
-  // state at mount.
+  // request state is told apart from the resume read at mount.
   const previousStageKind = useRef<Stage['kind']>(initialStage.kind)
-  // Where focus goes when the completed write removes the form: the done
-  // surface's heading, which assistive technology reads; its way back is the
-  // next tab stop. The flag is set by the write that lands the surface, so
-  // only a removal this write caused hands focus over.
+  // The done surface's heading is where focus lands when the completed write
+  // removes the form; the flag is set by that write, so only a removal it
+  // caused hands focus over.
   const doneFocusPending = useRef(false)
   const doneHeading = useRef<HTMLHeadingElement>(null)
-  // The failure banner a held send names as the reason it cannot run: a
-  // stated wait's own countdown is already on the page.
   const waitNoteId = useId()
-  // The published channel list is the deployment's: a choice that is no
-  // longer offered falls back to the first one.
   const selectedChannel =
     chosenChannel !== null && channels.includes(chosenChannel)
       ? chosenChannel
       : (channels[0] ?? null)
   const sms = selectedChannel === 'sms'
-  // The send the viewer asked for, waiting on the gate and the proof that
-  // send needs: the channel and the identifier it will send to. The gate is
-  // read and the proof obtained only while this is set, so the request form
-  // on its own shows no challenge. Both the first send and a resend wait
-  // here.
+  // A send waiting on the gate and proof it needs. The gate is read and the
+  // proof obtained only while this is set, so the request form alone shows no
+  // challenge.
   const [pendingSend, setPendingSend] = useState<PendingSend | null>(null)
-  // One send at a time: the direct path and the deferred path that waits
-  // for a proof can both reach the send in the same tick.
+  // The direct path and the deferred path that waits for a proof can reach
+  // the send in the same tick.
   const sendingRef = useRef(false)
-  // The channel names the surface: SMS reaches a phone number and runs the
-  // phone surface's mechanism, an email code runs the other surface's.
   const humanScope = sms ? 'phone' : 'other'
   const human = useHumanVerification(session, {
     scope: humanScope,
-    // The gate is read and the proof obtained only once the viewer asks for
-    // a send the gate holds; the request form alone reads and solves
-    // nothing.
     enabled: pendingSend !== null,
     ...(humanGate === undefined ? {} : { gate: humanGate }),
   })
-  // A gate the host already read is known before the hook reads anything; a
-  // screen without one learns it through the hook once a send asks for it.
   const gateDocument = humanGate ?? human.gate
   const needsProof = humanGateNeedsProof(gateDocument, humanScope)
 
-  // Resume the bound record once per mounted resume operation. A refused
-  // read (no binding, an expired or failed record) starts the surface
-  // fresh; the record's own state is the only thing read.
   useEffect(() => {
     if (resume === undefined) {
       return undefined
@@ -374,12 +272,8 @@ export function PasswordResetScreen({
     }
   }, [resume])
 
-  // The completed write replaces the whole form with the done surface, and
-  // the focused submit leaves with it. Hand focus to the surface's heading,
-  // which carries the completion as its accessible name; its way back is the
-  // next tab stop. Focus is handed over only when the removal is what took
-  // it: a connected control means the operator moved focus there during the
-  // write, and that choice stands.
+  // Hand focus to the done heading only when the removal is what took it: a
+  // connected control means the operator moved focus during the write.
   useLayoutEffect(() => {
     if (stage.kind !== 'done' || !doneFocusPending.current) {
       return
@@ -396,16 +290,9 @@ export function PasswordResetScreen({
     doneHeading.current?.focus()
   }, [stage])
 
-  // The send that replaces the request form takes the identifier field it
-  // was submitted from with it. A step switch hands focus to the new
-  // surface's first control, under the same rule step-focus uses: the
-  // move is the switch's only when focus was still at the submit origin,
-  // already on the body, or on a node that left the document. Focus on any
-  // other control is where the operator moved it while the send was in
-  // flight -- the back entry and the submit key stay mounted across both
-  // stages -- and taking it would undo their choice. The resume read that
-  // lands on a later state at mount replaced nothing, so only a commit
-  // from the request state counts.
+  // The send replaces the identifier field. Under the step-focus rule, focus
+  // moves only when it was still at the submit origin, on the body, or on a
+  // node that left the document; only a commit from the request state counts.
   useLayoutEffect(() => {
     const previous = previousStageKind.current
     previousStageKind.current = stage.kind
@@ -429,11 +316,6 @@ export function PasswordResetScreen({
     firstControl(container)?.focus()
   }, [stage.kind])
 
-  // A stated Retry-After wait counts down on its own: one tick a second
-  // re-renders the banner while the deadline is ahead, and the tick that
-  // crosses it clears the deadline so the send control re-enables. The
-  // failure itself stays, so the banner remains with the wait-free sentence
-  // instead of vanishing.
   useEffect(() => {
     if (retryUntil === null) {
       return undefined
@@ -453,10 +335,8 @@ export function PasswordResetScreen({
     return () => clearInterval(timer)
   }, [retryUntil])
 
-  // The resend countdown ticks while its deadline is ahead and stops at
-  // it. An interval (rather than a self-rescheduling timeout) keeps the
-  // clock moving under a test's advanced fake clock, where a re-render
-  // only happens after the batch of timer callbacks.
+  // An interval rather than a self-rescheduling timeout keeps the clock
+  // moving under a test's advanced fake clock.
   useEffect(() => {
     if (resendAt === null) {
       return undefined
@@ -474,8 +354,6 @@ export function PasswordResetScreen({
   const retryRemaining =
     retryUntil === null ? 0 : Math.max(0, retryUntil - Date.now())
   const waiting = retryRemaining > 0
-  // The seconds the shared banner paints: 0 once the deadline is cleared,
-  // so the visible sentence drops its number while the failure remains.
   const liveRetryAfterSeconds =
     retryUntil === null
       ? 0
@@ -488,8 +366,7 @@ export function PasswordResetScreen({
       const pending = operations.abandonReset?.()
       void pending?.catch(() => undefined)
     } catch {
-      // Leaving is best-effort: a failed abandon does not keep the viewer
-      // on the surface.
+      // Leaving is best-effort: a failed abandon does not keep the viewer here.
     }
   }
 
@@ -541,8 +418,6 @@ export function PasswordResetScreen({
     form.clearErrors()
     const proof = needsProof ? (human.proof ?? undefined) : undefined
     if (needsProof && proof === undefined) {
-      // A required proof that is not ready yet keeps the send from leaving:
-      // the block above the control is already showing why.
       return
     }
     sendingRef.current = true
@@ -555,9 +430,8 @@ export function PasswordResetScreen({
         ...(proof === undefined ? {} : { humanProof: proof }),
       })
       if (proof !== undefined) {
-        // A proof is single-use: the server consumed it for this send, so
-        // the block obtains the next one whether the send is accepted or
-        // refused.
+        // A proof is single-use: the next one is obtained whether the send is
+        // accepted or refused.
         human.consume()
       }
       const sent = await pending
@@ -582,11 +456,8 @@ export function PasswordResetScreen({
   sendRef.current = send
 
   /**
-   * Ask for a code: send now when the gate is known to want no proof,
-   * otherwise hold the send and let the block obtain one; the effect below
-   * sends the postponed request when the proof arrives. A new attempt
-   * clears the previous failure and field errors here, whichever path it
-   * takes.
+   * Ask for a code: sends now when the gate wants no proof, otherwise holds
+   * the send until the effect below sees a proof.
    */
   const askToSend = (
     channel: PasswordResetChannel,
@@ -594,12 +465,9 @@ export function PasswordResetScreen({
     origin: PendingSend['origin'],
   ): void => {
     if (pendingSend !== null) {
-      // A send is already waiting on its proof; asking again changes nothing.
       return
     }
     if (origin === 'send') {
-      // The submit point the switch below may move focus from: only focus
-      // still here when the code is out is the send's to take.
       sendFocusOrigin.current = document.activeElement
     }
     setFailure(null)
@@ -615,12 +483,9 @@ export function PasswordResetScreen({
     setPendingSend({ channel, identifier, origin })
   }
 
-  // A send asked for while the gate held it leaves as soon as the gate is
-  // known and the proof it wants is in hand: the viewer's one request is
-  // not turned into a click followed by a second one.
-  // The write-in-flight guard below is defensive and currently unreachable:
-  // the code submit abandons a held resend (setPendingSend(null)) before it
-  // starts its own write, so no held send survives into an in-flight write.
+  // A send held by the gate leaves as soon as the gate is known and its proof
+  // is in hand. The `busy` guard is defensive and currently unreachable: the
+  // code submit abandons a held resend before it starts its own write.
   useEffect(() => {
     if (pendingSend === null || human.pending || gateDocument === null) {
       return
@@ -649,8 +514,6 @@ export function PasswordResetScreen({
     try {
       await operations.completeReset({ newPassword })
       setFailure(null)
-      // A host that navigates takes focus with the new page; when it binds
-      // no done callback, the form's removal here is what focus lands from.
       if (onDone === undefined) {
         doneFocusPending.current = true
       }
@@ -658,8 +521,7 @@ export function PasswordResetScreen({
       try {
         onDone?.()
       } catch {
-        // A throwing host callback is not a failed write: the password
-        // changed, so the screen stays in its done state.
+        // A throwing host callback is not a failed write: the password changed.
       }
     } catch (error) {
       if (errorCodeOf(error) === BAD_REQUEST) {
@@ -705,9 +567,8 @@ export function PasswordResetScreen({
   }
 
   const onSubmit: SubmitHandler<ResetFields> = async (values) => {
-    // A send waiting on its proof is not a write in flight: the code submit
-    // stays usable, because the viewer may already hold a code from an
-    // earlier send. Only an actually running write holds the form.
+    // A send waiting on its proof is not a write in flight, so the code
+    // submit stays usable.
     if (busy || waiting) {
       return
     }
@@ -721,8 +582,6 @@ export function PasswordResetScreen({
         setPhoneAttempted(true)
         const phone = toE164(country, nationalNumber)
         if (phone === null) {
-          // The control states the per-country reason under its own field;
-          // nothing is sent.
           return
         }
         askToSend(selectedChannel, phone, 'send')
@@ -768,20 +627,17 @@ export function PasswordResetScreen({
       })
       return
     }
-    // Using the code in hand abandons a resend that is still waiting on its
-    // proof: the next code would invalidate the one being submitted.
+    // Using the code in hand abandons a resend still waiting on its proof: the
+    // next code would invalidate the one being submitted.
     setPendingSend(null)
     await verifyThenWrite(code, values.newPassword)
   }
 
   const awaitingProof = pendingSend !== null
-  // The resend control reports its own send and a send waiting on its proof.
   const resendBusy = busyAction === 'resend' || awaitingProof
-  // In the request stage the primary control is the send control, so it
-  // waits while its send runs and while that send waits on its proof. In
-  // the sent and verified stages it submits the code and/or the password,
-  // so only its own write makes it busy; a resend beside it holds it
-  // without a reason.
+  // In the request stage the primary control is the send control; in the sent
+  // and verified stages it submits the code and/or password, so only its own
+  // write makes it busy.
   const submitBusy =
     busyAction === 'submit' ||
     (stage.kind === 'request' && (busyAction === 'send' || awaitingProof))
@@ -789,9 +645,6 @@ export function PasswordResetScreen({
   const submitHeldBySibling =
     stage.kind !== 'request' && busyAction === 'resend'
   const submitUnavailable = submitHeldByWait || submitHeldBySibling
-  // The form's own submit is guarded as well: an implicit submission the
-  // submit button does not carry (Enter in a field) is swallowed under the
-  // same state as the control.
   const guardedSubmit = useActivationGuard(onSubmit, {
     busy: submitBusy,
     unavailable: submitUnavailable,
@@ -856,8 +709,8 @@ export function PasswordResetScreen({
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
         <Box role="status" sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-          {/* The heading is the landing when the host binds no way back:
-              focusable without entering the tab order, named by its text. */}
+          {/* The heading is the focus landing when the host binds no way back:
+              a programmatic target, not a tab stop. */}
           <Typography
             ref={doneHeading}
             component={headingLevel}
@@ -888,8 +741,6 @@ export function PasswordResetScreen({
   const identifierLabel = sms
     ? t('passwordReset.phoneLabel')
     : t('passwordReset.emailLabel')
-  // A resend is offered only for a sent record that named a channel and
-  // identifier, once its own interval has elapsed.
   const canResend =
     showingSent &&
     stage.channel !== null &&
@@ -972,11 +823,8 @@ export function PasswordResetScreen({
                   if (value === null || value === selectedChannel) {
                     return
                   }
-                  // Leaving a channel drops its whole-attempt failure, its
-                  // stated wait and its field errors: a channel's errors do
-                  // not cross to the next face. A send waiting on a proof
-                  // belongs to the channel that asked for it, so it is
-                  // dropped too.
+                  // A channel's errors, wait and held send do not cross to the
+                  // next face.
                   setFailure(null)
                   setRetryUntil(null)
                   form.clearErrors()
@@ -999,9 +847,6 @@ export function PasswordResetScreen({
                   nationalNumber={nationalNumber}
                   onCountryChange={(next) => {
                     form.clearErrors('identifier')
-                    // A send waiting on its proof names the identifier it
-                    // was asked for; editing the field cancels it rather
-                    // than sending to a value no longer on screen.
                     setPendingSend(null)
                     setCountry(next)
                   }}
@@ -1026,9 +871,6 @@ export function PasswordResetScreen({
                     inputRef={identifierInput}
                     onChange={(event) => {
                       field.onChange(event)
-                      // A send waiting on its proof names the identifier it
-                      // was asked for; editing the field cancels it rather
-                      // than sending to a value no longer on screen.
                       setPendingSend(null)
                     }}
                     label={identifierLabel}
@@ -1055,9 +897,8 @@ export function PasswordResetScreen({
                     inputRef={codeInput}
                     onChange={(event) => {
                       field.onChange(event)
-                      // Typing the code the viewer already holds ends a
-                      // resend still waiting on its proof: the next code
-                      // would invalidate what they are entering.
+                      // Typing a held code ends a resend still waiting on its
+                      // proof, which would invalidate what they are entering.
                       setPendingSend(null)
                     }}
                     label={t('passwordReset.codeLabel')}
@@ -1111,9 +952,7 @@ export function PasswordResetScreen({
             />
           </>
         )}
-        {/* The deployment's human-verification block. It appears only once
-            the viewer asks for a send the gate holds for a proof, so the
-            request form on its own shows no challenge; the send leaves by
+        {/* Appears only once a send is held for a proof; the send leaves by
             itself when the proof arrives. */}
         {pendingSend !== null ? (
           <HumanVerificationBlock

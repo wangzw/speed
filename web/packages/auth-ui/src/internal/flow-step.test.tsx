@@ -1,22 +1,3 @@
-/**
- * FlowStepFields behaviour: the factor, enroll and challenge vocabulary.
- *
- * What this suite pins: a known factor or enroll kind renders its
- * translated name, and a kind the family has no wording for shows the
- * kind as given -- the deployment's own vocabulary, never a generic
- * stand-in. A factor step answers "how do I prove it", so the kind leads:
- * a kind offered once reads as its kind name alone, while a repeated kind
- * distinguishes its entries by name ("Kind · Name") and an unnamed entry
- * from the second on by ordinal ("Kind (2)"). That last rule is the one
- * the three flow-step copies share: account-ui and admin-ui render the
- * same labels, so this suite is the auth-ui side of the registered sync
- * obligation.
- *
- * The same rule holds for a challenge's fields: a name the family knows
- * renders the bundle's label and the explanatory text under it, and an
- * unknown name renders verbatim with no hint.
- */
-
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
@@ -48,7 +29,6 @@ function render(next: AuthnStep, onUnsupported: () => void = vi.fn()) {
   )
 }
 
-/** Installs a `navigator.credentials` stub, answering the restorer. */
 function installCredentials(credentials: unknown): () => void {
   const original = Object.getOwnPropertyDescriptor(window.navigator, 'credentials')
   Object.defineProperty(window.navigator, 'credentials', {
@@ -64,7 +44,6 @@ function installCredentials(credentials: unknown): () => void {
   }
 }
 
-/** A challenge step the flow parks while it waits for the given fields. */
 function challengeStep(fields: AuthnField[]): OpenFlowState {
   return { seq: 2, state: 'signup', next: { kind: 'challenge', fields } }
 }
@@ -130,14 +109,9 @@ describe('FlowStepFields challenge submit', () => {
     await user.click(submit)
     expect(onAnswer).not.toHaveBeenCalled()
 
-    // An implicit submission from the field is the same activation.
     await user.type(username, '{Enter}')
     expect(onAnswer).not.toHaveBeenCalled()
 
-    // The form's own submit is judged by the same guard: whatever reaches
-    // the form while the answer is in flight sends nothing. The submit path
-    // runs through react-hook-form, so flush it before asserting -- a
-    // synchronous assertion here would pass even with the guard removed.
     await act(async () => {
       fireEvent.submit(submit.closest('form') as HTMLFormElement)
     })
@@ -211,8 +185,6 @@ describe('FlowStepFields account-opening submit', () => {
     await user.type(confirmation, '{Enter}')
     expect(onAnswer).not.toHaveBeenCalled()
 
-    // Flush the form's asynchronous submit path before asserting, so a
-    // removed guard would reach the answer and fail this case.
     await act(async () => {
       fireEvent.submit(submit.closest('form') as HTMLFormElement)
     })
@@ -266,13 +238,10 @@ describe('FlowStepFields username step', () => {
     expect(field).toHaveAttribute('aria-invalid', 'true')
     expect(field).toHaveAccessibleDescription(text)
     expect(field).toHaveFocus()
-    // The refusal is the field's, never the whole-attempt banner.
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('leaves the field without an error for any other code', () => {
-    // authn.bad_request is not a username refusal: on this step it belongs
-    // to the surface's whole-attempt banner.
     for (const code of ['authn.bad_request', 'authn.throttled']) {
       const { unmount } = renderSignup(code)
       const field = screen.getByLabelText(zhCN.signInFlow.usernameLabel)
@@ -339,8 +308,6 @@ describe('FlowStepFields social account-opening face', () => {
     )
   }
 
-  /** The identity sentence as the face composes it: one bundle entry per
-   * case, with the name filled in where it goes. */
   function identitySentence(options: {
     readonly provider: string
     readonly name?: string
@@ -356,9 +323,6 @@ describe('FlowStepFields social account-opening face', () => {
       .replace('{{name}}', options.name)
   }
 
-  /** The identity sentence's paragraph, matched on its whole text: the
-   * provider name is an element of its own, so the query cannot rely on the
-   * paragraph's direct text nodes alone. */
   function findIdentityParagraph(options: {
     readonly provider: string
     readonly name?: string
@@ -374,8 +338,6 @@ describe('FlowStepFields social account-opening face', () => {
     })
   }
 
-  /** The address block's accessible name, from the family's field
-   * vocabulary. */
   const emailLabel = zhCN.register.emailLabel
 
   it('renders no step title, the instruction sentence and the submit row', () => {
@@ -385,8 +347,6 @@ describe('FlowStepFields social account-opening face', () => {
       email: 'ada@example.com',
     })
 
-    // The host card's heading already says this is a sign-in; the step adds
-    // no second title of its own.
     expect(screen.queryByRole('heading')).toBeNull()
     expect(
       screen.getByText(zhCN.signInFlow.signupAccountInstruction, {
@@ -460,8 +420,6 @@ describe('FlowStepFields social account-opening face', () => {
     const address = screen.getByRole('textbox', { name: emailLabel })
     expect(address).toHaveAttribute('aria-readonly', 'true')
     expect(address).toHaveTextContent('ada@example.com')
-    // No input carries the address as its value: the fields the visitor
-    // fills in stay editable, and the address does not.
     expect(screen.queryByDisplayValue('ada@example.com')).toBeNull()
     expect(
       screen.getByText(
@@ -471,7 +429,6 @@ describe('FlowStepFields social account-opening face', () => {
         ),
       ),
     ).toBeInTheDocument()
-    // Selectable and focusable by keyboard, so the address can be copied.
     address.focus()
     expect(address).toHaveFocus()
   })
@@ -490,8 +447,6 @@ describe('FlowStepFields social account-opening face', () => {
   })
 
   it('names the method through the sign-in vocabulary', () => {
-    // The step carries the method name, not the provider identifier, so the
-    // face resolves it through the same words the sign-in surface uses.
     renderFace({ method: 'github' })
 
     expect(
@@ -500,8 +455,6 @@ describe('FlowStepFields social account-opening face', () => {
   })
 
   it('keeps the two WeChat modes apart on the face', () => {
-    // Both modes share one provider; the face shows the entry the person
-    // actually picked, not the brand's generic word.
     for (const [method, label] of [
       ['wechat.mp', zhCN.social.provider.wechatOfficialAccount],
       ['wechat.web', zhCN.social.provider.wechatWeb],
@@ -537,8 +490,6 @@ describe('FlowStepFields social account-opening face', () => {
   it('renders no identity sentence when the step carries no method', () => {
     renderFace({ displayName: 'Ada Lovelace', email: 'ada@example.com' })
 
-    // The lead without the provider has nothing to say, so the whole
-    // first sentence is left out; the second still says what is missing.
     const leadPrefix = zhCN.signInFlow.signupIdentity.slice(
       0,
       zhCN.signInFlow.signupIdentity.indexOf('{{provider}}'),
@@ -555,7 +506,6 @@ describe('FlowStepFields social account-opening face', () => {
     renderFace({ method: 'google', displayName: 'Ada Lovelace' })
 
     expect(screen.queryByRole('textbox', { name: emailLabel })).toBeNull()
-    // The remaining fields keep their order.
     const username = screen.getByLabelText(zhCN.signInFlow.usernameLabel)
     const password = screen.getByLabelText(zhCN.passwordSignIn.passwordLabel)
     const confirm = screen.getByLabelText(zhCN.register.confirmPasswordLabel)
@@ -599,8 +549,6 @@ describe('FlowStepFields social account-opening face', () => {
     expect(confirm).toHaveAccessibleDescription(
       zhCN.signInFlow.signupPasswordMismatch,
     )
-    // The confirmation never travels, so a matching pair sends only the two
-    // fields the server asked for.
     await userEvent.setup().clear(confirm)
     await userEvent
       .setup()
@@ -627,7 +575,6 @@ describe('FlowStepFields social account-opening face', () => {
       zhCN.signInFlow.signupPasswordPolicy,
     )
     expect(password).toHaveFocus()
-    // The refusal is the field's, never the whole-attempt banner.
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
@@ -665,9 +612,6 @@ describe('FlowStepFields social account-opening face', () => {
   })
 
   it('renders no display-name field on the social face', () => {
-    // The provider supplies the person's name; the social face asks for the
-    // username and the password alone, so the optional phone-only field does
-    // not leak into it.
     renderFace({ method: 'google', displayName: 'Ada Lovelace' })
 
     expect(
@@ -696,8 +640,6 @@ describe('FlowStepFields social account-opening face', () => {
     expect(
       screen.getByText(zhCN.signInFlow.signupDescription),
     ).toBeInTheDocument()
-    // The social face's narrative, address block and password fields do not
-    // leak into the username-only face.
     expect(
       screen.queryByText(zhCN.signInFlow.signupAccountInstruction),
     ).toBeNull()
@@ -712,9 +654,6 @@ describe('FlowStepFields social account-opening face', () => {
 })
 
 describe('FlowStepFields phone signup step', () => {
-  // A phone first login opens the account with a username, an optional
-  // display name and a password; the face renders them in the server's order
-  // and adds the confirmation right after the password.
   const phoneFields: AuthnField[] = [
     { name: 'username', kind: 'text', required: true },
     { name: 'display_name', kind: 'text' },
@@ -767,13 +706,10 @@ describe('FlowStepFields phone signup step', () => {
     const username = screen.getByLabelText(zhCN.signInFlow.usernameLabel)
     const displayName = screen.getByLabelText(zhCN.register.displayNameLabel)
 
-    // Optional means no required marker, so leaving it empty is allowed.
     expect(displayName).not.toBeRequired()
     expect(displayName).toHaveAccessibleDescription(
       zhCN.signInFlow.signupDisplayNameHelp,
     )
-    // The name is the person's, so the browser's own name autofill may fill
-    // it; the account's display name is capped at the server's limit.
     expect(displayName).toHaveAttribute('autocomplete', 'name')
     expect(displayName).toHaveAttribute('maxlength', '100')
     expect(
@@ -820,8 +756,6 @@ describe('FlowStepFields phone signup step', () => {
 
     await fillAndSubmit()
 
-    // An optional field left blank is absent from the answer, so the server
-    // reads no name and falls back to the username.
     expect(onAnswer).toHaveBeenCalledWith({
       username: 'ada',
       password: 'correct-horse',
@@ -842,9 +776,6 @@ describe('FlowStepFields phone signup step', () => {
 })
 
 describe('FlowStepFields password account-opening face', () => {
-  // The password face renders its fields from the step too: a deployment
-  // that asks for a display name beside the password gets the input, not
-  // only the fixed username/password/confirmation set.
   const accountFields: AuthnField[] = [
     { name: 'username', kind: 'text', required: true },
     { name: 'display_name', kind: 'text' },
@@ -907,8 +838,6 @@ describe('FlowStepFields labels', () => {
     expect(
       screen.getByRole('button', { name: zhCN.signInFlow.factorKind.totp }),
     ).toBeTruthy()
-    // The unknown kind is the deployment's own name, not the generic
-    // "other" label.
     expect(screen.getByRole('button', { name: 'magic' })).toBeTruthy()
     expect(
       screen.queryByRole('button', { name: zhCN.signInFlow.factorKind.other }),
@@ -924,8 +853,6 @@ describe('FlowStepFields labels', () => {
   })
 
   it('hides the reset door when the step offers no factor at all', () => {
-    // A factor step with nothing to choose is an abnormal state, not a lost
-    // method: the sentence would point at a door that is not the problem.
     render({ kind: 'factor', factors: [] })
 
     expect(screen.queryByText(zhCN.signInFlow.lostFactorHint)).toBeNull()
@@ -944,10 +871,6 @@ describe('FlowStepFields labels', () => {
   })
 
   it('labels same-named factors of different kinds by their kinds', () => {
-    // The bug this rule fixes: the login page used the registration-time
-    // name first, so two factors whose names happened to match -- here the
-    // browser/OS summary each device suggested -- rendered two identical
-    // buttons. The kind is what the viewer chooses between.
     render({
       kind: 'factor',
       factors: [
@@ -968,9 +891,6 @@ describe('FlowStepFields labels', () => {
   })
 
   it('distinguishes a repeated kind by name and by ordinal', () => {
-    // Both entries are passkeys, so the kind alone cannot tell them apart.
-    // The named one keeps the kind in front of its name; the unnamed second
-    // one takes an ordinal rather than repeating the kind's name alone.
     render({
       kind: 'factor',
       factors: [
@@ -1002,14 +922,10 @@ describe('FlowStepFields labels', () => {
 
 describe('FlowStepFields passkey arrival', () => {
   it('starts an assertion ceremony on arrival and does not restart it on a re-render', async () => {
-    // The passkey entry the viewer clicked is the only control: the
-    // assertion step it opens starts the browser's ceremony itself.
     const get = vi.fn().mockReturnValue(new Promise(() => {}))
     const restore = installCredentials({ get, create: vi.fn() })
     try {
       const onAnswer = vi.fn()
-      // A state update re-renders the renderer with a fresh step object,
-      // which is what a parent's ordinary re-render looks like.
       function Harness() {
         const [, setTick] = useState(0)
         return (
@@ -1034,14 +950,11 @@ describe('FlowStepFields passkey arrival', () => {
       expect(
         await screen.findByText(zhCN.signInFlow.passkeyWaiting),
       ).toBeInTheDocument()
-      // No second click: the start control is not offered at all.
       expect(
         screen.queryByRole('button', { name: zhCN.signInFlow.submit }),
       ).toBeNull()
       expect(get).toHaveBeenCalledTimes(1)
 
-      // The same challenge in a fresh options object is the same ceremony:
-      // an ordinary re-render leaves it running.
       await userEvent
         .setup()
         .click(screen.getByRole('button', { name: 'rerender' }))
@@ -1053,10 +966,6 @@ describe('FlowStepFields passkey arrival', () => {
   })
 
   it('restarts the arrival ceremony when the server re-sends the same challenge', async () => {
-    // The challenge string alone does not identify a ceremony: the server can
-    // send the same challenge again in the next step. The sequence number
-    // advances with every reply the flow parks, so a re-sent challenge starts
-    // the ceremony again while an ordinary re-render leaves it alone.
     const get = vi.fn().mockReturnValue(new Promise(() => {}))
     const restore = installCredentials({ get, create: vi.fn() })
     try {
@@ -1100,8 +1009,6 @@ describe('FlowStepFields passkey arrival', () => {
   })
 
   it('starts no assertion ceremony when a genuinely different step arrives', async () => {
-    // Only an assertion step starts on arrival. A different step the flow
-    // parks is not an assertion ceremony, whatever sequence it carries.
     const get = vi.fn().mockReturnValue(new Promise(() => {}))
     const restore = installCredentials({ get, create: vi.fn() })
     try {
@@ -1152,8 +1059,6 @@ describe('FlowStepFields passkey arrival', () => {
   })
 
   it('waits for a click before a registration ceremony starts', async () => {
-    // A creation ceremony needs the user activation some browsers require,
-    // so a registration step stays parked until the viewer clicks.
     const create = vi.fn().mockReturnValue(new Promise(() => {}))
     const restore = installCredentials({ get: vi.fn(), create })
     try {
@@ -1212,21 +1117,15 @@ describe('FlowStepFields passkey controls', () => {
       const cancel = await screen.findByRole('button', {
         name: zhCN.signInFlow.passkeyCancel,
       })
-      // The waiting state keeps cancel available: it is the only way out
-      // when the browser never settles the ceremony.
       expect(cancel).not.toBeDisabled()
       expect(cancel).not.toHaveAttribute('aria-disabled')
 
       act(() => setBusy?.(true))
       expect(cancel).toHaveAttribute('aria-disabled', 'true')
       expect(cancel).not.toHaveAttribute('aria-busy')
-      // An in-flight answer elsewhere in the step, not this control's own
-      // action: it carries no reason.
       expect(cancel).not.toHaveAttribute('aria-describedby')
       expect(cancel).not.toBeDisabled()
 
-      // Activation is swallowed while the answer is in flight: the
-      // ceremony stays waiting, so cancel is still the step's control.
       await user.click(cancel)
       expect(cancel).toBeInTheDocument()
       expect(
@@ -1392,8 +1291,6 @@ describe('FlowStepFields TOTP enrolment', () => {
     const confirm = screen.getByRole('button', {
       name: zhCN.signInFlow.submit,
     })
-    // The empty code is a precondition, not a write in flight: the control
-    // stays in the tab order and says why it cannot run.
     expect(confirm).toHaveAttribute('aria-disabled', 'true')
     expect(confirm).not.toBeDisabled()
     expect(confirm).toHaveAccessibleDescription(
@@ -1427,7 +1324,6 @@ describe('FlowStepFields TOTP enrolment', () => {
     expect(confirm).toHaveAttribute('aria-busy', 'true')
     expect(confirm).toHaveAttribute('aria-disabled', 'true')
     expect(confirm).not.toBeDisabled()
-    // The empty-code reason gives way to the write it started.
     expect(confirm).not.toHaveAccessibleDescription(
       zhCN.signInFlow.totpCodeRequired,
     )
@@ -1449,8 +1345,6 @@ describe('FlowStepFields TOTP enrolment', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.signInFlow.totpManualToggle }),
     )
-    // Label in Name needs canvas text measurement, which jsdom lacks; the
-    // named browser case decides it.
     await expectNoAxeViolations({
       decidedInBrowser: 'flowStepFieldsManualDisclosure',
     })
@@ -1475,9 +1369,6 @@ describe('FlowStepFields passkey failure wording', () => {
   }
 
   it('names an authenticator that already holds the credential', async () => {
-    // The server's excludeCredentials makes the creation ceremony reject with
-    // InvalidStateError; the reason carries a remedy of its own instead of the
-    // generic failure a viewer would retry forever.
     const create = vi
       .fn()
       .mockRejectedValue(
@@ -1526,13 +1417,10 @@ describe('FlowStepFields passkey failure wording', () => {
     const retry = await screen.findByRole('button', {
       name: zhCN.signInFlow.passkeyRetry,
     })
-    // One mapping for all three retry surfaces: the primary action face.
     expect(retry).toHaveClass('MuiButton-contained')
   })
 
   it('names the ceremony in the generic failure sentence', async () => {
-    // A registration and a sign-in that fail the same way read differently:
-    // the sentence names the ceremony that did not complete.
     const boom = (): Promise<never> => Promise.reject(new Error('boom'))
     const restore = installCredentials({
       create: vi.fn().mockImplementation(boom),
@@ -1554,7 +1442,6 @@ describe('FlowStepFields passkey failure wording', () => {
       )
       register.unmount()
 
-      // An assertion step starts on arrival and fails without a click.
       const signInFailure = vi.fn()
       renderPasskey({ challenge: 'Y2hhbGxlbmdl' }, signInFailure)
       await waitFor(() =>
@@ -1593,8 +1480,6 @@ describe('FlowStepFields unsupported step', () => {
   })
 })
 
-/** A gate whose phone surface runs Turnstile and whose other surface is
- * off: choosing the SMS factor is a send that needs a proof. */
 const PHONE_TURNSTILE: AuthnHumanGate = {
   phone: { required: true, provider: 'turnstile', site_key: 'site-1' },
   other: { required: false, provider: 'off' },
@@ -1632,8 +1517,6 @@ describe('HumanGatedFlowStep held answer', () => {
         name: zhCN.signInFlow.factorKind.sms,
       })
 
-      // The SMS factor is a send, so the answer waits for the proof and the
-      // whole step is busy meanwhile.
       await user.click(smsChoice)
       await waitFor(() =>
         expect(smsChoice).toHaveAttribute('aria-disabled', 'true'),
@@ -1642,8 +1525,6 @@ describe('HumanGatedFlowStep held answer', () => {
       expect(fake.widgets).toHaveLength(1)
       expect(onAnswer).not.toHaveBeenCalled()
 
-      // The cancel control drops the wait even when the proof never comes,
-      // and hands focus back to the answer control that asked.
       await user.click(
         screen.getByRole('button', { name: zhCN.signInFlow.passkeyCancel }),
       )
@@ -1656,8 +1537,6 @@ describe('HumanGatedFlowStep held answer', () => {
       ).toBeNull()
       expect(onAnswer).not.toHaveBeenCalled()
 
-      // The step is answerable again: the same choice holds again, and this
-      // time the proof it obtains sends the answer.
       await user.click(smsChoice)
       await waitFor(() => expect(fake.widgets).toHaveLength(2))
       act(() => {
@@ -1712,20 +1591,16 @@ describe('HumanGatedFlowStep held answer', () => {
         name: zhCN.signInFlow.factorKind.totp,
       })
 
-      // The chosen factor is the one that started the send.
       await user.click(sms)
       await waitFor(() => expect(sms).toHaveAttribute('aria-busy', 'true'))
       expect(sms).toHaveAttribute('aria-disabled', 'true')
       expect(sms).not.toBeDisabled()
 
-      // Its sibling is unavailable without a reason: the write in flight is
-      // not its own action.
       expect(totp).toHaveAttribute('aria-disabled', 'true')
       expect(totp).not.toHaveAttribute('aria-busy')
       expect(totp).not.toHaveAttribute('aria-describedby')
       expect(totp).not.toBeDisabled()
 
-      // Neither a click nor the keyboard starts a second choice.
       await user.click(totp)
       totp.focus()
       await user.keyboard('{Enter}')

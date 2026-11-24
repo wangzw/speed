@@ -1,9 +1,6 @@
 /**
- * The wait a refused request stated, read structurally.
- *
- * This package consumes the session, not `@speed/api-client`, so the
- * ApiError shape is checked the way `errorCodeOf` checks the code. Only a
- * 429 carrying a finite, non-negative `retryAfterMs` states a wait.
+ * The wait a refused request stated, read structurally from its
+ * `retryAfterMs`; only a 429 carrying a finite, non-negative value states one.
  */
 export function retryWaitMs(error: unknown): number | undefined {
   if (typeof error !== 'object' || error === null) {

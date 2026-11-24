@@ -1,17 +1,3 @@
-/**
- * SocialSignInSection behaviour: each configured provider renders its
- * bundle name and, on click, begins that method's login flow (asserted on
- * method, path and request body -- the provider is the flow's method and
- * the host callback route travels as the flow's return_to) and reports
- * the flow's redirect URL upward through onAuthorizeUrl; the section
- * itself never navigates. A refused start renders the answer's code text
- * in one alert and reports nothing; while one request is in flight its
- * button is busy -- focusable, announced unavailable and busy, with no
- * native disable -- and the others stay live. The en-US bundle renders on
- * an English-starting instance and the tree passes axe. Text expectations
- * read the bundle values, never inline language.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -44,18 +30,13 @@ function redirectFlow(url: string) {
   })
 }
 
-/** The clicked provider's flight is in flight: the button stays focusable
- * and announces its state instead of taking a native disable. */
 function expectBusy(button: HTMLElement): void {
   expect(button).toHaveAttribute('aria-disabled', 'true')
   expect(button).toHaveAttribute('aria-busy', 'true')
   expect(button).not.toHaveAttribute('disabled')
-  // Busy states give no reason: the flight is the button's own.
   expect(button).toHaveAccessibleDescription('')
 }
 
-/** A provider with no flight of its own stays live: another provider's
- * write never marks it unavailable. */
 function expectLive(button: HTMLElement): void {
   expect(button).not.toHaveAttribute('aria-disabled', 'true')
   expect(button).not.toHaveAttribute('aria-busy', 'true')
@@ -93,8 +74,6 @@ describe('SocialSignInSection', () => {
     expect(harness.calls).toHaveLength(2)
     expect(harness.calls[0]?.method).toBe('POST')
     expect(harness.calls[0]?.path).toBe('/api/v1/auth/flows')
-    // The provider is the flow's method; the host callback route is the
-    // flow's return_to (the server builds the provider's own redirect_uri).
     expect(harness.calls[0]?.options?.body).toMatchObject({
       method: 'google',
       delivery: 'session',
@@ -107,10 +86,6 @@ describe('SocialSignInSection', () => {
   })
 
   it('name no token delivery on the start -- the session delivery is auth-core’s', async () => {
-    // auth-core forces the cookie session (`delivery: 'session'`) on
-    // startFlow, so the section names no delivery of its own. A `'token'`
-    // here would be dead today and a live contradiction to the cookie model
-    // the moment that override lifted.
     const harness = makeHarness({
       [LOGIN_START]: () => redirectFlow(GOOGLE_AUTH_URL),
     })
@@ -218,20 +193,13 @@ describe('SocialSignInSection', () => {
       name: zhCN.social.provider.google,
     })
     await user.click(google)
-    // Wait for the flight to be in flight -- whichever state the button
-    // uses for it -- so the focus assertion runs against the in-flight
-    // control, not the idle one.
     await waitFor(() => {
       expect(
         google.hasAttribute('disabled') ||
           google.getAttribute('aria-disabled') === 'true',
       ).toBe(true)
     })
-    // The initiating control keeps the keyboard user's place for the whole
-    // flight instead of dropping it when the button becomes unavailable.
     expect(google).toHaveFocus()
-    // A second activation of the busy button -- pointer or Enter -- sends
-    // nothing: the flight already running owns this provider.
     await user.click(google)
     await user.keyboard('{Enter}')
     expect(harness.calls).toHaveLength(1)
@@ -243,9 +211,6 @@ describe('SocialSignInSection', () => {
         zhCN.errors.authn.method_disabled,
       ),
     )
-    // The refusal settles in place: the banner appears, the button returns
-    // live, and the viewer's focus never left the control they started it
-    // from.
     expect(google).toHaveFocus()
     expectLive(google)
   })
@@ -271,10 +236,6 @@ describe('SocialSignInSection', () => {
     const harness = makeHarness({
       [LOGIN_START]: () => redirectFlow(GOOGLE_AUTH_URL),
     })
-    // Rendered under the page h1 a real host page supplies: the section
-    // renders no heading of its own, and page-has-heading-one is
-    // determinate in jsdom now (see the axe helper header) -- a scan
-    // without that context fails instead of passing by indeterminacy.
     renderWithProviders(
       <div>
         <h1>Sign in</h1>
@@ -309,9 +270,6 @@ describe('SocialSignInSection', () => {
   })
 
   it('keep both overlapping attempts locked until each settles on its own', async () => {
-    // Two provider attempts in flight at once: each button must stay
-    // locked until ITS OWN attempt settles -- an earlier return must
-    // not re-enable the later provider's button mid-flight.
     let resolveGoogle: (value: unknown) => void = () => {}
     let resolveGithub: (value: unknown) => void = () => {}
     const googleGate = new Promise((resolve) => {
@@ -339,26 +297,17 @@ describe('SocialSignInSection', () => {
     await user.click(google)
     await waitFor(() => expectBusy(google))
     await user.click(github)
-    // Both in flight: both buttons busy.
     await waitFor(() => expectBusy(github))
     expectBusy(google)
-    // The earlier attempt settles first: its own button returns live,
-    // the still-pending later one stays busy.
     resolveGoogle(redirectFlow(GOOGLE_AUTH_URL))
     await waitFor(() => expectLive(google))
     expectBusy(github)
-    // The later attempt settles: its button returns live too.
     resolveGithub(redirectFlow(GITHUB_AUTH_URL))
     await waitFor(() => expectLive(github))
     expect(harness.calls).toHaveLength(2)
   })
 
   it('never paint an earlier attempt failure over a newer attempt success', async () => {
-    // Google's flight started first and fails only after the newer
-    // GitHub attempt is in flight; GitHub then succeeds. The section's
-    // failure banner must not show the stale Google failure after the
-    // GitHub success -- a failure can only belong to the newest
-    // attempt.
     let rejectGoogle: (error: unknown) => void = () => {}
     let resolveGithub: (value: unknown) => void = () => {}
     const googleGate = new Promise((_resolve, reject) => {
@@ -388,8 +337,6 @@ describe('SocialSignInSection', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.social.provider.github }),
     )
-    // The older Google flight fails while GitHub is still in flight;
-    // GitHub then succeeds.
     await act(async () => {
       rejectGoogle(apiError(403, 'authn.method_disabled'))
     })
@@ -452,8 +399,6 @@ describe('SocialSignInSection', () => {
     })
     await user.click(button)
     await waitFor(() => expect(beforeStart).toHaveBeenCalledTimes(1))
-    // The gate has not answered yet: its own provider button is busy, so
-    // a second click cannot pass the same gate and start another flow.
     expectBusy(button)
     expect(harness.calls).toHaveLength(0)
     await act(async () => {
@@ -481,7 +426,6 @@ describe('SocialSignInSection', () => {
         )}
       />,
     )
-    // The config's own icon wins; the lookup covers the rest.
     expect(
       screen
         .getByRole('button', { name: zhCN.social.provider.google })

@@ -1,11 +1,3 @@
-/**
- * SignInScreen's register mode under a host page heading, in a real
- * browser: the host names the page and the screen heads its own register
- * block, so the two headings must not carry the same words. The host's
- * page heading here uses the shipped register-entry label -- the demo's
- * sign-in page heads its register mode with exactly those words -- and
- * the case requires the page to hold one heading carrying them.
- */
 import { describe, expect, it } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -20,8 +12,6 @@ import { renderWithProviders } from '../test-utils/render.js'
 import { SignInScreen } from './SignInScreen.js'
 import enUS from './locales/en-US.json' with { type: 'json' }
 
-/** The words the host's page heading carries. Read from the bundle, never
- * inlined: the host shows the same label on its register entry. */
 const HOST_PAGE_TITLE = enUS.mode.registerEntry
 
 describe('SignInScreen register heading in Chromium', () => {
@@ -71,8 +61,6 @@ describe('SignInScreen password channel layout in Chromium', () => {
       name: enUS.passwordSignIn.submit,
     })
 
-    // An empty feedback region sits between the fields and the actions
-    // row; it must not add a row of its own -- one gap, not two.
     const distance =
       submit.getBoundingClientRect().top -
       field!.getBoundingClientRect().bottom
@@ -105,14 +93,10 @@ describe('SignInScreen password channel layout in Chromium', () => {
 
     const forgotBox = forgot.getBoundingClientRect()
     const submitBox = submit.getBoundingClientRect()
-    // One row: the entry's and the submit key's vertical spans overlap.
     expect(forgotBox.top).toBeLessThan(submitBox.bottom)
     expect(forgotBox.bottom).toBeGreaterThan(submitBox.top)
-    // The row sits below the password field, and the entry leads it.
     expect(forgotBox.top).toBeGreaterThan(field.getBoundingClientRect().bottom)
     expect(forgotBox.right).toBeLessThan(submitBox.left)
-    // One adjacent group, one spacing token apart -- not the two ends the
-    // old space-between row left -- with the submit closing the row.
     expect(submitBox.left - forgotBox.right).toBeCloseTo(8, 0)
     const row = submit.closest<HTMLElement>('[data-action-row]')
     expect(row).not.toBeNull()
@@ -175,8 +159,6 @@ describe('SignInScreen registration auto-login handoff in Chromium', () => {
     const identifier = await screen.findByLabelText(
       enUS.passwordSignIn.identifierLabel,
     )
-    // The submit key left with the registration form; focus lands on the
-    // sign-in form's first field, never on the document body.
     expect(document.activeElement).toBe(identifier)
   })
 
@@ -212,8 +194,6 @@ describe('SignInScreen registration auto-login handoff in Chromium', () => {
         ),
       ).toBe(true),
     )
-    // The auto-login is still in flight; the operator moves focus out of
-    // the registration form while it runs.
     const outside = screen.getByRole('button', { name: 'outside' })
     await user.click(outside)
     expect(document.activeElement).toBe(outside)
@@ -225,14 +205,11 @@ describe('SignInScreen registration auto-login handoff in Chromium', () => {
     const identifier = await screen.findByLabelText(
       enUS.passwordSignIn.identifierLabel,
     )
-    // The removal did not take the focus, so the landing must not take it
-    // back from the place the operator chose.
     expect(document.activeElement).toBe(outside)
     expect(document.activeElement).not.toBe(identifier)
   })
 })
 
-/** The row's right content edge (the row may carry its own padding). */
 function contentRightOf(row: HTMLElement): number {
   const rowBox = row.getBoundingClientRect()
   return rowBox.right - Number.parseFloat(getComputedStyle(row).paddingRight)

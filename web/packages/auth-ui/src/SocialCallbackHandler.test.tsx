@@ -1,25 +1,3 @@
-/**
- * SocialCallbackHandler behaviour: the handler reads the flow back once
- * (asserted on method and path), shows the pending notice while the read
- * is in flight, takes a ready flow's result and fires onSignedIn once on
- * success; StrictMode's double effect invocation starts exactly one read.
- * A read that finds no flow renders its code text in one alert under a
- * retry button that reads once more when the host gives no exit, and the
- * terminal restart notice when it does give onSignIn; the same terminal
- * notice covers an answer refused as authn.flow_invalid (a parked step's or
- * a ready flow's complete), a no-flow read, and a step this route cannot
- * render, each leaving the route without another read. A read that fails
- * transiently keeps its code text and retry. A mount that finds the session
- * already authenticated starts no read and fires onSignedIn again -- the
- * re-entry to the callback route after a completed login. The optional
- * absent slot reads the discovery document only when the flow read finds
- * nothing (or on a re-entry): without a redirect or enterprise method the
- * host's 404 renders, and every other outcome (a method, a failed discovery
- * read, no absent slot) keeps the banner and reads nothing. The en-US bundle
- * renders on an English-starting instance and the pending tree passes axe.
- * Text expectations read the bundle values, never inline language.
- */
-
 import { StrictMode } from 'react'
 import { flushSync } from 'react-dom'
 import { describe, expect, it, vi } from 'vitest'
@@ -45,23 +23,19 @@ import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
 
-/** The failure banner's sentence naming a whole-second wait. */
 function waitSentence(seconds: number): string {
   const [before = '', after = ''] = zhCN.throttle.retryAfter.split('{{seconds}}')
   return `${before}${seconds}${after}`
 }
 
-/** The alert's painted (aria-hidden) sentence, which follows the countdown. */
 function visibleSentence(alert: HTMLElement): HTMLElement | null {
   return alert.querySelector<HTMLElement>('span[aria-hidden="true"]')
 }
 
-/** The alert's accessible (clipped) sentence, which never changes. */
 function stableSentence(alert: HTMLElement): HTMLElement | null {
   return alert.querySelector<HTMLElement>('span:not([aria-hidden])')
 }
 
-/** The username step a first login parks at while it waits for a name. */
 function signupFlow() {
   return openFlow({
     seq: 1,
@@ -134,10 +108,6 @@ describe('SocialCallbackHandler', () => {
   })
 
   it('render the restart notice when a no-flow read finds a host exit', async () => {
-    // The flow is definitively gone, so a re-read deterministically finds
-    // nothing again. With the host's exit the terminal notice replaces the
-    // banner whose retry would spin on the same dead record, and its one
-    // action leaves the callback route without reading again.
     const onSignIn = vi.fn()
     const harness = makeHarness({
       [LOGIN_CURRENT]: () => {
@@ -197,21 +167,6 @@ describe('SocialCallbackHandler', () => {
   })
 
   it('mount the pending live region empty on a retry re-entry, then fill it (mount-with-text regression)', async () => {
-    // The pending notice's role="status" region mounts empty on every
-    // entry into the pending state -- the initial mount and a retry's
-    // re-entry alike -- because a live region announces content changes
-    // that follow its own existence, never text that mounts with it. The
-    // region is inserted first and its text is written after the next
-    // paint, scheduled from the ref callback in the commit that inserted
-    // it (two animation frames, so the empty region is painted before
-    // the text changes), so the region's first committed frame is empty
-    // whatever transition entered the phase, and the text fills an
-    // existing region a frame later. The assertion between the two
-    // writes below is what distinguishes the shapes: the region's text
-    // content must still be empty the moment the node re-appears on the
-    // retry. flushSync lands the retry's one commit synchronously, and
-    // the act scope holds back the animation frames that fill the region
-    // until this assertion has seen the birth frame.
     let attempts = 0
     const harness = makeHarness({
       [LOGIN_CURRENT]: () => {
@@ -231,9 +186,6 @@ describe('SocialCallbackHandler', () => {
     await waitFor(() =>
       expect(screen.getByRole('alert')).toBeInTheDocument(),
     )
-    // The failed state announces nothing through a live region: the only
-    // status node it carries is the feedback slot's always-mounted,
-    // still-empty success region.
     for (const region of screen.queryAllByRole('status')) {
       expect(region.textContent).toBe('')
     }
@@ -255,9 +207,6 @@ describe('SocialCallbackHandler', () => {
   })
 
   it('render a step the flow parked on and advance it to completion', async () => {
-    // The flow is still parked on a second factor when the handler reads
-    // it back: the shared step renderer renders the step and the answer
-    // completes the same flow.
     const harness = makeHarness({
       [LOGIN_CURRENT]: () =>
         openFlow({
@@ -290,9 +239,6 @@ describe('SocialCallbackHandler', () => {
   })
 
   it('render a step this route cannot render with an action that reads the flow again', async () => {
-    // A redirect step belongs to the host's navigation. The callback route
-    // cannot complete it, so the notice carries the same re-read the retry
-    // performs: the handler never goes back to waiting without reading.
     let reads = 0
     const harness = makeHarness({
       [LOGIN_CURRENT]: () => {
@@ -321,10 +267,6 @@ describe('SocialCallbackHandler', () => {
   })
 
   it('render the restart notice for a step this route cannot render when the host gives an exit', async () => {
-    // A redirect step belongs to the host's navigation and this route can
-    // never render it. With the host's exit the step becomes the terminal
-    // notice instead of a re-read that deterministically parks the same
-    // unrenderable step again.
     let reads = 0
     const onSignIn = vi.fn()
     const harness = makeHarness({
@@ -374,10 +316,6 @@ describe('SocialCallbackHandler', () => {
     ).toHaveLength(1)
     expect(harness.store.get()).toBe('access-1')
 
-    // The viewer returns to the callback URL after the sign-in landed
-    // (a back/forward re-entry in the same SPA instance): the mount
-    // finds the session authenticated, starts no second read and signals
-    // the host onward instead.
     first.unmount()
     renderWithProviders(
       <SocialCallbackHandler session={harness.session} onSignedIn={onSignedIn} />,
@@ -415,10 +353,6 @@ describe('SocialCallbackHandler', () => {
           resolveRead = resolve
         }),
     })
-    // Rendered under the page h1 a real host page supplies: the handler
-    // renders no heading of its own, and page-has-heading-one is
-    // determinate in jsdom now (see the axe helper header) -- a scan
-    // without that context fails instead of passing by indeterminacy.
     renderWithProviders(
       <div>
         <h1>Completing sign in</h1>
@@ -430,12 +364,6 @@ describe('SocialCallbackHandler', () => {
   })
 
   it('contain a throwing onSignedIn after a successful read: the success outcome never flips to the failed state', async () => {
-    // The flow verdict settles first; the host callback runs after. A
-    // host callback that throws is not a failure of the flow: it must not
-    // flip the screen to the failed state -- whose retry would read a
-    // flow that is already gone -- and must not suppress the success
-    // outcome (the session holds the issued token, and the containment
-    // keeps the throw from becoming an unhandled rejection).
     const harness = makeHarness({
       [LOGIN_CURRENT]: () => completeFlow(1),
       [LOGIN_ANSWER]: () => authenticatedCompletion(),
@@ -449,8 +377,6 @@ describe('SocialCallbackHandler', () => {
     )
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
     expect(harness.store.get()).toBe('access-1')
-    // Still the success outcome: no failed-state banner, no retry, and
-    // the pending notice stays up.
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: zhCN.socialCallback.retry }),
@@ -475,9 +401,6 @@ describe('SocialCallbackHandler', () => {
       />,
     )
 
-    // Nothing can return to this route: the discovery document offers no
-    // redirect or enterprise method, so the host's 404 answers instead of a
-    // flow-not-found banner.
     expect(await screen.findByText('No such page')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(
@@ -500,9 +423,6 @@ describe('SocialCallbackHandler', () => {
       />,
     )
 
-    // A method exists that could have returned here, so the empty read is a
-    // real flow-not-found: the retry banner stays, and the absent view does
-    // not take over.
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.authn.flow_invalid,
     )
@@ -528,8 +448,6 @@ describe('SocialCallbackHandler', () => {
       />,
     )
 
-    // An unreadable discovery document cannot settle "this deployment has no
-    // callback": the failure banner (with its retry) is the honest answer.
     expect(await screen.findByRole('alert')).toBeInTheDocument()
     expect(screen.queryByText('No such page')).not.toBeInTheDocument()
   })
@@ -548,9 +466,6 @@ describe('SocialCallbackHandler', () => {
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
     first.unmount()
 
-    // The re-entry reads the discovery document (the session is already
-    // authenticated): with no callback method, the host's 404 answers and the
-    // one-shot onSignedIn does not fire for a route nothing can land on.
     renderWithProviders(
       <SocialCallbackHandler
         session={harness.session}
@@ -575,19 +490,12 @@ describe('SocialCallbackHandler', () => {
         zhCN.errors.authn.flow_invalid,
       ),
     )
-    // Behaviour is unchanged for a host without an absent slot: the handler
-    // never reads the discovery document.
     expect(
       harness.calls.some((call) => call.path === '/api/v1/auth/methods'),
     ).toBe(false)
   })
 
   it('keep the parked step and render a refused answer beside it, retryable in place', async () => {
-    // A parked step's answer refused with any code but authn.flow_invalid
-    // leaves the flow parked on that step: the failure banner renders
-    // beside the step -- whose own controls are the retry -- instead of
-    // replacing it with the flow-read retry that belongs to a lost flow.
-    // Answering again begins a new attempt, clearing the banner first.
     let answers = 0
     const harness = makeHarness({
       [LOGIN_CURRENT]: () =>
@@ -621,8 +529,6 @@ describe('SocialCallbackHandler', () => {
     await user.type(code, '123456')
     await user.click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
 
-    // The step is still there, with the refusal beside it and no
-    // flow-read retry button.
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.authn.throttled,
     )
@@ -633,8 +539,6 @@ describe('SocialCallbackHandler', () => {
       screen.queryByRole('button', { name: zhCN.socialCallback.retry }),
     ).not.toBeInTheDocument()
 
-    // The step's own controls are the retry: answering again clears the
-    // banner and advances the same flow to completion.
     await user.click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
@@ -659,20 +563,15 @@ describe('SocialCallbackHandler', () => {
         }
       })
       const alert = screen.getByRole('alert')
-      // The banner names the wait the answer stated; the sentence assistive
-      // technology reads is fixed at that starting point.
       expect(visibleSentence(alert)).toHaveTextContent(waitSentence(2))
       expect(stableSentence(alert)).toHaveTextContent(waitSentence(2))
 
-      // The painted sentence follows the clock; the announced one does not.
       act(() => {
         vi.advanceTimersByTime(1000)
       })
       expect(visibleSentence(alert)).toHaveTextContent(waitSentence(1))
       expect(stableSentence(alert)).toHaveTextContent(waitSentence(2))
 
-      // At expiry the number is gone -- never a stale "0 seconds" -- and
-      // the banner itself stays (no timer clears a result).
       act(() => {
         vi.advanceTimersByTime(1000)
       })
@@ -732,7 +631,6 @@ describe('SocialCallbackHandler', () => {
       })
       const alert = screen.getByRole('alert')
       expect(visibleSentence(alert)).toHaveTextContent(waitSentence(3))
-      // The parked step keeps its own controls, with the banner beneath it.
       expect(screen.getByLabelText(zhCN.smsSignIn.codeLabel)).toHaveValue(
         '123456',
       )
@@ -762,10 +660,6 @@ describe('SocialCallbackHandler', () => {
   ])(
     'renders %s under the username field and keeps the step and its value',
     async (code, status, text) => {
-      // A first login through a method that opens an account parks at
-      // signup until the name arrives. Each name refusal is the field's:
-      // the step stays, the typed name stays, and no whole-attempt banner
-      // renders.
       const harness = makeHarness({
         [LOGIN_CURRENT]: () => signupFlow(),
         [LOGIN_ANSWER]: () => {
@@ -784,7 +678,6 @@ describe('SocialCallbackHandler', () => {
         expect(username).toHaveAccessibleDescription(text),
       )
       expect(username).toHaveAttribute('aria-invalid', 'true')
-      // The focus moved off the submit key and onto the value to change.
       expect(username).toHaveFocus()
       expect(username).toHaveValue('ada')
       expect(screen.queryByRole('alert')).toBeNull()
@@ -798,8 +691,6 @@ describe('SocialCallbackHandler', () => {
   )
 
   it('keeps the whole-attempt banner for a failure that is not a name refusal', async () => {
-    // authn.bad_request is another field's refusal (or a malformed body),
-    // so it never lands on the username field.
     const harness = makeHarness({
       [LOGIN_CURRENT]: () => signupFlow(),
       [LOGIN_ANSWER]: () => {
@@ -822,9 +713,6 @@ describe('SocialCallbackHandler', () => {
   })
 
   it('replaces a username step whose flow is gone with the restart notice', async () => {
-    // The flow is gone, so the answer cannot be retried on it. The step
-    // becomes a terminal notice whose one action hands the viewer back to
-    // the host's sign-in surface; it never resends the refused answer.
     const onSignIn = vi.fn()
     const harness = makeHarness({
       [LOGIN_CURRENT]: () => signupFlow(),
@@ -862,9 +750,6 @@ describe('SocialCallbackHandler', () => {
   })
 
   it('fall back to the re-reading retry when a step answer is refused as flow-invalid', async () => {
-    // authn.flow_invalid means the flow is gone: no step is left to keep,
-    // so the banner renders with the retry that reads the flow back -- the
-    // same shape as a read that finds no flow.
     let reads = 0
     const harness = makeHarness({
       [LOGIN_CURRENT]: () => {
@@ -898,7 +783,6 @@ describe('SocialCallbackHandler', () => {
     await user.type(code, '123456')
     await user.click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
 
-    // No step survives the lost flow: the banner carries the retry.
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.authn.flow_invalid,
     )
@@ -918,9 +802,6 @@ describe('SocialCallbackHandler', () => {
   })
 
   it('render the restart notice when a refused answer finds the flow gone', async () => {
-    // authn.flow_invalid means the flow no longer exists: no step survives
-    // and re-reading is a deterministic empty turn. With the host's exit the
-    // terminal notice replaces the banner whose retry re-reads the dead flow.
     const onSignIn = vi.fn()
     const harness = makeHarness({
       [LOGIN_CURRENT]: () =>
@@ -963,11 +844,6 @@ describe('SocialCallbackHandler', () => {
   })
 
   it('fall back to the re-reading retry when a ready flow complete answer is refused', async () => {
-    // A ready flow is taken with step: complete and never parked as a
-    // surface; a refusal of that answer leaves no rendered step to keep, so
-    // the banner renders with the retry that reads the flow back. The
-    // driver's own re-read classifies the refusal -- the flow is still
-    // ready -- before the banner offers the same read again.
     let answers = 0
     const harness = makeHarness({
       [LOGIN_CURRENT]: () => completeFlow(1),
@@ -989,9 +865,6 @@ describe('SocialCallbackHandler', () => {
         onSignIn={onSignIn}
       />,
     )
-    // A refusal that is not authn.flow_invalid says the flow may still be
-    // ready, so the banner with the re-read stays even though the host did
-    // supply an exit.
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(
         zhCN.errors.authn.unavailable,
@@ -1013,9 +886,6 @@ describe('SocialCallbackHandler', () => {
   })
 
   it('render the restart notice when a ready flow complete answer is refused as flow-invalid', async () => {
-    // The ready flow's completion was refused because the flow is gone:
-    // nothing is left to read back, so the terminal notice is the only
-    // honest outcome when the host offers an exit.
     const onSignIn = vi.fn()
     const harness = makeHarness({
       [LOGIN_CURRENT]: () => completeFlow(1),
@@ -1042,13 +912,6 @@ describe('SocialCallbackHandler', () => {
   })
 
   it('treat a superseded completion as the lost race it is: no failed state, no onSignedIn', async () => {
-    // A sibling login committing through the same session while this
-    // read's completion is in flight makes auth-core reject it with
-    // OperationSupersededError when its answer arrives: the session is
-    // authenticated under the WINNER's identity, which is not
-    // necessarily this flow's. The handler must not flip to the failed
-    // state and must not fire onSignedIn, a one-shot side effect reserved
-    // for the identity the session actually runs under.
     let releaseAnswer!: (value: unknown) => void
     const answerGate = new Promise((resolve) => {
       releaseAnswer = resolve
@@ -1068,20 +931,15 @@ describe('SocialCallbackHandler', () => {
     renderWithProviders(
       <SocialCallbackHandler session={harness.session} onSignedIn={onSignedIn} />,
     )
-    // The completion is in flight (the gate holds its answer).
     await waitFor(() =>
       expect(
         harness.calls.filter((call) => call.path === '/api/v1/auth/flows/answer'),
       ).toHaveLength(1),
     )
-    // The winning login commits while the completion is in flight.
     await act(async () => {
       await harness.session.answerFlow({ seq: 1, step: 'complete', input: {} })
     })
     expect(harness.store.get()).toBe('access-race')
-    // The completion's answer arrives after the winner committed:
-    // auth-core rejects it as superseded. No failure banner, no retry
-    // button, no onSignedIn, and the loser's tokens never applied.
     await act(async () => {
       releaseAnswer(authenticatedCompletion({ access_token: 'access-social' }))
     })
@@ -1095,8 +953,6 @@ describe('SocialCallbackHandler', () => {
 })
 
 describe('SocialCallbackHandler social account-opening face', () => {
-  /** The face a first social login parks at: username, password, and the
-   * provider identity it shared, shown read-only. */
   function accountFaceFlow() {
     return openFlow({
       seq: 1,
@@ -1138,12 +994,7 @@ describe('SocialCallbackHandler social account-opening face', () => {
     )
 
     const face = await screen.findByRole('region', { name: 'host card' })
-    // The face adds no second heading: the card's own h1 says this is a
-    // sign-in.
     expect(within(face).queryByRole('heading', { level: 2 })).toBeNull()
-    // The card frame renders before the face it wraps: the flow's first
-    // read fills the content, so the assertion waits for it instead of
-    // reading the loading state the synchronous query would catch.
     expect(
       await within(face).findByText(zhCN.signInFlow.signupAccountInstruction),
     ).toBeInTheDocument()
@@ -1237,16 +1088,12 @@ describe('SocialCallbackHandler social account-opening face', () => {
       />,
     )
 
-    // The pending read is the handler's own surface and may sit in the host
-    // card, but the absent view is the host's page: the card is gone once it
-    // renders.
     const absent = await screen.findByText('no such page')
     expect(absent.closest('section[aria-label="host card"]')).toBeNull()
   })
 })
 
 describe('SocialCallbackHandler error-page focus', () => {
-  /** The code challenge a social login parks at after its read. */
   function codeChallenge() {
     return openFlow({
       seq: 1,
@@ -1258,7 +1105,6 @@ describe('SocialCallbackHandler error-page focus', () => {
     })
   }
 
-  /** Answer the parked step with a code the server refuses. */
   async function answerRefusedStep(): Promise<HTMLElement> {
     const user = userEvent.setup()
     const code = await screen.findByLabelText(zhCN.smsSignIn.codeLabel)
@@ -1268,8 +1114,6 @@ describe('SocialCallbackHandler error-page focus', () => {
     return submit
   }
 
-  /** A refused answer whose outcome the test releases by hand, so focus can
-   * be moved away while the answer is still in flight. */
   function heldRefusal() {
     let refuse!: (error: unknown) => void
     const gate = new Promise<never>((_resolve, reject) => {
@@ -1292,9 +1136,6 @@ describe('SocialCallbackHandler error-page focus', () => {
 
     await answerRefusedStep()
 
-    // The answered step's submit left with the step. The focus it held must
-    // not fall to the document body: the terminal notice's heading is the
-    // landing, a programmatic target rather than a tab stop.
     await screen.findByText(zhCN.signInFlow.flowExpired)
     await waitFor(() => expect(document.body).not.toHaveFocus())
     const heading = screen.getByRole('heading', {
@@ -1321,8 +1162,6 @@ describe('SocialCallbackHandler error-page focus', () => {
     const submit = await answerRefusedStep()
     await waitFor(() => expect(submit).toHaveAttribute('aria-busy', 'true'))
 
-    // The viewer leaves the in-flight submit for something else while the
-    // answer is held.
     const user = userEvent.setup()
     const elsewhere = screen.getByRole('button', { name: 'Elsewhere' })
     await user.click(elsewhere)
@@ -1336,15 +1175,11 @@ describe('SocialCallbackHandler error-page focus', () => {
     const heading = await screen.findByRole('heading', {
       name: zhCN.socialCallback.incompleteTitle,
     })
-    // The viewer had already moved focus, so the landing leaves it alone.
     expect(elsewhere).toHaveFocus()
     expect(heading).not.toHaveFocus()
   })
 
   it('land on the failure page heading when a refused answer replaces the step', async () => {
-    // Without a host exit a lost flow cannot become the terminal notice, so
-    // the failure banner with its re-read takes the step's place. That page
-    // carries the same heading landing.
     const harness = makeHarness({
       [LOGIN_CURRENT]: () => codeChallenge(),
       [LOGIN_ANSWER]: () => {

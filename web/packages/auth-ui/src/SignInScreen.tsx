@@ -1,86 +1,5 @@
-/**
- * SignInScreen: the assembled sign-in surface over the deployment's
- * login methods.
- *
- * The channels are the deployment's own: the screen reads the discovery
- * document (`session.listMethods`, or a document the host injects) and
- * renders exactly what it names -- the ways in are the server's, so a
- * method enabled or disabled backend-side reaches the surface without a
- * frontend change. The document's descriptors are grouped by `kind`:
- *
- *  - `form` methods gather behind a tab strip (a single one renders
- *    without a strip -- a tablist with nothing to switch between is not a
- *    choice). Password and SMS keep their bespoke forms; any other form
- *    method is driven by its descriptor's own fields. Switching tabs
- *    unmounts the previous form, so its half-typed state and whole-attempt
- *    error are gone with it -- a deliberate reset: channel errors must not
- *    leak across surfaces. Where the deployment publishes an anonymous
- *    password reset and the host binds `onForgotPassword`, the password
- *    channel carries a "forgot password" text button immediately left of
- *    the submit key in its one right-aligned action row; it reports the
- *    click and navigates nothing.
- *  - `redirect` methods render as buttons (the social block); picking one
- *    begins the method's flow and hands the host the authorization URL to
- *    navigate.
- *  - `enterprise` methods render an email-first entry that discovers the
- *    viewer's identity providers before it leaves for one.
- *  - `webauthn` methods render a passkey button that starts the method's
- *    flow and renders the ceremony step.
- *
- * An unknown `kind` is ignored rather than rendered; a method whose name
- * the family does not know still renders through its descriptor (see
- * ./internal/labels), so the screen never crashes on a server-side method
- * it has never seen.
- *
- * `mode` is a pure presentational switch over the sign-in surface: the
- * component presents a "register" entry where the deployment allows a
- * first login to open an account (`discovery.signup.enabled` and either
- * `discovery.signup.password.enabled` or at least one rendered method
- * carrying `opens_account`). In register mode every channel on the screen
- * -- the form strip, the social buttons, the enterprise entry and the
- * passkey entry -- narrows to the methods that open an account, and the
- * form strip starts on its own default; a channel picked on the other
- * side of the switch does not carry over. The screen heads its register
- * block "Choose a sign-in method" and offers the way back as "Already
- * have an account? Sign in". When `discovery.signup.password.enabled` is
- * true, register mode
- * adds a synthetic "password registration" channel ahead of the narrowed
- * ones and selects it by default: it is not a discovery method, renders
- * `PasswordRegisterForm`, and reports its completion as
- * `channel: 'password'` -- the password descriptor still carries no
- * `opens_account`. In sign-in mode, where that entry is offered and the
- * screen has an SMS channel that opens an account, one sentence below the
- * channels says an unregistered phone number creates an account, the same
- * sentence for every number; the sentence names a phone number, so it is
- * absent where no such channel is on screen. Registration through a
- * login flow is one channel class; the password registration form is the
- * other.
- * A successful sign-in on a channel the screen drives itself fires
- * onSignedIn once, with the mode the screen was in and that channel's
- * method name (see SignInContext): a host can tell a registration from an
- * ordinary sign-in. Redirect and enterprise channels complete through the
- * callback route rather than this screen, so they carry no context.
- * Nothing here navigates: the page above (branding, the heading) is host
- * content, except that register mode renders its own title -- the page
- * heading still names the sign-in surface the host mounted.
- *
- * `discovery` lets a host inject a pre-fetched document (SSR, a test), in
- * which case the screen fires no read of its own. The deprecated
- * `channels` / `defaultChannel` props still narrow and select the form
- * channels for one major.
- *
- * The screen is assembleable: `order` puts the four channel classes in the
- * host's order (a class left out keeps its default position after the
- * listed ones), and the first class actually rendered heads the surface
- * with the "or"-less divider wording. `slots` opens the two places a host
- * commonly adds content (above the channels, below the forms), and
- * `providerIcon` supplies each redirect method's mark. `mode` is
- * uncontrolled until `onModeChange` is given: then the prop is the only
- * source of the presented mode and the register / sign-in switch merely
- * reports its choice to the host, which re-renders with the new mode.
- * `beforeStart` decides per attempt whether a channel's first flow may
- * begin (a false answer starts nothing and renders no error).
- */
+/** The assembled sign-in surface: renders the deployment's discovery
+ * document, grouped by kind, and switches between sign-in and register. */
 
 import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -127,18 +46,15 @@ import type {
 /** The form-channel names the deprecated override recognises. */
 export type SignInChannel = 'password' | 'sms'
 
-/** The synthetic form channel register mode adds when password
- * registration is enabled. It is not a discovery method: the password
- * descriptor keeps its sign-in meaning (and no `opens_account`). */
+/** The synthetic form channel register mode adds when password registration
+ * is enabled. It is not a discovery method. */
 const PASSWORD_REGISTER_CHANNEL = 'password-register'
 
 export type { SignInBeforeStart, SignInMode, SignInStartContext }
 
-/** A channel class the screen assembles, in the order it renders them. */
+/** A channel class the screen assembles. */
 export type SignInGroup = 'form' | 'redirect' | 'enterprise' | 'webauthn'
 
-/** The order the screen renders the channel classes in when `order` is
- * omitted. */
 const DEFAULT_GROUP_ORDER: readonly SignInGroup[] = [
   'form',
   'redirect',
@@ -154,14 +70,12 @@ export interface SignInScreenSlots {
   readonly belowForms?: ReactNode
 }
 
-/**
- * What a completion on this screen reports to the host: the mode the
- * screen was in when the login settled, and the name of the method that
- * drove it. The channel is the method's own name -- `password`, `sms`, a
- * passkey method's name, or a descriptor-driven form method's name.
- */
+/** What a completion on this screen reports to the host. */
 export interface SignInContext {
+  /** The mode the screen was in when the login settled. */
   readonly mode: SignInMode
+  /** The method that drove it: `password`, `sms`, a passkey method's name, or
+   * a descriptor-driven form method's name. */
   readonly channel: string
 }
 
@@ -181,6 +95,9 @@ export interface SocialSignInOptions {
   readonly onAuthorizeUrl?: (provider: SocialProvider, authorizeUrl: string) => void
 }
 
+/** The host supplies the session and the screen-wide assembly options; the
+ * screen owns discovery, the presented mode until `onModeChange` makes it
+ * controlled, and every channel's flow. */
 export interface SignInScreenProps {
   /** The session every channel on the screen drives. */
   readonly session: AuthSession
@@ -190,21 +107,19 @@ export interface SignInScreenProps {
    */
   readonly discovery?: AuthnMethodList
   /** The presentational mode; `'sign-in'` by default. Controlled when
-   * `onModeChange` is given (see there). */
+   * `onModeChange` is given. */
   readonly mode?: SignInMode
   /** Fired when the register / sign-in switch is activated. Giving it makes
    * `mode` the only source of the presented mode: the switch reports the
-   * choice and the host re-renders with it, instead of the screen keeping
-   * its own state. */
+   * choice and the host re-renders. */
   readonly onModeChange?: (mode: SignInMode) => void
-  /** Fired once after a sign-in commits on a channel this screen drives,
-   * with the mode and the channel's method name; the host decides what
-   * follows. A host that ignores the argument is unaffected. */
+  /** Fired once after a sign-in commits on a channel this screen drives, with
+   * the mode and the channel's method name. */
   readonly onSignedIn?: (context: SignInContext) => void
   /**
-   * Decides whether a channel's first flow may begin. A false answer
-   * starts nothing and renders no error; the flow's later steps are not
-   * gated. The context carries the method and the presented mode.
+   * Decides whether a channel's first flow may begin. A false answer starts
+   * nothing and renders no error; later steps are not gated. The context
+   * carries the method and the presented mode.
    */
   readonly beforeStart?: SignInBeforeStart
   /** The redirect / enterprise block of the screen; omitted to run without
@@ -228,50 +143,35 @@ export interface SignInScreenProps {
    */
   readonly channels?: readonly SignInChannel[]
   /**
-   * The form channel selected in sign-in mode on first render; password by
-   * default. When the named channel is not offered, the first offered one
-   * is shown. Register mode always starts on the first account-opening
-   * channel.
-   * @deprecated The channel selection is presentational; still honored for
-   * one major.
+   * The form channel selected in sign-in mode on first render; when it is not
+   * offered, the first offered one shows.
+   * @deprecated Presentational; still honored for one major.
    */
   readonly defaultChannel?: SignInChannel
   /**
    * A problem code the host carried here from outside a channel's own
-   * attempt, rendered above the channels with the same inline error the
-   * channels use. A failed social callback lands back on this screen with
-   * its code in the URL fragment, and the host hands it over here; an
-   * unknown code renders the generic message.
+   * attempt, rendered above the channels through the same inline error.
    */
   readonly initialError?: string
   /**
-   * The masked address a link-required refusal named, rendered as a plain
-   * line under the initial inline error so the viewer can tell which of
-   * their addresses collided. The server has already masked it; the screen
-   * only places it. It is read only when `initialError` is
-   * `authn.link_required`; every other code renders no line even if the
-   * host supplies a value, because the server never names an address for
-   * them.
+   * The masked address a link-required refusal named, placed under the initial
+   * inline error. Read only when `initialError` is `authn.link_required`.
    */
   readonly initialErrorEmail?: string
-  /**
-   * Reports that the screen stopped presenting `initialError`: choosing
-   * another mode or channel, or starting any new attempt, clears the host's
-   * message. The host drops the landing it supplied, so a remount does not
-   * present the same refusal again. A host that binds nothing keeps only
-   * the screen's local hiding.
-   */
+  /** Reports that the screen stopped presenting `initialError`. */
   readonly onInitialErrorDismiss?: () => void
   /**
    * Reports the password channel's "forgot password" click; the host
-   * navigates to its reset surface. The entry renders only where the
-   * discovery document publishes an anonymous password reset
-   * (`password_reset.enabled`) and only in sign-in mode, beneath the
-   * password channel's form. A host that binds nothing offers no entry.
+   * navigates. The entry renders only where the discovery document publishes
+   * an anonymous password reset, and only in sign-in mode.
    */
   readonly onForgotPassword?: () => void
 }
 
+/**
+ * Reads the deployment's discovery document (or renders the injected one) and
+ * renders its methods grouped by kind, switching between sign-in and register.
+ */
 export function SignInScreen({
   session,
   discovery,
@@ -293,10 +193,8 @@ export function SignInScreen({
 }: SignInScreenProps) {
   const { t } = useAuthUiTranslation()
   const [attempt, setAttempt] = useState(0)
-  // Any interaction with a channel other than the passkey entry is a new
-  // attempt for that entry: it bumps this epoch, and the entry remounts so a
-  // refusal from the previous ceremony never stands beside the work now in
-  // progress elsewhere on the screen.
+  // A passkey entry remounts on this epoch, so a refusal from the previous
+  // ceremony never stands beside the work now in progress elsewhere.
   const [interactionEpoch, setInteractionEpoch] = useState(0)
   const noteInteraction = (): void => {
     setInteractionEpoch((value) => value + 1)
@@ -307,19 +205,16 @@ export function SignInScreen({
   })
   const state: SignInDiscovery =
     discovery === undefined ? fetched : { status: 'ready', discovery }
-  // Uncontrolled by default: the screen switches its own mode. When the
-  // host takes the switch (`onModeChange` given), `mode` is the only
-  // source and the internal copy is never consulted.
+  // Uncontrolled until the host takes the switch; then `mode` is the only
+  // source.
   const [internalMode, setInternalMode] = useState<SignInMode>(mode)
   useEffect(() => {
     setInternalMode(mode)
   }, [mode])
   const controlledMode = onModeChange !== undefined
   const activeMode = controlledMode ? mode : internalMode
-  // The host's error stands until the viewer starts something else: choosing
-  // another mode or channel, or any attempt. The key identifies the message
-  // last presented, so a different value from the host -- a fresh landing --
-  // is presented again, and the host is told once to drop the dismissed one.
+  // The key identifies the message last presented, so a different value from
+  // the host is presented again and the dismissed one is dropped once.
   const hostErrorKey =
     initialError === undefined
       ? undefined
@@ -334,8 +229,6 @@ export function SignInScreen({
     setDismissedHostErrorKey(hostErrorKey)
     onInitialErrorDismiss?.()
   }
-  // A host that drops its landing leaves nothing to dismiss; a later landing
-  // supplies a new value, which is presented again.
   useEffect(() => {
     if (initialError === undefined) {
       setDismissedHostErrorKey(undefined)
@@ -349,14 +242,9 @@ export function SignInScreen({
       setInternalMode(next)
     }
   }
-  // The screen's start gate: the same decision for every channel, with
-  // the mode the screen currently presents added to the context. Every
-  // attempt passes through it, so it also clears the host's landing
-  // refusal: that message does not stand beside the answer this attempt
-  // is about to produce. The dismissal is not part of the gate's answer:
-  // `allowedToStart` contains a throwing gate as a refusal, and a host
-  // dismissal callback that throws is a host bug, not a decision to block
-  // the attempt. It is contained here so the answer stays `beforeStart`'s.
+  // The same gate for every channel, with the presented mode added. The
+  // dismissal is contained here so a throwing dismissal callback cannot change
+  // the gate's answer: it is a host bug, not a refusal.
   const startGate: SignInBeforeStart = (context) => {
     try {
       dismissHostError()
@@ -367,47 +255,27 @@ export function SignInScreen({
       ? true
       : beforeStart({ ...context, mode: activeMode })
   }
-  // The id base of the tab/tabpanel pair per form channel: each channel's
-  // tab names its panel through aria-controls, and the panel -- the
-  // mounted form, unmounted on switch -- answers through aria-labelledby.
   const channelId = useId()
   const [channel, setChannel] = useState<string | null>(null)
-  // The mode the viewer picked `channel` in. A selection belongs to the
-  // surface it was made on: the register side's default must win over a
-  // channel picked on the sign-in side (and the sign-in side keeps its
-  // own default when the viewer comes back).
+  // A selection belongs to the surface it was made on: the register side's
+  // default wins over a channel picked on the sign-in side.
   const [channelMode, setChannelMode] = useState<SignInMode | null>(null)
   const pickChannel = (name: string, forMode: SignInMode = activeMode): void => {
     dismissHostError()
     setChannel(name)
     setChannelMode(forMode)
   }
-  // The username a registration handed over after its auto-login was
-  // refused; the sign-in form it returns to starts with it.
   const [prefillUsername, setPrefillUsername] = useState<string | undefined>(
     undefined,
   )
-  // The mounted form surface, so the handoff below can name the first
-  // control of the form that replaced the registration one.
   const formSurfaceRef = useRef<HTMLDivElement | null>(null)
-  // Whether a refused auto-login has asked for the sign-in handoff. The
-  // flag is set in the callback that also switches the mode, and the
-  // commit that unmounts the registration form consumes it.
+  // Set by the refused auto-login that also switches the mode; consumed by
+  // the commit that unmounts the registration form.
   const signInHandoff = useRef(false)
 
-  // A refused auto-login unmounts the whole registration form, taking the
-  // control that held focus with it. Hand focus to the first control of
-  // the sign-in form that replaced it -- but only when that removal is
-  // what took the focus: the browser leaves it on the body when the
-  // focused control leaves, while a connected control means the operator
-  // moved focus elsewhere during the auto-login, and that choice stands.
-  //
-  // The write and the commit that unmounts the registration form belong
-  // together, so the flag is one commit's: it is consumed by the first
-  // commit after the write, whether or not the mode moved. A controlled
-  // host that keeps its mode where it is presents no sign-in surface, and
-  // a flag left behind would later fire on an unrelated mode switch that
-  // asked for no focus move.
+  // A refused auto-login removes the registration form with the focused control;
+  // hand focus to the sign-in form only when that removal took it. The flag lives
+  // one commit, so it cannot fire on a later unrelated mode switch.
   useLayoutEffect(() => {
     if (!signInHandoff.current) {
       return
@@ -478,9 +346,6 @@ export function SignInScreen({
   )
   const webauthnMethods = doc.methods.filter((method) => method.kind === 'webauthn')
 
-  // Register mode can only mean the methods that open an account; the same
-  // criterion narrows every channel class, and a channel the viewer picked
-  // in sign-in mode is honored only while it survives the form narrowing.
   const opensAccount = (method: AuthnMethodDescriptor): boolean =>
     method.opens_account === true
   const inMode = (
@@ -488,9 +353,6 @@ export function SignInScreen({
   ): readonly AuthnMethodDescriptor[] =>
     activeMode === 'register' ? methods.filter(opensAccount) : methods
 
-  // Register mode's synthetic password-registration channel: not a
-  // discovery method, so it sits ahead of the narrowed form methods only
-  // while password registration is enabled.
   const passwordRegister: AuthnMethodDescriptor | null =
     activeMode === 'register' && doc.signup?.password?.enabled === true
       ? {
@@ -517,10 +379,6 @@ export function SignInScreen({
           : (formNames[0] ?? '')
   const activeDescriptor = visibleForms.find((method) => method.name === selected)
 
-  // The redirect methods the screen renders in sign-in mode: the discovery
-  // set, or -- under the deprecated provider override -- the descriptors of
-  // the providers the host named, in the document's order. A provider the
-  // document does not describe carries no `opens_account` fact.
   const signInRedirects =
     social?.providers === undefined
       ? redirectMethods
@@ -528,10 +386,6 @@ export function SignInScreen({
           social.providers?.some((config) => config.provider === method.name),
         )
 
-  // The methods this screen actually renders in sign-in mode: the form
-  // channels left after the deprecated narrowing, the redirect methods,
-  // and the enterprise / webauthn entries. A method with an unknown kind
-  // renders nothing, so it cannot make the register entry visible.
   const renderedMethods = [
     ...formMethods,
     ...signInRedirects,
@@ -539,26 +393,17 @@ export function SignInScreen({
     ...webauthnMethods,
   ]
 
-  // The register entry appears where signup is on and either a rendered
-  // method opens an account or the deployment offers password
-  // registration, which brings its own form.
   const registerVisible =
     doc.signup?.enabled === true &&
     (renderedMethods.some(opensAccount) ||
       doc.signup.password.enabled === true)
 
-  // The sign-in mode's account sentence names a phone number, so it belongs
-  // under the SMS channel alone: it renders only where signup is on, an SMS
-  // channel that opens an account is on screen, and that channel is the one
-  // the viewer is looking at.
   const smsOpensAccount =
     doc.signup?.enabled === true &&
     visibleForms.some((method) => method.name === 'sms' && opensAccount(method))
 
-  // A deprecated provider override names channels without descriptors; in
-  // register mode it can only keep the ones whose discovery descriptor
-  // opens an account, in the host's own order. The override is honored as
-  // given in sign-in mode.
+  // A deprecated provider override names channels without descriptors: in
+  // register mode it keeps only those whose descriptor opens an account.
   const redirectConfigs: readonly SocialProviderConfig[] =
     social?.providers === undefined
       ? visibleRedirects.map((method) => ({
@@ -577,18 +422,10 @@ export function SignInScreen({
   const tabIdOf = (name: string): string => `${channelId}-${name}-tab`
   const panelIdOf = (name: string): string => `${channelId}-${name}-panel`
 
-  // The context the screen reports when a channel it drives completes. The
-  // channel forms keep their own no-argument onSignedIn (a leaf knows only
-  // its flow); the screen binds the method name here, and the mode is the
-  // one currently presented -- the register entry runs the same flow.
   const completed = (channelName: string): void => {
     onSignedIn?.({ mode: activeMode, channel: channelName })
   }
 
-  // The password channel's reset entry: it rides the channel's one
-  // right-aligned action row, immediately left of the submit key, so the
-  // link and the primary action read as one group rather than the link
-  // floating on a line of its own.
   const forgotPasswordEntry =
     activeMode === 'sign-in' &&
     selected === 'password' &&
@@ -609,11 +446,6 @@ export function SignInScreen({
             humanGate={doc.human}
             onSignedIn={onSignedIn}
             onSignInRequired={(username) => {
-              // The account exists; the viewer is handed to the sign-in
-              // form with the username the registration used. The
-              // selection belongs to the sign-in side this handoff picks.
-              // The commit that replaces this form hands focus to the
-              // sign-in form's first control (see the layout effect).
               signInHandoff.current = true
               setPrefillUsername(username)
               pickChannel('password', 'sign-in')
@@ -655,9 +487,6 @@ export function SignInScreen({
     }
   }
 
-  // The form class: the strip (when there is a choice), the selected
-  // form, the sign-in-mode account sentence, and the host's below-forms
-  // slot.
   const formBlock = (
     <>
       {visibleForms.length > 1 ? (
@@ -704,11 +533,6 @@ export function SignInScreen({
     </>
   )
 
-  // The discovery order runs the classes; a class the host left out keeps
-  // its default position after the listed ones, so a partial order cannot
-  // silently drop a channel set. The first class actually rendered heads
-  // the surface, and its divider drops the "or" that would refer to
-  // nothing above it.
   const requestedOrder = order ?? DEFAULT_GROUP_ORDER
   const groupOrder: readonly SignInGroup[] = [
     ...Array.from(new Set(requestedOrder)),
@@ -722,7 +546,6 @@ export function SignInScreen({
   }
   const firstGroup = groupOrder.find((group) => hasGroup[group]) ?? null
 
-  // The host's message is presented until the viewer starts something else.
   const shownInitialError =
     initialError !== undefined && dismissedHostErrorKey !== hostErrorKey
       ? initialError
@@ -783,9 +606,8 @@ export function SignInScreen({
           <GroupHeadingProvider key="webauthn" value={headingVariant}>
             {visibleWebauthn.map((method) => (
               <PasskeySignIn
-                // A switch of mode or form channel is a new attempt: the
-                // passkey entry remounts, so the previous ceremony's refusal
-                // and its retry never stand beside the channel now in use.
+                // Remount on a mode/channel switch or a new attempt, so no
+                // earlier ceremony's refusal stands beside the current channel.
                 key={`${method.name}:${activeMode}:${selected}:${interactionEpoch}`}
                 session={session}
                 method={method}
