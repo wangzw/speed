@@ -64,10 +64,7 @@
  * visually hidden and links it through `aria-describedby`, showing the
  * same text in a tooltip on hover and focus; `unavailableDescribedBy`
  * points at explanatory text the page already renders and adds nothing of
- * its own. A caller's own `aria-describedby` stays first. The deprecated
- * `disabled` and `loading` props are passed through unchanged for call
- * sites that have not migrated and are removed once every call site uses
- * `busy`/`unavailable`.
+ * its own. A caller's own `aria-describedby` stays first.
  */
 
 import { createContext, forwardRef, useContext, useId } from 'react'
@@ -152,7 +149,13 @@ export type ActionButtonUnavailableExplanation =
 
 export type ActionButtonProps = Omit<
   ButtonProps,
-  'variant' | 'color' | 'size' | 'loadingIndicator' | 'loadingPosition'
+  | 'variant'
+  | 'color'
+  | 'size'
+  | 'disabled'
+  | 'loading'
+  | 'loadingIndicator'
+  | 'loadingPosition'
 > &
   ActionButtonUnavailableExplanation & {
     /** Visual weight; defaults to 'secondary'. */
@@ -165,17 +168,6 @@ export type ActionButtonProps = Omit<
     readonly busy?: boolean
     /** The action cannot run now: its precondition is unmet, or a write is in flight in a scope whose context this button changes. Focusable, aria-disabled, activation swallowed. */
     readonly unavailable?: boolean
-    /**
-     * @deprecated Natively disables the button, which makes it unfocusable
-     * and can move a focused button's focus away. Use `busy` or
-     * `unavailable`. Removed once every call site has migrated.
-     */
-    readonly disabled?: boolean
-    /**
-     * @deprecated MUI's loading state, which natively disables the
-     * button. Use `busy`. Removed once every call site has migrated.
-     */
-    readonly loading?: boolean
   }
 
 function ActionButtonInner(
@@ -187,8 +179,6 @@ function ActionButtonInner(
     unavailable = false,
     unavailableReason,
     unavailableDescribedBy,
-    disabled,
-    loading,
     id,
     onClick,
     children,
@@ -253,8 +243,6 @@ function ActionButtonInner(
       size={size ?? rowSize}
       variant={variant}
       color={color}
-      disabled={disabled}
-      loading={loading}
       aria-disabled={isUnavailable ? true : ariaDisabled}
       aria-busy={isBusy ? true : ariaBusy}
       aria-describedby={describedBy}
