@@ -26,8 +26,8 @@ product default or poll interval the case cannot move is stated as it is.
   without ending the run that exercises them; `testing.TB` carries a method
   no other package can implement, so a recorder cannot stand in for it. The
   interface, not an import, is what keeps the test framework out.
-- **It carries its own tests**, which pin the parse of `GATE_TIME_SCALE` and
-  the two factors apart.
+- **It carries its own tests**, which pin the parse of `GATE_TIME_SCALE`, the
+  per-call read and the two factors apart.
 - **It sits beside `core` and not under `pkg/internal`, because
   `starters/demo/server` is a separate module and Go's `internal` rule keeps
   it out.** The authentication and authorization fixtures sit beside their
@@ -45,6 +45,15 @@ product default or poll interval the case cannot move is stated as it is.
   message naming the requirement, never a silent 1. Reading the load, the
   core count or the available CPUs would decide differently on the same
   commit, which is what the concurrency work rules out.
+- **Every bound reads `GATE_TIME_SCALE` at the call.** The go command hashes
+  the values a test read during its run into the result's cache key, and the
+  test log opens only when the binary starts its cases. A bound computed inside
+  a case therefore keys its result on the scale the run declared; one computed
+  in a package-level variable, an `init` function or `TestMain` would not, and
+  a cached pass would replay under another scale. `init` reads the value once
+  more, only to refuse a value the variable cannot mean before the first case
+  runs. The `tools/check_test_limits.py` gate refuses bounds computed before
+  the log opens.
 - **A lower bound goes through neither function.** "This took at least X" is
   only easier to satisfy on a slow machine; scaling it would stop it from
   holding the code to having waited at all.

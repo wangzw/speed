@@ -32,10 +32,16 @@
 // never probed. A run that reads the machine's load decides differently on the
 // same commit, which is what the concurrency work exists to rule out. Any other
 // value must be a decimal number of at least 1, fractions and exponents
-// included; anything else stops the run at startup with a message naming the
+// included; anything else stops the run with a message naming the
 // requirement, because a caller that passes the wrong value has to learn it at
 // once rather than get the default back. The wording is the one the frontend's
 // readers of the same variable use.
+//
+// The value is read on every call. A caller must compute its bounds when the
+// case runs, never in a package-level variable, an init function or TestMain;
+// tools/check_test_limits.py enforces it.
+//
+// init refuses a value the variable cannot mean before the first case runs.
 //
 // A lower bound -- "this took at least X" -- goes through none of them. A
 // slow machine only makes such a bound easier to satisfy, and scaling it would
@@ -55,8 +61,10 @@ import (
 // configuration carry the same name, so one value reaches every tier of a run.
 const envVar = "GATE_TIME_SCALE"
 
-// scale is the caller's declaration, read once at startup.
-var scale = mustReadScale(os.Getenv(envVar))
+// init refuses a value the variable cannot mean before the first case runs.
+func init() {
+	mustReadScale(os.Getenv(envVar))
+}
 
 // mustReadScale turns a refused value into the error that stops the binary.
 func mustReadScale(raw string) float64 {
@@ -98,18 +106,20 @@ func isDecimal(raw string) bool {
 	return !strings.ContainsRune(raw, '_')
 }
 
-// Scale returns d multiplied by the race factor and by GATE_TIME_SCALE. It is
+// Scale returns d multiplied by the race factor and by GATE_TIME_SCALE, read on
+// every call. It panics when the variable holds a value readScale refuses. It is
 // for a bound that waits for an event and returns as soon as it happens.
 func Scale(d time.Duration) time.Duration {
-	return time.Duration(float64(d) * float64(raceFactor) * scale)
+	return time.Duration(float64(d) * float64(raceFactor) * mustReadScale(os.Getenv(envVar)))
 }
 
-// Declared returns d multiplied by GATE_TIME_SCALE alone, with no race factor.
-// It is for the upper bound of a case that detects behaviour: the bound has to
-// stay below the time a wrong implementation needs, and the race factor belongs
-// to the program under test rather than to the difference being measured.
+// Declared returns d multiplied by GATE_TIME_SCALE alone, with no race factor,
+// read on every call. It panics when the variable holds a value readScale
+// refuses. It is for the upper bound of a case that detects behaviour: the bound
+// has to stay below the time a wrong implementation needs, and the race factor
+// belongs to the program under test rather than to the difference being measured.
 func Declared(d time.Duration) time.Duration {
-	return time.Duration(float64(d) * scale)
+	return time.Duration(float64(d) * mustReadScale(os.Getenv(envVar)))
 }
 
 // Fataler is what a case is failed through: *testing.T satisfies it. The
@@ -132,7 +142,8 @@ const meetingMargin = 10
 
 // DeclaredAgainst returns fixed + declared*GATE_TIME_SCALE, the upper bound of a
 // behaviour case, and fails the case when that bound reaches nine tenths of
-// wrong, the time a wrong implementation needs.
+// wrong, the time a wrong implementation needs. It reads GATE_TIME_SCALE on
+// every call and panics when the variable holds a value readScale refuses.
 //
 // fixed is the part of the bound the declaration does not scale, and declared
 // is the part it does; a bound with no fixed part passes 0. wrong is what the
@@ -151,7 +162,10 @@ func DeclaredAgainst(t Fataler, fixed, declared, wrong time.Duration) time.Durat
 		t.Fatalf("coretest: DeclaredAgainst needs a positive declared bound and wrong time and a non-negative "+
 			"fixed part; got fixed %v, declared %v, wrong %v", fixed, declared, wrong)
 	}
-	limit := fixed + Declared(declared)
+	// One read for the whole call: the bound and the failure both report the
+	// scale this call used, not a second reading that could differ.
+	scale := mustReadScale(os.Getenv(envVar))
+	limit := fixed + time.Duration(float64(declared)*scale)
 	if margin := wrong - wrong/meetingMargin; limit >= margin {
 		t.Fatalf("coretest: GATE_TIME_SCALE=%v brings the bound to %v, which has passed nine tenths of the %v a "+
 			"wrong implementation needs; the two meet at a scale of about %.2f, so at this scale the case can "+

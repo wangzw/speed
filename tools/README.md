@@ -108,6 +108,19 @@ a shared lockfile, written alongside it to make the width explicit); the
 setup action fails when the calling workflow omits it, and the scheduled
 workflows that call it declare it at workflow level.
 
+`test_coretest_cache_key.py` is likewise no script's suite: it builds a
+scratch module from the copied non-test coretest sources and runs `go test
+./...` three times, at `GATE_TIME_SCALE` 1, again at 1 as the control, and at
+3. It holds that every bound computed inside a case is rerun when the scale
+changes, because the value a test read is part of the result's cache key,
+while a bound computed in a package-level variable stays cached -- the premise
+`check_test_limits.py` enforces. The scratch module depends on the standard
+library only and runs with `GOPROXY=off`, so it resolves nothing from the
+network, and it strips `-count` from `GOFLAGS`, because CI's `-count=1`
+disables the cache and would hide the defect. Each package carries a random
+constant so a result from an earlier invocation of the suite cannot be
+replayed.
+
 `test_demo_redeploy_script.py` is likewise no script's suite: it holds
 `starters/demo/deploy/redeploy.sh` to a three-valued health verdict. It keeps
 the data when the machine checks pass (healthy), wakes a machine that

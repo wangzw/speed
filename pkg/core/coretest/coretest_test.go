@@ -103,8 +103,12 @@ func TestScaleNeverLowersTheRaceBound(t *testing.T) {
 // detector, so the time a wrong implementation needs stays measurable above it.
 func TestDeclaredCarriesTheCallersScaleAlone(t *testing.T) {
 	const d = 3 * time.Second
-	if got, want := Declared(d), time.Duration(float64(d)*scale); got != want {
-		t.Errorf("Declared(%v) = %v, want %v", d, got, want)
+	declared, err := readScale(os.Getenv(envVar))
+	if err != nil {
+		t.Fatalf("readScale(%q) returned error %v", os.Getenv(envVar), err)
+	}
+	if got, want := Declared(d), time.Duration(float64(d)*declared); got != want {
+		t.Errorf("Declared(%v) at GATE_TIME_SCALE=%v = %v, want %v", d, declared, got, want)
 	}
 	if got := Declared(0); got != 0 {
 		t.Errorf("Declared(0) = %v, want 0", got)
@@ -117,9 +121,7 @@ func TestDeclaredCarriesTheCallersScaleAlone(t *testing.T) {
 func TestBothFactorsApplyTheCallersScale(t *testing.T) {
 	const d = 2 * time.Second
 	const declared = 2.5
-	previous := scale
-	scale = declared
-	t.Cleanup(func() { scale = previous })
+	t.Setenv(envVar, "2.5")
 
 	if got, want := Declared(d), time.Duration(float64(d)*declared); got != want {
 		t.Errorf("Declared(%v) at GATE_TIME_SCALE=%v = %v, want %v", d, declared, got, want)
@@ -148,11 +150,9 @@ func (r *recordingFataler) Fatalf(format string, args ...any) {
 }
 
 // atScale runs body with GATE_TIME_SCALE set to declared.
-func atScale(t *testing.T, declared float64, body func()) {
+func atScale(t *testing.T, declared string, body func()) {
 	t.Helper()
-	previous := scale
-	scale = declared
-	t.Cleanup(func() { scale = previous })
+	t.Setenv(envVar, declared)
 	body()
 }
 
@@ -160,7 +160,7 @@ func atScale(t *testing.T, declared float64, body func()) {
 // whole bound, the fixed part included, stays below nine tenths of the wrong
 // time, so the case is still told apart and the function returns the bound.
 func TestDeclaredAgainstReturnsABoundBelowTheMargin(t *testing.T) {
-	atScale(t, 1, func() {
+	atScale(t, "1", func() {
 		rec := &recordingFataler{}
 		if got := DeclaredAgainst(rec, 600*time.Millisecond, 200*time.Millisecond, time.Second); got != 800*time.Millisecond {
 			t.Errorf("DeclaredAgainst = %v, want 800ms", got)
@@ -178,7 +178,7 @@ func TestDeclaredAgainstReturnsABoundBelowTheMargin(t *testing.T) {
 // a reader can check against the integer arithmetic rather than a truncated
 // share.
 func TestDeclaredAgainstPassesJustBelowNineTenths(t *testing.T) {
-	atScale(t, 1, func() {
+	atScale(t, "1", func() {
 		rec := &recordingFataler{}
 		if got := DeclaredAgainst(rec, 0, 809*time.Millisecond, 900*time.Millisecond); got != 809*time.Millisecond {
 			t.Errorf("DeclaredAgainst = %v, want 809ms", got)
@@ -194,7 +194,7 @@ func TestDeclaredAgainstPassesJustBelowNineTenths(t *testing.T) {
 // below it, so the case fails rather than passing a bound both implementations
 // satisfy.
 func TestDeclaredAgainstFailsAtExactlyNineTenths(t *testing.T) {
-	atScale(t, 1, func() {
+	atScale(t, "1", func() {
 		rec := &recordingFataler{}
 		DeclaredAgainst(rec, 0, 810*time.Millisecond, 900*time.Millisecond)
 		if !rec.failed {
@@ -208,7 +208,7 @@ func TestDeclaredAgainstFailsAtExactlyNineTenths(t *testing.T) {
 // the meeting point. The scale is well past the margin, so the wording says the
 // bound has passed nine tenths of the wrong time rather than sitting at it.
 func TestDeclaredAgainstFailureNamesTheFourElements(t *testing.T) {
-	atScale(t, 2, func() {
+	atScale(t, "2", func() {
 		rec := &recordingFataler{}
 		DeclaredAgainst(rec, 0, 600*time.Millisecond, time.Second)
 		if !rec.failed {
@@ -225,7 +225,7 @@ func TestDeclaredAgainstFailureNamesTheFourElements(t *testing.T) {
 // TestDeclaredAgainstFailsPastTheMargin holds the failing side, at a scale
 // other than 1 so that the failure is seen to carry the scale the run declared.
 func TestDeclaredAgainstFailsPastTheMargin(t *testing.T) {
-	atScale(t, 5, func() {
+	atScale(t, "5", func() {
 		rec := &recordingFataler{}
 		DeclaredAgainst(rec, 0, 200*time.Millisecond, time.Second)
 		if !rec.failed {
@@ -239,11 +239,71 @@ func TestDeclaredAgainstFailsPastTheMargin(t *testing.T) {
 	})
 }
 
+// TestBoundsReadTheVariableWhenTheCaseRuns checks that a scale set after
+// startup applies to each bound the case computes.
+func TestBoundsReadTheVariableWhenTheCaseRuns(t *testing.T) {
+	const d = 2 * time.Second
+	t.Setenv(envVar, "2.5")
+	if got, want := Scale(d), time.Duration(float64(d)*float64(raceFactor)*2.5); got != want {
+		t.Errorf("Scale(%v) at GATE_TIME_SCALE=2.5 = %v, want %v", d, got, want)
+	}
+	if got, want := Declared(d), 5*time.Second; got != want {
+		t.Errorf("Declared(%v) at GATE_TIME_SCALE=2.5 = %v, want %v", d, got, want)
+	}
+	rec := &recordingFataler{}
+	if got := DeclaredAgainst(rec, 0, 200*time.Millisecond, time.Second); got != 500*time.Millisecond {
+		t.Errorf("DeclaredAgainst at GATE_TIME_SCALE=2.5 = %v, want 500ms", got)
+	}
+	if rec.failed {
+		t.Errorf("DeclaredAgainst failed a case whose bound is below nine tenths of the wrong time: %s", rec.message)
+	}
+	t.Setenv(envVar, "5")
+	rec = &recordingFataler{}
+	DeclaredAgainst(rec, 0, 200*time.Millisecond, time.Second)
+	if !rec.failed {
+		t.Fatal("DeclaredAgainst passed a case whose bound reached the wrong time at GATE_TIME_SCALE=5")
+	}
+	if !strings.Contains(rec.message, "GATE_TIME_SCALE=5") {
+		t.Errorf("the failure %q does not name GATE_TIME_SCALE=5", rec.message)
+	}
+}
+
+// TestEveryBoundRefusesAValueTheVariableCannotMean checks that each value
+// function panics on a refused GATE_TIME_SCALE.
+func TestEveryBoundRefusesAValueTheVariableCannotMean(t *testing.T) {
+	t.Setenv(envVar, "abc")
+	for _, tc := range []struct {
+		name string
+		call func()
+	}{
+		{"Scale", func() { Scale(time.Second) }},
+		{"Declared", func() { Declared(time.Second) }},
+		{"DeclaredAgainst", func() { DeclaredAgainst(&recordingFataler{}, 0, time.Second, time.Hour) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				r := recover()
+				if r == nil {
+					t.Fatalf("%s did not stop the run on a refused GATE_TIME_SCALE", tc.name)
+				}
+				err, ok := r.(error)
+				if !ok {
+					t.Fatalf("%s panicked with %v, want an error", tc.name, r)
+				}
+				if !strings.Contains(err.Error(), envVar) || !strings.Contains(err.Error(), "at least 1") {
+					t.Errorf("%s panic %q does not name the requirement", tc.name, err)
+				}
+			}()
+			tc.call()
+		})
+	}
+}
+
 // TestDeclaredAgainstNeedsPositiveArguments holds the guard: a bound or a wrong
 // time that is not positive is a caller's mistake and stops the case rather
 // than being scaled into a bound nothing checks.
 func TestDeclaredAgainstNeedsPositiveArguments(t *testing.T) {
-	atScale(t, 1, func() {
+	atScale(t, "1", func() {
 		for _, args := range [][3]time.Duration{
 			{0, 0, time.Second},
 			{0, time.Second, 0},
