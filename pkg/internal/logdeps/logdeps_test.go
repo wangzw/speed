@@ -1,24 +1,4 @@
-// Package logdeps carries the descriptor-level cases about the logging
-// dependency: a module that takes a logger out of the registry has to declare
-// the requirement on the logging capability.
-//
-// The cases read module descriptors and run no host, which is the only shape
-// this requirement has. A module that took a logger without declaring the
-// requirement is handed one all the same, as long as some other module in the
-// run declared it — one declaration anywhere orders the logging module ahead of
-// every construction and behind every shutdown — so the omission leaves no
-// trace in a run until the module that carries the declaration is removed, and
-// then it surfaces as a startup failure in a module nobody changed. What the
-// omission costs meanwhile is invisible too: a module constructed before the
-// logging module resolves no logger and falls back to the process default
-// logger, which writes to standard output and bypasses the configured
-// destination.
-//
-// The modules are listed by hand because nothing in a descriptor says a module
-// logs: what a module resolves is inside its New or its Init. A module added
-// later that both omits the declaration and is not listed here passes silently,
-// which is the price the design records for the one assertion this requirement
-// has.
+// Package logdeps carries the descriptor-level cases that a module taking a logger declares the logging requirement.
 package logdeps
 
 import (
@@ -46,10 +26,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant/resolve"
 )
 
-// modulesThatTakeALogger are the modules that resolve the logging capability in
-// their New or their Init and hold a Named logger out of it. The list is
-// written out because a descriptor says nothing about what a module resolves:
-// whether a module holds a logger is inside its callbacks.
 func modulesThatTakeALogger() []core.Module {
 	return []core.Module{
 		resolve.Module(),
@@ -73,11 +49,6 @@ func modulesThatTakeALogger() []core.Module {
 	}
 }
 
-// modulesMissingTheLoggingDependency returns the names of the modules that
-// declare no requirement on the logging capability. It is factored out of the
-// case below so that a fabricated descriptor can be held to it, which is what
-// keeps the case from passing over an empty list or over a check that reports
-// nothing.
 func modulesMissingTheLoggingDependency(modules []core.Module) []string {
 	var missing []string
 	for _, module := range modules {
@@ -88,9 +59,6 @@ func modulesMissingTheLoggingDependency(modules []core.Module) []string {
 	return missing
 }
 
-// declaresLoggingDependency reports whether a descriptor declares a requirement
-// on the logging capability. A token is a typed nil pointer, so comparing two
-// of them compares the capability each designates.
 func declaresLoggingDependency(module core.Module) bool {
 	for _, requirement := range module.Requires {
 		if requirement.Token == (*log.Logger)(nil) {
@@ -100,18 +68,8 @@ func declaresLoggingDependency(module core.Module) bool {
 	return false
 }
 
-// TestEveryModuleThatTakesALoggerDeclaresTheLoggingDependency is the case
-// design-log.md names: a module that takes a logger out of the registry
-// declares the requirement, which is what orders the logging module ahead of
-// its construction and behind its shutdown.
-//
-// The declaration is optional and not required: a module takes the logging
-// capability up only when it is present, so a command that never names the
-// logging module is a legal assembly the logger's absence does not fail. The
-// optional declaration orders the two modules exactly as a required one does
-// (see core), which is the whole of what this case states — a required one
-// would make every such command have to name the logging module, changing the
-// assembly contract.
+// TestEveryModuleThatTakesALoggerDeclaresTheLoggingDependency checks that every module resolving the
+// logging capability declares a requirement on it.
 func TestEveryModuleThatTakesALoggerDeclaresTheLoggingDependency(t *testing.T) {
 	t.Parallel()
 	modules := modulesThatTakeALogger()
@@ -127,18 +85,9 @@ func TestEveryModuleThatTakesALoggerDeclaresTheLoggingDependency(t *testing.T) {
 	}
 }
 
-// otherCapability is a typed nil pointer to an interface that designates no
-// capability any module delivers. It gives a fabricated descriptor a
-// requirement that is not the logging one, so that the fabricated module has to
-// be reported and a real one does not.
 type otherCapability interface{ otherCapability() }
 
 // TestTheLoggingDependencyCaseFlagsAViolation is the control for the case above.
-// It holds a fabricated descriptor that declares no logging requirement to the
-// same check and requires that it be reported, so a green run of the case above
-// is not a run of a check that reports nothing over an empty list. The second
-// half is the discrimination: a descriptor that does carry the requirement,
-// optional like the real ones, is not reported.
 func TestTheLoggingDependencyCaseFlagsAViolation(t *testing.T) {
 	t.Parallel()
 	violating := core.Module{
