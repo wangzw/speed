@@ -19,14 +19,11 @@ func ownershipSpec() notification.TypeSpec {
 	}
 }
 
-// destinationParams is a parameter set that carries one external destination.
 func destinationParams(to string) map[string]any {
 	return map[string]any{"to": to}
 }
 
-// A destination the recipient does not own is refused: one bound to another
-// account and one bound to no account both answer ErrInvalidRequest, and neither
-// enqueues a job.
+// A destination the recipient does not own is refused.
 func TestDispatchRefusesADestinationThatIsNotTheRecipientsOwn(t *testing.T) {
 	r := newRig(t, func(h *host) { h.specs = map[string]notification.TypeSpec{"test.declarer": ownershipSpec()} })
 	ctx := r.tenantCtx("t1")
@@ -46,9 +43,7 @@ func TestDispatchRefusesADestinationThatIsNotTheRecipientsOwn(t *testing.T) {
 	}
 }
 
-// A destination the recipient owns passes. The address is compared in the form
-// the account store keeps, so a differently cased email address is the same
-// address.
+// A destination the recipient owns passes.
 func TestDispatchAcceptsADestinationThatIsTheRecipientsOwn(t *testing.T) {
 	r := newRig(t, func(h *host) { h.specs = map[string]notification.TypeSpec{"test.declarer": ownershipSpec()} })
 	ctx := r.tenantCtx("t1")
@@ -69,8 +64,7 @@ func TestDispatchAcceptsADestinationThatIsTheRecipientsOwn(t *testing.T) {
 }
 
 // A recipient that carries no identifier cannot own a destination, so a
-// dispatch that names one is refused. The account may exist and simply hold no
-// identifier, and it may be unknown altogether.
+// dispatch that names one is refused.
 func TestDispatchRefusesADestinationForARecipientWithNoIdentifiers(t *testing.T) {
 	r := newRig(t, func(h *host) { h.specs = map[string]notification.TypeSpec{"test.declarer": ownershipSpec()} })
 	ctx := r.tenantCtx("t1")
@@ -91,10 +85,8 @@ func TestDispatchRefusesADestinationForARecipientWithNoIdentifiers(t *testing.T)
 	}
 }
 
-// A failure to read the recipient's identifiers is an outage and not a pass: the
-// dispatch ends with the store's own error rather than treating the recipient as
-// owning nothing, the error is not the ownership rule's refusal, and nothing is
-// enqueued.
+// A failure to read the recipient's identifiers is an outage and not a
+// pass.
 func TestDispatchRefusesWhenTheRecipientIdentifiersCannotBeRead(t *testing.T) {
 	r := newRig(t, func(h *host) { h.specs = map[string]notification.TypeSpec{"test.declarer": ownershipSpec()} })
 	ctx := r.tenantCtx("t1")
@@ -115,9 +107,7 @@ func TestDispatchRefusesWhenTheRecipientIdentifiersCannotBeRead(t *testing.T) {
 	}
 }
 
-// A failure to look the destination up is the same outage, not a pass: the
-// dispatch ends with the store's own error rather than treating the destination
-// as unowned, and nothing is enqueued.
+// A failure to look the destination up is the same outage, not a pass.
 func TestDispatchRefusesWhenTheDestinationLookupFails(t *testing.T) {
 	r := newRig(t, func(h *host) { h.specs = map[string]notification.TypeSpec{"test.declarer": ownershipSpec()} })
 	ctx := r.tenantCtx("t1")

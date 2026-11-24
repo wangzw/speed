@@ -8,16 +8,8 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters holds the one thing
-// the OpenAPI fragment and the registrations have to agree on: the fragment is
-// the only source a generated client is built from, and the design leaves the
-// two free to drift with no failure signal at run time. The check drives the
-// module's own Init and compares what it registered there with what it
-// declared.
-//
-// The database is real, because Init takes its handle up; the tenant roster is
-// a stand-in, because the module declares the requirement without resolving it
-// and no request is served.
+// TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters holds the one
+// thing the OpenAPI fragment and the registrations have to agree on.
 func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 	database, dbConfig := routecontract.SQLite(t)
 	routecontract.Check(t, routecontract.Case{

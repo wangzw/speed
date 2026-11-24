@@ -11,15 +11,6 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The routes, under the fixed base path. The set is closed: every action the
-// inbox exposes is one of these four, and each is bound to the method and path
-// the design fixes. None carries a permission gate of its own — who may read a
-// recipient's inbox is the host's authorization decision — so the handler reads
-// the caller's identity only to know whose inbox is being read.
-//
-// The absolute paths are the declared fragment paths resolved against the API
-// root this module's Spec carries, so the declaration is the one place a route's
-// path is written.
 var (
 	basePath        = inboxSpec.ResolvePath("/notifications")
 	pathMessages    = inboxSpec.ResolvePath(pathMessagesFragment)
@@ -28,8 +19,6 @@ var (
 	pathMessageRead = inboxSpec.ResolvePath(pathMessageReadFragment)
 )
 
-// route is one inbox route: the method and path it answers and the handler that
-// serves it.
 type route struct {
 	method  string
 	path    string
@@ -48,14 +37,6 @@ func (s *inboxStore) routes() []route {
 	}
 }
 
-// guardList holds the one check the declared input cannot make: a limit or an
-// offset that is not a number. The entry point binds an int field from the
-// request and answers its own problem when the text is not a number, while this
-// module's contract answers that refusal with the module's bad-request problem
-// type. The check therefore stays at the mount, in front of the handler.
-//
-// The identity is read first, which keeps the route's original order: a request
-// with neither an identity nor a numeric page bound is still answered 401.
 func (s *inboxStore) guardList(next gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
@@ -77,10 +58,6 @@ func (s *inboxStore) guardList(next gin.HandlerFunc) gin.HandlerFunc {
 	}
 }
 
-// mount resolves every configured endpoint on the entry point and registers the
-// routes on each. Every name is looked up before any route is registered, so a
-// name the entry point does not declare fails the startup naming that endpoint
-// rather than leaving a partial mounting behind.
 func (s *inboxStore) mount(router speedhttp.Router) error {
 	type target struct {
 		name     string

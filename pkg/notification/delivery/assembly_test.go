@@ -22,8 +22,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// requirementOf reports whether the descriptor declares a token, and whether the
-// declaration is optional.
 func requirementOf(m core.Module, token core.Token) (bool, bool) {
 	for _, req := range m.Requires {
 		if req.Token == token {
@@ -48,16 +46,8 @@ func TestTheModuleDeliversTheDispatcherExclusively(t *testing.T) {
 	}
 }
 
-// The descriptor declares the dependencies the design fixes: the queue, the
-// handler registration face, the database, the tenant roster, the preferences
-// seam, the inbox seam, the localizer, the preference resolver, the account
-// store the destination rule reads, the key-value counters the email budget is
-// counted on and the shared sms ledger are required; the settings store, the
-// metric capability, the logging capability, the mail sender, the two sms seams
-// and the tenant name resolver are optional, the last because an assembly with
-// no roster names no tenant rather than exposing the identifier. It declares
-// nothing else — not an entry point, which this module mounts no route on, and
-// not an event bus, which it publishes nothing on.
+// TestTheDescriptorDeclaresTheFixedDependencies checks the descriptor's
+// required and optional dependencies.
 func TestTheDescriptorDeclaresTheFixedDependencies(t *testing.T) {
 	m := Module()
 	required := []core.Token{
@@ -108,10 +98,8 @@ func TestTheDescriptorDeclaresTheFixedDependencies(t *testing.T) {
 	}
 }
 
-// TestNotificationDeliveryRequiresNoHumanProof holds the other side of the
-// proof-consumption table: a notification sms is a business message, not a
-// verification message a person asked for, so the module takes up no
-// authn.HumanVerifier and an sms dispatch reaches the carrier without a proof.
+// TestNotificationDeliveryRequiresNoHumanProof holds the other side of
+// the proof-consumption table.
 func TestNotificationDeliveryRequiresNoHumanProof(t *testing.T) {
 	if found, _ := requirementOf(Module(), core.Token((*authn.HumanVerifier)(nil))); found {
 		t.Fatalf("the descriptor declares authn.HumanVerifier, want none: a business message carries no proof")
@@ -130,9 +118,8 @@ func TestNotificationDeliveryRequiresNoHumanProof(t *testing.T) {
 	}
 }
 
-// The module declares its migrations, its message catalog, its delivery-budget
-// settings schema and its two channel features as resources, and reads no
-// configuration: it declares no configuration namespace.
+// The module declares its migrations, catalog, delivery-budget schema and two
+// channel features as resources, and reads no configuration.
 func TestTheModuleDeclaresItsMigrationsAndCatalog(t *testing.T) {
 	var migrations db.Migrations
 	var catalog i18n.Catalog
@@ -214,9 +201,8 @@ func TestAMissingRequiredSeamFailsResolution(t *testing.T) {
 	}
 }
 
-// The recipient digest is the database's blind index, so a database assembled
-// without a root key ends the startup with ErrNoEncryptionKey rather than
-// writing an unkeyed digest anybody could reverse.
+// The recipient digest is the database's blind index, so a database without a
+// root key fails startup with ErrNoEncryptionKey.
 func TestStartRefusesWithoutARootKey(t *testing.T) {
 	if err := (host{noEncryptionKey: true}).drive(t, nil); !errors.Is(err, authn.ErrNoEncryptionKey) {
 		t.Fatalf("the drive ended with %v, want ErrNoEncryptionKey", err)

@@ -9,15 +9,11 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// validParams is a parameter set that passes the default type's whitelist and
-// renders into the catalog keys the tests set.
 func validParams() map[string]any {
 	return map[string]any{"invoice_id": "inv-1", "amount": 100}
 }
 
-// Dispatch runs the shape checks first: an empty type key, a recipient class
-// other than user, an empty recipient and an empty locale are all
-// ErrInvalidRequest, and none of them reaches the queue.
+// Dispatch runs the shape checks first.
 func TestDispatchRefusesAnUnreadableShape(t *testing.T) {
 	r := newRig(t, nil)
 	ctx := r.tenantCtx("t1")
@@ -76,9 +72,8 @@ func TestDispatchRefusesAContextWithoutATenant(t *testing.T) {
 	}
 }
 
-// A dispatch enqueues one job of this module's type, and two dispatches of one
-// logical event converge into one job: same tenant, type, recipient, language,
-// occurrence and parameters derive the same idempotency key.
+// A dispatch enqueues one job of this module's type, and two dispatches
+// of one logical event converge into one job.
 func TestDispatchEnqueuesOneJobAndConvergesOneLogicalEvent(t *testing.T) {
 	r := newRig(t, nil)
 	ctx := r.tenantCtx("t1")

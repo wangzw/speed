@@ -14,7 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// send drives one request through the engine with the context given.
 func send(t *testing.T, engine *gin.Engine, method, target string, ctx context.Context) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(method, target, nil)
@@ -24,13 +23,11 @@ func send(t *testing.T, engine *gin.Engine, method, target string, ctx context.C
 	return w
 }
 
-// problem is the default problem-details shape a refusal carries.
 type problem struct {
 	Type   string `json:"type"`
 	Status int    `json:"status"`
 }
 
-// decode reads a JSON response body into target.
 func decode(t *testing.T, w *httptest.ResponseRecorder, target any) {
 	t.Helper()
 	if err := json.Unmarshal(w.Body.Bytes(), target); err != nil {
@@ -83,8 +80,8 @@ func TestListRefusesOutOfRangePagination(t *testing.T) {
 	})
 }
 
-// The four routes answer the shapes the design fixes, and none of them writes a
-// message row.
+// TestRoutesAnswerTheirShapesAndWriteNoRow checks that the four routes answer
+// their shapes and none writes a message row.
 func TestRoutesAnswerTheirShapesAndWriteNoRow(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		e.on(t, host{}).drive(t, func(_ context.Context, reg *core.Registry) error {
@@ -95,7 +92,6 @@ func TestRoutesAnswerTheirShapesAndWriteNoRow(t *testing.T) {
 
 			before := rowCount(t, s)
 
-			// A listing over the messages written through the seam.
 			writeOne(t, in, ctx, "user-1", "key-1")
 			writeOne(t, in, ctx, "user-1", "key-2")
 
@@ -118,7 +114,6 @@ func TestRoutesAnswerTheirShapesAndWriteNoRow(t *testing.T) {
 				}
 			}
 
-			// The group filter reaches the store (the group column is quoted).
 			grouped := send(t, engine, http.MethodGet, pathMessages+"?group=billing", ctx)
 			if grouped.Code != http.StatusOK {
 				t.Errorf("GET %s?group=billing answered %d, want 200", pathMessages, grouped.Code)
@@ -139,7 +134,6 @@ func TestRoutesAnswerTheirShapesAndWriteNoRow(t *testing.T) {
 				t.Errorf("the other group's total is %d, want 0", emptyListing.Total)
 			}
 
-			// The unread count.
 			unread := send(t, engine, http.MethodGet, pathUnreadCount, ctx)
 			if unread.Code != http.StatusOK {
 				t.Errorf("GET %s answered %d, want 200", pathUnreadCount, unread.Code)
@@ -152,7 +146,6 @@ func TestRoutesAnswerTheirShapesAndWriteNoRow(t *testing.T) {
 				t.Errorf("the unread count is %d, want 2", count.Unread)
 			}
 
-			// Marking one message read.
 			first := listing.Messages[0].ID
 			marked := send(t, engine, http.MethodPost, basePath+"/messages/"+first+"/read", ctx)
 			if marked.Code != http.StatusNoContent {
@@ -162,7 +155,6 @@ func TestRoutesAnswerTheirShapesAndWriteNoRow(t *testing.T) {
 				t.Errorf("repeating the marking answered %d, want 204", again.Code)
 			}
 
-			// An unknown message is a 404 of the message-not-found code.
 			missing := send(t, engine, http.MethodPost, basePath+"/messages/ghost/read", ctx)
 			if missing.Code != http.StatusNotFound {
 				t.Errorf("marking an unknown message answered %d, want 404", missing.Code)
@@ -173,7 +165,6 @@ func TestRoutesAnswerTheirShapesAndWriteNoRow(t *testing.T) {
 				t.Errorf("the missing message answered type %q, want %q", p.Type, typePrefix+messageNotFoundCode)
 			}
 
-			// read-all marks the rest, and a repeat marks none.
 			readAll := send(t, engine, http.MethodPost, pathReadAll, ctx)
 			if readAll.Code != http.StatusOK {
 				t.Errorf("POST %s answered %d, want 200", pathReadAll, readAll.Code)
@@ -194,8 +185,6 @@ func TestRoutesAnswerTheirShapesAndWriteNoRow(t *testing.T) {
 				t.Errorf("the repeated read-all marked %d, want 0", repeatCount.ReadCount)
 			}
 
-			// The surface wrote no message row of its own: the two rows are the
-			// two written through the seam, and no request added a third.
 			if after := rowCount(t, s); after != before+2 {
 				t.Errorf("the table holds %d rows, want the two written through the seam (%d before)", after, before)
 			}

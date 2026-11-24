@@ -56,10 +56,6 @@ var (
 	_ authn.Accounts           = (*stubAccounts)(nil)
 )
 
-// stubQueue is a stand-in submission and registration face. It records every
-// enqueued task and converges two tasks under one idempotency key into one job,
-// the way the real queue's (tenant_id, idempotency_key) uniqueness does, so a
-// case can hold what a dispatch derived as a key.
 type stubQueue struct {
 	mu       sync.Mutex
 	tasks    []jobs.Task
@@ -116,14 +112,12 @@ func (q *stubQueue) Registered() []string {
 	return out
 }
 
-// enqueued lists the tasks the queue was handed, in order.
 func (q *stubQueue) enqueued() []jobs.Task {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return append([]jobs.Task(nil), q.tasks...)
 }
 
-// handlerOf returns the registered handler for a type.
 func (q *stubQueue) handlerOf(typ string) (jobs.Handler, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -131,8 +125,6 @@ func (q *stubQueue) handlerOf(typ string) (jobs.Handler, bool) {
 	return h, ok
 }
 
-// stubPrefs is a stand-in preferences seam. It answers Effective from a fixed
-// map and records the recipients it was asked about.
 type stubPrefs struct {
 	mu       sync.Mutex
 	channels map[string][]notification.Channel
@@ -215,7 +207,6 @@ func (s *stubInbox) last() notification.Message {
 	return s.written[len(s.written)-1]
 }
 
-// localizeCall is one Localize request a case can inspect.
 type localizeCall struct {
 	key  i18n.Key
 	args i18n.Args
@@ -269,7 +260,6 @@ func (l *stubLocalizer) asked(key string) bool {
 	return false
 }
 
-// argsFor answers the rendering arguments of the last call for key.
 func (l *stubLocalizer) argsFor(key string) (i18n.Args, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -281,9 +271,6 @@ func (l *stubLocalizer) argsFor(key string) (i18n.Args, bool) {
 	return nil, false
 }
 
-// stubResolver is a stand-in preference resolver. The context wins, as the real
-// resolver's does; a recipient with no stored zone answers none, which the
-// engine reads as UTC.
 type stubResolver struct {
 	zones map[string]string
 }
@@ -314,9 +301,6 @@ func (r stubResolver) TimeZoneFor(ctx context.Context, account string) (string, 
 	return zone, ok, nil
 }
 
-// stubMailSender is a stand-in mail seam. It records every message it was
-// handed, so a case can hold what reached the carrier: which fields the module
-// filled, which it deliberately left empty, and how many sends one delivery made.
 type stubMailSender struct {
 	mu      sync.Mutex
 	sends   int
@@ -337,29 +321,24 @@ func (s *stubMailSender) Send(_ context.Context, m mail.Message) (mail.Receipt, 
 	return mail.Receipt{ProviderID: "receipt-1"}, nil
 }
 
-// failWith makes every later send answer the given error.
 func (s *stubMailSender) failWith(err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sendErr = err
 }
 
-// messages lists the messages the carrier accepted, in order.
 func (s *stubMailSender) messages() []mail.Message {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]mail.Message(nil), s.sent...)
 }
 
-// sendCount is how many times a case reached the carrier, including the calls
-// that failed.
 func (s *stubMailSender) sendCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.sends
 }
 
-// stubBus is a stand-in event bus that records what was published.
 type stubBus struct {
 	mu        sync.Mutex
 	published []event.Event
@@ -380,11 +359,6 @@ func (b *stubBus) events() []event.Event {
 	return append([]event.Event(nil), b.published...)
 }
 
-// stubAccounts is a stand-in account store. It answers the two reads the
-// pipeline makes — the recipient's identifiers and the owner of a destination —
-// and leaves every other method of the interface unused. An account an
-// identifier is asked about that was never bound reads as absent, the way the
-// real store reports an unknown or tombstoned account.
 type stubAccounts struct {
 	mu      sync.Mutex
 	byID    map[authn.AccountID][]authn.Identifier
@@ -396,7 +370,6 @@ func newStubAccounts() *stubAccounts {
 	return &stubAccounts{byID: map[authn.AccountID][]authn.Identifier{}}
 }
 
-// register records a live account that carries no identifier.
 func (s *stubAccounts) register(id authn.AccountID) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -405,8 +378,6 @@ func (s *stubAccounts) register(id authn.AccountID) {
 	}
 }
 
-// bind records one identifier for an account. A value is stored normalized, the
-// way the account store keeps it.
 func (s *stubAccounts) bind(id authn.AccountID, kind authn.IdentifierKind, value string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -454,9 +425,8 @@ func (s *stubAccounts) Lookup(_ context.Context, kind authn.IdentifierKind, valu
 }
 
 // stubNormalize is the account store's normalization for the two kinds an
-// external channel addresses: an email address is trimmed and lower-cased, and a
-// phone number must already be E.164. It mirrors the shapes the store writes so
-// a case can hold that the pipeline compares normalized values.
+// external channel addresses: an email address is trimmed and
+// lower-cased, and a phone number must already be E.164.
 func stubNormalize(kind authn.IdentifierKind, value string) (string, error) {
 	switch kind {
 	case authn.IdentifierEmail:
@@ -498,8 +468,6 @@ func (s *stubAccounts) ListServiceSecrets(context.Context, authn.AccountID) ([]a
 	return nil, nil
 }
 
-// standIn is a module that delivers instance for the tokens named, the way
-// another module delivers its capability exclusively.
 func standIn(name string, instance any, tokens ...core.Token) core.Module {
 	provides := make([]core.Provision, len(tokens))
 	for i, tk := range tokens {
@@ -512,7 +480,6 @@ func standIn(name string, instance any, tokens ...core.Token) core.Module {
 	}
 }
 
-// declareType is a module that declares one notification type as a resource.
 func declareType(name string, spec notification.TypeSpec) core.Module {
 	return core.Module{
 		Name:      name,
@@ -521,8 +488,6 @@ func declareType(name string, spec notification.TypeSpec) core.Module {
 	}
 }
 
-// profileStandIn is a module that delivers an i18n.Profile. The token is
-// non-exclusive, so the provision is not either.
 func profileStandIn(name string, profile i18n.Profile) core.Module {
 	return core.Module{
 		Name:     name,
@@ -531,8 +496,6 @@ func profileStandIn(name string, profile i18n.Profile) core.Module {
 	}
 }
 
-// resourceStandIn is a module that declares resources a case borrows from
-// another module.
 func resourceStandIn(name string, resources []any) core.Module {
 	return core.Module{
 		Name:      name,
@@ -541,12 +504,8 @@ func resourceStandIn(name string, resources []any) core.Module {
 	}
 }
 
-// typeName is the type every case declares unless it declares another.
 const typeName = "billing.invoice_paid"
 
-// defaultSpec is the type every case declares unless it declares another: an
-// unsubscribable type whose default channels are in_app and email, with a
-// parameter whitelist.
 func defaultSpec() notification.TypeSpec {
 	return notification.TypeSpec{
 		Key:                    typeName,
@@ -580,7 +539,6 @@ func (b *logBuffer) logger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(b, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
 
-// lines returns the lines that carry every one of the substrings.
 func (b *logBuffer) lines(substrings ...string) []string {
 	var out []string
 	for _, line := range strings.Split(b.String(), "\n") {
@@ -595,10 +553,6 @@ func (b *logBuffer) lines(substrings ...string) []string {
 	return out
 }
 
-// bufferLogger is a logging capability whose Named logger writes into buf with
-// the module's name bound. A case uses it to read what the module reported
-// through its own logger, without a configured destination and without the
-// logger a context carries.
 type bufferLogger struct{ buf *logBuffer }
 
 func (l bufferLogger) Named(name string) *slog.Logger {
@@ -607,48 +561,20 @@ func (l bufferLogger) Named(name string) *slog.Logger {
 
 func (bufferLogger) Redaction() log.Redaction { return noRedaction{} }
 
-// host is one assembled run: the delivery module over a real SQLite database and
-// the tenant roster, with the seams a case drives stood in for and the type
-// declarations a case wants.
 type host struct {
-	// specs are extra type declarations, each by its own module.
-	specs map[string]notification.TypeSpec
-	// mail adds the mail seam when set.
-	mail bool
-	// sms adds the two sms seams when set.
-	sms bool
-	// noInbox and noLocalizer drop a required seam, which fails resolution.
+	specs                map[string]notification.TypeSpec
+	mail                 bool
+	sms                  bool
 	noInbox, noLocalizer bool
-	// noEncryptionKey assembles the database without a root key, so a case can
-	// hold the startup refusal the recipient digest depends on.
-	noEncryptionKey bool
-	// withPreferences drives the taxonomy's other consumption point —
-	// notification.preferences — instead of this module, over the same
-	// declarations, so a case can hold both points to one criterion.
-	withPreferences bool
-	// logger replaces the real logging module with a stand-in delivering this
-	// capability, so a case can read what the module writes without going
-	// through a configured destination.
-	logger log.Logger
-	// realLocalizer keeps the assembly's real i18n engine as the localizer
-	// instead of replacing it with a stub, so a case can hold the text the
-	// engine renders rather than the text a stub answers.
-	realLocalizer bool
-	// profile delivers an i18n.Profile the engine's resolver reads a recipient's
-	// stored time zone from.
-	profile i18n.Profile
-	// resources are extra resources the assembly declares, so a case can register
-	// another module's catalogs and type declarations without that module's own
-	// dependencies.
-	resources []any
-	// meter delivers the metric capability when set, so a case can read the
-	// utilization gauge the module reports.
-	meter observability.MeterProvider
+	noEncryptionKey      bool
+	withPreferences      bool
+	logger               log.Logger
+	realLocalizer        bool
+	profile              i18n.Profile
+	resources            []any
+	meter                observability.MeterProvider
 }
 
-// drive loads the configuration the way a host loads it, drives a registry to
-// the start stage, and runs action there. It reports the error the drive ended
-// with, so a case can hold the failure a missing seam produces.
 func (h host) drive(t *testing.T, action func(ctx context.Context, reg *core.Registry) error) error {
 	t.Helper()
 	dir := t.TempDir()
@@ -744,34 +670,20 @@ func (h host) drive(t *testing.T, action func(ctx context.Context, reg *core.Reg
 	})
 }
 
-// rig is an assembled run a case keeps: the product, a real database with the
-// ledger table, and every seam stub the module took up, so a case can drive the
-// product directly and inspect what reached each seam.
 type rig struct {
-	t       *testing.T
-	p       *pipeline
-	db      db.Database
-	queue   *stubQueue
-	prefs   *stubPrefs
-	inbox   *stubInbox
-	local   *stubLocalizer
-	bus     *stubBus
-	catalog tenant.Catalog
-	// accounts is the account store stub the ownership rule reads.
-	accounts *stubAccounts
-	// settings is the settings store the assembly's settings module delivers, so
-	// a case can write a budget limit and hold that the pipeline reads it.
-	settings settings.Store
-	// kv is the key-value capability the assembly delivers. It holds the email
-	// budgets; the sms budgets are counted over the shared ledger instead. A case
-	// also uses it to hold that a spent counter left there is not consulted by
-	// the sms path.
-	kv kv.KV
-	// mailSender is the mail seam stub, nil when the run did not take the email
-	// channel in.
-	mailSender *stubMailSender
-	// smsRegistry and smsSender are the sms seam stubs, nil when the run did not
-	// take the sms channel in.
+	t           *testing.T
+	p           *pipeline
+	db          db.Database
+	queue       *stubQueue
+	prefs       *stubPrefs
+	inbox       *stubInbox
+	local       *stubLocalizer
+	bus         *stubBus
+	catalog     tenant.Catalog
+	accounts    *stubAccounts
+	settings    settings.Store
+	kv          kv.KV
+	mailSender  *stubMailSender
 	smsRegistry *stubRegistry
 	smsSender   *stubSender
 }
@@ -780,8 +692,6 @@ type rig struct {
 // one host.prefs builds for a descriptor-only drive.
 func newDebugPrefs() *stubPrefs { return &stubPrefs{channels: map[string][]notification.Channel{}} }
 
-// newRig assembles the module over a real database with every seam a case
-// drives, and hands back the product and the stubs.
 func newRig(t *testing.T, configure func(*host)) *rig {
 	t.Helper()
 	h := host{}
@@ -816,8 +726,6 @@ func newRig(t *testing.T, configure func(*host)) *rig {
 	local := newStubLocalizer()
 	bus := &stubBus{}
 	accounts := newStubAccounts()
-	// The default accounts carry the two identifiers a dispatch in these cases
-	// addresses, so a destination that names one passes the ownership rule.
 	accounts.bind("u1", authn.IdentifierEmail, "u1@example.test")
 	accounts.bind("u1", authn.IdentifierPhone, "+15550001")
 	accounts.bind("u2", authn.IdentifierEmail, "u2@example.test")
@@ -881,9 +789,6 @@ func newRig(t *testing.T, configure func(*host)) *rig {
 		t.Fatalf("loading the configuration: %v", err)
 	}
 
-	// The configuration loader above always sees the real logging module, so the
-	// document's log section still names a declared item; a case that wants to
-	// read the module's own lines replaces the provider in the registry alone.
 	registered := modules
 	if h.logger != nil {
 		registered = make([]core.Module, 0, len(modules))
@@ -916,10 +821,9 @@ func newRig(t *testing.T, configure func(*host)) *rig {
 		mailSender: mailSender, smsRegistry: smsRegistry, smsSender: smsSender,
 	}
 
-	// The drive is held open for the whole case: the database module closes the
-	// handle it opened once the drive returns, so a case that asserted after the
-	// drive would be reading a closed pool. The action blocks until the case is
-	// done, and the cleanup releases it.
+	// The drive is held open for the whole case: the database module closes
+	// the handle it opened once the drive returns, so a case that asserted
+	// after the drive would be reading a closed pool.
 	delivered := make(chan struct{}, 1)
 	release := make(chan struct{})
 	done := make(chan error, 1)
@@ -977,10 +881,6 @@ func newRig(t *testing.T, configure func(*host)) *rig {
 	}
 }
 
-// tenantCtx registers a tenant in the roster and returns a context that belongs
-// to it. The identifier stays the caller's — rows are read back by it — while
-// the name, which the roster holds to a three-character slug, is derived from
-// it so a short identifier such as "t1" stays usable.
 func (r *rig) tenantCtx(id string) context.Context {
 	r.t.Helper()
 	name := id
@@ -997,9 +897,6 @@ func (r *rig) tenantCtx(id string) context.Context {
 	return ctx
 }
 
-// tenantCtxAs registers a tenant whose identifier and name differ and returns
-// a context that belongs to it. A case uses it to tell the name from the
-// identifier on every text a recipient can read.
 func (r *rig) tenantCtxAs(id, name string) context.Context {
 	r.t.Helper()
 	if err := r.catalog.Put(r.t.Context(), tenant.Tenant{ID: tenant.ID(id), Name: name, Status: tenant.StatusActive}); err != nil {
@@ -1012,14 +909,11 @@ func (r *rig) tenantCtxAs(id, name string) context.Context {
 	return ctx
 }
 
-// capturingLogger attaches a logger to ctx and returns the buffer that collects
-// what the module writes through it, so a case can read the external-send lines.
 func (r *rig) capturingLogger(ctx context.Context) (*logBuffer, context.Context) {
 	buf := &logBuffer{}
 	return buf, log.WithLogger(ctx, buf.logger())
 }
 
-// ledgerRow is one row read back from the ledger past every filter.
 type ledgerRow struct {
 	channel string
 	status  string
@@ -1060,13 +954,11 @@ func (r *rig) rows(tenantID string) []ledgerRow {
 	return out
 }
 
-// rowCount is how many rows the ledger holds for a tenant.
 func (r *rig) rowCount(tenantID string) int {
 	r.t.Helper()
 	return len(r.rows(tenantID))
 }
 
-// dispatch is one delivery intent a case builds and hands to the seam.
 func dispatch(userID, occurrence string, params map[string]any) notification.Dispatch {
 	return notification.Dispatch{
 		TypeKey:      typeName,
@@ -1089,7 +981,6 @@ func jobOf(t *testing.T, d notification.Dispatch) *jobs.Job {
 	return &jobs.Job{ID: "job", Type: JobType, Payload: payload}
 }
 
-// budgetRow is one row read back from the shared sms ledger.
 type budgetRow struct {
 	channel     string
 	purpose     string
@@ -1146,8 +1037,6 @@ func (r *rig) seedLedger(t *testing.T, a budget.Attempt) budget.ID {
 	return id
 }
 
-// refundLedger marks one seeded attempt refunded, the way a definitive failure
-// does.
 func (r *rig) refundLedger(t *testing.T, id budget.ID) {
 	t.Helper()
 	if err := budget.New(r.db.DB()).MarkRefunded(context.Background(), id, time.Now().UTC()); err != nil {
@@ -1188,9 +1077,6 @@ func (stubBudgetStore) Latest(context.Context, budget.Query) (time.Time, bool, e
 func (stubBudgetStore) CountCeiling(context.Context, time.Time) (int64, error) { return 0, nil }
 func (stubBudgetStore) PruneBefore(context.Context, time.Time) (int64, error)  { return 0, nil }
 
-// stubRegistry and stubSender are the sms seams a case drives when it turns the
-// sms channel on. The registry resolves every message to a code and the sender
-// records every send.
 type stubRegistry struct {
 	mu         sync.Mutex
 	resolveErr error
@@ -1214,7 +1100,6 @@ func (s *stubRegistry) Resolve(m sms.Message) (sms.Resolved, error) {
 	return sms.Resolved{To: m.To, Template: m.Template, Locale: m.Locale, Code: "code", Params: m.Params, DedupeID: m.DedupeID}, nil
 }
 
-// lastResolve answers the last message the registry was asked to resolve.
 func (s *stubRegistry) lastResolve() (sms.Message, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1256,15 +1141,12 @@ func (s *stubSender) Send(_ context.Context, _ sms.Resolved) (sms.Receipt, error
 	return sms.Receipt{ProviderID: "receipt-1"}, nil
 }
 
-// failWith makes every later send answer the given error.
 func (s *stubSender) failWith(err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sendErr = err
 }
 
-// sendCount is how many times a case reached the sms carrier, including the
-// calls that failed.
 func (s *stubSender) sendCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -45,9 +45,8 @@ func TestCanonicalJSONIsStable(t *testing.T) {
 	}
 }
 
-// A value held in memory and the same value read back from a decoded payload
-// encode alike, which is what makes the derived key the same on both sides of a
-// job.
+// A value in memory and the same value read back from a decoded payload encode
+// alike, so both sides of a job derive the same key.
 func TestCanonicalJSONTreatsARoundTripTheSame(t *testing.T) {
 	original := map[string]any{"amount": 100, "invoice_id": "inv-1", "paid": true}
 	before, err := canonicalJSON(original)

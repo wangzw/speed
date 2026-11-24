@@ -9,11 +9,6 @@ import (
 	"github.com/vislake/speed/pkg/sms/budget"
 )
 
-// The metric this module reports under. The name is shared with the
-// authentication capability's budget gauge on purpose: an operator watching the
-// SMS budget reads one instrument, and the channel attribute says which sending
-// capability consumed it. The module's scope name differs because instruments
-// belong to the meter that created them.
 const (
 	meterName       = ModuleName
 	utilizationName = "authn.sms.budget.utilization"
@@ -23,10 +18,6 @@ const (
 	utilizationDimensionAttribute = "dimension"
 )
 
-// The purpose and dimension of the one point that is not a notification budget:
-// the cross-channel ceiling spans both sending channels, so it reports under the
-// same shared purpose and ceiling dimension the authentication capability's
-// gauge names for it.
 const (
 	purposeShared    = "shared"
 	dimensionCeiling = "ceiling"
@@ -39,11 +30,6 @@ type meters struct {
 	utilization metric.Float64Gauge
 }
 
-// observeBudget records how much of one window a channel has consumed. The value
-// is the count divided by the limit, so the alerting threshold an operator sets
-// (0.8, say) means the same thing for every window. The purpose and dimension
-// label the point; channel is always notification here and authn on the other
-// capability's same-named gauge.
 func (m *meters) observeBudget(ctx context.Context, purpose, dimension string, used, limit int64) {
 	if m == nil || m.utilization == nil || limit <= 0 {
 		return

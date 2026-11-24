@@ -1,11 +1,5 @@
 package delivery
 
-// The ownership transfer notice end to end: the request is dispatched, its
-// payload travels through the queue's JSON encoding, the handler consumes it,
-// and the in-app message is rendered for the recipient. The expiry parameter is
-// a time.Time at the producer; the queue must not turn it into a string that the
-// engine leaves as the literal placeholder.
-
 import (
 	"context"
 	"strings"
@@ -18,13 +12,8 @@ import (
 	"github.com/vislake/speed/pkg/tenant/ownership"
 )
 
-// transferRequestType is the ownership notice this case dispatches.
 const transferRequestType = "tenant.owner.transfer_requested"
 
-// ownershipNoticeResources are the resources the ownership module contributes to
-// the delivery assembly: its message catalogs and its type declarations. The
-// module itself is not assembled, so its database and roster dependencies stay
-// out of this case.
 func ownershipNoticeResources() []any {
 	var resources []any
 	for _, resource := range ownership.Module().Resources {
@@ -36,8 +25,6 @@ func ownershipNoticeResources() []any {
 	return resources
 }
 
-// stubZoneProfile is a stored account preference the engine's resolver reads a
-// recipient's time zone from.
 type stubZoneProfile struct {
 	zones map[string]string
 }
@@ -52,12 +39,7 @@ func (p stubZoneProfile) TimeZoneFor(_ context.Context, account string) (string,
 }
 
 // TestTheTransferRequestNoticeRendersItsExpiryAfterTheQueue drives the notice
-// through the production path — Dispatch, the queue's JSON payload, Handle, the
-// inbox write — with the real i18n engine and the recipient's stored time zone
-// Asia/Shanghai. The in-app body must carry the time as a marker naming the
-// parameter, not a formatted instant: the viewer's display zone renders it, so
-// changing the zone re-renders an old message. The queue still restores the
-// parameter to a time.Time for the email channel's own render.
+// through Dispatch, the queue and Handle with the real i18n and Asia/Shanghai.
 func TestTheTransferRequestNoticeRendersItsExpiryAfterTheQueue(t *testing.T) {
 	rig := newRig(t, func(h *host) {
 		h.specs = map[string]notification.TypeSpec{}
@@ -96,13 +78,9 @@ func TestTheTransferRequestNoticeRendersItsExpiryAfterTheQueue(t *testing.T) {
 			if strings.Contains(body, "{{") {
 				t.Errorf("%s body = %q, want no placeholder left as written", locale, body)
 			}
-			// The marker names the parameter and carries no instant, layout or
-			// zone: the client resolves it against the viewer's display zone.
 			if want := "\uE000time:expires_at\uE001"; !strings.Contains(body, want) {
 				t.Errorf("%s body = %q, want the expiry as the time marker %q", locale, body, want)
 			}
-			// The server must not freeze the moment into the text: that is the
-			// recipient-zone rendering this change replaces.
 			if frozen := "2026-11-20 17:30 +0800"; strings.Contains(body, frozen) {
 				t.Errorf("%s body = %q, want no server-formatted instant %q", locale, body, frozen)
 			}

@@ -8,20 +8,13 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// unavailableTitleKey is the key the module composes for the 503's title: the
-// refusal that carries no problem type writes that one and nothing else. It is
-// spelled here the way messages.go spells it, so that a drift between the two
-// is what the guard below reports.
+// unavailableTitleKey is the key the module composes for the 503's title:
+// the refusal that carries no problem type writes that one and nothing
+// else.
 const unavailableTitleKey = ModuleName + ".unavailable" + titleSuffix
 
-// TestTheModuleDeclaresItsMessageCatalog holds that the catalog is declared to
-// the i18n engine, that the two locale files carry the same key set, and that
-// every key this module composes at render time is one the files carry.
-//
-// The last part is what keeps a refusal from answering English whatever the
-// request's language: the module's fallbacks are English too, so a key composed
-// differently from the one the files carry resolves to nothing and the fallback
-// is written instead — a Chinese request included.
+// TestTheModuleDeclaresItsMessageCatalog checks that the catalog's two locale
+// files carry the same keys and every key composed at render time.
 func TestTheModuleDeclaresItsMessageCatalog(t *testing.T) {
 	var catalog i18n.Catalog
 	found := false
@@ -64,7 +57,6 @@ func TestTheModuleDeclaresItsMessageCatalog(t *testing.T) {
 			}
 		}
 	}
-	// The 503 carries a title and no detail of its own.
 	if _, ok := en[unavailableTitleKey]; !ok {
 		t.Errorf("the English catalog carries no %q", unavailableTitleKey)
 	}
@@ -73,7 +65,6 @@ func TestTheModuleDeclaresItsMessageCatalog(t *testing.T) {
 	}
 }
 
-// localeKeys reads one locale file's key set.
 func localeKeys(t *testing.T, name string) map[string]string {
 	t.Helper()
 	raw, err := fs.ReadFile(localesFS, name)

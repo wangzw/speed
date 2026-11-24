@@ -1,23 +1,6 @@
 // Package inbox is the in-app inbox module: it holds one account's in-app
-// message rows and their listing, unread count and marking-read, and it mounts
-// the inbox routes under /api/v1/notifications.
-//
-// A row is written by the delivery pipeline through notification.Inbox.Write —
-// the one downstream writer of this module — and the HTTP surface reads the
-// rows out and marks them read; it never writes a message row. The title and
-// body of a row are rendered before they arrive: rendering, channel choice and
-// outbound delivery belong to notification.delivery, and this module neither
-// delivers nor pushes.
-//
-// A row is tenant-scoped: the tenant comes from the context, the recipient is
-// an account passed explicitly, and the in_app_messages table embeds the tenant
-// convention so the roster module's filter scopes, fills and checks every
-// statement this module issues through the model path. read_at changes from
-// empty to an instant once and is never rewritten, so a first-read timestamp is
-// stable. Write is idempotent on the dedupe key: one key lands one row.
-//
-// This module registers notification.inbox and delivers notification.Inbox
-// exclusively. pkg/notification is the interface package and registers nothing.
+// message rows and their listing, unread count and marking-read, and it
+// mounts the inbox routes under /api/v1/notifications.
 package inbox
 
 import (
@@ -51,12 +34,6 @@ const ModuleName = "notification.inbox"
 // module name.
 const ConfigNamespace = ModuleName
 
-// defaultEndpoint is the listening endpoint this module declares its OpenAPI
-// fragment for. The endpoint's name belongs to the host's HTTP configuration, and
-// a resource is a static declaration written before any configuration is read, so
-// the fragment carries this conventional name rather than an endpoint a run
-// happens to configure; the routes a run actually mounts follow the endpoints the
-// module is told to (notification.inbox.endpoints).
 const defaultEndpoint = "api"
 
 // EventInboxCreated is the type name of the event this module publishes after
@@ -84,9 +61,6 @@ var migrationRoot embed.FS
 //go:embed openapi/inbox.json
 var inboxFragment []byte
 
-// inboxSpec is the API root this module's fragment and routes hang off. The
-// fragment is generated from operations; the routes are mounted from the same
-// declarations and resolved against this root.
 var inboxSpec = speedhttp.Spec{
 	Endpoint: defaultEndpoint,
 	Prefix:   "api",
@@ -94,9 +68,6 @@ var inboxSpec = speedhttp.Spec{
 	Document: inboxFragment,
 }
 
-// migrationsFS is migrationRoot with the wrapping directory removed, so the
-// tree the database module sees has one directory per dialect at its root,
-// which is the shape it reads.
 var migrationsFS = func() fs.FS {
 	sub, err := fs.Sub(migrationRoot, "migrations")
 	if err != nil {
@@ -107,29 +78,12 @@ var migrationsFS = func() fs.FS {
 	return sub
 }()
 
-// init registers this module with the process registry. Importing the package
-// is what puts the inbox in a binary's available set.
 func init() { core.ProcessRegistry.Register(Module()) }
 
 // The product must deliver the seam the descriptor declares.
 var _ notification.Inbox = (*inboxStore)(nil)
 
 // Module is the descriptor a host registers.
-//
-// The database and the tenant roster are hard requirements: the table lives in
-// the delivered database, and every row belongs to a tenant whose roster
-// carries it, which is also what installs the statement filter the scoped reads
-// and writes go through. The event bus, the logging capability and the HTTP
-// entry point are optional; without a bus no created event is published while
-// the rows land exactly as they otherwise would, without logging the records
-// reach the process default logger, and without an entry point the routes are
-// not mounted and the endpoint list is not read. The capability is delivered
-// exclusively: one process has exactly one inbox, so a second provider fails
-// the startup.
-//
-// The descriptor also declares this module's own http.Spec, carrying the OpenAPI
-// fragment that describes the inbox surface under /api/v1/notifications; the
-// operations module merges it into the document a process serves.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -147,9 +101,6 @@ func Module() core.Module {
 			messageCatalog,
 			inboxSpec,
 			operations,
-			// The inbox surface: its routes are mounted whenever the module is
-			// in force and the process has an entry point, so the feature is
-			// static.
 			feature.Spec{Name: "notification.inbox"},
 		},
 
@@ -171,8 +122,6 @@ func Module() core.Module {
 			return newStore(reg)
 		},
 
-		// Init wires the optional surfaces up and mounts the routes. It reads no
-		// table: the routes are registered, not served.
 		Init: func(_ context.Context, reg *core.Registry, instance any) error {
 			s, ok := productOf(instance)
 			if !ok {
@@ -183,17 +132,11 @@ func Module() core.Module {
 	}
 }
 
-// productOf narrows an instance to this module's product. An instance of another
-// shape is one the host supplied for this module, such as a stand-in built for a
-// test, and the callbacks leave it alone.
 func productOf(instance any) (*inboxStore, bool) {
 	s, ok := instance.(*inboxStore)
 	return s, ok && s != nil
 }
 
-// inboxStore is the module's product and the implementation of
-// notification.Inbox. It holds the handle it writes through and the optional
-// surfaces it was assembled with.
 type inboxStore struct {
 	handle    *gorm.DB
 	bus       event.Bus
@@ -202,11 +145,6 @@ type inboxStore struct {
 	endpoints []string
 }
 
-// readerOf takes up the configuration reader.
-//
-// A reader that is not there means the host never supplied one as the instance
-// of the config module, which is the host's omission rather than something to
-// read as "nothing was configured".
 func readerOf(reg *core.Registry) (config.Reader, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
@@ -263,16 +201,7 @@ func newStore(reg *core.Registry) (*inboxStore, error) {
 	return s, nil
 }
 
-// wire runs in Init, where every instance exists. It takes up the optional
-// message localizer and mounts the routes on the entry point when one is
-// present.
-//
-// The entry point is optional: a command that resolves the inbox and has no
-// gateway still gets the capability through Resolve, and its routes are not
-// mounted. When the entry point is present the endpoint list is required — a
-// list that mounted the routes nowhere would silently drop them — and every
-// name in it is looked up before any route is registered, so a name the entry
-// point does not declare fails the startup naming that endpoint.
+// wire runs in Init, where every instance exists.
 func (s *inboxStore) wire(reg *core.Registry) error {
 	if localizer, found, err := optional[i18n.Localizer](reg, "the message localizer"); err != nil {
 		return err
@@ -302,9 +231,6 @@ func (s *inboxStore) wire(reg *core.Registry) error {
 	return nil
 }
 
-// diagnose writes the start diagnostic: the endpoints the inbox routes were
-// mounted on. The line is the module's own, so a reader finds what the inbox
-// mounted without scanning a chain listing.
 func (s *inboxStore) diagnose() {
 	s.logger.Info(ModuleName+": the inbox routes are mounted", "endpoints", s.endpoints)
 }

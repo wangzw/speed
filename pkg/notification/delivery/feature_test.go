@@ -29,15 +29,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The cases here drive the real feature board through a real registry, to Start,
-// beside the real delivery pipeline. Two things are held: a channel is named
-// exactly when its seams are present — sms needs both of its seams, so a case
-// with only the registry must not see the name — and a host-supplied instance
-// posts nothing.
-
-// featureQueue, featureHandlers, featureDatabase and the seam structs stand in
-// for the required and optional capabilities. The pipeline only takes them up in
-// New and registers its handler in Init; the seams are read for presence alone.
 type (
 	featureQueue       struct{ jobs.Queue }
 	featureDatabase    struct{ db.Database }
@@ -59,15 +50,12 @@ type featureHandlers struct{}
 func (featureHandlers) Register(jobs.Handler) error { return nil }
 func (featureHandlers) Registered() []string        { return nil }
 
-// openGate stands in for the authentication gateway, which only has to accept
-// the board's impersonable registration.
 type openGate struct{}
 
 func (openGate) Exempt(string, string, string)       {}
 func (openGate) Optional(string, string, string)     {}
 func (openGate) Impersonable(string, string, string) {}
 
-// featureCapture keeps what the board logs, so a case reads the frozen set back.
 type featureCapture struct {
 	mu      sync.Mutex
 	records []slog.Record
@@ -117,16 +105,12 @@ type noRedaction struct{}
 func (noRedaction) AddKeys(...string)              {}
 func (noRedaction) AddPattern(string, log.Matcher) {}
 
-// seams says which channel seams a case delivers.
 type seams struct {
 	mail     bool
 	registry bool
 	sender   bool
 }
 
-// driveWithBoard assembles the delivery module, the real board and the stand-ins
-// both need, and advances to Start. A supplied instance for the delivery module
-// replaces its own product, which is the host-supplied case.
 func driveWithBoard(t *testing.T, on seams, supplied bool) []string {
 	t.Helper()
 
@@ -171,8 +155,6 @@ func driveWithBoard(t *testing.T, on seams, supplied bool) []string {
 	}
 
 	if supplied {
-		// The host supplies the module's own instance. It delivers the declared
-		// seam, so the registry accepts it; the callbacks leave it alone.
 		reg.Supply(struct{ notification.Dispatcher }{}, ModuleName)
 	}
 
@@ -182,9 +164,8 @@ func driveWithBoard(t *testing.T, on seams, supplied bool) []string {
 	return capture.names(t)
 }
 
-// TestAChannelIsNamedExactlyWhenItsSeamsArePresent holds the email and sms
-// judgements. The registry-only case is the one a one-seam implementation
-// fails: sms is named only when both the registry and the sender are present.
+// TestAChannelIsNamedExactlyWhenItsSeamsArePresent holds the email and
+// sms judgements.
 func TestAChannelIsNamedExactlyWhenItsSeamsArePresent(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

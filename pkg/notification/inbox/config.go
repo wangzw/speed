@@ -7,8 +7,6 @@ import (
 	"github.com/vislake/speed/pkg/notification"
 )
 
-// The keys this module accepts, relative to its namespace, and the full path a
-// failure names.
 const (
 	endpointsItem = "endpoints"
 	endpointsKey  = ConfigNamespace + "." + endpointsItem
@@ -19,15 +17,8 @@ const (
 // the public ones included, would put them where no gateway guards them.
 const allEndpoints = "*"
 
-// configDefaults is what this module is worth without a configuration file.
-//
-// There is no endpoint list in it. The routes are mounted on the endpoints the
-// module is told to and on none by default: the list is read only when the HTTP
-// entry point is present, and a host that assembles one has to say which
-// endpoints carry the inbox rather than have them guessed.
 var configDefaults = moduleConfig{}
 
-// moduleConfig is the set of input items this module accepts.
 type moduleConfig struct {
 	// Endpoints names the listening endpoints the inbox routes are mounted on,
 	// by the entry point's own names. The list is a set of concrete names: the
@@ -35,21 +26,12 @@ type moduleConfig struct {
 	Endpoints []string `config:"endpoints"`
 }
 
-// resolved is the configuration this module runs on.
 type resolved struct {
 	endpoints []string
 }
 
-// resolve turns decoded configuration into what the module runs on. An empty
-// list is legal: a command with no HTTP entry point mounts no routes and reads
-// no endpoint list at all.
 func (c moduleConfig) resolve() resolved { return resolved{endpoints: c.Endpoints} }
 
-// validate checks the endpoint list. It runs only when the routes are mounted,
-// where the list is read: a command with no entry point mounts nothing and reads
-// no list, so an endpoint list it never uses is not judged. A refusal names the
-// key, and the module's own failure sentinel for a configuration it cannot run
-// on is notification.ErrInvalidConfig.
 func validateEndpoints(endpoints []string) error {
 	seen := make(map[string]struct{}, len(endpoints))
 	for i, name := range endpoints {
@@ -74,13 +56,6 @@ func validateEndpoints(endpoints []string) error {
 	return nil
 }
 
-// schema declares this module's input items. The namespace is this module's own
-// name, as it is for every registering module.
-//
-// The endpoint list takes the primary source alone. It decides where the routes
-// are mounted, so an environment variable or a command-line argument that could
-// rewrite it would be a way to move them onto an endpoint from outside the
-// configuration file.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,
@@ -96,8 +71,6 @@ func schema() config.Schema {
 	}
 }
 
-// readConfig decodes this module's section and validates it. Prepare and New
-// both go through it, so the two see one configuration.
 func readConfig(reader config.Reader) (resolved, error) {
 	var cfg moduleConfig
 	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {

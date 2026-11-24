@@ -8,27 +8,13 @@ import (
 	"github.com/vislake/speed/pkg/notification"
 )
 
-// taxonomy is the read-only set of notification types collected in New: the
-// type-key to notification.TypeSpec mapping, ordered by type key. It is built
-// once, holds nothing from any table, and does not change while the process
-// runs.
+// taxonomy is the read-only set of notification types collected in New:
+// the type-key to notification.TypeSpec mapping, ordered by type key.
 type taxonomy struct {
-	// keys is the type keys in ascending order.
-	keys []string
-	// byKey is the spec of each key.
+	keys  []string
 	byKey map[string]notification.TypeSpec
 }
 
-// buildTaxonomy collects the declarations into a taxonomy and refuses a set that
-// cannot be one.
-//
-// Every declaration is held to the criterion both consumption points of the
-// taxonomy apply — notification.ValidateTypeSpec — and two modules claiming one
-// key, the criterion's set-level rule, fail the startup too. A refusal names the
-// key and the declaring module rather than waiting for a request to find the
-// taxonomy unreadable.
-//
-// The keys are then ordered, so every view of the taxonomy is stable.
 func buildTaxonomy(resources []core.Resource[notification.TypeSpec]) (taxonomy, error) {
 	tax := taxonomy{byKey: make(map[string]notification.TypeSpec, len(resources))}
 	declaredBy := make(map[string]string, len(resources))
@@ -53,11 +39,8 @@ func buildTaxonomy(resources []core.Resource[notification.TypeSpec]) (taxonomy, 
 	return tax, nil
 }
 
-// Types returns a copy of the taxonomy; see notification.Preferences.
 func (p *product) Types() []notification.TypeSpec { return p.taxonomy.Types() }
 
-// Type reports whether a type is declared and, if so, its spec; see
-// notification.Preferences.
 func (p *product) Type(key string) (notification.TypeSpec, bool) { return p.taxonomy.Type(key) }
 
 // Types returns a copy of the taxonomy, ordered by type key. Each spec's slices
@@ -71,7 +54,6 @@ func (t taxonomy) Types() []notification.TypeSpec {
 	return out
 }
 
-// Type reports whether a type is in the taxonomy and, if so, its spec as a copy.
 func (t taxonomy) Type(key string) (notification.TypeSpec, bool) {
 	spec, ok := t.byKey[key]
 	if !ok {
@@ -80,8 +62,6 @@ func (t taxonomy) Type(key string) (notification.TypeSpec, bool) {
 	return copySpec(spec), true
 }
 
-// copySpec copies a spec so a value handed out shares no slice with the
-// taxonomy.
 func copySpec(spec notification.TypeSpec) notification.TypeSpec {
 	spec.DefaultChannels = append([]notification.Channel(nil), spec.DefaultChannels...)
 	spec.RecipientVisibleParams = append([]string(nil), spec.RecipientVisibleParams...)

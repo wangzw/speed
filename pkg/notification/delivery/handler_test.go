@@ -16,8 +16,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// setChannels installs the effective channel set a case wants for the declared
-// type.
 func (r *rig) setChannels(channels ...notification.Channel) {
 	r.t.Helper()
 	r.prefs.mu.Lock()
@@ -53,10 +51,7 @@ func TestTheInAppChannelRendersAndWritesTheMessage(t *testing.T) {
 	}
 }
 
-// The in-app delivery publishes no event of its own: the row is the inbox's to
-// announce, and the module that wrote it publishes its created event after it
-// committed. The bus is present in this assembly, so a delivery that published
-// one of its own would be seen here — and a subscriber would push twice.
+// The in-app delivery publishes no event of its own.
 func TestTheInAppDeliveryPublishesNoEventOfItsOwn(t *testing.T) {
 	r := newRig(t, nil)
 	ctx := r.tenantCtx("t1")
@@ -96,9 +91,8 @@ func TestRepeatedConsumptionDoesNotDeliverTwice(t *testing.T) {
 	}
 }
 
-// The email channel is skipped when the mail seam is absent from the assembly:
-// the channel is unavailable exactly as an absent seam is, and that is not a
-// failure.
+// The email channel is skipped when the mail seam is absent from the
+// assembly.
 func TestTheEmailChannelIsSkipped(t *testing.T) {
 	r := newRig(t, nil)
 	ctx := r.tenantCtx("t1")
@@ -113,12 +107,8 @@ func TestTheEmailChannelIsSkipped(t *testing.T) {
 	}
 }
 
-// The email channel renders the subject and both bodies from the type's own
-// catalog keys and hands them to the mail seam, once. The message is the
-// module's own to shape: the sender is left to the carrier's configured default,
-// the destination travels in the dispatch's parameters, the dedupe key is the
-// channel's own, and no attachment is carried — so nothing in it is a reader a
-// second send would find spent.
+// The email channel renders the subject and both bodies from the type's
+// own catalog keys and hands them to the mail seam, once.
 func TestTheEmailChannelRendersAndSendsTheMessage(t *testing.T) {
 	r := newRig(t, func(h *host) {
 		h.mail = true
@@ -211,9 +201,8 @@ func TestTheEmailChannelOmitsAnAbsentHTMLBody(t *testing.T) {
 	}
 }
 
-// A carrier that answers an uncertain outcome fails the email channel and does
-// not starve the others: the carrier's own text is what the ledger holds, and the
-// joined error is what makes the job retry. This module retries no send itself.
+// A carrier that answers an uncertain outcome fails the email channel and
+// does not starve the others.
 func TestAnEmailFailureDoesNotStarveTheOthers(t *testing.T) {
 	r := newRig(t, func(h *host) {
 		h.mail = true
@@ -307,9 +296,8 @@ func TestTheSmsChannelIsSkippedWithoutItsSeams(t *testing.T) {
 	}
 }
 
-// One channel's terminal failure does not starve the others and is not hidden by
-// their successes: the delivery walks every channel, the other channel is still
-// delivered, and the joined error is what the job retries on.
+// One channel's terminal failure does not starve the others and is not
+// hidden by their successes.
 func TestOneChannelFailureDoesNotStarveTheOthers(t *testing.T) {
 	r := newRig(t, func(h *host) {
 		h.sms = true
@@ -357,9 +345,8 @@ func TestOneChannelFailureDoesNotStarveTheOthers(t *testing.T) {
 	}
 }
 
-// A channel whose row is failed is attempted again by the next consumption, and
-// its new result settles into the same row: the retry makes up what did not
-// succeed, and the ledger keeps one row per channel.
+// A channel whose row is failed is attempted again by the next
+// consumption, and its new result settles into the same row.
 func TestAFailedChannelIsRetriedIntoSameRow(t *testing.T) {
 	r := newRig(t, func(h *host) {
 		h.sms = true
@@ -435,12 +422,7 @@ func TestTheHandlerValidatesThePayloadAgain(t *testing.T) {
 	}
 }
 
-// The handler holds a carried destination against the recipient again. The
-// submission seam is where a producer chooses the address, but the worker may
-// meet a payload the submitter never wrote or a row changed afterwards, and the
-// destination is the one field a send cannot survive being wrong: a payload
-// naming another account's address is refused before any channel is walked and
-// nothing reaches the carrier, while the recipient's own address still sends.
+// The handler holds a carried destination against the recipient again.
 func TestTheHandlerRefusesADestinationTheRecipientDoesNotOwn(t *testing.T) {
 	r := newRig(t, func(h *host) {
 		h.mail = true
@@ -485,11 +467,8 @@ func TestTheHandlerRefusesAContextWithoutATenant(t *testing.T) {
 	}
 }
 
-// TestTheEmailSendWritesOneLineWithoutSecrets holds the external-send log rule
-// on the email channel: an accepted send writes one Info line carrying the
-// channel, the type, the outcome, the carrier's identifier and the duration, a
-// failed send writes one Warn line carrying the outcome and the cause, and
-// neither carries the recipient, the message text or a parameter value.
+// TestTheEmailSendWritesOneLineWithoutSecrets holds the external-send log
+// rule on the email channel.
 func TestTheEmailSendWritesOneLineWithoutSecrets(t *testing.T) {
 	const (
 		recipient = "u1@example.test"
@@ -556,10 +535,8 @@ func TestTheEmailSendWritesOneLineWithoutSecrets(t *testing.T) {
 	}
 }
 
-// TestTheSMSSendWritesOneLineWithoutSecrets holds the external-send log rule on
-// the sms channel the same way: one line per call, the outcome and duration on
-// both, the carrier's identifier on a success and the cause on a failure, and no
-// recipient, body or parameter value on either.
+// TestTheSMSSendWritesOneLineWithoutSecrets holds the external-send log
+// rule on the sms channel the same way.
 func TestTheSMSSendWritesOneLineWithoutSecrets(t *testing.T) {
 	const (
 		recipient = "+15550001"
@@ -624,15 +601,8 @@ func TestTheSMSSendWritesOneLineWithoutSecrets(t *testing.T) {
 	}
 }
 
-// TestTheExternalSendLogsToTheModuleLogger holds where an external-send line
-// goes. The delivery job runs on a context the queue created, which carries no
-// injected logger, so a line taken from that context lands on the process
-// default chain and never reaches the configured destinations. The module
-// therefore takes the logging capability in New and writes through it, named
-// after itself. The case gives the context a logger of its own and holds that
-// the line does not go there, and that the module's logger carries it — for a
-// refused send, a send outside the carrier's sentinels, and one this deployment
-// cannot route.
+// TestTheExternalSendLogsToTheModuleLogger holds where an external-send
+// line goes.
 func TestTheExternalSendLogsToTheModuleLogger(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -716,11 +686,8 @@ func TestTheExternalSendLogsToTheModuleLogger(t *testing.T) {
 	}
 }
 
-// TestTheTenantParameterIsTheNameOnEveryChannel holds the outbound-text rule:
-// a dispatch that names the tenant by its internal identifier reaches every
-// text a recipient can read — the in-app title, body and payload, the email
-// subject and body, and the sms template variables — as the name instead. The
-// fixture's identifier and name differ, so either one is distinguishable.
+// TestTheTenantParameterIsTheNameOnEveryChannel holds the outbound-text
+// rule.
 func TestTheTenantParameterIsTheNameOnEveryChannel(t *testing.T) {
 	const (
 		internalID = "ACME-INTERNAL"
@@ -751,7 +718,6 @@ func TestTheTenantParameterIsTheNameOnEveryChannel(t *testing.T) {
 		t.Fatalf("the delivery failed: %v", err)
 	}
 
-	// The in-app payload carries the name, not the identifier.
 	msg := r.inbox.last()
 	if got := msg.Params["tenant"]; got != tenantName {
 		t.Errorf("the in-app payload names the tenant %v, want the name %q", got, tenantName)
@@ -770,7 +736,6 @@ func TestTheTenantParameterIsTheNameOnEveryChannel(t *testing.T) {
 			t.Errorf("%s rendered the tenant as %q, want the name %q", key, got, tenantName)
 		}
 	}
-	// The sms template variables carry the name too.
 	resolved, ok := r.smsRegistry.lastResolve()
 	if !ok {
 		t.Fatal("the sms channel resolved no message")
@@ -802,8 +767,7 @@ func TestTheTenantParameterIsTheNameOnEveryChannel(t *testing.T) {
 }
 
 // TestTheTenantParameterWithoutANameResolverNamesNobody holds the absent
-// seam: a dispatch that names the tenant renders no tenant rather than falling
-// back to the identifier, which is internal.
+// seam.
 func TestTheTenantParameterWithoutANameResolverNamesNobody(t *testing.T) {
 	r := newRig(t, func(h *host) {
 		h.specs = map[string]notification.TypeSpec{"test.declarer": {
@@ -815,8 +779,6 @@ func TestTheTenantParameterWithoutANameResolverNamesNobody(t *testing.T) {
 		}}
 	})
 	ctx := r.tenantCtx("t1")
-	// The rig delivers the roster's resolver; take it away to hold the absent
-	// seam.
 	r.p.tenantNames = nil
 	r.setChannels(notification.ChannelInApp)
 	r.local.set(typeName+".in_app.title", "notice")

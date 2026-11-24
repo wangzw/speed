@@ -11,11 +11,8 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The cases in this file drive the table, so each runs on every engine.
-
 // TestEffectiveWithoutARowTakesTheDefaultChannels holds the core of the
-// effective-set computation: a recipient with no stored row for a type takes the
-// type's default channels.
+// effective-set computation.
 func TestEffectiveWithoutARowTakesTheDefaultChannels(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		spec := aSpec("billing.invoice_paid", true, notification.ChannelInApp, notification.ChannelEmail)
@@ -58,7 +55,6 @@ func TestSetReplacesTheChannelSetAndEffectiveReportsIt(t *testing.T) {
 			if want := []notification.Channel{notification.ChannelSMS}; !slices.Equal(got, want) {
 				t.Errorf("Effective = %v, want %v", got, want)
 			}
-			// A second write replaces, it does not merge.
 			written, err = prefs.Set(ctx, "user-1", "billing.invoice_paid", []notification.Channel{notification.ChannelEmail})
 			if err != nil {
 				t.Fatalf("Set: %v", err)
@@ -75,8 +71,7 @@ func TestSetReplacesTheChannelSetAndEffectiveReportsIt(t *testing.T) {
 }
 
 // TestTheEffectiveSetIsDeduplicatedAndOrderedByTheClosedSet holds that the
-// effective set is deduplicated and ordered by the closed channel set, whatever
-// order the write gave.
+// effective set is deduplicated and ordered by the closed channel set.
 func TestTheEffectiveSetIsDeduplicatedAndOrderedByTheClosedSet(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		spec := aSpec("billing.invoice_paid", true, notification.ChannelInApp)
@@ -99,9 +94,8 @@ func TestTheEffectiveSetIsDeduplicatedAndOrderedByTheClosedSet(t *testing.T) {
 	})
 }
 
-// TestANotUnsubscribableTypeTakesAllDefaultsAndRefusesAWrite holds that a type
-// that cannot be unsubscribed takes all of its default channels from the
-// taxonomy and never has a stored row.
+// TestANotUnsubscribableTypeTakesAllDefaultsAndRefusesAWrite holds that an
+// unsubscribable type takes all taxonomy defaults and never stores a row.
 func TestANotUnsubscribableTypeTakesAllDefaultsAndRefusesAWrite(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		spec := aSpec("authn.code.sent", false, notification.ChannelInApp)
@@ -125,8 +119,7 @@ func TestANotUnsubscribableTypeTakesAllDefaultsAndRefusesAWrite(t *testing.T) {
 }
 
 // TestEffectiveAndSetRefuseAnUnknownTypeAndAMissingTenant holds the two
-// refusals both seam methods share: a type outside the taxonomy and a context
-// that carries no tenant.
+// refusals both seam methods share.
 func TestEffectiveAndSetRefuseAnUnknownTypeAndAMissingTenant(t *testing.T) {
 	spec := aSpec("billing.invoice_paid", true)
 	h := engines[0].on(t, harness{declare: []core.Module{declaringModule("billing", spec)}})

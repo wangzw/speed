@@ -11,9 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/core/coretest"
 )
 
-// The route answers the stream content type. Its identity and flusher are
-// settled and the header is set before the frame loop, so a context already
-// cancelled lets the loop end at once while the headers stay on the response.
+// The route answers the stream content type.
 func TestTheRouteSetsTheEventStreamContentType(t *testing.T) {
 	rig := newRig(t)
 	ctx, cancel := context.WithCancel(authntest.Context(t, context.Background()))
@@ -31,11 +29,8 @@ func TestTheRouteSetsTheEventStreamContentType(t *testing.T) {
 	}
 }
 
-// The answer's status and headers are flushed before the handler builds its
-// first event: the client learns the stream is open without waiting for an
-// event to arrive. The case observes the order on the response writer — a
-// flush with no body bytes yet, then the written frame — and reads the content
-// type as it was on that first flush.
+// The answer's status and headers are flushed before the handler builds
+// its first event.
 func TestTheHeadersAreFlushedBeforeTheFirstEvent(t *testing.T) {
 	rig := newRig(t)
 	ctx, cancel := context.WithCancel(authntest.Context(t, context.Background()))
@@ -81,7 +76,6 @@ func TestTheHeadersAreFlushedBeforeTheFirstEvent(t *testing.T) {
 	if after.body != want {
 		t.Errorf("the event stream is %q, want %q", after.body, want)
 	}
-	// The header flush came first, and each event is flushed as it is written.
 	if after.flushes < 2 {
 		t.Errorf("the answer flushed %d times, want the header flush and one per event", after.flushes)
 	}
@@ -107,9 +101,8 @@ func TestTheRouteAnswers401WithoutAnIdentity(t *testing.T) {
 	}
 }
 
-// A frame is the event name, the JSON data line, and a blank line: the shape a
-// connected client parses. The case drives the real route and reads the bytes
-// the handler flushes, so the promise is asserted on what a client receives.
+// A frame is the event name, the JSON data line, and a blank line: the
+// shape a connected client parses.
 func TestTheFrameIsAnEventNamedMessageWithJsonData(t *testing.T) {
 	rig := newRig(t)
 	ctx, cancel := context.WithCancel(authntest.Context(t, context.Background()))

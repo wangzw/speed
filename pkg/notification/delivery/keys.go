@@ -13,9 +13,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// keyField names one field of the object the idempotency key is derived from.
-// The key is the SHA-256 of a canonical encoding of exactly these fields, plus
-// the channel when the key is one channel's.
 const (
 	fieldTenant         = "tenant"
 	fieldTypeKey        = "type_key"
@@ -27,30 +24,14 @@ const (
 	fieldParams         = "params"
 )
 
-// channelKey derives the idempotency key of one channel's attempt at delivering
-// one dispatch:
-//
-//	hex(sha256(canonicalJSON{tenant, type_key, recipient_class, user_id,
-//	    channel, locale, occurrence_id, params}))
-//
-// The derivation is contract-frozen: the same key converges two attempts at one
-// logical event into one ledger row, and the inbox derives the same value for
-// the in_app channel with its own copy of the formula.
 func channelKey(id tenant.ID, d notification.Dispatch, channel notification.Channel) (string, error) {
 	return deriveKey(id, d, &channel)
 }
 
-// dispatchKey derives the idempotency key of the enqueued job for one dispatch:
-// the channel key with the channel dimension dropped. Two dispatches of one
-// logical event — same tenant, type, recipient, language, occurrence and
-// parameters — therefore converge into one job, and the queue's own
-// (tenant_id, idempotency_key) uniqueness is what settles them into one row.
 func dispatchKey(id tenant.ID, d notification.Dispatch) (string, error) {
 	return deriveKey(id, d, nil)
 }
 
-// deriveKey builds the object and hashes its canonical encoding. A nil channel
-// leaves that field out.
 func deriveKey(id tenant.ID, d notification.Dispatch, channel *notification.Channel) (string, error) {
 	fields := map[string]any{
 		fieldTenant:         string(id),
@@ -72,11 +53,6 @@ func deriveKey(id tenant.ID, d notification.Dispatch, channel *notification.Chan
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// canonicalJSON renders a value as a stable text: object keys sorted, values
-// normalized through one JSON round trip so a value held in memory and the same
-// value read back from a decoded payload encode alike. Two callers that pass
-// equal values therefore always get the same text, which is what makes the
-// derived key the same.
 func canonicalJSON(v any) (string, error) {
 	raw, err := json.Marshal(v)
 	if err != nil {
@@ -95,9 +71,6 @@ func canonicalJSON(v any) (string, error) {
 	return b.String(), nil
 }
 
-// writeCanonical writes one normalized JSON value. The value comes from a
-// json.Decoder with UseNumber, so its dynamic type is one of nil, bool, string,
-// json.Number, []any and map[string]any.
 func writeCanonical(b *strings.Builder, v any) error {
 	switch t := v.(type) {
 	case nil:

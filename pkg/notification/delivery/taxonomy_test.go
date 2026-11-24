@@ -10,17 +10,12 @@ import (
 	"github.com/vislake/speed/pkg/notification"
 )
 
-// declaration is one run's type declarations: the declaring module's name to the
-// spec it places in its Resources.
 type declaration map[string]notification.TypeSpec
 
-// declaredUnder is the declaration every case leans on, so one case differs from
-// the legal one in exactly one field.
 func declaredUnder(spec notification.TypeSpec) declaration {
 	return declaration{"billing": spec}
 }
 
-// legal is a declaration the criterion accepts.
 func legal() notification.TypeSpec {
 	return notification.TypeSpec{
 		Key:             "billing.invoice_paid",
@@ -29,15 +24,8 @@ func legal() notification.TypeSpec {
 	}
 }
 
-// The two consumption points of the taxonomy — this module and
-// notification.preferences — apply one criterion, so one declaration is refused
-// by both, with the same sentinel, and the declarations the criterion accepts
-// are accepted by both.
-//
-// The sibling point is driven from here because this package's assembly harness
-// already stands in for every seam the pipeline requires. An import a case makes
-// is not this module's own face: the module's code still reaches no
-// implementation subpackage of this capability.
+// The two consumption points apply one criterion, so a declaration is refused or
+// accepted by both alike.
 func TestOneDeclarationIsRefusedTheSameWayByBothConsumptionPoints(t *testing.T) {
 	refused := map[string]declaration{
 		"empty key": declaredUnder(notification.TypeSpec{
@@ -85,9 +73,6 @@ func TestOneDeclarationIsRefusedTheSameWayByBothConsumptionPoints(t *testing.T) 
 			Unsubscribable:         true,
 			RecipientVisibleParams: []string{"invoice_id", "amount"},
 		}),
-		// Unsubscribable constrains what a recipient may change, not which
-		// channels a type goes out under by default: a verification code is not
-		// unsubscribable and travels by sms.
 		"a type that cannot be unsubscribed over an external channel": declaredUnder(notification.TypeSpec{
 			Key:             "authn.code.sent",
 			DefaultChannels: []notification.Channel{notification.ChannelInApp, notification.ChannelSMS},
@@ -109,8 +94,6 @@ func TestOneDeclarationIsRefusedTheSameWayByBothConsumptionPoints(t *testing.T) 
 	}
 }
 
-// forEachPoint drives the declaration through both consumption points in turn,
-// handing each point's startup outcome to check.
 func forEachPoint(t *testing.T, declared declaration, check func(t *testing.T, err error)) {
 	t.Helper()
 	points := map[string]host{
@@ -124,10 +107,8 @@ func forEachPoint(t *testing.T, declared declaration, check func(t *testing.T, e
 	}
 }
 
-// A collection the criterion accepts is not merely started: this module holds it
-// as the reference a dispatch is validated against. Without this case the
-// acceptances above would pass on a collector that refused nothing and collected
-// nothing.
+// A collection the criterion accepts is not merely started: this module
+// holds it as the reference a dispatch is validated against.
 func TestAnAcceptedCollectionBecomesTheTaxonomy(t *testing.T) {
 	err := host{}.drive(t, func(_ context.Context, reg *core.Registry) error {
 		dispatcher, resolveErr := core.Resolve[notification.Dispatcher](reg)
