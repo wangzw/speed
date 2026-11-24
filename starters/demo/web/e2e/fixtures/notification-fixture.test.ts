@@ -1,11 +1,3 @@
-/**
- * The browser tier's copy of the notification fixture's dispatch window is
- * held to the Go source that declares it.
- *
- * The rollout journey waits for the fixture's periodic dispatch, so its bounds
- * are sized in that window. Moving the Go constant without this copy would
- * leave the waits sized against a schedule the fixture no longer runs.
- */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 

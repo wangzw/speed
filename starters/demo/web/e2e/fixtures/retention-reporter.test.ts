@@ -1,11 +1,3 @@
-/**
- * The run directory's fate at the end of a run.
- *
- * Every case drives the reporter the way Playwright does -- `onEnd` with the
- * run's final status, then `onExit` after every reporter has written its
- * report -- but points it at a temporary prefix root through its options, so
- * no real run directory is ever a candidate.
- */
 import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -15,18 +7,15 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import RunRetentionReporter from './retention-reporter'
 
-/** A directory name the harness itself mints: pid, base36 clock, hex nonce. */
 const RUN_DIRECTORY = 'speed-e2e-4242-m1abc2de-0a1b2c3d'
 
 let prefixRoot: string
 let runDirectory: string
 
-/** The run's final result, as Playwright hands it to `onEnd`. */
 function resultWith(status: FullResult['status']): FullResult {
   return { status } as FullResult
 }
 
-/** Whether a path exists, whichever way the filesystem answers. */
 async function exists(path: string): Promise<boolean> {
   try {
     await stat(path)
@@ -36,7 +25,6 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-/** A reporter aimed at this case's temporary root. */
 function reporterFor(root: string): RunRetentionReporter {
   return new RunRetentionReporter({
     artifactRoot: runDirectory,

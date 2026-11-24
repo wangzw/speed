@@ -1,14 +1,3 @@
-/**
- * The SAML identity provider's wire behaviour.
- *
- * The cases drive the provider over its real listeners: the https provider
- * receives an AuthnRequest on the redirect binding and answers a page that posts
- * a response, and the plain-http attacker origin serves the response the
- * provider kept back. The signing helper is replaced by a script that only
- * encodes its input, because the case is about what the provider puts into the
- * response and where it sends it; the signature itself is the Go helper's own
- * test and the journey's.
- */
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { request as httpRequest, type IncomingMessage } from 'node:http'
 import { request as httpsRequest } from 'node:https'
@@ -28,13 +17,11 @@ const ACS = 'http://localhost:9/api/v1/auth/callback/provider-1'
 const AUDIENCE = 'http://localhost:9/api/v1/auth/sso/saml/provider-1/metadata'
 const REQUEST_ID = '_request-1'
 
-/** One response read whole. */
 interface Answer {
   readonly status: number
   readonly body: string
 }
 
-/** Send one request to a URL, over the transport its scheme names. */
 function send(url: URL, init: { method?: string; body?: string } = {}): Promise<Answer> {
   return new Promise((resolve, reject) => {
     const onResponse = (response: IncomingMessage): void => {
@@ -61,7 +48,6 @@ function send(url: URL, init: { method?: string; body?: string } = {}): Promise<
   })
 }
 
-/** The AuthnRequest URL a service provider's redirect names. */
 function redirectTo(provider: SamlIdentityProvider): URL {
   const document =
     `<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" ` +
@@ -75,7 +61,6 @@ function redirectTo(provider: SamlIdentityProvider): URL {
   return url
 }
 
-/** The hidden fields of the page that posts a response. */
 function postedFields(page: string): { action: string; response: string; relay: string } {
   const action = /<form method="post" action="([^"]*)"/.exec(page)?.[1]
   const response = /name="SAMLResponse" value="([^"]*)"/.exec(page)?.[1]
@@ -103,7 +88,6 @@ describe('the SAML identity provider', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
-  /** Walk the provider's page and approve, answering the page that follows. */
   async function approve(): Promise<Answer> {
     const page = await send(redirectTo(provider))
     expect(page.status).toBe(200)
@@ -144,7 +128,6 @@ describe('the SAML identity provider', () => {
       `InResponseTo="${REQUEST_ID}"`,
     )
 
-    // Only the one response is held: the next approval is delivered.
     expect(postedFields((await approve()).body).action).toBe(ACS)
   })
 

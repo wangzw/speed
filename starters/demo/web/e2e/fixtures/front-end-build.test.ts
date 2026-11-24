@@ -1,11 +1,3 @@
-/**
- * The front-end build runs where pnpm finds the web workspace.
- *
- * pnpm walks up from the directory `-C` names until it meets a
- * pnpm-workspace.yaml. The case resolves that directory the same way and
- * requires the walk to end inside the repository, at a workspace that lists
- * the demo host, with a filter that selects the host by its package name.
- */
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 
@@ -14,13 +6,11 @@ import { describe, expect, it } from 'vitest'
 import { FRONT_END_BUILD_ARGS, FRONT_END_PACKAGE } from './front-end-build'
 import { REPO_ROOT, WEB_DIR } from './paths'
 
-/** The value that follows `flag` in the argument list, if any. */
 function valueOf(args: readonly string[], flag: string): string | undefined {
   const at = args.indexOf(flag)
   return at === -1 ? undefined : args[at + 1]
 }
 
-/** The nearest directory at or above `start`, inside the repository, holding a workspace file. */
 function workspaceRootAbove(start: string): string | undefined {
   const root = resolve(REPO_ROOT)
   for (let directory = resolve(start); ; directory = dirname(directory)) {
@@ -36,7 +26,6 @@ function workspaceRootAbove(start: string): string | undefined {
   }
 }
 
-/** The member globs a pnpm-workspace.yaml lists under `packages:`. */
 function workspaceMembers(workspaceRoot: string): string[] {
   const lines = readFileSync(join(workspaceRoot, 'pnpm-workspace.yaml'), 'utf8').split('\n')
   const start = lines.findIndex((line) => line.trim() === 'packages:')
@@ -77,8 +66,6 @@ describe('the front-end build command', () => {
   })
 
   it('fails when the filter matches no package', () => {
-    // pnpm reads the flag only before the command word; after it the flag
-    // reaches the script, and a missed filter exits 0 having built nothing.
     const flag = FRONT_END_BUILD_ARGS.indexOf('--fail-if-no-match')
     const command = FRONT_END_BUILD_ARGS.indexOf('run')
     expect(flag, 'the build carries --fail-if-no-match').toBeGreaterThan(-1)

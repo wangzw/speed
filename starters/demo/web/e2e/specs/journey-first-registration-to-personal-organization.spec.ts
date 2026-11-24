@@ -1,39 +1,3 @@
-/**
- * J1 -- a new visitor registers with a username, an email address and a
- * password, proves the address from the code the e2e mail carrier writes to
- * the process log, and reaches the tenant area with a personal organization as the
- * current organization. The journey's occupancy branches then close the test:
- * the same username and the same email are each refused on the registration
- * form, in place, without creating an account, and the username a refused
- * submission used is still available afterwards. Between them the test proves
- * that the new credentials work on the password sign-in form, and an
- * incomplete registration is refused in place.
- *
- * Everything is driven through the rendered product with mouse and keyboard:
- * headings, labels, buttons, focus, visible text and the standing
- * pending-verification notice. After the address is proved, the account
- * creates a business organization from the home card and lands on the
- * organization profile page, which also exercises the self-service creation
- * entry and the switch to the new organization; the organization profile
- * form itself is a separate change, so this step asserts the creation, the
- * switch and the landing address. The single non-UI read is the verification
- * code from the server's process log (fixtures/log.ts): the e2e mail carrier
- * reaches no relay, so the process log is where a person running the e2e
- * suite reads it.
- *
- * Expected copy is read from the shipped en-US locale bundles through
- * helpers/i18n.ts, so a sentence that changes in the product changes here with
- * it rather than leaving a stale literal that still passes.
- *
- * The PRD's per-requirement end-to-end field names this spec for
- * REQ-account-015, REQ-presentation-010, REQ-tenancy-027, REQ-tenancy-028,
- * REQ-signin-001, REQ-signin-004 and REQ-signup-024, but this spec does not
- * assert them: account verification status by source, locale-formatted
- * times, the personal owner's permission allow-list, the unverified-account
- * restriction, the anonymous discovery document, a surface derived from it,
- * and unverified sign-in are all outside the steps below. Those fields are
- * inaccurate; the ids this spec does exercise are the `@covers` line.
- */
 // @journey journey-first-registration-to-personal-organization.md
 // @covers REQ-signin-006, REQ-signup-001, REQ-signup-002, REQ-signup-003, REQ-signup-004, REQ-signup-005, REQ-signup-008, REQ-signup-009, REQ-signup-010, REQ-signup-028, REQ-signup-029, REQ-account-010, REQ-account-016, REQ-account-017, REQ-account-019, REQ-account-020, REQ-tenancy-022, REQ-tenancy-026, REQ-tenancy-059, REQ-tenancy-065
 import type { Page } from '@playwright/test'
@@ -47,11 +11,8 @@ import {
 } from '../helpers/account-menu'
 import { copy, copyPattern } from '../helpers/i18n'
 
-/** The display name of the business organization the verified account
- * creates; the account menu row renders it after the switch. */
 const ORGANIZATION_DISPLAY_NAME = 'E2E Team'
 
-/** The account page's email verification section. */
 function verificationSection(page: Page) {
   return page.getByRole('region', {
     name: copy('accountUi', 'verification.title'),
@@ -59,11 +20,6 @@ function verificationSection(page: Page) {
   })
 }
 
-/**
- * The standing pending-verification notice in the bar. Its accessible name is
- * its purpose followed by the visible message, so the address it names is part
- * of the name.
- */
 function verificationBanner(page: Page, email: string) {
   return page.getByRole('region', {
     name: `${copy('demo', 'verificationBanner.region')}: ${copy(
@@ -75,7 +31,6 @@ function verificationBanner(page: Page, email: string) {
   })
 }
 
-/** Leave the session the way the account menu does, then return to sign-in. */
 async function signOutToSignIn(
   page: Page,
   accounts: Accounts,
@@ -96,7 +51,6 @@ async function signOutToSignIn(
   ).toBeVisible()
 }
 
-/** The registration form's four labelled fields. */
 function registrationField(page: Page, key: string) {
   return page.getByLabel(copy('authUi', key), { exact: true })
 }
@@ -126,9 +80,6 @@ test('first-registration: a new visitor reaches a personal organization, and occ
 
   await test.step('registration mode renders the password form', async () => {
     await accounts.openRegistration()
-    // The host's page heading follows the mode; the form itself is the
-    // password registration surface the deployment offers for an unknown
-    // identifier.
     await expect(
       page.getByRole('heading', {
         level: 1,
@@ -147,9 +98,6 @@ test('first-registration: a new visitor reaches a personal organization, and occ
   })
 
   await test.step('an incomplete submission is refused in place', async () => {
-    // The form requires username, email and password together. Submitting it
-    // empty surfaces the required-field message on each of the three, and the
-    // surface stays on registration: no account is created.
     await accounts.submitRegistration()
     for (const key of [
       'register.usernameLabel',
@@ -169,8 +117,6 @@ test('first-registration: a new visitor reaches a personal organization, and occ
     ).toBeVisible()
   })
 
-  // Taken before the form is submitted: the verification section sends its
-  // first code after the account is accepted, and only that code may be used.
   let verificationAfter = 0
   await test.step('a valid submission creates the account and signs in', async () => {
     await accounts.fillRegistration(account)
@@ -188,9 +134,6 @@ test('first-registration: a new visitor reaches a personal organization, and occ
       ),
     ).toBeVisible()
 
-    // The section sends one code by itself and hands focus to the field the
-    // code belongs in; the resend control is held for the interval and states
-    // the remaining seconds.
     const codeField = section.getByLabel(
       copy('accountUi', 'verification.codeLabel'),
       { exact: true },
@@ -208,8 +151,6 @@ test('first-registration: a new visitor reaches a personal organization, and occ
       ),
     ).toBeVisible()
 
-    // The standing notice under the bar is present while the address is
-    // unproved.
     await expect(verificationBanner(page, account.email)).toBeVisible()
   })
 
@@ -245,7 +186,6 @@ test('first-registration: a new visitor reaches a personal organization, and occ
         { exact: true },
       ),
     ).toBeVisible()
-    // Proving the address lifts the restriction, so the standing notice goes.
     await expect(verificationBanner(page, account.email)).toHaveCount(0)
   })
 
@@ -261,13 +201,6 @@ test('first-registration: a new visitor reaches a personal organization, and occ
       }),
     ).toBeVisible()
 
-    // The account menu's first row names the current organization. A personal
-    // organization is named after the signed-in account -- and a registration
-    // without a display name names the account after its username -- so the
-    // row carries the account's own name rather than the generic
-    // 「Organization」 copy. The account holds this one organization, so the
-    // row is context rather than a switcher and the menu is the only place it
-    // renders.
     await openAccountMenu(page)
     await expect(
       page.getByRole('menu').getByText(account.username, { exact: true }),
@@ -276,13 +209,6 @@ test('first-registration: a new visitor reaches a personal organization, and occ
   })
 
   await test.step('a verified account creates a business organization and lands in it', async () => {
-    // The account now holds only its personal organization, so the account
-    // menu's organization row is context rather than an expansion; the home
-    // card is the entry. The creation writes through org.create (the server
-    // serves it), switches the current organization, re-reads the
-    // caller's tenants and lands on the organization profile page. That page
-    // itself is a separate change; this step proves the creation, the
-    // switch and the landing address, not the profile form.
     const organization = accounts.unique('team')
     await page
       .getByRole('heading', {
@@ -316,7 +242,6 @@ test('first-registration: a new visitor reaches a personal organization, and occ
       .click()
 
     await expect(page).toHaveURL(/\/organization\/admin\/profile$/)
-    // The account menu now names the new organization as the current one.
     await openAccountMenu(page)
     await expect(
       page.getByRole('menu').getByText(ORGANIZATION_DISPLAY_NAME, {
@@ -327,11 +252,6 @@ test('first-registration: a new visitor reaches a personal organization, and occ
   })
 
   await test.step('the new credentials sign in through the password form', async () => {
-    // Proving the address is not needed to sign in, and this is the one
-    // password login the journey drives: sign out, then submit the username
-    // and password on the sign-in surface. The session flip opens the tenant
-    // area, so the home heading is the rendered proof that the enabled
-    // account's password credential works.
     await signOutToSignIn(page, accounts)
     await accounts.signIn({
       identifier: account.username,
@@ -356,8 +276,6 @@ test('first-registration: a new visitor reaches a personal organization, and occ
     await expect(
       registrationField(page, 'register.usernameLabel'),
     ).toHaveAccessibleDescription(copy('authUi', 'register.usernameTaken'))
-    // The refusal stays on the registration surface; no account was created
-    // and no session was started.
     await expect(
       page.getByRole('heading', {
         level: 1,
@@ -367,7 +285,6 @@ test('first-registration: a new visitor reaches a personal organization, and occ
     ).toBeVisible()
   })
 
-  // The refused submission's username is reused below, so it is taken here.
   const refusedByEmail = accounts.unique('dupemail')
   await test.step('a duplicate email is refused on the form, in place', async () => {
     await accounts.fillRegistration({ ...refusedByEmail, email: account.email })
@@ -385,17 +302,12 @@ test('first-registration: a new visitor reaches a personal organization, and occ
   })
 
   await test.step('the username from the refused submission can register again', async () => {
-    // The email conflict rolls the whole registration back: the username the
-    // refused submission tried is not left reserved, and a later registration
-    // may use it.
     const fresh = accounts.unique('reuse')
     await accounts.fillRegistration({
       ...fresh,
       username: refusedByEmail.username,
     })
     await accounts.submitRegistration()
-    // A successful registration lands on the account page's verification
-    // section, which is the rendered proof that a new account was created.
     await expect(verificationSection(page)).toBeVisible()
   })
 })

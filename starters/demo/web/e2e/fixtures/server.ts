@@ -1,20 +1,3 @@
-/**
- * The per-test e2e server: one temporary directory, one sqlite file, one
- * process, real HTTP.
- *
- * Every spec starts its own server so a journey never inherits state from the
- * one before it. The fixture seeds the database, serves it on free loopback
- * ports, and waits for the startup record before answering; a run that exits or
- * hangs before that record fails with the child's log attached to the message.
- *
- * Stopping is ordered: hooks registered with `beforeStop` run first (the demo
- * fixture closes the browser context there, because the notification stream
- * would otherwise hold shutdown open), then SIGTERM, then SIGKILL if the
- * process has not left within the bound. The child is always run with the
- * temporary directory as its working directory, so every relative path in its
- * configuration resolves there and the token signing key is minted into the
- * temporary directory rather than the source tree.
- */
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { request as httpRequest } from 'node:http'
@@ -62,35 +45,20 @@ import {
 } from './saml-identity-provider'
 import { scaledTimeout } from './time-scale'
 
-// Every bound below is strictly inside the Playwright test timeout (three
-// minutes before GATE_TIME_SCALE, in playwright.config.ts), with room left for
-// the journey and for teardown. A fixture that used the whole test bound would
-// be killed by Playwright first, and the harness's own diagnostics -- the log
-// tail and standard error -- would never be printed. Each bound is a wait, not
-// work -- it returns as soon as the thing it waits for happens -- so it is
-// generous, and it widens with the test timeout through the same
-// GATE_TIME_SCALE.
 
-/** How long the seed command may run. */
 const SEED_TIMEOUT_MS = scaledTimeout(30_000)
 
-/** How long serve may take to write its ready record. */
 const START_TIMEOUT_MS = scaledTimeout(30_000)
 
-/** How long SIGTERM may take before SIGKILL follows. */
 const STOP_TIMEOUT_MS = scaledTimeout(25_000)
 
-/** How long one API request the fixture makes may take to answer. */
 const API_REQUEST_TIMEOUT_MS = scaledTimeout(10_000)
 
-/** How many times a bind failure is retried with fresh ports. */
 const MAX_BIND_ATTEMPTS = 3
 
 interface HarnessManifest {
   readonly binary: string
-  /** The helper that writes the impersonation operator's aged factors. */
   readonly factorSeed: string
-  /** The helper that signs the SAML identity provider's responses. */
   readonly samlSigner: string
   readonly repoRoot: string
   readonly serverDir: string
@@ -98,7 +66,6 @@ interface HarnessManifest {
   readonly builtAt: string
 }
 
-/** The build the global setup left for the fixtures to run. */
 export async function readHarnessManifest(): Promise<HarnessManifest> {
   let raw: string
   try {
@@ -123,7 +90,6 @@ export async function readHarnessManifest(): Promise<HarnessManifest> {
   return parsed as HarnessManifest
 }
 
-/** The environment the child starts with: this process's, less host and OTel. */
 function childEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env }
   for (const key of Object.keys(env)) {
@@ -132,11 +98,6 @@ function childEnv(): NodeJS.ProcessEnv {
   return env
 }
 
-/**
- * Run one one-shot command of the binary to completion. A successful run
- * answers both streams, because a command's one JSON line is part of its
- * result: the caller that reads it must not take the exit status alone.
- */
 function runCommand(
   binary: string,
   args: readonly string[],
@@ -168,11 +129,6 @@ function runCommand(
   })
 }
 
-/**
- * Wait for the child to leave, answering false on timeout. A spawn failure
- * raises 'error' instead of 'exit'; either one means the process will not
- * run, so both settle the wait.
- */
 function waitForExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
   if (child.exitCode !== null || child.signalCode !== null) {
     return Promise.resolve(true)
@@ -192,7 +148,6 @@ function waitForExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
   })
 }
 
-/** Fail loudly when a manifest outlives the binary it names. */
 async function ensureBinary(binary: string): Promise<void> {
   try {
     const info = await stat(binary)
@@ -210,7 +165,6 @@ async function ensureBinary(binary: string): Promise<void> {
   }
 }
 
-/** Whether a server that exited before ready was refused its listener. */
 function looksLikeBindFailure(log: ProcessLog, stderr: readonly string[]): boolean {
   const text = `${log.tail(200)}\n${stderr.join('\n')}`
   return /EADDRINUSE|address already in use|cannot assign requested address|bind:/i.test(
@@ -218,19 +172,16 @@ function looksLikeBindFailure(log: ProcessLog, stderr: readonly string[]): boole
   )
 }
 
-/** Whether a provider start failed because a loopback port was taken. */
 function looksLikePortTaken(error: unknown): boolean {
   return /EADDRINUSE|address already in use/i.test(String(error))
 }
 
-/** One answer from the product's own API, as the fixture reads it. */
 interface ApiAnswer {
   readonly status: number
   readonly body: string
   readonly setCookie: readonly string[]
 }
 
-/** Make one request against the running server and read the whole answer. */
 function callApi(
   url: string,
   options: {
@@ -269,7 +220,6 @@ function callApi(
   })
 }
 
-/** The Cookie request header a set of Set-Cookie values asks for. */
 function cookieHeader(setCookie: readonly string[]): string {
   return setCookie
     .map((entry) => entry.split(';', 1)[0] ?? '')
@@ -277,7 +227,6 @@ function cookieHeader(setCookie: readonly string[]): string {
     .join('; ')
 }
 
-/** The description of one open login flow, as the flow routes answer it. */
 interface FlowReply {
   readonly seq: number
   readonly nextKind: string
@@ -285,7 +234,6 @@ interface FlowReply {
   readonly accessToken: string
 }
 
-/** Read the flow fields the API sign-in needs out of one flow answer. */
 function parseFlowReply(body: string): FlowReply {
   const parsed = JSON.parse(body) as {
     readonly seq?: unknown
@@ -314,25 +262,9 @@ function parseFlowReply(body: string): FlowReply {
   }
 }
 
-/** The authenticator's step, matching the fixed thirty-second period. */
 const TOTP_STEP_MS = 30_000
 
-/**
- * Sign one account in through the product's own password flow and answer the
- * access token. The flow keeps its state in a cookie, so the answer's cookie is
- * carried to the completing call; the token is what the API requests below use.
- *
- * An account holding a second factor parks the flow on that factor. When the
- * caller names the authenticator seed, the flow selects the authenticator
- * factor, answers its challenge with the code the seeded seed produces, and
- * completes with the elevated session; a flow that asks for a factor the caller
- * did not name fails loudly rather than completing at the wrong level.
- *
- * The authenticator refuses to match a counter it already accepted, and a
- * browser session of the same account may have used the current step just
- * before this call. The code is therefore asked for one step ahead, which the
- * factor's one-step window accepts and its replay check sees as fresh.
- */
+// An account with a second factor parks the flow there. The code is asked for one step ahead: the authenticator refuses a counter it already accepted, and a browser session of the same account may have used the current step.
 async function signInThroughApi(
   origin: string,
   identifier: string,
@@ -420,19 +352,6 @@ async function signInThroughApi(
   return parsed.accessToken
 }
 
-/**
- * Prove a seeded account's email address through the product's own identifier
- * verification flow: sign in, ask the mail carrier for a code, read the code
- * from its log line, and submit it. The seed writes a seeded address as the
- * administrator's assertion, so the fixture restores the proved state an
- * invitation acceptance and an organization write require, without writing a
- * row around the product.
- *
- * The account's email address is its identifier, which the seed already
- * carries; the add call asks for a code to that address, and the verify call
- * writes the proof. The session signs in with the password alone: these
- * accounts hold no second factor.
- */
 async function proveEmailThroughProduct(
   origin: string,
   account: {
@@ -476,58 +395,42 @@ async function proveEmailThroughProduct(
   }
 }
 
-/** The input of one settings write the fixture makes through the product. */
 export interface TenantSettingWriteInput {
   readonly tenant: string
   readonly identifier: string
   readonly password: string
-  /**
-   * The authenticator seed the account's second-factor step needs. Omitted for
-   * an account that signs in on the password alone.
-   */
   readonly totpSecret?: string
   readonly namespace: string
   readonly key: string
   readonly value: string
 }
 
-/** What one settings write answered: its status and, for a problem, its type. */
 export interface TenantSettingWriteAnswer {
   readonly status: number
-  /** The problem type the refusal named; empty when the answer was not a problem. */
   readonly problemType: string
 }
 
-/** One declared setting item, by the key and the namespace that declared it. */
 export interface SettingsItem {
   readonly key: string
   readonly namespace: string
 }
 
-/** One settings read: the status it answered and the items it returned. */
 export interface SettingsReadAnswer {
   readonly status: number
   readonly items: readonly SettingsItem[]
 }
 
-/** The account an API settings session signs in as. */
 export interface SettingsAccount {
   readonly identifier: string
   readonly password: string
 }
 
-/**
- * The input of the tenant surface's zero-visibility probe: the tenant
- * administrator's account, the platform items to address from the tenant, and
- * the namespaces to read as a namespace.
- */
 export interface TenantSettingsProbeInput extends SettingsAccount {
   readonly tenant: string
   readonly items: readonly SettingsItem[]
   readonly namespaces: readonly string[]
 }
 
-/** What the tenant surface answered to one zero-visibility probe. */
 export interface TenantSettingsProbeAnswer {
   readonly read: SettingsReadAnswer
   readonly writes: Readonly<Record<string, TenantSettingWriteAnswer>>
@@ -535,7 +438,6 @@ export interface TenantSettingsProbeAnswer {
   readonly namespaceReads: Readonly<Record<string, number>>
 }
 
-/** Read the platform listing's items out of its top-level JSON array. */
 function platformSettingsItems(body: string): readonly SettingsItem[] {
   const parsed = JSON.parse(body) as unknown
   if (!Array.isArray(parsed)) return []
@@ -549,15 +451,7 @@ function platformSettingsItems(body: string): readonly SettingsItem[] {
   })
 }
 
-/**
- * Read the tenant envelope's items out of its `settings` array.
- *
- * The tenant item carries the full key and no separate namespace: the
- * declaring module is the key's leading segment, and the surface renders the
- * key rather than splitting it. The namespace field is therefore empty here;
- * the callers that address a write take their items from the platform listing,
- * which does carry one.
- */
+// The tenant item carries the full key and no separate namespace; callers that address a write take their items from the platform listing, which carries one.
 function tenantSettingsItems(body: string): readonly SettingsItem[] {
   const parsed = JSON.parse(body) as { readonly settings?: unknown }
   if (!Array.isArray(parsed.settings)) return []
@@ -571,25 +465,16 @@ function tenantSettingsItems(body: string): readonly SettingsItem[] {
   })
 }
 
-/** The problem type one refusal named; empty when it named none. */
 function problemTypeOf(body: string): string {
   if (body === '') return ''
   try {
     const problem = JSON.parse(body) as { readonly type?: unknown }
     return typeof problem.type === 'string' ? problem.type : ''
   } catch {
-    // A refusal that is not a problem document names no type.
     return ''
   }
 }
 
-/**
- * Start the local identity provider with the same fresh-pair retry the backend
- * port uses: the provider probes for two free ports and then binds them, so a
- * process can take one in the window between. The certificates are minted into
- * the run's directory again on each attempt and overwrite the same files, so a
- * retry only re-allocates the listeners.
- */
 async function startSocialIdentityProvider(
   dir: string,
 ): Promise<IdentityProvider> {
@@ -605,12 +490,6 @@ async function startSocialIdentityProvider(
   throw lastError
 }
 
-/**
- * Start the enterprise journey's local identity provider with the same fresh
- * pair retry the social provider uses: a process can take one of the two ports
- * between the provider's probe and its bind, and a retry re-allocates the
- * listeners while the certificate files are overwritten in place.
- */
 async function startEnterpriseProvider(
   dir: string,
 ): Promise<EnterpriseIdentityProvider> {
@@ -626,165 +505,41 @@ async function startEnterpriseProvider(
   throw lastError
 }
 
-/** A started server. */
 export interface E2EServer {
-  /** The e2e binary that was built. */
   readonly binary: string
-  /** The server's temporary directory. */
   readonly dir: string
-  /** The browser-facing origin, http://localhost:<backend-port>. */
   readonly url: string
-  /**
-   * The backend listener's port: the browser origin, the API and the
-   * operations probes all answer here.
-   */
   readonly backendPort: number
   readonly config: ServerConfig
-  /**
-   * The local OpenID Connect provider the social methods are pointed at, when
-   * this server's spec opted into it; undefined otherwise.
-   */
   readonly identityProvider?: IdentityProvider
-  /**
-   * The enterprise journey's local OpenID Connect provider, when this server's
-   * spec opted into it; undefined otherwise. Its fixed user's address is on the
-   * test domain the DNS stub answers for.
-   */
   readonly enterpriseIdentityProvider?: EnterpriseIdentityProvider
-  /**
-   * The DNS stub that answers TXT queries for the one record name on the
-   * enterprise journey's test domain, when this server's spec opted into it;
-   * undefined otherwise. A spec publishes the record the product renders
-   * through `setTXT`, the way an operator publishes it at the domain's DNS.
-   */
   readonly dnsStub?: DNSStub
-  /**
-   * The local SAML identity provider and the attacker origin beside it, when
-   * this server's spec opted into them; undefined otherwise.
-   */
   readonly samlIdentityProvider?: SamlIdentityProvider
-  /** Everything the child wrote to standard output, line by line. */
   readonly log: ProcessLog
-  /** Everything the child wrote to standard error, joined. */
   readonly stderr: string
-  /**
-   * Wait for a log carrier line recording one message. The SMS line names
-   * its destination, template and language; the mail line names its
-   * destination and renders the subject and body, so its template and language
-   * are selected together by the subject the caller passes.
-   */
   waitForCarrierMessage(
     options: Parameters<typeof waitForCarrierMessage>[1],
   ): Promise<CarrierMessage>
-  /** Count the carrier lines a filter names, at or after `after`. */
   countCarrierMessages(
     options: Parameters<typeof countCarrierMessages>[1],
   ): number
-  /** Wait for one external-send record the delivery pipeline wrote. */
   waitForOutboundRecord(
     options: Parameters<typeof waitForOutboundRecord>[1],
   ): Promise<OutboundRecord>
-  /** Count the external-send records a filter names, at or after `after`. */
   countOutboundRecords(
     options: Parameters<typeof countOutboundRecords>[1],
   ): number
-  /**
-   * Make one settings write through the product's own API, as the named
-   * account, and answer the status and problem type.
-   *
-   * The settings surface renders no control for every refusal this drives: a
-   * read-only tenant has no switch, a platform-enforced policy's switch is
-   * disabled, and a platform-level key is not on the page at all. This is the
-   * assembly layer's product request: it signs the account in through the
-   * public password flow (with the authenticator step when the account holds a
-   * second factor) and sends the same PUT the page would. A spec asserts the
-   * rendered state first and this answer beside it, never in place of it.
-   */
   writeTenantSetting(
     input: TenantSettingWriteInput,
   ): Promise<TenantSettingWriteAnswer>
-  /**
-   * Read the platform settings listing as the named platform administrator.
-   *
-   * The platform listing is the dynamic answer to "which keys exist at all";
-   * the tenant-surface probe below takes this answer as its item set rather
-   * than a hardcoded list, so a declaration that disappears from the build is
-   * visible as a missing key.
-   */
   readPlatformSettings(input: SettingsAccount): Promise<SettingsReadAnswer>
-  /**
-   * Probe the tenant settings surface as the named tenant administrator in one
-   * session: read the full listing, PUT and DELETE each named platform item,
-   * and read each named namespace.
-   *
-   * The tenant surface has no per-namespace read route, so the namespace read
-   * is answered by the router (404 or 405) rather than by the settings module.
-   * The PUT and DELETE targets are platform-level items, which have no tenant
-   * access; both must answer the same bare 404 an undeclared key gets.
-   */
   probeTenantSettings(
     input: TenantSettingsProbeInput,
   ): Promise<TenantSettingsProbeAnswer>
-  /** Run a hook before SIGTERM; hooks run in reverse registration order. */
   beforeStop(hook: () => Promise<void> | void): void
-  /** Request shutdown, wait for exit, and clean up unless kept. */
   stop(options?: { readonly keep?: boolean }): Promise<void>
 }
 
-/**
- * Start one e2e server: a fresh temporary directory, a fresh sqlite file
- * seeded by the binary itself, a free port, and the ops probes answered before
- * the fixture returns.
- *
- * The port is allocated after the seed command (which does not listen), so the
- * window between asking the kernel for a port and binding it is just the
- * config write. The allocator requires the port to be free on both loopback
- * address families: a browser resolving `localhost` prefers ::1, so a port
- * held there is unreachable even while 127.0.0.1 is free. The readiness probe
- * checks the literal addresses too, and a ::1 connection that is accepted but
- * does not answer 200 is treated as a taken port. A bind failure and a taken
- * ::1 port are both retried with a fresh port, bounded by MAX_BIND_ATTEMPTS.
- *
- * `seedMember`, `seedImpersonation`, `seedInvitee`, `invitationMail`,
- * `seedSocialAccount`, `seedTenantAdmin`, `seedUnprovedTenantAdmin`,
- * `seedSystemTenantAdmin`, `platformRequireMFA`, `tenantAdmins` and
- * `recentWindow` are passed through to the configuration the binary seeds; a
- * spec that needs none leaves them off, so the template's own seed stays the
- * baseline. The tenant-admin opt-ins seed through the binary's own seed
- * command: the proved administrator, the unproved one that the write gate
- * refuses, and a system tenant administrator outside the platform role.
- * `tenantAdmins` overrides the administrator list of a seeded tenant, so a
- * journey can pin a tenant to exactly one tenant-admin binding.
- * `platformRequireMFA` writes the admission policy into the global layer, the
- * platform floor every tenant reads as enforced. `seedTenantAdmin` and
- * `seedInvitee` then prove the seeded address through the product's own
- * email-code flow, which the acceptance and the organization write require.
- * `seedImpersonation` writes the operator's aged TOTP and SMS factors through
- * the factorseed command after the seed, and shapes acme so the operator stays
- * outside it.
- *
- * A spec that drives a social method turns on `socialIdentityProvider`. Only
- * then does the fixture start the local OpenID Connect provider, which mints
- * certificates with openssl and binds two more loopback ports. The provider
- * starts before the seed and lives as long as this server: the configuration
- * the binary reads names the provider's issuer and the CA file it minted, and a
- * configured CA file that cannot be read stops the start. It is part of the
- * environment the social methods run against, not a request the fixture answers
- * on the product's behalf. Every other spec runs without it and keeps the
- * template's public provider defaults.
- *
- * The enterprise journey opts in separately, with `enterpriseSSO`; the
- * tenant-SSO journey uses the same fixtures through `tenantSSO`, which also
- * seeds its tenant administrator and that tenant's own SSO requirement. Only
- * then does the fixture start the enterprise provider — the same OIDC machinery
- * with its own issuer, certificate material and one fixed user whose address is
- * on the test domain — and the UDP DNS stub beside it. The configuration the
- * binary reads names the stub as `authn.sso.dns-resolver`, the provider's CA as
- * `authn.sso.oidc-ca-file` and turns the loopback relaxation on; the stub
- * answers TXT queries for the one record name and NXDOMAINs everything else.
- * The social option is untouched by this one: a spec may turn on either, both,
- * or neither.
- */
 export async function startE2EServer(
   options: {
     readonly seedMember?: boolean
@@ -819,9 +574,7 @@ export async function startE2EServer(
   const stderrLines: string[] = []
   let stopped = false
 
-  // If the setup promise is abandoned (a Playwright timeout before `use`),
-  // its finally never runs. The worker's exit hook is the last chance to
-  // reap a server that is still running.
+  // An abandoned setup promise never runs its finally; the worker's exit hook is the last chance to reap the child.
   const reapOnExit = (): void => {
     if (
       child !== undefined &&
@@ -833,7 +586,6 @@ export async function startE2EServer(
   }
   process.once('exit', reapOnExit)
 
-  /** Stop the current child, if any, and clear the handle. */
   const terminate = async (): Promise<void> => {
     const running = child
     child = undefined
@@ -847,12 +599,7 @@ export async function startE2EServer(
   }
 
   try {
-    // The provider is the environment a social spec's methods run against. A
-    // spec that does not drive one leaves it off, so its server depends neither
-    // on openssl nor on the provider's two extra loopback ports. When it is on
-    // it starts before the seed so the configuration the binary reads already
-    // names a reachable issuer and an existing CA file: a configured root CA
-    // that cannot be read stops the start, so the order is load-bearing.
+    // Start before the seed: a configured CA file that cannot be read stops the start, so the order is load-bearing.
     identityProvider =
       options.socialIdentityProvider === true
         ? await startSocialIdentityProvider(dir)
@@ -864,11 +611,7 @@ export async function startE2EServer(
             issuer: identityProvider.issuer,
             rootCAFile: identityProvider.rootCAPath,
           }
-    // The enterprise journey's fixtures are the environment its own seams
-    // need: the provider answers on loopback, and the DNS stub is the one name
-    // server a domain-ownership proof can reach. They start before the seed for
-    // the same reason as the social provider: a configured CA file that cannot
-    // be read stops the start, so the order is load-bearing.
+    // These start before the seed for the same reason: a configured CA file must be readable when the server starts.
     if (
       options.enterpriseSSO === true ||
       options.tenantSSO === true
@@ -878,9 +621,6 @@ export async function startE2EServer(
         recordName: enterpriseIdentityProviderRecordName,
       })
     }
-    // The SAML identity provider needs neither seam: the product never calls
-    // it, the browser does, and the provider row carries its certificate. It
-    // starts for the spec that drives it and is stopped with the server.
     if (options.samlIdentityProvider === true) {
       samlProvider = await startSamlIdentityProvider({
         dir,
@@ -894,8 +634,7 @@ export async function startE2EServer(
             dnsResolver: dnsStub.address,
             rootCAFile: enterpriseProvider.rootCAPath,
           }
-    // Seed with a provisional port: the seed command does not listen, and the
-    // serve attempt below writes its own configuration with the final port.
+    // The seed does not listen; the serve attempt below renders its own configuration with the final port.
     const [seedBackend] = await freePorts(1)
     if (seedBackend === undefined) {
       throw new Error('the harness could not allocate a free port')
@@ -927,12 +666,6 @@ export async function startE2EServer(
       dir,
       'seeding the e2e database',
     )
-    // The impersonation operator's factors are written after the seed has
-    // created the account and before serve starts: the TOTP one is aged past
-    // the factor-age requirement, which an enrollment cannot reach, and the
-    // SMS one is active now. The command reads the same configuration the
-    // service runs on, so the database and the field-encryption key are the
-    // service's own.
     if (options.seedImpersonation === true) {
       const what = 'writing the impersonation operator factors'
       const seeded = await runCommand(
@@ -952,8 +685,7 @@ export async function startE2EServer(
         dir,
         what,
       )
-      // The fixture asks for both factors; a zero exit without both identifiers
-      // is a half-seeded operator, not a success.
+      // A zero exit without both identifiers is a half-seeded operator, not a success.
       readSeededFactors(seeded.stdout, seeded.stderr, what)
     }
 
@@ -1022,16 +754,10 @@ export async function startE2EServer(
           spawned.exitCode !== null ||
           spawned.signalCode !== null
         const bindFailure = exited && looksLikeBindFailure(log, stderrLines)
-        // A connection accepted on ::1 that does not answer like this server
-        // means another process holds the port there; the browser would reach
-        // that process instead. shouldRetryStart retries it with fresh ports
-        // exactly like a bind failure, even though the child itself is
-        // running.
+        // A connection accepted on ::1 that does not answer like this server means another process holds the port; retry with fresh ports even though the child is running.
         await terminate()
         if (shouldRetryStart(error, bindFailure, attempt, MAX_BIND_ATTEMPTS)) {
-          // The port was taken between allocation and bind. The log keeps
-          // both attempts, and `from` keeps the ready wait from matching a
-          // record written by the failed attempt.
+          // The log keeps both attempts; `from` keeps the ready wait from matching the failed attempt's record.
           continue
         }
         if (spawnError !== undefined) {
@@ -1058,13 +784,6 @@ export async function startE2EServer(
     }
     const serverConfig = config
 
-    // The seed writes a seeded address as an administrator's assertion, not a
-    // proof. The accounts whose journeys require a proved address get it
-    // through the product's own email-code flow once the server answers: an
-    // invitation acceptance and an organization write both refuse an unproved
-    // sender, and the fixture restores that state without a row written around
-    // the product. The unproved administrator the tenant-admin journey drives
-    // on purpose is not proved here.
     if (options.seedTenantAdmin === true) {
       await proveEmailThroughProduct(serverConfig.origin, e2eTenantAdmin, log)
     }
@@ -1083,8 +802,7 @@ export async function startE2EServer(
         try {
           await hook()
         } catch {
-          // A hook is a courtesy (closing the browser context); its failure
-          // must not leave the process running.
+          // A hook is a courtesy; its failure must not leave the process running.
         }
       }
       await terminate()

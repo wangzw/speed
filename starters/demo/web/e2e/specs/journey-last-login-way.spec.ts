@@ -1,65 +1,3 @@
-/**
- * The last-sign-in-way journey: an account opened by an enterprise just-in-time
- * first login holds one way to sign in that is not a passkey -- the enterprise
- * identity the login bound. A passkey is enrolled during that first login,
- * which the journey proves is not one of the three ways the rule counts (a
- * password credential, a proved phone number, an external identity). Unlinking
- * the enterprise identity while it is the only such way asks for fresh proof;
- * the owner answers the challenge in the page with the passkey just enrolled,
- * and the unlink is then refused: the dedicated sentence is rendered, and the
- * binding stays listed. The owner then sets a password from the same account
- * page; the external identity is no longer the only non-passkey way, and the
- * same unlink now succeeds.
- *
- * WHY THE ACCOUNT IS OPENED BY AN ENTERPRISE JUST-IN-TIME LOGIN. A social first
- * login opens an account with a password and the provider's address, and a
- * phone-code first login now opens one with a password too, so neither can
- * produce the state this journey starts from: no password, no email, no phone,
- * one external identity. An enterprise just-in-time first login opens it
- * instead: it asks for a username before any account exists and writes neither a
- * password nor the provider's declared address. The provider is registered and
- * its email domain verified through the admin surface, and the account itself is
- * opened by the login -- nothing seeds it out of band.
- *
- * THE ENTERPRISE IDENTITY IS THE EXTERNAL IDENTITY UNBOUND. The just-in-time
- * login binds the provider's identity to the account under its own provider
- * name, and the account page lists it under the social accounts card as
- * "Enterprise SSO". No social identity is bound beside it: a second external
- * identity would be a second way to sign in, so removing either would leave the
- * other and would not exercise the last-way rule.
- *
- * THE DEPLOYMENT REQUIRES A FACTOR, AND THAT IS LOAD-BEARING. A step-up accepts
- * only a factor whose activation predates the session's authentication time, and
- * only one whose channel differs from the channels the session already proved.
- * A login that proves an existing factor as its second factor cannot be
- * strengthened by that same factor afterwards. The journey therefore needs a
- * login whose session records one factor: the sign-in flow registers the
- * passkey during the login (an enrolling login), and a factor registered during
- * the authentication does not strengthen it. The enterprise just-in-time login
- * is such a login. The operator who registers the provider is subject to the
- * same policy, so that sign-in enrols a passkey of its own in a separate browser
- * context; the account it sets up is the journey's only product-created account.
- *
- * EVERYTHING IS DRIVEN THROUGH THE UI. The social round trip is the harness's
- * real OpenID Connect provider: the browser leaves for its authorization page
- * and clicks its control, so no route is intercepted and no response is faked.
- * The DNS publication is a FIXTURE ACTION: the product renders the record name
- * and value, and the spec writes that value into the running DNS stub, standing
- * in for the operator's act at the domain's DNS. The passkey is Chromium's
- * virtual authenticator (helpers/virtual-authenticator.ts): the page still calls
- * `navigator.credentials.create`/`.get`, and the fixture answers as a platform
- * authenticator would.
- *
- * WHAT IS ASSERTED. The refusal is the dedicated last-login-method answer, and
- * this spec asserts its shipped sentence: it says the account has no other way
- * to sign in and names setting a password or linking another account as the
- * remedy. It also asserts that the binding survives the refusal, that the
- * account's contact list stays empty, and that the provider's address is not
- * written into the account.
- *
- * Expected copy is read from the shipped en-US bundles through
- * helpers/i18n.ts.
- */
 // @journey journey-last-login-way.md
 // @covers REQ-security-040, REQ-security-013, REQ-account-023, REQ-account-061, REQ-account-067, REQ-signup-018, REQ-signin-022
 import type { BrowserContext, Locator, Page } from '@playwright/test'
@@ -93,31 +31,23 @@ import {
   type VirtualAuthenticator,
 } from '../helpers/virtual-authenticator'
 
-// The operator's sign-in, the provider's round trip, the passkey ceremonies and
-// the step-up run inside this file's per-test bound; fixture assembly included.
+// The sign-in, the provider round trip, the passkey ceremonies, the step-up and fixture assembly exceed the tier's default; keep this bound above it.
 test.describe.configure({ timeout: scaledTimeout(420_000) })
 
-/** The seeded platform administrator the e2e seed writes. */
 const OPERATOR = {
   identifier: 'operator@demo.test',
   username: 'operator',
   password: 'operator-dev-secret',
 } as const
 
-/** The tenant the provider is registered in (the enterprise fixtures' seed). */
 const TARGET_TENANT = 'globex'
 
-/** The provider the operator registers for the just-in-time login. */
 const PROVIDER_NAME = 'Globex Workforce'
 
-/** The username the employee chooses when the just-in-time login opens the
- * account. Nothing seeds it: the step collects it before any account exists. */
 const JIT_USERNAME = 'globex-lastway'
 
-/** The password the account sets after the refused unlink. */
 const NEW_PASSWORD = 'e2e-Password-789'
 
-/** The product's sign-in surface heading. */
 function signInHeading(page: Page): Locator {
   return page.getByRole('heading', {
     level: 1,
@@ -126,7 +56,6 @@ function signInHeading(page: Page): Locator {
   })
 }
 
-/** The tenant area's home heading, the rendered proof of a landed session. */
 function homeHeading(page: Page): Locator {
   return page.getByRole('heading', {
     level: 1,
@@ -135,7 +64,6 @@ function homeHeading(page: Page): Locator {
   })
 }
 
-/** The account settings' security pane heading, the page's one h1. */
 function securityHeading(page: Page): Locator {
   return page.getByRole('heading', {
     level: 1,
@@ -144,48 +72,36 @@ function securityHeading(page: Page): Locator {
   })
 }
 
-/** One account section card, named by its own h2 title. */
 function section(page: Page, title: string): Locator {
   return page.getByRole('region', { name: title, exact: true })
 }
 
-/** The security pane's sign-in-ways card. */
 function identifiersSection(page: Page): Locator {
   return section(page, copy('demo', 'account.rows.label.loginWays'))
 }
 
-/** The security pane's two-step-verification card. */
 function mfaSection(page: Page): Locator {
   return section(page, copy('demo', 'account.rows.label.mfa'))
 }
 
-/** The security pane's social accounts card. */
 function bindingsSection(page: Page): Locator {
   return section(page, copy('demo', 'account.rows.label.social'))
 }
 
-/** The profile pane's phone card. */
 function phoneCard(page: Page): Locator {
   return section(page, copy('demo', 'account.rows.label.phone'))
 }
 
-/** The profile pane's email card, which lists the contact addresses. */
 function emailCard(page: Page): Locator {
   return section(page, copy('demo', 'account.rows.label.email'))
 }
 
-/** The bound enterprise identity's row, labelled by its provider family. */
 function ssoRow(page: Page): Locator {
   return bindingsSection(page)
     .getByRole('listitem')
     .filter({ hasText: copy('accountUi', 'bindings.provider.oidc') })
 }
 
-/**
- * The row's unlink action. An enterprise binding is named by its raw provider
- * (`oidc:<id>`), not by the "Enterprise SSO" family label the row shows, so the
- * accessible name leaves the identifier open.
- */
 function ssoUnlink(page: Page): Locator {
   return bindingsSection(page).getByRole('button', {
     name: copyPattern('accountUi', 'bindings.unbindAriaWithProvider', {
@@ -194,7 +110,6 @@ function ssoUnlink(page: Page): Locator {
   })
 }
 
-/** The sign-in flow's passkey kind, on the factor and the enroll steps alike. */
 function passkeyKind(scope: Page | Locator): Locator {
   return scope.getByRole('button', {
     name: copy('authUi', 'signInFlow.factorKind.webauthn'),
@@ -202,7 +117,6 @@ function passkeyKind(scope: Page | Locator): Locator {
   })
 }
 
-/** The verification banner's link, which opens the address's proof. */
 function verificationBanner(page: Page): Locator {
   return page.getByRole('region', {
     name: `${copy('demo', 'verificationBanner.region')}: ${copy(
@@ -214,12 +128,10 @@ function verificationBanner(page: Page): Locator {
   })
 }
 
-/** The profile pane's email card, which carries the verification surface. */
 function verificationSection(page: Page): Locator {
   return emailCard(page)
 }
 
-/** The admin's navigation landmark. */
 function adminNav(page: Page): Locator {
   return page.getByRole('navigation', {
     name: copy('adminUi', 'shell.navLabel'),
@@ -227,21 +139,12 @@ function adminNav(page: Page): Locator {
   })
 }
 
-/** One admin navigation link by its page title. */
 function adminLink(page: Page, label: string): Locator {
   return adminNav(page).getByRole('link', { name: label, exact: true })
 }
 
-/** The platform's own organization. The account menu offers the admin entry
- * only while this is the current organization; platform administration is not
- * a tenant member's surface. */
 const PLATFORM_TENANT = 'system'
 
-/**
- * Open the admin from the tenant area. The way in is the account menu's admin
- * entry, offered only while the platform's own organization is current, so
- * the journey moves there first.
- */
 async function openConsole(page: Page): Promise<void> {
   await switchToTenant(page, PLATFORM_TENANT)
   await openAccountMenu(page)
@@ -250,7 +153,6 @@ async function openConsole(page: Page): Promise<void> {
   await expect(adminNav(page)).toBeVisible()
 }
 
-/** The tenant selector of a tenant-addressed admin page. */
 function tenantSelector(page: Page): Locator {
   return page.getByRole('combobox', {
     name: copy('adminUi', 'common.tenant'),
@@ -258,7 +160,6 @@ function tenantSelector(page: Page): Locator {
   })
 }
 
-/** The SSO page's provider write section. */
 function providerSection(page: Page): Locator {
   return page.getByRole('region', {
     name: copy('adminUi', 'sso.provider.title'),
@@ -266,7 +167,6 @@ function providerSection(page: Page): Locator {
   })
 }
 
-/** The SSO page's domain section. */
 function domainSection(page: Page): Locator {
   return page.getByRole('region', {
     name: copy('adminUi', 'sso.domains.title'),
@@ -274,7 +174,6 @@ function domainSection(page: Page): Locator {
   })
 }
 
-/** The SSO page's provider list row for one registered provider. */
 function providerRow(page: Page, name: string): Locator {
   return page
     .getByRole('table')
@@ -282,11 +181,6 @@ function providerRow(page: Page, name: string): Locator {
     .filter({ hasText: name })
 }
 
-/**
- * Register a passkey on the enroll step the sign-in flow parks on. An enrolling
- * login's registration step stays parked until the viewer clicks, so the prompt
- * and then the flow's own submit are the two interactions.
- */
 async function registerPasskeyOnSignIn(scope: Page | Locator): Promise<void> {
   const choice = passkeyKind(scope)
   await expect(choice).toBeVisible()
@@ -305,7 +199,6 @@ async function registerPasskeyOnSignIn(scope: Page | Locator): Promise<void> {
   await expect(prompt).toHaveCount(0)
 }
 
-/** Confirm one danger dialog by the label the caller's section supplies. */
 async function confirmDialog(
   page: Page,
   title: string,
@@ -318,7 +211,6 @@ async function confirmDialog(
     .click()
 }
 
-/** Clear the shared step-up challenge with a passkey the account holds. */
 async function proveWithPasskey(page: Page): Promise<void> {
   const dialog = page.getByRole('dialog', {
     name: copy('accountUi', 'mfa.stepUp.title'),
@@ -332,11 +224,6 @@ async function proveWithPasskey(page: Page): Promise<void> {
   await expect(passkey).toBeVisible()
   await passkey.click()
 
-  // Choosing the passkey starts the assertion ceremony on arrival, so there
-  // is no start control. When the ceremony settles, the ready state's
-  // `complete` step is the dialog's own confirmation and the dialog closes
-  // without a click; the prompt leaving is what distinguishes that settled
-  // step from the ceremony still running.
   await expect(
     dialog.getByText(copy('accountUi', 'flowStep.passkeyPrompt'), {
       exact: true,
@@ -345,7 +232,6 @@ async function proveWithPasskey(page: Page): Promise<void> {
   await expect(dialog).toHaveCount(0)
 }
 
-/** Select one organization through a tenant-addressed page's selector. */
 async function selectTenant(page: Page, tenant: string): Promise<void> {
   await chooseSelectOption(
     tenantSelector(page),
@@ -353,11 +239,6 @@ async function selectTenant(page: Page, tenant: string): Promise<void> {
   )
 }
 
-/**
- * Register one enabled OIDC just-in-time provider through the admin's provider
- * form, naming the local fixture's issuer, client and claim mapping. The
- * provider belongs to the tenant the page is switched to.
- */
 async function registerJITProvider(
   page: Page,
   provider: EnterpriseIdentityProvider,
@@ -385,9 +266,6 @@ async function registerJITProvider(
   await nameField.fill(name)
   await provisioningField.fill('jit')
 
-  // The enabled flag is a three-state field whose untouched value leaves the
-  // module's default; the journey's provider is enabled, so the operator
-  // states it.
   await chooseSelectOption(
     form.getByRole('combobox', {
       name: copy('adminUi', 'sso.provider.enabledLabel'),
@@ -399,8 +277,6 @@ async function registerJITProvider(
     }),
   )
 
-  // The provider configuration names the local issuer, its client identifier
-  // and the claim mapping that finds the user's address and display name.
   await form
     .getByLabel(copy('adminUi', 'sso.provider.configLabel'), {
       exact: true,
@@ -419,8 +295,6 @@ async function registerJITProvider(
     .fill(enterpriseIdentityProviderClient.secret)
   await create.click()
 
-  // The write confirms the created provider by name, the form returns to its
-  // initial state, and the list carries the provider under this tenant.
   await expect(
     page.getByText(copy('adminUi', 'sso.provider.created', { name }), {
       exact: true,
@@ -437,10 +311,6 @@ async function registerJITProvider(
   ).toBeVisible()
 }
 
-/**
- * Claim the fixture's email domain for one provider, publish the record the
- * one-time panel hands out through the DNS stub, and verify it.
- */
 async function claimAndVerifyDomain(
   page: Page,
   stub: DNSStub,
@@ -474,8 +344,6 @@ async function claimAndVerifyDomain(
     ),
   ).toBeVisible()
 
-  // The one-time panel carries the DNS token and, beside it, the record name
-  // and full record value the operator publishes.
   const panel = page.getByRole('status').filter({
     hasText: copy('adminUi', 'sso.domains.claimToken'),
   })
@@ -484,9 +352,6 @@ async function claimAndVerifyDomain(
   await expect(recordValue).toBeVisible()
   const publishedValue = ((await recordValue.textContent()) ?? '').trim()
 
-  // FIXTURE ACTION: the operator's own act at the domain's DNS is to publish
-  // the record value the panel shows. The stub stands in for that DNS zone and
-  // answers only this record name.
   stub.setTXT([publishedValue])
 
   const domainRow = domains
@@ -524,14 +389,6 @@ async function claimAndVerifyDomain(
   ).toBeVisible()
 }
 
-/**
- * The operator's precondition: sign in under the deployment's factor
- * requirement, enrol the passkey that sign-in demands, and prove the account's
- * own address, which the admin's human writes are gated on.
- *
- * The operator's browser context is the spec's own; the account it sets up is
- * the only account the operation leaves for the journey.
- */
 async function prepareOperator(
   operatorPage: Page,
   operatorContext: BrowserContext,
@@ -542,10 +399,6 @@ async function prepareOperator(
     identifier: OPERATOR.username,
     password: OPERATOR.password,
   })
-  // The deployment requires a factor of every account, so the operator's own
-  // sign-in parks at the enroll step before the session exists. The sign-in
-  // surface also offers a passkey as a first-factor method, so the step is
-  // addressed inside the password channel's own panel.
   const passwordPanel = operatorPage.getByRole('tabpanel', {
     name: copy('authUi', 'passwordSignIn.title'),
     exact: true,
@@ -557,11 +410,6 @@ async function prepareOperator(
   await registerPasskeyOnSignIn(passwordPanel)
   await expect(homeHeading(operatorPage)).toBeVisible()
 
-  // The journey starts with an operator whose address is proved. The seed
-  // writes the address as an administrator's assertion, so the spec
-  // reaches the precondition the way a person does -- the standing notice's
-  // verify entry, then the code the e2e mail carrier writes to the process
-  // log.
   const banner = verificationBanner(operatorPage)
   await expect(banner).toBeVisible()
   const beforeCode = server.log.mark()
@@ -589,8 +437,6 @@ async function prepareOperator(
       exact: true,
     })
     .click()
-  // The account holds an active factor, so proving the address asks for fresh
-  // local proof; the operator's own passkey answers the shared dialog.
   const verified = proof.getByText(
     copy('accountUi', 'verification.verifiedDescription', {
       email: OPERATOR.identifier,
@@ -611,8 +457,6 @@ async function prepareOperator(
   return authenticator
 }
 
-// The journey drives the provider's real round trip and the domain's TXT
-// lookup, and requires a factor of every account.
 test.use({ enterpriseSSO: true, mfaRequired: true })
 
 test('last-login-way: removing the last way that is not a passkey is refused', async ({
@@ -639,9 +483,6 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
 
   try {
     await test.step('precondition: the operator registers a just-in-time provider and verifies its email domain', async () => {
-      // The operator is subject to the same factor requirement as every other
-      // account, so its sign-in enrols a passkey. A separate context keeps
-      // that device's credential away from the account this journey opens.
       operatorContext = await browser.newContext({
         locale: 'en-US',
         timezoneId: 'UTC',
@@ -674,8 +515,6 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
         }),
       ).toBeVisible()
 
-      // No tenant is chosen yet, so the page prompts for one and renders no
-      // provider list.
       await selectTenant(operatorPage, TARGET_TENANT)
       await expect(
         operatorPage.getByRole('heading', {
@@ -687,8 +526,6 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
       await registerJITProvider(operatorPage, provider, PROVIDER_NAME)
       await claimAndVerifyDomain(operatorPage, stub, PROVIDER_NAME)
 
-      // The operator's work is done; its context is closed so its session does
-      // not linger beside the journey's own.
       await operatorAuthenticator.close()
       operatorAuthenticator = undefined
       await operatorContext.close()
@@ -699,7 +536,6 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
       await accounts.openSignIn()
       await expect(signInHeading(page)).toBeVisible()
 
-      // The provider appears only after the address's domain is discovered.
       const email = page.getByRole('textbox', {
         name: copy('authUi', 'enterprise.emailLabel'),
         exact: true,
@@ -725,8 +561,6 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
         .click()
       await approveEnterpriseSignIn(page)
 
-      // The callback parks the first login at the username step: the account is
-      // opened by the answer, not before it.
       const username = page.getByRole('textbox', {
         name: copy('authUi', 'signInFlow.usernameLabel'),
         exact: true,
@@ -734,11 +568,6 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
       await expect(username).toBeVisible()
       await accounts.answerSignupUsername(JIT_USERNAME)
 
-      // The deployment requires a factor, so the flow parks at the enroll step
-      // before the session exists. The passkey registered here belongs to the
-      // login, so it does not raise the session's level: the session records
-      // the enterprise identity alone, which is what lets this passkey answer
-      // the later step-up.
       await expect(
         page.getByText(copy('authUi', 'signInFlow.enrollTitle'), {
           exact: true,
@@ -748,8 +577,6 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
       await registerPasskeyOnSignIn(page)
       await expect(homeHeading(page)).toBeVisible()
 
-      // The account carries the provider's display name, because no
-      // administrator prepared one.
       await expectAccountMenuName(
         page.getByTestId('account-entry-trigger'),
         enterpriseIdentityProviderUser.name,
@@ -760,8 +587,6 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
       await openAccountSection(page, 'security')
       await expandAccountRows(page)
 
-      // The account's only login name is the username it chose: the enterprise
-      // login wrote no address and no phone.
       const identifiers = identifiersSection(page)
       await expect(
         identifiers.getByText(
@@ -783,11 +608,8 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
         }),
       ).toBeVisible()
 
-      // The enterprise identity is listed as a login way of its own.
       await expect(ssoRow(page)).toBeVisible()
 
-      // No password is set, so the password section offers the first-password
-      // form and no current-password field.
       const password = section(page, copy('accountUi', 'password.title'))
       await expect(
         password.getByRole('textbox', {
@@ -802,9 +624,6 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
         }),
       ).toBeVisible()
 
-      // The passkey registered during the sign-in is the account's one active
-      // factor: its group holds that one row, the row's own actions sit beside
-      // it, and the group's action reads as a plain add.
       const passkeyGroup = mfaSection(page).getByRole('region', {
         name: copy('accountUi', 'mfa.factor.kind.webauthn'),
         exact: true,
@@ -837,8 +656,6 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
         ),
       ).toHaveCount(0)
 
-      // The contact list is empty: the profile pane's email card lists no
-      // address row, and the phone card names no number.
       await selectAccountSection(page, 'profile')
       await expandAccountRows(page)
       await expect(emailCard(page).getByRole('row')).toHaveCount(0)
@@ -847,7 +664,6 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
           exact: true,
         }),
       ).toBeVisible()
-      // The unlink step drives the security pane's social card.
       await selectAccountSection(page, 'security')
       await expandAccountRows(page)
     })
@@ -860,16 +676,8 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
         copy('accountUi', 'bindings.confirmLabel'),
       )
 
-      // The unlink asks for fresh local multi-factor proof. The session proved
-      // the enterprise identity alone (the passkey registered during the login
-      // does not count), and the passkey's channel differs from it, so the
-      // shared step-up dialog offers the passkey and the owner answers it in
-      // the page.
       await proveWithPasskey(page)
 
-      // The won challenge replays the unlink, which the account module then
-      // refuses to remove as the last non-passkey way: the refusal renders in
-      // the bindings section's result region, and the row is still listed.
       await expect(
         bindingsSection(page)
           .getByRole('alert')
@@ -910,7 +718,6 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
           exact: true,
         }),
       ).toBeVisible()
-      // The write keeps the page on the security pane that started it.
       await expect(securityHeading(page)).toBeVisible()
     })
 

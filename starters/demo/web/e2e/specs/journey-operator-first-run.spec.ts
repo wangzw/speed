@@ -1,78 +1,3 @@
-/**
- * J12 -- an operator's first run: the seeded platform administrator signs in
- * with the account and password the seed wrote, and the account's email
- * identifier is on record but unproved. The standing notice under the app bar
- * names the address, offers the verify and change entries and carries no close
- * control. The operator enters the admin, opens the settings page and finds
- * the declared items grouped by namespace, each with its key, type, current
- * value and, where this deployment has written no row, the "Default" state.
- *
- * The operator changes one item to another value inside its declared domain and
- * saves. The write is refused -- the surface answers with the code-pinned text
- * that says to verify the email on the account page first, not with the
- * server's message -- and the draft stays in the field while the row still
- * reads "Default" and the current value is still the declaration. The operator
- * returns to the tenant area, follows the notice's verify entry (which sends
- * one code on arrival), reads that code out of the server's process log -- the
- * one non-UI read this spec makes -- and proves the address. The identifiers
- * list flips the same row to verified and the notice goes.
- *
- * Back on the settings page, the same item and the same value are written
- * again; this time the row reads "Overridden", the field shows the value the
- * operator entered, and the one feedback region carries "Setting saved" with
- * the earlier failure gone. A refresh re-reads the row from the server and it
- * still reads overridden -- the value is persisted, not local state. The audit
- * page lists the write newest-first; the action and outcome filters, applied
- * only on submit, narrow the list to that one record, and its detail shows the
- * action, object, outcome and actor with the tenant and purpose rows standing
- * in as placeholders; the back entry returns to the query.
- *
- * Everything is driven through the rendered product with mouse and keyboard:
- * headings, roles and accessible names, visible text, focus, disabled state and
- * the one feedback region. Expected copy is read from the shipped en-US bundles
- * through helpers/i18n.ts. The report's data values (the setting key, its type,
- * the action and outcome names) are the product's own answers, asserted as the
- * rendered data they are.
- *
- * Three claims in the journey document are narrower here than the document
- * states, and the reasons:
- *
- *  - The admin sidebar's "Platform configuration" group heading is not
- *    asserted here: the spec opens the settings page from the navigation
- *    entry itself, so the step does not observe the group's name. The grouping
- *    is proved through the "Identity & access" group (six entries, its
- *    heading rendered). The grouping and the destination are the step's
- *    substance; the platform group's name is not.
- *  - REQ-presentation-029 (one result at a time, the last settles) is left out
- *    of @covers. The journey's two writes sit on two different mounts of the
- *    settings page -- the account round trip between them unmounts it -- so a
- *    region that kept the first result would not look different from a fresh
- *    one, and this spec cannot discriminate the requirement. The success step
- *    still asserts that no failure text stands beside the confirmation.
- *  - REQ-platform-config-005 (the "Default" / "Overridden" state turns on
- *    whether the chosen layer holds an explicit row, not on whether the value
- *    is empty) is left out of @covers. Its discriminating acceptance writes
- *    empty text into an item, expects "Overridden", then removes that row and
- *    expects "Default". This journey's settings step writes only a non-empty
- *    value, to an int item whose declared domain refuses the empty string, and
- *    its untouched item has no row at all: an implementation that treated a
- *    stored empty value as "no row" would show "Default" for the never-set item
- *    and "Overridden" after the non-empty write exactly as the correct one
- *    does, so the assertions here cannot tell the two apart. The journey
- *    document lists the id, but its steps never drive the empty-value case.
- *
- * The type column is the table's lowest-priority column and only renders from
- * the container's `lg` width, so the spec opens a desktop viewport wide enough
- * to observe the key, type and value the step documents.
- *
- * REQ-signin-006 (a username and a password sign in), REQ-account-010
- * (a correct code proves the held address in place), 015/016/017/019/020,
- * REQ-platform-admin-001 (staff see the admin entry and the home card),
- * 017 (a write from an unproved account is refused with the verification
- * guidance), 029 (audit filters apply on submit) and 031 (the detail's full
- * field set), and REQ-platform-config-001/003 are the ids the assertions can
- * fail on.
- */
 // @journey journey-operator-first-run.md
 // @covers REQ-signin-006, REQ-account-010, REQ-account-015, REQ-account-016, REQ-account-017, REQ-account-019, REQ-account-020, REQ-platform-admin-001, REQ-platform-admin-017, REQ-platform-admin-029, REQ-platform-admin-031, REQ-platform-config-001, REQ-platform-config-003, REQ-presentation-027, REQ-presentation-028
 import type { Locator, Page } from '@playwright/test'
@@ -91,31 +16,19 @@ import {
 } from '../helpers/account-menu'
 import { copy, copyPattern } from '../helpers/i18n'
 
-// The settings table's type column is the lowest-priority one: it renders only
-// from its container's `lg` width, so the desktop viewport here is wide enough
-// for the key, type and current value the journey's settings step documents.
+// The settings table renders its type column only from `lg`; keep the viewport wide enough for the key, type and current value this spec reads.
 test.use({ viewport: { width: 1920, height: 1080 } })
 
-/** The seeded platform administrator the e2e seed writes. */
 const OPERATOR = {
   identifier: 'operator@demo.test',
   username: 'operator',
   password: 'operator-dev-secret',
   displayName: 'Demo Operator',
-  /** The organization the operator administers; the admin is entered from the
-   * platform's own organization instead. */
   organization: 'acme',
 } as const
 
-/** The platform's own organization: the admin entry is offered only there. */
 const SYSTEM_ORGANIZATION = 'system'
 
-/**
- * Move the tenant area onto the platform's own organization, where the admin
- * entry is offered. The account menu's first row names the current
- * organization; expanding it lists the others, and a pick closes the menu and
- * announces the switch in the menu's live region.
- */
 async function enterSystemOrganization(page: Page): Promise<void> {
   await openAccountMenu(page)
   const currentRow = organizationRow(page, OPERATOR.organization)
@@ -136,23 +49,15 @@ async function enterSystemOrganization(page: Page): Promise<void> {
   ).toBeVisible()
 }
 
-/** The one declared setting this journey writes, and its declared type. */
 const SETTING_KEY = 'ratelimit.limit'
 const SETTING_TYPE = 'int'
 
-/** Two more items of the same namespace, so the narrowed table is the group. */
 const SIBLING_KEYS = ['ratelimit.window', 'ratelimit.address-rate'] as const
 
-/** A declared item outside that namespace, used to prove the narrowing. */
 const FOREIGN_KEY = 'authn.account.signup'
 
-/** The value this journey writes: a positive integer, inside the declared
- * domain of a setting whose declared default is 100. */
 const NEW_VALUE = '150'
 
-/** The email-verification notice under the app bar. Its accessible name is its
- * purpose followed by the visible message, so the address it names is part of
- * the name. */
 function verificationBanner(page: Page, email: string): Locator {
   return page.getByRole('region', {
     name: `${copy('demo', 'verificationBanner.region')}: ${copy(
@@ -164,7 +69,6 @@ function verificationBanner(page: Page, email: string): Locator {
   })
 }
 
-/** The profile pane's email card, which carries the verification surface. */
 function verificationSection(page: Page): Locator {
   return page.getByRole('region', {
     name: copy('demo', 'account.rows.label.email'),
@@ -172,7 +76,6 @@ function verificationSection(page: Page): Locator {
   })
 }
 
-/** The security pane's sign-in-ways card. */
 function identifiersSection(page: Page): Locator {
   return page.getByRole('region', {
     name: copy('demo', 'account.rows.label.loginWays'),
@@ -180,7 +83,6 @@ function identifiersSection(page: Page): Locator {
   })
 }
 
-/** The admin's navigation landmark (the platform navigation). */
 function adminNav(page: Page): Locator {
   return page.getByRole('navigation', {
     name: copy('adminUi', 'shell.navLabel'),
@@ -188,7 +90,6 @@ function adminNav(page: Page): Locator {
   })
 }
 
-/** The settings page's namespace navigation. */
 function namespaceNav(page: Page): Locator {
   return page.getByRole('navigation', {
     name: copy('adminUi', 'settings.nav.label'),
@@ -196,12 +97,10 @@ function namespaceNav(page: Page): Locator {
   })
 }
 
-/** The settings table. */
 function settingsTable(page: Page): Locator {
   return page.getByRole('table')
 }
 
-/** The table row of the setting this journey writes. */
 function settingRow(page: Page): Locator {
   return settingsTable(page)
     .getByRole('row')
@@ -210,41 +109,26 @@ function settingRow(page: Page): Locator {
     })
 }
 
-/** The item's value field: the value cell is the draft input. */
 function valueField(page: Page): Locator {
   return page.getByRole('textbox', { name: SETTING_KEY, exact: true })
 }
 
-/** Escape the characters a regular expression reads as syntax. */
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-/**
- * One definition term of an audit detail. The ARIA `term` role takes no name
- * from its content, so the term is found by its exact text rather than by an
- * accessible name.
- */
 function term(page: Page, label: string): Locator {
   return page.locator('dt', {
     hasText: new RegExp(`^${escapeRegExp(label)}$`),
   })
 }
 
-/** One label/value row of an audit detail: the value cell beside its term. */
 function fieldValue(page: Page, label: string): Locator {
   return term(page, label).locator('xpath=following-sibling::dd[1]')
 }
 
-/** The audit list read the console's page itself fetches. */
 const AUDIT_LIST_PATH = '/api/v1/system/audit/records'
 
-/**
- * The raw actor of the login record, learned from the audit list read the
- * page itself receives. The row renders the actor's readable identity and
- * never the account id, so the response is where the id is learned for the
- * attribute leak assertions.
- */
 function observeLoginActor(page: Page): () => Promise<string> {
   let actor = ''
   page.on('response', (response) => {
@@ -281,11 +165,6 @@ function observeLoginActor(page: Page): () => Promise<string> {
   }
 }
 
-/**
- * The attributes a rendered value can reach: a hover title, an accessible
- * name or description, a link target and a control's own value or
- * placeholder. The console must keep the account id out of all of them.
- */
 const ACCOUNT_ID_ATTRIBUTES = [
   'title',
   'aria-label',
@@ -302,9 +181,6 @@ test('operator-first-run: the operator proves the email and lands the first sett
   const loginActor = observeLoginActor(page)
 
   await test.step('the operator signs in and the pending-email notice names the address', async () => {
-    // The operator holds a username and a password; the journey's sign-in
-    // clause is that pair working on the password form. Its email identifier is
-    // on record but not a login way.
     await accounts.signIn({
       identifier: OPERATOR.username,
       password: OPERATOR.password,
@@ -317,9 +193,6 @@ test('operator-first-run: the operator proves the email and lands the first sett
       }),
     ).toBeVisible()
 
-    // The tenant area's home is the address's standing notice: it names the
-    // address, offers the verify and change entries, and carries no close
-    // control (an Alert rendered without a close action).
     const banner = verificationBanner(page, OPERATOR.identifier)
     await expect(banner).toBeVisible()
     await expect(
@@ -346,10 +219,6 @@ test('operator-first-run: the operator proves the email and lands the first sett
   })
 
   await test.step('the admin opens from the account menu entry, and the settings page lists the declared items', async () => {
-    // The admin entry belongs to the platform's own organization, so the
-    // tenant area moves there first; the home admin card and the account
-    // menu's entry are two derivations of the same target, and the step drives
-    // the menu one and checks they agree.
     await enterSystemOrganization(page)
     const adminCard = page
       .getByRole('heading', {
@@ -371,11 +240,6 @@ test('operator-first-run: the operator proves the email and lands the first sett
 
     await entry.click()
 
-    // The admin navigation is grouped: the identity group holds six served
-    // pages, so its heading renders as a disclosure control. (The platform
-    // group holds the settings page and the SMS-template page in this
-    // assembly; this step opens the settings page from its entry -- see the
-    // file header.)
     const nav = adminNav(page)
     await expect(
       nav.getByRole('button', {
@@ -384,8 +248,6 @@ test('operator-first-run: the operator proves the email and lands the first sett
       }),
     ).toBeVisible()
 
-    // The journey's platform-configuration group: the settings page is opened
-    // from the admin navigation.
     await nav
       .getByRole('link', {
         name: copy('adminUi', 'settings.title'),
@@ -400,9 +262,6 @@ test('operator-first-run: the operator proves the email and lands the first sett
       }),
     ).toBeVisible()
 
-    // The namespaces are the grouping the page offers; narrowing to the
-    // setting's own namespace leaves that group's items and no other
-    // namespace's key.
     await expect(
       namespaceNav(page).getByRole('button', {
         name: copy('adminUi', 'settings.nav.all'),
@@ -422,8 +281,6 @@ test('operator-first-run: the operator proves the email and lands the first sett
       page.getByRole('textbox', { name: FOREIGN_KEY, exact: true }),
     ).toHaveCount(0)
 
-    // The item names its key, its declared type and its current value; no row
-    // is stored at this layer, so its state is the declaration.
     const row = settingRow(page)
     await expect(row.getByText(SETTING_KEY, { exact: true })).toBeVisible()
     await expect(row.getByText(SETTING_TYPE, { exact: true })).toBeVisible()
@@ -455,18 +312,12 @@ test('operator-first-run: the operator proves the email and lands the first sett
       })
       .click()
 
-    // The refusal renders the code's own text -- not the server's message --
-    // in the one feedback region under the table, and the row's field carries
-    // the same message through its accessible description.
     const refusal = copy('adminUi', 'errors.authn.contact_required')
     await expect(page.getByRole('alert').filter({ hasText: refusal }))
       .toBeVisible()
     await expect(valueField(page)).toHaveAccessibleDescription(refusal)
     await expect(valueField(page)).toHaveAttribute('aria-invalid', 'true')
 
-    // The draft the operator typed stays in the field; no row was written, so
-    // the item still reads as the declaration and the value it falls back to
-    // is unchanged.
     await expect(valueField(page)).toHaveValue(NEW_VALUE)
     await expect(
       row.getByText(copy('adminUi', 'settings.state.default'), {
@@ -484,17 +335,11 @@ test('operator-first-run: the operator proves the email and lands the first sett
   })
 
   await test.step('the verify entry sends a code and holds the resend control', async () => {
-    // Back to the tenant area, where the standing notice is still there: it is
-    // not a one-page notice, and the round trip through the admin must not
-    // clear it.
     await openAccountMenu(page)
     await backToApp(page).click()
     const banner = verificationBanner(page, OPERATOR.identifier)
     await expect(banner).toBeVisible()
 
-    // The cursor is taken before the entry is followed: the verification
-    // section sends its one code after the arrival, and only that code may be
-    // used.
     const beforeCode = server.log.mark()
     await banner
       .getByRole('link', {
@@ -503,9 +348,6 @@ test('operator-first-run: the operator proves the email and lands the first sett
       })
       .click()
 
-    // The automatic send lands: the section names the destination, the code
-    // field takes focus, and the send control is held for the server's
-    // interval with the remaining seconds stated.
     const section = verificationSection(page)
     await expect(section).toBeVisible()
     await expect(
@@ -542,8 +384,6 @@ test('operator-first-run: the operator proves the email and lands the first sett
       ),
     ).toBeVisible()
 
-    // The one non-UI read: the code the e2e mail carrier wrote to the
-    // process log for this address.
     const { code } = await waitForVerificationCode(
       server.log,
       'mail',
@@ -558,11 +398,6 @@ test('operator-first-run: the operator proves the email and lands the first sett
       })
       .click()
 
-    // The completion state names the proved address, the standing notice goes,
-    // and the account's own identifier list flips the address to verified --
-    // no second identifier is written for the address it already held. The
-    // address is the account's only one, so the proof also chooses it as a
-    // sign-in way: it is listed under Sign-in ways as well as Contacts.
     await expect(verificationSection(page)).toBeVisible()
     await expect(
       page.getByText(
@@ -574,12 +409,9 @@ test('operator-first-run: the operator proves the email and lands the first sett
     ).toBeVisible()
     await expect(verificationBanner(page, OPERATOR.identifier)).toHaveCount(0)
 
-    // The address is the account's chosen sign-in way (the email group lists
-    // the proved addresses only), beside the login name the operator chose.
     await selectAccountSection(page, 'security')
     await expandAccountRows(page)
     const identifiers = identifiersSection(page)
-    // The username is named by the sign-in group's sentence.
     await expect(
       identifiers.getByText(
         copy('accountUi', 'identifiers.usage.loginAs', {
@@ -598,9 +430,6 @@ test('operator-first-run: the operator proves the email and lands the first sett
   })
 
   await test.step('the same write now lands and the item reads overridden', async () => {
-    // Re-enter the admin and the settings page; the page is a fresh mount, so
-    // the item starts again from the declaration. The current organization is
-    // still the platform's own, so the entry is offered from the account menu.
     await openAccountMenu(page)
     await adminEntry(page).click()
     const nav = adminNav(page)
@@ -616,7 +445,6 @@ test('operator-first-run: the operator proves the email and lands the first sett
     await expect(valueField(page)).toBeVisible()
 
     const row = settingRow(page)
-    // The same item and the same new value as the refused attempt.
     await valueField(page).fill(NEW_VALUE)
     await page
       .getByRole('button', {
@@ -625,9 +453,6 @@ test('operator-first-run: the operator proves the email and lands the first sett
       })
       .click()
 
-    // The one feedback region now carries the success confirmation, the row
-    // re-reads as overridden with the written value, and the earlier failure's
-    // text is not beside it.
     const saved = copy('adminUi', 'settings.saved')
     await expect(page.getByText(saved, { exact: true })).toBeVisible()
     await expect(
@@ -646,8 +471,6 @@ test('operator-first-run: the operator proves the email and lands the first sett
       })
       .toBe(NEW_VALUE)
 
-    // A server re-read (the page's own refresh) shows the same state and value:
-    // the write is stored, not local draft state.
     await page
       .getByRole('button', {
         name: copy('adminUi', 'common.refresh'),
@@ -681,8 +504,6 @@ test('operator-first-run: the operator proves the email and lands the first sett
       }),
     ).toBeVisible()
 
-    // The write is on the newest page, and its row carries the action the
-    // settings module writes and the success outcome.
     const table = page.getByRole('table')
     const writeLink = table
       .getByRole('link')
@@ -690,11 +511,6 @@ test('operator-first-run: the operator proves the email and lands the first sett
     await expect(writeLink).toBeVisible()
     const writeRow = writeLink.locator('xpath=ancestor::tr[1]')
 
-    // The login that opened this session records the operator's account as
-    // its object. The row names that account by identity in both the object
-    // and the actor cell, never by the opaque identifier the export keeps.
-    // Background statement rows can push the login off the first page, so the
-    // action filter brings it into view; the reset returns to the full list.
     await page
       .getByLabel(copy('adminUi', 'audit.filters.action'), { exact: true })
       .fill('authn.login')
@@ -715,10 +531,6 @@ test('operator-first-run: the operator proves the email and lands the first sett
       }),
     ).toHaveCount(2)
 
-    // The object and actor cells render the readable identity; the account id
-    // the list read answered must not reach the row through an attribute
-    // either -- a hover title, an accessible name or description, a link
-    // target or a control's value or placeholder.
     const accountId = await loginActor()
     for (const attribute of ACCOUNT_ID_ATTRIBUTES) {
       await expect(
@@ -740,8 +552,6 @@ test('operator-first-run: the operator proves the email and lands the first sett
     ).trim()
     expect(outcome).not.toBe('')
 
-    // Typing the filters is not applying them: the unfiltered list still holds
-    // more than the one record.
     await page
       .getByLabel(copy('adminUi', 'audit.filters.action'), { exact: true })
       .fill('settings.set')
@@ -757,14 +567,10 @@ test('operator-first-run: the operator proves the email and lands the first sett
       })
       .click()
 
-    // Only the write this journey made matches both filters.
     await expect(table.locator('tbody tr')).toHaveCount(1)
     await expect(writeLink).toBeVisible()
     await writeLink.click()
 
-    // The record's detail shows every field the requirement names; the values
-    // this write carries are the action, the item, the outcome and the actor,
-    // and the tenant and purpose rows stand in as the empty-value placeholder.
     await expect(
       page.getByRole('heading', {
         level: 1,
@@ -812,7 +618,6 @@ test('operator-first-run: the operator proves the email and lands the first sett
       fieldValue(page, copy('adminUi', 'auditDetail.field.purpose')),
     ).toHaveText(copy('adminUi', 'common.emptyValue'))
 
-    // The detail carries its way back to the query.
     await page
       .getByRole('link', {
         name: copy('adminUi', 'auditDetail.back'),

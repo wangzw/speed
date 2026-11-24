@@ -1,93 +1,3 @@
-/**
- * The tenant administrator's organization administration surface.
- *
- * A business tenant's administrator -- a member holding the tenant's governed
- * permissions and no platform permission -- reaches the organization admin area
- * from the tenant home. This spec drives that surface the way the person
- * does: the account menu's organization group and the start card, the members
- * page's search, role filter and management panel, the invitations page's
- * issue, resend, revoke and status filter, the invitation handed to a
- * colleague in a second browser context, the tenant roles and grants, the
- * tenant settings layer, the tenant switch, the enterprise providers, the
- * `system` tenant and an impersonated session.
- *
- * The administrator signs in as the e2e fixture's proved-email account
- * (`e2eTenantAdmin`). The seed makes it acme's only tenant administrator,
- * which is the journey's precondition for the self-binding refusal: the
- * tenant has exactly one `tenant-admin` binding. The colleague comes through
- * a real invitation accepted in a second context; that acceptance is also
- * what makes the colleague an ordinary member for the "no entry" branch.
- *
- * The refusals are driven through the rendered controls and asserted on the
- * console's resolved failure copy. Two refusals the document names cannot be
- * reached through a rendered control and are therefore not claimed:
- *
- *  - The platform-domain permission grant. The organization grant picker
- *    offers only the governed catalog (REQ-tenant-admin-026), so a
- *    platform-domain code cannot be selected. Reaching the refusal would
- *    require the direct HTTP call the honesty gate forbids.
- *  - The `platform-admin` grant. The same governed catalog is the only grant
- *    source, so the page cannot name `platform-admin` as a grant target. Its
- *    role creation is driven, and the catalog is asserted not to offer the
- *    platform permission.
- *
- * The remaining narrow claims:
- *
- *  - REQ-tenant-admin-003 is driven as the switch retract/restore pair (to the
- *    personal tenant and back); a business-to-business switch is not driven.
- *  - REQ-tenant-admin-011/012/014 cover the current tenant's provider list;
- *    the cross-tenant absence is the fixture's single-tenant shape and is not
- *    driven through a second organization.
- *  - REQ-tenant-admin-033 (the last-administrator floor) and REQ-tenant-admin-
- *    047 are not claimed: the seed's one `tenant-admin` binding belongs to the
- *    signed-in administrator, and the panel disables that own binding before
- *    any request (REQ-tenant-admin-046), so the server's last-administrator
- *    path is not reachable through a rendered control. The Go tier asserts the
- *    server's refusals.
- *  - REQ-tenant-admin-034 covers the `platform-admin` role creation refusal.
- *    REQ-tenant-admin-048's binding half is not reachable through a rendered
- *    control any more: role binding moved into the member management panel,
- *    whose role list is the tenant's own roles, and `platform-admin` is not
- *    one of them. The refusal is the roles endpoint's, asserted by the unit
- *    tier.
- *  - REQ-tenant-admin-054 (cursor paging) is not driven: the e2e tenant
- *    holds one page of members and invitations, so neither pager renders.
- *  - REQ-tenancy-063 (an owner's account cannot be deleted or deactivated) is
- *    not driven: this spec never deletes or deactivates an account, and the
- *    PRD marks that requirement's end-to-end case unimplemented.
- *  - The personal-tenant direct visit is driven as an in-app history visit
- *    (`goBack`), because a full document load re-settles the current tenant
- *    to the account's non-personal membership; the history visit keeps the
- *    personal tenant current, which is the state the requirement describes.
- *
- * The settings surface's two refusals have no rendered control to drive.
- * A platform-held policy needs a multi-factor administrator, because the
- * admission layer would challenge every tenant-scoped request of a
- * single-factor one; that server names the operator, whose seasoned
- * authenticator the seedImpersonation option has factorseed write, as the
- * tenant's administrator, and the branch signs in with that factor before
- * reading the policy as an enforced, disabled switch. A platform-level
- * setting is neither rendered nor addressable from the tenant surface. In
- * both cases the server fixture makes the same request through the product's
- * API beside the rendered assertion, as the same administrator account: the
- * enforced policy's disable answers 409, and the tenant surface answers the
- * platform keys' writes and deletes with 404. Those API answers are sibling
- * evidence; the rendered state above each one carries the journey.
- *
- * Expected copy is read from the shipped en-US bundles through
- * helpers/i18n.ts. The only non-UI reads are the email verification code and
- * the impersonation step-up SMS code from the server's process log, and the
- * responses the pages themselves receive: the organization profile read, whose
- * owner
- * account identifier never appears on the page, and the tenant's member and
- * invitation reads, whose account identifiers the identity surfaces must
- * likewise never render, and the target's inbox read, whose expiry parameter
- * the transfer notice's body must render as a time. Those tests learn the
- * values from the response the page itself received: the identity tests assert
- * the rendered surface carries neither identifier, and the notification test
- * asserts the body carries the resolved time, not the delivery marker or the
- * raw instant.
- */
 // @journey journey-tenant-admin.md
 // @covers REQ-tenant-admin-001, REQ-tenant-admin-002, REQ-tenant-admin-003, REQ-tenant-admin-004, REQ-tenant-admin-006, REQ-tenant-admin-008, REQ-tenant-admin-009, REQ-tenant-admin-010, REQ-tenant-admin-011, REQ-tenant-admin-012, REQ-tenant-admin-013, REQ-tenant-admin-014, REQ-tenant-admin-015, REQ-tenant-admin-016, REQ-tenant-admin-017, REQ-tenant-admin-018, REQ-tenant-admin-022, REQ-tenant-admin-023, REQ-tenant-admin-025, REQ-tenant-admin-026, REQ-tenant-admin-027, REQ-tenant-admin-028, REQ-tenant-admin-029, REQ-tenant-admin-030, REQ-tenant-admin-031, REQ-tenant-admin-034, REQ-tenant-admin-041, REQ-tenant-admin-042, REQ-tenant-admin-043, REQ-tenant-admin-046, REQ-tenant-admin-048, REQ-tenant-admin-050, REQ-tenant-admin-051, REQ-tenant-admin-052, REQ-tenant-admin-053, REQ-tenant-admin-055, REQ-tenant-admin-056, REQ-tenant-admin-057, REQ-tenant-admin-058, REQ-tenant-admin-059, REQ-tenant-admin-060, REQ-tenant-admin-061, REQ-tenant-admin-062, REQ-tenant-admin-063, REQ-tenant-admin-064, REQ-tenant-admin-065, REQ-tenant-admin-066, REQ-tenant-admin-068, REQ-tenancy-008, REQ-tenancy-013, REQ-tenancy-015, REQ-tenancy-016, REQ-tenancy-021, REQ-tenancy-060, REQ-tenancy-061, REQ-tenancy-062, REQ-tenancy-064, REQ-tenancy-080, REQ-tenancy-081
 import type { BrowserContext, Locator, Page } from '@playwright/test'
@@ -159,26 +69,16 @@ import {
 } from '../helpers/organization-admin'
 import { chooseSelectOption } from '../helpers/select-option'
 
-/** The seeded business tenant the organization surface acts on. Its id is its name. */
 const TENANT = 'acme'
 
-/**
- * The template's ordinary member's login username. The e2e seed writes the
- * account as a username with no separate email identifier, so the member read
- * answers this value.
- */
 const ORDINARY_MEMBER_USERNAME = 'member'
 
-/** The non-builtin role the administrator creates. */
 const ROLE = 'Support'
 
-/** The role's free-text description. */
 const ROLE_DESCRIPTION = 'Reviews support requests and answers audit questions.'
 
-/** The governed permission granted to the role. */
 const PERMISSION = 'authn.membership.manage'
 
-/** The eight governed permissions, in the order the catalog sorts them. */
 const GOVERNED_PERMISSIONS = [
   'authn.idp.manage',
   'authn.membership.manage',
@@ -190,20 +90,14 @@ const GOVERNED_PERMISSIONS = [
   'tenant.profile.write',
 ] as const
 
-/** A platform-domain permission the governed catalog must not offer. */
 const PLATFORM_PERMISSION = 'authn.account.create'
 
-/** The SSO provider the organization registers. */
 const PROVIDER_NAME = 'Acme Organization OIDC'
 
-/** The printed error the reserved-role and self-binding refusals render. */
 function protectedText(): string {
   return copy('adminUi', 'errors.authz.protected')
 }
 
-/** The readable name the governed catalog renders for a permission code:
- * the declaring module's own description key, with the code's separators
- * turned into dashes. */
 function permissionDescription(permission: string): string {
   return copyKey(
     'authzPermissions',
@@ -211,12 +105,8 @@ function permissionDescription(permission: string): string {
   )
 }
 
-/** The address of an invitation used to exercise resend and revoke. */
 const RESENT_INVITEE = 'resent-invitee@demo.test'
 
-/** The address and account a role-bearing invitation is accepted with: the
- * journey registers it through the link, because no seeded account is a
- * non-member of the organization. */
 const ROLE_INVITEE = 'role-invitee@demo.test'
 const ROLE_INVITEE_IDENTITY = {
   email: ROLE_INVITEE,
@@ -225,10 +115,6 @@ const ROLE_INVITEE_IDENTITY = {
   password: 'role-invitee-secret',
 } as const
 
-/** The status tag's text of one invitation row. A terminal row stacks the
- * tag over a note naming the instant it settled, so the cell's first line is
- * the tag's own label; the lookup reads the cell's text instead of a
- * presentation class name. */
 async function invitationStatus(page: Page, email: string): Promise<string> {
   const table = invitationsSection(page).getByRole('table')
   const index = await columnIndex(table, copy('adminUi', 'invitations.column.status'))
@@ -236,14 +122,12 @@ async function invitationStatus(page: Page, email: string): Promise<string> {
   return text.split('\n')[0]!.trim()
 }
 
-/** The one-time panel that hands out the issued invitation's acceptance link. */
 function invitationLinkPanel(page: Page, email: string): Locator {
   return page.getByRole('status').filter({
     hasText: copy('adminUi', 'invitations.issued.link', { email }),
   })
 }
 
-/** Open one member's management panel and leave it open. */
 async function openMemberPanel(page: Page, displayName: string): Promise<Locator> {
   await manageMemberButton(page, displayName).click()
   const panel = memberPanel(page)
@@ -251,11 +135,6 @@ async function openMemberPanel(page: Page, displayName: string): Promise<Locator
   return panel
 }
 
-/**
- * Close one member's management panel through its close control. The control
- * is named by the member's composed identity label, which this helper leaves
- * open; the panel itself is matched by its own title.
- */
 async function closeMemberPanel(page: Page): Promise<void> {
   const panel = memberPanel(page)
   await panel
@@ -268,12 +147,10 @@ async function closeMemberPanel(page: Page): Promise<void> {
   await expect(panel).toHaveCount(0)
 }
 
-/** The bindings list item for one role inside an open member panel. */
 function bindingRow(panel: Locator, role: string): Locator {
   return panel.locator('li').filter({ hasText: role })
 }
 
-/** Select one value of the invitations section's status filter. */
 async function chooseInvitationStatus(
   page: Page,
   key: string,
@@ -284,7 +161,6 @@ async function chooseInvitationStatus(
   )
 }
 
-/** The impersonation page's start controls. */
 function targetField(page: Page): Locator {
   return page.getByRole('combobox', {
     name: copy('adminUi', 'impersonations.start.accountLabel'),
@@ -292,13 +168,6 @@ function targetField(page: Page): Locator {
   })
 }
 
-/**
- * Choose the impersonation target through the account picker. The operator
- * identifies an account by a login name it can read, never by the internal id:
- * the field searches the account roster and hands the chosen row's id to the
- * request. The caller re-runs this after a status read remounts the form,
- * because a remount drops the selection with the draft.
- */
 async function chooseImpersonationTarget(page: Page): Promise<void> {
   const field = targetField(page)
   await field.click()
@@ -334,7 +203,6 @@ function impersonationBanner(page: Page): Locator {
   })
 }
 
-/** The admin's navigation landmark (the platform console's own shell). */
 function adminNavigation(page: Page): Locator {
   return page.getByRole('navigation', {
     name: copy('adminUi', 'shell.navLabel'),
@@ -342,20 +210,10 @@ function adminNavigation(page: Page): Locator {
   })
 }
 
-/**
- * The account menu row naming the current organization. The row is a menuitem
- * while the account has another organization to switch to and a plain row (no
- * role) when it has none, so the row's text is what both shapes share.
- */
 function currentOrganizationRow(page: Page, name: string): Locator {
   return page.getByRole('menu').getByText(name, { exact: true })
 }
 
-/**
- * Move the tenant area onto `target` through the account menu's organization
- * row. The row names the current organization and expands to the others; a
- * pick closes the menu and announces the switch in the menu's live region.
- */
 async function switchOrganization(
   page: Page,
   current: string,
@@ -380,7 +238,6 @@ async function switchOrganization(
   ).toBeVisible()
 }
 
-/** The seeded platform operator the impersonation branch signs in as. */
 const OPERATOR = {
   identifier: 'operator@demo.test',
   username: 'operator',
@@ -388,25 +245,15 @@ const OPERATOR = {
   displayName: 'Demo Operator',
 } as const
 
-/** The invited address as the server masks it on the public read. */
 const MASKED_INVITEE = 'i***@demo.test'
 
-/** The operator's authenticator seed, written by the factorseed command. */
 const TOTP_SEED = e2eImpersonationFactors.totpSeed
 
-/** The phone the spec proves, which the operator's SMS factor binds. */
 const OPERATOR_PHONE = '+8613900139000'
 
-/** The reason recorded on the impersonation the branch starts. */
 const IMPERSONATION_REASON =
   'Support ticket 4712: the organization admin surface during impersonation.'
 
-/**
- * Sign the operator in with the password and the seeded authenticator factor.
- * The password step parks the login on its second factor; the operator holds
- * the authenticator and the SMS methods, and the authenticator one is the
- * seasoned local factor the impersonation gate accepts.
- */
 async function signInOperatorWithTotp(page: Page, accounts: {
   signIn(input: { readonly identifier: string; readonly password: string }): Promise<void>
 }): Promise<void> {
@@ -439,7 +286,6 @@ async function signInOperatorWithTotp(page: Page, accounts: {
   await expect(homeHeading(page)).toBeVisible()
 }
 
-/** The profile pane's phone card, which carries the number and its code step. */
 function phoneSection(page: Page): Locator {
   return page.getByRole('region', {
     name: copy('demo', 'account.rows.label.phone'),
@@ -447,7 +293,6 @@ function phoneSection(page: Page): Locator {
   })
 }
 
-/** The profile pane's email card, which carries the verification surface. */
 function emailSection(page: Page): Locator {
   return page.getByRole('region', {
     name: copy('demo', 'account.rows.label.email'),
@@ -455,12 +300,6 @@ function emailSection(page: Page): Locator {
   })
 }
 
-/**
- * Prove the operator's email address through the account page's own code flow.
- * The impersonation start and the organization writes both refuse an account
- * whose address is unproved; the seed writes it as an administrator's
- * assertion, so the journey reaches the proof the way a person does.
- */
 async function proveOperatorEmail(
   page: Page,
   server: E2EServer,
@@ -500,12 +339,6 @@ async function proveOperatorEmail(
   ).toBeVisible()
 }
 
-/**
- * Prove OPERATOR_PHONE through the account page's own verification flow, so the
- * operator's SMS factor has a proved number to address. The step-up the
- * impersonation branch may raise sends its code there; without a proved number
- * the factor has no destination. The code is the one log read this helper makes.
- */
 async function proveOperatorPhone(
   page: Page,
   server: E2EServer,
@@ -568,10 +401,6 @@ test.describe('the tenant administrator manages the organization', () => {
   test.use({
     seedTenantAdmin: true,
     seedInvitee: true,
-    // The journey's steps, and the platform-item probe inside step 17, make
-    // more than the declared hundred requests a minute from this one account.
-    // The e2e server raises the per-identity quota so the journey reaches
-    // the product instead of the counting layer; the layer stays assembled.
     identityQuota: '10000',
     viewport: { width: 1920, height: 1080 },
   })
@@ -580,16 +409,9 @@ test.describe('the tenant administrator manages the organization', () => {
     demo,
     browser,
   }) => {
-    // The journey drives an invitation through a second context, the member
-    // panel's five writes, the invitation resend/revoke cycle, the role
-    // surface, the settings write and two tenant switches; the tier's default
-    // bound covers one server and one journey, not this many settle points.
     test.setTimeout(scaledTimeout(600_000))
 
     const { page, server, accounts } = demo
-    // The account ids the organization surface reads must never reach the
-    // rendered page; this collects them from the product's own reads so the
-    // assertions below can look for them.
     const accountIds = collectTenantAccountIds(page, TENANT)
     let inviteeContext: BrowserContext | undefined
     let inviteePage: Page | undefined
@@ -604,12 +426,6 @@ test.describe('the tenant administrator manages the organization', () => {
         })
         await expect(homeHeading(page)).toBeVisible()
 
-        // REQ-tenant-admin-001 / REQ-tenant-admin-002: a tenant administrator
-        // holding no platform permission still sees the account menu's
-        // organization group -- on both account-menu surfaces -- and the start
-        // card, with one real link per openable page. The helper asserts the
-        // group's accessible name and every entry and closes each menu, so the
-        // caller's next click lands on the page.
         await expectOrganizationEntryPresent(page)
       })
 
@@ -631,8 +447,6 @@ test.describe('the tenant administrator manages the organization', () => {
         await openOrganizationPage(page, 'profile')
         expect(new URL(page.url()).pathname).toBe(organizationPath('/profile'))
 
-        // The next step reads the member table, so leave the first page for
-        // the invitations page through its account-menu entry.
         await openOrganizationPage(page, 'invitations')
       })
 
@@ -663,17 +477,11 @@ test.describe('the tenant administrator manages the organization', () => {
           copy('adminUi', 'members.column.joinedAt'),
         )
 
-        // REQ-tenant-admin-008 / REQ-tenant-admin-051: the current
-        // administrator is in its own list, with the name, account, roles,
-        // status, source and join time the record carries.
         const admin = memberRow(page, e2eTenantAdmin.displayName)
         await expect(admin).toHaveCount(1)
         await expect(cell(admin, nameColumn)).toHaveText(
           e2eTenantAdmin.displayName,
         )
-        // The username column shows the member record's login username; the
-        // name column beside it is the display name, and the internal account
-        // id is not what either shows.
         await expect(cell(admin, usernameColumn)).toHaveText(
           e2eTenantAdmin.username,
         )
@@ -686,8 +494,6 @@ test.describe('the tenant administrator manages the organization', () => {
         )
         await expect(cell(admin, joinedColumn)).not.toBeEmpty()
 
-        // The template's ordinary member is here too, carrying no role;
-        // nothing from another tenant is.
         const ordinary = memberRow(page, e2eOrdinaryMember.displayName)
         await expect(ordinary).toHaveCount(1)
         await expect(cell(ordinary, usernameColumn)).toHaveText(
@@ -703,18 +509,12 @@ test.describe('the tenant administrator manages the organization', () => {
           copy('adminUi', 'members.source.admin'),
         )
 
-        // The organization surface resolves every identity from its own member
-        // read; neither section renders the account ids that read carries, in
-        // visible text or in any attribute.
         const ids = await accountIds.settled()
         await expectNoAccountIds(invitationsSection(page), ids)
         await expectNoAccountIds(membersSection(page), ids)
       })
 
       await test.step('step 4: the member search narrows the list and distinguishes an empty search', async () => {
-        // REQ-tenant-admin-052: a prefix narrows the server-side read to the
-        // matching members; a query with no match says no member matches it
-        // rather than reporting an empty organization.
         await memberSearchField(page).fill('Demo Member')
         await expect
           .poll(async () => memberRow(page, e2eOrdinaryMember.displayName).count())
@@ -737,7 +537,6 @@ test.describe('the tenant administrator manages the organization', () => {
           ),
         ).toBeVisible()
 
-        // Clearing restores the full list.
         await page
           .getByRole('button', {
             name: copy('adminUi', 'members.search.clear'),
@@ -749,9 +548,6 @@ test.describe('the tenant administrator manages the organization', () => {
       })
 
       await test.step('step 5: the role filter narrows the list and a ?role= address opens filtered', async () => {
-        // REQ-tenant-admin-053: the role filter is server-side, writes the
-        // role into the address, and a direct visit with that address opens
-        // the filtered view with the filter applied.
         await chooseSelectOption(
           memberRoleFilter(page),
           page.getByRole('option', { name: 'tenant-admin', exact: true }),
@@ -764,7 +560,6 @@ test.describe('the tenant administrator manages the organization', () => {
           `?role=${encodeURIComponent('tenant-admin')}`,
         )
 
-        // A full load with the parameter opens the filtered view directly.
         await page.goto(
           `${server.url}${organizationPath('/invitations')}?role=${encodeURIComponent(
             'tenant-admin',
@@ -782,11 +577,6 @@ test.describe('the tenant administrator manages the organization', () => {
           .toBe(1)
         await expect(memberRow(page, e2eOrdinaryMember.displayName)).toHaveCount(0)
 
-        // Clearing the filter removes the parameter and restores both rows.
-        // A cleared role filter keeps the Select's empty value, which the
-        // closed control renders as the zero-width placeholder rather than
-        // the option's "Any role" text; the address and rows below carry the
-        // cleared state.
         await chooseSelectOption(
           memberRoleFilter(page),
           page.getByRole('option', {
@@ -822,9 +612,6 @@ test.describe('the tenant administrator manages the organization', () => {
           ),
         ).toBeVisible()
 
-        // REQ-tenant-admin-009 / REQ-tenant-admin-059: the acceptance value is
-        // handed out once, with its validity, the bearer risk, the copy
-        // control and the delivery result.
         const panel = invitationLinkPanel(page, e2eInvitee.identifier)
         await expect(panel).toBeVisible()
         await expect(
@@ -853,10 +640,6 @@ test.describe('the tenant administrator manages the organization', () => {
             exact: true,
           }),
         ).toBeVisible()
-        // REQ-tenant-admin-061: this deployment's mail carrier is the log
-        // carrier, which reaches no recipient, so the invitation channel
-        // reports not_configured and the panel hands out the link instead of
-        // reporting an email as sent.
         await expect(
           panel.getByText(
             copy('adminUi', 'invitations.issued.delivery.not_configured'),
@@ -867,8 +650,6 @@ test.describe('the tenant administrator manages the organization', () => {
           true,
         )
 
-        // Closing is the only moment the sole copy is dropped, so it asks
-        // first; keeping it leaves the panel in place.
         const close = panel.getByRole('button', {
           name: copy('adminUi', 'invitations.issued.closeAria', {
             tenant: TENANT,
@@ -905,8 +686,6 @@ test.describe('the tenant administrator manages the organization', () => {
           0,
         )
 
-        // REQ-tenant-admin-010 / REQ-tenancy-015: the list carries the pending
-        // invitation with its address, status, inviter and expiry.
         const row = invitationRow(page, e2eInvitee.identifier)
         await expect(row).toHaveCount(1)
         await expect(
@@ -914,8 +693,6 @@ test.describe('the tenant administrator manages the organization', () => {
             exact: true,
           }),
         ).toBeVisible()
-        // The inviter column shows the display name; the username is the
-        // hover title, not a second visible value.
         await expect(
           row.getByText(e2eTenantAdmin.displayName, { exact: true }),
         ).toBeVisible()
@@ -924,8 +701,6 @@ test.describe('the tenant administrator manages the organization', () => {
           copy('adminUi', 'invitations.column.expires'),
         )
         await expect(cell(row, expiryColumn)).not.toBeEmpty()
-        // Once the one-time value is dropped, the now-historical row offers no
-        // copy-link action.
         await expect(
           row.getByRole('button', {
             name: copy('adminUi', 'invitations.copyLink'),
@@ -944,9 +719,6 @@ test.describe('the tenant administrator manages the organization', () => {
         const invitee = inviteePage
         const invitationPath = new URL(acceptanceLink).pathname
 
-        // REQ-tenancy-016: an anonymous viewer meets the invitation landing,
-        // with the summary and the two account actions, not a generic sign-in
-        // page.
         await invitee.goto(acceptanceLink)
         await expect(
           invitee.getByRole('heading', {
@@ -972,7 +744,6 @@ test.describe('the tenant administrator manages the organization', () => {
         ).toBeVisible()
         expect(new URL(invitee.url()).pathname).toBe(invitationPath)
 
-        // The sign-in action opens the host's surface in place.
         await invitee
           .getByRole('button', {
             name: copy('authUi', 'acceptInvitation.signIn'),
@@ -1006,8 +777,6 @@ test.describe('the tenant administrator manages the organization', () => {
           })
           .click()
 
-        // Signing in through the landing keeps the address; the summary names
-        // the inviter, the tenant, the masked invited address and the expiry.
         await expect(
           invitee.getByRole('heading', {
             name: copy('authUi', 'acceptInvitation.title'),
@@ -1040,8 +809,6 @@ test.describe('the tenant administrator manages the organization', () => {
           ),
         ).toBeVisible()
 
-        // REQ-tenancy-021: the acceptance lands on the tenant home with the
-        // invited tenant as the current one.
         await invitee
           .getByRole('button', {
             name: copy('authUi', 'acceptInvitation.accept'),
@@ -1056,8 +823,6 @@ test.describe('the tenant administrator manages the organization', () => {
             exact: true,
           }),
         ).toBeVisible()
-        // The account menu's organization row names the invited tenant as the
-        // current one.
         await openAccountMenu(invitee)
         await expect(currentOrganizationRow(invitee, TENANT)).toBeVisible()
         await closeAccountMenu(invitee)
@@ -1069,13 +834,8 @@ test.describe('the tenant administrator manages the organization', () => {
         }
         const invitee = inviteePage
 
-        // REQ-tenant-admin-001's ordinary-member facet: no permission covers a
-        // organization page, so neither entry exists.
         await expectOrganizationEntryAbsent(invitee)
 
-        // REQ-tenant-admin-004: a direct visit to the area root or a subpath
-        // falls back to the tenant home, with no organization content and no
-        // retryable failure page.
         for (const path of [organizationPath(''), organizationPath('/invitations')]) {
           await invitee.goto(`${server.url}${path}`)
           await expect(homeHeading(invitee)).toBeVisible()
@@ -1096,9 +856,6 @@ test.describe('the tenant administrator manages the organization', () => {
           ).toHaveCount(0)
         }
 
-        // REQ-tenancy-013: an accepted link cannot be redeemed again. The
-        // current session is already a member of the invited tenant, so the
-        // terminal state says so and offers the way into the organization.
         await invitee.goto(acceptanceLink)
         await expect(
           invitee.getByRole('heading', {
@@ -1123,12 +880,7 @@ test.describe('the tenant administrator manages the organization', () => {
       })
 
       await test.step('step 9: the colleague is a member', async () => {
-        // The page carries no refresh control: the browser reload is the
-        // reader's own re-read, and the accepted state lands with it.
         await page.reload()
-        // The page opens on pending invitations. The acceptance left no
-        // pending invitation, so the list renders its filtered empty state
-        // until the accepted filter is chosen below.
         await expect(
           invitationsSection(page).getByRole('heading', {
             name: copy('adminUi', 'invitations.empty.filteredTitle'),
@@ -1136,16 +888,11 @@ test.describe('the tenant administrator manages the organization', () => {
           }),
         ).toBeVisible()
 
-        // The page opens on pending invitations; the accepted row is history,
-        // reached through its filter.
         await chooseInvitationStatus(page, 'invitations.status.accepted')
-        // The invitation reached its accepted terminal state.
         await expect
           .poll(() => invitationStatus(page, e2eInvitee.identifier))
           .toBe(copy('adminUi', 'invitations.status.accepted'))
 
-        // The member table gained the colleague, active, role-less and
-        // invitation-sourced.
         const table = membersSection(page).getByRole('table')
         const usernameColumn = await columnIndex(
           table,
@@ -1165,9 +912,6 @@ test.describe('the tenant administrator manages the organization', () => {
         )
         const joined = memberRow(page, e2eInvitee.displayName)
         await expect(joined).toHaveCount(1)
-        // The username column shows the record's login username. The member
-        // panel's own notices name the account by display name and username,
-        // which is where the composed reference comes from.
         await expect(cell(joined, usernameColumn)).toHaveText(
           e2eInvitee.username,
         )
@@ -1182,8 +926,6 @@ test.describe('the tenant administrator manages the organization', () => {
           copy('adminUi', 'members.roles.none'),
         )
 
-        // The refreshed page read the new member's account id with the rest of
-        // the roster; no section renders it.
         const ids = await accountIds.settled()
         await expectNoAccountIds(invitationsSection(page), ids)
         await expectNoAccountIds(membersSection(page), ids)
@@ -1194,8 +936,6 @@ test.describe('the tenant administrator manages the organization', () => {
         const roles = rolesSection(page)
         const rolesTable = roles.getByRole('table')
 
-        // REQ-tenant-admin-022: the tenant's own roles, with the builtin one
-        // marked; the platform domain's role is absent.
         const builtinColumn = await columnIndex(
           rolesTable,
           copy('adminUi', 'permissions.roles.column.builtin'),
@@ -1223,10 +963,6 @@ test.describe('the tenant administrator manages the organization', () => {
           rolesTable.getByText('platform-admin', { exact: true }),
         ).toHaveCount(0)
 
-        // REQ-tenant-admin-026: the catalog reference starts collapsed; its
-        // own action opens it, and only the governed permission set is
-        // offered. The full governed set still renders, in groups, once the
-        // reference is open.
         const catalog = await expandCatalogSection(page)
         for (const permission of GOVERNED_PERMISSIONS) {
           await expect(
@@ -1237,8 +973,6 @@ test.describe('the tenant administrator manages the organization', () => {
           catalog.getByText(PLATFORM_PERMISSION, { exact: true }),
         ).toHaveCount(0)
 
-        // REQ-tenant-admin-023: a non-builtin role with its free-text
-        // description and no grants or members yet.
         await roles
           .getByLabel(copy('adminUi', 'permissions.roles.create.roleLabel'), {
             exact: true,
@@ -1267,17 +1001,12 @@ test.describe('the tenant administrator manages the organization', () => {
         await expect(cell(roleRow, builtinColumn)).toHaveText(
           copy('adminUi', 'permissions.roles.builtinNo'),
         )
-        // The row carries what the operator wrote and the two counts the
-        // server reports: no grants, no active member yet.
         await expect(cell(roleRow, descriptionColumn)).toHaveText(
           ROLE_DESCRIPTION,
         )
         await expect(cell(roleRow, permissionsColumn)).toHaveText('0')
         await expect(cell(roleRow, membersColumn)).toHaveText('0')
 
-        // REQ-tenant-admin-027: the administrator holds every governed
-        // permission, so the grant lands. `authn.membership.manage` is
-        // high-risk, so the page asks for the deliberate second click.
         await roleRow
           .getByRole('button', {
             name: copy('adminUi', 'permissions.roles.actionsAria', {
@@ -1344,9 +1073,6 @@ test.describe('the tenant administrator manages the organization', () => {
           ),
         ).toBeVisible()
 
-        // The grant row leads with the catalog's readable name, keeps the
-        // code as secondary text, marks the risk and offers revoke by the
-        // server-reported permission code.
         const grantRow = grants
           .getByRole('table')
           .locator('tbody tr')
@@ -1386,9 +1112,6 @@ test.describe('the tenant administrator manages the organization', () => {
           grants.getByRole('table').getByText(PERMISSION, { exact: true }),
         ).toHaveCount(0)
 
-        // REQ-tenant-admin-041: the builtin administrator's usage is
-        // read-only. The page reports the active member count and the holder,
-        // and renders no binding or unbinding control of any kind.
         await builtin
           .getByRole('button', {
             name: copy('adminUi', 'permissions.roles.viewGrantsAria', {
@@ -1417,8 +1140,6 @@ test.describe('the tenant administrator manages the organization', () => {
       })
 
       await test.step('step 11: the member panel binds, unbinds and rebinds the role', async () => {
-        // The binding belongs to the member, so the journey drives it from the
-        // member's management panel rather than the roles page.
         await openOrganizationPage(page, 'invitations')
 
         const chooseRole = async (panel: Locator): Promise<void> => {
@@ -1440,21 +1161,15 @@ test.describe('the tenant administrator manages the organization', () => {
         }
 
         const panel = await openMemberPanel(page, e2eInvitee.displayName)
-        // REQ-tenant-admin-051: the panel lists the member's current bindings;
-        // the joined member holds none yet.
         await expect(
           panel.getByText(copy('adminUi', 'members.panel.rolesEmpty'), {
             exact: true,
           }),
         ).toBeVisible()
 
-        // The panel names the member by display name and username; the account
-        // id its row record carries appears nowhere in the dialog, text or
-        // attributes.
         const ids = await accountIds.settled()
         await expectNoAccountIds(panel, ids)
 
-        // REQ-tenant-admin-030 / REQ-tenant-admin-051: bind the role.
         await chooseRole(panel)
         await bindRole(panel)
         await expect(
@@ -1468,9 +1183,6 @@ test.describe('the tenant administrator manages the organization', () => {
         ).toBeVisible()
         await expect(bindingRow(panel, ROLE)).toHaveCount(1)
 
-        // REQ-tenant-admin-031: unbind asks first, then removes it from the
-        // list. The confirmation names the role whose permissions stop
-        // applying at once and the two server-side refusals it cannot show.
         await bindingRow(panel, ROLE)
           .getByRole('button', {
             name: copy('adminUi', 'members.panel.unbind'),
@@ -1510,7 +1222,6 @@ test.describe('the tenant administrator manages the organization', () => {
           }),
         ).toBeVisible()
 
-        // The rebind restores it, and the closed list reflects the same read.
         await chooseRole(panel)
         await bindRole(panel)
         await expect(bindingRow(panel, ROLE)).toHaveCount(1)
@@ -1542,8 +1253,6 @@ test.describe('the tenant administrator manages the organization', () => {
         )
 
         const panel = await openMemberPanel(page, e2eInvitee.displayName)
-        // REQ-tenant-admin-055: suspend asks first and the message says the
-        // access is paused while the bindings are kept and resumable.
         await panel
           .getByRole('button', {
             name: copy('adminUi', 'members.panel.suspend'),
@@ -1576,8 +1285,6 @@ test.describe('the tenant administrator manages the organization', () => {
             { exact: true },
           ),
         ).toBeVisible()
-        // The open panel follows the list read: suspended, bindings kept, and
-        // no new binding until the member is resumed.
         await expect(
           panel.getByText(copy('adminUi', 'members.status.suspended'), {
             exact: true,
@@ -1601,7 +1308,6 @@ test.describe('the tenant administrator manages the organization', () => {
           cell(memberRow(page, e2eInvitee.displayName), statusColumn),
         ).toHaveText(copy('adminUi', 'members.status.suspended'))
 
-        // Resume restores the membership and therefore the role's effect.
         const resumed = await openMemberPanel(page, e2eInvitee.displayName)
         await resumed
           .getByRole('button', {
@@ -1635,8 +1341,6 @@ test.describe('the tenant administrator manages the organization', () => {
       await test.step('step 13: the administrator cannot suspend itself and cannot unbind its own tenant-admin', async () => {
         const panel = await openMemberPanel(page, e2eTenantAdmin.displayName)
 
-        // REQ-tenant-admin-056: the control is disabled before any request,
-        // and the panel says why.
         await expect(
           panel.getByRole('button', {
             name: copy('adminUi', 'members.panel.suspend'),
@@ -1649,9 +1353,6 @@ test.describe('the tenant administrator manages the organization', () => {
           }),
         ).toBeVisible()
 
-        // REQ-tenant-admin-046: the one `tenant-admin` binding is the
-        // administrator's own; the panel disables it before any request and
-        // says why. The server refusal behind it is the Go tier's claim.
         const own = bindingRow(panel, 'tenant-admin')
         await expect(own).toHaveCount(1)
         await expect(
@@ -1671,8 +1372,6 @@ test.describe('the tenant administrator manages the organization', () => {
 
       await test.step('step 14: removing the member clears them from the list after the double confirmation', async () => {
         const panel = await openMemberPanel(page, e2eInvitee.displayName)
-        // REQ-tenant-admin-057: the message names the role bindings the
-        // removal clears and the reversible alternative.
         await panel
           .getByRole('button', {
             name: copy('adminUi', 'members.remove'),
@@ -1721,11 +1420,6 @@ test.describe('the tenant administrator manages the organization', () => {
         const roles = rolesSection(page)
         const rolesTable = roles.getByRole('table')
 
-        // REQ-tenant-admin-034, role creation: the reserved name is refused
-        // and the catalog does not gain a row. The binding half of
-        // REQ-tenant-admin-048 is not reachable here any more: the member
-        // panel's role list is the tenant's own roles, which never include
-        // `platform-admin`.
         await roles
           .getByLabel(copy('adminUi', 'permissions.roles.create.roleLabel'), {
             exact: true,
@@ -1744,9 +1438,6 @@ test.describe('the tenant administrator manages the organization', () => {
           rolesTable.locator('tbody tr').filter({ hasText: 'platform-admin' }),
         ).toHaveCount(0)
 
-        // The governed catalog is the grant source, so the page cannot even
-        // name the platform role as a grant target. The grants section renders
-        // for a chosen role, so select the role the journey created.
         await rolesTable
           .locator('tbody tr')
           .filter({ hasText: ROLE })
@@ -1779,17 +1470,11 @@ test.describe('the tenant administrator manages the organization', () => {
       await test.step('step 16: the administrator issues a role-bearing invitation, resends it, and the status filter narrows the list', async () => {
         await openOrganizationPage(page, 'invitations')
 
-        // REQ-tenant-admin-060: issue a second invitation the journey can
-        // resend and revoke without disturbing the accepted one.
         await page
           .getByLabel(copy('adminUi', 'invitations.issue.emailLabel'), {
             exact: true,
           })
           .fill(RESENT_INVITEE)
-        // REQ-tenant-admin-009: the caller holds the tenant's role-management
-        // permission, so the issue form offers the tenant's own roles. The
-        // role created in step 10 is the one chosen; the builtin tenant-admin
-        // role is left alone, so the tenant keeps its single administrator.
         await chooseSelectOption(
           page.getByRole('combobox', {
             name: copy('adminUi', 'invitations.issue.roleLabel'),
@@ -1834,9 +1519,6 @@ test.describe('the tenant administrator manages the organization', () => {
           .click()
         await expect(firstPanel).toHaveCount(0)
 
-        // REQ-tenant-admin-009: the issued row carries the role the form
-        // handed it in its role column. The table is re-read when the panel
-        // closes, so the row is awaited before its header is located.
         const issuedRow = invitationRow(page, RESENT_INVITEE)
         await expect(issuedRow).toHaveCount(1)
         const roleColumn = await columnIndex(
@@ -1845,9 +1527,6 @@ test.describe('the tenant administrator manages the organization', () => {
         )
         await expect(cell(issuedRow, roleColumn)).toHaveText(ROLE)
 
-        // Resend asks first, states the unchanged deadline, and replaces the
-        // one-time link; the log carrier delivers nothing, so the panel is
-        // the only place the new link appears.
         const resentRow = invitationRow(page, RESENT_INVITEE)
         await resentRow
           .getByRole('button', {
@@ -1868,8 +1547,6 @@ test.describe('the tenant administrator manages the organization', () => {
           exact: true,
         })
         await expect(resendDialog).toBeVisible()
-        // The confirmation names the deadline that will not change, not a
-        // validity the resend would grant.
         await expect(
           resendDialog.getByText(
             copyPattern('adminUi', 'invitations.resendMessage', {
@@ -1921,9 +1598,6 @@ test.describe('the tenant administrator manages the organization', () => {
           .click()
         await expect(secondPanel).toHaveCount(0)
 
-        // Resend replaced the token on the same invitation: no second row
-        // appeared, and the row now says it was resent once with the latest
-        // send's instant.
         await expect(invitationRow(page, RESENT_INVITEE)).toHaveCount(1)
         await expect(
           invitationRow(page, RESENT_INVITEE).getByText(
@@ -1932,14 +1606,10 @@ test.describe('the tenant administrator manages the organization', () => {
             }),
           ),
         ).toBeVisible()
-        // A resend keeps the invitation's role unchanged.
         await expect(
           cell(invitationRow(page, RESENT_INVITEE), roleColumn),
         ).toHaveText(ROLE)
 
-        // REQ-tenancy-081: the invitation grants its role on acceptance. A new
-        // address registers through the link, proves the address, accepts, and
-        // the member table then names the role beside the new member.
         await page
           .getByLabel(copy('adminUi', 'invitations.issue.emailLabel'), {
             exact: true,
@@ -1998,8 +1668,6 @@ test.describe('the tenant administrator manages the organization', () => {
           await roleContext.close()
         }
 
-        // The acceptance wrote the role beside the new membership, read back
-        // after a reload because the roster is the admin page's own read.
         await page.reload()
         const memberTable = membersSection(page).getByRole('table')
         const roleMember = memberTable
@@ -2013,7 +1681,6 @@ test.describe('the tenant administrator manages the organization', () => {
         await expect(cell(roleMember, memberRolesColumn)).toHaveText(ROLE)
         await chooseInvitationStatus(page, 'invitations.filter.all')
 
-        // REQ-tenant-admin-058: each filter narrows the server read.
         await chooseInvitationStatus(page, 'invitations.status.accepted')
         await expect(invitationRow(page, e2eInvitee.identifier)).toHaveCount(1)
         await expect(invitationRow(page, RESENT_INVITEE)).toHaveCount(0)
@@ -2022,9 +1689,6 @@ test.describe('the tenant administrator manages the organization', () => {
         await expect(invitationRow(page, RESENT_INVITEE)).toHaveCount(1)
         await expect(invitationRow(page, e2eInvitee.identifier)).toHaveCount(0)
 
-        // Nothing has been revoked or expired yet, so each of those filters
-        // names its own empty result rather than reporting an empty
-        // organization.
         for (const status of [
           'invitations.status.revoked',
           'invitations.status.expired',
@@ -2040,8 +1704,6 @@ test.describe('the tenant administrator manages the organization', () => {
           ).toBeVisible()
         }
 
-        // REQ-tenant-admin-010: revoking the pending invitation is a terminal
-        // state the revoked filter then lists, with no actions left on it.
         await chooseInvitationStatus(page, 'invitations.status.pending')
         await invitationRow(page, RESENT_INVITEE)
           .filter({
@@ -2086,7 +1748,6 @@ test.describe('the tenant administrator manages the organization', () => {
             exact: true,
           }),
         ).toBeVisible()
-        // A terminal invitation has nothing left to act on.
         await expect(
           revokedRow.getByRole('button', {
             name: copy('adminUi', 'invitations.actionsAria', {
@@ -2101,10 +1762,6 @@ test.describe('the tenant administrator manages the organization', () => {
       await test.step('step 17: the settings page is the two sign-in policies and nothing else', async () => {
         await openOrganizationPage(page, 'settings')
 
-        // REQ-tenant-admin-016: the organization surface manages exactly the
-        // two declared admission policies. It is not the key/value register:
-        // there is no table, no namespace navigation, no search and no batch
-        // save bar, and no platform-level setting name is rendered.
         await expect(
           page.getByRole('heading', {
             level: 1,
@@ -2169,22 +1826,6 @@ test.describe('the tenant administrator manages the organization', () => {
           await expect(page.getByText(namespace, { exact: false })).toHaveCount(0)
         }
 
-        // REQ-tenant-admin-018 / REQ-tenant-admin-019 / REQ-tenant-admin-062:
-        // the platform settings are invisible from this surface. A platform
-        // operator lists every declared platform setting; the plan's fifteen
-        // platform keys must all be in that dynamic listing, so an empty
-        // listing (or one that lost a declaration) fails here. The tenant
-        // administrator's own session then reads the full listing and
-        // addresses each platform item: the read returns exactly the two
-        // tenant keys, and every write and delete answers the bare 404 an
-        // undeclared key gets. A namespace read has no tenant route at all,
-        // so the router answers 404 or 405.
-        //
-        // This server does not run the impersonation fixture, so the seed
-        // writes the operator's address as an administrator's assertion it
-        // does not prove: the address is a contact, not a login way. The
-        // username beside it is the login name, which is what the API sign-in
-        // takes here.
         const platformSettings = await server.readPlatformSettings({
           identifier: OPERATOR.username,
           password: OPERATOR.password,
@@ -2227,33 +1868,15 @@ test.describe('the tenant administrator manages the organization', () => {
           expect([404, 405], `GET namespace ${namespace}`).toContain(status)
         }
 
-        // This journey leaves both policies off. Turning one on would require
-        // it of the single-factor tenant administrator from the next request
-        // onward -- the write itself passes, the read after it is challenged --
-        // and every later step would meet that challenge. The toggle itself is
-        // driven by `tenant-admin: an administrator turns a policy on, reads
-        // it back, and turns it off`, which signs in the multi-factor operator;
-        // the optimistic save, the confirmation and the rollback are also
-        // driven in the page's unit tests.
       })
 
       await test.step('step 18: a personal-tenant switch retracts the entry and a direct visit returns home', async () => {
-        // A personal organization is named after the account it belongs to, so
-        // the switcher row carries the administrator's own display name.
         const personal = e2eTenantAdmin.displayName
 
-        // REQ-tenant-admin-003/006: the switch retracts the entry, the account
-        // menu's organization group and the card at once.
         await switchOrganization(page, TENANT, personal)
         await expect(homeHeading(page)).toBeVisible()
         await expectOrganizationEntryAbsent(page)
 
-        // A direct visit while the personal tenant is current: history
-        // navigation leaves the module's current tenant in place, so the
-        // organization URL is reached with the personal tenant still current.
-        // The full-document load a fresh address would perform re-settles the
-        // account's non-personal membership, so it cannot exercise this
-        // branch; the history visit reaches the same guard.
         await page.goBack()
         await expect(homeHeading(page)).toBeVisible()
         expect(new URL(page.url()).pathname).toBe('/')
@@ -2266,16 +1889,11 @@ test.describe('the tenant administrator manages the organization', () => {
           }),
         ).toHaveCount(0)
 
-        // Switching back restores the entry once the new permission set
-        // settles.
         await switchOrganization(page, personal, TENANT)
         await expect(homeHeading(page)).toBeVisible()
         await expectOrganizationEntryPresent(page)
       })
     } finally {
-      // The colleague's context holds its own cookie session; closing it keeps
-      // a failed run from leaving a second context open while the server
-      // drains.
       await inviteeContext?.close().catch(() => undefined)
     }
   })
@@ -2291,8 +1909,6 @@ test.describe('the organization SSO page', () => {
   test('tenant-admin: the organization registers, verifies, disables and removes an SSO provider', async ({
     demo,
   }) => {
-    // The branch signs in and out several times to observe discovery after
-    // each provider state, so it needs more than the tier's default bound.
     test.setTimeout(scaledTimeout(300_000))
 
     const { page, server, accounts } = demo
@@ -2309,7 +1925,6 @@ test.describe('the organization SSO page', () => {
       )
     }
 
-    /** Publish the token the panel hands out, the operator's act at the DNS. */
     const publishAndVerify = async (): Promise<void> => {
       const domains = domainsSection(page)
       await expect(
@@ -2387,7 +2002,6 @@ test.describe('the organization SSO page', () => {
       await expect(panel).toHaveCount(0)
     }
 
-    /** Set the provider's enabled flag through its edit form. */
     const setProviderEnabled = async (enabled: boolean): Promise<void> => {
       const form = providerFormSection(page)
       await chooseSelectOption(
@@ -2402,9 +2016,6 @@ test.describe('the organization SSO page', () => {
           exact: true,
         }),
       ).toHaveValue(PROVIDER_NAME)
-      // The provider read does not carry the write-only configuration, and
-      // the write validates it, so the operator restates it when saving a
-      // change.
       await form
         .getByLabel(copy('adminUi', 'sso.provider.configLabel'), {
           exact: true,
@@ -2456,7 +2067,6 @@ test.describe('the organization SSO page', () => {
       ).toBeVisible()
     }
 
-    /** Look the provider up by the fixture user's address on the sign-in page. */
     const discover = async (expected: boolean): Promise<void> => {
       await accounts.signOut()
       await accounts.openSignIn()
@@ -2506,7 +2116,6 @@ test.describe('the organization SSO page', () => {
     await test.step('step 1: the organization SSO page starts empty for this tenant', async () => {
       await signInAdmin()
       await openOrganizationPage(page, 'sso')
-      // REQ-tenant-admin-011: the list is the current tenant's and is empty.
       await expect(
         page.getByRole('heading', {
           name: copy('adminUi', 'sso.empty.title'),
@@ -2569,8 +2178,6 @@ test.describe('the organization SSO page', () => {
         ),
       ).toBeVisible()
 
-      // REQ-tenant-admin-012: the provider appears in this tenant's list with
-      // its protocol and enabled state.
       const row = page
         .getByRole('table')
         .locator('tbody tr')
@@ -2583,8 +2190,6 @@ test.describe('the organization SSO page', () => {
     })
 
     await test.step('step 3: the administrator claims the email domain and verifies its DNS record', async () => {
-      // REQ-tenant-admin-015: the claim hands out the token and the DNS
-      // record; publishing it and verifying flips the row.
       const domains = domainsSection(page)
       await chooseSelectOption(
         domains.getByRole('combobox', {
@@ -2608,8 +2213,6 @@ test.describe('the organization SSO page', () => {
     })
 
     await test.step('step 4: a disabled provider leaves sign-in discovery', async () => {
-      // REQ-tenant-admin-013: the verified domain no longer resolves to the
-      // provider while it is disabled.
       await setProviderEnabled(false)
       await discover(false)
     })
@@ -2655,14 +2258,12 @@ test.describe('the organization SSO page', () => {
           { exact: true },
         ),
       ).toBeVisible()
-      // REQ-tenant-admin-014: it is gone from the list.
       await expect(
         page.getByRole('heading', {
           name: copy('adminUi', 'sso.empty.title'),
           exact: true,
         }),
       ).toBeVisible()
-      // ... and its verified domain no longer participates in discovery.
       await discover(false)
     })
   })
@@ -2676,16 +2277,12 @@ test.describe('the system tenant is not manageable', () => {
   }) => {
     const { page, server, accounts } = demo
 
-    // The account holds the system tenant's tenant-admin role and no platform
-    // permission.
     await accounts.signIn({
       identifier: e2eSystemTenantAdmin.identifier,
       password: e2eSystemTenantAdmin.password,
     })
     await expect(homeHeading(page)).toBeVisible()
 
-    // REQ-tenant-admin-006: the system tenant offers neither the entry nor the
-    // card.
     await expectOrganizationEntryAbsent(page)
 
     for (const path of [
@@ -2724,14 +2321,8 @@ test.describe('an impersonated session hides the organization', () => {
 
     await test.step('precondition: the operator signs in and opens the impersonation page', async () => {
       await signInOperatorWithTotp(page, accounts)
-      // The impersonation start refuses an unproved address, and the step-up
-      // it may raise sends its code to the operator's SMS factor, which binds a
-      // proved phone. Both proofs go through the account page's own flows,
-      // exactly as a person would.
       await proveOperatorEmail(page, server)
       await proveOperatorPhone(page, server)
-      // The operator's current organization is the platform's own, so the
-      // admin entry is offered from the account menu.
       await openAccountMenu(page)
       await adminEntry(page).click()
       await expect(adminNavigation(page)).toBeVisible()
@@ -2761,9 +2352,6 @@ test.describe('an impersonated session hides the organization', () => {
       await reasonField(page).fill(IMPERSONATION_REASON)
       await expect(startButton(page)).toBeEnabled()
 
-      // The start is fresh enough to land here; a slow setup may pass the
-      // freshness window, in which case the admin raises its step-up dialog.
-      // The branch classifies the answer rather than presuming either.
       const dialog = stepUpDialog(page)
       await expect(async () => {
         if (await dialog.isVisible()) return
@@ -2775,8 +2363,6 @@ test.describe('an impersonated session hides the organization', () => {
       }).toPass({ timeout: scaledTimeout(60_000), intervals: [2_000] })
 
       if (await dialog.isVisible()) {
-        // The sign-in used the authenticator factor, so the SMS factor is the
-        // one the step-up offers. Its code is the e2e carrier's log line.
         const before = server.log.mark()
         await dialog
           .getByRole('button', {
@@ -2811,8 +2397,6 @@ test.describe('an impersonated session hides the organization', () => {
     })
 
     await test.step('step 1: the entry and card are withheld while impersonating', async () => {
-      // REQ-tenant-admin-042: the impersonated session is the target account,
-      // but the surface is withheld regardless of its permissions.
       await expectOrganizationEntryAbsent(page)
     })
 
@@ -2867,7 +2451,6 @@ test.describe('an unproved email is refused until it is proved', () => {
       password: e2eUnprovedTenantAdmin.password,
     })
     await expect(homeHeading(page)).toBeVisible()
-    // The unproved address does not block admission; the entry still appears.
     await expectOrganizationEntryPresent(page)
 
     await openOrganizationPage(page, 'roles')
@@ -2888,8 +2471,6 @@ test.describe('an unproved email is refused until it is proved', () => {
     }
 
     await test.step('step 1: the organization write is refused with the contact-required text', async () => {
-      // REQ-tenant-admin-043/050: the write is refused before it lands and the
-      // page says to prove the address first.
       await createRole()
       await expect(
         rolesSection(page)
@@ -2913,9 +2494,6 @@ test.describe('an unproved email is refused until it is proved', () => {
       )
       await expect(banner).toBeVisible()
 
-      // The cursor is taken before the entry is followed: the verification
-      // section sends its one code after the arrival, and only that code may
-      // be used.
       const beforeCode = server.log.mark()
       await banner
         .getByRole('link', {
@@ -2978,13 +2556,6 @@ test.describe('an unproved email is refused until it is proved', () => {
 
 test.describe('a policy the platform holds on', () => {
   test.use({
-    // A platform requirement binds every tenant, so the tenant-scoped read
-    // that opens the settings page needs a multi-factor session. The seed
-    // creates the operator and factorseed writes the seasoned authenticator,
-    // so this branch names the operator the tenant's administrator. The page
-    // under test is the tenant settings surface; the account's platform role
-    // changes nothing on
-    // it, and the tenant-admin binding is what admits the read.
     seedImpersonation: true,
     tenantAdmins: { acme: [OPERATOR.identifier] },
     platformRequireMFA: true,
@@ -2999,15 +2570,9 @@ test.describe('a policy the platform holds on', () => {
     const { page, server, accounts } = demo
 
     await signInOperatorWithTotp(page, accounts)
-    // The organization write refuses an unproved address, so the operator
-    // proves it through the account page's own code flow first.
     await proveOperatorEmail(page, server)
     await openOrganizationPage(page, 'settings')
 
-    // The platform layer holds the MFA policy on, so the item reads as
-    // enforced and its switch is an enabled, disabled control with no way to
-    // turn it off. The SSO policy, which the platform does not hold, keeps its
-    // ordinary switch.
     const mfaTitle = copy('adminUi', 'organization.security.mfa.title')
     const ssoTitle = copy('adminUi', 'organization.security.sso.title')
     for (const title of [mfaTitle, ssoTitle]) {
@@ -3043,9 +2608,6 @@ test.describe('a policy the platform holds on', () => {
       }),
       exact: true,
     })
-    // The organization has registered no SSO provider, so the switch is held
-    // off with the reason named: turning the requirement on without a
-    // provider would lock the organization out of every request.
     await expect(ssoSwitch).not.toBeChecked()
     await expect(ssoSwitch).toBeDisabled()
     await expect(
@@ -3054,12 +2616,6 @@ test.describe('a policy the platform holds on', () => {
       }),
     ).toBeVisible()
 
-    // REQ-tenant-admin-018: the rendered state above promises that turning
-    // the enforced policy off cannot land, and the disabled switch offers no
-    // control to drive. The same administrator account makes that write
-    // through the product's API, in its own authenticated session, and the
-    // server refuses it as a conflict; the answer is the sibling evidence
-    // for the read-only rendering, never a replacement for it.
     const refusal = await server.writeTenantSetting({
       tenant: 'acme',
       identifier: OPERATOR.identifier,
@@ -3078,14 +2634,6 @@ test.describe('a policy the platform holds on', () => {
 
 test.describe('a policy the platform does not hold', () => {
   test.use({
-    // A tenant policy applies at members' next sign-in, not to sessions that
-    // already exist, so the session that carries the write is exempt from the
-    // rule it switches on. The seed creates the operator and factorseed writes
-    // the seasoned authenticator, and this branch names the operator acme's
-    // administrator;
-    // the seed writes the first configured administrator as the tenant's
-    // owner, so the organization belongs to that operator. The global layer
-    // stays off, so the tenant is free to choose the policy.
     seedImpersonation: true,
     tenantAdmins: { acme: [OPERATOR.identifier] },
     viewport: { width: 1920, height: 1080 },
@@ -3114,13 +2662,9 @@ test.describe('a policy the platform does not hold', () => {
         exact: true,
       })
     await signInOperatorWithTotp(page, accounts)
-    // The tenant policy write refuses an unproved address, so the operator
-    // proves it through the account page's own code flow first.
     await proveOperatorEmail(page, server)
     await openOrganizationPage(page, 'settings')
 
-    // The platform does not enforce either policy, so both are ordinary
-    // switches the tenant may move.
     await expect(mfaSwitch()).not.toBeChecked()
     await expect(mfaSwitch()).toBeEnabled()
     await expect(ssoSwitch()).not.toBeChecked()
@@ -3131,8 +2675,6 @@ test.describe('a policy the platform does not hold', () => {
     ).toHaveCount(2)
 
     await test.step('turning the policy on saves it immediately', async () => {
-      // REQ-tenant-admin-017: enabling needs no dialog, saves on its own and
-      // leaves the row saying so.
       await mfaSwitch().click()
       await expect(mfaSwitch()).toBeChecked()
       await expect(
@@ -3160,8 +2702,6 @@ test.describe('a policy the platform does not hold', () => {
     })
 
     await test.step('turning it off asks first and then saves the disabled state', async () => {
-      // REQ-tenant-admin-017: a close names the impact and waits for the
-      // two-step guard before anything is written.
       await mfaSwitch().click()
       const dialog = page.getByRole('dialog', {
         name: copy('adminUi', 'organization.security.confirm.title', {
@@ -3179,11 +2719,6 @@ test.describe('a policy the platform does not hold', () => {
           { exact: true },
         ),
       ).toBeVisible()
-      // The guard has changed nothing yet: the dialog is still the only
-      // interactive surface, and the page behind it is inert (the modal marks
-      // the background aria-hidden, so the switch is not a role query while
-      // the dialog is open). The write is observed from the row after the
-      // second confirmation closes it.
       await expect(dialog).toBeVisible()
 
       await dialog
@@ -3227,24 +2762,6 @@ test.describe('a policy the platform does not hold', () => {
   })
 })
 
-/**
- * The organization profile page's ownership surface.
- *
- * The e2e seed registers its business tenants as roster rows, not as
- * organizations: a seeded tenant carries no owner (`owner_account` stays
- * empty), so the owner-only controls never render on acme. These branches
- * therefore create an organization through the self-service page, whose
- * creator becomes the owner and the first tenant-admin in one product write,
- * and whose success lands on the organization profile page -- the fifth page.
- * That is the state the ownership controls describe, reached the way a person
- * reaches it.
- *
- * The ownership requirements (REQ-tenancy-060 through REQ-tenancy-064 and
- * REQ-tenant-admin-068) are registered in the PRD's feature documents but not
- * in this journey document, so they stay out of `@covers`: the honesty gate
- * accepts only ids the journey document lists, and the journey document is not
- * this task's to edit. The gap is reported rather than claimed.
- */
 const OWNED_NAME = 'acme-lab'
 const OWNED_DISPLAY_NAME = 'Acme Lab'
 const RENAMED_ORG = 'Acme Lab Renamed'
@@ -3254,7 +2771,6 @@ const OWNED_DESCRIPTION = 'The lab organization the ownership branches create.'
 const OWNED_CONTACT_EMAIL = 'lab@demo.test'
 const OWNED_WEBSITE = 'https://lab.demo.test'
 
-/** One definition-row value on a detail-style list, by its term. */
 function definitionValue(page: Page, label: string): Locator {
   return page
     .locator('dt')
@@ -3262,19 +2778,12 @@ function definitionValue(page: Page, label: string): Locator {
     .locator('xpath=following-sibling::dd[1]')
 }
 
-/** The owner fields one organization-profile read answers with. */
 interface ProfileOwner {
   readonly owner_account: string
   readonly owner_display_name: string
   readonly owner_username: string
 }
 
-/**
- * Wait for the product's own organization-profile read of `name` and return
- * the owner fields it answered. The page shows the owner's display name and
- * username but never the internal account identifier, so this is where a test
- * that must prove the identifier's absence learns the value to look for.
- */
 function waitForProfileOwner(
   page: Page,
   name: string,
@@ -3293,7 +2802,6 @@ function waitForProfileOwner(
     })
 }
 
-/** The profile page's owner-only card. */
 function ownershipSection(page: Page): Locator {
   return page.getByRole('region', {
     name: copy('adminUi', 'tenantProfile.ownership.title'),
@@ -3315,13 +2823,6 @@ function deleteOrganizationButton(page: Page): Locator {
   })
 }
 
-/**
- * Ask the organization's owner to hand ownership to one of its active
- * members, from the profile page. The dialog's member selector offers the
- * organization's active members and the request takes the deliberate second
- * confirmation. A request changes nothing: the caller stays the owner until
- * the target confirms on the account-level page.
- */
 async function requestOwnerTransfer(
   page: Page,
   target: { readonly displayName: string },
@@ -3339,14 +2840,11 @@ async function requestOwnerTransfer(
       name: copy('adminUi', 'tenantProfile.ownership.transfer.targetLabel'),
       exact: true,
     }),
-    // Only the organization's active members are offered, minus the current
-    // owner; the target is one.
     page.getByRole('option', {
       name: new RegExp(`^${escapeRegExp(target.displayName)} \\(.+\\)$`),
     }),
   )
 
-  // The request asks for the deliberate second confirmation.
   await dialog
     .getByRole('button', {
       name: copy('adminUi', 'tenantProfile.ownership.transfer.confirmLabel'),
@@ -3360,8 +2858,6 @@ async function requestOwnerTransfer(
   await expect(again).toBeEnabled()
   await again.click()
 
-  // The confirmation says the request was sent and that ownership has not
-  // moved, and the card now holds the pending request.
   await expect(
     ownershipSection(page).getByText(
       copyPattern('adminUi', 'tenantProfile.ownership.transfer.requested', {
@@ -3377,13 +2873,6 @@ async function requestOwnerTransfer(
   ).toBeVisible()
 }
 
-/**
- * The target's side: open the account-level transfer requests page from the
- * account menu, open the request naming the organization, and confirm it
- * through the page's own two-step confirmation. The caller has to be a
- * signed-in active member whose address the invitation proved, because the
- * confirmation is registration-gated.
- */
 async function confirmOwnerTransfer(
   page: Page,
   organizationName: string,
@@ -3403,8 +2892,6 @@ async function confirmOwnerTransfer(
     }),
   ).toBeVisible()
 
-  // The list addresses a request by the organization's own name; the row's
-  // Review action opens the detail view.
   const row = page
     .getByRole('listitem')
     .filter({ hasText: organizationName })
@@ -3428,8 +2915,6 @@ async function confirmOwnerTransfer(
     })
     .click()
 
-  // Confirming changes an organization's owner, so it takes the deliberate
-  // second confirmation the shared dialog asks for.
   const confirm = page.getByRole('dialog', {
     name: copy('accountUi', 'transferRequests.confirmTitle', {
       tenant: organizationName,
@@ -3460,30 +2945,18 @@ async function confirmOwnerTransfer(
   ).toBeVisible()
 }
 
-/** The notification surface's inbox list. */
 function inboxList(page: Page): Locator {
   return page.getByRole('list', {
     name: copy('notificationUi', 'inbox.title'),
   })
 }
 
-/** One in-app message as the notification surface's own read answers it. */
 interface InboxMessage {
   readonly title: string
   readonly body: string
   readonly params: Record<string, unknown> | null
 }
 
-/**
- * Open the notification centre from the account menu and return the inbox read
- * that carries the notice titled `title`.
- *
- * The delivery worker writes an in-app message on the queue's own poll, so the
- * first read after the page opens can land before the notice does. The live
- * stream re-reads the list on each pushed frame; the predicate skips the
- * answers that do not carry the notice rather than pinning the test to the
- * first fetch.
- */
 async function openNotificationCentre(
   page: Page,
   title: string,
@@ -3509,8 +2982,6 @@ async function openNotificationCentre(
     { timeout: scaledTimeout(45_000) },
   )
   const menu = await openAccountMenu(page)
-  // The row's accessible name appends the unread count ("Messages, 1 unread")
-  // when one is known, so the lookup matches the name's opening words.
   await menu
     .getByRole('menuitem', { name: copy('demo', 'userMenu.messages') })
     .click()
@@ -3526,12 +2997,6 @@ async function openNotificationCentre(
   return message
 }
 
-/**
- * Create an organization through the self-service page: the account menu's
- * organization row expands to the create entry, the form is filled, and the
- * hand-over lands on the new organization's profile page. The creator is its
- * owner and first tenant-admin.
- */
 async function createOrganization(
   page: Page,
   input: {
@@ -3569,8 +3034,6 @@ async function createOrganization(
   await page
     .getByRole('button', { name: copy('orgCreateUi', 'submit'), exact: true })
     .click()
-  // The create-then-enter sequence switches the current organization and
-  // navigates to its profile page.
   await expect(
     page.getByRole('heading', {
       level: 1,
@@ -3581,11 +3044,6 @@ async function createOrganization(
   expect(new URL(page.url()).pathname).toBe(organizationPath('/profile'))
 }
 
-/**
- * Issue an invitation to `email` on the organization's invitations page and
- * return the acceptance link the one-time panel hands out. The page is left
- * (which dismisses the panel) once the link is read.
- */
 async function issueInvitation(
   page: Page,
   server: { readonly url: string },
@@ -3613,7 +3071,6 @@ async function issueInvitation(
   expect(link).toMatch(
     new RegExp(`^${escapeRegExp(server.url)}/invitations/\\S+$`),
   )
-  // Leaving the page drops the one-time panel; the link is already captured.
   await mainNavigation(page)
     .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
     .click()
@@ -3621,11 +3078,6 @@ async function issueInvitation(
   return link
 }
 
-/**
- * Open an invitation link in a second context, sign the invited account in and
- * accept. The invitation fixture's invitee is the default; a caller passes an
- * account when a membership is restored to another account.
- */
 async function acceptInvitationAsInvitee(
   invitee: Page,
   link: string,
@@ -3635,8 +3087,6 @@ async function acceptInvitationAsInvitee(
   } = e2eInvitee,
 ): Promise<void> {
   await invitee.goto(link)
-  // The landing shows the invitation summary first; signing in is the
-  // landing's own action, and it opens the host's surface in place.
   await expect(
     invitee.getByRole('heading', {
       level: 1,
@@ -3690,13 +3140,6 @@ async function acceptInvitationAsInvitee(
   await expect(homeHeading(invitee)).toBeVisible()
 }
 
-/**
- * Register a new account through an invitation link, prove its address with the
- * code the account page sends, and accept the invitation. The registration's
- * product landing is the account page's verification section, and the
- * remembered landing returns the viewer to the link once the address is
- * proved.
- */
 async function registerAndAcceptThroughLink(
   invitee: Page,
   link: string,
@@ -3743,8 +3186,6 @@ async function registerAndAcceptThroughLink(
     })
     .fill(ROLE_INVITEE_IDENTITY.password)
 
-  // Registration sends no mail; the one code that follows is the account
-  // page's verification send, so the cursor before the submit is enough.
   const beforeCode = server.log.mark()
   await invitee
     .getByRole('button', {
@@ -3776,8 +3217,6 @@ async function registerAndAcceptThroughLink(
     })
     .click()
 
-  // The remembered landing returns the proved viewer to the link, which now
-  // offers the acceptance; the arrival itself proves the settled proof.
   await expect
     .poll(() => new URL(invitee.url()).pathname)
     .toBe(invitationPath)
@@ -3797,7 +3236,6 @@ async function registerAndAcceptThroughLink(
   await expect(homeHeading(invitee)).toBeVisible()
 }
 
-/** Bind a role to one member through the members page's management panel. */
 async function bindMemberRole(
   page: Page,
   displayName: string,
@@ -3836,11 +3274,6 @@ async function bindMemberRole(
   await expect(panel).toHaveCount(0)
 }
 
-/**
- * Sign the e2e template's platform operator in and prove its address. The
- * platform management writes refuse an account whose email is unproved, and
- * the seed writes the operator's address as an assertion, not a proof.
- */
 async function signInAndVerifyOperator(
   page: Page,
   server: E2EServer,
@@ -3907,9 +3340,6 @@ test.describe('the organization profile page belongs to its owner', () => {
     })
     await expect(homeHeading(page)).toBeVisible()
 
-    // The create-then-enter sequence lands on the profile page; the read it
-    // issues is awaited so the owner's internal identifier is known. The page
-    // must never render that identifier.
     const profileRead = waitForProfileOwner(page, OWNED_NAME)
     await createOrganization(page, {
       name: OWNED_NAME,
@@ -3918,9 +3348,6 @@ test.describe('the organization profile page belongs to its owner', () => {
     })
     const profileOwner = await profileRead
 
-    // The identity card names the owner by display name and username
-    // together, and the caller is that owner: the two controls render only
-    // for the account the profile's owner column carries.
     const owner = definitionValue(
       page,
       copy('adminUi', 'tenantProfile.field.owner'),
@@ -3935,13 +3362,8 @@ test.describe('the organization profile page belongs to its owner', () => {
       profileOwner.owner_account,
       'the profile names no owner account',
     ).not.toBe('')
-    // The internal account identifier appears nowhere on the page: not as
-    // text and not in an attribute. The username above is the only identity
-    // the owner row exposes beside the display name.
     await expect(page.getByText(profileOwner.owner_account)).toHaveCount(0)
     expect(await page.content()).not.toContain(profileOwner.owner_account)
-    // The status chip shares the value cell with the name, so the name is
-    // asserted as the cell's leading text rather than the whole cell.
     await expect(
       definitionValue(page, copy('adminUi', 'tenantProfile.field.name')),
     ).toContainText(OWNED_NAME)
@@ -3949,7 +3371,6 @@ test.describe('the organization profile page belongs to its owner', () => {
     await expect(transferOwnerButton(page)).toBeVisible()
     await expect(deleteOrganizationButton(page)).toBeVisible()
 
-    // The four descriptive fields are the page's to edit.
     await page
       .getByLabel(copy('adminUi', 'tenantProfile.field.displayName'), {
         exact: true,
@@ -3983,15 +3404,10 @@ test.describe('the organization profile page belongs to its owner', () => {
       ),
     ).toBeVisible()
 
-    // The landed save reaches the host's tenant-list reload, so the account
-    // menu's organization row shows the new name at once.
     await openAccountMenu(page)
     await expect(organizationRow(page, RENAMED_ORG)).toBeVisible()
     await closeAccountMenu(page)
 
-    // A full document load re-settles the current tenant from the caller's
-    // memberships, so the reloaded page addresses the seeded acme first. The
-    // read-back therefore returns to the organization the save wrote.
     await page.reload()
     await expect(
       page.getByRole('heading', {
@@ -4003,12 +3419,6 @@ test.describe('the organization profile page belongs to its owner', () => {
     await switchOrganization(page, 'acme', RENAMED_ORG)
     await openOrganizationPage(page, 'profile')
 
-    // Every one of the four saved values comes back from the server. Each was
-    // written to a value distinct from the organization's creation state, so a
-    // payload that dropped any of them leaves that field reading the old value
-    // and fails here.
-    // The status chip shares the value cell with the name, so the name is
-    // asserted as the cell's leading text rather than the whole cell.
     await expect(
       definitionValue(page, copy('adminUi', 'tenantProfile.field.name')),
     ).toContainText(OWNED_NAME)
@@ -4046,9 +3456,6 @@ test.describe('the organization profile page belongs to its owner', () => {
         displayName: OWNED_DISPLAY_NAME,
       })
 
-      // A second tenant administrator who is not the owner: invite the
-      // colleague, accept, then bind the tenant-admin role through the member
-      // panel.
       const link = await issueInvitation(page, server, e2eInvitee.identifier)
       inviteeContext = await browser.newContext({
         locale: 'en-US',
@@ -4059,9 +3466,6 @@ test.describe('the organization profile page belongs to its owner', () => {
       await acceptInvitationAsInvitee(invitee, link)
       await bindMemberRole(page, e2eInvitee.displayName, 'tenant-admin')
 
-      // The binding changes the invitee's tenant permission set, which the
-      // session read at sign-in. A fresh sign-in re-reads it; the signed-in
-      // account and the organization stay the same.
       const inviteeAccounts = createAccounts({ page: invitee, server })
       await inviteeAccounts.signOut()
       await inviteeAccounts.signIn({
@@ -4072,9 +3476,6 @@ test.describe('the organization profile page belongs to its owner', () => {
 
       await openOrganizationPage(invitee, 'profile')
 
-      // The page is admitted by the tenant-admin grant and names the owner by
-      // display name and username, but the caller is not that account:
-      // neither control renders, and the ownership card is absent altogether.
       const owner = definitionValue(
         invitee,
         copy('adminUi', 'tenantProfile.field.owner'),
@@ -4112,8 +3513,6 @@ test.describe('the organization profile page belongs to its owner', () => {
         displayName: OWNED_DISPLAY_NAME,
       })
 
-      // The target is an active member of the organization, reached through
-      // a real invitation accepted in a second context.
       const link = await issueInvitation(page, server, e2eInvitee.identifier)
       inviteeContext = await browser.newContext({
         locale: 'en-US',
@@ -4126,12 +3525,6 @@ test.describe('the organization profile page belongs to its owner', () => {
       await openOrganizationPage(page, 'profile')
       await requestOwnerTransfer(page, e2eInvitee)
 
-      // The target's own notification surface carries the request. Its body
-      // renders the request's expiry as a time in the viewer's display zone:
-      // the account stores no zone and this context pins UTC, so the expected
-      // rendering is the instant the inbox read answered, formatted for UTC.
-      // The row must carry that time -- not the marker the server writes in
-      // its place, and not the raw instant.
       const transferTitle = copyKey(
         'ownershipNotice',
         'tenant.owner.transfer_requested.in_app.title',
@@ -4151,30 +3544,17 @@ test.describe('the organization profile page belongs to its owner', () => {
         .filter({ hasText: transferTitle })
       await expect(noticeRow).toHaveCount(1)
       await expect(noticeRow).toContainText(expiresText)
-      // The delivery marker's delimiters frame the parameter name the client
-      // resolves; neither may reach the rendered row.
       await expect(noticeRow).not.toContainText(String.fromCharCode(0xe000))
       await expect(noticeRow).not.toContainText(String.fromCharCode(0xe001))
       await expect(noticeRow).not.toContainText(expiresAt)
 
-      // A request changes nothing yet: the caller stays on the
-      // organization's own page and remains its owner.
       expect(new URL(page.url()).pathname).toBe(organizationPath('/profile'))
 
-      // The target confirms on the account-level page opened from its own
-      // account menu. The confirmation is the write that moves the owner,
-      // and it happens in the target's context, so this page's own read is
-      // re-issued rather than updated through a shared cache.
       await confirmOwnerTransfer(invitee, OWNED_NAME)
 
-      // Re-open the profile: this page's own read predates the confirmation,
-      // and the target's context shares no cache with it.
       await openOrganizationPage(page, 'invitations')
       await openOrganizationPage(page, 'profile')
 
-      // The re-read profile names the target as the owner, and the controls
-      // withdraw from the previous owner because it no longer owns the
-      // organization -- not because it left it.
       const owner = definitionValue(
         page,
         copy('adminUi', 'tenantProfile.field.owner'),
@@ -4185,8 +3565,6 @@ test.describe('the organization profile page belongs to its owner', () => {
       await expect(transferOwnerButton(page)).toHaveCount(0)
       await expect(deleteOrganizationButton(page)).toHaveCount(0)
 
-      // The previous owner is still a member and keeps its tenant-admin
-      // binding on the organization's own member list.
       await openOrganizationPage(page, 'invitations')
       const callerMembers = membersSection(page).getByRole('table')
       const callerRoles = await columnIndex(
@@ -4197,8 +3575,6 @@ test.describe('the organization profile page belongs to its owner', () => {
       await expect(retained).toHaveCount(1)
       await expect(cell(retained, callerRoles)).toContainText('tenant-admin')
 
-      // The target now holds the organization: its owner controls render for
-      // that account, and its member row carries the tenant-admin binding.
       const inviteeAccounts = createAccounts({ page: invitee, server })
       await inviteeAccounts.signOut()
       await inviteeAccounts.signIn({
@@ -4213,9 +3589,6 @@ test.describe('the organization profile page belongs to its owner', () => {
         copy('adminUi', 'tenantProfile.field.owner'),
       )
       await expect(promotedOwner).toBeVisible()
-      // The transfer's new owner is named by its display name and username,
-      // read fresh from the account store rather than carried over from the
-      // previous owner.
       await expect(promotedOwner).toHaveText(
         `${e2eInvitee.displayName} (${e2eInvitee.username})`,
       )
@@ -4231,15 +3604,10 @@ test.describe('the organization profile page belongs to its owner', () => {
       const promoted = memberRow(invitee, e2eInvitee.displayName)
       await expect(promoted).toHaveCount(1)
       await expect(cell(promoted, rolesColumn)).toContainText('tenant-admin')
-      // The previous owner is still a member of the organization and still
-      // carries tenant-admin.
       const previous = memberRow(invitee, e2eTenantAdmin.displayName)
       await expect(previous).toHaveCount(1)
       await expect(cell(previous, rolesColumn)).toContainText('tenant-admin')
 
-      // The organization is still among the previous owner's memberships: the
-      // switcher offers it from the other organization, and moving back lands
-      // on the organization home with its administration entry intact.
       const menu = await openAccountMenu(page)
       await menu.getByRole('menuitem').first().click()
       await expect(
@@ -4286,8 +3654,6 @@ test.describe('the organization profile page belongs to its owner', () => {
         displayName: OWNED_DISPLAY_NAME,
       })
 
-      // The transfer's target is an active member, reached through a real
-      // invitation accepted in a second context.
       const link = await issueInvitation(page, server, e2eInvitee.identifier)
       inviteeContext = await browser.newContext({
         locale: 'en-US',
@@ -4297,11 +3663,6 @@ test.describe('the organization profile page belongs to its owner', () => {
       const invitee = await inviteeContext.newPage()
       await acceptInvitationAsInvitee(invitee, link)
 
-      // The owner's page opens the deletion and clears the name guard before
-      // anything changes, so the confirmation is armed and the write needs one
-      // more click. The page keeps the profile it read -- this account is the
-      // owner in it -- so the control stays on screen while the state
-      // underneath moves.
       await openOrganizationPage(page, 'profile')
       await deleteOrganizationButton(page).click()
       const dialog = page.getByRole('dialog', {
@@ -4329,10 +3690,6 @@ test.describe('the organization profile page belongs to its owner', () => {
       })
       await expect(again).toBeEnabled()
 
-      // A second session of the same account requests the organization for
-      // the colleague. The request changes nothing by itself: the target's
-      // confirmation is the write that moves the owner, and it leaves the
-      // previous owner's membership and bindings in place.
       otherContext = await browser.newContext({
         locale: 'en-US',
         timezoneId: 'UTC',
@@ -4349,18 +3706,9 @@ test.describe('the organization profile page belongs to its owner', () => {
       await openOrganizationPage(other, 'profile')
       await requestOwnerTransfer(other, e2eInvitee)
 
-      // The second session stays on the organization's profile: a request
-      // does not move the owner. The target then confirms on its own
-      // account-level page, in a session of its own, and that confirmation
-      // is what hands the organization on while this first page keeps the
-      // owner profile it read.
       expect(new URL(other.url()).pathname).toBe(organizationPath('/profile'))
       await confirmOwnerTransfer(invitee, OWNED_NAME)
 
-      // The stale page's confirmation is still armed. The caller is still a
-      // member -- the transfer kept its membership and its bindings -- but the
-      // organization's owner is the colleague, so the owner decision refuses
-      // the write, which the card states as the forbidden answer.
       await expect(dialog).toBeVisible()
       await expect(again).toBeEnabled()
       await again.click()
@@ -4397,8 +3745,6 @@ test.describe('the organization profile page belongs to its owner', () => {
     await openOrganizationPage(page, 'profile')
     await deleteOrganizationButton(page).click()
 
-    // Deletion is terminal, so the dialog asks for the name and then for the
-    // deliberate second confirmation.
     const dialog = page.getByRole('dialog', {
       name: copy('adminUi', 'tenantProfile.ownership.delete.title', {
         name: OWNED_DISPLAY_NAME,
@@ -4414,9 +3760,6 @@ test.describe('the organization profile page belongs to its owner', () => {
       name: copy('adminUi', 'tenantProfile.ownership.delete.confirmLabel'),
       exact: true,
     })
-    // The typed name is the guard, not decoration: the confirmation is inert
-    // while the field is empty or names anything but this organization's own
-    // name, and only the matching value enables it.
     await expect(confirm).toBeDisabled()
     await nameField.fill(`${OWNED_NAME}-not-the-name`)
     await expect(confirm).toBeDisabled()
@@ -4430,8 +3773,6 @@ test.describe('the organization profile page belongs to its owner', () => {
     await expect(again).toBeEnabled()
     await again.click()
 
-    // The caller is no longer a member: the host leaves the organization and
-    // the confirmation survives the move to the home page.
     await expect(homeHeading(page)).toBeVisible()
     expect(new URL(page.url()).pathname).toBe('/')
     const confirmation = page
@@ -4449,18 +3790,12 @@ test.describe('the organization profile page belongs to its owner', () => {
       ),
     ).toBeVisible()
 
-    // Switch back to the account's remaining organization: the deleted one is
-    // still the current tenant only through its recorded name, and a
-    // tenant-scoped request that announced it would be refused before the
-    // create handler runs.
     const menu = await openAccountMenu(page)
     await expect(organizationRow(page, OWNED_NAME)).toBeVisible()
     await organizationRow(page, OWNED_NAME).click()
     await menu.getByRole('menuitem', { name: 'acme', exact: true }).click()
     await expect(homeHeading(page)).toBeVisible()
 
-    // The tombstone keeps the name: a second creation with the same name is
-    // refused as an identifier conflict, and the form keeps the values.
     const createMenu = await openAccountMenu(page)
     await createMenu.getByRole('menuitem').first().click()
     await createMenu
@@ -4515,7 +3850,6 @@ test.describe('the organization profile page belongs to its owner', () => {
         displayName: OWNED_DISPLAY_NAME,
       })
 
-      // The target is an active member when the dialog lists it.
       const link = await issueInvitation(page, server, e2eInvitee.identifier)
       inviteeContext = await browser.newContext({
         locale: 'en-US',
@@ -4545,10 +3879,6 @@ test.describe('the organization profile page belongs to its owner', () => {
         }),
       )
 
-      // A second administrator session suspends the target after the dialog
-      // read listed it. The write that follows therefore meets a membership
-      // that is no longer active, which the tenant admin answers as a
-      // conflict.
       otherContext = await browser.newContext({
         locale: 'en-US',
         timezoneId: 'UTC',
@@ -4588,8 +3918,6 @@ test.describe('the organization profile page belongs to its owner', () => {
         }),
       ).toBeVisible()
 
-      // The stale confirmation is answered 409; the dialog stays open and
-      // states the conflict beside the chosen target.
       await dialog
         .getByRole('button', {
           name: copy('adminUi', 'tenantProfile.ownership.transfer.confirmLabel'),
@@ -4602,8 +3930,6 @@ test.describe('the organization profile page belongs to its owner', () => {
       })
       await expect(again).toBeEnabled()
       await again.click()
-      // The refusal closes the dialog and reports beside the controls, which
-      // the refused write leaves in place.
       await expect(
         ownershipSection(page).getByText(
           copy('adminUi', 'tenantProfile.ownership.error.conflict'),
@@ -4636,10 +3962,6 @@ test.describe('the organization profile page belongs to its owner', () => {
         name: OWNED_NAME,
         displayName: OWNED_DISPLAY_NAME,
       })
-      // The identity card names the organization by its name, the value the
-      // request surface uses; it carries no internal identifier.
-      // The value cell carries the status chip beside the name, so the name
-      // is read from the cell's leading text.
       const organizationName = (
         await definitionValue(
           page,
@@ -4651,9 +3973,6 @@ test.describe('the organization profile page belongs to its owner', () => {
       ).trim()
       expect(organizationName).toBe(OWNED_NAME)
 
-      // Another session ends the organization through the platform surface.
-      // The page under test keeps its cached profile, so its owner controls
-      // are still rendered when the write below is attempted.
       operatorContext = await browser.newContext({
         locale: 'en-US',
         timezoneId: 'UTC',
@@ -4704,8 +4023,6 @@ test.describe('the organization profile page belongs to its owner', () => {
         exact: true,
       })
       await expect(platformDelete).toBeVisible()
-      // Deletion asks for the organization's name before the two-step
-      // confirmation can arm.
       await platformDelete
         .getByLabel(
           copy('adminUi', 'tenantLifecycle.deleteConfirm.nameLabel'),
@@ -4733,9 +4050,6 @@ test.describe('the organization profile page belongs to its owner', () => {
         ),
       ).toBeVisible()
 
-      // The stale owner's page still offers the delete control. The write
-      // reaches the tombstone the other session wrote and is answered as a
-      // conflict, which the ownership card states.
       await deleteOrganizationButton(page).click()
       const dialog = page.getByRole('dialog', {
         name: copy('adminUi', 'tenantProfile.ownership.delete.title', {
@@ -4762,10 +4076,6 @@ test.describe('the organization profile page belongs to its owner', () => {
       })
       await expect(again).toBeEnabled()
       await again.click()
-      // The organization is gone, so the answer is the surface's not-found
-      // copy. The conflict copy belongs to the member-state refusal the
-      // `stopped being an active member` branch drives; a tombstone is
-      // refused before the write, at the tenant resolution.
       await expect(
         ownershipSection(page).getByText(
           copy('adminUi', 'tenantProfile.ownership.error.notFound'),

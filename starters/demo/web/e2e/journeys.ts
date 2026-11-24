@@ -1,42 +1,4 @@
-/**
- * The journey registry: every document under docs/prd/journeys and how the
- * end-to-end tier relates to it.
- *
- * `covered` means a spec declares the journey and drives it in the browser.
- *
- * `pending` means the browser tier can drive the journey but no spec has been
- * written yet. It is a statement about the schedule, not about the product:
- * the path is reachable through the rendered UI, and the reason says so.
- *
- * `unimplemented` means the product does not present the path yet: the feature
- * is designed (or not) and the browser has no rendered entry to drive, so no
- * spec could pass today. The reason says what is missing. It is a statement
- * about the product, not about the schedule, and the spec and the `covered`
- * label arrive with the implementation.
- *
- * `unreachable` means a precondition the tier cannot provide stands between
- * the journey and any spec: a deployment, a real identity or social provider,
- * or a behaviour only a real vendor exhibits. The reason names the missing
- * precondition. It is a statement about the tier's reach, not a verdict that
- * the product is broken, and it is not a place to park a journey whose spec
- * was merely deferred.
- *
- * The distinction matters because the three non-covered states say different
- * things. Calling a reachable journey `unreachable` tells a reader the browser
- * cannot get there when it can, and it silences the honesty gate for that
- * journey; calling a designed-but-unbuilt path `pending` claims a spec is all
- * that stands in the way. The gate accepts any non-covered state, so the label
- * is what keeps the count of deliberately unverified journeys honest. The gate
- * requires a reason on all three states and prints the four counts on every
- * run.
- *
- * `covers` lists the requirement ids the journey document itself lists. A
- * spec's `@covers` is the narrower claim: the ids that spec actually exercises.
- * The two are different by design -- this array lets a reader compare the
- * registry with the document; the spec header says what the assertions can
- * fail on. The honesty gate (tools/check_e2e_honesty.py) reads this file, not
- * executes it: keep the array literal shape it documents.
- */
+// tools/check_e2e_honesty.py reads this array literal rather than executing it; keep its shape.
 
 export interface JourneyEntry {
   readonly journey: string

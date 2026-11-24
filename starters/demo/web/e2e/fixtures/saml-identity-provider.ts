@@ -1,45 +1,3 @@
-/**
- * A SAML 2.0 identity provider on loopback, for the SP-initiated SAML journey.
- *
- * The product leaves for this provider with an AuthnRequest on the redirect
- * binding, and the provider answers the way a real one does: it shows a page
- * for one fixed user, and once the person approves it signs a Response for that
- * request's identifier and RelayState and serves a page that posts it to the
- * assertion consumer service. The browser performs every hop; the fixture never
- * calls the product.
- *
- * The provider has two listeners:
- *
- *   - The HTTPS listener is the identity provider itself. The product accepts
- *     only an https single sign-on address in a provider's configuration, so
- *     the address the operator registers is https. The certificate is minted
- *     into the run's temporary directory and is not in the browser's trust
- *     store; the one spec that drives this provider tells its browser context
- *     to accept it, which leaves every other journey's certificate checking as
- *     it is.
- *   - The attacker origin is plain http on a second loopback port. It stands
- *     for any other site on the web: it serves one page that posts a response to
- *     the product's assertion consumer service, so the browser sends that post
- *     cross-site, exactly as it would for a page that is not the identity
- *     provider.
- *
- * Both origins are on 127.0.0.1 while the product answers on localhost, so each
- * is cross-site to the product, the topology a deployed identity provider has.
- *
- * XML signing is the Go helper in starters/demo/server/e2e/samlsign, built by
- * the global setup. It signs with the library the product validates with, so the
- * fixture holds no XML-DSig implementation of its own.
- *
- * `holdNextResponse` is the attacker's side of the second test. An attacker who
- * signs in at the identity provider with a browser of their own receives a
- * response for the flow that browser started; the fixture keeps that response
- * instead of delivering it, and the attacker origin posts it. The response is
- * valid and signed, and it answers a request the victim's flow never made.
- *
- * Only fixtures may assemble the environment. This module spawns processes,
- * writes key material and listens on sockets; a spec or a helper may import its
- * constants and types but never these calls.
- */
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { mkdir, readFile } from 'node:fs/promises'
@@ -63,30 +21,19 @@ import {
   readBody,
 } from './identity-provider'
 
-/** The fixed user the provider authenticates. Its address is on the domain the DNS stub answers for. */
 export const samlIdentityProviderUser = {
   subject: 'saml-signin-user',
   email: `saml-employee@${enterpriseIdentityProviderDomain}`,
   name: 'SAML Employee',
 } as const
 
-/**
- * The username the product derives from the asserted address when the provider
- * reads its username from the `email` claim: the address's local part.
- */
 export const samlIdentityProviderUsername = 'saml-employee'
 
-/**
- * The claim mapping a SAML provider row needs to find the user's address and
- * display name: the attribute names the provider sends, each mapped to the
- * product's own target.
- */
 export const samlIdentityProviderClaims = {
   email: 'email',
   displayName: 'display_name',
 } as const
 
-/** The copy the provider's own pages render. */
 export const samlIdentityProviderCopy = {
   heading: 'Sign in with your SAML account',
   approve: 'Continue',
@@ -96,16 +43,13 @@ export const samlIdentityProviderCopy = {
   attackerHeading: 'Claim your reward',
 } as const
 
-/** The route the attacker origin serves the held response on. */
 const ATTACK_PATH = '/claim'
 
-/** How long the signing helper may take. */
 const SIGN_TIMEOUT_MS = 30_000
 
-/** How long an issued response stays valid, which the product bounds at ten minutes. */
+// The product bounds a response at ten minutes; this stays well inside.
 const RESPONSE_LIFETIME_MS = 5 * 60_000
 
-/** What the provider reads out of one AuthnRequest. */
 interface AuthnRequest {
   readonly id: string
   readonly acsURL: string
@@ -113,37 +57,26 @@ interface AuthnRequest {
   readonly relayState: string
 }
 
-/** One response the provider has signed and not yet delivered. */
 interface IssuedResponse {
   readonly acsURL: string
   readonly samlResponse: string
   readonly relayState: string
 }
 
-/** A started SAML identity provider. */
 export interface SamlIdentityProvider {
-  /** The entity identifier a provider row names as `idp_entity_id`. */
   readonly entityID: string
-  /** The https single sign-on address a provider row names as `idp_sso_url`. */
   readonly ssoURL: string
-  /** The PEM certificate a provider row names in `idp_certs`. */
   readonly certificatePEM: string
-  /** The attacker origin's page that posts the held response. */
   readonly attackURL: string
-  /** Keep the next response the provider signs instead of delivering it. */
   holdNextResponse(): void
-  /** Stop both listeners. */
   stop(): Promise<void>
 }
 
 export interface SamlIdentityProviderInput {
-  /** The e2e server's temporary directory; the key material lives under it. */
   readonly dir: string
-  /** The built signing helper, from the harness manifest. */
   readonly signer: string
 }
 
-/** The XML text of one attribute value, escaped. */
 function xml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -152,7 +85,6 @@ function xml(value: string): string {
     .replace(/"/g, '&quot;')
 }
 
-/** Undo the escaping an XML attribute or text node carries. */
 function unxml(value: string): string {
   return value
     .replace(/&lt;/g, '<')
@@ -162,20 +94,16 @@ function unxml(value: string): string {
     .replace(/&amp;/g, '&')
 }
 
-/** A SAML instant: RFC 3339 in UTC, to the second. */
 function instant(at: Date): string {
   return at.toISOString().replace(/\.\d{3}Z$/, 'Z')
 }
 
-/** A fresh SAML identifier, which an XML ID may not start with a digit. */
+// An XML ID may not start with a digit.
 function identifier(): string {
   return `_${randomBytes(16).toString('hex')}`
 }
 
-/**
- * Read an AuthnRequest off the redirect binding: the SAMLRequest parameter is
- * base64 of the raw-deflated XML, and the RelayState is echoed back untouched.
- */
+// The SAMLRequest is base64 of the raw-deflated XML on the redirect binding; RelayState is echoed untouched.
 function readAuthnRequest(url: URL): AuthnRequest {
   const encoded = url.searchParams.get('SAMLRequest')
   if (encoded === null || encoded === '') {
@@ -196,7 +124,6 @@ function readAuthnRequest(url: URL): AuthnRequest {
   }
 }
 
-/** The unsigned Response the provider answers one request with. */
 function buildResponse(
   request: AuthnRequest,
   entityID: string,
@@ -234,7 +161,6 @@ function buildResponse(
   )
 }
 
-/** Run the signing helper over one document and answer the base64 response. */
 function signResponse(
   signer: string,
   directory: string,
@@ -266,7 +192,6 @@ function signResponse(
   })
 }
 
-/** Write one HTML page. */
 function writePage(
   response: ServerResponse,
   status: number,
@@ -280,7 +205,6 @@ function writePage(
   response.end(body)
 }
 
-/** The page the provider shows for one request: the fixed user and one control. */
 function approvePage(token: string): string {
   const copy = samlIdentityProviderCopy
   return (
@@ -295,7 +219,6 @@ function approvePage(token: string): string {
   )
 }
 
-/** The page that posts one response to the assertion consumer service. */
 function postPage(title: string, response: IssuedResponse): string {
   return (
     `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
@@ -309,11 +232,6 @@ function postPage(title: string, response: IssuedResponse): string {
   )
 }
 
-/**
- * Start the SAML identity provider: key material under `dir/saml-identity-provider`,
- * the https provider and the plain-http attacker origin on two free loopback
- * ports.
- */
 export async function startSamlIdentityProvider(
   input: SamlIdentityProviderInput,
 ): Promise<SamlIdentityProvider> {
@@ -321,9 +239,7 @@ export async function startSamlIdentityProvider(
   const signingDirectory = join(directory, 'signing')
   const tlsDirectory = join(directory, 'tls')
   await mkdir(signingDirectory, { recursive: true })
-  // The identity provider's signing identity: an RSA key and a self-signed
-  // certificate, the two files the signing helper reads. The certificate is
-  // what the operator registers with the product.
+  // The signing identity is an RSA key and a self-signed certificate; the certificate is what the operator registers.
   await openssl([
     'req',
     '-x509',
@@ -431,8 +347,7 @@ export async function startSamlIdentityProvider(
       listen(attackerServer, attackerPort),
     ])
   } catch (error) {
-    // One listener up and the other refused would leave a socket this fixture
-    // never returns, so both are closed before the failure leaves here.
+    // A half-open pair would leak a socket, so both listeners are closed before the failure leaves.
     await Promise.all([close(httpsServer), close(attackerServer)])
     throw error
   }

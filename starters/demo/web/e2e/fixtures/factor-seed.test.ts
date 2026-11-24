@@ -1,11 +1,3 @@
-/**
- * The factorseed command's one JSON line is part of its result.
- *
- * The impersonation fixture asks the command for an authenticator and an SMS
- * factor, so a zero exit that omitted either is a half-seeded operator. The
- * reader holds the line to both keys, and a failure carries the standard
- * output and standard error so the half-seeded run is visible.
- */
 import { describe, expect, it } from 'vitest'
 
 import { readSeededFactors } from './factor-seed'

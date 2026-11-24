@@ -1,32 +1,7 @@
-/**
- * The server's standard output, and the three things the tests read out
- * of it: a verification code, the line that records a message accepted by the
- * e2e SMS carrier, and the line the delivery pipeline writes for an external
- * send.
- *
- * The binary writes its logfmt records to standard output (pkg/log's
- * bootstrap chain). These are the test-side reads the honesty rules allow: the
- * carriers reach no vendor or relay, so the process log is the only place a
- * person running the e2e suite would see a code or a notice leave. Nothing
- * else in this directory may interpret log lines; the server fixture hands
- * its captured lines to `ProcessLog`, and the callers ask this module for a
- * code by kind and destination address, a carrier message by destination,
- * template and language, or an outbound record by channel, type and outcome.
- *
- * A verification code is read from the `verification_code` field, never from
- * `code`: the gateway registers `code` as a sensitive key name and the logging
- * layer masks its value, so a line logged under that name would carry no usable
- * code. A notification message carries no code and writes no such field.
- *
- * The parser is a small logfmt reader rather than a split on spaces because
- * the mail record carries quoted bodies: `text` and `html` may contain spaces,
- * quotes and newlines, and the code is written after them.
- */
+// A verification code is read from the `verification_code` field, never `code`: the logging layer masks `code` as a sensitive key name.
 
-/** The two carriers that write code records to the log. */
 export type VerificationKind = 'sms' | 'mail'
 
-/** A verification code read from the process log. */
 export interface VerificationCode {
   readonly code: string
   readonly address: string
@@ -34,50 +9,30 @@ export interface VerificationCode {
   readonly index: number
 }
 
-/** The `msg` each carrier writes when it has sent a code. */
 const CODE_MESSAGE: Record<VerificationKind, string> = {
   sms: 'log sms: a verification code was sent',
   mail: 'log mail: a message was sent',
 }
 
-/**
- * The `msg` the SMS carrier writes for a resolved message. The carrier sends
- * two kinds: a verification code, which keeps the line above, and a
- * notification, whose line does not claim to carry a code. A caller tells the
- * kinds apart by the template and the language the line names, never by the
- * message text alone.
- */
+// The kinds are told apart by the template and language the line names, never by the message text alone.
 const SMS_CARRIER_MESSAGES: ReadonlySet<string> = new Set([
   CODE_MESSAGE.sms,
   'log sms: a message was sent',
 ])
 
-/**
- * The `msg` the e2e mail carrier writes for every message it sends. The line
- * carries the rendered subject and bodies, not a template key or a language:
- * the request's language is what the rendered subject shows, so a caller that
- * needs to select one template in one language passes that language's subject
- * as the filter.
- */
+// The mail line carries the rendered subject, not a template key or a language.
 const MAIL_CARRIER_MESSAGE = 'log mail: a message was sent'
 
-/** The `msg` notification.delivery writes for an external send it accepted. */
 const OUTBOUND_SENT_MESSAGE =
   'notification.delivery: an external message was sent'
 
-/** The `msg` notification.delivery writes for an external send it did not. */
 const OUTBOUND_FAILED_MESSAGE =
   'notification.delivery: an external message was not sent'
 
-/** The startup record the server fixture waits for. */
 const READY_MESSAGE = 'ready'
 
 const CODE_SHAPE = /^\d{6}$/
 
-/**
- * Decode one backslash escape from strconv.Quote's repertoire, answering the
- * text it stands for and the index just past it.
- */
 function unescape(text: string, start: number): [string, number] {
   const marker = text[start + 1]
   switch (marker) {
@@ -108,17 +63,11 @@ function unescape(text: string, start: number): [string, number] {
       return [String.fromCodePoint(Number.parseInt(hex, 16)), start + 10]
     }
     default:
-      // Covers the escaped quote and backslash, and any marker this reader
-      // does not know: the character itself is the best answer available.
       return [marker ?? '', start + 2]
   }
 }
 
-/**
- * Parse one logfmt line into its fields. A quoted value keeps its spaces,
- * escapes and newlines; an unquoted value ends at the next space. A token with
- * no `=` is skipped rather than treated as a field.
- */
+// Parse one logfmt line: a quoted value keeps its spaces, escapes and newlines, and a token with no `=` is skipped.
 export function parseLogfmt(line: string): Record<string, string> {
   const fields: Record<string, string> = {}
   let index = 0
@@ -163,7 +112,6 @@ export function parseLogfmt(line: string): Record<string, string> {
   return fields
 }
 
-/** Whether a `to` value names the address, among a comma-joined recipient list. */
 function names(address: string, want: string): boolean {
   const needle = want.trim().toLowerCase()
   return address
@@ -172,7 +120,6 @@ function names(address: string, want: string): boolean {
     .some((part) => part === needle)
 }
 
-/** The code a line carries for this kind and address, if it carries one. */
 function codeOnLine(
   line: string,
   kind: VerificationKind,
@@ -187,45 +134,31 @@ function codeOnLine(
   return code
 }
 
-/**
- * A line buffer the server fixture fills from the child's standard output.
- * Waiting is append-driven: a waiter is woken when a line arrives, so a code
- * that is written after the call is answered as soon as it lands.
- */
 export class ProcessLog {
   private readonly captured: string[] = []
   private readonly listeners = new Set<() => void>()
 
-  /** Append one line and wake every waiter. */
   append(line: string): void {
     this.captured.push(line)
     for (const listener of [...this.listeners]) listener()
   }
 
-  /** Every line captured so far. */
   get lines(): readonly string[] {
     return this.captured
   }
 
-  /** The whole capture, for a failure attachment. */
   get text(): string {
     return this.captured.join('\n')
   }
 
-  /** The number of lines captured so far: a cursor for `after`. */
   mark(): number {
     return this.captured.length
   }
 
-  /** The last `count` lines, for an error message. */
   tail(count = 40): string {
     return this.captured.slice(Math.max(0, this.captured.length - count)).join('\n')
   }
 
-  /**
-   * Wait until a line at or after `after` satisfies the predicate. The answer
-   * carries the line and its index so a caller can continue from it.
-   */
   async waitFor(
     predicate: (line: string, index: number) => boolean,
     options: {
@@ -254,7 +187,6 @@ export class ProcessLog {
     }
   }
 
-  /** Resolve when a line arrives, or when the remaining time runs out. */
   private waitForChange(remainingMs: number): Promise<void> {
     return new Promise((resolve) => {
       const wake = (): void => {
@@ -268,11 +200,7 @@ export class ProcessLog {
   }
 }
 
-/**
- * Wait for the startup record, which is written after every module started.
- * `after` is a log cursor: a bind retry passes the position taken before its
- * own child started, so a record from the failed attempt cannot answer it.
- */
+// `after` is a log cursor, so a bind retry cannot match a record written by the failed attempt.
 export async function waitForReady(
   log: ProcessLog,
   timeoutMs: number,
@@ -285,12 +213,7 @@ export async function waitForReady(
   })
 }
 
-/**
- * Wait for a verification code for this kind and destination, and answer the
- * latest one at or after `after`. The `after` cursor is what a caller uses when
- * the same address has received a code before and only the new one may be
- * accepted.
- */
+// Answers the latest code for this kind and destination at or after `after`.
 export async function waitForVerificationCode(
   log: ProcessLog,
   kind: VerificationKind,
@@ -310,8 +233,6 @@ export async function waitForVerificationCode(
       what: `a ${kind} verification code for ${address}`,
     },
   )
-  // Another send may have landed while this one was being observed; the
-  // latest line is the one that belongs to the most recent request.
   let latest: VerificationCode = {
     code: codeOnLine(found.line, kind, address) ?? '',
     address,
@@ -327,59 +248,26 @@ export async function waitForVerificationCode(
   return latest
 }
 
-/** One carrier line: the message the carrier wrote when it sent, and where. */
 export interface CarrierMessage {
-  /** The destination the carrier was handed. */
   readonly to: string
-  /**
-   * The logical template the SMS carrier sent under. The mail carrier names no
-   * template key; its template is the rendered subject below.
-   */
   readonly template: string
-  /** The language the SMS carrier resolved the message in. */
   readonly locale: string
-  /**
-   * The rendered subject the mail carrier wrote. It is the mail template as
-   * the request's language rendered it, which is what selects one template in
-   * one language; empty on an SMS carrier line.
-   */
   readonly subject: string
-  /**
-   * The rendered plain-text body the mail carrier wrote; empty on an SMS
-   * carrier line.
-   */
   readonly text: string
-  /** The whole line, for a failure attachment. */
   readonly line: string
-  /** The line's position, so a caller can continue from it. */
   readonly index: number
 }
 
-/** One external-send record the delivery pipeline wrote. */
 export interface OutboundRecord {
-  /** The channel the attempt was for: in_app, email or sms. */
   readonly channel: string
-  /** The notification type the dispatch carried. */
   readonly typeKey: string
-  /** The closed outcome the pipeline classified the attempt as. */
   readonly outcome: string
-  /** The carrier's own receipt identifier, empty for a refusal. */
   readonly providerID: string
-  /** The call's duration in milliseconds. */
   readonly durationMS: number
-  /** The whole line, for a failure attachment. */
   readonly line: string
-  /** The line's position, so a caller can continue from it. */
   readonly index: number
 }
 
-/**
- * The filter one carrier read accepts. An SMS line names its template key and
- * its language, and a mail line names neither; it writes the rendered subject
- * and plain-text body instead. A caller selects one mail template in one
- * language by passing that language's subject, and looks for a value inside
- * the body with `textIncludes`.
- */
 interface CarrierMessageFilter {
   readonly to?: string
   readonly template?: string
@@ -388,7 +276,6 @@ interface CarrierMessageFilter {
   readonly textIncludes?: string
 }
 
-/** A carrier line this kind of message wrote, if the line is one. */
 function carrierMessageOnLine(
   line: string,
   options: CarrierMessageFilter,
@@ -400,10 +287,6 @@ function carrierMessageOnLine(
   if (SMS_CARRIER_MESSAGES.has(msg)) {
     const template = fields.template ?? ''
     const locale = fields.locale ?? ''
-    // A carrier line is identified by what the send resolved to: the template
-    // and the language. Both message kinds carry them, so a caller can await
-    // either without one being mistaken for the other, and a line missing them
-    // is not a message this reader can attribute.
     if (template === '' || locale === '') return undefined
     if (options.to !== undefined && to !== options.to) return undefined
     if (options.template !== undefined && template !== options.template) {
@@ -412,8 +295,6 @@ function carrierMessageOnLine(
     if (options.locale !== undefined && locale !== options.locale) {
       return undefined
     }
-    // The mail-only filters cannot name an SMS line: it carries neither a
-    // rendered subject nor a body.
     if (options.subject !== undefined || options.textIncludes !== undefined) {
       return undefined
     }
@@ -425,8 +306,6 @@ function carrierMessageOnLine(
     const text = fields.text ?? ''
     if (subject === '') return undefined
     if (options.to !== undefined && to !== options.to) return undefined
-    // The mail line names no template key and no language; a caller passing
-    // either is asking for an SMS line, not this one.
     if (options.template !== undefined || options.locale !== undefined) {
       return undefined
     }
@@ -445,7 +324,6 @@ function carrierMessageOnLine(
   return undefined
 }
 
-/** An external-send line the pipeline wrote, if the line is one. */
 function outboundRecordOnLine(
   line: string,
   options: {
@@ -483,16 +361,6 @@ function outboundRecordOnLine(
   }
 }
 
-/**
- * Wait for the carrier line that records one message being handed to it.
- *
- * The SMS line carries the destination, the logical template and the language
- * it was resolved in. The mail line carries the destination and the rendered
- * subject and body, so the caller names the template and the language together
- * through the subject that language renders. Either line is the only evidence
- * a browser tier can read that the message left: the e2e carriers reach no
- * vendor or relay.
- */
 export async function waitForCarrierMessage(
   log: ProcessLog,
   options: CarrierMessageFilter & {
@@ -518,7 +386,6 @@ export async function waitForCarrierMessage(
   return { ...message, index: found.index }
 }
 
-/** Count the carrier lines a filter names, at or after `after`. */
 export function countCarrierMessages(
   log: ProcessLog,
   options: CarrierMessageFilter & {
@@ -536,12 +403,7 @@ export function countCarrierMessages(
   return count
 }
 
-/**
- * Wait for one external-send record the delivery pipeline wrote. A channel that
- * did not reach a carrier — a local refusal before the send — writes none, which
- * is what a caller counts instead of waiting when the send is expected to be
- * refused.
- */
+// A locally refused send writes no record; count records instead of waiting when a refusal is expected.
 export async function waitForOutboundRecord(
   log: ProcessLog,
   options: {
@@ -569,7 +431,6 @@ export async function waitForOutboundRecord(
   return { ...record, index: found.index }
 }
 
-/** Count the external-send records a filter names, at or after `after`. */
 export function countOutboundRecords(
   log: ProcessLog,
   options: {

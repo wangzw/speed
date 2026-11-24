@@ -1,13 +1,3 @@
-/**
- * The loopback port allocator and the readiness probe, from the browser's
- * point of view.
- *
- * A browser resolving `localhost` prefers ::1, while Node's resolver on the
- * machines the tier runs on answers 127.0.0.1. A port that answers HTTP on
- * 127.0.0.1 can therefore be held by another process on ::1 and the browser
- * sees an empty response. Every case here stands up the two addresses for real
- * and asks the harness's own functions, never a substitute for them.
- */
 import {
   createServer as createHttpServer,
   type Server as HttpServer,
@@ -32,7 +22,6 @@ import {
 } from './loopback'
 import { scaledTimeout } from './time-scale'
 
-/** Every listener a case opened, closed even when the case fails. */
 const cleanups: Array<() => Promise<void>> = []
 
 afterEach(async () => {
@@ -40,7 +29,6 @@ afterEach(async () => {
   await Promise.all(closing.map((close) => close()))
 })
 
-/** Close a listener, dropping the connections it still holds. */
 function closeServer(server: NetServer | HttpServer): Promise<void> {
   if ('closeAllConnections' in server) server.closeAllConnections()
   return new Promise((resolve) => {
@@ -48,7 +36,6 @@ function closeServer(server: NetServer | HttpServer): Promise<void> {
   })
 }
 
-/** Whether this machine has an IPv6 loopback the cases can bind. */
 async function canBindIPv6Loopback(): Promise<boolean> {
   try {
     const listener = await nodeLoopbackSockets.bind('::1', 0)
@@ -61,28 +48,10 @@ async function canBindIPv6Loopback(): Promise<boolean> {
 
 const ipv6LoopbackAvailable = await canBindIPv6Loopback()
 
-/**
- * The first explicit port a case tries when it needs a number that is free on
- * both loopback families. It lies below this machine's ephemeral range
- * (20000-65535), so the kernel never hands it to another process's outgoing
- * connection, and the case owns the number rather than taking one the kernel
- * picked.
- */
 const FREE_PORT_FIRST = 15_000
 
-/** How many consecutive explicit ports a case may try. */
 const FREE_PORT_ATTEMPTS = 256
 
-/**
- * A port the case itself confirmed free on both loopback families.
- *
- * A case cannot take a candidate from `bind(address, 0)`: the kernel judges
- * only the address it was asked about, so on this machine it can hand out
- * 32769 for 127.0.0.1 while another process's wildcard listener already holds
- * [::]:32769, and the follow-up bind on ::1 then fails with `EADDRINUSE`. The
- * explicit number is bound on 127.0.0.1 and ::1 in turn and returned only
- * after both binds succeeded, so neither family is left unjudged.
- */
 async function findFreeLoopbackPort(): Promise<number> {
   for (
     let port = FREE_PORT_FIRST;
@@ -109,7 +78,6 @@ async function findFreeLoopbackPort(): Promise<number> {
   )
 }
 
-/** An HTTP server on one literal loopback address answering a fixed status. */
 async function startHttpOn(
   address: '127.0.0.1' | '::1',
   port: number,
@@ -142,18 +110,12 @@ async function startHttpOn(
   return { port: bound, close: () => closeServer(server) }
 }
 
-/** An HTTP server on 127.0.0.1 that answers 200 to every request. */
 function startHealthyIPv4(): Promise<
   { readonly port: number; readonly close: () => Promise<void> }
 > {
   return startHttpOn('127.0.0.1', 0, 200)
 }
 
-/**
- * A wildcard IPv6 listener on one port, configured the way a long-lived
- * occupant is: v6only, so the same port stays free on 127.0.0.1; it accepts
- * every connection and never answers.
- */
 async function startSilentIPv6(
   port: number,
 ): Promise<{ readonly close: () => Promise<void> }> {
@@ -175,22 +137,14 @@ async function startSilentIPv6(
   }
 }
 
-/** The error a missing address family produces, with its system code. */
 function simulatedSystemError(code: string): NodeJS.ErrnoException {
   return Object.assign(new Error(`simulated ${code}`), { code })
 }
 
 describe('the loopback readiness probe', () => {
-  // T1. The defect: Node resolves `localhost` to 127.0.0.1 only, so the old
-  // probe answered 200 while the browser's preferred ::1 was held by another
-  // process. Skipped only on a machine with no IPv6 loopback, where there is
-  // no second address to hold.
   it.skipIf(!ipv6LoopbackAvailable)(
     'names the ::1 occupant when 127.0.0.1 answers 200',
     async () => {
-      // The port is confirmed free on both families by the case itself, so
-      // the silent occupant below cannot land on a number this machine
-      // already holds on ::1.
       const port = await findFreeLoopbackPort()
       const healthy = await startHttpOn('127.0.0.1', port, 200)
       cleanups.push(healthy.close)
@@ -225,10 +179,6 @@ describe('the loopback readiness probe', () => {
     },
   )
 
-  // T3. A machine with no IPv6 loopback must not be a failure: the allocator
-  // judges on 127.0.0.1 alone and the probe treats the missing family as
-  // "nothing there". The simulation goes through the same injection point the
-  // allocator and the probe share.
   it.each(['EADDRNOTAVAIL', 'EAFNOSUPPORT', 'ENETUNREACH'])(
     'allocates and probes when ::1 reports %s',
     async (code) => {
@@ -260,13 +210,9 @@ describe('the loopback readiness probe', () => {
     },
   )
 
-  // The accepted-connection branch: ::1 answering the same path with 200 is
-  // the harness's own server reached through the browser's family, and it
-  // passes. Anything else on ::1 belongs to another process and is retried.
   it.skipIf(!ipv6LoopbackAvailable)(
     'passes when ::1 answers 200 on the same path',
     async () => {
-      // Both servers share a port the case confirmed free on both families.
       const port = await findFreeLoopbackPort()
       const ipv4 = await startHttpOn('127.0.0.1', port, 200)
       cleanups.push(ipv4.close)
@@ -283,17 +229,9 @@ describe('the loopback readiness probe', () => {
     },
   )
 
-  // The deadline bounds the 127.0.0.1 poll only. A 127.0.0.1 answer that
-  // lands a few milliseconds before the bound must not squeeze the ::1 check
-  // into a budget too small for this process's own server to answer: a
-  // timeout there reads as another process holding the port, so the retry
-  // loop would throw the attempt away and could report the port as occupied.
   it.skipIf(!ipv6LoopbackAvailable)(
     'gives the ::1 check its full request timeout when the deadline is nearly spent',
     async () => {
-      // The examined port is one the case confirmed free on both families
-      // itself, so the two servers below cannot land on a number another
-      // process holds on ::1.
       const port = await findFreeLoopbackPort()
       const ipv4 = await startHttpOn('127.0.0.1', port, 200)
       cleanups.push(ipv4.close)
@@ -302,8 +240,6 @@ describe('the loopback readiness probe', () => {
 
       const readyTimeoutMs = scaledTimeout(300)
       const requestTimeoutMs = scaledTimeout(500)
-      // The own ::1 server answers, but not instantly: the point is that the
-      // budget it is handed is wide enough for it to be heard at all.
       const ipv6AnswerMs = scaledTimeout(25)
       const seenIPv6Timeouts: number[] = []
 
@@ -311,7 +247,6 @@ describe('the loopback readiness probe', () => {
         bind: nodeLoopbackSockets.bind,
         request: async (address, port, path, timeoutMs) => {
           if (address === '127.0.0.1') {
-            // Come back 200 with only a few milliseconds left on the bound.
             await new Promise((resolve) =>
               setTimeout(resolve, readyTimeoutMs - scaledTimeout(10)),
             )
@@ -345,7 +280,6 @@ describe('the loopback readiness probe', () => {
   it.skipIf(!ipv6LoopbackAvailable)(
     'treats a ::1 answer other than 200 as an occupied port',
     async () => {
-      // Both servers share a port the case confirmed free on both families.
       const port = await findFreeLoopbackPort()
       const ipv4 = await startHttpOn('127.0.0.1', port, 200)
       cleanups.push(ipv4.close)
@@ -382,9 +316,6 @@ describe('the loopback readiness probe', () => {
     },
   )
 
-  // A reset means ::1 accepted the connection and then dropped it, which is
-  // another process, never a missing address family: the probe must report
-  // the port as occupied rather than pass it.
   it('treats a ::1 connection reset as an occupied port', async () => {
     const port = 41_234
     const sockets: LoopbackSockets = {
@@ -418,17 +349,9 @@ describe('the loopback readiness probe', () => {
 })
 
 describe('the loopback port allocator', () => {
-  // T2. The candidate source is injectable so the case can hand the allocator
-  // a port that is held on ::1 before one that is free, and can then show the
-  // occupant was left alone.
   it.skipIf(!ipv6LoopbackAvailable)(
     'does not return a port another process holds on ::1',
     async () => {
-      // The occupied number and the free one are both explicit ports the case
-      // confirmed free on the two families first. Neither may come from
-      // `bind(..., 0)`: the kernel could hand out a number another process
-      // holds on ::1, failing the case on this machine's environment rather
-      // than on the allocator's judgment.
       const occupiedPort = await findFreeLoopbackPort()
       const occupant = await nodeLoopbackSockets.bind('::1', occupiedPort)
       cleanups.push(occupant.close)
@@ -455,10 +378,6 @@ describe('the loopback port allocator', () => {
 
       expect(ports).toHaveLength(1)
       expect(ports[0]).not.toBe(occupant.port)
-      // The occupant is still listening: the rejected candidate closed the
-      // allocator's own 127.0.0.1 listener, never the process's ::1 one. A
-      // rebind that unexpectedly succeeds joins the cleanups so the case
-      // never leaks it either.
       const rebound = await nodeLoopbackSockets
         .bind('::1', occupant.port)
         .then(
@@ -476,9 +395,6 @@ describe('the loopback port allocator', () => {
     },
   )
 
-  // Any other ::1 bind error means the allocator cannot judge the port; it
-  // must fail loudly and name both the code and the port rather than return a
-  // port whose ::1 side it never checked.
   it('names the code and port when ::1 cannot be judged', async () => {
     const attempted: number[] = []
     const sockets: LoopbackSockets = {
@@ -512,8 +428,6 @@ describe('the loopback port allocator', () => {
     }
   })
 
-  // Running out of candidates must report every rejected port and the reason,
-  // and must close each candidate's 127.0.0.1 listener on the way out.
   it('lists the rejected ports and reasons when candidates run out', async () => {
     const bound: number[] = []
     const closed: number[] = []
@@ -561,11 +475,6 @@ describe('the loopback port allocator', () => {
 })
 
 describe('the fixture retry decision', () => {
-  // The ::1 occupant reaches the fixtures as a LoopbackPortOccupiedError
-  // thrown by the probe, with the child still running. Dropping that branch
-  // would turn a port another process grabbed between allocation and startup
-  // into a failed journey, so the decision is pinned here: the fixture loop
-  // itself needs a built binary and is not reachable from a unit test.
   const occupied = new LoopbackPortOccupiedError(41_234, 'it did not answer')
 
   it('retries a port another process holds on ::1 while attempts remain', () => {

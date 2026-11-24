@@ -1,22 +1,7 @@
-/**
- * The tenant switcher's switch confirmation, asserted as the clipped
- * announcement it is.
- *
- * The host passes `announcement="visually-hidden"` to the switcher, so the
- * confirmation stays in a `role="status"` region that keeps announcing the
- * switch while taking the kit's clip recipe: a 1x1 box that paints nothing.
- * The assertion proves both halves of that contract -- the text is still one
- * exact node in the document, and its box stays within the 1px bound -- so a
- * regression back to an inline confirmation, whose span grows to the
- * sentence's width and line height, fails here.
- */
+// The host passes announcement="visually-hidden": the confirmation stays a role=status region clipped to a 1x1 box. Assert both the exact text node and the 1px bound.
 
 import { expect, type Page } from '@playwright/test'
 
-/**
- * Assert one exact copy string is present in the document and clipped to a
- * box no larger than one pixel in either dimension.
- */
 export async function expectClippedAnnouncement(
   page: Page,
   text: string,

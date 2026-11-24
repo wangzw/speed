@@ -1,24 +1,9 @@
-/**
- * The factors the factorseed command reports it wrote.
- *
- * The command writes one JSON line on success, carrying the identifier of each
- * factor it inserted. The impersonation fixture asks for both an authenticator
- * and an SMS factor, so a successful run that omitted either left the
- * precondition half-written: the journey would start from an operator that
- * cannot complete the step-up it exists to reach. Reading the line holds the
- * command to what the fixture asked for instead of trusting its exit status.
- */
 export interface SeededFactors {
   readonly totp: string
   readonly sms: string
 }
 
-/**
- * Read the command's JSON line, requiring both factor identifiers. A line that
- * is not JSON, is not an object, or omits a factor is a failure, and the
- * message carries both streams so the failure shows what the command wrote
- * rather than only that it exited zero.
- */
+// A zero exit is not enough: both factor identifiers must be present.
 export function readSeededFactors(
   stdout: string,
   stderr: string,

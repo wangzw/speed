@@ -1,38 +1,3 @@
-/**
- * The email password-reset journey: a person who forgot their password proves
- * their account's address with a code from the e2e mail carrier, writes a
- * new password without ever holding a session, and signs in with it.
- *
- * Everything is driven through the rendered product with mouse and keyboard:
- * the sign-in surface's forgot-password entry, the reset page's email channel,
- * its identifier, code, new-password and confirmation fields, and the account
- * menu's sign-out. The single non-UI read is the verification code from the
- * server's process log (fixtures/log.ts): the e2e carrier reaches no relay, so
- * the process log is where a person running the e2e suite reads it.
- *
- * The account's own address is proved through the registration's verification
- * step, which sends a code to that address. The reset reuses the inbox resend
- * window that send holds (the window is per destination and shared across
- * purposes), so the first reset send is suppressed and the surface's resend
- * control is what releases it; `readResetCode` waits out that control rather
- * than a fixed sleep, and reads the code the resend delivered.
- *
- * An unregistered address is driven first: it gets the same "a code has been
- * sent if these details match an account" notice and, for any code, the one
- * collapsed refusal. That is the same-shape answer, observed without reading
- * whether a message left.
- *
- * REQ-security-035 is not claimed: the spec does not enrol a second factor, so
- * it cannot observe that the factor list is unchanged and the next login still
- * stops at the factor. REQ-security-037 is not claimed either: this deployment
- * publishes the reset, so the spec never meets the closed one. REQ-abuse-011 is
- * not claimed: the specs observe the shared resend window's suppression, not a
- * budget being exhausted.
- *
- * Expected copy is read from the shipped en-US locale bundles through
- * helpers/i18n.ts, so a sentence that changes in the product changes here with
- * it rather than leaving a stale literal that still passes.
- */
 // @journey journey-password-reset-email.md
 // @covers REQ-security-020, REQ-security-034, REQ-security-036, REQ-signin-036
 import type { BrowserContext, Page } from '@playwright/test'
@@ -51,17 +16,12 @@ import {
   waitOutTheResetSecond,
 } from '../helpers/password-reset'
 
-/** The password the reset writes. */
 const NEW_PASSWORD = 'reset-Password-456'
 
-/** The password an unregistered target's attempt tries to write. */
 const GHOST_PASSWORD = 'ghost-Password-456'
 
-/** Any code fails against a suppressed record; the value need only be shaped
- * like a code. */
 const WRONG_CODE = '000000'
 
-/** The sign-in surface's page heading. */
 function signInHeading(page: Page) {
   return page.getByRole('heading', {
     level: 1,
@@ -70,7 +30,6 @@ function signInHeading(page: Page) {
   })
 }
 
-/** The tenant area's home heading, reached after a successful sign-in. */
 function homeHeading(page: Page) {
   return page.getByRole('heading', {
     level: 1,
@@ -79,7 +38,6 @@ function homeHeading(page: Page) {
   })
 }
 
-/** The password sign-in form's identifier field. */
 function signInIdentifierField(page: Page) {
   return page.getByRole('textbox', {
     name: copy('authUi', 'passwordSignIn.identifierLabel'),
@@ -87,7 +45,6 @@ function signInIdentifierField(page: Page) {
   })
 }
 
-/** The password sign-in form's password field. */
 function signInPasswordField(page: Page) {
   return page.getByRole('textbox', {
     name: copy('authUi', 'passwordSignIn.passwordLabel'),
@@ -101,8 +58,6 @@ test('password-reset-email: an addressed code resets the password and ends the o
   const { page, server, accounts } = demo
   const account = accounts.unique('reset-email')
 
-  // A second device holds an active session across the reset; its context is
-  // the spec's own and is closed with the server.
   const browser = page.context().browser()
   if (browser === null) {
     throw new Error('the demo page is not attached to a browser')
@@ -117,8 +72,6 @@ test('password-reset-email: an addressed code resets the password and ends the o
       await accounts.openSignIn()
       await openReset(page, 'email')
       await requestResetCode(page, 'email', accounts.unique('ghost').email)
-      // The same sentence every identifier gets; no message was sent and the
-      // test read none.
       await expectCodeRefused(page, WRONG_CODE, GHOST_PASSWORD)
       await backToSignInButton(page).click()
       await expect(signInHeading(page)).toBeVisible()
@@ -200,7 +153,6 @@ test('password-reset-email: an addressed code resets the password and ends the o
       })
       await expect(homeHeading(page)).toBeVisible()
 
-      // A device with no session is refused the old password.
       await accounts.signOut()
       await accounts.openSignIn()
       await signInIdentifierField(page).fill(account.username)

@@ -1,22 +1,3 @@
-/**
- * Expected copy, read from the shipped locale bundles.
- *
- * A journey asserts on what the product renders, so its expected text has to
- * be the product's own text: the same bundle the app loads, not a copy of a
- * sentence in the test. The bundles are read from their package sources (the
- * demo host's own and the platform packages') instead of being imported as
- * JSON so the harness does not depend on a bundler's JSON handling; the lookup
- * still fails loudly when a key moves, which is what catches drift.
- *
- * The browser is pinned to en-US by the Playwright config, so a journey that
- * asserts the starting interface reads the en-US bundle. A journey that
- * switches the interface's language (the personalization journey chooses
- * zh-CN) names that language explicitly: the product's copy after the switch
- * comes from the zh-CN bundle, and asserting it against en-US would be both
- * wrong and a hardcoded literal. A journey that asserts a translated string
- * names the bundle, the dot path and optionally the language; `{{name}}`
- * placeholders are filled from the call's variables.
- */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
@@ -36,10 +17,8 @@ export type CopyBundle =
   | 'ownershipNotice'
   | 'authzPermissions'
 
-/** The languages the deployment ships bundles for. */
 export type CopyLocale = 'en-US' | 'zh-CN'
 
-/** The bundle directory; the language's file name is appended to it. */
 const BUNDLES: Record<CopyBundle, string> = {
   demo: '../../src/locales',
   authUi: '../../../../../web/packages/auth-ui/src/locales',
@@ -51,32 +30,14 @@ const BUNDLES: Record<CopyBundle, string> = {
   uiKit: '../../../../../web/packages/ui-kit/src/locales',
   adminUi: '../../../../../web/packages/admin-ui/src/locales',
   orgCreateUi: '../../../../../web/packages/org-create-ui/src/locales',
-  // The notification fixture's catalog. The delivery pipeline renders an
-  // in-app message from "<type_key>.<channel>.<part>" in the module's own
-  // catalog, and the e2e configuration is what enables the fixture, so its
-  // text is a shipped product string like any other. Its keys carry dots as
-  // literal characters; `copyKey` reads them that way.
   demoNotice: '../../../server/demo_notification_locales',
-  // The invitation notice the backend renders and the e2e mail carrier
-  // writes to the process log. Its keys carry dots as literal characters; read
-  // them through `copyKey`.
   invitemail: '../../../../../pkg/authn/invitemail/locales',
-  // The ownership module's notification catalog. The delivery pipeline renders
-  // an in-app message from "<type_key>.<channel>.<part>" in the declaring
-  // module's own catalog, so a transfer request's title and body are shipped
-  // product strings. Its keys carry dots as literal characters; read them
-  // through `copyKey`.
   ownershipNotice: '../../../../../pkg/tenant/ownership/locales',
-  // The governed permission catalog's own descriptions, rendered by the
-  // authorization surface in the request's language. The keys are the
-  // permission codes with their separators turned into dashes; read them
-  // through `copyKey`.
   authzPermissions: '../../../../../pkg/authz/policy/locales',
 }
 
 const loaded = new Map<string, unknown>()
 
-/** Read and cache one bundle in one language. */
 function bundle(name: CopyBundle, locale: CopyLocale): unknown {
   const cacheKey = `${name}\u0000${locale}`
   const cached = loaded.get(cacheKey)
@@ -96,7 +57,6 @@ function bundle(name: CopyBundle, locale: CopyLocale): unknown {
   return parsed
 }
 
-/** Resolve one dot path to its string, failing on a miss or a non-string. */
 function lookup(name: CopyBundle, path: string, locale: CopyLocale): string {
   let current: unknown = bundle(name, locale)
   for (const segment of path.split('.')) {
@@ -116,12 +76,6 @@ function lookup(name: CopyBundle, path: string, locale: CopyLocale): string {
   return current
 }
 
-/**
- * The expected copy for one bundle key, with its `{{name}}` placeholders
- * filled. A placeholder with no value is a harness error rather than an empty
- * substitution: a test that expected `Verification is complete for .` would
- * pass for the wrong reason.
- */
 export function copy(
   name: CopyBundle,
   path: string,
@@ -140,16 +94,7 @@ export function copy(
   })
 }
 
-/**
- * The expected copy for one bundle key read literally.
- *
- * A catalog whose keys are themselves whole strings -- the notification
- * fixture's text is keyed `<type_key>.<channel>.<part>` -- cannot go through
- * `copy`'s dot-path lookup, which reads those dots as nesting. This reads the
- * top-level entry under the exact key. A missing key or a non-string value is
- * a harness error, the same as `copy`. `variables` fill the entry's `{{name}}`
- * placeholders; a placeholder with no value is a harness error, like `copy`'s.
- */
+// For a catalog whose keys are whole strings (dots are literal): read the top-level entry, not a dot-path.
 export function copyKey(
   name: CopyBundle,
   key: string,
@@ -175,23 +120,11 @@ export function copyKey(
   })
 }
 
-/** Escape the characters a regular expression reads as syntax. */
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-/**
- * A matcher for one bundle key whose `{{name}}` placeholders are filled by
- * patterns rather than fixed values.
- *
- * A sentence the product renders with a number the reader cannot know in
- * advance -- `You can request another code in {{seconds}} seconds.` -- still
- * has to be asserted against the bundle's own wording. Each placeholder is
- * replaced by the regular expression its caller supplies; every other
- * character is escaped, so the answer matches the product's sentence with only
- * the variable part left open. A placeholder with no pattern is a harness
- * error, like `copy`'s missing value.
- */
+// Each placeholder is replaced by its caller's pattern; every other character is escaped.
 export function copyPattern(
   name: CopyBundle,
   path: string,
