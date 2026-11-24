@@ -1,23 +1,4 @@
-// Package dbtest delivers the database capability to a test the way an assembly
-// delivers it: the engine's own module, driven through its New stage in a
-// registry of its own over a configuration loaded by the real loader, with the
-// handle it opened kept open until the test ends.
-//
-// A handle a test opens with gorm.Open is not one the database module opened,
-// and it is not a stand-in for one: it carries none of what the module installs
-// on the handles it opens — the engine marker, the constraint classification,
-// the field encryption — and none of the pool shape the module gives a locator,
-// such as the one connection of an in-memory database. A module is exercised on
-// a handle from here where what it meets is what an assembly hands it.
-//
-// A handle delivered here comes out of an assembly of the engine's module and
-// the config module only, with no log module in it, so its statement records go
-// through the process default logger, to standard output at the bootstrap level,
-// stamped with the engine module's name as the module attribute.
-//
-// No migration is applied: only the engine's module takes part, beside the
-// config module the reader is supplied to, and a test builds the tables it
-// needs.
+// Package dbtest delivers the database capability to a test the way an assembly does: the engine's own module driven through its New stage.
 package dbtest
 
 import (
@@ -39,36 +20,27 @@ import (
 	"github.com/vislake/speed/pkg/db/sqlite"
 )
 
-// hostPrefix names the environment variables the configuration would be read
-// from. No machine carries variables under it, so the section a test writes is
-// the whole of what configures the engine.
 const hostPrefix = "SPEEDDBTESTFIXTURE"
 
-// Items are input items of the engine's section beside its locator, by key:
-// "max-open-conns", "max-idle-conns", "conn-max-lifetime" and the rest the
-// engine declares. A nil Items configures the locator alone.
+// Items are input items of the engine's section beside its locator, by key: "max-open-conns",
+// "max-idle-conns", "conn-max-lifetime" and the rest the engine declares.
+// A nil Items configures the locator alone.
 type Items map[string]any
 
-// SQLite delivers the capability of the SQLite engine over the locator dsn,
-// with the items configured beside it.
+// SQLite delivers the capability of the SQLite engine over the locator dsn, with the items
+// configured beside it.
 func SQLite(t testing.TB, dsn string, items Items) db.Database {
 	t.Helper()
 	return deliver(t, sqlite.Module(), sqlite.ConfigNamespace, dsn, items)
 }
 
-// Postgres delivers the capability of the PostgreSQL engine over the database
-// the locator dsn names — one the test took from
-// pkg/internal/pgpool/pgtest — with the items configured beside it. Each call
-// is an assembly of its own: two of them on one locator are two processes' pools
-// on one database, and neither is a connection built with Open from the other.
+// Postgres delivers the capability of the PostgreSQL engine over the database the locator dsn
+// names — one the test took from pkg/internal/pgpool/pgtest — with the items configured beside it.
 func Postgres(t testing.TB, dsn string, items Items) db.Database {
 	t.Helper()
 	return deliver(t, postgres.Module(), postgres.ConfigNamespace, dsn, items)
 }
 
-// deliver drives the engine's module through New and hands back what it
-// delivered. The drive's action holds the lifecycle there until the test ends,
-// and the module's Close then releases the pool.
 func deliver(t testing.TB, module core.Module, namespace, dsn string, items Items) db.Database {
 	t.Helper()
 	reader := load(t, module, namespace, dsn, items)
@@ -113,9 +85,6 @@ func deliver(t testing.TB, module core.Module, namespace, dsn string, items Item
 	}
 }
 
-// load reads the engine's section the way a host's run reads it: through the
-// configuration loader, from a JSON primary source holding the locator and the
-// items under the engine's namespace, with an empty command line.
 func load(t testing.TB, module core.Module, namespace, dsn string, items Items) config.Reader {
 	t.Helper()
 	section := map[string]any{"dsn": dsn}
@@ -150,11 +119,6 @@ func load(t testing.TB, module core.Module, namespace, dsn string, items Items) 
 	return reader
 }
 
-// defaultLocator renders the primary source's location as a file URL. The path
-// is escaped rather than concatenated: testing.TempDir embeds the subtest name
-// in the directory, a name written twice makes it append "#01", and url.Parse
-// reads a bare "#" or "?" as the start of a fragment or query, leaving a
-// truncated path that names a directory and not the config file.
 func defaultLocator(path string) string {
 	return (&url.URL{Scheme: "file", Path: path}).String()
 }

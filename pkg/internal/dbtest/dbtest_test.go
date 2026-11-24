@@ -5,13 +5,8 @@ import (
 	"testing"
 )
 
-// TestSQLiteInADirectoryNameWithURLMetacharacters reproduces the failure a
-// locator built by concatenation has. testing.TempDir embeds the subtest name in
-// the directory, and two subtests of one name make it append "#01"; a locator
-// written "file://"+path then loses everything from the "#" on, and the loader
-// sees a directory with no extension instead of the config file. The two
-// subtests share a name on purpose: that is what puts the metacharacter in the
-// path.
+// TestSQLiteInADirectoryNameWithURLMetacharacters reproduces the failure a locator built by
+// concatenation has.
 func TestSQLiteInADirectoryNameWithURLMetacharacters(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		t.Run("same", func(t *testing.T) {
@@ -22,9 +17,8 @@ func TestSQLiteInADirectoryNameWithURLMetacharacters(t *testing.T) {
 	}
 }
 
-// TestTheDefaultLocatorSurvivesURLMetacharacters pins the round trip directly:
-// whatever a directory name carries, the locator has to read back as the same
-// path, because the loader takes the path from the parsed URL.
+// TestTheDefaultLocatorSurvivesURLMetacharacters checks that a file path containing #, ? or a space
+// reads back unchanged from its default locator.
 func TestTheDefaultLocatorSurvivesURLMetacharacters(t *testing.T) {
 	for _, path := range []string{
 		"/tmp/a#1/config.json",
