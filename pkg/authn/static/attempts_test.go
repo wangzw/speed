@@ -14,11 +14,7 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// TestWrongPasswordsThatArriveTogetherAreHeldAgainstOneAnother holds the free
-// attempts of a name to the free attempts and not to the width: with every
-// derivation held open, no more than the five free attempts and the one beyond
-// them get as far as a derivation, however many arrive together, and the rest
-// are refused as held back without one.
+// TestWrongPasswordsThatArriveTogetherAreHeldAgainstOneAnother holds that simultaneous guesses get at most the free attempts and one more derivation.
 func TestWrongPasswordsThatArriveTogetherAreHeldAgainstOneAnother(t *testing.T) {
 	const arriving = 64
 	b := tableWith(t, map[string]string{"alice": "secret"})
@@ -42,7 +38,6 @@ func TestWrongPasswordsThatArriveTogetherAreHeldAgainstOneAnother(t *testing.T) 
 		}()
 	}
 
-	// The refused ones answer while the derivations are still held open.
 	var refused int
 	timeout := time.After(10 * time.Second)
 	for refused < arriving-6 {
@@ -68,9 +63,7 @@ func TestWrongPasswordsThatArriveTogetherAreHeldAgainstOneAnother(t *testing.T) 
 	}
 }
 
-// TestAGuessBetweenEveryPassIsStillCountedAndHeldBack holds that a pass clears
-// nothing: a caller who presents the right password between every two guesses
-// is held back after the same six derivations as one who does not.
+// TestAGuessBetweenEveryPassIsStillCountedAndHeldBack holds that a pass between guesses clears nothing.
 func TestAGuessBetweenEveryPassIsStillCountedAndHeldBack(t *testing.T) {
 	b := tableWith(t, map[string]string{"alice": "secret"})
 	b.throttle = password.NewThrottle(b.throttleParams, newClock().now)
@@ -92,9 +85,7 @@ func TestAGuessBetweenEveryPassIsStillCountedAndHeldBack(t *testing.T) {
 	}
 }
 
-// TestAPassFromADerivationGivesBackItsOwnAttemptOnly holds the same two edges
-// for a pass that was derived, with the cache off: the attempt it reserved is
-// given back and the failures before it are not.
+// TestAPassFromADerivationGivesBackItsOwnAttemptOnly holds that a derived pass returns its reserved attempt and no earlier failure.
 func TestAPassFromADerivationGivesBackItsOwnAttemptOnly(t *testing.T) {
 	store := newFakeSettings()
 	store.set(cacheTTLPath, time.Duration(0))
@@ -107,8 +98,6 @@ func TestAPassFromADerivationGivesBackItsOwnAttemptOnly(t *testing.T) {
 		b.Verify(context.Background(), basic("alice", "wrong"))
 	}
 	before := derived.Load()
-	// Five failures stand, so the sixth attempt is the last one made, and it
-	// passes: its own reservation goes back and the five stay.
 	if got := b.Verify(context.Background(), basic("alice", "secret")); outcome(got) != verdict.Authenticated {
 		t.Fatalf("the right password after five failures reads %v (%v)", outcome(got), cause(got))
 	}
@@ -118,7 +107,6 @@ func TestAPassFromADerivationGivesBackItsOwnAttemptOnly(t *testing.T) {
 	if got := b.Verify(context.Background(), basic("alice", "secret")); outcome(got) != verdict.Authenticated {
 		t.Fatalf("a second pass reads %v (%v): the first took more than its own attempt", outcome(got), cause(got))
 	}
-	// Five stand: one more failure is the sixth and holds the name back.
 	b.Verify(context.Background(), basic("alice", "wrong"))
 	if got := b.Verify(context.Background(), basic("alice", "secret")); !errors.Is(cause(got), authn.ErrThrottled) {
 		t.Errorf("after a pass and a sixth failure the right password reads %v (%v), want held back: the pass "+
@@ -126,8 +114,6 @@ func TestAPassFromADerivationGivesBackItsOwnAttemptOnly(t *testing.T) {
 	}
 }
 
-// parkingStore is a settings store that holds every read of the cache lifetime
-// until the case lets it go, and says each time a read has arrived.
 type parkingStore struct {
 	*fakeSettings
 	arrived chan struct{}
@@ -142,13 +128,7 @@ func (s *parkingStore) Get(l settings.Layer, key string, target any) error {
 	return s.fakeSettings.Get(l, key, target)
 }
 
-// TestACachedPasswordIsNotAGuessAndHoldsNoAttempt holds that a password that is
-// remembered from a derivation takes no part in the free attempts of its name:
-// with more calls for the right password in flight at once than a name has free
-// attempts, every one of them, and the one that arrives after them, is
-// authenticated. A call is held at the read of the cache lifetime, the first
-// thing a cached check does that is not the throttle's own, so one that held an
-// attempt from the moment it was admitted would still hold it there.
+// TestACachedPasswordIsNotAGuessAndHoldsNoAttempt holds that concurrent checks of a remembered password are all authenticated.
 func TestACachedPasswordIsNotAGuessAndHoldsNoAttempt(t *testing.T) {
 	const inflight = 12 // more than the free attempts and the one beyond them
 	fs := newFakeSettings()
@@ -159,7 +139,6 @@ func TestACachedPasswordIsNotAGuessAndHoldsNoAttempt(t *testing.T) {
 	b.throttle = password.NewThrottle(b.throttleParams, newClock().now)
 	derived := counting(b)
 
-	// Remember the password with the store open.
 	close(store.release)
 	if got := b.Verify(context.Background(), basic("alice", "secret")); outcome(got) != verdict.Authenticated {
 		t.Fatalf("remembering the password: %v (%v)", outcome(got), cause(got))
@@ -172,9 +151,6 @@ func TestACachedPasswordIsNotAGuessAndHoldsNoAttempt(t *testing.T) {
 	for range inflight {
 		go func() { verdicts <- b.Verify(context.Background(), basic("alice", "secret")) }()
 	}
-	// Every call is at the read, or has already been answered: one that took an
-	// attempt would have been refused before it got there once the free attempts
-	// were taken.
 	parked, answered := 0, 0
 	timeout := time.After(10 * time.Second)
 	for parked+answered < inflight {
@@ -191,7 +167,6 @@ func TestACachedPasswordIsNotAGuessAndHoldsNoAttempt(t *testing.T) {
 		}
 	}
 
-	// One more call, with all of them in flight, is a cached password too.
 	late := make(chan authn.Verdict, 1)
 	go func() { late <- b.Verify(context.Background(), basic("alice", "secret")) }()
 	var got authn.Verdict
@@ -220,10 +195,7 @@ func TestACachedPasswordIsNotAGuessAndHoldsNoAttempt(t *testing.T) {
 	}
 }
 
-// TestARememberedPasswordIsRefusedWhileItsNameIsHeldBack holds that a cached
-// check is not a way around the back-off: a name whose failures stand and have
-// earned a wait is refused with the right password too, without a derivation,
-// and is let in again when the wait is over.
+// TestARememberedPasswordIsRefusedWhileItsNameIsHeldBack holds that a cached check cannot bypass the back-off.
 func TestARememberedPasswordIsRefusedWhileItsNameIsHeldBack(t *testing.T) {
 	b := tableWith(t, map[string]string{"alice": "secret"})
 	clk := newClock()
@@ -256,10 +228,7 @@ func TestARememberedPasswordIsRefusedWhileItsNameIsHeldBack(t *testing.T) {
 	}
 }
 
-// TestAHotNameWithTheRightPasswordIsNeverHeldBackByItsOwnTraffic holds the same
-// property under real parallelism: workers that present the right password of
-// one name over and over, with no failure ever recorded, are all authenticated,
-// however the calls interleave.
+// TestAHotNameWithTheRightPasswordIsNeverHeldBackByItsOwnTraffic holds the property under real parallelism with no failure recorded.
 func TestAHotNameWithTheRightPasswordIsNeverHeldBackByItsOwnTraffic(t *testing.T) {
 	const workers, calls = 16, 1000
 	b := tableWith(t, map[string]string{"alice": "secret"})

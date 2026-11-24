@@ -12,9 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// registerRig builds a rig whose registration switch is open and whose budgets
-// are the declared defaults: ten registrations a minute per source address and
-// the deployment-wide default.
 func registerRig(t *testing.T) *rig {
 	t.Helper()
 	r := newRig(t, &fakeMethod{name: "password"})
@@ -22,7 +19,6 @@ func registerRig(t *testing.T) *rig {
 	return r
 }
 
-// registerBody is a well-formed registration body.
 const registerBody = `{"username":"alice","email":"alice@example.com","password":"alice-password","` +
 	`display_name":"Alice","locale":"zh-CN","time_zone":"Asia/Shanghai"}`
 
@@ -31,17 +27,12 @@ const registerBody = `{"username":"alice","email":"alice@example.com","password"
 // of requests it sends cannot be split by a bucket boundary.
 var fixedClock = func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
 
-// registerFrom posts a registration from the source address given, which the
-// test engine trusts as a proxy and reads out of the forwarded header.
 func (r *rig) registerFrom(ip, body string) *httptest.ResponseRecorder {
 	r.t.Helper()
 	return r.send(http.MethodPost, "/api/v1/auth/register", body, "X-Forwarded-For", ip)
 }
 
-// TestARegistrationOpensAnAccountAndAnswersItsState holds the success path: 201,
-// the registered state, the account, and the email awaiting verification. The
-// route writes no flow record, no session and no cookie, and the account module
-// is handed every member of the body.
+// TestARegistrationOpensAnAccountAndAnswersItsState holds the 201, the registered state, the account and the email awaiting verification.
 func TestARegistrationOpensAnAccountAndAnswersItsState(t *testing.T) {
 	r := registerRig(t)
 
@@ -86,9 +77,7 @@ func TestARegistrationOpensAnAccountAndAnswersItsState(t *testing.T) {
 	}
 }
 
-// TestARegistrationRefusesABadBody holds the 400s the route produces itself: a
-// required member left out, an unknown member, and a body over the capability's
-// 64 KiB limit. None of them reaches the account module.
+// TestARegistrationRefusesABadBody holds the 400s for a missing member, an unknown member and a body over 64 KiB.
 func TestARegistrationRefusesABadBody(t *testing.T) {
 	cases := []struct {
 		name string
@@ -117,9 +106,7 @@ func TestARegistrationRefusesABadBody(t *testing.T) {
 	}
 }
 
-// TestARegistrationRefusesAnotherMediaType holds the 415 of the body guard: a
-// registration that is not application/json is refused before the handler runs,
-// in the capability's own problem code, and opens no account.
+// TestARegistrationRefusesAnotherMediaType holds that a non-JSON registration is refused before the handler and opens no account.
 func TestARegistrationRefusesAnotherMediaType(t *testing.T) {
 	r := registerRig(t)
 
@@ -135,10 +122,7 @@ func TestARegistrationRefusesAnotherMediaType(t *testing.T) {
 	}
 }
 
-// TestACrossSiteRegistrationIsRefusedByTheWrapper holds that the cross-origin
-// check runs before the handler: a cross-site POST register is refused with the
-// gateway's 401 and opens no account, while the same body from this origin is
-// accepted. The check is the production one the mounter wraps every route in.
+// TestACrossSiteRegistrationIsRefusedByTheWrapper holds that a cross-site POST register is refused before the handler, while the same body from this origin passes.
 func TestACrossSiteRegistrationIsRefusedByTheWrapper(t *testing.T) {
 	r := registerRig(t)
 
@@ -160,10 +144,7 @@ func TestACrossSiteRegistrationIsRefusedByTheWrapper(t *testing.T) {
 	}
 }
 
-// TestARegistrationRefusesAClosedSwitch holds the pre-check: with the account
-// module's password-signup switch closed, or absent, the route answers 403
-// signup-closed and calls no registration. The switch is re-read on every
-// request, so opening it takes effect without a restart.
+// TestARegistrationRefusesAClosedSwitch holds that a closed or absent switch answers 403 signup-closed and calls no registration.
 func TestARegistrationRefusesAClosedSwitch(t *testing.T) {
 	r := newRig(t, &fakeMethod{name: "password"})
 	r.p.settings = readerWith(nil)
@@ -179,8 +160,6 @@ func TestARegistrationRefusesAClosedSwitch(t *testing.T) {
 		t.Error("a closed registration was handed to the account module")
 	}
 
-	// The authority is the account module's own check: a pre-check that let the
-	// request through still answers signup-closed when Register refuses it.
 	r.signups.err = authn.ErrSignupClosed
 	r.p.settings = readerWith(map[string]string{passwordSignupPath: signupOpen})
 	refused := r.send(http.MethodPost, "/api/v1/auth/register", registerBody)
@@ -192,7 +171,7 @@ func TestARegistrationRefusesAClosedSwitch(t *testing.T) {
 }
 
 // TestARegistrationMapsTheModulesRefusals holds each failure the account module
-// reports to the answer the design gives it.
+// reports to the answer it gives.
 func TestARegistrationMapsTheModulesRefusals(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -230,16 +209,9 @@ func TestARegistrationMapsTheModulesRefusals(t *testing.T) {
 	}
 }
 
-// TestThePerSourceBudgetStopsARegistration holds the minute bucket: one source
-// address may register up to the budget a minute, another source address has its
-// own bucket, and the attempt past the budget is a 429 with a Retry-After that
-// does not outlast the bucket.
+// TestThePerSourceBudgetStopsARegistration holds that each source has its own minute bucket and the attempt past it is a 429 within the bucket.
 func TestThePerSourceBudgetStopsARegistration(t *testing.T) {
 	r := registerRig(t)
-	// The budget counts a source address's registrations in the wall-clock
-	// minute the request reads. A pair of requests that straddled a minute
-	// boundary would see two fresh budgets, and the case would be decided by
-	// when it ran; the clock is pinned inside one minute instead.
 	r.p.clock = fixedClock
 	r.p.settings = readerWith(map[string]string{
 		passwordSignupPath: signupOpen,
@@ -274,15 +246,9 @@ func TestThePerSourceBudgetStopsARegistration(t *testing.T) {
 	}
 }
 
-// TestTheGlobalBudgetStopsARegistration holds the hour bucket: the deployment's
-// registrations are counted in one bucket for every source, and the attempt past
-// the budget is a 429 with a Retry-After within the hour. The two budget cases
-// run on different source addresses with the per-source budget well above what
-// they spend, so the refusal can only be the deployment-wide bucket's.
+// TestTheGlobalBudgetStopsARegistration holds that one deployment-wide hour bucket bounds every source, answering 429 within the hour.
 func TestTheGlobalBudgetStopsARegistration(t *testing.T) {
 	r := registerRig(t)
-	// The hour bucket is a wall-clock one too; the clock is pinned inside it
-	// for the same reason as the minute bucket above.
 	r.p.clock = fixedClock
 	r.p.settings = readerWith(map[string]string{
 		passwordSignupPath:     signupOpen,
@@ -307,11 +273,7 @@ func TestTheGlobalBudgetStopsARegistration(t *testing.T) {
 	}
 }
 
-// TestAFailingBudgetCounterTakesItsOwnDirection holds the two directions: a
-// per-source counter that cannot be written is skipped, which is the direction of
-// the source-address pre-throttle, while the deployment-wide counter that cannot
-// be written refuses with a 503, which is the direction of a dependency that
-// cannot answer.
+// TestAFailingBudgetCounterTakesItsOwnDirection holds that a failed per-source count is skipped and a failed global count answers 503.
 func TestAFailingBudgetCounterTakesItsOwnDirection(t *testing.T) {
 	t.Run("the per-source counter is skipped", func(t *testing.T) {
 		r := registerRig(t)
@@ -348,9 +310,7 @@ func TestAFailingBudgetCounterTakesItsOwnDirection(t *testing.T) {
 	})
 }
 
-// TestARegistrationAnswersAThrottledModuleWithItsDelay holds that the back-off
-// the account module reports after the uniqueness check keeps its own delay in
-// the answer rather than being flattened to a 429 with none.
+// TestARegistrationAnswersAThrottledModuleWithItsDelay holds that the module's own retry delay is kept rather than flattened.
 func TestARegistrationAnswersAThrottledModuleWithItsDelay(t *testing.T) {
 	r := registerRig(t)
 	r.signups.err = &authn.ThrottledError{RetryAfter: 42 * time.Second}
@@ -362,9 +322,7 @@ func TestARegistrationAnswersAThrottledModuleWithItsDelay(t *testing.T) {
 	}
 }
 
-// TestARegistrationAnUnknownFailureIsAnOutage holds the default: an error no
-// branch names is a 503 and not a pass, so a defective dependency cannot open an
-// account by answering something unexpected.
+// TestARegistrationAnUnknownFailureIsAnOutage holds that an unnamed error answers 503 and opens no account.
 func TestARegistrationAnUnknownFailureIsAnOutage(t *testing.T) {
 	r := registerRig(t)
 	r.signups.err = errors.New("the store answered something else")

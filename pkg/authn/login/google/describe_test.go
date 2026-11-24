@@ -7,9 +7,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestDescribeReportsTheRedirect holds the descriptor the discovery endpoint
-// publishes for the Google method: a redirect button that speaks OIDC, opens an
-// account, and whose bindings land under the provider value "google".
+// TestDescribeReportsTheRedirect holds the Google descriptor: a redirect button speaking OIDC that opens accounts, bound as "google".
 func TestDescribeReportsTheRedirect(t *testing.T) {
 	got := (&product{}).Describe()
 	if got.Name != "google" || got.Kind != authn.MethodKindRedirect ||

@@ -7,13 +7,6 @@ import (
 	"testing"
 )
 
-// forbidden are the packages this module's closure may not hold. It keeps no
-// store, takes no part in settings or events, and does not know the tenant
-// directory: tenancy depends on authentication and not the other way round. It
-// does not import the gateway either: the gateway is reached through the
-// interface, so that a host's own gateway takes this module in, and importing
-// its package would register the gateway module with every binary that imports
-// this one.
 var forbidden = []string{
 	"github.com/vislake/speed/pkg/authn/gate",
 	"github.com/vislake/speed/pkg/authn/static",
@@ -24,7 +17,6 @@ var forbidden = []string{
 	"github.com/vislake/speed/pkg/tenant",
 }
 
-// depsOf is every package in the closure of this package's non-test files.
 func depsOf(t *testing.T) []string {
 	t.Helper()
 	cmd := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}", ".")
@@ -37,8 +29,6 @@ func depsOf(t *testing.T) []string {
 	return strings.Fields(string(out))
 }
 
-// forbiddenIn reports the packages of the listing that are, or sit under, one of
-// the forbidden ones.
 func forbiddenIn(listing []string) []string {
 	var out []string
 	for _, pkg := range listing {
@@ -51,11 +41,7 @@ func forbiddenIn(listing []string) []string {
 	return out
 }
 
-// TestTheModuleHoldsNoStoreNoGatewayAndNoTenantInItsClosure holds the dependency
-// statement over the closure and not only over the direct imports. The controls
-// make it more than an empty listing: the closure has to hold what the module
-// uses, and the reading has to find a forbidden package under its own path and
-// under a subpackage.
+// TestTheModuleHoldsNoStoreNoGatewayAndNoTenantInItsClosure holds the dependency statement over the whole closure.
 func TestTheModuleHoldsNoStoreNoGatewayAndNoTenantInItsClosure(t *testing.T) {
 	listing := depsOf(t)
 	for _, want := range []string{

@@ -8,8 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// A3 and first-login provisioning for a social identity with no binding.
-
+// TestSocialLinkRequiredOnlyForAVerifiedAddressOnAnExistingAccount checks that such an address answers link-required with its mask and writes nothing.
 func TestSocialLinkRequiredOnlyForAVerifiedAddressOnAnExistingAccount(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
 	e.s.seed(t, seed{id: "a1", status: authn.StatusActive, email: "ann@home.org", emailVia: "idp:google"})
@@ -35,10 +34,8 @@ func TestSocialLinkRequiredOnlyForAVerifiedAddressOnAnExistingAccount(t *testing
 	}
 }
 
+// TestSocialUnverifiedAddressIsNotAClue checks that an unverified address never yields link-required.
 func TestSocialUnverifiedAddressIsNotAClue(t *testing.T) {
-	// The provider's own claim that it did not verify the address does not turn
-	// into link-required, which would tell a stranger an account holds it. The
-	// answer is the one for an address nobody holds.
 	e := newEnv(t, withSignup(SignupClosed))
 	e.s.seed(t, seed{id: "a1", status: authn.StatusActive, email: "ann@home.org", emailVia: "idp:google"})
 	_, held := e.resolve(social("google", "g9", "ann@home.org", false))
@@ -51,6 +48,7 @@ func TestSocialUnverifiedAddressIsNotAClue(t *testing.T) {
 	}
 }
 
+// TestSocialUnverifiedAddressOpensTheAccountWithoutTheAddress checks that a new account is opened without the unverified address.
 func TestSocialUnverifiedAddressOpensTheAccountWithoutTheAddress(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
 	holder := e.s.seed(t, seed{id: "a1", status: authn.StatusActive, email: "ann@home.org", emailVia: "idp:google"})
@@ -66,6 +64,8 @@ func TestSocialUnverifiedAddressOpensTheAccountWithoutTheAddress(t *testing.T) {
 	}
 }
 
+// TestSocialClosedSignupCreatesNothing checks that a closed signup refuses a new
+// social login as signup-closed and writes nothing.
 func TestSocialClosedSignupCreatesNothing(t *testing.T) {
 	e := newEnv(t)
 	_, err := e.resolve(social("github", "gh1", "", false))
@@ -77,6 +77,7 @@ func TestSocialClosedSignupCreatesNothing(t *testing.T) {
 	}
 }
 
+// TestSocialOpenSignupCreatesAnEnabledUserWithTheDeclaredAddressAsAContact checks the enabled user, the 100-character name and the verified contact.
 func TestSocialOpenSignupCreatesAnEnabledUserWithTheDeclaredAddressAsAContact(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
 	long := strings.Repeat("名", 150)
@@ -114,6 +115,8 @@ func TestSocialOpenSignupCreatesAnEnabledUserWithTheDeclaredAddressAsAContact(t 
 	}
 }
 
+// TestSocialOpenSignupWritesNoAddressTheProviderDidNotVerify checks that an open
+// social signup writes no address the provider did not verify.
 func TestSocialOpenSignupWritesNoAddressTheProviderDidNotVerify(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
 	res, err := e.resolve(social("github", "gh1", "x@home.org", false))
@@ -128,10 +131,9 @@ func TestSocialOpenSignupWritesNoAddressTheProviderDidNotVerify(t *testing.T) {
 	}
 }
 
+// TestSocialOpenSignupWritesTheVerifiedAddressNoAccountHolds checks that an open
+// social signup writes the provider's verified address when no account holds it.
 func TestSocialOpenSignupWritesTheVerifiedAddressNoAccountHolds(t *testing.T) {
-	// A verified address no account holds is written into the account as a
-	// contact: it is the address the provider stands behind, and no other
-	// account's data is touched by writing it.
 	e := newEnv(t, withSignup(SignupOpen))
 	res, err := e.resolve(social("google", "g1", "new@home.org", true))
 	if err != nil || res.Outcome != OutcomeCreated {
@@ -145,6 +147,7 @@ func TestSocialOpenSignupWritesTheVerifiedAddressNoAccountHolds(t *testing.T) {
 	}
 }
 
+// TestSocialProofInAnEnterpriseNamespaceIsRefused checks that such a proof is an invalid argument and writes nothing.
 func TestSocialProofInAnEnterpriseNamespaceIsRefused(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen), withProvider(authn.ProvisioningJIT, false))
 	for _, provider := range []string{"oidc:" + idpAcme, "saml:" + idpAcme} {
@@ -158,6 +161,8 @@ func TestSocialProofInAnEnterpriseNamespaceIsRefused(t *testing.T) {
 	}
 }
 
+// TestSocialUnbindableAddressIsNoClue checks that a declared address that cannot
+// be an identifier opens the account without it.
 func TestSocialUnbindableAddressIsNoClue(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
 	res, err := e.resolve(social("google", "g1", "not-an-address", true))

@@ -22,11 +22,7 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// TestTheSettingsAreDeclaredToTheStoreWithTheirDomains drives the declaration
-// through the settings module that builds the key table from it: the assembly
-// is refused if an item's key and its field's tag disagree, a write on either
-// side of an edge of a domain is judged as the code acts on it, and a value
-// the store holds is the value the backend reads.
+// TestTheSettingsAreDeclaredToTheStoreWithTheirDomains holds the key-tag agreement, the domain edges and the read value.
 func TestTheSettingsAreDeclaredToTheStoreWithTheirDomains(t *testing.T) {
 	withDeliveredStore(t, func(ctx context.Context, store settings.Store) {
 		b := tableWith(t, map[string]string{"alice": "secret"})
@@ -86,11 +82,6 @@ func TestTheSettingsAreDeclaredToTheStoreWithTheirDomains(t *testing.T) {
 	})
 }
 
-// withDeliveredStore runs body against the settings store the settings module
-// delivers in an assembly that holds this module's declaration, over a SQLite
-// database the database module opened. This module is registered for its
-// declaration alone, the way the key table reads every registered module's: it
-// does not take part in the drive.
 func withDeliveredStore(t *testing.T, body func(ctx context.Context, store settings.Store)) {
 	t.Helper()
 	database := dbtest.SQLite(t, filepath.Join(t.TempDir(), "settings.db"), nil)
@@ -131,9 +122,6 @@ func withDeliveredStore(t *testing.T, body func(ctx context.Context, store setti
 	}
 }
 
-// applySettingsMigrations runs the settings module's own SQLite migrations, read
-// out of the declaration it registers, so the table the store writes into is the
-// one that module ships.
 func applySettingsMigrations(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	var tree fs.FS
@@ -165,21 +153,15 @@ func applySettingsMigrations(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// decodesNothing is the configuration reader of an assembly that configures
-// nothing, which leaves every declared default in place.
 type decodesNothing struct{}
 
 func (decodesNothing) Decode(string, any) error { return nil }
 
-// discardingLogger is the logging capability of an assembly whose records nobody
-// reads.
 type discardingLogger struct{}
 
 func (discardingLogger) Named(string) *slog.Logger { return slog.New(slog.DiscardHandler) }
 func (discardingLogger) Redaction() log.Redaction  { return noopRedaction{} }
 
-// acceptingBus takes every event and delivers none: the store publishes a change
-// after each write, and nothing here subscribes to it.
 type acceptingBus struct {
 	mu        sync.Mutex
 	published int

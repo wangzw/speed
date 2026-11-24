@@ -15,9 +15,7 @@ func credential(raw string) authn.Credential {
 	return authn.Credential{Scheme: "basic", Value: base64.StdEncoding.EncodeToString([]byte(raw))}
 }
 
-// a credential that is not a user and a password is refused at once: it
-// derives nothing, counts against nobody and leaves the back-off as it was,
-// and the one without a colon is not read as an empty password.
+// TestAMalformedCredentialIsRefusedBeforeAnythingIsLookedUpOrCounted holds that a bad credential derives nothing and counts against nobody.
 func TestAMalformedCredentialIsRefusedBeforeAnythingIsLookedUpOrCounted(t *testing.T) {
 	empty, err := HashPBKDF2("", 2)
 	if err != nil {

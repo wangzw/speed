@@ -1,33 +1,4 @@
-// Package login carries the login engine of the authentication capability: the
-// flow record, the state machine that advances it, the account resolution step,
-// the second-factor orchestration and the terminal actions that make a session
-// or issue a token.
-//
-// It is a process engine and a set of routes, not a login method. The kinds of
-// first factor live in leaf packages that each deliver authn.LoginMethod beside
-// one another, and the engine takes them all with core.ResolveAll in its Init.
-// An assembly that names this module and delivers no method fails at startup
-// with authn.ErrNoLoginMethod, and two methods of one name fail with
-// authn.ErrMethodConflict.
-//
-// One login is one record in the key-value store, advanced by one
-// compare-and-swap per step, so that a replay, a re-used authorization code and
-// two concurrent answers are judged by the store's own atomicity and not by the
-// engine. A callback is moved to processing before the method is asked, so the
-// authorization code or the assertion is handled at most once. When the flow is
-// ready, the terminal action swaps the record to a tombstone and only then makes
-// the session or issues the token, so that a login completes at most once.
-//
-// The routes are mounted through mount.Mounter, which registers each route and
-// its access level in one call. Account resolution is the work of the
-// internal/resolve package and the account self-service routes are the work of
-// the internal/selfservice package; this package builds both and calls them.
-//
-// The one place this package writes an identity rather than reading one is the
-// audit row of a completed login: it derives a context carrying the account the
-// login just proved, so that the row's actor is that account, and hands the
-// context to the audit record alone. The derived context reaches no handler and
-// no later step, so it does not flow back into the request chain.
+// Package login carries the login engine: the flow record and state machine, account resolution, second-factor orchestration, and the terminal actions that make a session or issue a token.
 package login
 
 import (
@@ -58,31 +29,16 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// ModuleName is this module's name in the registry. A host writes it into the
-// command that takes the login engine in.
+// ModuleName is this module's name in the registry.
 const ModuleName = "authn.login"
 
-// diagnosticPrefix starts every line this module writes to the startup
-// diagnostics, which have several writers; it is the gateway's, so that a reader
-// scanning for what authentication did finds both.
 const diagnosticPrefix = "authn: "
 
-// defaultEndpoint is the endpoint this module's fragment is declared on: the
-// account endpoint under the gateway's base path, which is where the reference
-// assembly mounts the authentication capability's own routes. A resource is a
-// static declaration fixed before configuration is read, so the field carries
-// this default; the merged document takes it as the endpoint of these
-// operations. A deployment that mounts the routes elsewhere is drift, which the
-// fragment is allowed to have and which produces no failure signal (see pkg/ops).
 const defaultEndpoint = "account"
 
 //go:embed openapi/login.json
 var loginFragment []byte
 
-// loginSpec is the API root this module's fragment and routes hang off. Its
-// prefix and version are the common ones; the fragment writes the capability's
-// own segment, so a route's declared path begins with the part of the mounter's
-// base that lies below this root.
 var loginSpec = speedhttp.Spec{
 	Endpoint: defaultEndpoint,
 	Prefix:   "api",
@@ -90,30 +46,9 @@ var loginSpec = speedhttp.Spec{
 	Document: loginFragment,
 }
 
-// init registers this module with the process registry.
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// Module is the descriptor a host registers.
-//
-// It delivers the login-method switch, which reports the methods the run-time
-// disabled-methods setting has turned off, and nothing else: the engine is a
-// process and a set of routes, and every capability it uses comes from another
-// module. The route mounter, the key-value store, the account reads and writes,
-// the self-registration and its verification read, the password capability, the
-// member reads, the failure back-off, the session store and the multi-factor
-// module are required, and each is delivered exclusively by another module, so a
-// command that names this one fails before anything is built unless it names them
-// too. The human-verification
-// gate is required: the humanverify module delivers one in every mode, off
-// included, so the requirement forces no mechanism, while an engine without one
-// would send ungated whenever the configuration names a mode. The settings store
-// is required as optional only so that it is initialised first and its snapshot
-// is loaded when Init reads a setting, and the impersonation capability is
-// optional so that an assembly without one refuses the completion of a flow an
-// impersonating identity started.
-//
-// The stance is StateEnabled and never StateAuto: the module is taken in at run
-// level, so it has no way to stand itself down.
+// Module is the descriptor a host registers. It delivers the login-method switch and nothing else, every other capability coming from another module, and its state is StateEnabled, never StateAuto.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -140,9 +75,6 @@ func Module() core.Module {
 			settingsSchema(),
 			loginSpec,
 			operations,
-			// The optional account self-service surfaces. Each is posted in
-			// Init from the same judgement that mounts it; the name constants
-			// live beside that judgement.
 			feature.Spec{Name: selfservice.FeaturePhone, Conditional: true},
 			feature.Spec{Name: selfservice.FeatureEmail, Conditional: true},
 		},
@@ -172,17 +104,12 @@ func Module() core.Module {
 	}
 }
 
-// productOf narrows an instance to this module's product. An instance of another
-// shape is one a host supplied for this module, and the callbacks leave it
-// alone.
 func productOf(instance any) (*product, bool) {
 	p, ok := instance.(*product)
 	return p, ok && p != nil
 }
 
-// product is the module's instance.
 type product struct {
-	// Required capabilities, taken up by New.
 	mounter      mount.Mounter
 	kv           kv.KV
 	accounts     authn.Accounts
@@ -196,7 +123,6 @@ type product struct {
 	mfa          authn.MFA
 	human        authn.HumanVerifier
 
-	// Optional capabilities, taken up by Init and read-only afterwards.
 	tokens        authn.Tokens
 	impersonation authn.Impersonation
 	smsCodes      authn.SMSCodes
@@ -212,7 +138,6 @@ type product struct {
 	logger        *slog.Logger
 	settings      *reader
 
-	// Assembled by Init.
 	resolver    *resolve.Resolver
 	selfservice *selfservice.Service
 	resetMail   *resetMailer
@@ -220,11 +145,6 @@ type product struct {
 	methods     map[string]authn.LoginMethod
 	methodNames []string
 
-	// Configuration read once, in Init: the trusted origins a return_to may
-	// name, which are the origin the deployment is reached at when none is
-	// configured, the public URL the flow and reset cookies are built for, and
-	// the names a request carries them under, which follow it. The registration
-	// and the registration switch are settings, read at each use.
 	trustedOrigins []string
 	publicURL      string
 	flowCookie     string
@@ -233,10 +153,6 @@ type product struct {
 	clock clock.Source
 }
 
-// newProduct takes up the required capabilities. The descriptor declares each of
-// them as required, so the registry fails before this runs unless every one of
-// them is present; each resolution is still checked and its failure names the
-// capability.
 func newProduct(reg *core.Registry) (*product, error) {
 	p := &product{
 		methods: map[string]authn.LoginMethod{},
@@ -271,7 +187,6 @@ func newProduct(reg *core.Registry) (*product, error) {
 	return p, nil
 }
 
-// wire runs in Init, where every instance exists.
 func (p *product) wire(reg *core.Registry) error {
 	if delivered, err := core.Resolve[log.Logger](reg); err == nil {
 		p.logger = delivered.Named(ModuleName)
@@ -351,7 +266,6 @@ func (p *product) wire(reg *core.Registry) error {
 	return nil
 }
 
-// optional takes up a capability whose absence is a legal assembly.
 func optional[T any](reg *core.Registry, what string) (T, error) {
 	var zero T
 	v, err := core.Resolve[T](reg)
@@ -365,38 +279,24 @@ func optional[T any](reg *core.Registry, what string) (T, error) {
 	}
 }
 
-// DisabledMethods reports the login methods the run-time switch has turned off,
-// as the settings reader reads it. It delegates to the one read the engine uses,
-// so the switch and the methods listing answer the same names, the password
-// method filtered out and a failed read an error rather than the empty list.
 func (p *product) DisabledMethods() ([]string, error) {
 	return p.settings.disabledMethods()
 }
 
-// The engine delivers the switch its descriptor declares.
 var _ authn.LoginMethodSwitch = (*product)(nil)
 
-// takeBoard takes up the feature board when this process publishes one. It is
-// not a requirement: a process that serves no frontend has no board, and the
-// report it would receive is skipped.
 func (p *product) takeBoard(reg *core.Registry) {
 	if b, err := core.Resolve[feature.Board](reg); err == nil {
 		p.board = b
 	}
 }
 
-// postFeature reports one conditional feature of this module to the board, when
-// the process has one. It is handed to the account self-service mount, which
-// calls it in the judgement that decides the surface's presence.
 func (p *product) postFeature(name string) {
 	if p.board != nil {
 		p.board.Post(ModuleName, name)
 	}
 }
 
-// takeMethods holds the methods taken in to the rules the engine needs of them:
-// a name that is non-empty and unique. No method is a legal assembly until a
-// request begins a flow, at which point it is ErrNoLoginMethod.
 func (p *product) takeMethods(all []authn.LoginMethod) error {
 	for _, m := range all {
 		name := m.Name()
@@ -417,9 +317,6 @@ func (p *product) takeMethods(all []authn.LoginMethod) error {
 	return nil
 }
 
-// readConfig reads the gateway origins a return_to may name and names the flow
-// and reset cookies after the public URL. The public URL is the gateway's key,
-// and the Mounter's when the key is empty.
 func (p *product) readConfig(reader config.Reader) error {
 	gate, err := readGate(reader)
 	if err != nil {
@@ -441,20 +338,12 @@ func (p *product) readConfig(reader config.Reader) error {
 	return nil
 }
 
-// nameCookies keeps the public URL the flow and reset cookies are built for and
-// names the two cookies for it: the __Host- prefix and Secure on https, neither
-// on http. Every write, a set or a clear, builds its cookie
-// with cookiename.Cookie from publicURL, and every read looks the cookie up
-// under the name set here, which is the name cookiename.Cookie gives it.
 func (p *product) nameCookies(publicURL string) {
 	p.publicURL = publicURL
 	p.flowCookie = cookiename.Name(publicURL, cookiename.Flow, "")
 	p.resetCookie = cookiename.Name(publicURL, cookiename.Reset, "")
 }
 
-// buildResolver builds the account-resolution step from the membership and
-// provider capabilities. The first-login switch is read through the settings
-// store at each resolution, so a change takes effect without a restart.
 func (p *product) buildResolver() error {
 	r, err := resolve.New(resolve.Config{
 		Accounts:          p.accounts,
@@ -474,20 +363,14 @@ func (p *product) buildResolver() error {
 	return nil
 }
 
-// signupEnabled is whether a first login may open an account, as the settings
-// state it now.
 func (p *product) signupEnabled() bool {
 	return p.settings.signup() == signupOpen
 }
 
-// passwordSignupEnabled is whether the anonymous name-and-password registration
-// route is open, as the settings state it now. It is a pre-check only: the
-// authority is Signups.Register, which reads the same key.
 func (p *product) passwordSignupEnabled() bool {
 	return p.settings.passwordSignup() == signupOpen
 }
 
-// buildSelfservice builds the account self-service routes.
 func (p *product) buildSelfservice() error {
 	svc, err := selfservice.New(selfservice.Deps{
 		Accounts:    p.accounts,
@@ -513,8 +396,6 @@ func (p *product) buildSelfservice() error {
 	return nil
 }
 
-// readerOf takes up the configuration reader. Its absence means the host never
-// handed one to the registry, which is core's own failure.
 func readerOf(reg *core.Registry) (config.Reader, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
@@ -523,9 +404,6 @@ func readerOf(reg *core.Registry) (config.Reader, error) {
 	return reader, nil
 }
 
-// checkConfig holds the configuration this module reads in Prepare to what it
-// can run on. It reads the same keys wire reads, so the two see one
-// configuration.
 func checkConfig(reader config.Reader) error {
 	if _, err := readGate(reader); err != nil {
 		return fmt.Errorf("%s%s: reading the gateway keys: %w", diagnosticPrefix, ModuleName, err)
@@ -533,11 +411,6 @@ func checkConfig(reader config.Reader) error {
 	return nil
 }
 
-// diagnose writes the startup lines: which methods take part, whether the token
-// delivery is available, whether the phone routes are mounted, whether the
-// enterprise providers and the audit and event capabilities are present, and
-// whether the end the routes are mounted on is one the tenant resolution layer
-// guards.
 func (p *product) diagnose(reg *core.Registry) {
 	if len(p.methodNames) == 0 {
 		p.logger.Warn(diagnosticPrefix + "no login method takes part, so no login flow can be started")
@@ -571,8 +444,6 @@ func (p *product) diagnose(reg *core.Registry) {
 			ModuleName+"."+ipLimitKey+" is 0",
 			slog.String("setting", ModuleName+"."+ipLimitKey))
 	} else {
-		// The layer being on is the ordinary state; the relaxation is what a
-		// reader has to be able to find, so only that one is a warning.
 		p.logger.Info(diagnosticPrefix+ModuleName+": the source-address pre-throttle is on",
 			slog.String("setting", ModuleName+"."+ipLimitKey), slog.Int("per-minute", limit))
 	}
@@ -581,10 +452,6 @@ func (p *product) diagnose(reg *core.Registry) {
 	p.checkResolutionEndpoints(reg)
 }
 
-// diagnoseReset writes the startup lines of the anonymous password reset: whether
-// the switch is open, and which channels this assembly can carry. The switch is
-// read once here to report a deployment that starts already relaxed, and the
-// channels are the same judgement that publishes them in the discovery document.
 func (p *product) diagnoseReset() {
 	if p.settings.passwordReset() != passwordResetOpen {
 		p.logger.Info(diagnosticPrefix + "the anonymous password reset is closed, so its routes answer 403 " +
@@ -608,9 +475,6 @@ func (p *product) diagnoseReset() {
 	}
 }
 
-// diagnoseSignup writes the startup lines of anonymous self-registration: whether
-// the route is open, and whether the per-source budget that bounds it is off. The
-// switch itself is the account module's, read here only to report it.
 func (p *product) diagnoseSignup() {
 	if !p.passwordSignupEnabled() {
 		p.logger.Info(diagnosticPrefix + "name-and-password self-registration is closed, so the register route " +
@@ -627,11 +491,6 @@ func (p *product) diagnoseSignup() {
 	}
 }
 
-// checkResolutionEndpoints checks that the end the routes are mounted on is not
-// one the tenant resolution layer guards, since a global account's login
-// request carries no tenant name and a guarded end answers it a 404. The
-// resolution layer's endpoint list is read from configuration; a value of
-// another shape writes a Warn and never fails the startup.
 func (p *product) checkResolutionEndpoints(reg *core.Registry) {
 	reader, err := optional[config.Reader](reg, "the configuration reader")
 	if err != nil || reader == nil {

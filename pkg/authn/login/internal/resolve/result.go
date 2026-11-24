@@ -6,7 +6,6 @@ import "github.com/vislake/speed/pkg/authn"
 // outcome and comes with an error.
 type Outcome uint8
 
-// The outcomes.
 const (
 	// OutcomeBound: the account the proof already belonged to, by an existing
 	// binding or because the method named it or a phone proved it.
@@ -20,13 +19,16 @@ const (
 	// OutcomeMatched: an enterprise identity was bound to the account an
 	// administrator had prepared for it.
 	OutcomeMatched
-	// OutcomeCreated: the login created the account.
+	// OutcomeCreated is a first login that opened the account.
 	OutcomeCreated
 )
 
 // Result is what a resolution decided.
 type Result struct {
+	// Account is the account the resolution landed on; empty while Pending is
+	// set.
 	Account authn.AccountID
+	// Outcome says how the resolution reached its account.
 	Outcome Outcome
 	// Pending, when it is set, is the account a first login would open: the
 	// resolution decided to open one and wrote nothing, and Create opens it

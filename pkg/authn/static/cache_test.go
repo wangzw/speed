@@ -9,10 +9,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/verdict"
 )
 
-// TestAPasswordIsRememberedFromTheDerivationAndNotFromItsHits holds the
-// lifetime to the derivation that vouched for the password: a password
-// presented more often than the lifetime is still derived again once per
-// lifetime, and is not carried past it by the hits that fall inside it.
+// TestAPasswordIsRememberedFromTheDerivationAndNotFromItsHits holds that hits do not extend the remembered lifetime.
 func TestAPasswordIsRememberedFromTheDerivationAndNotFromItsHits(t *testing.T) {
 	b := tableWith(t, map[string]string{"alice": "secret"})
 	clk := newClock()

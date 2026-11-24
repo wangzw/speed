@@ -9,21 +9,17 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// The account module's settings this package reads by path. They are written out
-// here so that the cases name the keys the design lists.
 const (
 	testPasswordSignupKey = "authn.account.password-signup"
 	testSignupIPLimitKey  = "authn.account.signup-ip-limit"
 	testSignupGlobalKey   = "authn.account.signup-global-hourly"
 )
 
-// openPasswordSignup turns the anonymous register route on for a case.
 func openPasswordSignup(t *testing.T, h *harness) {
 	t.Helper()
 	writeASetting(t, h.ctx, h.store, testPasswordSignupKey, "open")
 }
 
-// registerOne posts one registration and returns the reply.
 func (h *harness) registerOne(username, email, password string) reply {
 	h.t.Helper()
 	return h.post("/api/v1/auth/register", map[string]string{
@@ -31,10 +27,7 @@ func (h *harness) registerOne(username, email, password string) reply {
 	})
 }
 
-// TestARegistrationThenSignsInWithTheSameCredentials holds the whole anonymous
-// registration against the real modules: the route opens an account in one
-// transaction, answers the pending state of the address, makes no session and
-// sets no cookie, and the existing password flow then signs the new account in.
+// TestARegistrationThenSignsInWithTheSameCredentials holds that registration opens the account, makes no session, and the password flow then signs in.
 func TestARegistrationThenSignsInWithTheSameCredentials(t *testing.T) {
 	assemble(t, func(h *harness) {
 		openPasswordSignup(t, h)
@@ -73,8 +66,6 @@ func TestARegistrationThenSignsInWithTheSameCredentials(t *testing.T) {
 			t.Error("the session a login after a registration delivered does not authenticate")
 		}
 
-		// The email address is only a contact awaiting verification: it is in no
-		// identifier row, so the username is the only login name.
 		identifiers, err := h.accounts.Identifiers(h.ctx, authn.AccountID(accountID))
 		if err != nil {
 			t.Fatalf("reading the identifiers of the new account: %v", err)
@@ -89,9 +80,7 @@ func TestARegistrationThenSignsInWithTheSameCredentials(t *testing.T) {
 	})
 }
 
-// TestARegistrationRefusesAClosedSwitch holds the declared default: with no
-// settings row the register route is closed, answers 403 signup-closed, and opens
-// no account. Writing the switch open takes effect on the next request.
+// TestARegistrationRefusesAClosedSwitch holds that with no settings row the route answers 403 signup-closed and opens nothing.
 func TestARegistrationRefusesAClosedSwitch(t *testing.T) {
 	assemble(t, func(h *harness) {
 		closed := h.registerOne("alice", "alice@example.com", "alice-password")
@@ -113,9 +102,7 @@ func TestARegistrationRefusesAClosedSwitch(t *testing.T) {
 	})
 }
 
-// TestARegistrationRefusesABadRequest holds the 400s before an account is opened:
-// an unknown member, a missing required member, and a password the policy
-// refuses.
+// TestARegistrationRefusesABadRequest holds the 400s for an unknown member, a missing member and a policy-refused password.
 func TestARegistrationRefusesABadRequest(t *testing.T) {
 	assemble(t, func(h *harness) {
 		openPasswordSignup(t, h)
@@ -142,9 +129,7 @@ func TestARegistrationRefusesABadRequest(t *testing.T) {
 	})
 }
 
-// TestARegistrationAnswersATakenUsernameWithAConflict holds the one explicit
-// conflict a registration reports: the username is taken, and the answer says so
-// in the register route's own code rather than the generic conflict.
+// TestARegistrationAnswersATakenUsernameWithAConflict holds that a taken username answers 409 username-taken, not the generic conflict.
 func TestARegistrationAnswersATakenUsernameWithAConflict(t *testing.T) {
 	assemble(t, func(h *harness) {
 		openPasswordSignup(t, h)
@@ -163,9 +148,7 @@ func TestARegistrationAnswersATakenUsernameWithAConflict(t *testing.T) {
 	})
 }
 
-// TestARegistrationAnswersAReservedEmailWithEmailTaken holds the contact
-// arbitration: the first registration reserves the address, and a second one
-// naming it, in any case, is 409 email-taken and opens no account.
+// TestARegistrationAnswersAReservedEmailWithEmailTaken holds that a second registration naming a reserved address, in any case, answers 409 email-taken.
 func TestARegistrationAnswersAReservedEmailWithEmailTaken(t *testing.T) {
 	assemble(t, func(h *harness) {
 		openPasswordSignup(t, h)
@@ -187,9 +170,7 @@ func TestARegistrationAnswersAReservedEmailWithEmailTaken(t *testing.T) {
 	})
 }
 
-// TestThePerSourceBudgetStopsARegistration holds the minute bucket against the
-// real key-value store: one source address may register up to the budget, and the
-// attempt past it is a 429 with a Retry-After, opening no account.
+// TestThePerSourceBudgetStopsARegistration holds each source's minute bucket, the attempt past it answering 429 and opening no account.
 func TestThePerSourceBudgetStopsARegistration(t *testing.T) {
 	assemble(t, func(h *harness) {
 		openPasswordSignup(t, h)
@@ -200,13 +181,6 @@ func TestThePerSourceBudgetStopsARegistration(t *testing.T) {
 		if first.status != http.StatusCreated {
 			t.Fatalf("the first registration answered %d: %s", first.status, first.body)
 		}
-		// The budget counts a source address's registrations in the wall-clock
-		// minute the request reads. A pair split by a minute boundary sees two
-		// budgets, so a correct implementation may admit the second request at
-		// the start of a new minute; that is the only way it may. An admission
-		// inside one minute is the budget being wrong (off by one, or a counter
-		// that did not move), so the retry is allowed only when the two requests
-		// straddle the boundary; otherwise the case fails as the bug it is.
 		refusedName := "bob"
 		bobMinute := time.Now().Truncate(time.Minute)
 		second := h.registerOne(refusedName, "bob@example.com", "bob-password")
@@ -233,10 +207,7 @@ func TestThePerSourceBudgetStopsARegistration(t *testing.T) {
 	})
 }
 
-// TestTheGlobalBudgetStopsARegistration holds the deployment-wide hourly bucket
-// against the real key-value store: the registrations of every source share one
-// bucket, and the attempt past it is a 429 with a Retry-After, opening no
-// account.
+// TestTheGlobalBudgetStopsARegistration holds one hourly bucket for every source, the attempt past it answering 429.
 func TestTheGlobalBudgetStopsARegistration(t *testing.T) {
 	assemble(t, func(h *harness) {
 		openPasswordSignup(t, h)

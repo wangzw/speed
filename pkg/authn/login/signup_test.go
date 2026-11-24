@@ -10,15 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// A first login that would open an account stops at the username step. These
-// cases drive the engine's part of the pending signup: the callback lands the
-// user agent on the return target with the flow left at signup, GET
-// flows/current reads the username challenge, and the answer opens the account
-// and carries on to the policy.
-
-// socialProofMethod is a redirect method whose callback proves an external
-// identity with no binding, so a first login of it resolves to a pending signup
-// once signup is open.
 func socialProofMethod() *redirectMethod {
 	m := &redirectMethod{}
 	m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
@@ -30,11 +21,6 @@ func socialProofMethod() *redirectMethod {
 	return m
 }
 
-// checkSignupReply checks the flow reply of a flow parked at the username step,
-// so that every case reads the same challenge shape: the username and the
-// password a social first login asks for, the method that started the flow, the
-// provider's name for the person, and no address for the client to show when the
-// provider declared none.
 func checkSignupReply(t *testing.T, body, method string) {
 	t.Helper()
 	reply := decode(t, body)
@@ -68,8 +54,6 @@ func checkSignupReply(t *testing.T, body, method string) {
 	}
 }
 
-// socialVerifiedEmailMethod is socialProofMethod with the provider declaring a
-// verified address, so a first login parks at the signup step carrying it.
 func socialVerifiedEmailMethod() *redirectMethod {
 	m := &redirectMethod{}
 	m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
@@ -84,11 +68,7 @@ func socialVerifiedEmailMethod() *redirectMethod {
 	return m
 }
 
-// TestAnAddressLostToTheAccountRaceAnswersLinkRequiredWithItsMask holds the
-// mapping of the address race: when the account write reports that the declared
-// address was taken after the resolution found it free, the flow is spent and
-// the answer is the link-required refusal an address registered all along
-// gives, with the masked address in the landing fragment.
+// TestAnAddressLostToTheAccountRaceAnswersLinkRequiredWithItsMask holds that a lost address races to the same link-required refusal with the masked address.
 func TestAnAddressLostToTheAccountRaceAnswersLinkRequiredWithItsMask(t *testing.T) {
 	r := newRigMethod(t, socialVerifiedEmailMethod())
 	r.withOpenSignup()
@@ -105,8 +85,6 @@ func TestAnAddressLostToTheAccountRaceAnswersLinkRequiredWithItsMask(t *testing.
 	if err != nil || !present {
 		t.Fatalf("reading the flow record: present=%v err=%v", present, err)
 	}
-	// Another account takes the address after the resolution found it free and
-	// before this login's account write.
 	r.admin.createErr = fmt.Errorf("account: %w", authn.ErrContactTaken)
 
 	rt := &routes{product: r.p, endpoint: "login"}
@@ -130,10 +108,7 @@ func TestAnAddressLostToTheAccountRaceAnswersLinkRequiredWithItsMask(t *testing.
 	}
 }
 
-// TestACallbackThatWouldOpenAnAccountStopsAtTheUsernameStep holds that a
-// callback which resolves to a first-login account is landed on the return
-// target with nothing written, and that the resumable flow reads back the
-// username challenge.
+// TestACallbackThatWouldOpenAnAccountStopsAtTheUsernameStep holds that the callback lands on the return target with nothing written, and the flow reads back the username challenge.
 func TestACallbackThatWouldOpenAnAccountStopsAtTheUsernameStep(t *testing.T) {
 	r := newRigMethod(t, socialProofMethod())
 	r.withOpenSignup()
@@ -158,10 +133,6 @@ func TestACallbackThatWouldOpenAnAccountStopsAtTheUsernameStep(t *testing.T) {
 	checkSignupReply(t, current.Body.String(), r.p.methodNames[0])
 }
 
-// wechatFirstLoginMethod is one of the two WeChat entries. Both reach the
-// deployment under the provider identifier wechat while their method names tell
-// them apart, so the pending signup has to carry the method name rather than the
-// identifier.
 func wechatFirstLoginMethod() *redirectMethod {
 	m := &redirectMethod{name: "wechat.mp"}
 	m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
@@ -173,10 +144,7 @@ func wechatFirstLoginMethod() *redirectMethod {
 	return m
 }
 
-// TestTheSignupStepNamesTheMethodNotTheProvider holds that the pending signup of
-// a WeChat first login carries the method name the person picked, not the
-// provider identifier both entries share: the client names the entry, not the
-// provider.
+// TestTheSignupStepNamesTheMethodNotTheProvider holds that a WeChat pending signup carries the method name both entries do not share.
 func TestTheSignupStepNamesTheMethodNotTheProvider(t *testing.T) {
 	m := wechatFirstLoginMethod()
 	r := newRigMethod(t, m)
@@ -199,9 +167,7 @@ func TestTheSignupStepNamesTheMethodNotTheProvider(t *testing.T) {
 	}
 }
 
-// TestTheUsernameOpensTheAccountAndThePolicyRuns holds that a legal username
-// opens the pending account with that name and the flow goes on to the
-// multi-factor policy rather than straight to ready.
+// TestTheUsernameOpensTheAccountAndThePolicyRuns holds that a legal username opens the account and the flow goes on to the policy.
 func TestTheUsernameOpensTheAccountAndThePolicyRuns(t *testing.T) {
 	r := newRigMethod(t, socialProofMethod())
 	r.withOpenSignup()
@@ -235,11 +201,7 @@ func TestTheUsernameOpensTheAccountAndThePolicyRuns(t *testing.T) {
 	}
 }
 
-// TestARejectedUsernameKeepsTheFlowAtTheUsernameStep holds that a username which
-// does not normalize is 400 and one another account holds is 409, that neither
-// opens an account, and that the flow stays at signup so a legal name can follow
-// at the same step number: a refusal counts the answer without moving the
-// position.
+// TestARejectedUsernameKeepsTheFlowAtTheUsernameStep holds that an invalid or taken name opens nothing and the flow stays at signup with the same sequence number.
 func TestARejectedUsernameKeepsTheFlowAtTheUsernameStep(t *testing.T) {
 	r := newRigMethod(t, socialProofMethod())
 	r.withOpenSignup()
@@ -278,8 +240,6 @@ func TestARejectedUsernameKeepsTheFlowAtTheUsernameStep(t *testing.T) {
 		t.Errorf("seq after two rejections = %v, want the position held at 1", seq)
 	}
 
-	// The flow is still retryable: the legal name at the same step number opens
-	// the account.
 	ok := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
 		`{"seq":1,"step":"answer","input":{"username":"newperson","password":"collected-password"}}`, "Cookie", cookie)
 	if ok.Code != http.StatusOK {

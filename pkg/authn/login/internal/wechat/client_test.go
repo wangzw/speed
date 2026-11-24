@@ -21,15 +21,11 @@ const (
 	testAppSecret = "app-secret-2f7a91c4"
 )
 
-// recorded is what the mock server saw of the last request.
 type recorded struct {
 	method string
 	query  url.Values
 }
 
-// tokenServer serves one token answer over TLS and reports the request it saw.
-// The client reaches it through the restricted egress client, which admits the
-// loopback address only when told to and trusts the server's own certificate.
 func tokenServer(t *testing.T, status int, body string) (*httptest.Server, *x509.CertPool, *recorded) {
 	t.Helper()
 	seen := &recorded{}
@@ -47,7 +43,6 @@ func tokenServer(t *testing.T, status int, body string) (*httptest.Server, *x509
 	return srv, pool, seen
 }
 
-// clientFor points a client at a mock server through the restricted client.
 func clientFor(srv *httptest.Server, pool *x509.CertPool) *Client {
 	return New(Options{
 		AppID:         testAppID,
@@ -57,6 +52,7 @@ func clientFor(srv *httptest.Server, pool *x509.CertPool) *Client {
 	})
 }
 
+// TestExchangeSendsTheProvidersRequest checks the provider GET's parameters and the identity read from the answer.
 func TestExchangeSendsTheProvidersRequest(t *testing.T) {
 	srv, pool, seen := tokenServer(t, http.StatusOK, `{"access_token":"t","expires_in":7200,"openid":"OPEN-1","unionid":"UNION-1"}`)
 	c := clientFor(srv, pool)
@@ -84,6 +80,7 @@ func TestExchangeSendsTheProvidersRequest(t *testing.T) {
 	}
 }
 
+// TestANonZeroErrcodeIsARefusalToldApart checks that each errcode becomes a refusal whose class tells the two kinds apart.
 func TestANonZeroErrcodeIsARefusalToldApart(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -122,6 +119,8 @@ func TestANonZeroErrcodeIsARefusalToldApart(t *testing.T) {
 	}
 }
 
+// TestAnUnusableAnswerIsAnOutage checks that a malformed, oversized or non-200
+// token answer reads as an outage.
 func TestAnUnusableAnswerIsAnOutage(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -148,15 +147,11 @@ func TestAnUnusableAnswerIsAnOutage(t *testing.T) {
 	}
 }
 
-// roundTripFunc is a transport a case scripts, to drive a transport failure of a
-// chosen shape without a network.
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-// TestATransportFailureNeverCarriesTheURL holds that the *url.Error net/http
-// returns — whose text is the whole request URL, secret included — is unwrapped
-// and never handed back. The cause is kept, so the log still says why.
+// TestATransportFailureNeverCarriesTheURL holds that the whole-URL transport error is unwrapped and never returned.
 func TestATransportFailureNeverCarriesTheURL(t *testing.T) {
 	c := New(Options{
 		AppID:         testAppID,
@@ -182,9 +177,7 @@ func TestATransportFailureNeverCarriesTheURL(t *testing.T) {
 	}
 }
 
-// TestNoErrorPathCarriesTheSecret holds the invariant the ADR states: for every
-// way an exchange can fail, the secret and the URL carrying it stay inside the
-// client.
+// TestNoErrorPathCarriesTheSecret holds that no failure path carries the secret or the URL holding it.
 func TestNoErrorPathCarriesTheSecret(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -226,6 +219,8 @@ func TestNoErrorPathCarriesTheSecret(t *testing.T) {
 	}
 }
 
+// TestAuthorizeURLNamesTheApplicationAndEndsWithTheFragment checks that
+// AuthorizeURL names the application and ends with the required fragment.
 func TestAuthorizeURLNamesTheApplicationAndEndsWithTheFragment(t *testing.T) {
 	c := New(Options{AppID: testAppID, AppSecret: testAppSecret})
 	got := c.AuthorizeURL(AuthorizeQRConnect, "snsapi_login", "https://app.example/api/v1/auth/callback/wechat.web", "the-state")
@@ -258,9 +253,7 @@ func TestAuthorizeURLNamesTheApplicationAndEndsWithTheFragment(t *testing.T) {
 	}
 }
 
-// TestTheDefaultOutboundClientIsTheRestrictedOne holds that a client built with
-// no transport of its own sends through internal/egress: it refuses a plain-http
-// destination and a non-public one.
+// TestTheDefaultOutboundClientIsTheRestrictedOne holds that a client with no transport refuses plain-http and non-public destinations.
 func TestTheDefaultOutboundClientIsTheRestrictedOne(t *testing.T) {
 	t.Run("a plain-http destination is refused", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
@@ -281,10 +274,7 @@ func TestTheDefaultOutboundClientIsTheRestrictedOne(t *testing.T) {
 	})
 }
 
-// TestTheTokenResponseSizeIsCapped holds the client's own response cap, which is
-// what bounds the answer under a client a test injects: a body exactly at the cap
-// is read, and one byte over is refused as an outage. It runs over a plain client
-// so the cap the client applies itself is the one observed.
+// TestTheTokenResponseSizeIsCapped holds that a body at the cap is read and one byte over is an outage.
 func TestTheTokenResponseSizeIsCapped(t *testing.T) {
 	build := func(t *testing.T, body string) *Client {
 		t.Helper()
@@ -309,10 +299,7 @@ func TestTheTokenResponseSizeIsCapped(t *testing.T) {
 	}
 }
 
-// TestTheDefaultClientHonoursAllowLoopbackAndRootCAs holds the two affordances
-// the default restricted client exposes: a deployment or a dev run that admits
-// the loopback address and trusts its own roots can reach the server through the
-// client built with no transport of its own.
+// TestTheDefaultClientHonoursAllowLoopbackAndRootCAs holds that the default client admits loopback and trusts the configured roots.
 func TestTheDefaultClientHonoursAllowLoopbackAndRootCAs(t *testing.T) {
 	srv, pool, seen := tokenServer(t, http.StatusOK, `{"openid":"OPEN-1"}`)
 	c := New(Options{

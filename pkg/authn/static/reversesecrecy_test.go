@@ -40,7 +40,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The names of the stand-in modules a driven registry is built from.
 const (
 	providersName = "stand-in.providers"
 	accountsName  = "stand-in.accounts"
@@ -53,24 +52,17 @@ const (
 	logName       = "stand-in.log"
 )
 
-// registeredRules is a logging capability's registration face that keeps the
-// name of every rule registered with it.
 type registeredRules struct{ names []string }
 
 func (r *registeredRules) AddKeys(...string) {}
 
 func (r *registeredRules) AddPattern(name string, _ log.Matcher) { r.names = append(r.names, name) }
 
-// captureLogger is the logging capability a case supplies, so a rule registered
-// with it is seen.
 type captureLogger struct{ rules *registeredRules }
 
 func (l captureLogger) Named(string) *slog.Logger { return slog.New(slog.DiscardHandler) }
 func (l captureLogger) Redaction() log.Redaction  { return l.rules }
 
-// The stand-ins a driven registry supplies, each delivering one required
-// capability and called by nothing here. They embed the interface so no method
-// has to be written.
 type (
 	noProviders struct{ authn.SSOProviders }
 	noAccounts  struct{ authn.Accounts }
@@ -83,14 +75,10 @@ type (
 // method refuses a register that cannot record a consumed assertion.
 func (noProviders) RememberAssertion(context.Context, string, string, time.Time) error { return nil }
 
-// declaring builds the stand-in module that declares one capability.
 func declaring(name string, tok core.Token) core.Module {
 	return core.Module{Name: name, Provides: []core.Provision{{Token: tok}}}
 }
 
-// reverseReader builds the real configuration loader over body, with the modules
-// whose sections the case configures registered so their declared items are
-// known.
 func reverseReader(t *testing.T, body string) config.Reader {
 	t.Helper()
 	locator := filepath.Join(t.TempDir(), "config.json")
@@ -113,8 +101,6 @@ func reverseReader(t *testing.T, body string) config.Reader {
 	return reader
 }
 
-// registry is the registry a case drives, with the config reader and the logging
-// capability supplied and the stand-in modules declared.
 func registry(t *testing.T, body string) (*core.Registry, *registeredRules) {
 	t.Helper()
 	rules := &registeredRules{}
@@ -140,13 +126,7 @@ func registry(t *testing.T, body string) (*core.Registry, *registeredRules) {
 	return reg, rules
 }
 
-// TestTheSAMLModuleRegistersNoLiteralRedactionRule holds the saml backend to
-// registering nothing, with sp-key-file configured to a real key file: the item
-// is marked sensitive — config keeps it out of its own output — but its value is
-// a path, and the module holds no secret configuration value to register. The
-// enable switch is on, because off the module stands itself down and is never
-// constructed, which would let the case pass without driving the registration
-// it is about.
+// TestTheSAMLModuleRegistersNoLiteralRedactionRule holds that a path-valued sensitive item registers no secret.
 func TestTheSAMLModuleRegistersNoLiteralRedactionRule(t *testing.T) {
 	keyPath, certPath := spKeyPair(t)
 	body := fmt.Sprintf(`{"authn":{"sso":{"saml":{"enabled":true,"sp-key-file":%q,"sp-cert-file":%q}}}}`,
@@ -171,10 +151,7 @@ func TestTheSAMLModuleRegistersNoLiteralRedactionRule(t *testing.T) {
 	requireNoRule(t, rules, saml.ModuleName)
 }
 
-// TestTheTokenModuleRegistersNoLiteralRedactionRule holds the token backend to
-// registering nothing, with signing-key-file configured to a real key file: the
-// item is marked sensitive, but its value is a path, and the module holds no
-// secret configuration value to register.
+// TestTheTokenModuleRegistersNoLiteralRedactionRule holds that a path-valued sensitive item registers no secret.
 func TestTheTokenModuleRegistersNoLiteralRedactionRule(t *testing.T) {
 	keyPath := ecKey(t)
 	body := fmt.Sprintf(`{"authn":{"token":{"issuer":"https://auth.example.com",`+
@@ -195,7 +172,6 @@ func TestTheTokenModuleRegistersNoLiteralRedactionRule(t *testing.T) {
 	requireNoRule(t, rules, token.ModuleName)
 }
 
-// requireNoRule fails the case for each rule the logging capability was handed.
 func requireNoRule(t *testing.T, rules *registeredRules, module string) {
 	t.Helper()
 	if len(rules.names) != 0 {
@@ -204,9 +180,6 @@ func requireNoRule(t *testing.T, rules *registeredRules, module string) {
 	}
 }
 
-// spKeyPair writes an RSA private key and a self-signed certificate for it, and
-// returns their paths: the pair the saml backend loads when sp-key-file and
-// sp-cert-file are set.
 func spKeyPair(t *testing.T) (keyPath, certPath string) {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -229,8 +202,6 @@ func spKeyPair(t *testing.T) (keyPath, certPath string) {
 	return keyPath, certPath
 }
 
-// ecKey writes a P-256 private key in PKCS#8, the kind the token backend loads
-// for its ES256 signing key, and returns its path.
 func ecKey(t *testing.T) string {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -244,8 +215,6 @@ func ecKey(t *testing.T) string {
 	return writePEM(t, "signing-key.pem", "PRIVATE KEY", der)
 }
 
-// writePEM writes one PEM block to a file under a case's temporary directory and
-// returns its path.
 func writePEM(t *testing.T, name, blockType string, der []byte) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), name)

@@ -17,9 +17,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The setting keys of this module, relative to its namespace, and the full paths
-// a read goes by. The module declares these; the ones belonging to another
-// namespace are read, not declared, and their owners state their domains.
 const (
 	flowTTLKey                = "flow-ttl"
 	callBudgetKey             = "call-budget"
@@ -47,11 +44,6 @@ const (
 	passwordResetPath          = ModuleName + "." + passwordResetKey
 	passwordResetTicketTTLPath = ModuleName + "." + passwordResetTicketTTLKey
 
-	// The self-registration settings the account module declares and this
-	// module only reads: the registration switch is the authority in
-	// Signups.Register and a pre-check here; the two budgets bound the
-	// anonymous route before an account is written. Each path is the account
-	// namespace joined to the key name its owner declares.
 	passwordSignupKey     = "password-signup"
 	signupIPLimitKey      = "signup-ip-limit"
 	signupGlobalHourlyKey = "signup-global-hourly"
@@ -62,7 +54,6 @@ const (
 	signupGlobalHourlyPath = accountNamespace + "." + signupGlobalHourlyKey
 )
 
-// The domains of the settings this module declares.
 const (
 	minFlowTTL = time.Minute
 	maxFlowTTL = 30 * time.Minute
@@ -70,28 +61,17 @@ const (
 	minCallBudget = time.Second
 	maxCallBudget = 60 * time.Second
 
-	// The domain of the anonymous password reset's verified-ticket lifetime: how
-	// long a proved reset may wait before the new password is written.
 	minPasswordResetTicketTTL = time.Minute
 	maxPasswordResetTicketTTL = 30 * time.Minute
 
-	// maxIPLimit is the most verification messages the source-address
-	// pre-throttle charges a source per minute, the setting's own unit.
 	maxIPLimit = 10000
 
-	// The domain of the self-service email-code lifetime and of the interval
-	// before another code may be asked for. They are the login module's, read by
-	// the self-service email routes.
 	minEmailCodeTTL = time.Minute
 	maxEmailCodeTTL = 30 * time.Minute
 
 	minEmailResend = 30 * time.Second
 	maxEmailResend = 10 * time.Minute
 
-	// The domains of the email verification code budgets, in sends per window.
-	// The first two count an inbox's budget form, the next two the account that
-	// asked, the next two the request's source address, and the last every
-	// account and address together.
 	minEmailPerAddressHourly = 1
 	maxEmailPerAddressHourly = 60
 
@@ -114,17 +94,13 @@ const (
 	maxEmailGlobalHourly = 1000000
 )
 
-// The closed set of delivery modes, and the two the value-name set names.
 const (
 	deliverySession = "session"
 	deliveryToken   = "token"
 
-	// maxReturnToBytes is the most a return_to may be, in bytes.
 	maxReturnToBytes = 2048
 )
 
-// The relaxation switch the account module declares and this module reads. A
-// value outside the set the account module declares reads as the strict one.
 const (
 	signupPath = "authn.account.signup"
 
@@ -134,8 +110,6 @@ const (
 
 func signupInDomain(v string) bool { return v == signupClosed || v == signupOpen }
 
-// The two values of the anonymous password reset switch. closed is the strict
-// default: a deployment that never opened reset serves none.
 const (
 	passwordResetClosed = "closed"
 	passwordResetOpen   = "open"
@@ -147,10 +121,6 @@ func passwordResetTicketTTLInDomain(d time.Duration) bool {
 	return d >= minPasswordResetTicketTTL && d <= maxPasswordResetTicketTTL
 }
 
-// The domain and the declared default of the two registration budgets, repeated
-// here because this module only reads the values the account module declares: one
-// source address may register at most signupIPLimitCeil times a minute, and the
-// whole deployment at most signupHourlyCeil times an hour.
 const (
 	signupIPLimitCeil         = 10000
 	signupGlobalHourlyFloor   = 1
@@ -164,9 +134,6 @@ func signupGlobalHourlyInDomain(n int) bool {
 	return n >= signupGlobalHourlyFloor && n <= signupGlobalHourlyCeil
 }
 
-// options carries the settings this module declares and their defaults, which
-// the settings module reads off it and which it never receives a value for. The
-// two lists are string items holding JSON, because a setting item is a scalar.
 type options struct {
 	FlowTTL                time.Duration `config:"flow-ttl"`
 	CallBudget             time.Duration `config:"call-budget"`
@@ -189,9 +156,7 @@ type options struct {
 	EmailGlobalHourly     int `config:"email-global-hourly"`
 }
 
-// defaults is the declared default of each setting, and the value a tuning read
-// that cannot be made falls back to. DisabledMethods is not read through that
-// fallback: it is a mandatory switch, and a read that fails refuses.
+// defaults is each setting's declared default; a failed tuning read falls back to it, except the mandatory disabled-methods switch.
 var defaults = options{
 	FlowTTL:                10 * time.Minute,
 	CallBudget:             10 * time.Second,
@@ -214,7 +179,6 @@ var defaults = options{
 	EmailGlobalHourly:     300,
 }
 
-// The domains of the settings this module declares.
 func flowTTLInDomain(d time.Duration) bool      { return d >= minFlowTTL && d <= maxFlowTTL }
 func callBudgetInDomain(d time.Duration) bool   { return d >= minCallBudget && d <= maxCallBudget }
 func ipLimitInDomain(n int) bool                { return n >= 0 && n <= maxIPLimit }
@@ -250,18 +214,10 @@ func emailGlobalHourlyInDomain(n int) bool {
 	return n >= minEmailGlobalHourly && n <= maxEmailGlobalHourly
 }
 
-// methodPassword is the login method the disabled-methods switch cannot turn
-// off. Whether it is in force depends only on the password module being
-// assembled, and the assembly is the host's call (REQ-signin-039).
 const methodPassword = "password"
 
-// methodSMS is the SMS login method's stable name, which the module publishes.
-// The step-up start reads it to tell whether a session established by an SMS
-// code may re-prove that channel (REQ-security-016).
 const methodSMS = "sms"
 
-// deliveryModesTextInDomain reports whether a JSON array of strings is a legal
-// value of the delivery-modes setting.
 func deliveryModesTextInDomain(text string) bool {
 	modes, err := parseList(text)
 	if err != nil {
@@ -270,10 +226,6 @@ func deliveryModesTextInDomain(text string) bool {
 	return deliveryModesInDomain(modes)
 }
 
-// disabledMethodsTextInDomain reports whether a JSON array of strings is a legal
-// value of the disabled-methods setting: it must parse as a JSON array of
-// strings, and it may not name the password method, which no deployment turns
-// off. The empty text and the empty array are both legal: they turn nothing off.
 func disabledMethodsTextInDomain(text string) bool {
 	list, err := parseList(text)
 	if err != nil {
@@ -283,9 +235,7 @@ func disabledMethodsTextInDomain(text string) bool {
 	return !dropped
 }
 
-// withoutPassword returns list with the password method removed, and whether it
-// named it. Every read of the disabled-methods switch passes through here, so a
-// value written around the settings surface cannot turn the password method off.
+// withoutPassword removes the password method from every read of the switch, so a value written around the settings surface cannot turn it off.
 func withoutPassword(list []string) ([]string, bool) {
 	if !slices.Contains(list, methodPassword) {
 		return list, false
@@ -299,8 +249,6 @@ func withoutPassword(list []string) ([]string, bool) {
 	return kept, true
 }
 
-// parseList reads a JSON array of strings from the text of a list setting. The
-// empty string reads as the empty list.
 func parseList(text string) ([]string, error) {
 	if strings.TrimSpace(text) == "" {
 		return nil, nil
@@ -313,9 +261,6 @@ func parseList(text string) ([]string, error) {
 	return out, nil
 }
 
-// deliveryModesInDomain reports whether every name is one of the closed set and
-// none repeats; an empty list is outside the domain, since it names nothing a
-// login could be delivered as.
 func deliveryModesInDomain(modes []string) bool {
 	if len(modes) == 0 {
 		return false
@@ -333,7 +278,6 @@ func deliveryModesInDomain(modes []string) bool {
 	return true
 }
 
-// settingsSchema declares this module's runtime parameters.
 func settingsSchema() settings.Schema {
 	return settings.Schema{
 		Namespace: ModuleName,
@@ -456,9 +400,6 @@ func settingsSchema() settings.Schema {
 	}
 }
 
-// reader reads this module's settings with the failure direction each has. The
-// store is nil when the assembly has none, and every setting then reads as its
-// declared default, which is a legal assembly.
 type reader struct {
 	store  settings.Store
 	logger *slog.Logger
@@ -471,16 +412,8 @@ func newReader(store settings.Store, logger *slog.Logger) *reader {
 	return &reader{store: store, logger: logger, reported: make(map[string]string)}
 }
 
-// errSettingRead is what a failed read of the mandatory switch is wrapped in.
 var errSettingRead = errors.New("the setting cannot be read")
 
-// disabledMethods reads the mandatory switch of the methods turned off. A read
-// that fails is an error and not the empty default: the default turns nothing
-// off, so falling back to it would let a method the operator turned off answer.
-//
-// The password method is filtered out of what is read, since no deployment turns
-// it off, and a raw value that named it is reported once per value so an
-// operator can correct the row (REQ-signin-039).
 func (r *reader) disabledMethods() ([]string, error) {
 	if r.store == nil {
 		return nil, nil
@@ -529,9 +462,6 @@ func (r *reader) defaultReturnTo() string {
 	return v
 }
 
-// callbackErrorReturnTo is where a failed navigation callback lands the user
-// agent. An unreadable value falls back to the declared default, and the value
-// is held to the return target rule at use, like the default return target.
 func (r *reader) callbackErrorReturnTo() string {
 	if r.store == nil {
 		return defaults.CallbackErrorTo
@@ -548,9 +478,6 @@ func (r *reader) callbackErrorReturnTo() string {
 	return v
 }
 
-// deliveryModes reads the closed set of delivery modes a login may ask for. A
-// read that fails or lands outside the domain reads as the declared default,
-// which offers both.
 func (r *reader) deliveryModes() []string {
 	fallback, _ := parseList(defaults.DeliveryModes)
 	if r.store == nil {
@@ -574,63 +501,39 @@ func (r *reader) ipLimit() int {
 	return readTuned(r, ModuleName+"."+ipLimitKey, defaults.IPLimit, ipLimitInDomain)
 }
 
-// passwordReset reads the anonymous password reset switch. A read that fails or a
-// value outside the declared set reads as closed, the strict side.
 func (r *reader) passwordReset() string {
 	return readTuned(r, passwordResetPath, passwordResetClosed, passwordResetInDomain)
 }
 
-// passwordResetTicketTTL reads how long a proved reset may wait before the new
-// password is written. A failed read and a value outside the domain read as the
-// declared default.
 func (r *reader) passwordResetTicketTTL() time.Duration {
 	return readTuned(r, passwordResetTicketTTLPath, defaults.PasswordResetTicketTTL,
 		passwordResetTicketTTLInDomain)
 }
 
-// signup reads the account module's registration switch. A read that fails or a
-// value outside the declared set reads as closed.
 func (r *reader) signup() string {
 	return readTuned(r, signupPath, signupClosed, signupInDomain)
 }
 
-// passwordSignup reads the account module's switch of name-and-password
-// self-registration. It is the authority in Signups.Register; the register route
-// reads it only as a pre-check, so a read that fails or a value outside the
-// declared set reads as closed and the route answers signup-closed.
 func (r *reader) passwordSignup() string {
 	return readTuned(r, passwordSignupPath, signupClosed, signupInDomain)
 }
 
-// signupIPLimit reads the account module's per-source registration budget, in
-// registrations a minute; zero turns the budget off. A read that fails or a value
-// outside the declared domain reads as the declared default.
 func (r *reader) signupIPLimit() int {
 	return readTuned(r, signupIPLimitPath, signupIPLimitDefault, signupIPLimitInDomain)
 }
 
-// signupGlobalHourly reads the account module's deployment-wide registration
-// budget, in registrations an hour. A read that fails or a value outside the
-// declared domain reads as the declared default.
 func (r *reader) signupGlobalHourly() int {
 	return readTuned(r, signupGlobalHourlyPath, signupGlobalHourlyDefault, signupGlobalHourlyInDomain)
 }
 
-// emailCodeTTL reads the lifetime of an emailed verification code, which the
-// self-service email route and the password reset's email channel answer with.
 func (r *reader) emailCodeTTL() time.Duration {
 	return readTuned(r, ModuleName+"."+emailCodeTTLKey, defaults.EmailCodeTTL, emailCodeTTLInDomain)
 }
 
-// emailResend reads the interval before another emailed verification code may be
-// asked for.
 func (r *reader) emailResend() time.Duration {
 	return readTuned(r, ModuleName+"."+emailResendKey, defaults.EmailResend, emailResendInDomain)
 }
 
-// The email send budget readers. The reset's email channel reads the same
-// numerical settings the self-service email branch uses and counts them on keys
-// of its own.
 func (r *reader) emailPerAddressHourly() int {
 	return readTuned(r, ModuleName+"."+emailPerAddressHourlyKey,
 		defaults.EmailPerAddressHourly, emailPerAddressHourlyInDomain)
@@ -666,8 +569,6 @@ func (r *reader) emailGlobalHourly() int {
 		defaults.EmailGlobalHourly, emailGlobalHourlyInDomain)
 }
 
-// smsCodeTTL reads the lifetime of an SMS verification code, which the SMS
-// module declares. The SMS channel of the reset answers with it.
 func (r *reader) smsCodeTTL() time.Duration {
 	const (
 		path = "authn.sms.code-ttl"
@@ -678,8 +579,6 @@ func (r *reader) smsCodeTTL() time.Duration {
 	return readTuned(r, path, def, func(d time.Duration) bool { return d >= lo && d <= hi })
 }
 
-// smsResend reads the interval before another SMS code may be sent to one
-// number, which the SMS module declares.
 func (r *reader) smsResend() time.Duration {
 	const (
 		path = "authn.sms.resend-interval"
@@ -690,9 +589,6 @@ func (r *reader) smsResend() time.Duration {
 	return readTuned(r, path, def, func(d time.Duration) bool { return d >= lo && d <= hi })
 }
 
-// recentWindow reads the multi-factor module's recent-window setting, which one
-// step of this module's completion review uses and only reads. A failed read and
-// a value outside its domain read as the declared default.
 func (r *reader) recentWindow() time.Duration {
 	const (
 		path = "authn.mfa.recent-window"
@@ -703,12 +599,6 @@ func (r *reader) recentWindow() time.Duration {
 	return readTuned(r, path, def, func(d time.Duration) bool { return d >= lo && d <= hi })
 }
 
-// perFlowSends reads the per-flow SMS send limit, which the SMS module declares
-// and this module only satisfies. The declaring module may be absent from an
-// assembly (the deploy build carries no SMS family); an undeclared key is that
-// absence, not a fault, and reads as the declared default without a diagnostic.
-// A failed read and a value outside the domain also read as the default, and
-// each records its own Error.
 func (r *reader) perFlowSends() int {
 	const path = "authn.sms.per-flow-sends"
 	if r.store == nil {
@@ -731,17 +621,12 @@ func (r *reader) perFlowSends() int {
 	return v
 }
 
-// The domain of authn.sms.per-flow-sends and its default, repeated here because
-// this module only reads the value the SMS module declares.
 const (
 	defaultPerFlowSends = 3
 	minPerFlowSends     = 1
 	maxPerFlowSends     = 10
 )
 
-// readTuned reads a tuning setting: one that fails to read, and one outside its
-// domain, read as the declared default, and the fault is reported at Error once
-// per distinct fault.
 func readTuned[T any](r *reader, path string, fallback T, inDomain func(T) bool) T {
 	if r.store == nil {
 		return fallback
@@ -759,8 +644,6 @@ func readTuned[T any](r *reader, path string, fallback T, inDomain func(T) bool)
 	return v
 }
 
-// report writes the Error line of a setting read in a way other than as it says,
-// once per distinct fault.
 func (r *reader) report(path, problem, detail string) {
 	r.mu.Lock()
 	last, reported := r.reported[path]
@@ -778,8 +661,6 @@ func (r *reader) report(path, problem, detail string) {
 	}
 }
 
-// gateConfig is the part of the gateway's section this module reads: the public
-// URL the redirect targets are built from and the origins a return_to may name.
 type gateConfig struct {
 	Mount struct {
 		PublicURL string `config:"public-url"`
@@ -787,16 +668,10 @@ type gateConfig struct {
 	TrustedOrigins []string `config:"trusted-origins"`
 }
 
-// resolveConfig is the part of the tenant resolution module's configuration the
-// startup check reads: which endpoints it guards. The shape is read as a list of
-// names; a value of any other shape reads as unreadable and only a Warn is
-// written.
 type resolveConfig struct {
 	Endpoints []string `config:"endpoints"`
 }
 
-// readGate reads the gateway keys this module needs. A missing reader leaves the
-// public URL empty and trusts no origin, which the return_to check states.
 func readGate(reader config.Reader) (gateConfig, error) {
 	var g gateConfig
 	if reader == nil {
@@ -808,9 +683,6 @@ func readGate(reader config.Reader) (gateConfig, error) {
 	return g, nil
 }
 
-// readResolveEndpoints reads the endpoints the tenant resolution layer guards.
-// ok is false when the shape cannot be read, which the startup check turns into
-// a Warn and never a failure.
 func readResolveEndpoints(reader config.Reader) (endpoints []string, ok bool) {
 	if reader == nil {
 		return nil, false
@@ -825,9 +697,6 @@ func readResolveEndpoints(reader config.Reader) (endpoints []string, ok bool) {
 	return r.Endpoints, true
 }
 
-// checkReturnTo holds a return target to the rule the engine applies at the
-// start of a flow. An empty value is refused except where the caller has a
-// default of its own: the caller substitutes its default and calls again.
 func checkReturnTo(value string, trusted []string) error {
 	if value == "" {
 		return fmt.Errorf("%w: the return target is empty", authn.ErrInvalidArgument)
@@ -845,19 +714,12 @@ func checkReturnTo(value string, trusted []string) error {
 	if !ok {
 		return fmt.Errorf("%w: the return target is neither a relative path nor an absolute URL", authn.ErrInvalidArgument)
 	}
-	// An absolute URL is accepted only when its origin is one the deployment
-	// trusts, which keeps a login from being turned into an open redirect. The
-	// comparison is by origin, so a path, query or fragment under a trusted
-	// origin is accepted too.
 	if slices.Contains(trusted, origin) {
 		return nil
 	}
 	return fmt.Errorf("%w: the return target's origin is not a trusted origin", authn.ErrInvalidArgument)
 }
 
-// originOf returns the canonical origin of an absolute URL, with its path, query
-// and fragment dropped. ok is false for a value that is not an absolute http or
-// https URL.
 func originOf(raw string) (string, bool) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" || u.Opaque != "" {
@@ -874,9 +736,6 @@ func originOf(raw string) (string, bool) {
 	return origin, true
 }
 
-// relativeReturnTo reports whether a value beginning with a slash is a
-// well-formed relative path: a single leading slash, no scheme-relative "//",
-// no backslash, no control character and no "@".
 func relativeReturnTo(value string) bool {
 	if !strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") {
 		return false

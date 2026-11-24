@@ -11,9 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// axesAccount gives the account a username, an unproved phone number and two
-// email addresses, one proved and one only asserted, with their axes set the way
-// the account module would have written them.
 func (h *harness) axesAccount() {
 	h.accounts.identifiers = []authn.Identifier{
 		{
@@ -35,15 +32,10 @@ func (h *harness) axesAccount() {
 	}
 }
 
-// TestChangingOnlyTheContactNeedsNoFreshAuthentication holds the lighter half of
-// the route: a contact is not a way in, so writing it asks for CSRF (which the
-// mounter applies to every write) but not for a fresh authentication, and it
-// neither rotates the session nor revokes the others.
+// TestChangingOnlyTheContactNeedsNoFreshAuthentication holds that writing the contact needs CSRF but no fresh authentication, rotation or revocation.
 func TestChangingOnlyTheContactNeedsNoFreshAuthentication(t *testing.T) {
 	h := newHarness(t)
 	h.axesAccount()
-	// A first factor older than the freshness window, which a sign-in change
-	// would refuse.
 	h.as(authntest.WithAuthTime(now.Add(-30 * time.Minute)))
 	w := h.put("/identifiers/ident-unproved", `{"contact":true}`)
 	if w.Code != http.StatusNoContent {
@@ -64,10 +56,7 @@ func TestChangingOnlyTheContactNeedsNoFreshAuthentication(t *testing.T) {
 	}
 }
 
-// TestChoosingAnIdentifierAsASignInWayRotatesTheSession holds the heavier half: a
-// sign-in change asks for fresh authentication, writes both axes as they now
-// stand, and, when the row becomes a sign-in way, rotates the current session and
-// revokes the account's others.
+// TestChoosingAnIdentifierAsASignInWayRotatesTheSession holds that a sign-in change asks for freshness, writes both axes and rotates on a new way in.
 func TestChoosingAnIdentifierAsASignInWayRotatesTheSession(t *testing.T) {
 	h := newHarness(t)
 	h.axesAccount()
@@ -93,9 +82,7 @@ func TestChoosingAnIdentifierAsASignInWayRotatesTheSession(t *testing.T) {
 	}
 }
 
-// TestChoosingAPhoneAsASignInWayRotatesTheSession holds the same rotation for a
-// proved phone number: the requirement names a verified email address or phone
-// number, and either choice is a new way in.
+// TestChoosingAPhoneAsASignInWayRotatesTheSession holds that a proved phone is a new way in and rotates the session.
 func TestChoosingAPhoneAsASignInWayRotatesTheSession(t *testing.T) {
 	h := newHarness(t)
 	h.axesAccount()
@@ -117,13 +104,10 @@ func TestChoosingAPhoneAsASignInWayRotatesTheSession(t *testing.T) {
 	}
 }
 
-// TestChoosingTheDefaultContactDoesNotRotate the session holds that the default
-// contact is not a rotation point: it asks for fresh authentication, writes the
-// choice, and leaves the session as it is.
+// TestChoosingTheDefaultContactDoesNotRotateTheSession holds that the default contact asks for freshness but leaves the session.
 func TestChoosingTheDefaultContactDoesNotRotateTheSession(t *testing.T) {
 	h := newHarness(t)
 	h.axesAccount()
-	// A second proved email address to move the choice to.
 	h.accounts.identifiers = append(h.accounts.identifiers, authn.Identifier{
 		ID: "ident-proved-two", Kind: authn.IdentifierEmail, Value: "second@example.com",
 		VerifiedAt: now.Add(-time.Minute), VerifiedVia: authn.VerifiedViaEmailCode,
@@ -143,12 +127,7 @@ func TestChoosingTheDefaultContactDoesNotRotateTheSession(t *testing.T) {
 	}
 }
 
-// TestUpdatingAnIdentifierRefusesWhatTheAxesDoNotAllow holds the refusals the
-// route decides itself, before the account module is asked: an unproved row
-// cannot become a sign-in way, only a proved email address can be the default
-// contact, a username has no two axes, an identifier the account does not hold
-// is answered the same way as one that does not exist, and a body that changes
-// nothing is malformed.
+// TestUpdatingAnIdentifierRefusesWhatTheAxesDoNotAllow holds the unproved sign-in, non-email default, username, foreign identifier and no-change refusals.
 func TestUpdatingAnIdentifierRefusesWhatTheAxesDoNotAllow(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -179,10 +158,7 @@ func TestUpdatingAnIdentifierRefusesWhatTheAxesDoNotAllow(t *testing.T) {
 	}
 }
 
-// TestASignInChangeAsksForFreshAuthentication holds that the freshness a change
-// of what proves the account asks for is decided from the body: the same stale
-// identity that may write a contact is refused the step-up when it asks to change
-// sign-in or the default contact.
+// TestASignInChangeAsksForFreshAuthentication holds that the body decides freshness, so a stale identity may write a contact but not sign-in.
 func TestASignInChangeAsksForFreshAuthentication(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -206,10 +182,7 @@ func TestASignInChangeAsksForFreshAuthentication(t *testing.T) {
 	}
 }
 
-// TestUpdatingAnIdentifierMapsTheAccountModulesAnswers holds each answer the
-// write can give: the two lock-out refusals are their own 409 codes, an argument
-// the account module refuses is a 400, and a dependency that cannot answer is a
-// 503.
+// TestUpdatingAnIdentifierMapsTheAccountModulesAnswers holds the two 409 lock-outs, the 400 argument refusal and the 503 outage.
 func TestUpdatingAnIdentifierMapsTheAccountModulesAnswers(t *testing.T) {
 	for _, c := range []struct {
 		err  error

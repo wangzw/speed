@@ -9,12 +9,8 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// wantLoginAction is the audit action of a login, from design-authn-events.md's
-// action table. It is a host-visible name, so the cases spell it out instead of
-// reading the package's own constant.
 const wantLoginAction = "authn.login"
 
-// oneLoginRow holds a case to exactly one login audit row and returns it.
 func oneLoginRow(t *testing.T, sink *auditing) loginRow {
 	t.Helper()
 	rows := sink.rows()
@@ -28,14 +24,11 @@ func oneLoginRow(t *testing.T, sink *auditing) loginRow {
 	return loginRow{entry: row, actors: sink.identities()}
 }
 
-// loginRow is one row with the identities it was written under.
 type loginRow struct {
 	entry  audit.Entry
 	actors []string
 }
 
-// expectDetail holds a row to the only detail a login row carries: the method and
-// the delivery.
 func expectDetail(t *testing.T, row loginRow, method, delivery string) {
 	t.Helper()
 	if len(row.entry.Detail) != 2 || row.entry.Detail["method"] != method || row.entry.Detail["delivery"] != delivery {
@@ -43,7 +36,6 @@ func expectDetail(t *testing.T, row loginRow, method, delivery string) {
 	}
 }
 
-// expectEmptyActor holds a failure row to the empty actor the design gives it.
 func expectEmptyActor(t *testing.T, row loginRow) {
 	t.Helper()
 	if len(row.actors) != 1 || row.actors[0] != "" {
@@ -51,9 +43,7 @@ func expectEmptyActor(t *testing.T, row loginRow) {
 	}
 }
 
-// A refused credential writes one authn.login row with outcome failure. The
-// account is unknown at that point, so the object is empty and the actor stays
-// empty too.
+// TestARefusedLoginWritesOneFailureRow holds that a refused credential writes one authn.login row with outcome failure.
 func TestARefusedLoginWritesOneFailureRow(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -79,7 +69,7 @@ func TestARefusedLoginWritesOneFailureRow(t *testing.T) {
 	expectEmptyActor(t, row)
 }
 
-// A login the failure back-off stops writes one row with outcome throttled.
+// TestAThrottledLoginWritesOneThrottledRow holds that a login stopped by the back-off writes one row with outcome throttled.
 func TestAThrottledLoginWritesOneThrottledRow(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -105,8 +95,7 @@ func TestAThrottledLoginWritesOneThrottledRow(t *testing.T) {
 	expectEmptyActor(t, row)
 }
 
-// A resolution the server can decide against — here an external identity bound
-// to an account that cannot log in — writes one row with outcome refused.
+// TestARefusedResolutionWritesOneRefusedRow holds that a server-decidable resolution refusal writes one row with outcome refused.
 func TestARefusedResolutionWritesOneRefusedRow(t *testing.T) {
 	m := &fakeMethod{name: "google"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -133,7 +122,7 @@ func TestARefusedResolutionWritesOneRefusedRow(t *testing.T) {
 	expectEmptyActor(t, row)
 }
 
-// An outage is outside the audit result set, so it is counted but writes no row.
+// TestAnUnavailableLoginWritesNoAuditRow holds that an outage is counted but writes no audit row.
 func TestAnUnavailableLoginWritesNoAuditRow(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -152,8 +141,7 @@ func TestAnUnavailableLoginWritesNoAuditRow(t *testing.T) {
 	}
 }
 
-// A second factor's refusal writes one failure row whose object is the account
-// the first factor already proved, so the row can be tied to it.
+// TestASecondFactorRefusalWritesOneRowForTheAccount holds that a second-factor refusal writes one failure row naming the already-proved account.
 func TestASecondFactorRefusalWritesOneRowForTheAccount(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {

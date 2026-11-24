@@ -35,7 +35,6 @@ const (
 	basePath                 = "/api/v1/auth"
 )
 
-// harness is a Service on a mounttest Mounter with a fake for every dependency.
 type harness struct {
 	t        *testing.T
 	log      *callLog
@@ -139,24 +138,16 @@ func newHarness(t *testing.T, cfgs ...func(*config)) *harness {
 	return h
 }
 
-// declaredRel turns a route declared against the module's API root into the
-// relative path the test Mounter joins to its base. The login engine passes its
-// own resolver in production; the harness runs without it.
 func declaredRel(declared string) string {
 	return strings.TrimPrefix(declared, "/auth")
 }
 
-// impersonableMounter registers every guarded route as one an impersonating
-// identity may pass, which is the registration mistake the handlers' own check
-// is the fallback for.
 type impersonableMounter struct{ *mounttest.Mounter }
 
 func (m impersonableMounter) Guarded(method, rel string, h gin.HandlerFunc, opts ...mount.Option) {
 	m.Mounter.Guarded(method, rel, h, append(opts, mount.Impersonable())...)
 }
 
-// as sets the identity of the requests that follow: the account and session of
-// the harness, a first factor proven a minute ago, and what opts change.
 func (h *harness) as(opts ...authntest.Option) {
 	h.t.Helper()
 	base := []authntest.Option{
@@ -167,24 +158,19 @@ func (h *harness) as(opts ...authntest.Option) {
 	h.m.As(append(base, opts...)...)
 }
 
-// activeFactor gives the account a registered, active TOTP factor.
 func (h *harness) activeFactor() {
 	h.mfa.factors = []authn.FactorRecord{{ID: "factor-1", Account: account, Kind: authn.FactorTOTP, Status: authn.FactorActive}}
 }
 
-// multi is an identity that proved two factors here a minute ago.
 func (h *harness) multi() {
 	h.as(authntest.WithAssurance(authn.AssuranceMulti), authntest.WithMethods(authn.MethodPassword, authn.MethodTOTP))
 }
 
-// request is one request to a route, written relative to the base path.
 type request struct {
 	method string
 	path   string
 	body   string
 	header map[string]string
-	// remote is the peer address the request is served from. Empty keeps the
-	// standard library's default.
 	remote string
 }
 
@@ -220,8 +206,6 @@ func (h *harness) delete(path string) *httptest.ResponseRecorder {
 	return h.do(request{method: http.MethodDelete, path: path})
 }
 
-// problemType is the code a problem answer carries, without the type prefix, or
-// the empty string when the body is not a problem or has none (about:blank).
 func problemType(t *testing.T, w *httptest.ResponseRecorder) string {
 	t.Helper()
 	var p struct {
@@ -261,18 +245,12 @@ func (w *lockedWriter) Write(p []byte) (int, error) {
 	return w.c.buf.Write(p)
 }
 
-// guardedRoute is one route that changes the account, with a request body it
-// accepts and whether the route asks for a fresh authentication.
 type guardedRoute struct {
 	name  string
 	req   request
 	fresh bool
 }
 
-// mutating is the routes that change the account, with a request body each of
-// them accepts. fresh marks the ones that add, choose or remove a way in: those
-// ask for a fresh authentication, while registering or proving a contact address
-// does not.
 var mutating = []guardedRoute{
 	{"PUT /password", request{method: http.MethodPut, path: "/password", body: `{"new_password":"correct horse"}`}, true},
 	{"POST /phone", request{method: http.MethodPost, path: "/phone", body: `{"phone":"+8613800000000"}`}, false},
@@ -284,8 +262,6 @@ var mutating = []guardedRoute{
 	{"DELETE /links/:id", request{method: http.MethodDelete, path: "/links/link-1"}, true},
 }
 
-// gatedRoutes is the routes held to a fresh authentication: the ones that change
-// how the account signs in.
 func gatedRoutes() []guardedRoute {
 	var out []guardedRoute
 	for _, tc := range mutating {
@@ -299,8 +275,6 @@ func gatedRoutes() []guardedRoute {
 // secretSubject is a binding's provider-side subject, which no answer may carry.
 const secretSubject = "subject-9f3a-never-shown"
 
-// richAccount gives the account two identifiers and two external bindings, one
-// of each carrying values a test reads back.
 func (h *harness) richAccount() {
 	h.accounts.account.MFARequired = true
 	h.accounts.identifiers = []authn.Identifier{

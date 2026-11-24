@@ -28,7 +28,6 @@ type store struct {
 	members    map[string]authn.Membership
 	next       int
 
-	// What the resolver did.
 	created        []authn.CreateAccount
 	deleted        []authn.AccountID
 	linked         []authn.ExternalLink
@@ -37,11 +36,9 @@ type store struct {
 	discovered     []string
 	other          []string // calls of any other write method
 
-	// Providers, and the verified domains of enabled providers.
 	providers map[string]authn.SSOProvider
 	domains   map[string][]authn.SSOProvider
 
-	// Hooks and injected failures.
 	beforeCreate func(authn.CreateAccount)
 	afterCreate  func()
 	beforeLink   func(authn.AccountID, authn.ExternalLink)
@@ -94,18 +91,15 @@ func normalize(kind authn.IdentifierKind, value string) (string, error) {
 	return strings.ToLower(value), nil
 }
 
-// seed is an account put in the store as a fixture.
 type seed struct {
-	id          authn.AccountID
-	status      authn.AccountStatus
-	kind        authn.AccountKind
-	password    bool
-	mfaRequired bool
-	email       string
-	emailVia    string
-	phone       string
-	// phoneNotSignIn seeds a phone the account holds but did not choose as a
-	// sign-in way.
+	id             authn.AccountID
+	status         authn.AccountStatus
+	kind           authn.AccountKind
+	password       bool
+	mfaRequired    bool
+	email          string
+	emailVia       string
+	phone          string
 	phoneNotSignIn bool
 	username       string
 	bindings       [][2]string
@@ -129,9 +123,6 @@ func (s *store) seed(t *testing.T, sd seed) authn.AccountID {
 		if err != nil {
 			t.Fatalf("seed %s %q: %v", kind, value, err)
 		}
-		// A seeded account stands for one that predates the two axes: its
-		// username and phone are sign-in ways, as the migration fills them,
-		// unless the case seeds a phone the holder left out of sign-in.
 		signIn := kind == authn.IdentifierUsername ||
 			(kind == authn.IdentifierPhone && !sd.phoneNotSignIn)
 		rec.identifiers = append(rec.identifiers, authn.Identifier{
@@ -156,7 +147,6 @@ func (s *store) seed(t *testing.T, sd seed) authn.AccountID {
 	return sd.id
 }
 
-// live is the accounts that exist and are not deleted.
 func (s *store) live() []authn.AccountID {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -202,14 +192,12 @@ func (s *store) membershipOf(tenant string, id authn.AccountID) (authn.Membershi
 	return m, ok
 }
 
-// writes is how many writes of any kind the resolver made.
 func (s *store) writes() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.created) + len(s.deleted) + len(s.linked) + len(s.membershipPuts) + len(s.other)
 }
 
-// accountsView is the Accounts the resolver reads.
 type accountsView struct {
 	authn.Accounts
 	s *store
@@ -281,7 +269,6 @@ func (v accountsView) Externals(_ context.Context, id authn.AccountID) ([]authn.
 	return slices.Clone(r.bindings), nil
 }
 
-// adminView is the AccountAdmin the resolver writes through.
 type adminView struct {
 	authn.AccountAdmin
 	s *store
@@ -335,11 +322,6 @@ func (v adminView) create(in authn.CreateAccount) (authn.Account, error) {
 	if err := add(authn.IdentifierEmail, in.Email, in.EmailVerifiedVia, false); err != nil {
 		return authn.Account{}, err
 	}
-	// The phone an SMS first login proved is a sign-in way from the start; any
-	// other phone row starts on neither axis. The username the create is given is
-	// recorded on the CreateAccount itself, not as an identifier: these cases
-	// read the creation, and the account module's own username handling is
-	// exercised against the real store.
 	if err := add(authn.IdentifierPhone, in.Phone, in.PhoneVerifiedVia,
 		in.PhoneVerifiedVia.Via == authn.VerifiedViaSMSCode); err != nil {
 		return authn.Account{}, err
@@ -417,7 +399,6 @@ func (v adminView) Delete(ctx context.Context, id authn.AccountID, reason string
 	return nil
 }
 
-// membershipsView counts what the resolver does with memberships.
 type membershipsView struct {
 	authn.Memberships
 	s *store
@@ -453,7 +434,6 @@ func (v membershipsView) Put(_ context.Context, m authn.Membership) error {
 	return nil
 }
 
-// ssoView is the register of providers.
 type ssoView struct {
 	authn.SSOProviders
 	s *store
@@ -477,15 +457,12 @@ func (v ssoView) Discover(_ context.Context, domain string) ([]authn.SSOProvider
 	return slices.Clone(v.s.domains[domain]), nil
 }
 
-// provisionerFunc is a Provisioner.
 type provisionerFunc func(ctx context.Context, p authn.CreateAccount, via string) (authn.CreateAccount, error)
 
 func (f provisionerFunc) Provision(ctx context.Context, p authn.CreateAccount, via string) (authn.CreateAccount, error) {
 	return f(ctx, p, via)
 }
 
-// rendezvous lets n callers wait for each other, so that a test can make
-// concurrent logins pass a point together.
 type rendezvous struct {
 	mu   sync.Mutex
 	n    int
@@ -505,7 +482,6 @@ func (r *rendezvous) wait() {
 	<-r.ch
 }
 
-// The fixture's tenant and providers.
 const (
 	tenantAcme = "acme"
 	idpAcme    = "okta-1"
@@ -513,7 +489,6 @@ const (
 	tenantElse = "else"
 )
 
-// env is a resolver over a store.
 type env struct {
 	t  *testing.T
 	s  *store
@@ -529,10 +504,6 @@ func withProvisioner(p provisionerFunc) option {
 	return func(c *Config, _ *store) { c.Provisioner = p }
 }
 
-// withProvider registers an enterprise provider of tenantAcme with the given
-// provisioning and merge switch, and its verified domain acme.com. A JIT
-// provider asks the person for a username, which is the strategy the older
-// cases exercised; a claim strategy is added by withClaimProvider.
 func withProvider(provisioning string, merge bool) option {
 	return func(_ *Config, s *store) {
 		p := authn.SSOProvider{
@@ -547,8 +518,6 @@ func withProvider(provisioning string, merge bool) option {
 	}
 }
 
-// withClaimProvider registers a just-in-time provider of tenantAcme that reads
-// its username from the given claim.
 func withClaimProvider(claim string) option {
 	return func(_ *Config, s *store) {
 		p := authn.SSOProvider{
@@ -580,17 +549,10 @@ func newEnv(t *testing.T, opts ...option) *env {
 	return &env{t: t, s: s, r: r, cf: cfg}
 }
 
-// testUsername is the login name the first login of these cases opens an
-// account with, standing in for the username the pending-signup step collects.
 const testUsername = "ann"
 
-// testPassword is the password the social and phone first logins of these cases
-// open their accounts with, standing in for the one their step collects.
 const testPassword = "correct horse battery staple"
 
-// passwordOf is the password the engine hands Create for a pending signup: the
-// social and phone steps' own, and none for the enterprise path, which takes
-// none.
 func passwordOf(p Pending) string {
 	if p.Source == SourceSocial || p.Source == SourcePhone {
 		return testPassword
@@ -598,15 +560,11 @@ func passwordOf(p Pending) string {
 	return ""
 }
 
-// resolve runs a first login the way the engine does: it resolves the proof and,
-// when the resolution parks at the pending signup, opens the account with the
-// test username.
 func (e *env) resolve(p authn.Proof) (Result, error) {
 	e.t.Helper()
 	return e.resolveAs(testUsername, p)
 }
 
-// resolveAs is resolve with a chosen username.
 func (e *env) resolveAs(username string, p authn.Proof) (Result, error) {
 	e.t.Helper()
 	res, err := e.pending(p)
@@ -616,8 +574,6 @@ func (e *env) resolveAs(username string, p authn.Proof) (Result, error) {
 	return e.r.Create(context.Background(), *res.Pending, username, passwordOf(*res.Pending), "")
 }
 
-// pending resolves a first login without opening the account, which is what the
-// engine does when it parks the flow at the pending signup.
 func (e *env) pending(p authn.Proof) (Result, error) {
 	e.t.Helper()
 	return e.r.Resolve(context.Background(), Request{Proof: p, Purpose: authn.PurposeLogin})
@@ -634,8 +590,6 @@ func enterprise(subject, email string) authn.Proof {
 	}
 }
 
-// enterpriseWithUsername is an enterprise proof that asserts a preferred
-// username, for the claim strategy.
 func enterpriseWithUsername(subject, email, preferredUsername string) authn.Proof {
 	p := enterprise(subject, email)
 	p.External.PreferredUsername = preferredUsername
@@ -646,8 +600,6 @@ func phone(value string) authn.Proof {
 	return authn.Proof{Identifier: &authn.Identifier{Kind: authn.IdentifierPhone, Value: value, VerifiedVia: authn.VerifiedViaSMSCode}}
 }
 
-// contextWithCancelOnLink is a context that is cancelled when the resolver binds
-// an identity, so that what follows runs on a cancelled context.
 func contextWithCancelOnLink(e *env) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(context.Background())
 	e.s.beforeLink = func(authn.AccountID, authn.ExternalLink) { cancel() }

@@ -15,15 +15,8 @@ import (
 	"github.com/vislake/speed/pkg/authn/login/internal/resolve"
 )
 
-// errNoUsableFactor is a login whose account has factors but none the engine can
-// offer, which reads as a failed credential and never as an account with no
-// factor.
 var errNoUsableFactor = fmt.Errorf("%w: no usable factor", authn.ErrInvalidCredentials)
 
-// invoke runs one call to a login method or a factor under the call budget,
-// recovering a panic and discarding an answer that arrives after the budget.
-// ok is false only when the call gave no answer at all, which the caller writes
-// as a server error; every other defect is answered as the method's outage.
 func (p *product) invoke(ctx context.Context, method string, call func(ctx context.Context) (authn.Step, error)) (authn.Step, bool) {
 	cctx, cancel := context.WithTimeout(ctx, p.settings.callBudget())
 	defer cancel()
@@ -64,16 +57,12 @@ func (p *product) invoke(ctx context.Context, method string, call func(ctx conte
 	return got, true
 }
 
-// countAnswer folds one accepted client answer into the record's count, which
-// the per-flow limit is read against. A call that is the flow's first move and
-// not a client's answer counts none.
 func countAnswer(rec *record, answered bool) {
 	if answered {
 		rec.Answers++
 	}
 }
 
-// sendsLeft is how many SMS sends a flow may still make.
 func (r *routes) sendsLeft(rec record) int {
 	left := r.settings.perFlowSends() - rec.Sends
 	if left < 0 {
@@ -82,7 +71,6 @@ func (r *routes) sendsLeft(rec record) int {
 	return left
 }
 
-// flowState is the view a method or factor is handed of the flow.
 func (r *routes) flowState(rec record, token string) authn.FlowState {
 	return authn.FlowState{
 		ID:        tokenDigest(token)[:16],
@@ -97,10 +85,7 @@ func (r *routes) flowState(rec record, token string) authn.FlowState {
 	}
 }
 
-// flowAccount is the account a flow's steps act for. For a link and an
-// enrollment it is the effective account, which is where those terminal actions
-// land. A step-up proves the factors of the account that started it, so when an
-// impersonating identity started the flow its steps act for the operator.
+// flowAccount is the account a flow's steps act for: while an impersonating identity runs a step-up, its steps prove the operator's factors.
 func flowAccount(rec record) authn.AccountID {
 	if rec.Purpose == authn.PurposeStepUp && rec.Actor != "" {
 		return authn.AccountID(rec.Actor)
@@ -108,8 +93,6 @@ func flowAccount(rec record) authn.AccountID {
 	return authn.AccountID(rec.Account)
 }
 
-// swap writes the record built from old, refusing the request as an invalid flow
-// when another writer moved the record first.
 func (r *routes) swap(c *call, token string, old []byte, rec record) bool {
 	ok, err := r.advance(c.ctx, token, old, rec)
 	if err != nil {
@@ -123,14 +106,7 @@ func (r *routes) swap(c *call, token string, old []byte, rec record) bool {
 	return true
 }
 
-// recordSends folds a method's or factor's send report into the record. It
-// returns false and ends the flow when the report overstates what the call was
-// allowed to send, which would widen the per-flow limit: the record is swapped
-// to its tombstone and the request is answered as the method's outage. A report
-// is also what spends the source address's allowance: the pre-throttle counts
-// verification messages rather than flow starts, and a call that sent nothing
-// spends nothing. admitSends is the read-only check at request entry that keeps
-// a source already at its limit from reaching the method and sending at all.
+// recordSends ends the flow as the method's outage when a report exceeds SendsLeft: accepting it would widen the per-flow limit.
 func (r *routes) recordSends(c *call, token string, raw []byte, rec *record, got authn.Step) bool {
 	n := step.SendsOf(got)
 	if n < 0 {
@@ -152,8 +128,6 @@ func (r *routes) recordSends(c *call, token string, raw []byte, rec *record, got
 	return true
 }
 
-// applyFirstSubmit advances a flow whose first-factor answer is a client
-// submission. It is the answer route's work for a flow in the first state.
 func (r *routes) applyFirstSubmit(c *call, token, echo string, rec record, raw []byte, fields map[string]string, proof string) {
 	m, ok := r.method(rec.Method)
 	if !ok {
@@ -173,17 +147,13 @@ func (r *routes) applyFirstSubmit(c *call, token, echo string, rec record, raw [
 	r.migrateFirst(c, token, echo, rec, raw, got, false, true)
 }
 
-// applyFirstBegin runs the first call of a flow started at the first factor. It
-// is not a client answer, so it moves the step number but counts no answer.
 func (r *routes) applyFirstBegin(c *call, token, echo string, rec record, raw []byte, fields map[string]string, proof string) {
 	m, ok := r.method(rec.Method)
 	if !ok {
 		r.fail(c, fmt.Errorf("%w: the flow names a method not taken in", authn.ErrFlowInvalid))
 		return
 	}
-	// The provider the flow's callback path must name is fixed with this first
-	// call and written in the swap below: the start input's provider for an
-	// enterprise one, the method's own name for a social one.
+	// The provider is fixed with this first call; a callback path is matched against it.
 	rec.Provider = flowProvider(rec.Method, fields)
 	s := authn.Start{
 		Purpose:   rec.Purpose,
@@ -204,10 +174,6 @@ func (r *routes) applyFirstBegin(c *call, token, echo string, rec record, raw []
 	r.migrateFirst(c, token, echo, rec, raw, got, false, false)
 }
 
-// migrateFirst turns a first-factor method's answer into the next record state,
-// swaps it and writes the reply. callback marks the callback route, whose reply
-// for a completed cookie login is a 303 rather than a body; answered marks a
-// client submission, which is what counts against the per-flow answer limit.
 func (r *routes) migrateFirst(c *call, token, echo string, rec record, raw []byte, got authn.Step, callback, answered bool) {
 	if !r.recordSends(c, token, raw, &rec, got) {
 		return
@@ -241,15 +207,10 @@ func (r *routes) migrateFirst(c *call, token, echo string, rec record, raw []byt
 		}
 		r.replyStep(c, rec, stepView{Kind: nextWebAuthn, Options: step.DataOf(got)}, echo)
 	case step.KindRefused:
-		// The step and its private state stay: they are the step the same
-		// sequence number answers again once the person corrects the value.
 		countAnswer(&rec, answered)
 		if !r.swap(c, token, raw, rec) {
 			return
 		}
-		// A proof the gate refused, or one over the field's bound, is not a
-		// credential that did not hold: it keeps its own 403 or 400 and is not
-		// reported as a failed login.
 		if cause := step.CauseOf(got); !isHumanProofRejection(cause) {
 			r.reportLogin(c.ctx, rec, outcomeFailed)
 		}
@@ -263,17 +224,12 @@ func (r *routes) migrateFirst(c *call, token, echo string, rec record, raw []byt
 	case step.KindProven:
 		r.resolveAndDecide(c, token, echo, rec, raw, step.ProofOf(got), callback)
 	default:
-		// A first factor answers a proof, a prompt, a redirect, a refusal or an
-		// outage; anything else is its defect.
 		r.logger.Error(ModuleName+": a login method gave an answer a first factor may not give",
 			slog.String("method", rec.Method), slog.String("answer", step.KindOf(got).String()))
 		c.serverError()
 	}
 }
 
-// resolveAndDecide resolves the account a proof names and decides what the flow
-// does next: a second factor, a registration, or ready. The record it writes
-// carries the account, the proof and, for a login, the policy outcome.
 func (r *routes) resolveAndDecide(c *call, token, echo string, rec record, raw []byte, proof authn.Proof, callback bool) {
 	res, err := r.resolver.Resolve(c.ctx, resolve.Request{
 		Proof:   proof,
@@ -289,22 +245,13 @@ func (r *routes) resolveAndDecide(c *call, token, echo string, rec record, raw [
 		r.fail(c, err)
 		return
 	}
-	// A login that would open an account stops the flow at the username step:
-	// the resolution decided what the account will be and wrote nothing, and the
-	// facts wait in the record for the answer.
 	if res.Pending != nil {
 		r.beginSignup(c, token, echo, rec, raw, proof, res.Pending, callback)
 		return
 	}
-	// Only a login resolves to the account it lands on. A link, a step-up and an
-	// enrollment are bound to the account the flow was started on, so their record
-	// keeps it even when the proof was the operator's own.
+	// Only a login takes its resolved account; the other purposes stay bound to the account the flow started on.
 	if rec.Purpose == authn.PurposeLogin {
 		if rec.State == stateReprove && res.Account != authn.AccountID(rec.Account) {
-			// The password proved an account other than the one this flow
-			// registered the factor on. Carrying the flow onto it would let a
-			// re-proof enable a factor for an account whose password this login
-			// never proved, so the answer is a failed credential.
 			rec.State = stateFailed
 			if !r.swap(c, token, raw, rec) {
 				return
@@ -317,10 +264,7 @@ func (r *routes) resolveAndDecide(c *call, token, echo string, rec record, raw [
 	}
 	p := proof
 	rec.Proof = &p
-	// The first factor's private step state is spent once it proves. Carrying
-	// it into the next state would hand it to a registration or a second
-	// factor as that step's own in-progress state, which is what a redirect
-	// first factor leaves behind.
+	// The first factor's private step state is spent once it proves; carrying it on would hand it to another step.
 	rec.MethodStep = ""
 	rec.MethodState = nil
 	if err := r.decidePolicy(c.ctx, &rec, proof); err != nil {
@@ -339,10 +283,6 @@ func (r *routes) resolveAndDecide(c *call, token, echo string, rec record, raw [
 	case stateReady:
 		r.replyReady(c, token, rec, callback, echo)
 	case stateSecond, stateEnroll:
-		// A callback is a top-level navigation, so a flow that still needs a
-		// second or a registration factor sends the user agent back to the
-		// return target with the flow left in the cookie; the front end resumes
-		// with GET flows/current.
 		if callback {
 			c.redirect(http.StatusSeeOther, r.returnTarget(rec))
 			return
@@ -353,12 +293,6 @@ func (r *routes) resolveAndDecide(c *call, token, echo string, rec record, raw [
 	}
 }
 
-// beginSignup parks a flow whose resolution would open an account: the facts it
-// decided go into the record's pending member and the person is asked for a
-// username. Nothing is written to the account store before the answer, so a flow
-// abandoned here leaves no account. A callback is a top-level navigation, so it
-// lands the user agent on the return target with the flow left in the cookie;
-// the front end resumes with GET flows/current and answers the username step.
 func (r *routes) beginSignup(c *call, token, echo string, rec record, raw []byte, proof authn.Proof,
 	pending *resolve.Pending, callback bool,
 ) {
@@ -366,8 +300,6 @@ func (r *routes) beginSignup(c *call, token, echo string, rec record, raw []byte
 	rec.Proof = &p
 	rec.Pending = pending
 	rec.State = stateSignup
-	// The first factor's private step state is spent once it proves, as it is on
-	// a resolution that lands on an account.
 	rec.MethodStep = ""
 	rec.MethodState = nil
 	if !r.swap(c, token, raw, rec) {
@@ -380,24 +312,11 @@ func (r *routes) beginSignup(c *call, token, echo string, rec record, raw []byte
 	r.replyStep(c, rec, r.nextOf(rec), echo)
 }
 
-// applySignupAnswer handles the username step of a flow parked at signup. A
-// legal, free username opens the account the pending facts describe and the flow
-// carries on to the policy; a username that cannot be used is 400 bad-request,
-// one another account holds is 409 username-taken, and a password the policy
-// refuses, or the absence of one at the social or phone step, is 400
-// bad-request. Each of those refusals leaves the flow at signup to be retried,
-// and none of them writes an account. An address the pending signup declared
-// verified that another account took between the resolution and the write is 401
-// link-required, naming the masked address: it is the refusal an address that was
-// registered all along gives, and the flow is spent.
 func (r *routes) applySignupAnswer(c *call, token, echo string, rec record, raw []byte, fields map[string]string) {
 	if rec.Pending == nil || rec.Proof == nil {
 		c.unauthorized(mount.CodeFlowInvalid)
 		return
 	}
-	// Each source reads the fields its step asked for: a social first login
-	// carries the password, a phone first login carries the password and the
-	// optional display name, and an enterprise one neither.
 	var password, displayName string
 	switch rec.Pending.Source {
 	case resolve.SourceSocial:
@@ -444,10 +363,6 @@ func (r *routes) applySignupAnswer(c *call, token, echo string, rec record, raw 
 		c.fail(mount.CodeUsernameTaken)
 		return
 	case errors.Is(err, authn.ErrContactTaken):
-		// The address the pending signup declared lost the race to another
-		// account between the resolution that found it free and the account
-		// write. The person is where an address registered all along puts them:
-		// link-required, naming the masked address, with the flow spent.
 		rec.State = stateFailed
 		if !r.swap(c, token, raw, rec) {
 			return
@@ -488,15 +403,6 @@ func (r *routes) applySignupAnswer(c *call, token, echo string, rec record, raw 
 	r.replyStep(c, rec, r.nextOf(rec), echo)
 }
 
-// decidePolicy sets the flow's next state from the multi-factor policy. A login
-// with a second factor becomes second, a login the policy requires a factor of
-// becomes enroll, and every other purpose and a login with no factor requirement
-// becomes ready. An enrollment records whether a tenant's requirement caused it:
-// such a flow does not complete on the registration alone but goes on to prove
-// the password again and use the new factor, so the session it records is
-// multi-factor. A step-up that started at the password because every factor was
-// registered during the session offers those factors as its second step once the
-// password has been proved again.
 func (r *routes) decidePolicy(ctx context.Context, rec *record, proof authn.Proof) error {
 	if rec.Purpose != authn.PurposeLogin {
 		if rec.Purpose == authn.PurposeStepUp && len(rec.MFA.Offered) > 0 {
@@ -534,11 +440,7 @@ func (r *routes) decidePolicy(ctx context.Context, rec *record, proof authn.Proo
 	return nil
 }
 
-// tenantRequiresMFA reports whether a tenant the account is an active member of
-// requires multi-factor authentication, as the injected seam answers. An
-// assembly that wires no seam has no tenant requirement. A read that fails is
-// carried out as an error: a login must not complete on a requirement it cannot
-// establish.
+// tenantRequiresMFA reports whether a tenant the account is an active member of requires multi-factor authentication; a failed read is an error, never "no requirement".
 func (r *routes) tenantRequiresMFA(ctx context.Context, account authn.AccountID) (bool, error) {
 	if r.tenantMFA == nil {
 		return false, nil
@@ -546,7 +448,6 @@ func (r *routes) tenantRequiresMFA(ctx context.Context, account authn.AccountID)
 	return r.tenantMFA.RequiresMFA(ctx, account)
 }
 
-// factorViews renders the offered factors for the client.
 func factorViews(records []authn.FactorRecord) []factorView {
 	out := make([]factorView, len(records))
 	for i, f := range records {
@@ -555,19 +456,10 @@ func factorViews(records []authn.FactorRecord) []factorView {
 	return out
 }
 
-// replyStep writes a reply that keeps a flow open, echoing the flow token only
-// when the request carried it in the header.
 func (r *routes) replyStep(c *call, rec record, next stepView, echo string) {
 	c.wire(flowReply{Seq: rec.Seq, State: rec.State, FlowToken: echo, Next: next})
 }
 
-// replyReady writes the reply of a flow that reached ready: for the callback
-// route of a cookie login the session is made here and the user agent is sent to
-// the return target; for a callback of another purpose the user agent is landed
-// the same way, with the flow left in the cookie for the client to complete; a
-// token login's callback that is a navigation is landed the same way too, while
-// one that is an API call is answered the completion body; for a submit answer
-// the client takes the result with step=complete.
 func (r *routes) replyReady(c *call, token string, rec record, callback bool, echo string) {
 	if callback {
 		switch {
@@ -575,11 +467,6 @@ func (r *routes) replyReady(c *call, token string, rec record, callback bool, ec
 			r.completeCallbackLogin(c, token, rec)
 			return
 		case rec.Purpose == authn.PurposeLogin && rec.Delivery == deliveryToken:
-			// A token cannot ride a redirect URL: an API callback waits for the
-			// client to take the completion. A callback that is a top-level
-			// navigation cannot read that body, so it is landed like every other
-			// navigation landing: no session is made, the flow stays at ready in
-			// the cookie, and the client takes the token with a later complete.
 			if c.navigation() {
 				c.redirect(http.StatusSeeOther, r.returnTarget(rec))
 				return
@@ -587,11 +474,6 @@ func (r *routes) replyReady(c *call, token string, rec record, callback bool, ec
 			r.replyStep(c, rec, stepView{Kind: nextComplete}, echo)
 			return
 		case rec.Purpose != authn.PurposeLogin:
-			// A callback of a purpose other than login is a top-level navigation
-			// too, so it lands the user agent the same way. No session is made:
-			// the flow stays at ready in the cookie, the host's callback page
-			// reads it with GET flows/current, and the terminal action runs when
-			// the client answers complete.
 			c.redirect(http.StatusSeeOther, r.returnTarget(rec))
 			return
 		}
@@ -599,8 +481,6 @@ func (r *routes) replyReady(c *call, token string, rec record, callback bool, ec
 	writeComplete(c, rec)
 }
 
-// returnTarget is where a callback lands the user agent: the return target the
-// flow recorded, or the deployment's default when the flow recorded none.
 func (r *routes) returnTarget(rec record) string {
 	if rec.ReturnTo != "" {
 		return rec.ReturnTo
@@ -608,11 +488,7 @@ func (r *routes) returnTarget(rec record) string {
 	return r.defaultReturnTarget()
 }
 
-// completeCallbackLogin runs the terminal action of a callback that finished a
-// cookie login. The record was just left at ready by the resolution, so the
-// ready->done tombstone is swapped here first, exactly as complete does on the
-// answer route: the callback's terminal action runs at most once and an Open
-// POST flows/answer {"step":"complete"} against the same flow is refused.
+// completeCallbackLogin swaps ready to done before acting, so the callback's terminal action runs at most once.
 func (r *routes) completeCallbackLogin(c *call, token string, rec record) {
 	raw, err := json.Marshal(rec)
 	if err != nil {

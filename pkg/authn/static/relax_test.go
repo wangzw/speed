@@ -14,9 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// relaxBus is a bus that keeps the handlers subscribed and delivers to them, the
-// way the process-local bus does, and remembers how many handlers each event
-// type carries.
 type relaxBus struct {
 	mu       sync.Mutex
 	handlers map[string][]event.Handler
@@ -32,7 +29,6 @@ func (b *relaxBus) Subscribe(eventType string, _ string, h event.Handler) {
 
 func (b *relaxBus) Publish(context.Context, event.Event) error { return nil }
 
-// deliver hands an event to the handlers of its type, as the bus would.
 func (b *relaxBus) deliver(ctx context.Context, evt event.Event) {
 	b.mu.Lock()
 	handlers := append([]event.Handler(nil), b.handlers[evt.Type]...)
@@ -42,14 +38,12 @@ func (b *relaxBus) deliver(ctx context.Context, evt event.Event) {
 	}
 }
 
-// subscribed is how many handlers the type carries.
 func (b *relaxBus) subscribed(eventType string) int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return len(b.handlers[eventType])
 }
 
-// relaxAudit keeps the rows it was asked to write, and fails them when told to.
 type relaxAudit struct {
 	mu   sync.Mutex
 	rows []audit.Entry
@@ -69,9 +63,6 @@ func (a *relaxAudit) entries() []audit.Entry {
 	return append([]audit.Entry(nil), a.rows...)
 }
 
-// relaxRig drives the module's subscription the way an assembly drives it: a
-// backend holding a settings store, a bus it is subscribed to, an audit seam
-// that keeps its rows, and a logger that keeps its lines.
 type relaxRig struct {
 	b     *backend
 	bus   *relaxBus
@@ -93,13 +84,10 @@ func newRelaxRig(t *testing.T) *relaxRig {
 	return &relaxRig{b: b, bus: bus, audit: rec, out: out}
 }
 
-// deliver hands a settings change to the module as the bus would when the
-// settings module publishes one.
 func (r *relaxRig) deliver(change settings.Change) {
 	r.bus.deliver(context.Background(), event.Event{Type: settings.ChangedEventType, Payload: change})
 }
 
-// warnLines returns the Warn lines the logger kept that carry every fragment.
 func warnLines(out *capture, fragments ...string) []string {
 	var lines []string
 	for _, line := range strings.Split(out.String(), "\n") {
@@ -120,9 +108,7 @@ func warnLines(out *capture, fragments ...string) []string {
 	return lines
 }
 
-// TestARelaxingChangeWritesAWarnAndAnAuditRow holds the visibility: each watched
-// setting moved in its relaxing direction writes one Warn naming the key and the
-// direction, and one best-effort audit row, and nothing else.
+// TestARelaxingChangeWritesAWarnAndAnAuditRow holds one Warn naming key and direction and one best-effort audit row.
 func TestARelaxingChangeWritesAWarnAndAnAuditRow(t *testing.T) {
 	for _, c := range []struct {
 		key, old, new, direction string
@@ -153,9 +139,7 @@ func TestARelaxingChangeWritesAWarnAndAnAuditRow(t *testing.T) {
 	}
 }
 
-// TestATighteningChangeWritesNothing holds the other direction: a move that
-// checks more, and one that keeps a value the same, is not a relaxation and is
-// not reported.
+// TestATighteningChangeWritesNothing holds that a stricter or equal move is not reported.
 func TestATighteningChangeWritesNothing(t *testing.T) {
 	r := newRelaxRig(t)
 	r.deliver(settings.Change{Key: freeAttemptsPath, Old: "7", New: "5"})
@@ -170,9 +154,7 @@ func TestATighteningChangeWritesNothing(t *testing.T) {
 	}
 }
 
-// TestASensitiveChangeIsSkippedEntirely holds the Sensitive filter against a
-// change that would relax: a withheld change is dropped before the relaxation
-// test, so it writes no Warn and no audit row.
+// TestASensitiveChangeIsSkippedEntirely holds that a withheld value is dropped before the relaxation test.
 func TestASensitiveChangeIsSkippedEntirely(t *testing.T) {
 	r := newRelaxRig(t)
 	r.deliver(settings.Change{Key: freeAttemptsPath, Old: "5", New: "7", Sensitive: true})
@@ -198,10 +180,7 @@ func TestAnUnwatchedKeyIsIgnored(t *testing.T) {
 	}
 }
 
-// TestALayerThatHeldNoRowReadsAsTheDeclaredDefault holds the comparison against
-// a change whose old side holds no row: the declared default is the strict end
-// of every watched setting, so raising free-attempts relaxes and lowering it
-// does not.
+// TestALayerThatHeldNoRowReadsAsTheDeclaredDefault holds that the default is the strict end of each setting.
 func TestALayerThatHeldNoRowReadsAsTheDeclaredDefault(t *testing.T) {
 	t.Run("raising with no old row relaxes", func(t *testing.T) {
 		r := newRelaxRig(t)
@@ -218,8 +197,6 @@ func TestALayerThatHeldNoRowReadsAsTheDeclaredDefault(t *testing.T) {
 		}
 	})
 	t.Run("a delete reads as the declared default", func(t *testing.T) {
-		// fail-window relaxes downward; deleting a raised row returns it to the
-		// default of 15m, which is above the 10m it held, so it tightens.
 		r := newRelaxRig(t)
 		r.deliver(settings.Change{Key: failWindowPath, Old: "10m0s", New: "", Deleted: true})
 		if rows := r.audit.entries(); len(rows) != 0 {
@@ -228,9 +205,7 @@ func TestALayerThatHeldNoRowReadsAsTheDeclaredDefault(t *testing.T) {
 	})
 }
 
-// TestARelaxedSettingWithoutAnAuditSeamIsAWarnAndOnlyThat holds the best-effort
-// direction: with no audit seam a loosening change is still a Warn, no audit row
-// is written, and the handler does not panic.
+// TestARelaxedSettingWithoutAnAuditSeamIsAWarnAndOnlyThat holds that the Warn is written and the handler does not panic.
 func TestARelaxedSettingWithoutAnAuditSeamIsAWarnAndOnlyThat(t *testing.T) {
 	r := newRelaxRig(t)
 	r.b.audit = nil
@@ -243,9 +218,7 @@ func TestARelaxedSettingWithoutAnAuditSeamIsAWarnAndOnlyThat(t *testing.T) {
 	}
 }
 
-// TestTheModuleSubscribesOnlyWithABusAndAStore holds the wiring: the module
-// subscribes to the settings change event only when both the bus that carries it
-// and the store it is about are present, and it does not panic when neither is.
+// TestTheModuleSubscribesOnlyWithABusAndAStore holds the wiring and that missing either does not panic.
 func TestTheModuleSubscribesOnlyWithABusAndAStore(t *testing.T) {
 	for _, c := range []struct {
 		name      string
@@ -271,10 +244,6 @@ func TestTheModuleSubscribesOnlyWithABusAndAStore(t *testing.T) {
 	}
 }
 
-// driveWatching takes the module through a full assembly holding a bus provider
-// when withBus is set and a settings store provider when store is not nil, so a
-// case can see whether the module subscribed. The bus is registered regardless
-// so a case without one still drives the module over a legal assembly.
 func driveWatching(t *testing.T, bus *relaxBus, withBus bool, store settings.Store) {
 	t.Helper()
 	subjects := `{"alice":"` + cheapEntry(t, "alices") + `"}`

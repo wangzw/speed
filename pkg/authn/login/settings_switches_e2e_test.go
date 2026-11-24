@@ -12,14 +12,8 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The account switch this package reads as a setting. It is written out here
-// rather than read from the account module so that the cases name the key the
-// design lists.
 const testSignupKey = "authn.account.signup"
 
-// writeASetting writes one value into the settings store the assembly
-// delivered. A failure is fatal: the key being undeclared is the whole point of
-// the case that follows it.
 func writeASetting(t *testing.T, ctx context.Context, store settings.Store, key string, value any) {
 	t.Helper()
 	if store == nil {
@@ -31,7 +25,6 @@ func writeASetting(t *testing.T, ctx context.Context, store settings.Store, key 
 	}
 }
 
-// signupEnabled reads the registration switch from the methods listing.
 func (h *harness) signupEnabled() bool {
 	h.t.Helper()
 	r := h.get("/api/v1/auth/methods")
@@ -49,8 +42,6 @@ func (h *harness) signupEnabled() bool {
 	return enabled
 }
 
-// signupFlags reads both registration switches from the methods listing: the
-// union the two report and the register route's own.
 func (h *harness) signupFlags() (enabled, password bool) {
 	h.t.Helper()
 	r := h.get("/api/v1/auth/methods")
@@ -70,10 +61,7 @@ func (h *harness) signupFlags() (enabled, password bool) {
 	return enabled, password
 }
 
-// TestASignupSettingThatIsOpenTurnsTheMethodsListingOn holds that the
-// registration switch is read at run time from the settings store the
-// deployment holds: the listing is closed with no row and offers signup once
-// authn.account.signup is written open, without a restart.
+// TestASignupSettingThatIsOpenTurnsTheMethodsListingOn holds that the switch is read at run time, so writing it open changes the listing without a restart.
 func TestASignupSettingThatIsOpenTurnsTheMethodsListingOn(t *testing.T) {
 	assemble(t, func(h *harness) {
 		if got := h.signupEnabled(); got {
@@ -88,11 +76,7 @@ func TestASignupSettingThatIsOpenTurnsTheMethodsListingOn(t *testing.T) {
 	})
 }
 
-// TestTheTwoSignupSwitchesAreReportedOnTheirOwn holds the discovery document and
-// the register route against the real settings store in all four combinations of
-// the two switches: signup.enabled is the union, signup.password.enabled reports
-// the register route's own switch, and the route is open only when that switch
-// is.
+// TestTheTwoSignupSwitchesAreReportedOnTheirOwn holds all four combinations: signup.enabled unions them and signup.password.enabled reports the register route.
 func TestTheTwoSignupSwitchesAreReportedOnTheirOwn(t *testing.T) {
 	for _, c := range []struct {
 		name       string
@@ -134,10 +118,7 @@ func TestTheTwoSignupSwitchesAreReportedOnTheirOwn(t *testing.T) {
 	}
 }
 
-// TestASocialFirstLoginWithAVerifiedAddressOnAnAccountIsLinkRequired holds the
-// retirement of the automatic link at the HTTP layer: a first social login whose
-// provider proved the address of an existing account answers 401 link-required
-// and binds nothing, whatever the settings hold.
+// TestASocialFirstLoginWithAVerifiedAddressOnAnAccountIsLinkRequired holds that the automatic link is retired: such a login answers 401 link-required and binds nothing.
 func TestASocialFirstLoginWithAVerifiedAddressOnAnAccountIsLinkRequired(t *testing.T) {
 	assembleWith(t, []core.Module{socialModule()}, func(h *harness) {
 		acct, err := h.admin.Create(h.ctx, authn.CreateAccount{
@@ -188,9 +169,6 @@ func TestTheRemovedAutoLinkSettingIsNotDeclared(t *testing.T) {
 	})
 }
 
-// socialLogin runs one first social login through the stand-in method and
-// returns the reply that settled it: the start itself when the engine resolved
-// the proven step there, the answer otherwise.
 func (h *harness) socialLogin() reply {
 	h.t.Helper()
 	start := h.post("/api/v1/auth/flows", map[string]any{"method": "google"})
@@ -201,16 +179,10 @@ func (h *harness) socialLogin() reply {
 	return h.post("/api/v1/auth/flows/answer", map[string]any{"seq": seq, "step": "complete"})
 }
 
-// socialMethod is a stand-in social provider's login method: its first step is
-// already a proof of a verified external identity, so a case reaches the
-// resolution such a proof governs without an outside provider.
 type socialMethod struct{}
 
 var errNoSocialAnswer = errors.New("the stand-in social method has no answer step")
 
-// socialMethodName is the stand-in social method's name, the value the discovery
-// document publishes as methods[].name and the pending signup carries as
-// provided_method.
 const socialMethodName = "google"
 
 func (socialMethod) Name() string { return socialMethodName }
@@ -243,7 +215,6 @@ func (socialMethod) Answer(context.Context, authn.FlowState, authn.StepInput) (a
 	return authn.Step{}, errNoSocialAnswer
 }
 
-// socialModule registers the stand-in method in an assembly.
 func socialModule() core.Module {
 	return core.Module{
 		Name:     "stand-in.google",

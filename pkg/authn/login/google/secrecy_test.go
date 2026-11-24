@@ -8,11 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestAConfigurationErrorNeverRepeatsTheClientSecret holds the discipline that a
-// module holding a secret configuration value keeps it out of the text of every
-// failure on the way to a runnable configuration. The value is registered as a
-// literal redaction rule for logs; this is the other half: the failure a startup
-// prints must not carry it, whichever item the failure actually names.
+// TestAConfigurationErrorNeverRepeatsTheClientSecret holds the secret out of every configuration failure's text.
 func TestAConfigurationErrorNeverRepeatsTheClientSecret(t *testing.T) {
 	const secret = "s3cr3t-google-client-sentinel-9f8e7d6c"
 	for name, tc := range map[string]struct {

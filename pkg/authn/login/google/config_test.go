@@ -22,9 +22,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// gateDefaults is the stand-in gateway module's carrier for the keys this module
-// reads from the gateway's section, under the same mount path the real gateway
-// declares.
 type gateDefaults struct {
 	Mount struct {
 		PublicURL string `config:"public-url"`
@@ -34,8 +31,6 @@ type gateDefaults struct {
 	} `config:"mount"`
 }
 
-// gateStandIn declares the authn.gate keys this module reads, so a case's body
-// may configure them without pulling the whole gateway in.
 func gateStandIn() core.Module {
 	d := &gateDefaults{}
 	d.Mount.Bases.Default = "/api/v1/auth"
@@ -45,15 +40,11 @@ func gateStandIn() core.Module {
 	}
 }
 
-// readerOver builds the real configuration loader over a body, with this
-// module's schema and the gateway keys it reads declared.
 func readerOver(t *testing.T, body string) config.Reader {
 	t.Helper()
 	return authntest.ConfigReaderAll(t, body, Module(), gateStandIn())
 }
 
-// googleBody is a complete configuration body with extra items appended to this
-// module's section.
 func googleBody(extra string) string {
 	items := `"client-id":"the-id","client-secret":"the-secret"`
 	if extra != "" {
@@ -63,7 +54,6 @@ func googleBody(extra string) string {
 		`"login":{"google":{` + items + `}}}}`
 }
 
-// writeRootCA writes a self-signed root certificate in PEM and returns its path.
 func writeRootCA(t *testing.T) string {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -129,9 +119,7 @@ func TestTheReaderAcceptsTheRootCAFile(t *testing.T) {
 	}
 }
 
-// TestTheReaderRefusesAnUnreadableRootCAFile holds that a root CA file that
-// cannot be read fails the start rather than leaving verification on the system
-// roots without saying so.
+// TestTheReaderRefusesAnUnreadableRootCAFile holds that an unreadable root CA file fails the start instead of silently using the system roots.
 func TestTheReaderRefusesAnUnreadableRootCAFile(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "absent.pem")
 	_, err := readConfig(readerOver(t, googleBody(fmt.Sprintf(`"root-ca-file":%q`, missing))))
@@ -221,9 +209,7 @@ func TestResolveBuildsTheRedirectTarget(t *testing.T) {
 	}
 }
 
-// TestResolveRefusesAnIncompleteConfiguration holds that a missing client
-// identifier, secret or public address is a startup failure and not a silent
-// absence.
+// TestResolveRefusesAnIncompleteConfiguration holds that a missing identifier, secret or public address fails the start rather than reading as absence.
 func TestResolveRefusesAnIncompleteConfiguration(t *testing.T) {
 	cases := []struct {
 		name string
@@ -294,10 +280,7 @@ func TestTheSchemaMarksTheClientItems(t *testing.T) {
 	}
 }
 
-// TestTheConfigKeysMatchTheSchemaAndTags holds the naming contract: the module's
-// namespace is its name, the item keys are the schema's keys, and each is the
-// config tag the mount struct reads it by. A drift between the two would let the
-// schema declare a key the reader never fills.
+// TestTheConfigKeysMatchTheSchemaAndTags holds that the namespace, schema keys and config tags name the same items.
 func TestTheConfigKeysMatchTheSchemaAndTags(t *testing.T) {
 	if ConfigNamespace != ModuleName {
 		t.Errorf("ConfigNamespace = %q, want the module name %q", ConfigNamespace, ModuleName)

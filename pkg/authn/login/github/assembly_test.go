@@ -13,15 +13,11 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// completeBody is the configuration body a working assembly is built from.
 func completeBody() string {
 	return `{"authn":{"gate":{"mount":{"public-url":"https://app.example"}},` +
 		`"login":{"github":{"client-id":"the-id","client-secret":"the-secret"}}}}`
 }
 
-// registryWithReader builds a registry with a real configuration reader over a
-// body, supplied under the config module's name, which is what a module that
-// reads configuration needs before its Prepare runs.
 func registryWithReader(t *testing.T, body string) *core.Registry {
 	t.Helper()
 	reader := authntest.ConfigReaderAll(t, body, Module(), gateStandIn())
@@ -31,9 +27,7 @@ func registryWithReader(t *testing.T, body string) *core.Registry {
 	return reg
 }
 
-// TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt holds the shape the
-// design names: the login method delivered non-exclusively, so several methods
-// stand side by side, one schema resource and the optional logging capability.
+// TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt holds that the method is delivered non-exclusively, with one schema resource and the optional logger.
 func TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName {
@@ -78,9 +72,7 @@ func TestPrepareRefusesAnUnrunnableConfiguration(t *testing.T) {
 	}
 }
 
-// TestPrepareStandsDownWhenNoCredentialIsGiven holds the unconfigured case: a
-// deployment that gave neither credential did not configure GitHub sign-in, so
-// the module is absent from the run without failing the startup.
+// TestPrepareStandsDownWhenNoCredentialIsGiven holds that neither credential means the module is absent without failing startup.
 func TestPrepareStandsDownWhenNoCredentialIsGiven(t *testing.T) {
 	body := `{"authn":{"gate":{"mount":{"public-url":"https://app.example"}}}}`
 	got, err := Module().Prepare(t.Context(), registryWithReader(t, body))
@@ -95,9 +87,7 @@ func TestPrepareStandsDownWhenNoCredentialIsGiven(t *testing.T) {
 	}
 }
 
-// TestPrepareNamesTheMissingCredentialWhenHalfConfigured holds the half-
-// configured case: one credential without the other is a startup failure, and
-// the failure names the item to write.
+// TestPrepareNamesTheMissingCredentialWhenHalfConfigured holds that one credential alone fails startup and names the missing item.
 func TestPrepareNamesTheMissingCredentialWhenHalfConfigured(t *testing.T) {
 	cases := []struct {
 		name string
@@ -130,9 +120,7 @@ func TestPrepareNamesTheMissingCredentialWhenHalfConfigured(t *testing.T) {
 	}
 }
 
-// TestPrepareRefusesAnIllegalPublicAddress holds the required gateway item: a
-// public address that is not an origin stops the startup before a redirect is
-// built from it.
+// TestPrepareRefusesAnIllegalPublicAddress holds that a public address that is not an origin stops startup before a redirect is built.
 func TestPrepareRefusesAnIllegalPublicAddress(t *testing.T) {
 	body := `{"authn":{"gate":{"mount":{"public-url":"not an origin"}},` +
 		`"login":{"github":{"client-id":"the-id","client-secret":"the-secret"}}}}`
@@ -142,9 +130,7 @@ func TestPrepareRefusesAnIllegalPublicAddress(t *testing.T) {
 	}
 }
 
-// TestTheModuleDeliversTheMethodThroughTheRegistry drives a real registry
-// through this module's descriptor to Init and resolves the login method from
-// the product, naming it.
+// TestTheModuleDeliversTheMethodThroughTheRegistry drives a real registry and resolves the named login method.
 func TestTheModuleDeliversTheMethodThroughTheRegistry(t *testing.T) {
 	reg := registryWithReader(t, completeBody())
 	reg.Register(Module())

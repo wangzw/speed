@@ -17,9 +17,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// The audit action and detail of a registration, as design-authn-events.md's
-// action table and detail paragraph name them. They are host-visible names, so
-// the cases spell them out instead of reading the package's own constants.
 const (
 	wantSignupAction       = "authn.signup"
 	wantSignupMethod       = "password"
@@ -27,7 +24,6 @@ const (
 	wantMandatoryAttribute = "mandatory"
 )
 
-// oneRow holds a case to exactly one row and returns it.
 func oneRow(t *testing.T, rows []audit.Entry) audit.Entry {
 	t.Helper()
 	if len(rows) != 1 {
@@ -36,11 +32,7 @@ func oneRow(t *testing.T, rows []audit.Entry) audit.Entry {
 	return rows[0]
 }
 
-// TestARegistrationAuditRowIsWrittenUnderADerivedIdentity holds the success
-// path: one authn.signup row, its object is the account just opened, its only
-// detail is method=password, and its actor is that account even though the
-// public route's own context carries no identity. The derived context reaches
-// the one Record only and is not left on the request's context.
+// TestARegistrationAuditRowIsWrittenUnderADerivedIdentity holds one signup row, the account as object and actor, and method=password as the only detail.
 func TestARegistrationAuditRowIsWrittenUnderADerivedIdentity(t *testing.T) {
 	r := registerRig(t)
 	sink := &auditing{}
@@ -75,10 +67,7 @@ func TestARegistrationAuditRowIsWrittenUnderADerivedIdentity(t *testing.T) {
 	}
 }
 
-// TestARefusedRegistrationLeavesAnEmptyActorRow holds the refusals: the switch,
-// a taken name or address, the policy and a missing member each write one row
-// with outcome refused, no object and an empty actor. The detail is
-// method=password and nothing else, so no address or username reaches the row.
+// TestARefusedRegistrationLeavesAnEmptyActorRow holds that every refusal writes one row with outcome refused, no object and no actor.
 func TestARefusedRegistrationLeavesAnEmptyActorRow(t *testing.T) {
 	cases := []struct {
 		name string
@@ -120,9 +109,7 @@ func TestARefusedRegistrationLeavesAnEmptyActorRow(t *testing.T) {
 	}
 }
 
-// TestAThrottledRegistrationIsAuditedAsThrottled holds the back-offs: the
-// account module's username back-off and the route's own per-source budget both
-// end on outcome throttled, still with no object and no actor.
+// TestAThrottledRegistrationIsAuditedAsThrottled holds that both back-offs end on outcome throttled with no object or actor.
 func TestAThrottledRegistrationIsAuditedAsThrottled(t *testing.T) {
 	t.Run("the username back-off", func(t *testing.T) {
 		r := registerRig(t)
@@ -174,10 +161,7 @@ func TestAThrottledRegistrationIsAuditedAsThrottled(t *testing.T) {
 	})
 }
 
-// TestAnUnavailableRegistrationLeavesNoAuditRow holds the reading this build
-// takes of the outcome set: an outage or a capacity failure is neither a
-// success, a refusal nor a back-off, and the closed set names no value for it,
-// so no row is written. The answer stays the 5xx the route gives.
+// TestAnUnavailableRegistrationLeavesNoAuditRow holds that an outage or capacity failure writes no row, since the closed outcome set names none.
 func TestAnUnavailableRegistrationLeavesNoAuditRow(t *testing.T) {
 	cases := []struct {
 		name string
@@ -205,10 +189,7 @@ func TestAnUnavailableRegistrationLeavesNoAuditRow(t *testing.T) {
 	}
 }
 
-// TestAFailedSignupAuditDoesNotBlockTheRegistration holds the best-effort tier:
-// an audit write that fails leaves the 201 and the opened account as they were,
-// writes an Error line, and counts one authn.audit.write-failures with
-// mandatory=false.
+// TestAFailedSignupAuditDoesNotBlockTheRegistration holds that a failed audit write leaves the 201, logs an Error and counts one mandatory=false failure.
 func TestAFailedSignupAuditDoesNotBlockTheRegistration(t *testing.T) {
 	reader, mp := newTestMetrics(t)
 	r := registerRig(t)
@@ -241,9 +222,6 @@ func TestAFailedSignupAuditDoesNotBlockTheRegistration(t *testing.T) {
 	}
 }
 
-// auditFailurePoints collects authn.audit.write-failures and returns its counts
-// keyed by the mandatory attribute, which the design makes the instrument's one
-// attribute.
 func auditFailurePoints(t *testing.T, reader *sdkmetric.ManualReader) map[bool]int {
 	t.Helper()
 	var rm metricdata.ResourceMetrics

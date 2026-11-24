@@ -9,9 +9,7 @@ import (
 	"time"
 )
 
-// TestTheSettingDomainsAdmitTheirBounds holds the endpoints of the domains this
-// module declares: a value exactly at a bound is inside it, and one past it is
-// out.
+// TestTheSettingDomainsAdmitTheirBounds holds that a value exactly at a bound is inside its domain and one past it is out.
 func TestTheSettingDomainsAdmitTheirBounds(t *testing.T) {
 	if !flowTTLInDomain(minFlowTTL) || !flowTTLInDomain(maxFlowTTL) {
 		t.Error("a flow-ttl at its own bound is outside the domain")
@@ -31,16 +29,12 @@ func TestTheSettingDomainsAdmitTheirBounds(t *testing.T) {
 	if ipLimitInDomain(-1) || ipLimitInDomain(maxIPLimit+1) {
 		t.Error("an ip-limit past its bound is inside the domain")
 	}
-	// The ip-limit setting is per minute, so its ceiling is stated in per-minute
-	// terms and matches the design's 0..10000.
 	if maxIPLimit != 10000 {
 		t.Errorf("maxIPLimit = %d, want 10000", maxIPLimit)
 	}
 }
 
-// TestTheEmailBudgetDomainsAdmitTheirBounds holds the four email verification
-// code budgets at their endpoints: a value exactly at a bound is inside its
-// domain, one past either end is out, and the declared defaults are inside.
+// TestTheEmailBudgetDomainsAdmitTheirBounds holds the four email budgets at their endpoints, with the declared defaults inside.
 func TestTheEmailBudgetDomainsAdmitTheirBounds(t *testing.T) {
 	for _, c := range []struct {
 		name     string
@@ -87,8 +81,6 @@ func TestTheEmailBudgetDomainsAdmitTheirBounds(t *testing.T) {
 			t.Errorf("%s: the declared default %d is outside the domain", c.name, c.def)
 		}
 	}
-	// The declared defaults are the design's table; a change here is a change of
-	// the contract, so the numbers are pinned rather than only checked in-domain.
 	if defaults.EmailPerAddressHourly != 5 || defaults.EmailPerAddressDaily != 10 ||
 		defaults.EmailPerAccountHourly != 10 || defaults.EmailPerAccountDaily != 100 ||
 		defaults.EmailPerSourceHourly != 30 || defaults.EmailPerSourceDaily != 100 ||
@@ -132,12 +124,8 @@ func TestAnEmptyReturnTargetFallsBack(t *testing.T) {
 	}
 }
 
-// TestTheRegistrationReadsFallBackToTheirStrictSide holds the three reads of the
-// account module's registration settings at their two fallbacks. A read that
-// fails, and a value outside the declared domain, read as the strict side: the
-// password switch as closed, the per-source budget as zero (off), and the
-// deployment-wide budget as its declared default. The in-domain values are read
-// back as written, so a case that always answered the fallback could not pass.
+// TestTheRegistrationReadsFallBackToTheirStrictSide holds the three reads
+// of the account module's registration settings at their two fallbacks.
 func TestTheRegistrationReadsFallBackToTheirStrictSide(t *testing.T) {
 	failing := readerWith(nil) // every key the map does not carry fails to read
 
@@ -184,10 +172,7 @@ func TestTheRegistrationReadsFallBackToTheirStrictSide(t *testing.T) {
 	}
 }
 
-// TestTheDisabledMethodsDomainNeverAdmitsPassword holds the value domain of the
-// disabled-methods setting: it parses a JSON array of strings, the empty text
-// and the empty array are legal, and a value naming the password method is
-// refused.
+// TestTheDisabledMethodsDomainNeverAdmitsPassword holds that the domain parses a JSON array and refuses a value naming password.
 func TestTheDisabledMethodsDomainNeverAdmitsPassword(t *testing.T) {
 	item, ok := settingsSchema().Items[disabledMethodsKey]
 	if !ok || item.Domain.Rule() == "" {
@@ -210,10 +195,7 @@ func TestTheDisabledMethodsDomainNeverAdmitsPassword(t *testing.T) {
 	}
 }
 
-// TestTheDisabledMethodsReadIgnoresPasswordAndReportsItOnce holds the read side:
-// a raw value naming password still turns off its other names and never the
-// password method, and the same value is reported once rather than on every
-// read.
+// TestTheDisabledMethodsReadIgnoresPasswordAndReportsItOnce holds that password is never turned off and its out-of-domain value is reported once.
 func TestTheDisabledMethodsReadIgnoresPasswordAndReportsItOnce(t *testing.T) {
 	var buf bytes.Buffer
 	r := newReader(&fakeStore{values: map[string]string{disabledMethodsPath: `["sms","password"]`}},
@@ -239,10 +221,7 @@ func TestTheDisabledMethodsReadIgnoresPasswordAndReportsItOnce(t *testing.T) {
 	}
 }
 
-// TestTheDeliveredSwitchMatchesTheSettingsRead holds that the switch the module
-// delivers answers exactly what the settings reader answers: a raw value naming
-// the password method still turns off its other names and never password, and a
-// read that fails is an error rather than the empty list.
+// TestTheDeliveredSwitchMatchesTheSettingsRead holds that the delivered switch matches the settings read and an error rather than an empty list.
 func TestTheDeliveredSwitchMatchesTheSettingsRead(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
@@ -263,7 +242,6 @@ func TestTheDeliveredSwitchMatchesTheSettingsRead(t *testing.T) {
 		t.Errorf("the delivered switch = %v, want only sms: password is never turned off", got)
 	}
 
-	// A store that cannot answer is an error, not the empty list.
 	failing := &product{settings: newReader(&fakeStore{values: map[string]string{}}, logger)}
 	if got, err := failing.DisabledMethods(); err == nil {
 		t.Errorf("a failed read answered %v, nil; want an error", got)
@@ -272,9 +250,7 @@ func TestTheDeliveredSwitchMatchesTheSettingsRead(t *testing.T) {
 	}
 }
 
-// TestThePerFlowSendLimitHoldsItsDomain holds the domain of the per-flow send
-// limit this module only reads: a value at a bound is used, and one outside reads
-// as the declared default.
+// TestThePerFlowSendLimitHoldsItsDomain holds that an out-of-domain read falls back to the declared default.
 func TestThePerFlowSendLimitHoldsItsDomain(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -295,10 +271,7 @@ func TestThePerFlowSendLimitHoldsItsDomain(t *testing.T) {
 	}
 }
 
-// TestThePerFlowSendLimitTreatsAnAbsentDeclaringModuleAsTheDefault holds the
-// deploy assembly's shape: the SMS module is not there, so the key is undeclared
-// and the engine uses the declared default without an Error. A real read failure
-// is still diagnosed.
+// TestThePerFlowSendLimitTreatsAnAbsentDeclaringModuleAsTheDefault holds that an undeclared key uses the default without an Error.
 func TestThePerFlowSendLimitTreatsAnAbsentDeclaringModuleAsTheDefault(t *testing.T) {
 	var absent bytes.Buffer
 	r := newReader(&fakeStore{values: map[string]string{}},

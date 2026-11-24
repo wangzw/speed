@@ -1,32 +1,7 @@
-// Package google carries the Google login method: the first factor that proves
-// an external identity by an OpenID Connect authorization-code flow against
-// Google.
-//
-// The method answers with a Step and does nothing else. In Begin it draws the
-// state, the PKCE verifier and the nonce, keeps them in its private bytes as
-// the flow record's method state, and answers the authorization URL. In Answer
-// it checks that the redirect came back with the state it drew, exchanges the
-// authorization code for an identity token, verifies the token through go-oidc,
-// and checks the nonce, the authorized party and the hosted domain itself. It
-// touches no HTTP route, session, token or flow record apart from the outbound
-// requests it makes: each of those — discovery, the key set, the token exchange
-// — leaves one record through the outbound logging transport, naming the
-// method, host, path, status, outcome and time and never the query, where an
-// authorization code, a token and a state travel. The engine logs the cause of
-// an answer, and no cause here names an authorization code, a token, a state or
-// a nonce.
-//
-// Every outbound request the method makes goes through the restricted egress
-// client, so a discovery document, a key set and a token endpoint can only be
-// reached over https at a public address, and each call is bounded by the
-// deadline of the context the engine hands in. Discovery is lazy and cached:
-// the provider is discovered on the first call that needs it, a failure ends
-// that call with an outage and is not cached, and the method answers an outage
-// until the discovery succeeds.
-//
-// A host takes the method in by writing ModuleName into a command alongside the
-// login engine. It delivers the login method capability non-exclusively, so it
-// stands beside the other methods.
+// Package google carries the Google login method, which proves an external
+// identity by an OpenID Connect authorization-code flow against Google. It is one
+// authn.LoginMethod and touches no HTTP route, session, token or flow record
+// apart from its outbound requests.
 package google
 
 import (
@@ -56,12 +31,8 @@ const ConfigNamespace = ModuleName
 // never changes.
 const methodName = "google"
 
-// providerName is the external provider this method keys identities under. It is
-// the method's own name, in the namespace of the external bindings.
 const providerName = "google"
 
-// defaultIssuer is the OpenID Connect issuer the provider is discovered at when
-// the configuration names none.
 const defaultIssuer = "https://accounts.google.com"
 
 // callbackPath is where the engine mounts the redirect the provider sends the
@@ -70,11 +41,8 @@ const defaultIssuer = "https://accounts.google.com"
 // redirect a different provider holds cannot be aimed here.
 const callbackPath = "/callback/" + methodName
 
-// diagnosticPrefix starts every line the authentication capability writes to the
-// startup diagnostics, which have several writers.
 const diagnosticPrefix = "authn: "
 
-// init registers this module with the process registry.
 func init() { core.ProcessRegistry.Register(Module()) }
 
 // product must satisfy the capability it delivers.
@@ -152,7 +120,6 @@ func prepare(reader config.Reader) (core.Enablement, error) {
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 
-// product is the module's instance. It delivers the login method.
 type product struct {
 	config   resolved
 	client   *http.Client

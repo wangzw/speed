@@ -13,7 +13,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/verdict"
 )
 
-// errNoDerivation stands for a derivation the process cannot run.
 var errNoDerivation = errors.New("this process cannot derive")
 
 // a derivation the process cannot run is a failed attempt and a refusal.
@@ -57,9 +56,6 @@ func TestADerivationErrorWhoseCallerLeftIsAnOutageAndNotCounted(t *testing.T) {
 			t.Fatalf("a derivation that failed after its caller left reads %v (%v), want unavailable with the context's error",
 				outcome(got), cause(got))
 		}
-		// The call is not described as ended during the derivation: that
-		// derivation gave no answer, and a derivation that ran to its end is the
-		// one that is counted.
 		if text := cause(got).Error(); !strings.Contains(text, "the call ended before a derivation gave an answer") ||
 			strings.Contains(text, "during") {
 			t.Fatalf("the outage reads %q, want the text that says the call ended before a derivation gave an answer", text)
@@ -91,8 +87,6 @@ func TestAPassServedFromTheCacheClearsNothingOfTheFailuresBeforeIt(t *testing.T)
 	if derived.Load() != before {
 		t.Fatalf("the remembered pass derived, so it was not served from the cache")
 	}
-	// Four failures stand. The fifth is the last free one, the sixth is made and
-	// holds the name back: the pass in between took neither more nor fewer.
 	for i := range 2 {
 		if got := b.Verify(context.Background(), basic("alice", "wrong")); outcome(got) != verdict.Denied || errors.Is(cause(got), authn.ErrThrottled) {
 			t.Fatalf("failure %d after the pass reads %v (%v), want a refusal that was checked", i+5, outcome(got), cause(got))
@@ -125,10 +119,7 @@ func TestTheSubjectsOfTheTableKeepTheirBackoffUnderASprayOfNames(t *testing.T) {
 	}
 }
 
-// TestTheLineThatSaysANameIsHeldBackNamesItsReasonClass holds the attribute a
-// security event of the back-off carries: the single line written when a name
-// passes its free attempts says reason_class=throttled, whether the name is in
-// the table or not, and the lines that say nothing about a back-off do not.
+// TestTheLineThatSaysANameIsHeldBackNamesItsReasonClass holds reason_class=throttled on the one line and absent from the others.
 func TestTheLineThatSaysANameIsHeldBackNamesItsReasonClass(t *testing.T) {
 	for _, name := range []string{"alice", "typed-by-a-caller"} {
 		t.Run(name, func(t *testing.T) {

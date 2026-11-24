@@ -23,9 +23,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// gateDefaults is the carrier the stand-in gateway module declares the keys this
-// module reads from the gateway's section under, with the same default the real
-// gateway declares for the mount path.
 type gateDefaults struct {
 	Mount struct {
 		PublicURL string `config:"public-url"`
@@ -35,8 +32,6 @@ type gateDefaults struct {
 	} `config:"mount"`
 }
 
-// gateStandIn declares the authn.gate keys this module reads, so a case's body
-// may configure them without pulling the whole gateway in.
 func gateStandIn() core.Module {
 	d := &gateDefaults{}
 	d.Mount.Bases.Default = "/api/v1/auth"
@@ -46,8 +41,6 @@ func gateStandIn() core.Module {
 	}
 }
 
-// readerOver builds the real configuration loader over a body, with this
-// module's schema and the gateway keys it reads declared.
 func readerOver(t *testing.T, body string) config.Reader {
 	t.Helper()
 	return authntest.ConfigReaderAll(t, body, Module(), gateStandIn())
@@ -78,9 +71,7 @@ func TestTheSchemaCarriesTheDesignsFlags(t *testing.T) {
 	}
 }
 
-// TestTheReaderRefusesAMissingCredential drives the real configuration loader: a
-// required credential no source gave stops the startup, which is what has to
-// happen before the module builds a client with an empty secret.
+// TestTheReaderRefusesAMissingCredential holds that a required credential no source gave stops startup.
 func TestTheReaderRefusesAMissingCredential(t *testing.T) {
 	body := `{"authn":{"gate":{"mount":{"public-url":"https://app.example"}},` +
 		`"login":{"github":{"client-secret":"the-secret"}}}}`
@@ -90,9 +81,7 @@ func TestTheReaderRefusesAMissingCredential(t *testing.T) {
 	}
 }
 
-// TestTheReaderServesACompleteSection is the control for the loader case: a
-// complete section resolves, the callback address is built from the public base
-// and the mount path, the endpoint is GitHub's and the API base is the API host.
+// TestTheReaderServesACompleteSection holds that a complete section resolves the callback address, the GitHub endpoints and the API base.
 func TestTheReaderServesACompleteSection(t *testing.T) {
 	body := `{"authn":{"gate":{"mount":{"public-url":"https://app.example"}},` +
 		`"login":{"github":{"client-id":"the-id","client-secret":"the-secret"}}}}`
@@ -129,9 +118,7 @@ func TestAHostMountPathIsUsedInTheRedirect(t *testing.T) {
 	}
 }
 
-// TestAnEmptyPublicBaseIsRefused holds that a configuration with no public base
-// is a startup failure: the callback address is built from it and must never be
-// guessed from a request.
+// TestAnEmptyPublicBaseIsRefused holds that a missing public base fails startup rather than being guessed from a request.
 func TestAnEmptyPublicBaseIsRefused(t *testing.T) {
 	body := `{"authn":{"login":{"github":{"client-id":"the-id","client-secret":"the-secret"}}}}`
 	_, err := readConfig(readerOver(t, body))
@@ -140,9 +127,6 @@ func TestAnEmptyPublicBaseIsRefused(t *testing.T) {
 	}
 }
 
-// stubReader answers readConfig from the two sections a case chooses, without a
-// loader, so a case can drive a shape the stand-in gateway's defaults would
-// otherwise fill or a decode failure the loader would raise first.
 type stubReader struct {
 	cfg     moduleConfig
 	gate    gateConfig
@@ -167,16 +151,13 @@ func (s stubReader) Decode(path string, target any) error {
 func TestAnEmptyMountPathIsRefused(t *testing.T) {
 	gate := gateConfig{}
 	gate.Mount.PublicURL = "https://app.example"
-	// The base path is left empty.
 	_, err := readConfig(stubReader{cfg: moduleConfig{ClientID: "the-id", ClientSecret: "the-secret"}, gate: gate})
 	if !errors.Is(err, authn.ErrInvalidConfig) {
 		t.Fatalf("an empty mount path gave %v, want one wrapping ErrInvalidConfig", err)
 	}
 }
 
-// TestAGateDecodeErrorIsRefused holds that a failure to read the gateway's
-// section fails the read rather than being swallowed into a half-configured
-// method.
+// TestAGateDecodeErrorIsRefused holds that an unreadable gateway section fails the read rather than half-configuring the method.
 func TestAGateDecodeErrorIsRefused(t *testing.T) {
 	boom := errors.New("the gateway section cannot be read")
 	_, err := readConfig(stubReader{cfg: moduleConfig{ClientID: "the-id", ClientSecret: "the-secret"}, gateErr: boom})
@@ -185,8 +166,6 @@ func TestAGateDecodeErrorIsRefused(t *testing.T) {
 	}
 }
 
-// githubBody is a complete configuration body with extra items appended to this
-// module's section.
 func githubBody(extra string) string {
 	items := `"client-id":"the-id","client-secret":"the-secret"`
 	if extra != "" {
@@ -196,7 +175,6 @@ func githubBody(extra string) string {
 		`"login":{"github":{` + items + `}}}}`
 }
 
-// writeRootCA writes a self-signed root certificate in PEM and returns its path.
 func writeRootCA(t *testing.T) string {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -243,9 +221,7 @@ func TestTheReaderAcceptsTheEndpointOverrides(t *testing.T) {
 	}
 }
 
-// TestATrailingSlashOnTheAPIBaseIsRemoved holds that the configured base is
-// normalized on read: the two reads join a path that starts with a slash, so a
-// base ending in one would produce a doubled slash and a different address.
+// TestATrailingSlashOnTheAPIBaseIsRemoved holds that the configured base is normalized so joined paths do not double the slash.
 func TestATrailingSlashOnTheAPIBaseIsRemoved(t *testing.T) {
 	body := githubBody(`"api-base":"https://idp.example/api/v3/"`)
 	got, err := readConfig(readerOver(t, body))
@@ -266,9 +242,7 @@ func TestTheReaderAcceptsTheEgressSeamKeys(t *testing.T) {
 	}
 }
 
-// TestTheReaderRefusesAnUnreadableRootCAFile holds that a root CA file that
-// cannot be read fails the start rather than leaving verification on the system
-// roots without saying so.
+// TestTheReaderRefusesAnUnreadableRootCAFile holds that an unreadable root CA file fails the start instead of silently using the system roots.
 func TestTheReaderRefusesAnUnreadableRootCAFile(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "absent.pem")
 	_, err := readConfig(readerOver(t, githubBody(fmt.Sprintf(`"root-ca-file":%q`, missing))))
@@ -277,9 +251,7 @@ func TestTheReaderRefusesAnUnreadableRootCAFile(t *testing.T) {
 	}
 }
 
-// TestTheEndpointOverridesMustBeHTTPS holds that every endpoint override is an
-// absolute https address, so a custom endpoint cannot quietly downgrade the
-// transport.
+// TestTheEndpointOverridesMustBeHTTPS holds that every endpoint override is absolute https.
 func TestTheEndpointOverridesMustBeHTTPS(t *testing.T) {
 	cases := []struct {
 		key   string

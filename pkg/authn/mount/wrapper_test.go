@@ -13,15 +13,9 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// trustedSibling is an origin written into trusted-origins, which the cases about
-// the same-site vectors send as the Origin of a request.
 const trustedSibling = "https://sibling.example.com"
 
-// TestTheCrossOriginCheckHoldsEveryUnsafeMethodAndNoSafeOne holds the vectors of
-// the check through the real entry point and the real gateway, on a route of each
-// access level. A refused request is a 401 and the handler is not called: the
-// counter is what tells a refusal that stopped the handler from one that only
-// changed the status.
+// TestTheCrossOriginCheckHoldsEveryUnsafeMethodAndNoSafeOne holds the check through the real entry point and gateway on each access level.
 func TestTheCrossOriginCheckHoldsEveryUnsafeMethodAndNoSafeOne(t *testing.T) {
 	var calls atomic.Int64
 	liveStack{
@@ -90,7 +84,6 @@ func TestTheCrossOriginCheckHoldsEveryUnsafeMethodAndNoSafeOne(t *testing.T) {
 					}
 				}
 			}
-			// A safe method is not put to the check, whatever the vector.
 			for _, v := range vectors {
 				edits := []func(*nethttp.Request){headers(v.headers...)}
 				if level.edit != nil {
@@ -103,10 +96,7 @@ func TestTheCrossOriginCheckHoldsEveryUnsafeMethodAndNoSafeOne(t *testing.T) {
 	})
 }
 
-// TestACallbackIsReachedFromAnotherSiteAndNothingElseUnderTheBaseIs holds the
-// bypass through the real entry point: the callback's pattern is let through
-// cross-site, with no credential and for whichever provider, and a sibling POST
-// under the same base keeps the check.
+// TestACallbackIsReachedFromAnotherSiteAndNothingElseUnderTheBaseIs holds the bypass through the real entry point.
 func TestACallbackIsReachedFromAnotherSiteAndNothingElseUnderTheBaseIs(t *testing.T) {
 	var callback, other atomic.Int64
 	liveStack{
@@ -141,12 +131,7 @@ func TestACallbackIsReachedFromAnotherSiteAndNothingElseUnderTheBaseIs(t *testin
 	})
 }
 
-// TestTheTrustSetAgreesWithTheGatewaysForEverySpellingOfAnOrigin puts each
-// vector of originVectors to the check the module hands out and to the check the
-// gateway builds for itself, through the real modules: a same-site POST with the
-// vector as its Origin to a public route and to a guarded route behind a cookie
-// credential, which the gateway holds to its own check. Two checks built from one
-// configuration admit the same requests and refuse the same ones.
+// TestTheTrustSetAgreesWithTheGatewaysForEverySpellingOfAnOrigin compares the module's check with the gateway's for each vector.
 func TestTheTrustSetAgreesWithTheGatewaysForEverySpellingOfAnOrigin(t *testing.T) {
 	var cookieRoute atomic.Int64
 	liveStack{
@@ -190,7 +175,6 @@ func TestTheTrustSetAgreesWithTheGatewaysForEverySpellingOfAnOrigin(t *testing.T
 	})
 }
 
-// quoted renders a list of strings as the members of a JSON array.
 func quoted(items []string) string {
 	out := make([]string, len(items))
 	for i, s := range items {
@@ -199,10 +183,7 @@ func quoted(items []string) string {
 	return strings.Join(out, ",")
 }
 
-// TestEveryResponseOnAMountedRouteCarriesNoStore holds the header from the start
-// of the response: on every answer a handler gives, an error it writes and the
-// refusal of the check. A handler that has a reason to say otherwise sets its own
-// over it.
+// TestEveryResponseOnAMountedRouteCarriesNoStore holds the header on handler answers, errors and the check's refusal.
 func TestEveryResponseOnAMountedRouteCarriesNoStore(t *testing.T) {
 	liveStack{
 		register: func(m mount.Mounter) {

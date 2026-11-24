@@ -14,16 +14,12 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The fragment's info section: the title this module's fragment carries and the
-// version of the fragment's shape.
 const (
 	fragmentTitle   = "authn login"
 	fragmentVersion = "1.0.0"
 )
 
-// The routes as the fragment writes them: relative to the module's API root, so
-// a route is declared once and both the fragment and the mounting read the same
-// string.
+// The declarations write routes relative to the module's API root, so the fragment and the mounting read one string.
 const (
 	pathMethods               = "/auth/methods"
 	pathRegister              = "/auth/register"
@@ -49,11 +45,16 @@ const (
 type AuthnLoginMethods struct {
 	_ struct{} `description:"The discovery document of the login surface: one descriptor per login method that takes part and is not turned off, whether registration is open, the second-factor kinds the deployment takes in, and the human-verification gate this deployment requires before a verification message is sent. Enterprise identity providers are not listed here; they are discovered through the SSO module."`
 
+	// Methods is sorted by method name.
 	Methods []AuthnMethodDescriptor `json:"methods" required:"true" description:"The methods taking part that are not turned off, one descriptor each, sorted by name"`
-	Signup  AuthnLoginSignup        "json:\"signup\" required:\"true\" description:\"Whether registration is open on this deployment: true when either `authn.account.signup` or `authn.account.password-signup` is `open`.\""
-	MFA     AuthnLoginMFA           `json:"mfa" required:"true" description:"The second-factor kinds the deployment takes in."`
-	Human   AuthnLoginHuman         `json:"human" required:"true" description:"The human-verification gate a send must satisfy."`
+	// Signup is the union of the two registration switches.
+	Signup AuthnLoginSignup "json:\"signup\" required:\"true\" description:\"Whether registration is open on this deployment: true when either `authn.account.signup` or `authn.account.password-signup` is `open`.\""
+	// MFA is a deployment fact, not any account's enrolled factors.
+	MFA AuthnLoginMFA `json:"mfa" required:"true" description:"The second-factor kinds the deployment takes in."`
+	// Human's two surfaces may run different mechanisms.
+	Human AuthnLoginHuman `json:"human" required:"true" description:"The human-verification gate a send must satisfy."`
 
+	// PasswordReset describes the deployment only; it says nothing about any account.
 	PasswordReset AuthnLoginPasswordReset `json:"password_reset" required:"true" description:"Whether this deployment offers the anonymous password reset, and the channels it may use."`
 }
 
@@ -62,7 +63,9 @@ type AuthnLoginMethods struct {
 type AuthnLoginPasswordReset struct {
 	_ struct{} `description:"Whether this deployment offers the anonymous password reset and through which channels. It is a deployment fact, the same for every anonymous caller, and it says nothing about whether any account can be reset."`
 
-	Enabled bool     `json:"enabled" required:"true" description:"Whether the anonymous password reset is open: the switch is open, the audit record is present, and at least one channel is available"`
+	// Enabled is the capability bit, not any account's reset eligibility.
+	Enabled bool `json:"enabled" required:"true" description:"Whether the anonymous password reset is open: the switch is open, the audit record is present, and at least one channel is available"`
+	// Methods is sorted email before sms.
 	Methods []string `json:"methods" required:"true" description:"The channels the reset may be sent through: email and sms, sorted, leaving out a channel that is not assembled, whose template is missing or that a disabled method turned off"`
 }
 
@@ -73,7 +76,9 @@ type AuthnLoginPasswordReset struct {
 type AuthnLoginHuman struct {
 	_ struct{} `description:"The human-verification gate a deployment puts in front of every send of a verification message, reported once per surface. A deployment may run a different mechanism on each: the phone surface guards the four SMS sends, and the other surface guards every send that does not address a phone number. A deployment whose gate is off reports the off mechanism on both surfaces."`
 
+	// Phone covers SMS login, the SMS second factor, phone enrollment and anonymous SMS reset.
 	Phone AuthnLoginHumanGate `json:"phone" required:"true" description:"The gate on a send that delivers a message to a phone number: login, second factor, enrollment and anonymous reset by SMS."`
+	// Other covers the sends that do not address a phone number, such as the email reset and self-service email branches.
 	Other AuthnLoginHumanGate `json:"other" required:"true" description:"The gate on every send that does not address a phone number: an email reset code and a self-service email addition."`
 }
 
@@ -83,10 +88,14 @@ type AuthnLoginHuman struct {
 type AuthnLoginHumanGate struct {
 	_ struct{} `description:"The human-verification gate one surface runs: whether a proof is required, the mechanism that checks it, the public identifier a client-side widget needs, and the action that widget must be rendered with. A surface whose gate is off reports the off mechanism and requires nothing."`
 
-	Required bool   "json:\"required\" required:\"true\" description:\"Whether every send on this surface must first present a valid, single-use proof\""
+	// Required is per surface; when it is false the gate is skipped there.
+	Required bool "json:\"required\" required:\"true\" description:\"Whether every send on this surface must first present a valid, single-use proof\""
+	// An off mechanism writes the value off.
 	Provider string "json:\"provider\" required:\"true\" description:\"The mechanism that checks a proof on this surface: `off` when the gate is off, `pow` for the self-hosted proof of work, `captcha` for the self-hosted captcha, or `turnstile` for Cloudflare's widget\""
-	SiteKey  string "json:\"site_key,omitempty\" description:\"The public identifier a client-side widget is rendered with, for a mechanism that needs one; absent for `off`, `pow` and `captcha`\""
-	Action   string "json:\"action,omitempty\" description:\"The action a client-side widget must be rendered with, for a mechanism that needs one; absent for `off`, `pow` and `captcha`. The provider's answer must name it.\""
+	// SiteKey is empty for every mechanism that does not need one.
+	SiteKey string "json:\"site_key,omitempty\" description:\"The public identifier a client-side widget is rendered with, for a mechanism that needs one; absent for `off`, `pow` and `captcha`\""
+	// Action is empty for every mechanism that does not need one.
+	Action string "json:\"action,omitempty\" description:\"The action a client-side widget must be rendered with, for a mechanism that needs one; absent for `off`, `pow` and `captcha`. The provider's answer must name it.\""
 }
 
 // AuthnMethodDescriptor is one login method as the discovery document reports
@@ -94,13 +103,20 @@ type AuthnLoginHumanGate struct {
 type AuthnMethodDescriptor struct {
 	_ struct{} `description:"One login method as the discovery document reports it: its stable name, how a client renders it, the protocol a redirect or enterprise method speaks, its brand label, whether it can open an account, the provider values its bindings appear under, and the inputs its first step asks for."`
 
-	Name             string            `json:"name" required:"true" description:"The method's stable name"`
-	Kind             string            `json:"kind" required:"true" description:"How a client renders the method: form, redirect, enterprise or webauthn"`
-	Protocol         string            `json:"protocol,omitempty" description:"The wire protocol a redirect or enterprise method speaks: oauth2, oidc or saml; empty otherwise"`
-	Label            string            `json:"label,omitempty" description:"The method's brand name where it has one, otherwise empty for a name-keyed translation"`
-	OpensAccount     bool              "json:\"opens_account,omitempty\" description:\"Whether the method may open an account for an identifier it does not yet know; false for the phone and social methods when `authn.account.signup` is closed\""
-	BindingProviders []string          `json:"binding_providers,omitempty" description:"The stored provider values, or namespace prefixes, the method's bindings appear under; absent means the method's name"`
-	Fields           []AuthnLoginField `json:"fields,omitempty" description:"The inputs the method's first step asks for, empty for a method that does not open with a form"`
+	// Name is the vocabulary the discovery document, the routes and the flow record share.
+	Name string `json:"name" required:"true" description:"The method's stable name"`
+	// Kind decides whether Fields is present; only a form method carries them.
+	Kind string `json:"kind" required:"true" description:"How a client renders the method: form, redirect, enterprise or webauthn"`
+	// Protocol is empty for kinds other than redirect and enterprise.
+	Protocol string `json:"protocol,omitempty" description:"The wire protocol a redirect or enterprise method speaks: oauth2, oidc or saml; empty otherwise"`
+	// A client falls back to the method name when Label is empty.
+	Label string `json:"label,omitempty" description:"The method's brand name where it has one, otherwise empty for a name-keyed translation"`
+	// OpensAccount is cleared in the answer when registration is closed.
+	OpensAccount bool "json:\"opens_account,omitempty\" description:\"Whether the method may open an account for an identifier it does not yet know; false for the phone and social methods when `authn.account.signup` is closed\""
+	// It describes the method's constants, never whether any account is bound.
+	BindingProviders []string `json:"binding_providers,omitempty" description:"The stored provider values, or namespace prefixes, the method's bindings appear under; absent means the method's name"`
+	// Fields comes from Begin called with empty input.
+	Fields []AuthnLoginField `json:"fields,omitempty" description:"The inputs the method's first step asks for, empty for a method that does not open with a form"`
 }
 
 // AuthnLoginSignup says whether anonymous self-registration is available: either
@@ -109,7 +125,9 @@ type AuthnMethodDescriptor struct {
 type AuthnLoginSignup struct {
 	_ struct{} `description:"Whether anonymous self-registration is available on this deployment: either a first login may open an account, or the name-and-password register route is open. The two switches are independent; each member below reports its own."`
 
-	Enabled  bool                     `json:"enabled" required:"true" description:"Whether anonymous self-registration is available: true when either a first login may open an account or the name-and-password register route is open"`
+	// Enabled is only a pre-check; Signups.Register reads the switch again as the authority.
+	Enabled bool `json:"enabled" required:"true" description:"Whether anonymous self-registration is available: true when either a first login may open an account or the name-and-password register route is open"`
+	// Password is read on every methods request.
 	Password AuthnLoginSignupPassword `json:"password" required:"true" description:"Whether the name-and-password register route is open."`
 }
 
@@ -117,6 +135,7 @@ type AuthnLoginSignup struct {
 type AuthnLoginSignupPassword struct {
 	_ struct{} `description:"Whether the anonymous name-and-password register route is open, reported on its own because it is independent of a first login opening an account."`
 
+	// Enabled is the register route's own switch, read per request.
 	Enabled bool `json:"enabled" required:"true" description:"Whether POST /auth/register is open"`
 }
 
@@ -124,6 +143,7 @@ type AuthnLoginSignupPassword struct {
 type AuthnLoginMFA struct {
 	_ struct{} `description:"The second-factor kinds the deployment takes in, as the multi-factor module reports them. This is a deployment-level list, not the caller's own registered factors."`
 
+	// Factors is a deployment fact, not the caller's enrolled factors.
 	Factors []string `json:"factors" required:"true" description:"The kinds of second factor the deployment takes in"`
 }
 
@@ -133,46 +153,69 @@ type AuthnLoginMFA struct {
 type AuthnLoginFlow struct {
 	_ struct{} `description:"One open login flow, as returned by a start, by an answer that keeps the flow open, or by the current-flow read: the step number the next answer must echo, the flow's state, the flow token when the flow is bound by the header, and what the client does next."`
 
-	Seq       int            `json:"seq" required:"true" description:"The step number the next answer must echo"`
-	State     string         `json:"state" required:"true" description:"The flow's state: first, signup, second, enroll, reprove, ready, processing, done or failed"`
-	FlowToken string         `json:"flow_token,omitempty" description:"The flow token, set only when the flow is bound by the Authn-Flow header"`
-	Next      AuthnLoginStep `json:"next" required:"true" description:"What the client does at the flow's current step."`
+	// Seq is unchanged by a refusal, so a client retries in place with the same value.
+	Seq int `json:"seq" required:"true" description:"The step number the next answer must echo"`
+	// A tombstone state, done or failed, marks a flow that is spent.
+	State string `json:"state" required:"true" description:"The flow's state: first, signup, second, enroll, reprove, ready, processing, done or failed"`
+	// FlowToken never appears in a cookie-bound answer.
+	FlowToken string `json:"flow_token,omitempty" description:"The flow token, set only when the flow is bound by the Authn-Flow header"`
+	// Next is what the client does at the flow's current step.
+	Next AuthnLoginStep `json:"next" required:"true" description:"What the client does at the flow's current step."`
 }
 
 // AuthnLoginStep is what the client does next.
 type AuthnLoginStep struct {
 	_ struct{} "description:\"What the client does at the flow's current step. Only the members that belong to `kind` are present: `challenge` carries `fields`; a pending signup of a social first login also carries `provided_method`, `provided_display_name` and `provided_email`; `redirect` carries `url` and `method`; `factor` carries `factors`; `enroll` carries `kinds`; `webauthn` carries `options`; `complete` carries nothing.\""
 
-	Kind                string             `json:"kind" required:"true" description:"What the client does next: challenge, redirect, factor, enroll, complete or webauthn"`
-	Fields              []AuthnLoginField  `json:"fields,omitempty" description:"The inputs a challenge step asks for"`
-	ProvidedMethod      string             `json:"provided_method,omitempty" description:"The stable name of the login method that started this flow, in the same vocabulary as methods[].name in the discovery document, such as github, google, wechat.mp or wechat.web; carried by the pending signup of a social first login so the client can name the provider; absent for every other step"`
-	ProvidedDisplayName string             `json:"provided_display_name,omitempty" description:"The provider's name for the person, carried by the pending signup of a social first login for the client to show read-only; absent when the provider gave none and for every other step"`
-	ProvidedEmail       string             `json:"provided_email,omitempty" description:"The address the provider declared verified, carried by the pending signup of a social first login for the client to show read-only; absent when the provider declared no verified address and for every other step"`
-	ExpiresIn           int                `json:"expires_in,omitempty" description:"How long a challenge lives, in seconds. No handler of this fragment sets it, so the member is absent from every answer."`
-	ResendAfter         int                `json:"resend_after,omitempty" description:"How soon a challenge may be asked for again, in seconds. No handler of this fragment sets it, so the member is absent from every answer."`
-	URL                 string             `json:"url,omitempty" description:"Where a redirect step sends the user agent"`
-	Method              string             `json:"method,omitempty" description:"The HTTP method the redirect uses"`
-	Factors             []AuthnLoginFactor `json:"factors,omitempty" description:"The factors a second-factor step offers"`
-	Kinds               []string           `json:"kinds,omitempty" description:"The factor kinds an enroll step takes in"`
-	Options             any                "json:\"options,omitempty\" description:\"The data a webauthn step carries: the public-key creation or request options of a WebAuthn ceremony, or, for a TOTP enrollment, an object with an `otpauth_uri` the client renders as a QR code.\""
+	// Kind decides which other members are set.
+	Kind string `json:"kind" required:"true" description:"What the client does next: challenge, redirect, factor, enroll, complete or webauthn"`
+	// Fields is present on a challenge step only.
+	Fields []AuthnLoginField `json:"fields,omitempty" description:"The inputs a challenge step asks for"`
+	// ProvidedMethod is absent once the flow leaves the pending signup.
+	ProvidedMethod string `json:"provided_method,omitempty" description:"The stable name of the login method that started this flow, in the same vocabulary as methods[].name in the discovery document, such as github, google, wechat.mp or wechat.web; carried by the pending signup of a social first login so the client can name the provider; absent for every other step"`
+	// ProvidedDisplayName is absent when the provider gives no name.
+	ProvidedDisplayName string `json:"provided_display_name,omitempty" description:"The provider's name for the person, carried by the pending signup of a social first login for the client to show read-only; absent when the provider gave none and for every other step"`
+	// ProvidedEmail appears only when the provider declared the address verified.
+	ProvidedEmail string `json:"provided_email,omitempty" description:"The address the provider declared verified, carried by the pending signup of a social first login for the client to show read-only; absent when the provider declared no verified address and for every other step"`
+	// ExpiresIn is reserved; this fragment's handlers never set it, so it stays absent.
+	ExpiresIn int `json:"expires_in,omitempty" description:"How long a challenge lives, in seconds. No handler of this fragment sets it, so the member is absent from every answer."`
+	// ResendAfter is reserved; this fragment's handlers never set it, so it stays absent.
+	ResendAfter int `json:"resend_after,omitempty" description:"How soon a challenge may be asked for again, in seconds. No handler of this fragment sets it, so the member is absent from every answer."`
+	// URL is set on a redirect step only.
+	URL string `json:"url,omitempty" description:"Where a redirect step sends the user agent"`
+	// Method is set on a redirect step only.
+	Method string `json:"method,omitempty" description:"The HTTP method the redirect uses"`
+	// Factors is set on a factor step only.
+	Factors []AuthnLoginFactor `json:"factors,omitempty" description:"The factors a second-factor step offers"`
+	// Kinds is set on an enroll step only.
+	Kinds []string `json:"kinds,omitempty" description:"The factor kinds an enroll step takes in"`
+	// Options is set on a webauthn step only.
+	Options any "json:\"options,omitempty\" description:\"The data a webauthn step carries: the public-key creation or request options of a WebAuthn ceremony, or, for a TOTP enrollment, an object with an `otpauth_uri` the client renders as a QR code.\""
 }
 
 // AuthnLoginField is one input a method asks the client for.
 type AuthnLoginField struct {
 	_ struct{} `description:"One input a method asks the client for, named by the method and rendered according to its kind."`
 
-	Name     string "json:\"name\" required:\"true\" description:\"The input's key: the client submits its value under this name in the `input` map of the start request or of the answer.\""
-	Kind     string "json:\"kind\" required:\"true\" description:\"How the client renders the input: `text`, `password`, `code` or `phone`.\""
-	Required bool   `json:"required,omitempty" description:"Whether the step needs a value; absent means the field may be left out."`
-	Secret   bool   `json:"secret,omitempty" description:"Whether the value must not be displayed or echoed, as for a password or a code; absent means it is not secret."`
+	// Name is the key the client submits the value under.
+	Name string "json:\"name\" required:\"true\" description:\"The input's key: the client submits its value under this name in the `input` map of the start request or of the answer.\""
+	// Kind is one of the four kinds in the closed set.
+	Kind string "json:\"kind\" required:\"true\" description:\"How the client renders the input: `text`, `password`, `code` or `phone`.\""
+	// Absent Required means the field may be left empty.
+	Required bool `json:"required,omitempty" description:"Whether the step needs a value; absent means the field may be left out."`
+	// Absent Secret means the value may be displayed or echoed.
+	Secret bool `json:"secret,omitempty" description:"Whether the value must not be displayed or echoed, as for a password or a code; absent means it is not secret."`
 }
 
 // AuthnLoginFactor is one second factor the flow offers to verify.
 type AuthnLoginFactor struct {
 	_ struct{} `description:"One second factor the flow offers to verify: its identifier, its kind and a display label. It carries nothing secret."`
 
-	ID    string "json:\"id\" required:\"true\" description:\"The factor's identifier; send it as `input.factor` when answering the second-factor step.\""
-	Kind  string "json:\"kind\" required:\"true\" description:\"The factor kind, such as `totp`, `sms` or `webauthn`; the client renders the challenge according to it.\""
+	// ID is not a secret, and it stays stable for the factor.
+	ID string "json:\"id\" required:\"true\" description:\"The factor's identifier; send it as `input.factor` when answering the second-factor step.\""
+	// The client picks the challenge form by Kind.
+	Kind string "json:\"kind\" required:\"true\" description:\"The factor kind, such as `totp`, `sms` or `webauthn`; the client renders the challenge according to it.\""
+	// A client falls back to Kind when Label is empty.
 	Label string `json:"label,omitempty" description:"A display label for the factor; it may be empty, in which case the client falls back to the kind's own name."`
 }
 
@@ -180,7 +223,9 @@ type AuthnLoginFactor struct {
 type AuthnLoginSession struct {
 	_ struct{} "description:\"The answer of a login completed with `delivery=session`, and of a step-up completed on a cookie session: the state name `authenticated` and the public facts of the session that was created or elevated. The session cookie is set in the same response.\""
 
-	State   string                "json:\"state\" required:\"true\" enum:\"authenticated\" description:\"The literal `authenticated`, marking a completed login.\""
+	// State is always authenticated on this shape.
+	State string "json:\"state\" required:\"true\" enum:\"authenticated\" description:\"The literal `authenticated`, marking a completed login.\""
+	// Session is the public facts of the session the login created.
 	Session AuthnLoginSessionView `json:"session" required:"true" description:"The public facts of the session the login created."`
 }
 
@@ -188,7 +233,9 @@ type AuthnLoginSession struct {
 type AuthnLoginSessionView struct {
 	_ struct{} `description:"The public facts of the session a login created. No token or secret is included."`
 
-	ID        string    `json:"id" required:"true" description:"The session identifier; the browser client holds the session cookie written in the same response."`
+	// ID is an identifier, not a credential.
+	ID string `json:"id" required:"true" description:"The session identifier; the browser client holds the session cookie written in the same response."`
+	// ExpiresAt is the absolute expiry, not an idle limit.
 	ExpiresAt time.Time `json:"expires_at" required:"true" description:"The session's expiry, as an RFC 3339 instant in UTC."`
 }
 
@@ -197,10 +244,15 @@ type AuthnLoginSessionView struct {
 type AuthnLoginToken struct {
 	_ struct{} "description:\"The answer of a login completed with `delivery=token`, and of a token-delivered step-up: the state name, the token type, the access token, its lifetime and the refresh token.\""
 
-	State        string `json:"state" required:"true" enum:"authenticated,elevated" description:"authenticated for a login; elevated for a step-up, which issues no refresh token and carries it empty"`
-	TokenType    string "json:\"token_type\" required:\"true\" enum:\"Bearer\" description:\"The authorization scheme the access token is sent with; it is always `Bearer`.\""
-	AccessToken  string "json:\"access_token\" required:\"true\" description:\"The access token, sent in the `Authorization` header as `Bearer <value>`.\""
-	ExpiresIn    int    `json:"expires_in" required:"true" description:"The access token's lifetime in seconds"`
+	// A login answers authenticated; a step-up answers elevated.
+	State string `json:"state" required:"true" enum:"authenticated,elevated" description:"authenticated for a login; elevated for a step-up, which issues no refresh token and carries it empty"`
+	// TokenType is always Bearer.
+	TokenType string "json:\"token_type\" required:\"true\" enum:\"Bearer\" description:\"The authorization scheme the access token is sent with; it is always `Bearer`.\""
+	// AccessToken expires after ExpiresIn.
+	AccessToken string "json:\"access_token\" required:\"true\" description:\"The access token, sent in the `Authorization` header as `Bearer <value>`.\""
+	// ExpiresIn is a duration in whole seconds, not an instant.
+	ExpiresIn int `json:"expires_in" required:"true" description:"The access token's lifetime in seconds"`
+	// A login carries a refresh token; a step-up leaves it empty.
 	RefreshToken string `json:"refresh_token" required:"true" description:"Empty on a step-up, which issues no refresh token"`
 }
 
@@ -209,6 +261,7 @@ type AuthnLoginToken struct {
 type AuthnLoginActionResult struct {
 	_ struct{} "description:\"The answer of a flow that finished by binding an external identity (`linked`) or registering a factor (`enrolled`); neither issues a session or a token.\""
 
+	// State names which terminal action ran.
 	State string `json:"state" required:"true" enum:"linked,enrolled" description:"linked when the flow bound an external identity; enrolled when it registered a factor"`
 }
 
@@ -217,8 +270,11 @@ type AuthnLoginActionResult struct {
 type AuthnLoginRegistration struct {
 	_ struct{} "description:\"The answer of an anonymous self-registration: the state name `registered`, the account that was opened, and the email address awaiting verification. No session is made and no email is sent.\""
 
-	State        string                        "json:\"state\" required:\"true\" enum:\"registered\" description:\"The literal `registered`, marking that an account was opened\""
-	AccountID    string                        `json:"account_id" required:"true" description:"The identifier of the account that was opened"`
+	// State is always registered on this shape.
+	State string "json:\"state\" required:\"true\" enum:\"registered\" description:\"The literal `registered`, marking that an account was opened\""
+	// The registration opens no session.
+	AccountID string `json:"account_id" required:"true" description:"The identifier of the account that was opened"`
+	// Verification is the contact awaiting verification.
 	Verification AuthnLoginRegistrationContact `json:"verification" required:"true" description:"The contact awaiting verification."`
 }
 
@@ -226,7 +282,9 @@ type AuthnLoginRegistration struct {
 type AuthnLoginRegistrationContact struct {
 	_ struct{} "description:\"The contact a new registration has to prove: the pending state of the email address the caller gave, which is not yet a login name.\""
 
+	// State stays pending until the address is proved after signing in.
 	State string "json:\"state\" required:\"true\" enum:\"pending\" description:\"The verification state of the email address: `pending` until the address is proved after signing in\""
+	// Email is the address the caller gave, awaiting verification.
 	Email string `json:"email" required:"true" description:"The email address the caller gave, awaiting verification"`
 }
 
@@ -240,17 +298,14 @@ type AuthnLoginAnswer struct {
 	value any
 }
 
-// MarshalJSON writes the answer's own shape, which is one of the union's
-// members.
+// MarshalJSON writes the answer's own shape, one member of the union.
 func (a AuthnLoginAnswer) MarshalJSON() ([]byte, error) { return json.Marshal(a.value) }
 
-// JSONSchemaOneOf is the union's members: the open flow, the cookie-session
-// answer, the token answer and the link or enrollment result.
+// JSONSchemaOneOf lists the union's members: the open flow, the cookie-session answer, the token answer and the link or enrollment result.
 func (AuthnLoginAnswer) JSONSchemaOneOf() []interface{} {
 	return []interface{}{AuthnLoginFlow{}, AuthnLoginSession{}, AuthnLoginToken{}, AuthnLoginActionResult{}}
 }
 
-// The internal names the engine already uses for the wire shapes.
 type (
 	flowReply            = AuthnLoginFlow
 	stepView             = AuthnLoginStep
@@ -272,7 +327,6 @@ type (
 	passwordResetView    = AuthnLoginPasswordReset
 )
 
-// startInput is the body of POST flows.
 type startInput struct {
 	_ struct{} "description:\"The start request; `method` must name a login method this deployment takes in, or the call is a bad request.\""
 
@@ -282,15 +336,10 @@ type startInput struct {
 	ReturnTo string            "json:\"return_to\" description:\"Where the callback lands the user agent: either a path starting with a single `/`, not `//`, without backslash, control characters or `@` and at most 2048 bytes, or an absolute URL whose origin the deployment trusts; anything else is a 400 bad-request. The callback lands the user agent there for every purpose that reaches ready: a login, a link and a no-factor step-up. An absent or empty value uses the configured `authn.login.default-return-to`, which is held to the same rule and falls back to `/`. The value is stored in the flow record, and no parameter of the callback request can change it.\""
 	Binding  string            "json:\"binding\" description:\"How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when the public URL is a loopback http address) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method.\""
 	Input    map[string]string `json:"input" description:"The fields the method's first step takes, as name-to-value strings. At most 8 members, each value at most 512 bytes; anything beyond is a 400 bad-request."`
-	// HumanProof is the proof the deployment's human-verification gate checks
-	// before a verification message is sent. It is flat rather than a member of
-	// input because an input value is capped at 512 bytes and a Turnstile token
-	// can exceed that. It is read only when this request would send a message and
-	// the deployment requires a proof; otherwise it is ignored.
+	// HumanProof is read only when this request would send a message and the deployment requires a proof; it is flat because an input value is capped at 512 bytes.
 	HumanProof string `json:"human_proof" description:"The human-verification proof the deployment may require before it sends a verification message: a Turnstile token, a captcha answer or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent."`
 }
 
-// startAuthenticatedInput is the body of POST flows/authenticated.
 type startAuthenticatedInput struct {
 	_ struct{} "description:\"The start request for a purpose other than login; `purpose` must be `link`, `step-up` or `enroll`.\""
 
@@ -300,12 +349,10 @@ type startAuthenticatedInput struct {
 	ReturnTo string            "json:\"return_to\" description:\"Where the callback lands the user agent: either a path starting with a single `/`, not `//`, without backslash, control characters or `@` and at most 2048 bytes, or an absolute URL whose origin the deployment trusts; anything else is a 400 bad-request. The callback lands the user agent there for every purpose that reaches ready: a login, a link and a no-factor step-up. An absent or empty value uses the configured `authn.login.default-return-to`, which is held to the same rule and falls back to `/`. The value is stored in the flow record, and no parameter of the callback request can change it.\""
 	Binding  string            "json:\"binding\" description:\"How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when the public URL is a loopback http address) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method.\""
 	Input    map[string]string "json:\"input\" description:\"The fields the started step takes, as name-to-value strings: the method's first step for `link` and for a step-up that starts at the first factor, the enrollment step for `enroll` where `kind` names the factor kind and an optional `label` names the factor (at most 64 characters after trimming surrounding whitespace, without control characters; a value outside that domain is a 400 bad-request), except that a kind an account may hold only once -- the authenticator app -- takes no name, and a label sent for it is that same 400 bad-request, and nothing for a step-up that starts at the second factor, except that a step-up may also name `exclude_factor`, one factor the flow must not offer -- the factor the caller is about to delete, which must never prove its own removal; a value naming no factor of the account filters nothing. When that exclusion leaves the account no factor at all, the flow of an account holding a password starts at the password and completes on it alone, while an account without a password is refused with 401 `insufficient_user_authentication`. At most 8 members, each value at most 512 bytes.\""
-	// HumanProof is the proof the deployment's human-verification gate checks
-	// before a verification message is sent; see startInput.HumanProof.
+	// HumanProof is the proof checked before this request sends a message.
 	HumanProof string `json:"human_proof" description:"The human-verification proof the deployment may require before it sends a verification message: a Turnstile token, a captcha answer or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent."`
 }
 
-// registerInput is the body of POST register.
 type registerInput struct {
 	_ struct{} "description:\"The anonymous registration request: a username, an email address and a password are required; a display name, a language and a time zone are optional. The email address is only a contact awaiting verification, not a login name.\""
 
@@ -317,7 +364,6 @@ type registerInput struct {
 	TimeZone    string `json:"time_zone" description:"The account's time-zone preference, optional, written to the i18n.tz attribute; a value outside the accepted time-zone domain is a 400 bad-request."`
 }
 
-// passwordResetStartInput is the body of POST password-reset.
 type passwordResetStartInput struct {
 	_ struct{} `description:"The first step of an anonymous password reset: the channel to prove and the identifier to send a code to."`
 
@@ -326,14 +372,12 @@ type passwordResetStartInput struct {
 	HumanProof string `json:"human_proof" description:"The human-verification proof the deployment may require before it sends a verification message: a Turnstile token, a captcha answer or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent."`
 }
 
-// passwordResetVerifyInput is the body of POST password-reset/verify.
 type passwordResetVerifyInput struct {
 	_ struct{} `description:"The code sent to the identifier the bound reset is proving."`
 
 	Code string `json:"code" required:"true" description:"The code as the channel sent it. Empty or longer than 32 bytes is a 400 bad-request; a wrong code, an expired code and a suppressed record are all a 401 login-failed."`
 }
 
-// passwordResetCompleteInput is the body of POST password-reset/complete.
 type passwordResetCompleteInput struct {
 	_ struct{} `description:"The new password of a reset whose identifier has been proved."`
 
@@ -345,101 +389,79 @@ type passwordResetCompleteInput struct {
 type AuthnLoginPasswordResetState struct {
 	_ struct{} `description:"The state of the bound anonymous password reset: whether a code was sent or the identifier is proved, how long the code or the proved ticket lives, and, while a code is outstanding, how soon another may be asked for. It carries no account, no identifier and no code."`
 
-	State       string `json:"state" required:"true" enum:"sent,verified" description:"sent after a code was sent, verified once the code held"`
-	ExpiresIn   int    `json:"expires_in" required:"true" description:"How long the code or the proved ticket lives, in whole seconds"`
-	ResendAfter int    `json:"resend_after,omitempty" description:"How soon another code may be asked for, in whole seconds; absent once the identifier is proved"`
+	// A verified record sends no further code.
+	State string `json:"state" required:"true" enum:"sent,verified" description:"sent after a code was sent, verified once the code held"`
+	// ExpiresIn changes with State: the code's lifetime while sent, the ticket's once verified.
+	ExpiresIn int `json:"expires_in" required:"true" description:"How long the code or the proved ticket lives, in whole seconds"`
+	// ResendAfter is how soon another code may be asked for, in whole seconds;
+	// absent once the identifier is proved.
+	ResendAfter int `json:"resend_after,omitempty" description:"How soon another code may be asked for, in whole seconds; absent once the identifier is proved"`
 }
 
-// passwordResetState is the internal name of that reply.
 type passwordResetState = AuthnLoginPasswordResetState
 
-// answerInput is the body of POST flows/answer.
 type answerInput struct {
 	_ struct{} "description:\"One answer to the bound flow: which step is being answered, the step number to echo, and the fields the step takes.\""
 
 	Seq   int               "json:\"seq\" description:\"The `seq` of the flow as last returned. It must equal the record's current step number; a stale or future value is a 401 flow-invalid.\""
 	Step  string            "json:\"step\" description:\"The step being answered: `answer` for a first-factor submission, only while the flow is at the first factor; `factor` for a second-factor step, only at the second factor; `enroll` for an enrollment step, only at the enroll state; `complete` to take the result of a ready flow. A name outside this set is a 400 bad-request, and a step that does not match the flow's state is a 401 flow-invalid.\""
 	Input map[string]string "json:\"input\" description:\"The fields the step takes, as name-to-value strings. At most 8 members, each value at most 8 KiB; a second-factor step reads `factor` to choose the factor and then the values that factor asks for, an enrollment step reads `kind`, and `complete` reads nothing.\""
-	// HumanProof is the proof the deployment's human-verification gate checks
-	// before a verification message is sent; see startInput.HumanProof.
+	// HumanProof is the proof checked before this request sends a message.
 	HumanProof string `json:"human_proof" description:"The human-verification proof the deployment may require before it sends a verification message: a Turnstile token, a captcha answer or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent."`
 }
 
-// callbackInput is the path of a provider callback: the provider segment the
-// flow recorded.
 type callbackInput struct {
 	Provider string "path:\"provider\" description:\"The provider this callback is for: a social method's stable name, or, for an enterprise SSO provider, the identifier the start named in `input.provider`. It must equal the provider recorded in the flow the callback is bound to; a mismatch is a 401 flow-invalid and the callback never reaches a method.\""
 }
 
-// challengeHeader declares the header every 401 on this module's routes carries:
-// the gateway writes the endpoint's challenge when it refuses the request first,
-// and a handler that answers 401 itself returns it in the fault's headers.
 var challengeHeader = speedhttp.Header{
 	Name:        "WWW-Authenticate",
 	Description: "The capability's challenge: the Bearer and Cookie schemes, never Basic.",
 }
 
-// retryAfterHeader declares the header a 429 carries when the back-off states a
-// delay, and a 503 carries when the password derivation is refused for capacity.
 var retryAfterHeader = speedhttp.Header{
 	Name:        "Retry-After",
 	Description: "Whole seconds to wait before retrying, when the back-off states a delay; absent otherwise.",
 }
 
-// locationHeader declares the header a redirect answer carries.
 var locationHeader = speedhttp.Header{
 	Name:        "Location",
 	Description: "The flow's stored return target, or the configured `authn.login.default-return-to` when the flow recorded none.",
 }
 
-// landingHeader is the Location of a refused callback landed in the product.
 var landingHeader = speedhttp.Header{
 	Name:        "Location",
 	Description: "The configured `authn.login.callback-error-return-to`, with the problem code in the `authn_error` fragment.",
 }
 
-// unauthorized is the declaration of a 401 that carries the capability's
-// challenge.
 func unauthorized(description string) speedhttp.Response {
 	response := speedhttp.ProblemResponse(http.StatusUnauthorized, description)
 	response.Headers = []speedhttp.Header{challengeHeader}
 	return response
 }
 
-// throttled is the declaration of a 429 that may carry a retry delay.
 func throttled(description string) speedhttp.Response {
 	response := speedhttp.ProblemResponse(http.StatusTooManyRequests, description)
 	response.Headers = []speedhttp.Header{retryAfterHeader}
 	return response
 }
 
-// gatewayFailure is the declaration of a 503 that may carry a retry delay: the
-// password derivation refused for capacity answers one.
 func gatewayFailure(description string) speedhttp.Response {
 	response := speedhttp.ProblemResponse(http.StatusServiceUnavailable, description)
 	response.Headers = []speedhttp.Header{retryAfterHeader}
 	return response
 }
 
-// unavailableAnswer is the declaration of a 503 on a route that cannot refuse
-// for capacity, so it never carries a retry delay.
 var unavailableAnswer = speedhttp.ProblemResponse(http.StatusServiceUnavailable,
 	"A dependency could not answer")
 
-// capabilityProblem is an answer the entry point writes itself, before a handler
-// runs: a body it could not bind. Its problem type is the capability's code for
-// the status, so a body refused before the handler is answered in the same
-// vocabulary as one the handler refuses.
 func capabilityProblem(status int, code, description string) speedhttp.Response {
 	return speedhttp.ProblemResponseOf(status, description, typePrefix+code)
 }
 
-// bodyOverLimit is the 413 the endpoint's body limit answers with before a
-// route runs. It is a platform-wide answer and carries no capability code.
 var bodyOverLimit = speedhttp.ProblemResponse(http.StatusRequestEntityTooLarge,
 	"The request body is over the endpoint's limit")
 
-// jsonAnswer declares one JSON answer whose body is structure.
 func jsonAnswer(status int, description string, structure any) speedhttp.Response {
 	return speedhttp.Response{
 		Status:      status,
@@ -448,32 +470,18 @@ func jsonAnswer(status int, description string, structure any) speedhttp.Respons
 	}
 }
 
-// The common failures every route that runs a login method shares.
 var (
 	badRequestAnswer = capabilityProblem(http.StatusBadRequest, mount.CodeBadRequest,
 		"The body could not be read, or a value is outside its domain")
 	forbiddenAnswer = speedhttp.ProblemResponse(http.StatusForbidden,
 		"The method or the account is unavailable")
-	// sendForbiddenAnswer is the 403 of the routes that send a verification
-	// message: the refusal shared with the other routes, and the
-	// human-verification refusal a deployment may turn on.
 	sendForbiddenAnswer = speedhttp.ProblemResponse(http.StatusForbidden,
 		"The method or the account is unavailable, or a human-verification proof is missing or invalid "+
 			"(human-verification-required)")
-	// answerForbiddenAnswer is the 403 of the route that answers the current
-	// step of a flow. The route continues any flow, so it carries the account
-	// refusal shared with the other routes, the SMS prerequisite a second-factor
-	// challenge or an enrollment step carries, and the human-verification
-	// refusal a deployment may turn on a send.
 	answerForbiddenAnswer = speedhttp.ProblemResponse(http.StatusForbidden,
 		"The account is unavailable, or an SMS second-factor challenge or enrollment is refused because "+
 			"the account has no proved phone (phone-required), or a human-verification proof is missing "+
 			"or invalid (human-verification-required)")
-	// signedInForbiddenAnswer is the 403 of the flow route that runs on an
-	// identity already signed in. It carries the signup gate of `purpose=link`
-	// beside the refusal shared with the other routes, the SMS prerequisite an
-	// `enroll` flow for the SMS kind carries, and the human-verification
-	// refusal a deployment may turn on a step-up.
 	signedInForbiddenAnswer = speedhttp.ProblemResponse(http.StatusForbidden,
 		"The method or the account is unavailable, or a `purpose=link` flow is refused because the "+
 			"caller has an email address that is not proved (contact-required), or an SMS `purpose=enroll` "+
@@ -487,7 +495,6 @@ var (
 	dependencyAnswer = gatewayFailure("A dependency could not answer")
 )
 
-// methodsOperation declares the discovery route.
 var methodsOperation = speedhttp.NewReplyOperation[struct{}](
 	"authn.login.methods",
 	http.MethodGet,
@@ -509,7 +516,6 @@ var methodsOperation = speedhttp.NewReplyOperation[struct{}](
 	speedhttp.Public(),
 )
 
-// registerOperation declares the anonymous self-registration route.
 var registerOperation = speedhttp.NewReplyOperation[registerInput](
 	"authn.login.register",
 	http.MethodPost,
@@ -554,7 +560,6 @@ var registerOperation = speedhttp.NewReplyOperation[registerInput](
 	speedhttp.Public(),
 )
 
-// startOperation declares the route that starts a login flow.
 var startOperation = speedhttp.NewReplyOperation[startInput](
 	"authn.login.start",
 	http.MethodPost,
@@ -589,8 +594,6 @@ var startOperation = speedhttp.NewReplyOperation[startInput](
 	speedhttp.Public(),
 )
 
-// startAuthenticatedOperation declares the route that starts a link, step-up or
-// enrollment flow on the identity the gateway authenticated.
 var startAuthenticatedOperation = speedhttp.NewReplyOperation[startAuthenticatedInput](
 	"authn.login.startAuthenticated",
 	http.MethodPost,
@@ -628,8 +631,6 @@ var startAuthenticatedOperation = speedhttp.NewReplyOperation[startAuthenticated
 	},
 )
 
-// answerOperation declares the route that answers the current step of the flow
-// the request is bound to.
 var answerOperation = speedhttp.NewReplyOperation[answerInput](
 	"authn.login.answer",
 	http.MethodPost,
@@ -669,7 +670,6 @@ var answerOperation = speedhttp.NewReplyOperation[answerInput](
 	speedhttp.Public(),
 )
 
-// currentOperation declares the read of the flow the request is bound to.
 var currentOperation = speedhttp.NewReplyOperation[struct{}](
 	"authn.login.current",
 	http.MethodGet,
@@ -691,7 +691,6 @@ var currentOperation = speedhttp.NewReplyOperation[struct{}](
 	speedhttp.Public(),
 )
 
-// abandonOperation declares the removal of the flow the request is bound to.
 var abandonOperation = speedhttp.NewReplyOperation[struct{}](
 	"authn.login.abandon",
 	http.MethodDelete,
@@ -711,7 +710,6 @@ var abandonOperation = speedhttp.NewReplyOperation[struct{}](
 	speedhttp.Public(),
 )
 
-// callbackResponses are the answers both callback methods share.
 var callbackResponses = []speedhttp.Response{
 	jsonAnswer(http.StatusOK, "The flow, advanced by the callback, as answered to an API callback: a token-delivery login whose callback declares no navigation. A login that declares a navigation is answered 303 instead.", AuthnLoginFlow{}),
 	{
@@ -735,7 +733,6 @@ var callbackResponses = []speedhttp.Response{
 	unavailableAnswer,
 }
 
-// callbackGetOperation declares a callback delivered as a browser navigation.
 var callbackGetOperation = speedhttp.NewReplyOperation[callbackInput](
 	callbackGetID,
 	http.MethodGet,
@@ -759,8 +756,6 @@ var callbackGetOperation = speedhttp.NewReplyOperation[callbackInput](
 	speedhttp.Public(),
 )
 
-// callbackPostResponses are the answers of the route a provider's cross-site
-// form post reaches.
 var callbackPostResponses = []speedhttp.Response{
 	{
 		Status: http.StatusOK,
@@ -801,7 +796,6 @@ var callbackPostResponses = []speedhttp.Response{
 	unauthorized("The posted body is over the 512 KiB bound or does not parse (login-failed)"),
 }
 
-// callbackPostOperation declares a callback delivered as a cross-site form post.
 var callbackPostOperation = speedhttp.NewReplyOperation[callbackInput](
 	callbackPostID,
 	http.MethodPost,
@@ -820,7 +814,6 @@ var callbackPostOperation = speedhttp.NewReplyOperation[callbackInput](
 	speedhttp.Public(),
 )
 
-// callbackResumeOperation declares the post the bounce page sends.
 var callbackResumeOperation = speedhttp.NewReplyOperation[callbackInput](
 	callbackResumeID,
 	http.MethodPost,
@@ -849,8 +842,6 @@ var callbackResumeOperation = speedhttp.NewReplyOperation[callbackInput](
 	speedhttp.Public(),
 )
 
-// passwordResetStartOperation declares the first step of an anonymous password
-// reset.
 var passwordResetStartOperation = speedhttp.NewReplyOperation[passwordResetStartInput](
 	"authn.login.passwordResetStart",
 	http.MethodPost,
@@ -883,7 +874,6 @@ var passwordResetStartOperation = speedhttp.NewReplyOperation[passwordResetStart
 	speedhttp.Public(),
 )
 
-// passwordResetCurrentOperation declares the read of the bound reset.
 var passwordResetCurrentOperation = speedhttp.NewReplyOperation[struct{}](
 	"authn.login.passwordResetCurrent",
 	http.MethodGet,
@@ -904,7 +894,6 @@ var passwordResetCurrentOperation = speedhttp.NewReplyOperation[struct{}](
 	speedhttp.Public(),
 )
 
-// passwordResetDeleteOperation declares the abandonment of the bound reset.
 var passwordResetDeleteOperation = speedhttp.NewReplyOperation[struct{}](
 	"authn.login.passwordResetDelete",
 	http.MethodDelete,
@@ -921,8 +910,6 @@ var passwordResetDeleteOperation = speedhttp.NewReplyOperation[struct{}](
 	speedhttp.Public(),
 )
 
-// passwordResetVerifyOperation declares the code check of an anonymous password
-// reset.
 var passwordResetVerifyOperation = speedhttp.NewReplyOperation[passwordResetVerifyInput](
 	"authn.login.passwordResetVerify",
 	http.MethodPost,
@@ -953,7 +940,6 @@ var passwordResetVerifyOperation = speedhttp.NewReplyOperation[passwordResetVeri
 	speedhttp.Public(),
 )
 
-// passwordResetCompleteOperation declares the write of a proved reset.
 var passwordResetCompleteOperation = speedhttp.NewReplyOperation[passwordResetCompleteInput](
 	"authn.login.passwordResetComplete",
 	http.MethodPost,
@@ -987,9 +973,6 @@ var passwordResetCompleteOperation = speedhttp.NewReplyOperation[passwordResetCo
 	speedhttp.Public(),
 )
 
-// loginOperations is the declaration of the engine's own routes. The account
-// self-service operations are added to it below, so the fragment is generated
-// from one list.
 var loginOperations = speedhttp.Operations{
 	methodsOperation,
 	registerOperation,
@@ -1008,15 +991,9 @@ var loginOperations = speedhttp.Operations{
 	callbackResumeOperation,
 }
 
-// operations is this module's declaration of the API it serves. The fragment is
-// generated from it; the routes are mounted from the same declarations.
 var operations = append(loginOperations, selfservice.Operations()...)
 
-// mountRel turns a declared route into the relative path the mounter joins to
-// its base. The declaration writes the route against the module's API root, and
-// the part of the mounter's default base the capability owns is the default base
-// less that root. Removing it leaves the relative path the mounter takes,
-// whatever base the deployment configured.
+// mountRel removes the part of the mounter's default base the module owns, so the route mounts under whatever base is configured.
 func mountRel(declared string) string {
 	owned := strings.TrimPrefix(mount.DefaultBasePath, loginSpec.APIRoot())
 	rel, found := strings.CutPrefix(declared, owned)
@@ -1027,14 +1004,10 @@ func mountRel(declared string) string {
 	return rel
 }
 
-// stepUpChallenge is the WWW-Authenticate value of a step-up refusal.
 func stepUpChallenge(id authn.Identity, r authn.Requirement) string {
 	return stepup.Challenge(id, r)
 }
 
-// stepUpFault is the 401 of an identity that does not meet a requirement: the
-// insufficient_user_authentication type and the challenge carrying the identity's
-// scheme and the requirement's level and window.
 func stepUpFault(id authn.Identity, r authn.Requirement) speedhttp.Fault {
 	return speedhttp.Fault{
 		Status: http.StatusUnauthorized,

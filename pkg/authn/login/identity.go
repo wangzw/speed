@@ -13,10 +13,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// statusIdentity builds the identity a verifying backend would build from a
-// session's status, for reading the freshness a completion review requires. It
-// stamps no backend and no challenge: it is used for a judgement, not for a
-// request.
 func statusIdentity(st authn.SessionStatus) authn.Identity {
 	return identity.New(authn.Principal{
 		Account:    st.Account,
@@ -28,9 +24,7 @@ func statusIdentity(st authn.SessionStatus) authn.Identity {
 	}, "", "")
 }
 
-// sessionOwns reports whether a session is the one an identity was built from:
-// the account the row belongs to is the identity's account, or, for an
-// impersonating identity, the actor's account and a row that names a record.
+// sessionOwns accepts the flow's account, or during impersonation the operator's account and a row that names a record.
 func sessionOwns(id authn.Identity, st authn.SessionStatus) bool {
 	if id.Impersonating() {
 		return st.Account == id.Actor() && st.ImpersonationID != ""
@@ -38,12 +32,7 @@ func sessionOwns(id authn.Identity, st authn.SessionStatus) bool {
 	return st.Account == id.Account()
 }
 
-// idpAttributes is the idp.* snapshot an external identity's attribute mapping
-// produced, held to the bound the session payload carries: at most the declared
-// number of entries, a key within the declared length including the prefix, and
-// a value cut at a character boundary to the declared length. A key outside the
-// reserved prefix is dropped, since only the mapping's own attributes belong in
-// the snapshot.
+// idpAttributes drops a key outside the reserved idp. prefix and cuts the key and value to the session payload's bounds.
 func idpAttributes(ext *authn.External) map[string]string {
 	if ext == nil || len(ext.Attributes) == 0 {
 		return nil
@@ -67,8 +56,6 @@ func idpAttributes(ext *authn.External) map[string]string {
 	return out
 }
 
-// cutUTF8 shortens s to at most n bytes without splitting a character, and
-// returns s itself when it is already within the bound.
 func cutUTF8(s string, n int) string {
 	if len(s) <= n {
 		return s
@@ -80,20 +67,14 @@ func cutUTF8(s string, n int) string {
 	return cut
 }
 
-// The audit action of a login, and the event payloads' field sources.
 const actionLogin = "authn.login"
 
-// The audit results of a login that did not succeed. The metric's set names
-// failed, while the audit table's names failure; the two are kept apart here.
 const (
 	auditOutcomeFailure   = "failure"
 	auditOutcomeThrottled = "throttled"
 	auditOutcomeRefused   = "refused"
 )
 
-// loginAuditOutcome maps a terminal metric outcome to the audit result of
-// authn.login. success is written by auditLogin, which carries the session, the
-// methods and the derived identity; unavailable is outside the audit result set.
 func loginAuditOutcome(outcome string) (string, bool) {
 	switch outcome {
 	case outcomeFailed:
@@ -106,16 +87,7 @@ func loginAuditOutcome(outcome string) (string, bool) {
 	return "", false
 }
 
-// auditLoginOutcome writes the audit row of a login that ended on a failed,
-// throttled or refused outcome. The object is the account identifier when the
-// flow already knew one, and empty otherwise; the actor stays empty, because a
-// login that failed proved nobody. The detail carries only the method and the
-// delivery, never the input or a free-text reason. A flow of another purpose is
-// not a login and writes nothing.
-//
-// The row is best-effort: a failure is an Error and a count on
-// authn.audit.write-failures with mandatory=false, and the login's own answer is
-// unchanged.
+// auditLoginOutcome writes only the method and delivery as detail, never the input or a free-text reason.
 func (r *routes) auditLoginOutcome(ctx context.Context, rec record, outcome string) {
 	if r.audit == nil || rec.Purpose != authn.PurposeLogin {
 		return
@@ -133,12 +105,6 @@ func (r *routes) auditLoginOutcome(ctx context.Context, rec record, outcome stri
 	}
 }
 
-// auditLogin writes the login audit row. The row's actor is the account the
-// login just proved, which is carried by a context derived for this one call:
-// identity.With puts an identity into it, and the context reaches the audit
-// record alone. It is never handed to a handler and never becomes the request's
-// own context, so it does not flow back into the request chain. The row is
-// best-effort: a failure is an Error and never fails the login.
 func (r *routes) auditLogin(c *call, rec record, account authn.AccountID, session authn.SessionID, methods []authn.Method, result authn.MFAResult) {
 	if r.audit == nil {
 		return
@@ -167,8 +133,6 @@ func (r *routes) auditLogin(c *call, rec record, account authn.AccountID, sessio
 	}
 }
 
-// publishLogin publishes authn.login.succeeded. A failure is a Warn and never
-// blocks the login: an event is a hint.
 func (r *routes) publishLogin(ctx context.Context, account authn.AccountID, session authn.SessionID, methods []authn.Method, result authn.MFAResult, delivery string) {
 	if r.bus == nil {
 		return
@@ -190,18 +154,8 @@ func (r *routes) publishLogin(ctx context.Context, account authn.AccountID, sess
 	}
 }
 
-// The audit action of a completed link, from the capability's closed action
-// table. It is in the best-effort tier beside the unlink path's own action.
 const actionBindingLink = "authn.binding.link"
 
-// flowIdentity is the identity a flow's terminal action is audited under,
-// derived from the flow record. The account is the effective account the action
-// lands on. An impersonating flow also carries the operator that started it,
-// the grant's tenant and the session it runs in, so the journal writes the row's
-// actor as the operator and its on_behalf_of, impersonation_scope and session
-// detail from the impersonated account, the scope and the session. A flow the
-// account's own holder started has no actor, so its row's actor is that account
-// and the journal adds no impersonation detail.
 func (r *routes) flowIdentity(rec record) authn.Identity {
 	p := authn.Principal{
 		Account:  authn.AccountID(rec.Account),
@@ -215,27 +169,10 @@ func (r *routes) flowIdentity(rec record) authn.Identity {
 	return identity.New(p, "", "")
 }
 
-// flowAuditContext is the context one terminal audit write of a flow is made
-// under. The flow's routes are public, so the request carries no identity and
-// the row would otherwise lose the operator; the context is derived for this one
-// call and is never handed to a handler or written back to the request.
 func (r *routes) flowAuditContext(ctx context.Context, rec record) context.Context {
 	return identity.With(ctx, r.flowIdentity(rec))
 }
 
-// auditBindingLink writes the best-effort audit row of a completed link: a
-// failure is an Error and never fails the link. The object is the account the
-// identity was bound to and the detail names the provider class, which is the
-// shape the unlink path records its own row in.
-//
-// The row's actor is the operator the flow was started by and, under an
-// impersonation, the detail carries the impersonated account, the grant's tenant
-// and the session; a link the account's own holder made has that account as its
-// actor. The flow's routes are public, so the request carries no identity and
-// the row would otherwise be written without one; the context it is written
-// under is derived from the flow's record for this one call, exactly as
-// auditLogin derives its own. It is handed to no handler and never becomes the
-// request's context.
 func (r *routes) auditBindingLink(c *call, rec record, provider string) {
 	if r.audit == nil {
 		return
@@ -258,10 +195,7 @@ func (r *routes) auditBindingLink(c *call, rec record, provider string) {
 	}
 }
 
-// publishBinding publishes authn.binding.changed for a completed link. The
-// provider class is the closed set the payload carries; a provider written in
-// none of the classes publishes no event rather than one with a value outside
-// the set, exactly as the unlink path does.
+// publishBinding publishes authn.binding.changed only for a provider in the payload's closed class set.
 func (r *routes) publishBinding(ctx context.Context, account authn.AccountID, provider string) {
 	if r.bus == nil {
 		return
@@ -284,9 +218,6 @@ func (r *routes) publishBinding(ctx context.Context, account authn.AccountID, pr
 	}
 }
 
-// bindingProviderClass is the class of a provider in the closed set the
-// authn.binding.changed payload carries: google, github, wechat, oidc or saml.
-// A provider written in none of the namespaces has no class.
 func bindingProviderClass(provider string) (string, bool) {
 	switch {
 	case provider == "google", provider == "github", provider == "wechat":
@@ -301,8 +232,6 @@ func bindingProviderClass(provider string) (string, bool) {
 	return "", false
 }
 
-// assuranceName is the level's name, never its number, as the event payload
-// carries it.
 func assuranceName(a authn.Assurance) string {
 	switch a {
 	case authn.AssuranceMulti:

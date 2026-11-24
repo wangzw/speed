@@ -24,10 +24,8 @@ func cookieValue(w *httptest.ResponseRecorder, name string) (string, bool) {
 	return "", false
 }
 
-// TestAPasswordChangeSetsThenRotatesThenRevokesTheOthers holds the success path
-// call by call and in order. The write comes first because a revocation made
-// before it would sign the account's other sessions out for a change that then
-// failed; the cookie comes last, after the last call that can fail.
+// TestAPasswordChangeSetsThenRotatesThenRevokesTheOthers holds the
+// success path call by call and in order.
 func TestAPasswordChangeSetsThenRotatesThenRevokesTheOthers(t *testing.T) {
 	h := newHarness(t)
 	w := h.put("/password", newPassword)
@@ -52,10 +50,7 @@ func TestAPasswordChangeSetsThenRotatesThenRevokesTheOthers(t *testing.T) {
 	}
 }
 
-// TestTheHandlerDoesNotPublishThePasswordChangedEvent holds that the event of a
-// changed password is the password module's: it is published by Passwords.Set
-// and a second one from the handler would be a duplicate. The audit row is the
-// handler's.
+// TestTheHandlerDoesNotPublishThePasswordChangedEvent holds that Passwords.Set is the one publisher, so the handler must not duplicate it.
 func TestTheHandlerDoesNotPublishThePasswordChangedEvent(t *testing.T) {
 	h := newHarness(t)
 	h.put("/password", newPassword)
@@ -138,10 +133,7 @@ func TestAFailedPasswordWriteRevokesNothing(t *testing.T) {
 	}
 }
 
-// TestAFailedRotationStillRevokesTheOtherSessions holds that the half of the
-// settling that protects the account is not skipped because the other half
-// failed, that no cookie is written for a token that was not issued, and that
-// the answer is the 503 of a state that is in force and unfinished.
+// TestAFailedRotationStillRevokesTheOtherSessions holds that the protective half still runs, no cookie is written and the answer is 503.
 func TestAFailedRotationStillRevokesTheOtherSessions(t *testing.T) {
 	h := newHarness(t)
 	h.sessions.rotateErr = authn.ErrUnavailable
@@ -160,10 +152,7 @@ func TestAFailedRotationStillRevokesTheOtherSessions(t *testing.T) {
 	}
 }
 
-// TestAFailedRotationWritesNoCookieEvenWithAReturnedToken holds the guard's
-// other half: when the rotation reports an error, no cookie is written even
-// though the same call also handed back a token, because the failure is what
-// says the new token does not stand and the old one may still be valid.
+// TestAFailedRotationWritesNoCookieEvenWithAReturnedToken holds that a rotation error means no cookie, whatever token came back.
 func TestAFailedRotationWritesNoCookieEvenWithAReturnedToken(t *testing.T) {
 	h := newHarness(t)
 	h.sessions.rotateErr = authn.ErrUnavailable
@@ -176,9 +165,7 @@ func TestAFailedRotationWritesNoCookieEvenWithAReturnedToken(t *testing.T) {
 	}
 }
 
-// TestAFailedRevocationStillWritesTheRotatedToken holds that once the token was
-// rotated the response carries the new one, because the old one no longer holds
-// and the caller would otherwise be signed out of the session it just proved.
+// TestAFailedRevocationStillWritesTheRotatedToken holds that the new token is returned since the old no longer holds.
 func TestAFailedRevocationStillWritesTheRotatedToken(t *testing.T) {
 	h := newHarness(t)
 	h.sessions.revokeErr = authn.ErrUnavailable
@@ -191,9 +178,7 @@ func TestAFailedRevocationStillWritesTheRotatedToken(t *testing.T) {
 	}
 }
 
-// TestASessionThatIsGoneIsTheGatewaysAnswer holds that a session revoked between
-// the request's authentication and its rotation is a 401, not a 503 that invites
-// a retry on a session that will never be valid again.
+// TestASessionThatIsGoneIsTheGatewaysAnswer holds that a session revoked before rotation is a 401, not a retryable 503.
 func TestASessionThatIsGoneIsTheGatewaysAnswer(t *testing.T) {
 	h := newHarness(t)
 	h.sessions.rotateErr = authn.ErrSessionRevoked
@@ -202,10 +187,7 @@ func TestASessionThatIsGoneIsTheGatewaysAnswer(t *testing.T) {
 	}
 }
 
-// TestAPasswordRequestBodyIsHeldToTheSharedDecoder holds that the body is read by
-// the shared decoder, which is where the media type, the unknown fields and the
-// trailing data are refused, and that a password that is not given is refused
-// here. None reaches the password module.
+// TestAPasswordRequestBodyIsHeldToTheSharedDecoder holds that the shared decoder refuses media type, unknown fields and trailing data, and a missing password.
 func TestAPasswordRequestBodyIsHeldToTheSharedDecoder(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -234,9 +216,7 @@ func TestAPasswordRequestBodyIsHeldToTheSharedDecoder(t *testing.T) {
 	}
 }
 
-// TestNoPasswordIsInAnAnswerOrALogLine drives a password and the current one
-// through every failure the write can give and holds that neither is in the
-// answer or in anything logged.
+// TestNoPasswordIsInAnAnswerOrALogLine drives every failure and holds neither password in the answer or the log.
 func TestNoPasswordIsInAnAnswerOrALogLine(t *testing.T) {
 	for _, err := range []error{authn.ErrPasswordPolicy, authn.ErrInvalidCredentials, authn.ErrUnavailable, errors.New("driver: broken pipe")} {
 		h := newHarness(t)

@@ -15,9 +15,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The stand-ins a driven registry is built from: one module that delivers the
-// configuration reader and one that delivers the logging capability, each as its
-// own module does.
 const (
 	configModule = "stand-in.config"
 	logModule    = "stand-in.log"
@@ -37,8 +34,6 @@ func standInLog() core.Module {
 	}
 }
 
-// fakeReader is a configuration reader whose values a case chooses. It answers
-// the two sections the module reads: its own and the gateway's.
 type fakeReader struct {
 	appID     string
 	appSecret string
@@ -75,8 +70,6 @@ func (f *fakeReader) Decode(path string, target any) error {
 	return nil
 }
 
-// recordingRedaction records the pattern a module registered, so a case can
-// apply it the way the logging layer would.
 type recordingRedaction struct {
 	pattern string
 	match   log.Matcher
@@ -87,7 +80,6 @@ func (r *recordingRedaction) AddPattern(name string, m log.Matcher) {
 	r.pattern, r.match = name, m
 }
 
-// recordingLogger is the smallest logging capability a host supplies for a test.
 type recordingLogger struct{ r *recordingRedaction }
 
 func (l *recordingLogger) Named(string) *slog.Logger { return slog.New(slog.DiscardHandler) }
@@ -124,8 +116,6 @@ func mask(m log.Matcher, value string) string {
 	return b.String()
 }
 
-// buildRegistry registers this module beside the stand-ins and supplies the
-// reader and the logger under their modules.
 func buildRegistry(reader config.Reader, logger log.Logger) *core.Registry {
 	reg := core.New()
 	reg.Register(Module())
@@ -140,6 +130,7 @@ func fullReader() *fakeReader {
 	return &fakeReader{appID: testAppID, appSecret: testAppSecret, publicURL: "https://app.example.com"}
 }
 
+// TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt checks the non-exclusive method, optional logger and config schema.
 func TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt(t *testing.T) {
 	m := Module()
 	if m.Name != "authn.login.wechat-web" || ModuleName != "authn.login.wechat-web" {
@@ -162,6 +153,8 @@ func TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt(t *testing.T) {
 	}
 }
 
+// TestPrepareStatesEnabledWhenTheConfigurationIsComplete checks that Prepare
+// reports the module enabled when the configuration is complete.
 func TestPrepareStatesEnabledWhenTheConfigurationIsComplete(t *testing.T) {
 	reg := buildRegistry(fullReader(), &recordingLogger{r: &recordingRedaction{}})
 	got, err := Module().Prepare(context.Background(), reg)
@@ -173,9 +166,7 @@ func TestPrepareStatesEnabledWhenTheConfigurationIsComplete(t *testing.T) {
 	}
 }
 
-// TestPrepareFailsOnAMissingRequiredItem holds that an assembly that names the
-// module but omits an item it needs fails at startup with ErrInvalidConfig, the
-// secret never named.
+// TestPrepareFailsOnAMissingRequiredItem holds that a missing required item fails startup with ErrInvalidConfig and no secret named.
 func TestPrepareFailsOnAMissingRequiredItem(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -199,10 +190,7 @@ func TestPrepareFailsOnAMissingRequiredItem(t *testing.T) {
 	}
 }
 
-// TestARealRegistryDeliversTheMethodAndBuildsTheCallbackAddress holds the wiring:
-// the method is delivered over the capabilities the registry resolved, and the
-// callback address it sends the provider is built from the module's redirect
-// route and the gateway's public address.
+// TestARealRegistryDeliversTheMethodAndBuildsTheCallbackAddress holds that the callback comes from the redirect route and the gateway's public address.
 func TestARealRegistryDeliversTheMethodAndBuildsTheCallbackAddress(t *testing.T) {
 	reg := buildRegistry(fullReader(), &recordingLogger{r: &recordingRedaction{}})
 	var methods []authn.LoginMethod
@@ -233,10 +221,7 @@ func TestARealRegistryDeliversTheMethodAndBuildsTheCallbackAddress(t *testing.T)
 	}
 }
 
-// TestNewRegistersTheSecretAsALiteralRedactionRule holds the ADR's invariant at
-// the logging boundary: the application secret is registered so that it is
-// masked wherever it turns up in a log line, in each form a log line may carry
-// it.
+// TestNewRegistersTheSecretAsALiteralRedactionRule holds that the secret is masked in every form a log line may carry.
 func TestNewRegistersTheSecretAsALiteralRedactionRule(t *testing.T) {
 	red := &recordingRedaction{}
 	reg := buildRegistry(fullReader(), &recordingLogger{r: red})
@@ -260,6 +245,8 @@ func TestNewRegistersTheSecretAsALiteralRedactionRule(t *testing.T) {
 	}
 }
 
+// TestACommandWithoutTheConfigurationReaderFailsToBuild checks that a command
+// without the configuration reader fails to build.
 func TestACommandWithoutTheConfigurationReaderFailsToBuild(t *testing.T) {
 	reg := core.New()
 	reg.Register(Module())
@@ -276,6 +263,8 @@ func TestACommandWithoutTheConfigurationReaderFailsToBuild(t *testing.T) {
 	}
 }
 
+// TestImportingThePackageRegistersTheModuleWithTheProcess checks that importing
+// the package registers the module with the process registry.
 func TestImportingThePackageRegistersTheModuleWithTheProcess(t *testing.T) {
 	got, ok := core.ProcessRegistry.Lookup(ModuleName)
 	if !ok {
@@ -286,9 +275,7 @@ func TestImportingThePackageRegistersTheModuleWithTheProcess(t *testing.T) {
 	}
 }
 
-// TestPrepareStandsDownWhenNoCredentialIsGiven holds the unconfigured case: a
-// deployment that gave neither credential did not configure the method, so it is
-// absent from the run without failing the startup.
+// TestPrepareStandsDownWhenNoCredentialIsGiven holds that neither credential means the method is absent without failing startup.
 func TestPrepareStandsDownWhenNoCredentialIsGiven(t *testing.T) {
 	reg := buildRegistry(&fakeReader{}, &recordingLogger{r: &recordingRedaction{}})
 	got, err := Module().Prepare(context.Background(), reg)
@@ -303,9 +290,7 @@ func TestPrepareStandsDownWhenNoCredentialIsGiven(t *testing.T) {
 	}
 }
 
-// TestPrepareRefusesAnIllegalPublicAddress holds the required gateway item: a
-// public address that is not an origin stops the startup before a redirect is
-// built from it.
+// TestPrepareRefusesAnIllegalPublicAddress holds that a public address that is not an origin stops startup.
 func TestPrepareRefusesAnIllegalPublicAddress(t *testing.T) {
 	reader := &fakeReader{appID: testAppID, appSecret: testAppSecret, publicURL: "not an origin"}
 	reg := buildRegistry(reader, &recordingLogger{r: &recordingRedaction{}})
@@ -315,9 +300,7 @@ func TestPrepareRefusesAnIllegalPublicAddress(t *testing.T) {
 	}
 }
 
-// TestPreparePropagatesAReaderFailure holds that a failure to read the module's
-// section fails the start rather than being swallowed into a half-configured,
-// unusable method.
+// TestPreparePropagatesAReaderFailure holds that a section read failure fails the start rather than half-configuring the method.
 func TestPreparePropagatesAReaderFailure(t *testing.T) {
 	boom := errors.New("the section cannot be read")
 	reg := buildRegistry(&fakeReader{err: boom}, &recordingLogger{r: &recordingRedaction{}})

@@ -54,7 +54,6 @@ var configDefaults = moduleConfig{
 	Concurrency: password.DefaultConcurrency(),
 }
 
-// moduleConfig is the set of input items this module accepts.
 type moduleConfig struct {
 	// Subjects maps each subject to its password entry, in the format
 	// ParseHash reads. The value is a hash rather than a password: this
@@ -70,7 +69,6 @@ type moduleConfig struct {
 	Concurrency int `config:"concurrency"`
 }
 
-// options carries the four settings items and their declared defaults.
 type options struct {
 	CacheTTL     time.Duration `config:"cache-ttl"`
 	FreeAttempts int           `config:"free-attempts"`
@@ -119,7 +117,6 @@ type resolved struct {
 	secrets []string
 }
 
-// resolve turns decoded configuration into what the module runs on.
 func (c moduleConfig) resolve() (resolved, error) {
 	if c.CacheSize < 1 || c.CacheSize > maxCacheSize {
 		return resolved{}, fmt.Errorf("%w: %s.%s is %d, and the cache holds from 1 to %d checks",
@@ -157,7 +154,6 @@ func (c moduleConfig) resolve() (resolved, error) {
 	return r, nil
 }
 
-// schema declares this module's input items.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,
@@ -182,8 +178,6 @@ func schema() config.Schema {
 	}
 }
 
-// settingsSchema declares this module's runtime parameters, each with the domain
-// the code acts on.
 func settingsSchema() settings.Schema {
 	return settings.Schema{
 		Namespace: ConfigNamespace,
@@ -213,8 +207,6 @@ func settingsSchema() settings.Schema {
 	}
 }
 
-// readConfig decodes this module's section and validates it. Prepare and New
-// both go through it, so the two see one table.
 func readConfig(reader config.Reader) (resolved, error) {
 	var cfg moduleConfig
 	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {

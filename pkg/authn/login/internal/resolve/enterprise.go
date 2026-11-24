@@ -10,8 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// membershipSource is the Membership.Source of an account an enterprise
-// provider created, followed by the provider's identifier.
 const membershipSource = "jit:"
 
 // enterpriseUnbound resolves an enterprise identity with no binding (A5). The

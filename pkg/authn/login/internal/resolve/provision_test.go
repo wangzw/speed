@@ -10,6 +10,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
+// TestProvisionerChangesDisplayNameAndAttributesAndNothingElse checks that the hook may change only those two fields.
 func TestProvisionerChangesDisplayNameAndAttributesAndNothingElse(t *testing.T) {
 	var gotVia string
 	var gotIn authn.CreateAccount
@@ -17,7 +18,6 @@ func TestProvisionerChangesDisplayNameAndAttributesAndNothingElse(t *testing.T) 
 		gotVia, gotIn = via, p.Clone()
 		p.DisplayName = "Ann (host)"
 		p.Attributes = map[string]string{"region": "eu"}
-		// What the host may not change.
 		p.ID, p.Kind = "forged", authn.KindService
 		p.Email, p.EmailVerifiedVia = "evil@x.org", authn.Verification{Via: authn.VerifiedViaAdmin}
 		p.Phone, p.PhoneVerifiedVia = "+1555", authn.Verification{Via: authn.VerifiedViaAdmin}
@@ -53,6 +53,8 @@ func TestProvisionerChangesDisplayNameAndAttributesAndNothingElse(t *testing.T) 
 	}
 }
 
+// TestProvisionerSeesTheViaOfEachFirstLogin checks that the hook sees via signup
+// for a social and a phone first login and via jit for an enterprise one.
 func TestProvisionerSeesTheViaOfEachFirstLogin(t *testing.T) {
 	var vias []string
 	hook := func(_ context.Context, p authn.CreateAccount, via string) (authn.CreateAccount, error) {
@@ -70,6 +72,8 @@ func TestProvisionerSeesTheViaOfEachFirstLogin(t *testing.T) {
 	}
 }
 
+// TestProvisionerRefusalCreatesNothing checks that a hook's refusal is reported
+// as a provision refusal, not an unavailable dependency, and creates no account.
 func TestProvisionerRefusalCreatesNothing(t *testing.T) {
 	refuse := func(context.Context, authn.CreateAccount, string) (authn.CreateAccount, error) {
 		return authn.CreateAccount{}, fmt.Errorf("no sign-ups from this domain: %w", authn.ErrProvisionRefused)
@@ -95,9 +99,8 @@ func TestProvisionerRefusalCreatesNothing(t *testing.T) {
 	}
 }
 
+// TestProvisionerFaultIsAnUnavailableDependencyAndCreatesNothing checks that a hook fault reads as unavailable and creates nothing.
 func TestProvisionerFaultIsAnUnavailableDependencyAndCreatesNothing(t *testing.T) {
-	// The hook's own error does not pass for one of the sentinels the engine maps
-	// to another answer, whatever it wraps.
 	fault := func(context.Context, authn.CreateAccount, string) (authn.CreateAccount, error) {
 		return authn.CreateAccount{DisplayName: "half a result"}, fmt.Errorf("db down: %w", authn.ErrLinkRequired)
 	}
@@ -114,6 +117,8 @@ func TestProvisionerFaultIsAnUnavailableDependencyAndCreatesNothing(t *testing.T
 	}
 }
 
+// TestWithoutAProvisionerTheAccountIsMadeFromTheProvidersName checks that
+// without a hook the account takes the provider's name and no attributes.
 func TestWithoutAProvisionerTheAccountIsMadeFromTheProvidersName(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
 	res, err := e.resolve(social("github", "gh1", "", false))
@@ -125,6 +130,8 @@ func TestWithoutAProvisionerTheAccountIsMadeFromTheProvidersName(t *testing.T) {
 	}
 }
 
+// TestProvisionerIsNotAskedWhenNothingIsCreated checks that the hook is not
+// asked when the resolution creates no account.
 func TestProvisionerIsNotAskedWhenNothingIsCreated(t *testing.T) {
 	asked := 0
 	hook := func(_ context.Context, p authn.CreateAccount, _ string) (authn.CreateAccount, error) {
@@ -148,6 +155,8 @@ func TestProvisionerIsNotAskedWhenNothingIsCreated(t *testing.T) {
 	}
 }
 
+// TestProvisionerNameIsCutLikeTheProvidersOwn checks that a display name the hook
+// returns is cut to 100 characters like the provider's own.
 func TestProvisionerNameIsCutLikeTheProvidersOwn(t *testing.T) {
 	hook := func(_ context.Context, p authn.CreateAccount, _ string) (authn.CreateAccount, error) {
 		p.DisplayName = strings.Repeat("x", 300)
@@ -162,6 +171,8 @@ func TestProvisionerNameIsCutLikeTheProvidersOwn(t *testing.T) {
 	}
 }
 
+// TestProvisionerReturningOnlyANameLeavesTheRestOfTheAccountAlone checks that a
+// hook returning only a name leaves the rest of the account to the resolver.
 func TestProvisionerReturningOnlyANameLeavesTheRestOfTheAccountAlone(t *testing.T) {
 	hook := func(context.Context, authn.CreateAccount, string) (authn.CreateAccount, error) {
 		return authn.CreateAccount{DisplayName: "kept"}, nil
@@ -176,10 +187,7 @@ func TestProvisionerReturningOnlyANameLeavesTheRestOfTheAccountAlone(t *testing.
 	}
 }
 
-// TestAFirstLoginThatWouldOpenAnAccountParksAtThePendingSignup holds the pending
-// step: a social, SMS or enterprise login that would open an account resolves to
-// a pending signup, carries the facts the account will be opened with, and
-// writes nothing before a username is chosen.
+// TestAFirstLoginThatWouldOpenAnAccountParksAtThePendingSignup holds that the facts are carried and nothing is written before a username.
 func TestAFirstLoginThatWouldOpenAnAccountParksAtThePendingSignup(t *testing.T) {
 	for name, tc := range map[string]struct {
 		proof  authn.Proof
@@ -209,9 +217,7 @@ func TestAFirstLoginThatWouldOpenAnAccountParksAtThePendingSignup(t *testing.T) 
 	}
 }
 
-// TestAFirstLoginCreatesTheAccountWithTheCollectedUsername holds that the
-// username collected after the pending step is the one the account is created
-// with on all three paths that open an account.
+// TestAFirstLoginCreatesTheAccountWithTheCollectedUsername holds that the collected username is used on all three opening paths.
 func TestAFirstLoginCreatesTheAccountWithTheCollectedUsername(t *testing.T) {
 	for name, tc := range map[string]struct {
 		proof authn.Proof

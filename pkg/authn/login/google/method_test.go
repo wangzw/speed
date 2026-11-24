@@ -17,10 +17,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/step"
 )
 
-// TestTheHappyPathProvesAGoogleIdentity holds the whole flow: Begin draws the
-// state, the PKCE challenge and the nonce and answers the authorization URL, the
-// provider sends the user agent back with a code, and Answer exchanges it and
-// verifies the identity token.
+// TestTheHappyPathProvesAGoogleIdentity holds Begin's state, PKCE and nonce, the callback, and Answer's exchange and verification.
 func TestTheHappyPathProvesAGoogleIdentity(t *testing.T) {
 	r := newRig(t, resolved{})
 	private, authURL := r.begin(authn.PurposeLogin)
@@ -98,9 +95,7 @@ func TestTheMethodServesLoginLinkAndStepUp(t *testing.T) {
 	}
 }
 
-// TestBeginKeepsTheSecretsInThePrivateState holds that the private state carries
-// the PKCE verifier and the nonce but the state only as its digest, so a read of
-// the flow record yields no value an attacker could present as the state.
+// TestBeginKeepsTheSecretsInThePrivateState holds that the verifier and nonce stay private and the state is kept only as its digest.
 func TestBeginKeepsTheSecretsInThePrivateState(t *testing.T) {
 	r := newRig(t, resolved{})
 	private, authURL := r.begin(authn.PurposeLogin)
@@ -122,10 +117,7 @@ func TestBeginKeepsTheSecretsInThePrivateState(t *testing.T) {
 	}
 }
 
-// TestTheAuthorizationEndpointAcceptsTheS256Challenge is the design's named
-// assumption: the provider's authorization endpoint accepts a code_challenge
-// with the S256 method. The mock refuses any other request, so a redirect back
-// is the acceptance.
+// TestTheAuthorizationEndpointAcceptsTheS256Challenge holds that the provider's authorization endpoint accepts a code_challenge with S256.
 func TestTheAuthorizationEndpointAcceptsTheS256Challenge(t *testing.T) {
 	r := newRig(t, resolved{})
 	_, authURL := r.begin(authn.PurposeLogin)
@@ -165,11 +157,7 @@ func TestTheHostedDomainIsSentAndChecked(t *testing.T) {
 	}
 }
 
-// TestTheIdentityTokenChecks holds the checks on the token and the redirect that
-// the negative design lists: the state, the issuer, the audience, the expiry,
-// the nonce, the verifier and the subject. Each case starts a valid flow and
-// then breaks one thing; script may adjust the callback query and return a
-// replacement for the flow's private state.
+// TestTheIdentityTokenChecks holds the state, issuer, audience, expiry, nonce, verifier and subject checks.
 func TestTheIdentityTokenChecks(t *testing.T) {
 	past := time.Now().Add(-time.Hour).Unix()
 
@@ -282,9 +270,7 @@ func TestTheMultiAudienceAuthorizedPartyIsChecked(t *testing.T) {
 	}
 }
 
-// TestTheAlgorithmConfusionIsRefused holds that a token signed with none or with
-// HS256 is refused: the provider's key set is what verifies the signature, and
-// the symmetric algorithm could otherwise be confused with a bare secret.
+// TestTheAlgorithmConfusionIsRefused holds that a token signed with none or HS256 is refused.
 func TestTheAlgorithmConfusionIsRefused(t *testing.T) {
 	t.Run("none", func(t *testing.T) {
 		r := newRig(t, resolved{})
@@ -302,9 +288,6 @@ func TestTheAlgorithmConfusionIsRefused(t *testing.T) {
 		private, query := r.start(authn.PurposeLogin)
 		r.idp.signRaw = func(claims map[string]any) (string, error) {
 			payload, _ := json.Marshal(claims)
-			// A key long enough for HS256, so the only reason the token is
-			// refused is that the provider's key set is what verifies the
-			// signature and no symmetric algorithm is allowed.
 			signer, err := jose.NewSigner(
 				jose.SigningKey{Algorithm: jose.HS256, Key: []byte("0123456789abcdef0123456789abcdef")},
 				(&jose.SignerOptions{}).WithType("JWT"),
@@ -348,10 +331,7 @@ func TestTheEmailVerifiedFlagIsReadAsABoolean(t *testing.T) {
 	}
 }
 
-// TestTheProviderErrorParameterIsRefusedBeforeAnythingElse holds the design's
-// first step: a redirect carrying an error is refused before the state, the code
-// or the token endpoint is reached, so a callback that would otherwise prove is
-// still refused.
+// TestTheProviderErrorParameterIsRefusedBeforeAnythingElse holds that a redirect carrying an error is refused before state, code or token exchange.
 func TestTheProviderErrorParameterIsRefusedBeforeAnythingElse(t *testing.T) {
 	r := newRig(t, resolved{})
 	private, query := r.start(authn.PurposeLogin)
@@ -364,9 +344,7 @@ func TestTheProviderErrorParameterIsRefusedBeforeAnythingElse(t *testing.T) {
 	}
 }
 
-// TestAMissingCodeIsRefusedWithoutTouchingTheTokenEndpoint holds that a callback
-// with no authorization code is refused locally: the guard refuses it rather than
-// letting an empty code reach the token endpoint and come back rejected.
+// TestAMissingCodeIsRefusedWithoutTouchingTheTokenEndpoint holds that a callback without a code is refused locally.
 func TestAMissingCodeIsRefusedWithoutTouchingTheTokenEndpoint(t *testing.T) {
 	r := newRig(t, resolved{})
 	private, query := r.start(authn.PurposeLogin)
@@ -377,9 +355,7 @@ func TestAMissingCodeIsRefusedWithoutTouchingTheTokenEndpoint(t *testing.T) {
 	}
 }
 
-// TestAnAbsentIssuerParameterIsAccepted holds that the issuer comparison is made
-// only when the redirect carries an iss parameter (RFC 9207): a callback without
-// one is accepted, and the token's own issuer is what the library verifies.
+// TestAnAbsentIssuerParameterIsAccepted holds that the iss comparison happens only when the redirect carries one.
 func TestAnAbsentIssuerParameterIsAccepted(t *testing.T) {
 	r := newRig(t, resolved{})
 	private, query := r.start(authn.PurposeLogin)
@@ -389,9 +365,7 @@ func TestAnAbsentIssuerParameterIsAccepted(t *testing.T) {
 	}
 }
 
-// TestAnOutageIsAnOutageAndNotARefusal holds the failure direction: discovery
-// that fails, a token endpoint that fails and a token response without an
-// identity token are all answered as an outage, never as a refusal.
+// TestAnOutageIsAnOutageAndNotARefusal holds that failed discovery, a failed token endpoint and a missing identity token are outages.
 func TestAnOutageIsAnOutageAndNotARefusal(t *testing.T) {
 	t.Run("discovery fails", func(t *testing.T) {
 		r := newRig(t, resolved{})
@@ -415,11 +389,6 @@ func TestAnOutageIsAnOutageAndNotARefusal(t *testing.T) {
 		wantUnavailable(t, r.answer(private, query, authn.PurposeLogin))
 	})
 	t.Run("the key set cannot be reached is answered as a refusal", func(t *testing.T) {
-		// The library fetches the key set under the provider's own context and
-		// flattens the failure into the same error as a signature failure, so
-		// this path cannot tell the provider being unreachable apart from a
-		// token that does not verify, and answers a refusal. The test records
-		// the behaviour rather than a wished-for one.
 		r := newRig(t, resolved{})
 		r.idp.jwksURI = "https://127.0.0.1:1/jwks"
 		private, query := r.start(authn.PurposeLogin)
@@ -433,9 +402,7 @@ func TestAnOutageIsAnOutageAndNotARefusal(t *testing.T) {
 	})
 }
 
-// TestAMisroutedAnswerIsRefused holds that an answer that is not a redirect
-// back, a step the method did not name and a private state the method did not
-// write are all refused.
+// TestAMisroutedAnswerIsRefused holds that a non-redirect answer, an unnamed step and unwritten private state are refused.
 func TestAMisroutedAnswerIsRefused(t *testing.T) {
 	r := newRig(t, resolved{})
 	private, query := r.start(authn.PurposeLogin)
@@ -478,7 +445,6 @@ func TestNoCauseNamesAValueTheClientSent(t *testing.T) {
 	}
 }
 
-// proven asserts a proof and returns it.
 func proven(t *testing.T, got authn.Step) authn.Proof {
 	t.Helper()
 	if k := step.KindOf(got); k != step.KindProven {
@@ -487,7 +453,6 @@ func proven(t *testing.T, got authn.Step) authn.Proof {
 	return step.ProofOf(got)
 }
 
-// refused asserts a refusal.
 func refused(t *testing.T, got authn.Step) {
 	t.Helper()
 	if k := step.KindOf(got); k != step.KindRefused {
@@ -495,7 +460,6 @@ func refused(t *testing.T, got authn.Step) {
 	}
 }
 
-// unavailable asserts an outage.
 func wantUnavailable(t *testing.T, got authn.Step) {
 	t.Helper()
 	if k := step.KindOf(got); k != step.KindUnavailable {
@@ -503,10 +467,7 @@ func wantUnavailable(t *testing.T, got authn.Step) {
 	}
 }
 
-// TestBeginDrawsFreshRandomSecrets holds that each Begin draws a fresh, random
-// state, PKCE verifier and nonce: two calls yield different values, the state and
-// nonce are 32 random bytes in base64url, and the verifier is a 43..128 character
-// URL-safe PKCE verifier.
+// TestBeginDrawsFreshRandomSecrets holds that two calls differ and that state, nonce and verifier have their random shapes.
 func TestBeginDrawsFreshRandomSecrets(t *testing.T) {
 	r := newRig(t, resolved{})
 	priv1, authURL1 := r.begin(authn.PurposeLogin)
@@ -553,18 +514,14 @@ func TestBeginDrawsFreshRandomSecrets(t *testing.T) {
 	}
 }
 
-// TestABooleanClaimThatIsNeitherRefusesTheToken holds that an email_verified
-// value that is neither a boolean nor a string boolean — a number included —
-// refuses the whole token.
+// TestABooleanClaimThatIsNeitherRefusesTheToken holds that an email_verified value that is neither boolean nor string boolean refuses the token.
 func TestABooleanClaimThatIsNeitherRefusesTheToken(t *testing.T) {
 	r := newRig(t, resolved{})
 	r.idp.override = map[string]any{"email_verified": 1}
 	refused(t, r.run(authn.PurposeLogin))
 }
 
-// TestTheBooleanClaimReadsOnlyTheFormsItAccepts pins the branches of the boolean
-// claim: a bare or string true/false and JSON null are read; a number, the string
-// "null" and an object are errors.
+// TestTheBooleanClaimReadsOnlyTheFormsItAccepts pins the accepted boolean and null forms against the rejected ones.
 func TestTheBooleanClaimReadsOnlyTheFormsItAccepts(t *testing.T) {
 	cases := []struct {
 		name string
@@ -601,9 +558,7 @@ func TestTheBooleanClaimReadsOnlyTheFormsItAccepts(t *testing.T) {
 	}
 }
 
-// TestReadStateRefusesWhatItDidNotWrite pins every guard of readState: the
-// version, the three non-empty fields, the disallowed unknown fields and the
-// trailing content.
+// TestReadStateRefusesWhatItDidNotWrite pins the version, non-empty fields, unknown-field and trailing-content guards.
 func TestReadStateRefusesWhatItDidNotWrite(t *testing.T) {
 	if _, ok := readState(writeState(digest("s"), "v", "n")); !ok {
 		t.Fatal("readState refused what writeState wrote")
@@ -625,9 +580,7 @@ func TestReadStateRefusesWhatItDidNotWrite(t *testing.T) {
 	}
 }
 
-// TestThePublishedNamesAreLiterals holds the stable values of the code: the
-// method name, the provider name and the callback path are published and never
-// change.
+// TestThePublishedNamesAreLiterals holds the method name, provider name and callback path as stable literals.
 func TestThePublishedNamesAreLiterals(t *testing.T) {
 	if methodName != "google" {
 		t.Errorf("methodName = %q, want google", methodName)
@@ -643,9 +596,7 @@ func TestThePublishedNamesAreLiterals(t *testing.T) {
 	}
 }
 
-// TestNewMethodUsesTheResolvedIssuer holds that newMethod builds the provider
-// cache over the issuer the configuration resolved, so a mistyped issuer would
-// be caught.
+// TestNewMethodUsesTheResolvedIssuer holds that the provider cache is built over the configured issuer.
 func TestNewMethodUsesTheResolvedIssuer(t *testing.T) {
 	m := newMethod(resolved{clientID: "id", issuer: defaultIssuer}, nil)
 	if m.provider.issuer != defaultIssuer {
@@ -653,9 +604,7 @@ func TestNewMethodUsesTheResolvedIssuer(t *testing.T) {
 	}
 }
 
-// TestAnswerDiscoversTheProviderWhenTheCacheIsEmpty holds the Answer-side
-// discovery path: with an empty cache and a discovery that fails, the answer is
-// an outage rather than a nil provider dereference.
+// TestAnswerDiscoversTheProviderWhenTheCacheIsEmpty holds that a failed discovery there is an outage, not a nil dereference.
 func TestAnswerDiscoversTheProviderWhenTheCacheIsEmpty(t *testing.T) {
 	r := newRig(t, resolved{})
 	const state = "the-drawn-state"

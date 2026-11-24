@@ -42,15 +42,7 @@ var cookieOrigins = []cookieOrigin{
 	},
 }
 
-// TestEveryCookieTheEngineWritesIsNamedForThePublicURL enumerates the cookies the
-// engine writes on the start of a flow, its callback, the abandoning of a flow,
-// and the start and delete of a reset, so that the flow and the reset cookie are
-// each both set and cleared, and holds each Set-Cookie to what its public URL
-// gives: no prefix and no Secure on an http public URL, __Host- and Secure on
-// https, https on localhost included. Every one keeps HttpOnly, Path=/, no Domain
-// and its SameSite on both. The callback reads the flow cookie under that name
-// and completes the login; the session cookie it writes is the session module's,
-// and the rig's session fake writes none.
+// TestEveryCookieTheEngineWritesIsNamedForThePublicURL holds each set and clear to the name and Secure its public URL gives.
 func TestEveryCookieTheEngineWritesIsNamedForThePublicURL(t *testing.T) {
 	for _, origin := range cookieOrigins {
 		t.Run(origin.name, func(t *testing.T) {
@@ -146,10 +138,7 @@ func TestEveryCookieTheEngineWritesIsNamedForThePublicURL(t *testing.T) {
 	}
 }
 
-// TestABindingUnderTheOtherFormsNameIsNotFound holds that the engine reads the
-// flow and reset cookies under the one name its public URL gives: a live token
-// sent under the other form's name finds no binding, while the same token under
-// the right name does.
+// TestABindingUnderTheOtherFormsNameIsNotFound holds that a token under the other form's cookie name finds no binding.
 func TestABindingUnderTheOtherFormsNameIsNotFound(t *testing.T) {
 	for _, origin := range cookieOrigins {
 		t.Run(origin.name, func(t *testing.T) {
@@ -182,8 +171,6 @@ func TestABindingUnderTheOtherFormsNameIsNotFound(t *testing.T) {
 	}
 }
 
-// promptMethod is a password method whose first step is a prompt, so a start
-// leaves a live flow bound to its cookie.
 func promptMethod() *fakeMethod {
 	return &fakeMethod{name: "password", begin: func(authn.Start) (authn.Step, error) {
 		return authn.StepPrompt("credentials", nil,

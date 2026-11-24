@@ -11,11 +11,8 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// displayNameMax is the most characters of a display name, as
-// AccountAdmin.SetDisplayName states it.
 const displayNameMax = 100
 
-// The values of CreateAccount.Via the resolver writes.
 const (
 	viaJIT    = "jit"
 	viaSignup = "signup"
@@ -76,7 +73,6 @@ func (r *Resolver) unwind(ctx context.Context, id authn.AccountID) {
 	_ = r.admin.Delete(context.WithoutCancel(ctx), id, authn.ReasonSelf)
 }
 
-// newAccount is the account an external login creates and what binds it.
 type newAccount struct {
 	create authn.CreateAccount
 	link   authn.ExternalLink

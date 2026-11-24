@@ -9,8 +9,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestTokenDigestKeysAndBinds holds that a flow token yields one digest used both
-// as the record's key and as its binding: possession of the token is the binding.
+// TestTokenDigestKeysAndBinds holds that a flow token's one digest serves as both the record key and its binding.
 func TestTokenDigestKeysAndBinds(t *testing.T) {
 	token, err := newFlowToken()
 	if err != nil {
@@ -35,9 +34,7 @@ func TestTokenDigestKeysAndBinds(t *testing.T) {
 	}
 }
 
-// TestRecordDecodeRefusesAnUnknownVersionFieldAndRetiredMerge holds the
-// record's forward safety: a version this build does not know is refused, so is
-// an unknown field, and so is a record left by the retired automatic merge.
+// TestRecordDecodeRefusesAnUnknownVersionFieldAndRetiredMerge holds that an unknown version, an unknown field and a retired merged record are all refused.
 func TestRecordDecodeRefusesAnUnknownVersionFieldAndRetiredMerge(t *testing.T) {
 	good := record{Version: recordVersion, Purpose: authn.PurposeLogin, State: stateFirst}
 	raw, err := json.Marshal(good)
@@ -61,18 +58,13 @@ func TestRecordDecodeRefusesAnUnknownVersionFieldAndRetiredMerge(t *testing.T) {
 	}
 }
 
-// TestAFlowRecordsTheProviderItsCallbackPathCarries holds what a flow records as
-// the provider its callback path must name: the method's own name for a social
-// method, and the start input's provider for an enterprise one. A social
-// method's start input cannot change it, so the recorded value always matches
-// the callback path the method itself builds.
+// TestAFlowRecordsTheProviderItsCallbackPathCarries holds that a social method records its name and an enterprise provider the start input's value.
 func TestAFlowRecordsTheProviderItsCallbackPathCarries(t *testing.T) {
 	social := newRigMethod(t, &redirectMethod{})
 	socialCookie := startRedirect(t, social, "")
 	if got := flowProviderOf(t, social, socialCookie); got != "password" {
 		t.Errorf("a social flow recorded provider %q, want the method name", got)
 	}
-	// A social start input naming a provider does not change the record.
 	sneaky := startRedirect(t, social, `,"input":{"provider":"ent"}`)
 	if got := flowProviderOf(t, social, sneaky); got != "password" {
 		t.Errorf("a social flow with input.provider recorded provider %q, want the method name", got)
@@ -85,8 +77,6 @@ func TestAFlowRecordsTheProviderItsCallbackPathCarries(t *testing.T) {
 	}
 }
 
-// flowProviderOf reads the provider a flow recorded, keyed by the token its
-// cookie carries.
 func flowProviderOf(t *testing.T, r *rig, cookie string) string {
 	t.Helper()
 	_, token, ok := strings.Cut(cookie, "=")
@@ -104,9 +94,7 @@ func flowProviderOf(t *testing.T, r *rig, cookie string) string {
 	return rec.Provider
 }
 
-// TestCheckReturnToAcceptsARelativePathOrATrustedAbsoluteURL holds the rule the
-// engine applies at Begin, and that an absolute URL is accepted only for a
-// trusted origin.
+// TestCheckReturnToAcceptsARelativePathOrATrustedAbsoluteURL holds that an absolute return target is accepted only for a trusted origin.
 func TestCheckReturnToAcceptsARelativePathOrATrustedAbsoluteURL(t *testing.T) {
 	trusted := []string{"https://app.example.org"}
 	for _, ok := range []string{"/", "/orders", "/orders/42?x=1", "https://app.example.org/after"} {
@@ -125,9 +113,7 @@ func TestCheckReturnToAcceptsARelativePathOrATrustedAbsoluteURL(t *testing.T) {
 	}
 }
 
-// TestIDPAttributesAreTrimmedToTheDeclaredBounds holds the three bounds of the
-// idp.* snapshot: the count, the key length and the value length, with the value
-// cut at a character boundary so it never carries an invalid rune.
+// TestIDPAttributesAreTrimmedToTheDeclaredBounds holds the count, key and value bounds, the value cut at a character boundary.
 func TestIDPAttributesAreTrimmedToTheDeclaredBounds(t *testing.T) {
 	attrs := map[string]string{}
 	for i := 0; i < authn.SessionIDPAttributesMax+4; i++ {
@@ -136,7 +122,6 @@ func TestIDPAttributesAreTrimmedToTheDeclaredBounds(t *testing.T) {
 	// A multi-byte value longer than the bound must be cut without splitting a
 	// character.
 	attrs[authn.ReservedPrefixIDP+"long"] = strings.Repeat("世", 100)
-	// A key over the length is dropped; a key without the prefix is dropped.
 	attrs[authn.ReservedPrefixIDP+strings.Repeat("x", authn.SessionIDPKeyMax)] = "v"
 	attrs["plain"] = "v"
 	out := idpAttributes(&authn.External{Attributes: attrs})
@@ -170,8 +155,7 @@ func validUTF8(s string) bool {
 	return true
 }
 
-// TestCheckFieldsHoldsTheStartInputToItsBounds holds the field count and length
-// bounds of a start request's input.
+// TestCheckFieldsHoldsTheStartInputToItsBounds holds the field count and length bounds of a start request's input.
 func TestCheckFieldsHoldsTheStartInputToItsBounds(t *testing.T) {
 	if err := checkFields(nil, maxStartFieldBytes); err != nil {
 		t.Errorf("an empty input is refused: %v", err)
@@ -195,9 +179,7 @@ func TestCheckFieldsHoldsTheStartInputToItsBounds(t *testing.T) {
 	}
 }
 
-// TestTheAnswerFieldBoundIsLargerThanTheStartBound holds the two input bounds
-// apart: an answer may carry a WebAuthn credential, whose JSON runs past the
-// 512-byte bound a start field carries, so the answer bound is the larger one.
+// TestTheAnswerFieldBoundIsLargerThanTheStartBound holds that the answer bound exceeds 512 bytes so a WebAuthn credential fits.
 func TestTheAnswerFieldBoundIsLargerThanTheStartBound(t *testing.T) {
 	credential := strings.Repeat("x", 1100)
 	if len(credential) <= maxStartFieldBytes {
@@ -211,8 +193,7 @@ func TestTheAnswerFieldBoundIsLargerThanTheStartBound(t *testing.T) {
 	}
 }
 
-// TestParseListReadsTheJSONArrayOfAListSetting holds the reading of a list
-// setting, whose value is a JSON array in a string item.
+// TestParseListReadsTheJSONArrayOfAListSetting holds the reading of a list setting stored as a JSON array string.
 func TestParseListReadsTheJSONArrayOfAListSetting(t *testing.T) {
 	if got, err := parseList(`["session","token"]`); err != nil || len(got) != 2 {
 		t.Errorf("parseList = %v, %v; want two names", got, err)

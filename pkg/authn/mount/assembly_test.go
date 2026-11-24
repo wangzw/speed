@@ -18,23 +18,14 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// handler is a handler no case calls; the registrations here are about what is
-// written to the two registration surfaces and not about what a request does.
 func handler(*gin.Context) {}
 
-// newReader is the configuration reader a case hands the module, with the
-// gateway's keys declared the way they are in an assembly that holds it.
 func newReader(t *testing.T, body string) config.Reader {
 	t.Helper()
 	return authntest.ConfigReaderAll(t, body, Module(), gate.Module())
 }
 
-// TestTheModuleIsDeliveredAndTheCapabilityResolvesToIt drives the real registry
-// through the descriptor: construction asserts the instance against the
-// capability the descriptor declares, so a product that did not implement it
-// would fail the drive with ErrUndeliveredCapability before this case's action
-// ran. The resolved capability is the one the descriptor's New built, reading
-// what the configuration says.
+// TestTheModuleIsDeliveredAndTheCapabilityResolvesToIt drives the registry and fails with ErrUndeliveredCapability when the capability is missing.
 func TestTheModuleIsDeliveredAndTheCapabilityResolvesToIt(t *testing.T) {
 	var got mount.Mounter
 	err := stack{
@@ -56,10 +47,7 @@ func TestTheModuleIsDeliveredAndTheCapabilityResolvesToIt(t *testing.T) {
 	}
 }
 
-// TestTheDescriptorStatesWhatTheDesignStates holds the declarations of the
-// descriptor: the gateway is required and nothing else is, the capability is
-// delivered exclusively and by nothing else, no input item is declared, and the
-// stance is enabled whatever the configuration says.
+// TestTheDescriptorStatesWhatTheDesignStates holds the gateway requirement, exclusive delivery, no input item and the enabled stance.
 func TestTheDescriptorStatesWhatTheDesignStates(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "authn.mount" {
@@ -97,11 +85,7 @@ func TestTheProcessRegistryCarriesTheModule(t *testing.T) {
 	}
 }
 
-// TestAGatewayTheHostSuppliedTakesTheModuleIn holds that a gateway that is not
-// the gateway module's product, delivered either by a module of its own or
-// supplied over the gateway module, passes the delivery check and receives each
-// registration through its three public methods and nothing else, each paired
-// with the route written to the entry point at the same endpoint, method and path.
+// TestAGatewayTheHostSuppliedTakesTheModuleIn holds that a supplied gateway passes the delivery check and receives each paired registration.
 func TestAGatewayTheHostSuppliedTakesTheModuleIn(t *testing.T) {
 	register := func(m mount.Mounter) {
 		m.Public("POST", "/login", handler)
@@ -165,12 +149,6 @@ func TestAGatewayTheHostSuppliedTakesTheModuleIn(t *testing.T) {
 	}
 }
 
-// pairingProblems lists what is wrong with the halves of the registrations: a
-// route whose access level was not written beside it, and an access level written
-// for a route nobody registered. The two halves of a registration name one
-// (endpoint, method, path), or the registration is half made. The routes in
-// guarded are the ones registered with no access level of their own, which the
-// gateway guards by default.
 func pairingProblems(routes []routeCall, access []accessCall, guarded []routeCall) []string {
 	var problems []string
 	for _, a := range access {
@@ -192,9 +170,7 @@ func pairingProblems(routes []routeCall, access []accessCall, guarded []routeCal
 	return problems
 }
 
-// TestThePairingCheckSeesAMissingAndAMistypedRegistration is the control for
-// pairingProblems: it has to report a hand-written pair that went wrong, or the
-// case above that relies on it would pass for any registration.
+// TestThePairingCheckSeesAMissingAndAMistypedRegistration controls pairingProblems with a hand-written pair that went wrong.
 func TestThePairingCheckSeesAMissingAndAMistypedRegistration(t *testing.T) {
 	routes := []routeCall{{"main", "POST", "/api/v1/auth/login"}, {"main", "GET", "/api/v1/auth/me"}}
 	guarded := []routeCall{routes[1]}
@@ -216,12 +192,7 @@ func TestThePairingCheckSeesAMissingAndAMistypedRegistration(t *testing.T) {
 	}
 }
 
-// TestAnInstanceTheHostSuppliedForTheModuleIsLeftAlone holds the tolerance of
-// every callback for an instance that is not the module's own product: the
-// registry hands this module the instance that was supplied, Prepare does not
-// run for it, and Init neither takes up the entry point nor registers anything,
-// so a registrant gets the supplied one and the entry point and the gateway hear
-// nothing from this module.
+// TestAnInstanceTheHostSuppliedForTheModuleIsLeftAlone holds that Prepare and Init do nothing for a supplied instance.
 func TestAnInstanceTheHostSuppliedForTheModuleIsLeftAlone(t *testing.T) {
 	l := &ledger{}
 	supplied := mounttest.New(t)

@@ -11,8 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/step"
 )
 
-// The sentinels the cases drive through every path, so that an assertion that
-// they are nowhere in an answer, an error or a log line has something to find.
 const (
 	sentinelPassword = "Sentinel-Pa55-4d1c9e"
 	sentinelNew      = "Sentinel-New-7b2e03"
@@ -48,7 +46,6 @@ func (l *ledger) all() []call {
 	return append([]call(nil), l.calls...)
 }
 
-// count is how many calls of op were made.
 func (l *ledger) count(op string) int {
 	n := 0
 	for _, c := range l.all() {
@@ -68,8 +65,6 @@ func (l *ledger) ops() []string {
 	return out
 }
 
-// fakeThrottle is a Throttle that remembers what it was asked and answers with
-// what a case set.
 type fakeThrottle struct {
 	led *ledger
 
@@ -98,8 +93,6 @@ func (f *fakeThrottle) Succeed(_ context.Context, scope authn.ThrottleScope, key
 	return f.succeedErr
 }
 
-// fakePasswords is a Passwords whose Verify and Set are set by a case. The other
-// methods are not this module's and fail the case that reaches them.
 type fakePasswords struct {
 	authn.Passwords
 	led *ledger
@@ -118,7 +111,6 @@ func (f *fakePasswords) Set(ctx context.Context, id authn.AccountID, password st
 	return f.set(ctx, id, password, opt)
 }
 
-// rig is one method with its two fakes.
 type rig struct {
 	m  *method
 	th *fakeThrottle
@@ -126,8 +118,6 @@ type rig struct {
 	l  *ledger
 }
 
-// newRig builds a method whose Verify accepts the sentinel password for
-// testAccount and refuses every other, and whose Set accepts any password.
 func newRig() *rig {
 	l := &ledger{}
 	th := &fakeThrottle{led: l}
@@ -142,7 +132,6 @@ func newRig() *rig {
 	return &rig{m: &method{passwords: pw, throttle: th}, th: th, pw: pw, l: l}
 }
 
-// credentialFields are the fields of a start request or an answer.
 func credentialFields(identifier, password string) map[string]string {
 	return map[string]string{fieldIdentifier: identifier, fieldPassword: password}
 }
@@ -159,11 +148,8 @@ func flowAt(stepName string, private []byte) authn.FlowState {
 	return authn.FlowState{ID: "flow-1", Purpose: authn.PurposeLogin, Step: stepName, Private: private}
 }
 
-// kindOf reads the kind of an answer.
 func kindOf(s authn.Step) step.Kind { return step.KindOf(s) }
 
-// describe renders everything an answer carries as one string, for an assertion
-// that something is nowhere in it.
 func describe(s authn.Step) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "kind=%s name=%q private=%q to=%q data=%v retry=%s", kindOf(s), step.NameOf(s), step.PrivateOf(s),

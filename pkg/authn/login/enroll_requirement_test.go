@@ -10,7 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// tenantSeam is the authn.TenantMFARequirement seam a case scripts.
 type tenantSeam struct {
 	required bool
 	err      error
@@ -20,11 +19,6 @@ func (s tenantSeam) RequiresMFA(context.Context, authn.AccountID) (bool, error) 
 	return s.required, s.err
 }
 
-// tenantEnrollmentRig builds a login whose account "acct1" has no factor, whose
-// method proves a password, and whose policy requires a registration. The first
-// Require call answers as the policy does before the registration; every later
-// one offers the factor the registration created, as the real policy does once
-// the account holds an active factor.
 func tenantEnrollmentRig(t *testing.T) *rig {
 	t.Helper()
 	m := &fakeMethod{name: "password"}
@@ -64,7 +58,6 @@ func tenantEnrollmentRig(t *testing.T) *rig {
 	return r
 }
 
-// answerStep answers one flow step and returns the decoded reply.
 func answerStep(t *testing.T, r *rig, cookie string, seq int, step, input string) map[string]any {
 	t.Helper()
 	body := fmt.Sprintf(`{"seq":%d,"step":%q,"input":%s}`, seq, step, input)
@@ -106,10 +99,7 @@ func nextKindOf(t *testing.T, reply map[string]any) string {
 	return kind
 }
 
-// TestATenantRequirementMakesTheLoginRegisterAndThenProveBothFactors holds the
-// product rule: a tenant's require-mfa makes a login with no factor register
-// one, then prove the password again and use the new factor, and only then
-// records a multi-factor session.
+// TestATenantRequirementMakesTheLoginRegisterAndThenProveBothFactors holds that such a login registers, re-proves the password, then records a multi-factor session.
 func TestATenantRequirementMakesTheLoginRegisterAndThenProveBothFactors(t *testing.T) {
 	r := tenantEnrollmentRig(t)
 	r.p.tenantMFA = tenantSeam{required: true}
@@ -186,10 +176,7 @@ func TestATenantRequirementMakesTheLoginRegisterAndThenProveBothFactors(t *testi
 	}
 }
 
-// TestAnEnrollmentWithoutATenantRequirementCompletesSingle holds that the
-// pre-existing behaviour is kept where no tenant requires a factor: a policy
-// that asks an account to register completes the login as a single factor once
-// the registration lands.
+// TestAnEnrollmentWithoutATenantRequirementCompletesSingle holds that without a tenant requirement the login completes as a single factor once the registration lands.
 func TestAnEnrollmentWithoutATenantRequirementCompletesSingle(t *testing.T) {
 	r := tenantEnrollmentRig(t)
 	r.p.tenantMFA = tenantSeam{required: false}
@@ -222,9 +209,7 @@ func TestAnEnrollmentWithoutATenantRequirementCompletesSingle(t *testing.T) {
 	}
 }
 
-// TestATenantRequirementThatCannotBeReadRefusesTheLogin holds the failure
-// direction: a seam read that fails does not let the login through as a single
-// factor. The answer is the dependency's 503.
+// TestATenantRequirementThatCannotBeReadRefusesTheLogin holds that a failed seam read never lets the login through as single-factor.
 func TestATenantRequirementThatCannotBeReadRefusesTheLogin(t *testing.T) {
 	r := tenantEnrollmentRig(t)
 	r.p.tenantMFA = tenantSeam{err: errors.New("settings unavailable")}
@@ -244,15 +229,11 @@ func TestATenantRequirementThatCannotBeReadRefusesTheLogin(t *testing.T) {
 	}
 }
 
-// TestTheReprovedPasswordMustProveTheSameAccount holds the account the flow was
-// bound to: proving another account's password at the reprove step is refused,
-// so a factor is never enabled for an account this login did not prove.
+// TestTheReprovedPasswordMustProveTheSameAccount holds that a proof of another account at reprove is refused, so no factor is enabled for an unproved account.
 func TestTheReprovedPasswordMustProveTheSameAccount(t *testing.T) {
 	r := tenantEnrollmentRig(t)
 	r.p.tenantMFA = tenantSeam{required: true}
 	r.allow("acct2")
-	// The first answer proves the account the flow is bound to; the reproof
-	// proves another account whose credentials are equally valid.
 	answers := 0
 	r.p.methods["password"].(*fakeMethod).ans = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
 		answers++

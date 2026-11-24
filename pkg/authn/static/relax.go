@@ -92,8 +92,6 @@ func numeric(key, text string, declared bool) (int64, bool) {
 	return n, err == nil
 }
 
-// declaredNumber is the declared default of one of the watched settings, as the
-// comparison reads it.
 func declaredNumber(key string) (int64, bool) {
 	switch key {
 	case freeAttemptsPath:

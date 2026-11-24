@@ -10,11 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// A9: the same identity logging in for the first time twice at once ends in one
-// account and one binding. The request that lost the binding reads the winner's;
-// one that lost an address the winner's creation took is refused that address,
-// which the engine answers as link-required (A3).
-
 type answer struct {
 	res Result
 	err error
@@ -73,9 +68,9 @@ func checkOneAccount(t *testing.T, e *env, answers []answer, wantBound int) {
 	}
 }
 
+// TestConcurrentFirstLoginMakesOneAccount checks that two concurrent social first
+// logins bind one account, with the loser's account unwound and one binding kept.
 func TestConcurrentFirstLoginMakesOneAccount(t *testing.T) {
-	// Both logins have created their account before either binds, so the
-	// uniqueness of the binding is what decides.
 	e := newEnv(t, withSignup(SignupOpen))
 	gate := newRendezvous(2)
 	e.s.afterCreate = gate.wait
@@ -89,11 +84,8 @@ func TestConcurrentFirstLoginMakesOneAccount(t *testing.T) {
 	}
 }
 
+// TestConcurrentFirstLoginWithAnAddressMakesOneAccount checks that two concurrent logins open one account, the loser refused the address.
 func TestConcurrentFirstLoginWithAnAddressMakesOneAccount(t *testing.T) {
-	// Both logins look the address up before either writes, so the address is
-	// what decides: it is written in the same transaction as the account, before
-	// any binding exists. Exactly one account is opened; the request that loses
-	// the address is refused it, which the engine answers as link-required.
 	e := newEnv(t, withSignup(SignupOpen))
 	gate := newRendezvous(2)
 	e.s.beforeCreate = func(authn.CreateAccount) { gate.wait() }
@@ -130,6 +122,8 @@ func TestConcurrentFirstLoginWithAnAddressMakesOneAccount(t *testing.T) {
 	}
 }
 
+// TestConcurrentFirstLoginOfAPhoneMakesOneAccount checks that two concurrent
+// first logins of one phone open one account.
 func TestConcurrentFirstLoginOfAPhoneMakesOneAccount(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
 	gate := newRendezvous(2)
@@ -138,14 +132,13 @@ func TestConcurrentFirstLoginOfAPhoneMakesOneAccount(t *testing.T) {
 	checkOneAccount(t, e, answers, 1)
 }
 
+// TestConcurrentEnterpriseFirstLoginMakesOneAccountAndOneMembership checks that
+// two concurrent enterprise first logins open one account with one membership.
 func TestConcurrentEnterpriseFirstLoginMakesOneAccountAndOneMembership(t *testing.T) {
 	e := newEnv(t, withProvider(authn.ProvisioningJIT, false))
 	gate := newRendezvous(2)
 	e.s.beforeCreate = func(authn.CreateAccount) { gate.wait() }
 	answers := resolveTogether(e, 2, enterprise("u1", "ann@acme.com"))
-	// Both looked the address up before either made an account. The address is
-	// held by the winner's account once it is made, so the second Create fails on
-	// it; the loser ends on the winner's account or at link-required.
 	var created int
 	for _, a := range answers {
 		if a.err == nil && a.res.Outcome == OutcomeCreated {

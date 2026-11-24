@@ -8,14 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// The display name a first login opens an account with: every path that creates
-// an account takes the name its source gave, makes it fit to store and falls back
-// to the username when nothing is left. The phone path's name is collected at
-// signup, and a social or enterprise provider may give none.
-
-// TestAFirstLoginWithoutADisplayNameIsNamedAfterItsUsername holds the fallback
-// on all three paths that open an account: a social provider and an enterprise
-// provider that give no name, and a phone signup that collected none.
+// TestAFirstLoginWithoutADisplayNameIsNamedAfterItsUsername holds the username fallback on the social, enterprise and phone paths.
 func TestAFirstLoginWithoutADisplayNameIsNamedAfterItsUsername(t *testing.T) {
 	socialProof := func() authn.Proof {
 		p := social("github", "gh1", "", false)
@@ -51,10 +44,7 @@ func TestAFirstLoginWithoutADisplayNameIsNamedAfterItsUsername(t *testing.T) {
 	}
 }
 
-// TestAPhoneSignupDisplayNameIsMadeFitToStore holds the shape the shared
-// provision layer gives a name the signup step collected: invalid text and
-// control characters dropped, the ends trimmed, and the result cut to 100
-// characters, which is the bound AccountAdmin.SetDisplayName states.
+// TestAPhoneSignupDisplayNameIsMadeFitToStore holds the shared cleaning: invalid text dropped, ends trimmed and cut to 100 characters.
 func TestAPhoneSignupDisplayNameIsMadeFitToStore(t *testing.T) {
 	for _, tc := range []struct {
 		name string

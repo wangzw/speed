@@ -36,9 +36,7 @@ const (
 	gateBasePathItem  = "mount.bases.default"
 )
 
-// moduleConfig is the set of input items this module accepts.
 type moduleConfig struct {
-	// ClientID is the OAuth client identifier the provider issued.
 	ClientID string `config:"client-id"`
 	// ClientSecret is the OAuth client secret the provider issued.
 	ClientSecret string `config:"client-secret"`
@@ -72,7 +70,6 @@ type gateMount struct {
 	} `config:"bases"`
 }
 
-// resolved is the configuration the method runs on.
 type resolved struct {
 	clientID      string
 	clientSecret  string
@@ -167,7 +164,6 @@ func redirectTarget(publicURL, basePath string) string {
 	return strings.TrimRight(publicURL, "/") + "/" + strings.Trim(base, "/") + callbackPath
 }
 
-// schema declares this module's input items.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,

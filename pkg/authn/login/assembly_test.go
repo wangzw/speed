@@ -19,7 +19,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// stubMethod is a login method of the given name that answers nothing.
 type stubMethod struct{ name string }
 
 func (m stubMethod) Name() string { return m.name }
@@ -35,9 +34,6 @@ func (stubMethod) Answer(context.Context, authn.FlowState, authn.StepInput) (aut
 	return authn.Step{}, nil
 }
 
-// The stub instances stand in for the capabilities another module delivers
-// exclusively: the login engine's Init only checks that each is present, and the
-// paths these cases reach call none of their methods.
 type (
 	stubKV          struct{ kv.KV }
 	stubAccounts    struct{ authn.Accounts }
@@ -51,8 +47,6 @@ type (
 	stubMFA         struct{ authn.MFA }
 )
 
-// stubHuman is the required human-verification gate a test assembly resolves,
-// with both surfaces off: none of these cases presents a proof.
 type stubHuman struct{}
 
 var _ authn.HumanVerifier = stubHuman{}
@@ -63,7 +57,6 @@ func (stubHuman) SiteKey(authn.HumanScope) string                               
 func (stubHuman) Action(authn.HumanScope) string                                   { return "" }
 func (stubHuman) Verify(context.Context, authn.HumanProof, authn.HumanScope) error { return nil }
 
-// standIn is a module delivering one instance for the tokens given.
 func standIn(name string, instance any, exclusive bool, tokens ...core.Token) core.Module {
 	provides := make([]core.Provision, len(tokens))
 	for i, tk := range tokens {
@@ -76,24 +69,15 @@ func standIn(name string, instance any, exclusive bool, tokens ...core.Token) co
 	}
 }
 
-// methodModule registers one login method the way a method subpackage does: a
-// module of its own, delivering the capability without claiming it. The index
-// keeps the module names apart when two methods share a name, which is the
-// declaration one case reaches ErrMethodConflict with.
 func methodModule(i int, name string) core.Module {
 	return standIn(fmt.Sprintf("stand-in.method.%d.%s", i, name), stubMethod{name: name}, false, (*authn.LoginMethod)(nil))
 }
 
-// driveEngine drives the registry through the login module's descriptor with the
-// given method modules, to the stage named.
 func driveEngine(t *testing.T, mounter *mounttest.Mounter, names []string, methods []string) error {
 	t.Helper()
 	return driveEngineWith(t, mounter, names, methods, true)
 }
 
-// driveEngineWith is driveEngine with a switch over the required
-// human-verification gate, for the case that holds a command naming the engine
-// without one to a resolution refusal.
 func driveEngineWith(t *testing.T, mounter *mounttest.Mounter, names []string, methods []string, human bool) error {
 	t.Helper()
 	reader := loadConfig(t, "{}")
@@ -135,8 +119,7 @@ func driveEngineWith(t *testing.T, mounter *mounttest.Mounter, names []string, m
 	})
 }
 
-// TestNoMethodFailsTheDrive holds ErrNoLoginMethod: an assembly that takes the
-// engine in with no login method cannot start a flow.
+// TestNoMethodFailsTheDrive holds that an assembly with no login method fails with ErrNoLoginMethod.
 func TestNoMethodFailsTheDrive(t *testing.T) {
 	err := driveEngine(t, mounttest.New(t), nil, nil)
 	if !errors.Is(err, authn.ErrNoLoginMethod) {
@@ -144,8 +127,7 @@ func TestNoMethodFailsTheDrive(t *testing.T) {
 	}
 }
 
-// TestTwoMethodsOfOneNameFailTheDrive holds ErrMethodConflict: a duplicate name
-// is a declaration that is not well formed, and the drive names both.
+// TestTwoMethodsOfOneNameFailTheDrive holds that a duplicate method name fails with ErrMethodConflict, naming both.
 func TestTwoMethodsOfOneNameFailTheDrive(t *testing.T) {
 	err := driveEngine(t, mounttest.New(t), nil, []string{"password", "password"})
 	if !errors.Is(err, authn.ErrMethodConflict) {
@@ -153,9 +135,7 @@ func TestTwoMethodsOfOneNameFailTheDrive(t *testing.T) {
 	}
 }
 
-// TestOneMethodRegistersTheRoutes holds the descriptor end to end: a real
-// registry built the engine, took up the method, and registered the engine's
-// routes on the mounter with their access levels.
+// TestOneMethodRegistersTheRoutes holds that a real registry builds the engine, takes up the method and registers the routes with their access levels.
 func TestOneMethodRegistersTheRoutes(t *testing.T) {
 	m := mounttest.New(t)
 	err := driveEngine(t, m, nil, []string{"password"})
@@ -182,9 +162,6 @@ func TestOneMethodRegistersTheRoutes(t *testing.T) {
 			t.Errorf("the engine registered no route %q; it has %v", key, got)
 		}
 	}
-	// The route on an authenticated identity is the one an impersonating
-	// identity reaches; the anonymous flow routes carry no identity and are not
-	// registered for it.
 	authenticated, ok := m.Registered(http.MethodPost, "/api/v1/auth/flows/authenticated")
 	if !ok || !authenticated.Impersonable {
 		t.Errorf("POST /api/v1/auth/flows/authenticated is not registered impersonable: %+v", authenticated)
@@ -200,12 +177,7 @@ func TestOneMethodRegistersTheRoutes(t *testing.T) {
 	}
 }
 
-// TestTheDescriptorRequiresWhatTheEngineNeeds holds the descriptor's shape: the
-// capabilities another module delivers exclusively are required, and the
-// settings store and the logging capability are optional, so the settings store
-// is initialised first. The human-verification gate is required, so an assembly
-// that names the engine without one fails in resolution instead of sending
-// ungated.
+// TestTheDescriptorRequiresWhatTheEngineNeeds holds that exclusive capabilities are required and the settings store and logger optional.
 func TestTheDescriptorRequiresWhatTheEngineNeeds(t *testing.T) {
 	m := login.Module()
 	if m.Name != login.ModuleName || login.ModuleName != "authn.login" {
@@ -250,10 +222,7 @@ func TestTheDescriptorRequiresWhatTheEngineNeeds(t *testing.T) {
 	}
 }
 
-// TestTheDriveFailsWithoutAHumanVerifier holds the required gate: a command that
-// names the engine and no human-verification gate fails in resolution. Before the
-// requirement the drive succeeded, so a deployment whose configuration named a
-// mode sent ungated.
+// TestTheDriveFailsWithoutAHumanVerifier holds that an assembly without the required gate fails in resolution.
 func TestTheDriveFailsWithoutAHumanVerifier(t *testing.T) {
 	err := driveEngineWith(t, mounttest.New(t), nil, []string{"password"}, false)
 	if !errors.Is(err, core.ErrMissingProvider) {

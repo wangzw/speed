@@ -10,11 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The settings this package reads, each with the default its declaring module
-// states and the domain that module holds a written value to. authn.mfa owns
-// the first and authn.sms the other two; this package reads them and declares
-// none. authn.login owns the email-code pair, which the email self-service route
-// reads and this package declares none of either.
 const (
 	keyRecentWindow     = "authn.mfa.recent-window"
 	defaultRecentWindow = 10 * time.Minute
@@ -41,8 +36,6 @@ const (
 	minEmailResendInterval     = 30 * time.Second
 	maxEmailResendInterval     = 10 * time.Minute
 
-	// The email verification code budgets. authn.login declares them and
-	// this package reads them into the domains the declaring module states.
 	keyEmailPerAddressHourly     = "authn.login.email-per-address-hourly"
 	defaultEmailPerAddressHourly = 5
 	minEmailPerAddressHourly     = 1
@@ -79,12 +72,6 @@ const (
 	maxEmailGlobalHourly     = 1000000
 )
 
-// durations reads duration settings from the store. A read that fails and a
-// value outside the setting's domain, which the store judges when it is written
-// and not when it is read, both read as the declared default, and the fault is
-// written at Error. The same fault is written once and again only when it
-// changes or has been cleared in between, because a setting is read on every
-// request.
 type durations struct {
 	store settings.Store
 
@@ -96,7 +83,6 @@ func newDurations(store settings.Store) *durations {
 	return &durations{store: store, reported: make(map[string]string)}
 }
 
-// get reads key as a duration in [lo, hi] and falls back to def.
 func (d *durations) get(ctx context.Context, key string, def, lo, hi time.Duration) time.Duration {
 	if d.store == nil {
 		return def
@@ -114,10 +100,6 @@ func (d *durations) get(ctx context.Context, key string, def, lo, hi time.Durati
 	return v
 }
 
-// counts reads whole-number settings from the store, with the same fallback as
-// durations: a read that fails and a value outside the setting's domain both
-// read as the declared default, and the fault is written at Error once per
-// distinct fault.
 type counts struct {
 	store settings.Store
 
@@ -129,7 +111,6 @@ func newCounts(store settings.Store) *counts {
 	return &counts{store: store, reported: make(map[string]string)}
 }
 
-// get reads key as a whole number in [lo, hi] and falls back to def.
 func (c *counts) get(ctx context.Context, key string, def, lo, hi int) int {
 	if c.store == nil {
 		return def

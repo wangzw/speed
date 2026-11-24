@@ -9,8 +9,6 @@ import (
 	"github.com/vislake/speed/pkg/config"
 )
 
-// secrecyReader answers the two paths readConfig reads: this module's own
-// section and the gateway's, whose mount items build the callback address.
 type secrecyReader struct {
 	cfg  moduleConfig
 	gate gateConfig
@@ -34,7 +32,6 @@ func (r secrecyReader) Decode(path string, target any) error {
 	return nil
 }
 
-// gateWithMount builds the gateway section the callback address is built from.
 func gateWithMount(publicURL, basePath string) gateConfig {
 	var g gateConfig
 	g.Mount.PublicURL = publicURL
@@ -42,11 +39,7 @@ func gateWithMount(publicURL, basePath string) gateConfig {
 	return g
 }
 
-// TestAConfigurationErrorNeverRepeatsTheClientSecret holds the discipline that a
-// module holding a secret configuration value keeps it out of the text of every
-// failure on the way to a runnable configuration. The value is registered as a
-// literal redaction rule for logs; this is the other half: the failure a startup
-// prints must not carry it, whichever item the failure actually names.
+// TestAConfigurationErrorNeverRepeatsTheClientSecret holds the secret out of every configuration failure's text.
 func TestAConfigurationErrorNeverRepeatsTheClientSecret(t *testing.T) {
 	const secret = "s3cr3t-github-client-sentinel-9f8e7d6c"
 	readerFailure := errors.New("the section cannot be read")

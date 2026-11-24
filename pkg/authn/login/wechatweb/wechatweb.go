@@ -1,30 +1,4 @@
-// Package wechatweb carries the WeChat website-application login method: the
-// first factor that proves a WeChat identity by the code the provider hands back
-// after a QR code is scanned.
-//
-// It is one authn.LoginMethod among the first factors, registered as
-// authn.login.wechat-web and reporting the name wechat.web. It delivers the
-// login-method capability non-exclusively, so it stands beside every other
-// method, and it holds one WeChat application's credentials. It shares the thin
-// client — the token exchange, the error sanitizing and the subject rules — with
-// the official-account method under login/internal/wechat; the two are separate
-// modules with separate credentials because WeChat issues each its own.
-//
-// A login begins by sending the user agent to the provider's authorization
-// address with a fresh state; the callback comes back to this capability's
-// callback route, where the state is compared and the code is traded for the
-// identity it names. The identity carries no email, and the name it carries is
-// not an authorization fact: the method calls no user-info endpoint and
-// synthesizes nothing.
-//
-// The token exchange is the method's one outbound call. The shared client
-// records it, success or failure, naming the method, host, path, status, outcome
-// and duration and never the query, where the application secret and the code
-// travel.
-//
-// A host takes the method in by writing ModuleName into a command alongside the
-// login engine and providing this module's two configuration items, which are
-// required once the module is named.
+// Package wechatweb carries the WeChat website-application login method, which proves a WeChat identity by the code the provider returns after a QR-code login.
 package wechatweb
 
 import (
@@ -48,65 +22,34 @@ const ModuleName = "authn.login.wechat-web"
 // ConfigNamespace is where this module's input items are mounted.
 const ConfigNamespace = ModuleName
 
-// methodName is the name this method reports. It is a constant of the code: it
-// appears in routes, flow records and metric attributes, and the callback path
-// is built from it, so a published name never changes.
 const methodName = "wechat.web"
 
-// scope is the authorization scope the website application is asked for.
 const scope = "snsapi_login"
 
-// stepAuthorize is this method's own name for its single step, the redirect to
-// the provider. The engine keeps it in the flow record.
 const stepAuthorize = "authorize"
 
-// authorizeEndpoint is the provider endpoint the user agent is sent to.
 const authorizeEndpoint = wechat.AuthorizeQRConnect
 
-// The gateway's section, read for the public address and base path the callback
-// address is built from.
 const (
 	gateNamespace = "authn.gate"
 	callbackPath  = "/callback/"
 )
 
-// The configuration items this module accepts, relative to its namespace.
 const (
 	appIDItem     = "app-id"
 	appSecretItem = "app-secret"
 )
 
-// method is this module's product.
 type method struct {
 	client      *wechat.Client
 	redirectURI string
 }
 
-// method must satisfy the capability it delivers.
 var _ authn.LoginMethod = (*method)(nil)
 
-// init registers this module with the process registry.
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// Module is the descriptor a host registers.
-//
-// The login-method capability is delivered without being claimed, which is what
-// lets several methods stand side by side. Prepare reads and validates the
-// module's section and the gateway's public address ahead of every construction,
-// so a deployment missing either is a startup failure rather than a surprise
-// when a login begins.
-//
-// Prepare states the run-time decision from this module's own configuration. A
-// deployment that gave neither the application identifier nor the secret has not
-// configured the method, so it stands itself down with that reason. One
-// credential without the other is a half-configured application and fails the
-// startup, naming the item to write. With both, the gateway's public address and
-// the remaining items are validated, and a missing or illegal one fails the
-// startup there.
-//
-// The logging capability is taken up as an optional requirement, because the
-// application secret is registered as a literal redaction rule and an assembly
-// with no logging has nothing to register it with.
+// Module is the descriptor a host registers. The login-method capability is delivered non-exclusively; settings and logging are optional.
 func Module() core.Module {
 	return core.Module{
 		Name:      ModuleName,
@@ -131,8 +74,6 @@ func Module() core.Module {
 			if err != nil {
 				return nil, err
 			}
-			// The registration runs before any logger this module would take:
-			// an attribute bound before the rule exists is never judged by it.
 			if err := registerSecret(reg, cfg.appSecret); err != nil {
 				return nil, err
 			}
@@ -142,8 +83,6 @@ func Module() core.Module {
 	}
 }
 
-// newMethod builds the product over a client. Production builds the client from
-// this module's configuration; a case passes one pointed at a mock server.
 func newMethod(client *wechat.Client, redirectURI string) *method {
 	return &method{client: client, redirectURI: redirectURI}
 }
@@ -164,9 +103,7 @@ func (m *method) Describe() authn.MethodDescriptor {
 	}
 }
 
-// Begin starts a flow: it draws a fresh state, keeps its digest as the flow's
-// private state, and sends the user agent to the provider's authorization
-// address. It reads nothing from the start request.
+// Begin starts a flow: it draws a fresh state, keeps its digest as the private state, and sends the user agent to the authorization address.
 func (m *method) Begin(ctx context.Context, s authn.Start) (authn.Step, error) {
 	if err := ctx.Err(); err != nil {
 		return authn.StepUnavailable(err), nil
@@ -182,11 +119,7 @@ func (m *method) Begin(ctx context.Context, s authn.Start) (authn.Step, error) {
 	return authn.StepRedirect(stepAuthorize, st.Private(), to), nil
 }
 
-// Answer handles the provider's callback. It checks the state the callback
-// carries against the flow's, then trades the code for the identity it names and
-// proves it. A callback whose state or code is wrong, or that reports the
-// authorization was cancelled, is refused; a provider that cannot be reached is
-// an outage; neither answer carries the provider's own words.
+// Answer checks the callback's state against the flow's and trades the code for the identity it names.
 func (m *method) Answer(ctx context.Context, f authn.FlowState, in authn.StepInput) (authn.Step, error) {
 	if in.Action != authn.InputCallback {
 		return authn.StepRefused(errNotCallback), nil
@@ -213,8 +146,6 @@ func (m *method) Answer(ctx context.Context, f authn.FlowState, in authn.StepInp
 	if err != nil {
 		var refusal *wechat.RefusalError
 		if errors.As(err, &refusal) {
-			// The provider stated a failure: a rejected code, rejected
-			// credentials or another refusal, told apart in the cause.
 			return authn.StepRefused(fmt.Errorf("%s: %w", ModuleName, err)), nil
 		}
 		return authn.StepUnavailable(fmt.Errorf("%s: %w", ModuleName, err)), nil
@@ -222,11 +153,6 @@ func (m *method) Answer(ctx context.Context, f authn.FlowState, in authn.StepInp
 	return authn.StepProven(m.client.Proof(id)), nil
 }
 
-// servesPurpose reports whether the method answers a flow of this purpose. A
-// WeChat identity is a first factor, so it serves a login, a link that binds the
-// identity to an account that is already logged in, and a step-up that falls
-// back to a fresh first factor. An enrollment registers a second factor, which a
-// redirect to a provider is not, so it is refused.
 func servesPurpose(purpose string) bool {
 	switch purpose {
 	case authn.PurposeLogin, authn.PurposeLink, authn.PurposeStepUp:
@@ -236,8 +162,6 @@ func servesPurpose(purpose string) bool {
 	}
 }
 
-// The causes the method puts on a refusal. None carries anything the client or
-// the provider sent.
 var (
 	errNotCallback   = errors.New("authn.login.wechat-web: the answer is not a provider callback")
 	errCancelled     = errors.New("authn.login.wechat-web: the provider reported the authorization was cancelled")
@@ -245,15 +169,10 @@ var (
 	errNoCode        = errors.New("authn.login.wechat-web: the callback carries no authorization code")
 )
 
-// refusePurpose refuses a flow of a purpose the method does not serve.
 func refusePurpose(purpose string) authn.Step {
 	return authn.StepRefused(fmt.Errorf("%s: purpose %q is not served", ModuleName, purpose))
 }
 
-// readerOf takes up the configuration reader. Its absence means the host never
-// handed one to the registry, which is core's own failure and is carried out as
-// it stands; reading it as "nothing was configured" would lose the method in
-// silence.
 func readerOf(reg *core.Registry) (config.Reader, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
@@ -263,10 +182,6 @@ func readerOf(reg *core.Registry) (config.Reader, error) {
 	return reader, nil
 }
 
-// registerSecret registers the application secret as a literal redaction rule,
-// so it is masked wherever it turns up in a log line. An assembly with no
-// logging has nothing to register it with and registers nothing; this runs in
-// New, before any logger this module would take.
 func registerSecret(reg *core.Registry, secret string) error {
 	delivered, err := core.Resolve[log.Logger](reg)
 	switch {
@@ -280,22 +195,13 @@ func registerSecret(reg *core.Registry, secret string) error {
 	return nil
 }
 
-// moduleConfig is the set of input items this module accepts.
 type moduleConfig struct {
-	// AppID is the application identifier of the website application.
-	AppID string `config:"app-id"`
-	// AppSecret is its application secret. It travels in the token request's
-	// query string and is registered as a literal redaction rule.
+	AppID     string `config:"app-id"`
 	AppSecret string `config:"app-secret"`
 }
 
-// configDefaults is what this module is worth without a configuration file.
-// There is no default credential: a login under a guessed application is worse
-// than a deployment that fails to start.
 var configDefaults = moduleConfig{}
 
-// gateMount is the part of the gateway's configuration this module reads: the
-// public address and the base path its callback route is mounted under.
 type gateMount struct {
 	PublicURL string `config:"public-url"`
 	Bases     struct {
@@ -303,15 +209,12 @@ type gateMount struct {
 	} `config:"bases"`
 }
 
-// resolved is the configuration this module runs on.
 type resolved struct {
 	appID       string
 	appSecret   string
 	redirectURI string
 }
 
-// The two required credential items, each read on its own so the module can
-// tell a deployment that configured neither from one that configured only half.
 type appIDOnly struct {
 	AppID string `config:"app-id"`
 }
@@ -320,10 +223,6 @@ type appSecretOnly struct {
 	AppSecret string `config:"app-secret"`
 }
 
-// credentialGiven reports whether the loader was given a value for one required
-// credential item. ErrMissingRequired is the loader saying no source gave it;
-// any other failure is the configuration being unreadable and is carried out as
-// it stands.
 func credentialGiven(reader config.Reader, target any) (bool, error) {
 	err := reader.Decode(ConfigNamespace, target)
 	switch {
@@ -336,21 +235,12 @@ func credentialGiven(reader config.Reader, target any) (bool, error) {
 	}
 }
 
-// halfConfigured is the failure of a deployment that supplied one credential
-// and not the other, naming the item to write. A website application missing
-// either half cannot exchange the code the provider hands back.
 func halfConfigured(item string) error {
 	return fmt.Errorf("%w: %s.%s was not given while the other credential was; the website "+
 		"application needs both the application identifier and the secret, so give both or neither",
 		authn.ErrInvalidConfig, ConfigNamespace, item)
 }
 
-// prepare decides whether this run includes the website-application method.
-// Neither credential means the deployment did not configure the method, which is
-// a normal absence: it stands down and says why. One credential alone is a
-// mistake, not an absence, so it stops the start and names the missing item.
-// Both credentials let the rest of the configuration decide, and its failures
-// are startup failures.
 func prepare(reader config.Reader) (core.Enablement, error) {
 	idGiven, err := credentialGiven(reader, &appIDOnly{})
 	if err != nil {
@@ -378,9 +268,6 @@ func prepare(reader config.Reader) (core.Enablement, error) {
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 
-// resolve turns decoded configuration into what the module runs on. Both
-// credentials and the public address are required; the base path falls back to
-// the shared default. The failure names the item and never the secret.
 func (c moduleConfig) resolve(g gateMount) (resolved, error) {
 	appID := strings.TrimSpace(c.AppID)
 	if appID == "" {
@@ -412,8 +299,6 @@ func (c moduleConfig) resolve(g gateMount) (resolved, error) {
 	}, nil
 }
 
-// schema declares this module's input items. Both credentials are required; the
-// secret is sensitive.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,
@@ -432,9 +317,6 @@ func schema() config.Schema {
 	}
 }
 
-// readConfig decodes this module's section and the gateway's public address and
-// validates both. Prepare and New both go through it, so the two see one
-// configuration.
 func readConfig(reader config.Reader) (resolved, error) {
 	var cfg moduleConfig
 	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {

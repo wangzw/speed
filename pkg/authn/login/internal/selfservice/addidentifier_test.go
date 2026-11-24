@@ -13,8 +13,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// pendingEmail mirrors the record the email branch keeps in the store, so a test
-// can read it back without the handler's unexported type.
 type pendingEmail struct {
 	Account    string `json:"account"`
 	Email      string `json:"email"`
@@ -22,8 +20,6 @@ type pendingEmail struct {
 	ExpiresAt  int64  `json:"expires_at"`
 }
 
-// pendingEmailKey is the one key of the pending email verification in the store,
-// or "" when there is none.
 func pendingEmailKey(h *harness) (string, pendingEmail, bool) {
 	for _, key := range h.kv.keys() {
 		if !strings.HasPrefix(key, "authn:email:") {
@@ -38,8 +34,6 @@ func pendingEmailKey(h *harness) (string, pendingEmail, bool) {
 	return "", pendingEmail{}, false
 }
 
-// pendingAttempts is the failed-attempt count kept against a pending
-// verification, read off the count's own key, or 0 when nothing is counted.
 func pendingAttempts(h *harness) float64 {
 	for _, key := range h.kv.keys() {
 		if !strings.HasPrefix(key, "authn:email-attempts:") {
@@ -54,28 +48,22 @@ func pendingAttempts(h *harness) float64 {
 	return 0
 }
 
-// emailHarness is a harness with the email branch switched on.
 func emailHarness(t *testing.T) *harness {
 	t.Helper()
 	return newHarness(t, func(c *config) { c.email = true })
 }
 
-// addBody is the POST /identifiers body for a kind and a value.
 func addBody(kind, value string) string {
 	body, _ := json.Marshal(map[string]string{"kind": kind, "value": value})
 	return string(body)
 }
 
-// verifyBody is the POST /identifiers/verify body for a code.
 func verifyBody(code string) string {
 	body, _ := json.Marshal(map[string]string{"code": code})
 	return string(body)
 }
 
-// TestAUsernameIsAddedAsTheAccountOwnAssertion holds the ruling that a login
-// name is written the moment the caller asks for it, recorded as the account's
-// own assertion and not as a proof: a username names no contact address, so
-// there is no ownership to establish.
+// TestAUsernameIsAddedAsTheAccountOwnAssertion holds that a login name is written at once as the account's own assertion, since it names no contact.
 func TestAUsernameIsAddedAsTheAccountOwnAssertion(t *testing.T) {
 	h := newHarness(t)
 	w := h.post("/identifiers", addBody("username", "Ada-2"))
@@ -98,9 +86,7 @@ func TestAUsernameIsAddedAsTheAccountOwnAssertion(t *testing.T) {
 	}
 }
 
-// TestAnEmailIsAddedOnlyAfterItsCodeComesBack holds the whole loop: an add sends
-// a code and answers pending, nothing is written yet, and only the matching code
-// writes the address, with the code proof.
+// TestAnEmailIsAddedOnlyAfterItsCodeComesBack holds that the add answers pending and only the matching code writes the address.
 func TestAnEmailIsAddedOnlyAfterItsCodeComesBack(t *testing.T) {
 	h := emailHarness(t)
 	w := h.post("/identifiers", addBody("email", "Ada@Example.COM"))
@@ -150,12 +136,7 @@ func TestAnEmailIsAddedOnlyAfterItsCodeComesBack(t *testing.T) {
 	}
 }
 
-// TestProvingTheAccountsOwnUnprovedEmailSucceeds holds that an address the
-// account already holds as an unproved identifier is proved by its own code:
-// the verify answers added and the account module's in-place proof is what
-// follows. The identifier table's own duplicate is no longer this account's
-// answer, which TestARepeatedIdentifierRowStaysAConflict covers for a row
-// written around the reservation table.
+// TestProvingTheAccountsOwnUnprovedEmailSucceeds holds that its own code proves the account's unproved address in place.
 func TestProvingTheAccountsOwnUnprovedEmailSucceeds(t *testing.T) {
 	h := emailHarness(t)
 	h.accounts.lookup["ada@example.com"] = account
@@ -183,15 +164,9 @@ func TestProvingTheAccountsOwnUnprovedEmailSucceeds(t *testing.T) {
 	}
 }
 
-// TestAStepUpRefusalLeavesAnEmailCodeReplayable holds the email branch's half of
-// the ordering: the pending record carries the digest of the code and is spent
-// only once the address is written, not when the code matches, so a step-up
-// refusal between the two leaves the code the client replays afterwards usable.
+// TestAStepUpRefusalLeavesAnEmailCodeReplayable holds that the pending record is spent only when the address is written, not when the code matches.
 func TestAStepUpRefusalLeavesAnEmailCodeReplayable(t *testing.T) {
 	h := emailHarness(t)
-	// An active factor holds the stale single-factor session to a fresh
-	// multi-factor proof; the account has no default contact, so proving the
-	// first address carries a protected consequence.
 	h.activeFactor()
 	h.as()
 	if w := h.post("/identifiers", addBody("email", "ada@example.com")); w.Code != http.StatusOK || problemState(t, w) != "pending" {
@@ -217,9 +192,7 @@ func TestAStepUpRefusalLeavesAnEmailCodeReplayable(t *testing.T) {
 	}
 }
 
-// TestARepeatedIdentifierRowStaysAConflict holds the defensive mapping: a row
-// the identifier table refuses as a duplicate, written around the reservation
-// table, still answers 409 conflict rather than email-taken.
+// TestARepeatedIdentifierRowStaysAConflict holds that a duplicate row written around the reservation table still answers 409 conflict.
 func TestARepeatedIdentifierRowStaysAConflict(t *testing.T) {
 	h := emailHarness(t)
 	h.post("/identifiers", addBody("email", "ada@example.com"))
@@ -230,10 +203,7 @@ func TestARepeatedIdentifierRowStaysAConflict(t *testing.T) {
 	}
 }
 
-// TestAnAddressTheAccountModuleCannotNormalizeIsStillSent holds that the
-// reservation read's normalization refusal is not an outage: the route sends to
-// an address the account module cannot reserve, and the write step refuses it if
-// it is submitted.
+// TestAnAddressTheAccountModuleCannotNormalizeIsStillSent holds that a normalization refusal is not an outage and the write step refuses it.
 func TestAnAddressTheAccountModuleCannotNormalizeIsStillSent(t *testing.T) {
 	h := emailHarness(t)
 	h.signup.pendingErr = authn.ErrInvalidIdentifier
@@ -246,9 +216,7 @@ func TestAnAddressTheAccountModuleCannotNormalizeIsStillSent(t *testing.T) {
 	}
 }
 
-// TestTheEmailBranchRefusesWhenTheDeploymentHasNoChannel holds that an assembly
-// with no email channel cannot prove an address, so it answers the email branch
-// as unavailable rather than writing an unproven address.
+// TestTheEmailBranchRefusesWhenTheDeploymentHasNoChannel holds that an assembly without a channel answers unavailable rather than writing an unproved address.
 func TestTheEmailBranchRefusesWhenTheDeploymentHasNoChannel(t *testing.T) {
 	h := newHarness(t, func(c *config) { c.noSMS = true })
 	w := h.post("/identifiers", addBody("email", "ada@example.com"))
@@ -275,9 +243,7 @@ func TestAnUnknownIdentifierKindIsRefused(t *testing.T) {
 	}
 }
 
-// TestTheCodeNeverComesBackInTheAnswerOrTheLog holds that the answer of an add
-// carries only the state and the two durations, and that the code reaches
-// neither the body nor the log.
+// TestTheCodeNeverComesBackInTheAnswerOrTheLog holds that the answer carries only state and durations, and the code reaches neither body nor log.
 func TestTheCodeNeverComesBackInTheAnswerOrTheLog(t *testing.T) {
 	h := emailHarness(t)
 	w := h.post("/identifiers", addBody("email", "ada@example.com"))
@@ -290,9 +256,7 @@ func TestTheCodeNeverComesBackInTheAnswerOrTheLog(t *testing.T) {
 	}
 }
 
-// TestAResendWithinTheIntervalIsThrottled holds that a second code asked for
-// inside the interval is a 429, so the route cannot be turned into a flood of
-// messages to one address.
+// TestAResendWithinTheIntervalIsThrottled holds that a second code inside the interval is a 429.
 func TestAResendWithinTheIntervalIsThrottled(t *testing.T) {
 	h := emailHarness(t)
 	if w := h.post("/identifiers", addBody("email", "ada@example.com")); w.Code != http.StatusOK {
@@ -326,10 +290,8 @@ func TestAResendAfterTheIntervalSendsAgain(t *testing.T) {
 	}
 }
 
-// TestAResendFromAnotherSessionIsThrottledByAddress holds that the resend window
-// is held against the address rather than the session. A second session naming
-// the same address within the interval is a 429, so the route cannot be turned
-// into a flood of messages to one address by opening another session.
+// TestAResendFromAnotherSessionIsThrottledByAddress holds that the resend
+// window is held against the address rather than the session.
 func TestAResendFromAnotherSessionIsThrottledByAddress(t *testing.T) {
 	h := emailHarness(t)
 	if w := h.post("/identifiers", addBody("email", "ada@example.com")); w.Code != http.StatusOK {
@@ -345,9 +307,7 @@ func TestAResendFromAnotherSessionIsThrottledByAddress(t *testing.T) {
 	}
 }
 
-// TestAWrongCodeIsRejectedAndCounted holds that a code that does not match is
-// login-failed, that no identifier is written, and that the attempt is counted
-// against the pending record.
+// TestAWrongCodeIsRejectedAndCounted holds login-failed, no identifier written and the attempt counted.
 func TestAWrongCodeIsRejectedAndCounted(t *testing.T) {
 	h := emailHarness(t)
 	h.post("/identifiers", addBody("email", "ada@example.com"))
@@ -371,10 +331,7 @@ func TestAWrongCodeIsRejectedAndCounted(t *testing.T) {
 	}
 }
 
-// TestTheRecordIsSpentAfterTheAttemptsAreUsedUp holds that a pending code cannot
-// be guessed over its lifetime: once the attempts are used up the record is gone
-// and the next verify is the same login-failed a wrong code gets, so the caller
-// has to ask for another code.
+// TestTheRecordIsSpentAfterTheAttemptsAreUsedUp holds that once attempts are spent the next verify is the same login-failed.
 func TestTheRecordIsSpentAfterTheAttemptsAreUsedUp(t *testing.T) {
 	h := emailHarness(t)
 	h.post("/identifiers", addBody("email", "ada@example.com"))
@@ -397,13 +354,7 @@ func TestTheRecordIsSpentAfterTheAttemptsAreUsedUp(t *testing.T) {
 	}
 }
 
-// TestAWrongCodeAdvancesTheCountByAnAtomicIncrement holds the shape the attempt
-// bound needs under concurrency: a wrong code advances a count of its own
-// through the store's atomic increment. A count kept as a field of the record is
-// advanced by reading it, adding one and writing it back, and concurrent wrong
-// codes each read the same value and write back the same one, so every count but
-// one is lost and the bound no longer holds. The count therefore lives on a key
-// of its own, advanced without a read-modify-write of anything.
+// TestAWrongCodeAdvancesTheCountByAnAtomicIncrement holds the store's atomic increment behind the attempt bound.
 func TestAWrongCodeAdvancesTheCountByAnAtomicIncrement(t *testing.T) {
 	h := emailHarness(t)
 	h.post("/identifiers", addBody("email", "ada@example.com"))
@@ -424,10 +375,7 @@ func TestAWrongCodeAdvancesTheCountByAnAtomicIncrement(t *testing.T) {
 	}
 }
 
-// TestAnAddressOfAnotherAccountIsAConflict holds that the contact reservation's
-// refusal of an address another account owns reaches the client as 409
-// email-taken. The identifier table's own duplicate is this account's conflict,
-// which TestReaddingTheAccountsOwnEmailStaysAConflict holds.
+// TestAnAddressOfAnotherAccountIsAConflict holds that a reserved address answers 409 email-taken.
 func TestAnAddressOfAnotherAccountIsAConflict(t *testing.T) {
 	h := emailHarness(t)
 	h.post("/identifiers", addBody("email", "ada@example.com"))
@@ -439,10 +387,7 @@ func TestAnAddressOfAnotherAccountIsAConflict(t *testing.T) {
 	}
 }
 
-// TestAVerificationWithNoPendingRecordIsLoginFailed holds that a verify with no
-// add behind it reports the same refusal a wrong code gets: an address another
-// account holds never receives a code, so a distinct code here would tell the
-// caller which addresses are taken.
+// TestAVerificationWithNoPendingRecordIsLoginFailed holds that a verify without an add answers like a wrong code, revealing nothing.
 func TestAVerificationWithNoPendingRecordIsLoginFailed(t *testing.T) {
 	h := emailHarness(t)
 	w := h.post("/identifiers/verify", verifyBody("123456"))
@@ -451,9 +396,7 @@ func TestAVerificationWithNoPendingRecordIsLoginFailed(t *testing.T) {
 	}
 }
 
-// TestAnEmailAddThatCannotBeSentFails holds that a channel that cannot deliver
-// the code ends the add as unavailable and keeps no pending record, so a code
-// nobody received is never one a caller could answer.
+// TestAnEmailAddThatCannotBeSentFails holds that an undeliverable code ends as unavailable and keeps no pending record.
 func TestAnEmailAddThatCannotBeSentFails(t *testing.T) {
 	h := emailHarness(t)
 	h.email.err = authn.ErrUnavailable
@@ -466,7 +409,6 @@ func TestAnEmailAddThatCannotBeSentFails(t *testing.T) {
 	}
 }
 
-// problemState is the state field of a success answer.
 func problemState(t *testing.T, w *httptest.ResponseRecorder) string {
 	t.Helper()
 	var body struct {

@@ -30,13 +30,7 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// REQ-signin-033. The key of an external identity is the provider and the
-// stable subject, and the address a provider declares is display data only.
-
-// TestExternalIdentityStillResolvesToItsAccountAfterTheProviderChangesTheEmail
-// holds the resolve path of the rule: a second login of the same (provider,
-// subject) lands on the account the first one made, even though the declared
-// address changed, and neither an account nor a binding is added.
+// TestExternalIdentityStillResolvesToItsAccountAfterTheProviderChangesTheEmail holds that the same provider and subject land on the same account despite a changed address.
 func TestExternalIdentityStillResolvesToItsAccountAfterTheProviderChangesTheEmail(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
 	first, err := e.resolve(social("google", "g1", "ann@first.example", true))
@@ -71,9 +65,7 @@ func TestExternalIdentityStillResolvesToItsAccountAfterTheProviderChangesTheEmai
 	}
 }
 
-// TestOneAddressUnderTwoProvidersIsTwoIdentities holds that the provider is
-// part of the key: the same subject string and the same declared address under
-// two providers are two bindings of two accounts, not one identity.
+// TestOneAddressUnderTwoProvidersIsTwoIdentities holds that the provider is part of the key.
 func TestOneAddressUnderTwoProvidersIsTwoIdentities(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
 	google := e.s.seed(t, seed{id: "a1", status: authn.StatusActive, bindings: [][2]string{{"google", "shared-subject"}}})
@@ -103,10 +95,7 @@ func TestOneAddressUnderTwoProvidersIsTwoIdentities(t *testing.T) {
 	}
 }
 
-// TestABindingOutranksAnAddressHeldByAnotherAccount holds the priority of the
-// binding over the provider's address hint: the address is verified and belongs
-// to another account, and the login still lands on the account the identity is
-// bound to.
+// TestABindingOutranksAnAddressHeldByAnotherAccount holds that a verified address of another account does not divert a bound login.
 func TestABindingOutranksAnAddressHeldByAnotherAccount(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
 	bound := e.s.seed(t, seed{id: "a1", status: authn.StatusActive, bindings: [][2]string{{"google", "g1"}}})
@@ -128,9 +117,7 @@ func TestABindingOutranksAnAddressHeldByAnotherAccount(t *testing.T) {
 	}
 }
 
-// TestTwoSubjectsOfOneProviderOnFirstLoginOpenTwoAccounts holds the other half
-// of the key: the subject alone decides which identity a first login is, so two
-// subjects of one provider are two accounts.
+// TestTwoSubjectsOfOneProviderOnFirstLoginOpenTwoAccounts holds that the subject alone decides which identity a first login is.
 func TestTwoSubjectsOfOneProviderOnFirstLoginOpenTwoAccounts(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
 	first, err := e.resolve(social("google", "subject-one", "", false))
@@ -155,9 +142,6 @@ func TestTwoSubjectsOfOneProviderOnFirstLoginOpenTwoAccounts(t *testing.T) {
 	}
 }
 
-// REQ-signup-043 and REQ-signup-044. The account identifier is minted by the
-// account store and belongs to no login identifier and no external identity.
-
 // createdBy is one creation path's account: the identifier it minted and the
 // login identifier or external subject that identifier must differ from.
 type createdBy struct {
@@ -166,12 +150,7 @@ type createdBy struct {
 	notEqual []string
 }
 
-// TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges
-// drives the five account-opening paths and the two host paths against the real
-// account module, and holds that each account receives a non-empty identifier
-// that is distinct from every other one, from the login identifiers and from
-// the external subject, and that changing the display name, the email or the
-// external profile leaves it in place.
+// TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges holds that every path mints a distinct identifier unaffected by profile changes.
 func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *testing.T) {
 	withRealAccountStore(t, func(ctx context.Context, reg *core.Registry) {
 		accounts := mustResolve[authn.Accounts](t, reg)
@@ -204,8 +183,6 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 			minted = append(minted, createdBy{path: path, id: id, notEqual: notEqual})
 			return id
 		}
-		// firstLogin is what the engine does for a first login: it resolves the
-		// proof and opens the pending account with the collected username.
 		firstLogin := func(req Request, username string) (Result, error) {
 			res, resolveErr := r.Resolve(ctx, req)
 			if resolveErr != nil || res.Pending == nil {
@@ -214,7 +191,6 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 			return r.Create(ctx, *res.Pending, username, passwordOf(*res.Pending), "")
 		}
 
-		// One: password self-registration.
 		registered, err := signups.Register(ctx, authn.RegisterAccount{
 			Username: "self-made", Email: "self-made@example.org", Password: "correct horse battery staple",
 		})
@@ -223,7 +199,6 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 		}
 		passwordID := record("password self-registration", registered.ID, "self-made", "self-made@example.org")
 
-		// Two: the first sign-in of a phone.
 		phoneLogin, err := firstLogin(Request{Proof: phone("+8613800000001"), Purpose: authn.PurposeLogin}, "phone-made")
 		if err != nil || phoneLogin.Outcome != OutcomeCreated {
 			t.Fatalf("the first phone login = %+v, %v, want a new account", phoneLogin, err)
@@ -235,7 +210,6 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 			t.Errorf("the phone the login proved is not a sign-in way: %+v", held)
 		}
 
-		// Three: the first sign-in of a social identity with a verified address.
 		socialLogin, err := firstLogin(Request{
 			Proof: social("google", "google-subject", "social@example.org", true), Purpose: authn.PurposeLogin,
 		}, "social-made")
@@ -254,8 +228,6 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 			t.Errorf("the social account holds the identifiers %+v, want its username and the declared address as a default contact and sign-in way", held)
 		}
 
-		// The same subject under another provider is another identity against
-		// the real store too: the binding key is the pair, not the subject.
 		otherProvider, err := firstLogin(Request{
 			Proof: social("github", "google-subject", "", false), Purpose: authn.PurposeLogin,
 		}, "other-made")
@@ -267,9 +239,6 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 		}
 		record("the same subject under another provider", otherProvider.Account, "google-subject")
 
-		// Four: the first sign-in of a social identity whose address the
-		// provider does not stand behind. The account is complete without the
-		// address, and the address is not written as an identifier.
 		unverified, err := firstLogin(Request{
 			Proof: social("github", "github-subject", "unverified@example.org", false), Purpose: authn.PurposeLogin,
 		}, "unverified-made")
@@ -288,7 +257,6 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 			t.Errorf("the second login of the unverified identity = %+v, %v, want the same account bound", again, resolveErr)
 		}
 
-		// Five: an enterprise provider's just-in-time first login.
 		jitLogin, err := firstLogin(Request{
 			Proof: authn.Proof{
 				Provider: idpAcme,
@@ -311,8 +279,6 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 			t.Errorf("the enterprise account's membership = %+v, %v, %v, want an active one", member, ok, memberErr)
 		}
 
-		// Six: accepting an invitation, which adds a membership to an account
-		// that already proved the invited address. It opens no account.
 		inviteHolder, err := admin.Create(ctx, authn.CreateAccount{
 			Kind: authn.KindUser, Username: "invite-made", Email: "invite@example.org",
 			EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaEmailCode}, Via: authn.ReasonAdmin,
@@ -331,7 +297,6 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 		}
 		inviteID := record("invitation acceptance", invited.Account, "invite@example.org")
 
-		// Seven and eight: the host's own creation and import paths.
 		administrator, err := admin.Create(ctx, authn.CreateAccount{
 			Kind: authn.KindUser, Username: "admin-made", Via: authn.ReasonAdmin,
 		})
@@ -351,8 +316,6 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 		}
 		record("import with the host's identifier", imported.ID, "legacy42")
 
-		// Every identifier is distinct, and none is the login identifier or
-		// external subject of the login that made the account.
 		seen := map[authn.AccountID]string{}
 		for _, made := range minted {
 			if first, dup := seen[made.id]; dup {
@@ -369,7 +332,6 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 			}
 		}
 
-		// A system-minted identifier is a UUIDv7, as the account module states.
 		for _, made := range []authn.AccountID{passwordID, phoneID, socialID, unverifiedID, jitID, inviteID, adminID} {
 			parsed, err := uuid.Parse(string(made))
 			if err != nil || parsed.Version() != 7 {
@@ -380,8 +342,6 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 			t.Errorf("the imported identifier was replaced")
 		}
 
-		// Changing the display name, the email and the external profile leaves
-		// every identifier as it was.
 		for i, made := range minted {
 			if err := admin.SetDisplayName(ctx, made.id, fmt.Sprintf("Renamed %d", i)); err != nil {
 				t.Errorf("%s: setting the display name: %v", made.path, err)
@@ -421,10 +381,7 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 	})
 }
 
-// TestSocialAccountWithoutAVerifiedAddressIsCompleteAndKeepsItsIdentifier holds
-// REQ-signup-044 on its own: a first social login whose provider does not stand
-// behind the declared address still opens a complete account with an identifier
-// of its own, writes no address, and logs the same identity back in.
+// TestSocialAccountWithoutAVerifiedAddressIsCompleteAndKeepsItsIdentifier holds that an unverified address still opens a complete account without it.
 func TestSocialAccountWithoutAVerifiedAddressIsCompleteAndKeepsItsIdentifier(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
 	first, err := e.resolve(social("github", "gh-subject", "unverified@example.org", false))
@@ -451,7 +408,6 @@ func TestSocialAccountWithoutAVerifiedAddressIsCompleteAndKeepsItsIdentifier(t *
 	}
 }
 
-// identifiersOf reads an account's identifiers.
 func identifiersOf(t *testing.T, accounts authn.Accounts, id authn.AccountID) []authn.Identifier {
 	t.Helper()
 	identifiers, err := accounts.Identifiers(context.Background(), id)
@@ -461,7 +417,6 @@ func identifiersOf(t *testing.T, accounts authn.Accounts, id authn.AccountID) []
 	return identifiers
 }
 
-// mustResolve takes a capability out of a driven registry.
 func mustResolve[T any](t *testing.T, reg *core.Registry) T {
 	t.Helper()
 	value, err := core.Resolve[T](reg)
@@ -471,10 +426,6 @@ func mustResolve[T any](t *testing.T, reg *core.Registry) T {
 	return value
 }
 
-// jitRegister is the register of enterprise providers a case needs: one enabled
-// just-in-time provider of tenantAcme, with acme.com as its verified domain.
-// The rest of the interface is left to the embedded nil, and a call to it is a
-// case reaching for something it did not set up.
 type jitRegister struct{ authn.SSOProviders }
 
 func (jitRegister) provider() authn.SSOProvider {
@@ -499,11 +450,8 @@ func (r jitRegister) Discover(_ context.Context, domain string) ([]authn.SSOProv
 	return []authn.SSOProvider{r.provider()}, nil
 }
 
-// standInSettings answers the one setting the account module's self-registration
-// reads as its authority, and every other key as undeclared.
 type standInSettings struct{}
 
-// passwordSignupKey is the setting the account module's registration reads.
 const passwordSignupKey = "authn.account.password-signup"
 
 func (standInSettings) Get(_ settings.Layer, key string, target any) error {
@@ -547,15 +495,10 @@ func (s standInSettings) Read(key string, reads ...settings.LayerRead) ([]settin
 	return results, nil
 }
 
-// standInAudit accepts every entry and keeps none: the invitation module
-// requires the capability, and no case here reads what it wrote.
 type standInAudit struct{}
 
 func (standInAudit) Record(context.Context, audit.Entry) error { return nil }
 
-// standInTenantDescriptions answers a tenant as an ordinary organization named
-// after its identifier. The invitation module requires the seam, and no case
-// here invites into the system tenant or reads an organization's display name.
 type standInTenantDescriptions struct{}
 
 func (standInTenantDescriptions) TenantDescriptionOf(_ context.Context, id string) (authn.TenantDescription, error) {
@@ -577,7 +520,6 @@ func (noopMounter) Endpoint() string                                            
 func (noopMounter) PublicURL() string                 { return "http://127.0.0.1" }
 func (noopMounter) CSRF() *http.CrossOriginProtection { return nil }
 
-// module is a stand-in that provides one capability.
 func module(name string, token any, build func() (any, error)) core.Module {
 	return core.Module{
 		Name:     name,
@@ -586,10 +528,6 @@ func module(name string, token any, build func() (any, error)) core.Module {
 	}
 }
 
-// withRealAccountStore brings the real account, invitation and route modules up
-// over a SQLite file of this test's own, so that every creation path writes
-// through the account module's own checks, and runs use inside the drive with
-// the registry the capabilities are resolved from.
 func withRealAccountStore(t *testing.T, use func(context.Context, *core.Registry)) {
 	t.Helper()
 	dsn := filepath.Join(t.TempDir(), "identity-stability.db")

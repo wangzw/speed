@@ -26,8 +26,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// cheapEntry writes an entry at a cost a test can afford. The cost travels inside
-// the entry, so what is exercised is the path a production table takes.
 func cheapEntry(t *testing.T, plaintext string) string {
 	t.Helper()
 	encoded, err := HashPBKDF2(plaintext, 2)
@@ -37,8 +35,6 @@ func cheapEntry(t *testing.T, plaintext string) string {
 	return encoded
 }
 
-// tableWith builds a backend holding the subjects named, each with the given
-// password.
 func tableWith(t *testing.T, subjects map[string]string) *backend {
 	t.Helper()
 	cfg := moduleConfig{
@@ -63,8 +59,6 @@ func backendOf(t *testing.T, cfg moduleConfig) *backend {
 	return b
 }
 
-// basic renders a Basic credential the way the gateway hands one over: the
-// scheme folded to lower case.
 func basic(user, plaintext string) authn.Credential {
 	return authn.Credential{
 		Scheme: "basic",
@@ -72,11 +66,9 @@ func basic(user, plaintext string) authn.Credential {
 	}
 }
 
-// outcome and cause read a verdict the way the gateway does.
 func outcome(v authn.Verdict) verdict.Outcome { return verdict.OutcomeOf(v) }
 func cause(v authn.Verdict) error             { return verdict.CauseOf(v) }
 
-// fakeSettings is a settings store holding the values a case writes into it.
 type fakeSettings struct {
 	mu     sync.Mutex
 	values map[string]any
@@ -134,7 +126,6 @@ func (f *fakeSettings) Read(key string, reads ...settings.LayerRead) ([]settings
 	return results, nil
 }
 
-// counting wraps the backend's derivation so that a case can tell when one ran.
 func counting(b *backend) *atomic.Int64 {
 	var n atomic.Int64
 	inner := b.check
@@ -145,7 +136,6 @@ func counting(b *backend) *atomic.Int64 {
 	return &n
 }
 
-// handClock is a clock a case moves by hand.
 type handClock struct {
 	mu sync.Mutex
 	t  time.Time
@@ -212,10 +202,7 @@ func TestTheRightPasswordAuthenticatesAndTheWrongOneDoesNot(t *testing.T) {
 	})
 }
 
-// TestTheBackendDeclaresWhatItTakesAndMayHandBack holds the two declarations the
-// gateway admits it by, from the outside: the name is the constant the static
-// prefix is reserved to, the carrier is the Basic scheme alone, and the account
-// namespace is the static prefix with no capability beyond it.
+// TestTheBackendDeclaresWhatItTakesAndMayHandBack holds the reserved name, the Basic carrier and the static account namespace.
 func TestTheBackendDeclaresWhatItTakesAndMayHandBack(t *testing.T) {
 	b := tableWith(t, map[string]string{"alice": "a"})
 
@@ -233,10 +220,7 @@ func TestTheBackendDeclaresWhatItTakesAndMayHandBack(t *testing.T) {
 	}
 }
 
-// TestEveryNoThisBackendGivesIsAboutTheCredential holds the one thing a backend
-// must not get wrong, from the other direction: a refusal and an outage are the
-// distinction every lockout, rate limiter and alert rule is keyed off, and the
-// table is in memory, so a no is never an outage.
+// TestEveryNoThisBackendGivesIsAboutTheCredential holds that a refusal is never an outage.
 func TestEveryNoThisBackendGivesIsAboutTheCredential(t *testing.T) {
 	b := tableWith(t, map[string]string{"alice": "secret"})
 
@@ -276,10 +260,7 @@ func TestThePasswordMayContainColons(t *testing.T) {
 	}
 }
 
-// TestACredentialIsNotReadAgainstAnotherNamesEntry holds that the user name in
-// the credential picks the entry and the password is derived against that entry
-// alone: the two names share a password on purpose, so that bob's password
-// failing against alice's entry could not be what refuses them.
+// TestACredentialIsNotReadAgainstAnotherNamesEntry holds that the user name picks the one entry the password is derived against.
 func TestACredentialIsNotReadAgainstAnotherNamesEntry(t *testing.T) {
 	b := tableWith(t, map[string]string{"alice": "same", "bob": "same"})
 
@@ -294,12 +275,7 @@ func TestACredentialIsNotReadAgainstAnotherNamesEntry(t *testing.T) {
 	}
 }
 
-// TestACancelledCallIsAnOutageAndDerivesNothing holds the one point at which this
-// backend can honour its context: a call whose time is already gone spends no
-// derivation and answers that it could not say, which is the truth, since the
-// password was never checked. The right password is the one a derivation would
-// have confirmed, and a password that was already remembered would be accepted
-// without one, so both are asked.
+// TestACancelledCallIsAnOutageAndDerivesNothing holds that an expired call spends no derivation and answers unavailable.
 func TestACancelledCallIsAnOutageAndDerivesNothing(t *testing.T) {
 	b := tableWith(t, map[string]string{"alice": "correct horse"})
 	derived := counting(b)
@@ -337,10 +313,7 @@ func TestACancelledCallIsAnOutageAndDerivesNothing(t *testing.T) {
 	}
 }
 
-// TestAnEndedContextIsNotAFailedAttempt holds that a call cancelled before it
-// could check does not count against the name, whether the name is in the table
-// or not: nothing was tried, and counting it would let a caller who can cancel
-// requests hold a name back.
+// TestAnEndedContextIsNotAFailedAttempt holds that a cancelled check counts against no name.
 func TestAnEndedContextIsNotAFailedAttempt(t *testing.T) {
 	b := tableWith(t, map[string]string{"alice": "secret"})
 	cancelled, cancel := context.WithCancel(context.Background())
@@ -357,8 +330,6 @@ func TestAnEndedContextIsNotAFailedAttempt(t *testing.T) {
 		t.Errorf("after twenty cancelled calls the right password reads %v, want authenticated: "+
 			"cancelled calls were counted as failures", outcome(got))
 	}
-	// A name that is not in the table is not held back by the cancelled calls
-	// made in its name either.
 	for range 6 {
 		b.Verify(context.Background(), basic("mallory", "wrong"))
 	}
@@ -368,10 +339,7 @@ func TestAnEndedContextIsNotAFailedAttempt(t *testing.T) {
 	}
 }
 
-// TestACapacityLimitIsAnOutageThatSaysSo holds the answer when the width is
-// taken: unavailable, never denied, with the sentinel the gateway reads the
-// Retry-After off. The failure does not count against the name, since the
-// password was not checked.
+// TestACapacityLimitIsAnOutageThatSaysSo holds unavailable with the Retry-After sentinel.
 func TestACapacityLimitIsAnOutageThatSaysSo(t *testing.T) {
 	b := tableWith(t, map[string]string{"alice": "secret"})
 	real := b.check
@@ -395,9 +363,8 @@ func TestACapacityLimitIsAnOutageThatSaysSo(t *testing.T) {
 	}
 }
 
-// TestAnAskForCapacityIsAskedForWithNoWait holds what the backend asks of the
-// Governor: no wait. A derivation that finds the width taken is an outage, and
-// a backend that waited would queue every request behind the ones running.
+// TestAnAskForCapacityIsAskedForWithNoWait holds what the backend asks of
+// the Governor: no wait.
 func TestAnAskForCapacityIsAskedForWithNoWait(t *testing.T) {
 	b := tableWith(t, map[string]string{"alice": "secret"})
 	var asked []time.Duration
@@ -414,9 +381,7 @@ func TestAnAskForCapacityIsAskedForWithNoWait(t *testing.T) {
 	}
 }
 
-// TestAPasswordThatHeldIsNotDerivedAgainWhileItIsRemembered holds the cache from
-// both sides: a second check of the same password derives nothing, and a
-// password that was refused is never remembered, so it derives every time.
+// TestAPasswordThatHeldIsNotDerivedAgainWhileItIsRemembered holds that a remembered pass derives nothing and a refusal is never remembered.
 func TestAPasswordThatHeldIsNotDerivedAgainWhileItIsRemembered(t *testing.T) {
 	b := tableWith(t, map[string]string{"alice": "secret"})
 	derived := counting(b)
@@ -441,9 +406,7 @@ func TestAPasswordThatHeldIsNotDerivedAgainWhileItIsRemembered(t *testing.T) {
 	}
 }
 
-// TestTheCacheDoesNotLetOneSubjectsPasswordStandForAnothers holds the cache
-// against the case that makes it dangerous: two subjects, and a password that
-// held for one being presented for the other.
+// TestTheCacheDoesNotLetOneSubjectsPasswordStandForAnothers holds that a password held for one subject does not serve another.
 func TestTheCacheDoesNotLetOneSubjectsPasswordStandForAnothers(t *testing.T) {
 	b := tableWith(t, map[string]string{"alice": "alices", "bob": "bobs"})
 
@@ -455,10 +418,7 @@ func TestTheCacheDoesNotLetOneSubjectsPasswordStandForAnothers(t *testing.T) {
 	}
 }
 
-// TestTheCacheLifetimeIsASettingAndZeroSwitchesItOff holds the setting from
-// three sides: unread it is the declared sixty seconds, a value in its domain is
-// followed, zero switches the cache off, and a value outside the domain reads as
-// the default.
+// TestTheCacheLifetimeIsASettingAndZeroSwitchesItOff holds the sixty-second default, a followed value, zero off and an out-of-domain default.
 func TestTheCacheLifetimeIsASettingAndZeroSwitchesItOff(t *testing.T) {
 	store := newFakeSettings()
 	b := tableWith(t, map[string]string{"alice": "secret"})
@@ -466,14 +426,12 @@ func TestTheCacheLifetimeIsASettingAndZeroSwitchesItOff(t *testing.T) {
 	derived := counting(b)
 	check := func() { b.Verify(context.Background(), basic("alice", "secret")) }
 
-	// Not stored: the declared default, which remembers.
 	check()
 	check()
 	if derived.Load() != 1 {
 		t.Errorf("with no setting stored the cache derived %d times in two checks, want once", derived.Load())
 	}
 
-	// Zero: off, and what was remembered is not served.
 	store.set(cacheTTLPath, time.Duration(0))
 	check()
 	check()
@@ -481,7 +439,6 @@ func TestTheCacheLifetimeIsASettingAndZeroSwitchesItOff(t *testing.T) {
 		t.Errorf("with the lifetime at zero two checks brought the derivations to %d, want 3", derived.Load())
 	}
 
-	// A value outside the domain reads as the default, which is to remember.
 	for _, bad := range []time.Duration{-time.Second, password.MaxCacheTTL + time.Second} {
 		store.set(cacheTTLPath, bad)
 		before := derived.Load()
@@ -504,10 +461,7 @@ func TestTheCacheLifetimeIsASettingAndZeroSwitchesItOff(t *testing.T) {
 	}
 }
 
-// TestAFailedNameIsHeldBackAndTheCheckIsNotMade holds the back-off at its edge:
-// five failures are free, the sixth attempt is the first one beyond them and is
-// still made, and it is the failure of the sixth that holds the name back, after
-// which the right password is refused without a derivation.
+// TestAFailedNameIsHeldBackAndTheCheckIsNotMade holds that five failures are free, the sixth is made, and its failure locks the name.
 func TestAFailedNameIsHeldBackAndTheCheckIsNotMade(t *testing.T) {
 	b := tableWith(t, map[string]string{"alice": "secret"})
 	clk := newClock()
@@ -522,7 +476,6 @@ func TestAFailedNameIsHeldBackAndTheCheckIsNotMade(t *testing.T) {
 	if derived.Load() != 5 {
 		t.Fatalf("five free attempts derived %d times, want 5", derived.Load())
 	}
-	// The sixth attempt is made and fails, which starts the back-off.
 	if got := b.Verify(context.Background(), basic("alice", "wrong")); outcome(got) != verdict.Denied {
 		t.Fatalf("the sixth attempt reads %v", outcome(got))
 	}
@@ -549,9 +502,6 @@ func TestAFailedNameIsHeldBackAndTheCheckIsNotMade(t *testing.T) {
 	if passed := b.Verify(context.Background(), basic("alice", "secret")); outcome(passed) != verdict.Authenticated {
 		t.Errorf("the right password after the back-off reads %v, want authenticated: %v", outcome(passed), cause(passed))
 	}
-	// The pass cleared nothing: six failures stand, so the next failure is the
-	// seventh and holds the name back for four seconds. Had the pass cleared the
-	// count, five more failures would still have been free.
 	if failed := b.Verify(context.Background(), basic("alice", "wrong")); outcome(failed) != verdict.Denied {
 		t.Fatalf("a failure after the pass reads %v, want denied", outcome(failed))
 	}
@@ -565,10 +515,7 @@ func TestAFailedNameIsHeldBackAndTheCheckIsNotMade(t *testing.T) {
 	}
 }
 
-// TestTheBackoffDoesNotDependOnTheNameBeingInTheTable holds what the keying is
-// for: a name that is in the table and one that is not are held back after the
-// same number of failures, so holding a name back says nothing about whether it
-// exists.
+// TestTheBackoffDoesNotDependOnTheNameBeingInTheTable holds that present and absent names lock after the same failures.
 func TestTheBackoffDoesNotDependOnTheNameBeingInTheTable(t *testing.T) {
 	b := tableWith(t, map[string]string{"alice": "secret"})
 	b.throttle = password.NewThrottle(b.throttleParams, newClock().now)
@@ -599,9 +546,7 @@ func TestOneNamesBackoffIsNotAnothers(t *testing.T) {
 	}
 }
 
-// TestTheBackoffParametersAreSettings holds the three settings each from its own
-// side: the free attempts, the window and the cap are read from the store, and a
-// value outside its domain, or no store, reads as the declared default.
+// TestTheBackoffParametersAreSettings holds the free attempts, window and cap, with an out-of-domain or absent store reading the default.
 func TestTheBackoffParametersAreSettings(t *testing.T) {
 	t.Run("free attempts", func(t *testing.T) {
 		store := newFakeSettings()
@@ -627,9 +572,6 @@ func TestTheBackoffParametersAreSettings(t *testing.T) {
 
 		for range 40 {
 			b.Verify(context.Background(), basic("alice", "wrong"))
-			// Each wait is over before the next attempt, so that every attempt
-			// is made and fails: attempts made during a wait are refused unread
-			// and are not counted. Forty of them stay inside the window.
 			clk.advance(10 * time.Second)
 		}
 		b.Verify(context.Background(), basic("alice", "wrong"))
@@ -686,9 +628,7 @@ func TestTheBackoffParametersAreSettings(t *testing.T) {
 	})
 }
 
-// TestTheDeclaredSettingsAreTheDesignsAndTheirDomainsHold holds the defaults and
-// the domains against the design's numbers, which a setting's reader and its
-// declaration both lean on.
+// TestTheDeclaredSettingsAreTheDesignsAndTheirDomainsHold holds the declared defaults and domains that readers and declarations lean on.
 func TestTheDeclaredSettingsAreTheDesignsAndTheirDomainsHold(t *testing.T) {
 	if defaults.CacheTTL != time.Minute || defaults.FreeAttempts != 5 ||
 		defaults.FailWindow != 15*time.Minute || defaults.MaxBackoff != 15*time.Minute {
@@ -728,9 +668,7 @@ func TestTheDeclaredSettingsAreTheDesignsAndTheirDomainsHold(t *testing.T) {
 	}
 }
 
-// TestALegacyEntryStillAuthenticates holds the read-only form end to end: an
-// entry in the old form, which nothing writes, is read at startup and verifies
-// its password.
+// TestALegacyEntryStillAuthenticates holds that the old entry form is read at startup and verifies its password.
 func TestALegacyEntryStillAuthenticates(t *testing.T) {
 	phc := cheapEntry(t, "secret")
 	fields := strings.Split(phc, "$") // "", "pbkdf2-sha256", "i=2,l=32", salt, hash
@@ -747,9 +685,7 @@ func TestALegacyEntryStillAuthenticates(t *testing.T) {
 	}
 }
 
-// TestEntriesOfAllThreeFormsShareOneTable holds that the form of an entry is its
-// own: Argon2id, PBKDF2 and the old form sit in one table and each verifies its
-// own password.
+// TestEntriesOfAllThreeFormsShareOneTable holds that each entry form verifies its own password in one table.
 func TestEntriesOfAllThreeFormsShareOneTable(t *testing.T) {
 	argon, err := Hash("argon-secret")
 	if err != nil {
@@ -776,7 +712,6 @@ func TestEntriesOfAllThreeFormsShareOneTable(t *testing.T) {
 	}
 }
 
-// capture is a log handler that keeps what it is handed, text and all.
 type capture struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -800,10 +735,7 @@ func (c *capture) String() string {
 	return c.buf.String()
 }
 
-// TestTheStartupNamesTheEntriesThatAreOldOrWeak holds the diagnostics that turn
-// a silent weak entry into a recorded one: an entry in the old form and an entry
-// below what OWASP recommends are each named once, by entry, and a sound entry
-// is not named. The entries themselves never reach the log.
+// TestTheStartupNamesTheEntriesThatAreOldOrWeak holds that each old or weak entry is named once and a sound one is not.
 func TestTheStartupNamesTheEntriesThatAreOldOrWeak(t *testing.T) {
 	sound, err := Hash("sound")
 	if err != nil {
@@ -835,8 +767,6 @@ func TestTheStartupNamesTheEntriesThatAreOldOrWeak(t *testing.T) {
 	if strings.Count(text, "old form") != 1 {
 		t.Errorf("the old-form entry is named %d times, want once:\n%s", strings.Count(text, "old form"), text)
 	}
-	// "old" is at 600000 iterations, which is not below the floor, so it is named
-	// as old and not as weak.
 	if strings.Count(text, "below the least") != 1 {
 		t.Errorf("the weak entry is named %d times, want once:\n%s", strings.Count(text, "below the least"), text)
 	}
@@ -847,12 +777,8 @@ func TestTheStartupNamesTheEntriesThatAreOldOrWeak(t *testing.T) {
 	}
 }
 
-// TestTheLinesAboutTheTableNameAnEntryAndNeverASubject holds the attribute the
-// table's own log lines carry. The log has no field called subject, because that
-// word means a bound external identity elsewhere in the library: a name of the
-// table is written as the entry, the name a line about a held-back name carries
-// is written only when the table holds it, and a name the table does not hold is
-// whatever a caller typed and is not written at all.
+// TestTheLinesAboutTheTableNameAnEntryAndNeverASubject holds the
+// attribute the table's own log lines carry.
 func TestTheLinesAboutTheTableNameAnEntryAndNeverASubject(t *testing.T) {
 	var out capture
 	b := tableWith(t, map[string]string{"alice": "secret", "Admin": "upper", "admin": "lower"})
@@ -895,10 +821,7 @@ func TestTheLinesAboutTheTableNameAnEntryAndNeverASubject(t *testing.T) {
 	}
 }
 
-// TestNamesThatDifferOnlyInCaseAreNamedAtStartupAndShareTheBackoff holds the
-// coupling the case-folded back-off key brings: the table matches names exactly
-// and the back-off does not, so two subjects spelt apart by case hold each other
-// back, and the startup says which ones. A name that has no twin is not named.
+// TestNamesThatDifferOnlyInCaseAreNamedAtStartupAndShareTheBackoff holds the case-folded back-off key and the startup naming.
 func TestNamesThatDifferOnlyInCaseAreNamedAtStartupAndShareTheBackoff(t *testing.T) {
 	var out capture
 	b := tableWith(t, map[string]string{"Admin": "upper", "admin": "lower", "bob": "bob-secret"})
@@ -934,9 +857,7 @@ func TestNamesThatDifferOnlyInCaseAreNamedAtStartupAndShareTheBackoff(t *testing
 	}
 }
 
-// TestModuleIsAnUnexclusiveVerifierThatAlwaysRuns holds the descriptor: it
-// delivers the verification capability without claiming it, so it stands beside
-// other backends, and it never stands itself down.
+// TestModuleIsAnUnexclusiveVerifierThatAlwaysRuns holds the non-exclusive capability and that the module never stands down.
 func TestModuleIsAnUnexclusiveVerifierThatAlwaysRuns(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName {
@@ -959,8 +880,6 @@ func TestModuleIsAnUnexclusiveVerifierThatAlwaysRuns(t *testing.T) {
 	}
 }
 
-// load reads a configuration body with the real loader and returns the error it
-// gives, which the shared reader of authntest turns into a failed test.
 func load(t *testing.T, body string) (config.Reader, error) {
 	t.Helper()
 	locator := t.TempDir() + "/config.json"
@@ -978,11 +897,7 @@ func load(t *testing.T, body string) (config.Reader, error) {
 	return config.Load(t.Context(), reg, nil)
 }
 
-// TestAValueOutsideItsDomainIsTheDefaultAndIsReportedAtError holds the read side
-// of a setting's domain, which the store judges only when a value is written: a
-// value found outside it is acted on as the declared default, the Error line
-// names the setting and not the table, and a setting read on every request is
-// written once for as long as it stays wrong.
+// TestAValueOutsideItsDomainIsTheDefaultAndIsReportedAtError holds the default, the named setting and the once-only Error.
 func TestAValueOutsideItsDomainIsTheDefaultAndIsReportedAtError(t *testing.T) {
 	store := newFakeSettings()
 	store.set(freeAttemptsPath, 1000)
@@ -1016,7 +931,6 @@ func TestAValueOutsideItsDomainIsTheDefaultAndIsReportedAtError(t *testing.T) {
 		t.Errorf("the report is not at Error:\n%s", text)
 	}
 
-	// Once the value is right and wrong again, it is reported again.
 	store.set(freeAttemptsPath, 3)
 	if got := b.throttleParams().FreeAttempts; got != 3 {
 		t.Fatalf("a value inside the domain reads as %d, want 3", got)
@@ -1028,9 +942,7 @@ func TestAValueOutsideItsDomainIsTheDefaultAndIsReportedAtError(t *testing.T) {
 	}
 }
 
-// TestALockedNameIsRefusedEvenWhenItsPasswordIsRemembered holds the order of
-// the lock and the cache: the cache saves a derivation and never a back-off, so
-// a password that held lately is refused for a name that is being held back.
+// TestALockedNameIsRefusedEvenWhenItsPasswordIsRemembered holds that the cache saves a derivation, never a back-off.
 func TestALockedNameIsRefusedEvenWhenItsPasswordIsRemembered(t *testing.T) {
 	b := tableWith(t, map[string]string{"alice": "secret"})
 	b.throttle = password.NewThrottle(b.throttleParams, newClock().now)
@@ -1053,9 +965,7 @@ func TestALockedNameIsRefusedEvenWhenItsPasswordIsRemembered(t *testing.T) {
 	}
 }
 
-// TestALockedNameIsRefusedBeforeTheContextIsLookedAt holds the order of the lock
-// and the call's time: a name that is being held back is refused as held back,
-// and the Unavailable of an ended call is for a name that is not.
+// TestALockedNameIsRefusedBeforeTheContextIsLookedAt holds the lock before the call's time check.
 func TestALockedNameIsRefusedBeforeTheContextIsLookedAt(t *testing.T) {
 	b := tableWith(t, map[string]string{"alice": "secret"})
 	b.throttle = password.NewThrottle(b.throttleParams, newClock().now)
@@ -1069,13 +979,9 @@ func TestALockedNameIsRefusedBeforeTheContextIsLookedAt(t *testing.T) {
 	}
 }
 
-// leaveKey carries the cancel function of a call to the derivation it makes.
 type leaveKey struct{}
 
-// TestAWrongPasswordWhoseCallerLeftDuringTheDerivationIsStillCounted holds that
-// the derivation, which takes no context, has an answer when it ends, and that
-// the answer is counted: a caller who disconnects as soon as it has sent a
-// password cannot try passwords without the back-off seeing them.
+// TestAWrongPasswordWhoseCallerLeftDuringTheDerivationIsStillCounted holds that derivations take no context and their answers still count.
 func TestAWrongPasswordWhoseCallerLeftDuringTheDerivationIsStillCounted(t *testing.T) {
 	b := tableWith(t, map[string]string{"alice": "secret"})
 	b.throttle = password.NewThrottle(b.throttleParams, newClock().now)
@@ -1103,9 +1009,7 @@ func TestAWrongPasswordWhoseCallerLeftDuringTheDerivationIsStillCounted(t *testi
 	}
 }
 
-// TestSpellingsOfAnUnknownNameShareTheBackoff holds the normalised key: failures
-// of a name in another case or with white space around it are failures of the
-// same key, so changing the spelling does not start the count over.
+// TestSpellingsOfAnUnknownNameShareTheBackoff holds the normalised key across case and whitespace.
 func TestSpellingsOfAnUnknownNameShareTheBackoff(t *testing.T) {
 	b := tableWith(t, map[string]string{"alice": "secret"})
 	b.throttle = password.NewThrottle(b.throttleParams, newClock().now)

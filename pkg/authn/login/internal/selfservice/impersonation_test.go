@@ -9,18 +9,12 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// impersonating makes the next requests those of an administrator acting as the
-// account inside one tenant, with a proof that would meet any requirement.
 func (h *harness) impersonating() {
 	h.t.Helper()
 	h.as(append(localMulti(time.Second), authntest.WithActor("admin-1"), authntest.WithScope("tenant-a"))...)
 }
 
-// TestAnImpersonatingIdentityChangesTheEffectiveAccountsPassword holds that the
-// routes act for the impersonated account instead of refusing the identity: the
-// password written is the effective account's, the rotated session is the
-// operator's own, and the sessions revoked as the others are the effective
-// account's.
+// TestAnImpersonatingIdentityChangesTheEffectiveAccountsPassword holds that the password is the target's and the rotated session the operator's.
 func TestAnImpersonatingIdentityChangesTheEffectiveAccountsPassword(t *testing.T) {
 	h := newHarness(t)
 	h.impersonating()
@@ -39,12 +33,7 @@ func TestAnImpersonatingIdentityChangesTheEffectiveAccountsPassword(t *testing.T
 	}
 }
 
-// TestNoSelfServiceRouteRefusesAnImpersonatingIdentity holds that the guard of
-// every self-service route lets an impersonating identity through: the route
-// then acts for the effective account or refuses for its own reason, and the
-// freshness the effective account calls for is decided from that account. Only
-// the routes that change how the account signs in read the factors; the contact
-// registration routes ask for none.
+// TestNoSelfServiceRouteRefusesAnImpersonatingIdentity holds that each route acts for the effective account or refuses for its own reason.
 func TestNoSelfServiceRouteRefusesAnImpersonatingIdentity(t *testing.T) {
 	for _, tc := range mutating {
 		t.Run(tc.name, func(t *testing.T) {

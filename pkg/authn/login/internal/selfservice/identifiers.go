@@ -12,11 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// removeIdentifier answers DELETE /identifiers/:id. The identifier has to be one
-// of the caller's own: an identifier that is not, whether it does not exist or
-// belongs to another account, is answered the same way, so that a caller learns
-// nothing about identifiers it does not hold. Whether the removal leaves the
-// account a way to log in is the account module's to say.
 func (r *routes) removeIdentifier(ctx context.Context, in identifierPathInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	who, ok := r.authorize(c, "")
@@ -40,23 +35,6 @@ func (r *routes) removeIdentifier(ctx context.Context, in identifierPathInput, m
 	return c.result()
 }
 
-// updateIdentifier answers PUT /identifiers/:id: it sets the two axes of one of
-// the caller's identifiers and possibly its default contact. The identifier has
-// to be the caller's own, whether it does not exist or belongs to another
-// account, so the route discloses nothing about what another account holds.
-//
-// The body's members are optional and each is left as it is when absent. A
-// registered address is always a contact, so contact true is accepted and
-// changes nothing while contact false is refused. Sign-in may be set true only
-// on an identifier whose ownership is proved, and the default contact may only
-// be a proved email address. Those refusals are bad-request before the account
-// module is asked. Changing sign-in or the default contact asks for the
-// freshness every change of what proves the account asks for; changing contact
-// alone does not. A write that would leave the account without a login name
-// answers 409 login-identifier-required and one that would leave it without any
-// way to sign in answers 409 last-login-method, and neither takes effect.
-// Putting a proved email address or phone number into sign-in is a rotation
-// point: the current session gets a new token and the others are revoked.
 func (r *routes) updateIdentifier(ctx context.Context, in updateIdentifierInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	who, ok := r.authorize(c, "")
@@ -67,8 +45,6 @@ func (r *routes) updateIdentifier(ctx context.Context, in updateIdentifierInput,
 		c.fail(mount.CodeBadRequest)
 		return c.result()
 	}
-	// The freshness a change of the way in asks for is decided from the body, so
-	// it is asked for here rather than in the precheck every other route uses.
 	if in.SignIn != nil || (in.DefaultContact != nil && *in.DefaultContact) {
 		id, found := authn.FromContext(c.ctx)
 		if !found {
@@ -104,8 +80,6 @@ func (r *routes) updateIdentifier(ctx context.Context, in updateIdentifierInput,
 		return c.result()
 	}
 
-	// The flags go first: they carry the refusals that must leave both parts of
-	// the request without effect, and the default contact is no rotation point.
 	selected := in.SignIn != nil && *in.SignIn && !row.SignIn
 	if in.Contact != nil || in.SignIn != nil {
 		flags := authn.IdentifierFlags{Contact: row.Contact, SignIn: row.SignIn}
@@ -133,12 +107,6 @@ func (r *routes) updateIdentifier(ctx context.Context, in updateIdentifierInput,
 	return c.result()
 }
 
-// unlink answers DELETE /links/:id. As for an identifier, the binding has to be
-// one of the caller's own. The account module refuses to remove the last way to
-// log in (ErrLastLoginMethod, a 409), and counts a way that only an IdP declared
-// as none, which is why the freshness this route asks for is a local one. After
-// the unbinding the current session is rotated, the others are revoked and
-// authn.binding.changed is published.
 func (r *routes) unlink(ctx context.Context, in linkPathInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	who, ok := r.authorize(c, actionBindingUnlink)
@@ -181,10 +149,6 @@ func (r *routes) unlink(ctx context.Context, in linkPathInput, meta *speedhttp.M
 	return c.result()
 }
 
-// providerClass is the class of a provider in the closed set the event payload
-// carries: google, github, wechat, oidc or saml. A provider written in none of
-// the namespaces of the account design has no class, and its unlinking publishes
-// no event rather than one with a value outside the set.
 func providerClass(provider string) (string, bool) {
 	switch {
 	case provider == "google", provider == "github", provider == "wechat":

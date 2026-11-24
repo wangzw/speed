@@ -10,8 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// humanType is the problem code a response body carries, without the type
-// prefix.
 func humanType(t *testing.T, body string) string {
 	t.Helper()
 	return strings.TrimPrefix(fmt.Sprint(decode(t, body)["type"]), "urn:speed:authn:")
@@ -21,9 +19,7 @@ func humanType(t *testing.T, body string) string {
 // proof, the mechanism it names, and the tokens it accepts. Every call is
 // recorded, so a case can see that the engine never asks the gate.
 type fakeHuman struct {
-	required bool
-	// byScope, when set, answers Required per scope instead of the single
-	// required flag, so a case can gate one surface and leave the other off.
+	required       bool
 	byScope        map[authn.HumanScope]bool
 	provider       string
 	siteKey        string
@@ -61,8 +57,6 @@ func (h *fakeHuman) Verify(_ context.Context, p authn.HumanProof, scope authn.Hu
 	return nil
 }
 
-// askedScopes is every scope the gate was asked about, through Required and
-// Verify alike.
 func (h *fakeHuman) askedScopes() []authn.HumanScope {
 	scopes := make([]authn.HumanScope, 0, len(h.requiredScopes)+len(h.verifyScopes))
 	scopes = append(scopes, h.requiredScopes...)
@@ -70,14 +64,10 @@ func (h *fakeHuman) askedScopes() []authn.HumanScope {
 	return scopes
 }
 
-// requiredHuman is a gate that requires a proof and accepts proof-1.
 func requiredHuman() *fakeHuman {
 	return &fakeHuman{required: true, provider: "pow", accept: map[string]bool{"proof-1": true}}
 }
 
-// assertOnlyScope holds that every question the gate was asked named want: a
-// route that asks the wrong surface is asking a different gate, and one that
-// asks both is held to a gate it does not send on.
 func assertOnlyScope(t *testing.T, human *fakeHuman, want authn.HumanScope) {
 	t.Helper()
 	scopes := human.askedScopes()
@@ -91,8 +81,6 @@ func assertOnlyScope(t *testing.T, human *fakeHuman, want authn.HumanScope) {
 	}
 }
 
-// phoneMethod is a login method whose first step declares the phone field, the
-// shape a method that sends a code has.
 func phoneMethod() *fakeMethod {
 	return &fakeMethod{name: "sms", desc: authn.MethodDescriptor{
 		Name: "sms", Kind: authn.MethodKindForm,
@@ -100,10 +88,7 @@ func phoneMethod() *fakeMethod {
 	}}
 }
 
-// TestTheEngineForwardsTheStartProofWithoutCheckingIt holds the start route's
-// side of the gate: the request's proof reaches the method in Start, and the
-// engine does not ask the gate. A proof is single-use, so a caller-side check
-// here would consume it before the code engine's own check.
+// TestTheEngineForwardsTheStartProofWithoutCheckingIt holds that a start request's proof reaches the method and the gate is never asked.
 func TestTheEngineForwardsTheStartProofWithoutCheckingIt(t *testing.T) {
 	m := phoneMethod()
 	var got authn.Start
@@ -131,9 +116,7 @@ func TestTheEngineForwardsTheStartProofWithoutCheckingIt(t *testing.T) {
 	}
 }
 
-// TestTheEngineForwardsAnAnswerProofWithoutCheckingIt holds the answer route:
-// an answer that carries a phone reaches the method with the proof in its
-// FlowState, and the gate is never asked.
+// TestTheEngineForwardsAnAnswerProofWithoutCheckingIt holds that an answer's proof reaches the method in FlowState and the gate is never asked.
 func TestTheEngineForwardsAnAnswerProofWithoutCheckingIt(t *testing.T) {
 	m := phoneMethod()
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -169,9 +152,7 @@ func TestTheEngineForwardsAnAnswerProofWithoutCheckingIt(t *testing.T) {
 	}
 }
 
-// TestTheEngineForwardsAFactorChallengeProofWithoutCheckingIt holds the second
-// factor: choosing an SMS factor hands the factor the request's proof in its
-// FlowState, and the engine does not ask the gate itself.
+// TestTheEngineForwardsAFactorChallengeProofWithoutCheckingIt holds that choosing an SMS factor hands the proof to the factor and the engine does not check it.
 func TestTheEngineForwardsAFactorChallengeProofWithoutCheckingIt(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -208,24 +189,13 @@ func TestTheEngineForwardsAFactorChallengeProofWithoutCheckingIt(t *testing.T) {
 	}
 }
 
-// TestARejectedStartLeavesNoContinuableFlowAndChargesNothing holds the record
-// the start writes before the method runs. The start route stores the flow at
-// the first state and only then calls the method's Begin, so a gate refusal
-// answers 403 after a record exists. That record must not be a second charge and
-// must not be a way to continue: the method reports no send, so the record's
-// send count stays zero; a Begin is not a client answer, so its answer count
-// stays zero; the record has no method step, so even a binding token would reach
-// no step the method can walk; and the refusal drops the flow cookie, so the
-// client never holds the token that record is keyed by. The record's lifetime is
-// the flow TTL, but this case does not advance the clock and does not wait for
-// expiry: it holds the record's shape and its zero counts only.
+// TestARejectedStartLeavesNoContinuableFlowAndChargesNothing holds the
+// record the start writes before the method runs.
 func TestARejectedStartLeavesNoContinuableFlowAndChargesNothing(t *testing.T) {
 	begins := 0
 	m := phoneMethod()
 	m.begin = func(authn.Start) (authn.Step, error) {
 		begins++
-		// What the SMS method answers when the code engine refuses the proof:
-		// the gate's sentinel, refused before anything was sent.
 		return authn.StepRefused(fmt.Errorf("authn.login.sms: %w", authn.ErrHumanVerificationRequired)), nil
 	}
 	r := newRig(t, m)
@@ -270,12 +240,7 @@ func TestARejectedStartLeavesNoContinuableFlowAndChargesNothing(t *testing.T) {
 	}
 }
 
-// TestAProoflessFirstStepIsNotReportedAsAFailedLogin holds the observation
-// side of the refusal: a proof the gate refuses is not a credential that did not
-// hold, so the first step is answered 403 human-verification-required and
-// records neither a failed login outcome nor a login audit row. A refusal for
-// any other cause still counts as a failed login, which the completions
-// instrument's own case pins.
+// TestAProoflessFirstStepIsNotReportedAsAFailedLogin holds that a gate refusal answers 403 and records neither a failed outcome nor an audit row.
 func TestAProoflessFirstStepIsNotReportedAsAFailedLogin(t *testing.T) {
 	reader, mp := newTestMetrics(t)
 	m := phoneMethod()
@@ -306,10 +271,7 @@ func TestAProoflessFirstStepIsNotReportedAsAFailedLogin(t *testing.T) {
 	}
 }
 
-// TestAFirstStepRefusedForAnArgumentIsReportedAsAFailedLogin holds the other
-// direction of the narrowed predicate: ErrInvalidArgument is an ordinary
-// argument refusal, not a proof refusal, so a method that answers with it keeps
-// the 400 its cause maps to and is still counted and audited as a failed login.
+// TestAFirstStepRefusedForAnArgumentIsReportedAsAFailedLogin holds that ErrInvalidArgument is an ordinary refusal, counted and audited as a failed login.
 func TestAFirstStepRefusedForAnArgumentIsReportedAsAFailedLogin(t *testing.T) {
 	reader, mp := newTestMetrics(t)
 	m := phoneMethod()
@@ -340,14 +302,8 @@ func TestAFirstStepRefusedForAnArgumentIsReportedAsAFailedLogin(t *testing.T) {
 	}
 }
 
-// TestAFactorChallengeProofRefusalIsNotReportedAsAFailedLogin holds the second
-// factor's observation side. Choosing a factor starts its challenge, and an SMS
-// factor checks the proof at the send entry: a missing or invalid proof is
-// ErrHumanVerificationRequired and an over-long one is ErrHumanProofTooLong. Both
-// keep their own 403 or 400 and record neither a failed login outcome nor a
-// login audit row; reporting the refusal first would count a proof the gate
-// never accepted as a credential that did not hold. The challenge is started
-// once in each case.
+// TestAFactorChallengeProofRefusalIsNotReportedAsAFailedLogin holds the
+// second factor's observation side.
 func TestAFactorChallengeProofRefusalIsNotReportedAsAFailedLogin(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -408,10 +364,7 @@ func TestAFactorChallengeProofRefusalIsNotReportedAsAFailedLogin(t *testing.T) {
 	}
 }
 
-// TestAFactorChallengeNonProofRefusalIsReportedAsAFailedLogin holds the other
-// side of the narrowed predicate: a factor challenge refused for a credential
-// that did not hold is a failed login, answered 401 login-failed, counted once
-// as password/failed and audited once. The challenge is started once.
+// TestAFactorChallengeNonProofRefusalIsReportedAsAFailedLogin holds that a wrong credential on a factor challenge answers 401 and is counted and audited once.
 func TestAFactorChallengeNonProofRefusalIsReportedAsAFailedLogin(t *testing.T) {
 	reader, mp := newTestMetrics(t)
 	m := &fakeMethod{name: "password"}
@@ -459,11 +412,7 @@ func TestAFactorChallengeNonProofRefusalIsReportedAsAFailedLogin(t *testing.T) {
 	}
 }
 
-// TestAFactorChallengeWithoutAProvenPhoneIsThePhoneRequiredProblem holds that a
-// factor whose account no longer holds the verified phone it enrolled with is a
-// precondition failure, not a credential that did not hold: the challenge answers
-// 403 phone-required and records neither a failed login outcome nor a login audit
-// row.
+// TestAFactorChallengeWithoutAProvenPhoneIsThePhoneRequiredProblem holds that a missing verified phone answers 403 phone-required with no failed outcome or audit row.
 func TestAFactorChallengeWithoutAProvenPhoneIsThePhoneRequiredProblem(t *testing.T) {
 	reader, mp := newTestMetrics(t)
 	m := &fakeMethod{name: "password"}
@@ -511,10 +460,8 @@ func TestAFactorChallengeWithoutAProvenPhoneIsThePhoneRequiredProblem(t *testing
 	}
 }
 
-// TestAStartWithNoProofReachesTheMethod holds the other direction: the engine
-// no longer refuses a send for want of a proof. The code engine makes that
-// decision, and the method is called with an empty proof so the code engine can
-// answer it.
+// TestAStartWithNoProofReachesTheMethod holds the other direction: the
+// engine no longer refuses a send for want of a proof.
 func TestAStartWithNoProofReachesTheMethod(t *testing.T) {
 	m := phoneMethod()
 	var got authn.Start

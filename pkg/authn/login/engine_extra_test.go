@@ -21,8 +21,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// readerWith builds a settings reader over the given values, with the disabled
-// methods defaulted to none so a read of the mandatory switch succeeds.
 func readerWith(values map[string]string) *reader {
 	all := map[string]string{disabledMethodsPath: "[]"}
 	for k, v := range values {
@@ -31,8 +29,6 @@ func readerWith(values map[string]string) *reader {
 	return newReader(&fakeStore{values: all}, slog.New(slog.NewTextHandler(ioDiscard{}, nil)))
 }
 
-// sendBudgetRig builds a rig whose answer reports the given send counts, one per
-// answer, against the default per-flow budget.
 func sendBudgetRig(t *testing.T, reports []int) *rig {
 	t.Helper()
 	m := &fakeMethod{name: "password"}
@@ -49,10 +45,7 @@ func sendBudgetRig(t *testing.T, reports []int) *rig {
 	return newRig(t, m)
 }
 
-// TestThePerFlowSendBudgetHolds holds the per-flow send budget: a report that is
-// exactly what is left is allowed, more than is left swaps the flow to its
-// tombstone and answers the method's outage, a negative report spends nothing,
-// and what earlier answers spent is subtracted.
+// TestThePerFlowSendBudgetHolds holds the per-flow send budget: exactly what is left is allowed, more tombstones the flow, and earlier sends are subtracted.
 func TestThePerFlowSendBudgetHolds(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -80,9 +73,7 @@ func TestThePerFlowSendBudgetHolds(t *testing.T) {
 	}
 }
 
-// TestAnOverstatedSendReportLeavesATombstone holds that a report that would widen
-// the budget ends the flow: the record is swapped to its tombstone, so a later
-// answer is refused.
+// TestAnOverstatedSendReportLeavesATombstone holds that a report which would widen the budget tombstones the flow, so a later answer is refused.
 func TestAnOverstatedSendReportLeavesATombstone(t *testing.T) {
 	r := sendBudgetRig(t, []int{9})
 	rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
@@ -95,10 +86,7 @@ func TestAnOverstatedSendReportLeavesATombstone(t *testing.T) {
 	}
 }
 
-// TestARefusedEnrollmentKeepsItsStepForTheSameSequence holds that a wrong
-// confirmation code leaves the registration at its step with its sequence number
-// unchanged, so the corrected code answers the same number and completes the
-// registration.
+// TestARefusedEnrollmentKeepsItsStepForTheSameSequence holds that a wrong confirmation code keeps the registration's step and sequence number for the retry.
 func TestARefusedEnrollmentKeepsItsStepForTheSameSequence(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	r := newRig(t, m)
@@ -142,9 +130,7 @@ func TestARefusedEnrollmentKeepsItsStepForTheSameSequence(t *testing.T) {
 	}
 }
 
-// TestApplyEnrollForwardsTheClientInput holds that the enroll step hands the
-// client's own input to MFA.Enroll, so a factor's confirmation step sees its own
-// fields.
+// TestApplyEnrollForwardsTheClientInput holds that the enroll step hands the client's own input to MFA.Enroll.
 func TestApplyEnrollForwardsTheClientInput(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	r := newRig(t, m)
@@ -178,10 +164,7 @@ func TestApplyEnrollForwardsTheClientInput(t *testing.T) {
 	}
 }
 
-// TestAnEnrollmentRefusedForAMissingPhoneIsThePhoneRequiredProblem holds that the
-// SMS factor's missing-phone precondition is not answered as a failed login: the
-// enrollment answers the 403 phone-required that tells the client to verify a
-// phone first, just as a malformed input keeps its own bad-request.
+// TestAnEnrollmentRefusedForAMissingPhoneIsThePhoneRequiredProblem holds that a missing phone answers 403 phone-required, and a malformed input its own bad-request.
 func TestAnEnrollmentRefusedForAMissingPhoneIsThePhoneRequiredProblem(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	r := newRig(t, m)
@@ -199,12 +182,7 @@ func TestAnEnrollmentRefusedForAMissingPhoneIsThePhoneRequiredProblem(t *testing
 	}
 }
 
-// TestAnAnswerCarriesAFieldLargerThanAStartField holds the two input bounds
-// apart: a WebAuthn credential's JSON runs past the 512-byte bound a start
-// field carries, and an answer that carries one must reach the method rather
-// than be refused as a bad request. The start bound and the answer bound were
-// once the same constant, so a credential was refused 400 on every passkey
-// step.
+// TestAnAnswerCarriesAFieldLargerThanAStartField holds that an answer may carry a WebAuthn credential past the start field's 512-byte bound.
 func TestAnAnswerCarriesAFieldLargerThanAStartField(t *testing.T) {
 	reached := false
 	m := &fakeMethod{
@@ -240,13 +218,7 @@ func TestAnAnswerCarriesAFieldLargerThanAStartField(t *testing.T) {
 	}
 }
 
-// TestASingleFactorEnrollmentCompletesAfterItsOwnFactorTurnsActive holds that a
-// registration does not fail on the very factor enablement it just caused: the
-// multi-factor module makes a pending factor active on the factor's last step,
-// before the engine's completion, and the completion's freshness re-check reads
-// the requirement the flow fixed at its start -- the fresh first factor a
-// factorless account asked for -- not one recomputed against the account's new
-// factor.
+// TestASingleFactorEnrollmentCompletesAfterItsOwnFactorTurnsActive holds that completion reads the requirement fixed at the start, not one recomputed after the factor turned active.
 func TestASingleFactorEnrollmentCompletesAfterItsOwnFactorTurnsActive(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	r := newRig(t, m)
@@ -257,8 +229,6 @@ func TestASingleFactorEnrollmentCompletesAfterItsOwnFactorTurnsActive(t *testing
 		if n == 1 {
 			return authn.StepPrompt("confirm", nil, authn.Field{Name: "code", Kind: authn.FieldCode, Required: true})
 		}
-		// The last step enables the factor, as MFA.Enroll does: the account now
-		// holds an active factor by the time the completion's review runs.
 		r.mfa.factors = []authn.FactorRecord{{ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive}}
 		return authn.StepEnrolled(authn.FactorRecord{ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive})
 	}
@@ -282,11 +252,7 @@ func TestASingleFactorEnrollmentCompletesAfterItsOwnFactorTurnsActive(t *testing
 	}
 }
 
-// TestTheCompletionReviewRefusesAnotherAccountsSession holds the guard the
-// session's own status feeds: a session that now belongs to another account
-// cannot carry the flow onto the account that started it. A marker left by a
-// lapsed impersonation is not this guard's business, because the flow is not
-// impersonating and the session still belongs to the account that started it.
+// TestTheCompletionReviewRefusesAnotherAccountsSession holds that a session that now belongs to another account cannot carry the flow.
 func TestTheCompletionReviewRefusesAnotherAccountsSession(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	r := newRig(t, m)
@@ -305,8 +271,7 @@ func TestTheCompletionReviewRefusesAnotherAccountsSession(t *testing.T) {
 	}
 }
 
-// TestTheEnrollNextStepCarriesTheKinds holds that a login whose policy requires a
-// factor answers next.kind=enroll with the kinds the assembly takes in.
+// TestTheEnrollNextStepCarriesTheKinds holds that a policy-required factor answers next.kind=enroll with the assembled kinds.
 func TestTheEnrollNextStepCarriesTheKinds(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -327,13 +292,7 @@ func TestTheEnrollNextStepCarriesTheKinds(t *testing.T) {
 	}
 }
 
-// TestTheFirstRegistrationAnswerDropsTheFirstFactorsStepState holds that the
-// private state a first factor carried while it proved does not reach the
-// registration as that step's own in-progress state: the enrollment's first
-// answer is handed an empty Private, so the multi-factor module starts a
-// registration instead of looking for a pending factor it never made. A
-// redirect first factor (social or enterprise) leaves such a state behind, and
-// a deployment that requires a factor parks that login at enroll.
+// TestTheFirstRegistrationAnswerDropsTheFirstFactorsStepState holds that the enrollment's first answer gets an empty Private, not the first factor's spent state.
 func TestTheFirstRegistrationAnswerDropsTheFirstFactorsStepState(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -380,9 +339,7 @@ func TestTheFirstRegistrationAnswerDropsTheFirstFactorsStepState(t *testing.T) {
 	}
 }
 
-// TestLoginWithNoUsableFactorIsRefused holds that a login whose account has
-// factors but none the engine can offer is a credential failure, not an account
-// with no factor.
+// TestLoginWithNoUsableFactorIsRefused holds that factors exist but none is offerable answers as a credential failure, not as an account with no factor.
 func TestLoginWithNoUsableFactorIsRefused(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -399,9 +356,7 @@ func TestLoginWithNoUsableFactorIsRefused(t *testing.T) {
 	}
 }
 
-// TestStartAuthenticatedRefusesAGoneSession holds the session check of the
-// authenticated start: a missing or revoked session is a flow-invalid 401, and a
-// status that cannot be read is a 503.
+// TestStartAuthenticatedRefusesAGoneSession holds that a missing or revoked session is flow-invalid, and an unreadable status 503.
 func TestStartAuthenticatedRefusesAGoneSession(t *testing.T) {
 	cases := []struct {
 		name string
@@ -426,8 +381,7 @@ func TestStartAuthenticatedRefusesAGoneSession(t *testing.T) {
 	}
 }
 
-// TestTheDeliveryModeSettingNarrowsWhatIsAllowed holds that a delivery mode
-// outside the configured set is refused even when the capability is present.
+// TestTheDeliveryModeSettingNarrowsWhatIsAllowed holds that a delivery mode outside the configured set is refused even when the capability is present.
 func TestTheDeliveryModeSettingNarrowsWhatIsAllowed(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("credentials", nil), nil }
@@ -441,9 +395,7 @@ func TestTheDeliveryModeSettingNarrowsWhatIsAllowed(t *testing.T) {
 	}
 }
 
-// TestAnActiveFactorRaisesTheLinkRequirement holds that an account with an active
-// factor is held to a fresh local multi-factor authentication before a link,
-// which a single-factor session does not satisfy.
+// TestAnActiveFactorRaisesTheLinkRequirement holds that an account with an active factor must present a fresh local multi-factor session before a link.
 func TestAnActiveFactorRaisesTheLinkRequirement(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	r := newRig(t, m)
@@ -456,9 +408,7 @@ func TestAnActiveFactorRaisesTheLinkRequirement(t *testing.T) {
 	}
 }
 
-// TestTheSourceAddressPreThrottleHolds holds the boundary of the source-address
-// pre-throttle: the sends up to the limit are served and the one past it is
-// throttled before the method runs, so it sends nothing.
+// TestTheSourceAddressPreThrottleHolds holds that the send past the limit is throttled before the method runs, so it sends nothing.
 func TestTheSourceAddressPreThrottleHolds(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -481,9 +431,7 @@ func TestTheSourceAddressPreThrottleHolds(t *testing.T) {
 	}
 }
 
-// TestTheSourceAddressPreThrottleCountsSendsNotStarts holds that the allowance
-// is spent by a verification message, not by opening a flow: a flow that sends
-// nothing spends nothing, and a flow that sends a code spends one.
+// TestTheSourceAddressPreThrottleCountsSendsNotStarts holds that the allowance is spent by a reported message, not by opening a flow.
 func TestTheSourceAddressPreThrottleCountsSendsNotStarts(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(s authn.Start) (authn.Step, error) {
@@ -501,7 +449,6 @@ func TestTheSourceAddressPreThrottleCountsSendsNotStarts(t *testing.T) {
 			t.Fatalf("flow %d that sends nothing answered %d, want 200: %s", i, rec.Code, rec.Body.String())
 		}
 	}
-	// A flow that sends one code spends the one available send.
 	if rec := r.send(http.MethodPost, "/api/v1/auth/flows",
 		`{"method":"password","input":{"phone":"+15550001111"}}`); rec.Code != http.StatusOK {
 		t.Fatalf("the flow that sends one code answered %d, want 200: %s", rec.Code, rec.Body.String())
@@ -510,16 +457,12 @@ func TestTheSourceAddressPreThrottleCountsSendsNotStarts(t *testing.T) {
 		`{"method":"password","input":{"phone":"+15550001111"}}`); rec.Code != http.StatusTooManyRequests {
 		t.Errorf("the code past the limit answered %d, want 429: %s", rec.Code, rec.Body.String())
 	}
-	// Three flows reached the method; the fourth was refused before it did.
 	if m.calls != 3 {
 		t.Errorf("the method ran %d times, want three: the refused flow still sent a message", m.calls)
 	}
 }
 
-// TestTheSourceAddressPreThrottleCountsEveryReportedSend holds that the counter
-// follows the method's report: a call that reports two sends spends two, so a
-// limit of ten is reached after five such calls, and the counter reads back a
-// two-digit value on the way.
+// TestTheSourceAddressPreThrottleCountsEveryReportedSend holds that a call reporting two sends spends two, so a limit of ten is reached after five calls.
 func TestTheSourceAddressPreThrottleCountsEveryReportedSend(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -541,8 +484,7 @@ func TestTheSourceAddressPreThrottleCountsEveryReportedSend(t *testing.T) {
 	}
 }
 
-// TestASourceAddressPreThrottleThatIsOffCountsNothing holds the layer turned off
-// (limit 0): every send is served and no counter is written for the address.
+// TestASourceAddressPreThrottleThatIsOffCountsNothing holds that limit zero serves every send and writes no counter.
 func TestASourceAddressPreThrottleThatIsOffCountsNothing(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -563,9 +505,7 @@ func TestASourceAddressPreThrottleThatIsOffCountsNothing(t *testing.T) {
 	}
 }
 
-// TestAnUnreadablePreThrottleCounterIsSkipped holds the layer's fail-open when
-// the counter cannot be read: it skips the layer and writes a Warn, so the sends
-// are still served.
+// TestAnUnreadablePreThrottleCounterIsSkipped holds the layer's fail-open: an unreadable counter skips it with a Warn and still serves the sends.
 func TestAnUnreadablePreThrottleCounterIsSkipped(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -587,8 +527,7 @@ func TestAnUnreadablePreThrottleCounterIsSkipped(t *testing.T) {
 	}
 }
 
-// TestAnUnwritablePreThrottleCounterIsSkipped holds the same fail-open when the
-// counter cannot be charged after a send.
+// TestAnUnwritablePreThrottleCounterIsSkipped holds the same fail-open when the counter cannot be charged after a send.
 func TestAnUnwritablePreThrottleCounterIsSkipped(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -610,9 +549,7 @@ func TestAnUnwritablePreThrottleCounterIsSkipped(t *testing.T) {
 	}
 }
 
-// TestTokenDeliveryIssuesATokenPair holds the token delivery: the session made is
-// a token session and the answer carries the access token, the refresh token and
-// a non-negative expiry.
+// TestTokenDeliveryIssuesATokenPair holds that token delivery makes a token session and answers both tokens with a non-negative expiry.
 func TestTokenDeliveryIssuesATokenPair(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -643,9 +580,7 @@ func TestTokenDeliveryIssuesATokenPair(t *testing.T) {
 	}
 }
 
-// TestASessionExpiryIsWrittenInUTC holds the wire rule for the login session
-// answer: the expiry leaves as a UTC instant whose text ends in Z, even when
-// the issued instant carries another zone.
+// TestASessionExpiryIsWrittenInUTC holds that the session expiry leaves as a UTC instant ending in Z.
 func TestASessionExpiryIsWrittenInUTC(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -669,9 +604,7 @@ func TestASessionExpiryIsWrittenInUTC(t *testing.T) {
 	}
 }
 
-// TestMethodsAndCurrentBehave holds the two listing routes: GET methods hides a
-// disabled method, and GET flows/current refuses a tombstone and echoes the flow
-// token of a header-bound flow.
+// TestMethodsAndCurrentBehave holds that GET methods hides a disabled method and GET flows/current refuses a tombstone and echoes a header-bound token.
 func TestMethodsAndCurrentBehave(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("credentials", nil), nil }
@@ -693,7 +626,6 @@ func TestMethodsAndCurrentBehave(t *testing.T) {
 		t.Errorf("GET methods with password named by the switch = %v, want the password descriptor kept", got.Body.String())
 	}
 
-	// A header-bound flow echoes its token in the flow reply and in a resume.
 	header := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password","binding":"header"}`)
 	tok, ok := decode(t, header.Body.String())["flow_token"].(string)
 	if !ok || tok == "" {
@@ -705,9 +637,7 @@ func TestMethodsAndCurrentBehave(t *testing.T) {
 	}
 }
 
-// TestTheStartupDiagnosticWarnsWhenThePreThrottleIsOff holds the relaxation
-// warning: the source-address pre-throttle being off is written as a Warn of its
-// own, and turning it on writes the proxy-bucket hint instead.
+// TestTheStartupDiagnosticWarnsWhenThePreThrottleIsOff holds that the off layer writes a Warn of its own, and the on layer the proxy-bucket hint instead.
 func TestTheStartupDiagnosticWarnsWhenThePreThrottleIsOff(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -733,9 +663,7 @@ func TestTheStartupDiagnosticWarnsWhenThePreThrottleIsOff(t *testing.T) {
 	}
 }
 
-// TestASecondFactorMustBeOneTheFlowOffered holds the second-factor selection
-// guards: a factor the flow did not offer is a flow-invalid 401, and an empty
-// factor is the 400 of a malformed step.
+// TestASecondFactorMustBeOneTheFlowOffered holds that an unoffered factor is flow-invalid and an empty factor the malformed-step 400.
 func TestASecondFactorMustBeOneTheFlowOffered(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -761,9 +689,7 @@ func TestASecondFactorMustBeOneTheFlowOffered(t *testing.T) {
 	}
 }
 
-// TestTheAnswerRouteDistinguishesItsRefusals holds that the 401 of a wrong step
-// number and the 401 of a refused credential carry different challenges, and
-// that an unknown step is the 400 the answer route writes.
+// TestTheAnswerRouteDistinguishesItsRefusals holds that a wrong sequence and a refused credential carry different challenges, and an unknown step a 400.
 func TestTheAnswerRouteDistinguishesItsRefusals(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("credentials", nil), nil }
@@ -788,9 +714,7 @@ func TestTheAnswerRouteDistinguishesItsRefusals(t *testing.T) {
 	}
 }
 
-// TestTheAssuranceNamesAndTheIDPKeyBoundArePinned holds the two small mappings
-// the login event carries: the assurance level's name, and that an idp.* key of
-// exactly the maximum length is kept.
+// TestTheAssuranceNamesAndTheIDPKeyBoundArePinned holds the assurance level's name and that an idp.* key of exactly the maximum length is kept.
 func TestTheAssuranceNamesAndTheIDPKeyBoundArePinned(t *testing.T) {
 	if got := assuranceName(authn.AssuranceSingle); got != "single" {
 		t.Errorf("AssuranceSingle is named %q, want single", got)
@@ -808,9 +732,7 @@ func TestTheAssuranceNamesAndTheIDPKeyBoundArePinned(t *testing.T) {
 	}
 }
 
-// TestTheFlowBoundsArePinned pins the published flow bounds to their literal
-// values, so a change to a constant is caught rather than followed by the test
-// that builds its boundary from it.
+// TestTheFlowBoundsArePinned pins the flow bounds to literal values, so a changed constant is caught rather than followed.
 func TestTheFlowBoundsArePinned(t *testing.T) {
 	if maxAnswers != 8 || maxInputFields != 8 || maxStartFieldBytes != 512 || maxAnswerFieldBytes != 8<<10 || maxReturnToBytes != 2048 {
 		t.Errorf("the flow bounds changed: answers %d, input fields %d, start field bytes %d, answer field bytes %d, return_to bytes %d",
@@ -818,7 +740,6 @@ func TestTheFlowBoundsArePinned(t *testing.T) {
 	}
 }
 
-// newTestMetrics builds a manual-reader meter provider a case collects from.
 func newTestMetrics(t *testing.T) (*sdkmetric.ManualReader, *sdkmetric.MeterProvider) {
 	t.Helper()
 	reader := sdkmetric.NewManualReader()
@@ -827,9 +748,6 @@ func newTestMetrics(t *testing.T) (*sdkmetric.ManualReader, *sdkmetric.MeterProv
 	return reader, mp
 }
 
-// loginMetricPairs collects the completions counter and returns its data points
-// keyed by "method/outcome". It fails when a data point is missing either
-// attribute, which is the closed set the instrument carries.
 func loginMetricPairs(t *testing.T, reader *sdkmetric.ManualReader) map[string]int {
 	t.Helper()
 	var rm metricdata.ResourceMetrics
@@ -860,12 +778,10 @@ func loginMetricPairs(t *testing.T, reader *sdkmetric.ManualReader) map[string]i
 	return out
 }
 
-// TestTheLoginCompletionsInstrumentCarriesMethodAndOutcome holds the instrument's
-// attribute set and that it counts a failed login, not only a completed one.
+// TestTheLoginCompletionsInstrumentCarriesMethodAndOutcome holds the instrument's attributes and that it counts failed logins too.
 func TestTheLoginCompletionsInstrumentCarriesMethodAndOutcome(t *testing.T) {
 	reader, mp := newTestMetrics(t)
 
-	// A login that completes counts success.
 	success := &fakeMethod{name: "password"}
 	success.begin = func(authn.Start) (authn.Step, error) {
 		return authn.StepProven(authn.Proof{Account: "acct1", Methods: []authn.Method{authn.MethodPassword}}), nil
@@ -880,7 +796,6 @@ func TestTheLoginCompletionsInstrumentCarriesMethodAndOutcome(t *testing.T) {
 	cookie := flowCookie(t, rec)
 	rs.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":0,"step":"complete"}`, "Cookie", cookie)
 
-	// A login whose first factor is refused counts failed.
 	refused := &fakeMethod{name: "password"}
 	refused.begin = func(authn.Start) (authn.Step, error) { return authn.StepRefused(errBoom), nil }
 	rr := newRig(t, refused)
@@ -898,9 +813,7 @@ func TestTheLoginCompletionsInstrumentCarriesMethodAndOutcome(t *testing.T) {
 	}
 }
 
-// TestAnAnswerAfterTheCallBudgetIsUnavailable holds the engine's call budget: a
-// method that answers only after the budget has ended is answered as an outage,
-// not with its late answer.
+// TestAnAnswerAfterTheCallBudgetIsUnavailable holds that an answer arriving after the call budget is an outage, not the late answer.
 func TestAnAnswerAfterTheCallBudgetIsUnavailable(t *testing.T) {
 	r := newRigMethod(t, &redirectMethod{})
 	r.p.settings = readerWith(map[string]string{ModuleName + "." + callBudgetKey: "1s"})
@@ -917,9 +830,7 @@ func TestAnAnswerAfterTheCallBudgetIsUnavailable(t *testing.T) {
 	}
 }
 
-// TestAMethodGivingOversizedPrivateStateIsAnOutage holds the surface bound the
-// model states on a method's private state: a step whose private bytes are over
-// it is answered as the method's outage rather than stored in the flow record.
+// TestAMethodGivingOversizedPrivateStateIsAnOutage holds that private state over the surface bound is an outage rather than stored.
 func TestAMethodGivingOversizedPrivateStateIsAnOutage(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -933,13 +844,10 @@ func TestAMethodGivingOversizedPrivateStateIsAnOutage(t *testing.T) {
 	}
 }
 
-// TestAResolverErrorFailsTheFlowClosed holds the resolver's failure path: a proof
-// the resolver refuses to resolve leaves the flow a failed tombstone, answers the
-// request and issues no session, rather than being read as a zero resolution.
+// TestAResolverErrorFailsTheFlowClosed holds that a refused proof leaves a failed tombstone and issues no session.
 func TestAResolverErrorFailsTheFlowClosed(t *testing.T) {
 	m := &redirectMethod{}
 	m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
-		// A proof that names no resolution source is the resolver's own error.
 		return authn.StepProven(authn.Proof{}), nil
 	}
 	r := newRigMethod(t, m)
@@ -958,11 +866,7 @@ func TestAResolverErrorFailsTheFlowClosed(t *testing.T) {
 	}
 }
 
-// TestALinkIsRefusedForAnUnverifiedAccount holds the signup gate of the
-// authenticated start: a pending self-registration cannot begin a link, the
-// answer is 403 contact-required, and no flow record is written. Step-up and
-// enroll are not gated, and an account that never self-registered or has proved
-// its address links as before.
+// TestALinkIsRefusedForAnUnverifiedAccount holds that a pending self-registration cannot start a link, answering 403 contact-required with no record.
 func TestALinkIsRefusedForAnUnverifiedAccount(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -1005,8 +909,7 @@ func TestALinkIsRefusedForAnUnverifiedAccount(t *testing.T) {
 	}
 }
 
-// TestStepUpAndEnrollAreNotGatedByTheSignupState holds the other two purposes:
-// an unverified account may still strengthen its session and register a factor.
+// TestStepUpAndEnrollAreNotGatedByTheSignupState holds that an unverified account may still step up and enroll a factor.
 func TestStepUpAndEnrollAreNotGatedByTheSignupState(t *testing.T) {
 	for _, body := range []string{
 		`{"purpose":"step-up","method":"password"}`,
@@ -1029,8 +932,7 @@ func TestStepUpAndEnrollAreNotGatedByTheSignupState(t *testing.T) {
 	}
 }
 
-// TestALinkOnAnUnreadableSignupStateIs503 holds the failure direction: a state
-// that cannot be read is unavailable, never a pass.
+// TestALinkOnAnUnreadableSignupStateIs503 holds the failure direction: an unreadable state is unavailable, never a pass.
 func TestALinkOnAnUnreadableSignupStateIs503(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	r := newRig(t, m)
@@ -1049,9 +951,7 @@ func TestALinkOnAnUnreadableSignupStateIs503(t *testing.T) {
 	}
 }
 
-// A registration step that refuses the input as malformed answers 400, not the
-// 401 a credential that did not hold gets: a label outside its domain never
-// reached a factor to check.
+// TestARegistrationRefusedForAMalformedInputIsABadRequest holds that a malformed enrollment input answers 400, not the credential 401.
 func TestARegistrationRefusedForAMalformedInputIsABadRequest(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	r := newRig(t, m)

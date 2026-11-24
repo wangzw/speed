@@ -28,63 +28,35 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The anonymous password reset. It is not a login flow: it keeps its own
-// binding in the reset cookie and its own key-value record, writes no login flow,
-// creates no session and touches no factor. A record belongs only to the cookie
-// that asked for it, and only a target that is eligible is ever sent a message;
-// every other target follows the same record, verify and answer path with a
-// suppressed record, so an answer never says whether an account can be reset.
 const (
-	// resetKeyPrefix starts the key of a reset record. The rest is the SHA-256 of
-	// the cookie secret, never the secret itself.
 	resetKeyPrefix = "authn:reset:"
 
 	resetRecordVersion = 1
 
-	// The states of a reset record. processing is the internal state while the
-	// password is being written; there is no done, because a success removes the
-	// record.
 	resetStateSent       = "sent"
 	resetStateVerified   = "verified"
 	resetStateProcessing = "processing"
 	resetStateFailed     = "failed"
 
-	// The two channels, the closed set the request names and the record keeps.
 	resetChannelEmail = "email"
 	resetChannelSMS   = "sms"
 
-	// The code is six digits and a record admits this many wrong answers, after
-	// which the record is failed and every later answer is still login-failed.
 	resetCodeDigits    = 6
 	maxResetAttempts   = 5
 	maxResetCodeLength = 32
 
-	// resetMailWorkers bounds the goroutines that deliver reset mail, so a burst
-	// of requests cannot open an unbounded number of carrier calls. A full pool
-	// answers 503 before a record is written, for an eligible and a suppressed
-	// target alike.
 	resetMailWorkers = 4
 
-	// The mandatory audit action of the reset, and the outcome its pre-write row
-	// carries. success and denied exist already, as outcomeSuccess and
-	// outcomeDenied are not declared in this package, so the two are named here.
 	actionPasswordReset = "authn.password.reset"
 	outcomeAttempted    = "attempted"
 	resetOutcomeDenied  = "denied"
 )
 
-// resetE164 and resetEmail are the shapes a reset identifier is accepted in. The
-// account module owns the authoritative normalization; these are the shapes a
-// message is paid for.
 var (
 	resetE164  = regexp.MustCompile(`^\+[1-9][0-9]{6,14}$`)
 	resetEmail = regexp.MustCompile(`^[^@\s]+@[^@\s]+$`)
 )
 
-// resetRecord is one anonymous password reset, the key-value store's value. It
-// stores no address and no phone: only the keyed digest of the normalized
-// identifier, the account and identifier row of an eligible target, the challenge
-// or a local digest of the code, and the counters and deadlines.
 type resetRecord struct {
 	Version          int       `json:"v"`
 	Channel          string    `json:"channel"`
@@ -104,9 +76,6 @@ type resetRecord struct {
 	Locale           string    `json:"locale,omitempty"`
 }
 
-// resetMailer bounds the goroutines that deliver reset email. A slot is reserved
-// before the record is written, so a full pool answers 503 with nothing written;
-// the slot is released when the carrier call returns.
 type resetMailer struct {
 	slots chan struct{}
 }
@@ -118,8 +87,6 @@ func newResetMailer(workers int) *resetMailer {
 	return &resetMailer{slots: make(chan struct{}, workers)}
 }
 
-// reserve takes one slot without waiting. A nil mailer, which is a product that
-// was not built through newProduct, admits everything.
 func (m *resetMailer) reserve() bool {
 	if m == nil {
 		return true
@@ -132,7 +99,6 @@ func (m *resetMailer) reserve() bool {
 	}
 }
 
-// release gives one slot back.
 func (m *resetMailer) release() {
 	if m == nil {
 		return
@@ -140,13 +106,6 @@ func (m *resetMailer) release() {
 	<-m.slots
 }
 
-// setResetCookie writes the reset cookie, the carrier of the reset binding. It
-// is built by cookiename.Cookie: __Host-authn-reset, whose prefix requires
-// Secure, a path of "/" and no Domain, or authn-reset on an http public URL,
-// where it carries the same attributes but Secure, which cookiename.Secure leaves
-// off there. A maxAge of -1 clears it; a set and a clear carry the same
-// attributes. The cookie is SameSite=Strict: the reset is driven from the site's
-// own page, and a cross-site request must not carry it.
 func (r *routes) setResetCookie(c *call, token string, maxAge int) {
 	c.setCookie(cookiename.Cookie(r.publicURL, cookiename.Spec{
 		Stem:     cookiename.Reset,
@@ -156,12 +115,8 @@ func (r *routes) setResetCookie(c *call, token string, maxAge int) {
 	}))
 }
 
-// resetKey is the key of a reset record: the prefix and the SHA-256 of the cookie
-// secret.
 func resetKey(token string) string { return resetKeyPrefix + tokenDigest(token) }
 
-// decodeResetRecord reads a reset record and refuses one of another version or
-// with an unknown field.
 func decodeResetRecord(raw []byte) (resetRecord, error) {
 	var rec resetRecord
 	dec := json.NewDecoder(strings.NewReader(string(raw)))
@@ -175,9 +130,7 @@ func decodeResetRecord(raw []byte) (resetRecord, error) {
 	return rec, nil
 }
 
-// loadResetRecord reads the record a presented cookie is bound to. A record whose
-// binding does not match the cookie, and one that cannot be decoded, are invalid
-// flows rather than outages.
+// A record whose binding does not match or cannot be decoded is an invalid flow, not an outage.
 func (r *routes) loadResetRecord(ctx context.Context, token string) (resetRecord, []byte, bool, error) {
 	if token == "" {
 		return resetRecord{}, nil, false, nil
@@ -199,8 +152,6 @@ func (r *routes) loadResetRecord(ctx context.Context, token string) (resetRecord
 	return rec, raw, true, nil
 }
 
-// storeResetRecord creates a reset record with a fresh lifetime and returns the
-// bytes it wrote, which a later compare-and-swap matches.
 func (r *routes) storeResetRecord(ctx context.Context, token string, rec resetRecord, ttl time.Duration) ([]byte, error) {
 	raw, err := json.Marshal(rec)
 	if err != nil {
@@ -212,10 +163,7 @@ func (r *routes) storeResetRecord(ctx context.Context, token string, rec resetRe
 	return raw, nil
 }
 
-// swapResetRecord advances a reset record with one compare-and-swap. A false
-// result, with no error, means another writer moved the record first, which the
-// caller answers as an invalid flow. The compare-and-swap does not extend the key's
-// lifetime, so a record's deadline is fixed when it is created.
+// A swap does not extend the record's lifetime; its deadline is fixed when the record is created.
 func (r *routes) swapResetRecord(ctx context.Context, token string, old []byte, rec resetRecord) ([]byte, bool, error) {
 	raw, err := json.Marshal(rec)
 	if err != nil {
@@ -228,7 +176,6 @@ func (r *routes) swapResetRecord(ctx context.Context, token string, old []byte, 
 	return raw, swapped, nil
 }
 
-// deleteResetRecord removes a reset record; it is idempotent.
 func (r *routes) deleteResetRecord(ctx context.Context, token string) error {
 	if err := r.kv.Delete(ctx, resetKey(token)); err != nil {
 		return fmt.Errorf("%s: removing a reset record: %w", ModuleName, err)
@@ -236,9 +183,6 @@ func (r *routes) deleteResetRecord(ctx context.Context, token string) error {
 	return nil
 }
 
-// normalizeResetIdentifier holds a reset identifier to the shape its channel
-// accepts and returns the form the account module normalizes to: an address is
-// trimmed and lowercased, a phone is kept as written.
 func normalizeResetIdentifier(channel, raw string) (string, bool) {
 	switch channel {
 	case resetChannelEmail:
@@ -261,22 +205,16 @@ func normalizeResetIdentifier(channel, raw string) (string, bool) {
 	return "", false
 }
 
-// resetIdentifierDigest is the keyed digest of a normalized identifier. The key
-// is the cookie secret's digest, so a reader of the store cannot enumerate
-// addresses or numbers, and the same-cookie resend test can compare it.
 func resetIdentifierDigest(token, channel, normalized string) string {
 	sum := sha256.Sum256([]byte(tokenDigest(token) + "\x00" + channel + "\x00" + normalized))
 	return hex.EncodeToString(sum[:])
 }
 
-// resetCodeDigest is the salted digest of a code, salted with the cookie secret's
-// digest. A reader of the store cannot recompute the digest of a guessed code.
 func resetCodeDigest(token, code string) string {
 	sum := sha256.Sum256([]byte(tokenDigest(token) + "\x00" + code))
 	return hex.EncodeToString(sum[:])
 }
 
-// resetDigestMatches compares two hexadecimal digests in constant time.
 func resetDigestMatches(want, got string) bool {
 	w, err1 := hex.DecodeString(want)
 	g, err2 := hex.DecodeString(got)
@@ -286,7 +224,6 @@ func resetDigestMatches(want, got string) bool {
 	return subtle.ConstantTimeCompare(w, g) == 1
 }
 
-// resetCode draws a six-digit code from the system's entropy source.
 func resetCode() (string, error) {
 	bound := new(big.Int).Exp(big.NewInt(10), big.NewInt(resetCodeDigits), nil)
 	n, err := rand.Int(rand.Reader, bound)
@@ -296,9 +233,7 @@ func resetCode() (string, error) {
 	return fmt.Sprintf("%0*d", resetCodeDigits, n.Int64()), nil
 }
 
-// resetDecoy is a local random digest a suppressed record compares against. It is
-// never the digest of a code a client could present, so a suppressed record never
-// verifies, and no call to the code verifier is made.
+// resetDecoy is a local random digest, so a suppressed record never verifies and never calls the code verifier.
 func resetDecoy() (string, error) {
 	var raw [32]byte
 	if _, err := rand.Read(raw[:]); err != nil {
@@ -307,11 +242,6 @@ func resetDecoy() (string, error) {
 	return hex.EncodeToString(raw[:]), nil
 }
 
-// resetEligible decides whether a target may be reset and returns the account and
-// identifier row that make it eligible. An identifier that names no account, a
-// deleted account, a disabled account, a service account, an account without a
-// password, and an identifier whose proof is not the requested channel's are all
-// ineligible, and none of them is an error.
 func (r *routes) resetEligible(ctx context.Context, channel, normalized string) (bool, authn.AccountID, string, error) {
 	kind := authn.IdentifierEmail
 	wantVia := authn.VerifiedViaEmailCode
@@ -348,9 +278,6 @@ func (r *routes) resetEligible(ctx context.Context, channel, normalized string) 
 	return false, "", "", nil
 }
 
-// resetRecordEligible re-checks, at the completion, that the account a verified
-// record names is still enabled, still a user with a password, and still holds the
-// proved identifier row under the same proof channel.
 func (r *routes) resetRecordEligible(ctx context.Context, rec resetRecord) (bool, error) {
 	account := authn.AccountID(rec.Account)
 	if account == "" || rec.IdentifierID == "" {
@@ -384,10 +311,6 @@ func (r *routes) resetRecordEligible(ctx context.Context, rec resetRecord) (bool
 	return false, nil
 }
 
-// resetOpen is the surface check every reset route makes before it acts: the
-// switch is open and the mandatory audit record is present. A closed switch is
-// 403 password-reset-closed; an absent audit is 503 unavailable, because the reset
-// does not publish without one.
 func (r *routes) resetOpen(c *call) bool {
 	if r.settings.passwordReset() != passwordResetOpen {
 		c.forbidden(mount.CodePasswordResetClosed)
@@ -402,10 +325,6 @@ func (r *routes) resetOpen(c *call) bool {
 	return true
 }
 
-// resetChannelReady is the channel check: the channel is assembled, a SMS channel
-// was not turned off by disabled-methods, and the SMS carrier can carry the reset
-// purpose. A channel the deployment took off answers 403 password-reset-closed; a
-// channel that is not assembled answers 503 unavailable.
 func (r *routes) resetChannelReady(c *call, channel string) bool {
 	switch channel {
 	case resetChannelEmail:
@@ -438,9 +357,6 @@ func (r *routes) resetChannelReady(c *call, channel string) bool {
 	return true
 }
 
-// resetChannelAvailable reports whether a channel may be published in the
-// discovery document. disabled is the set of method names turned off, read once by
-// the discovery handler.
 func (r *routes) resetChannelAvailable(channel string, disabled []string) bool {
 	switch channel {
 	case resetChannelEmail:
@@ -457,9 +373,6 @@ func (r *routes) resetChannelAvailable(channel string, disabled []string) bool {
 	return false
 }
 
-// passwordResetCapability is the discovery member: the deployment offers the
-// reset when the switch is open, the audit is present and at least one channel is
-// available. It is a deployment fact and carries no account dimension.
 func (r *routes) passwordResetCapability(disabled []string) passwordResetView {
 	out := passwordResetView{Methods: []string{}}
 	for _, channel := range []string{resetChannelEmail, resetChannelSMS} {
@@ -471,7 +384,6 @@ func (r *routes) passwordResetCapability(disabled []string) passwordResetView {
 	return out
 }
 
-// slicesContains reports whether list holds value.
 func slicesContains(list []string, value string) bool {
 	for _, item := range list {
 		if item == value {
@@ -481,7 +393,6 @@ func slicesContains(list []string, value string) bool {
 	return false
 }
 
-// resetDurations is the code lifetime and resend interval of a channel.
 func (r *routes) resetDurations(channel string) (codeTTL, resend time.Duration) {
 	if channel == resetChannelSMS {
 		return r.settings.smsCodeTTL(), r.settings.smsResend()
@@ -489,30 +400,14 @@ func (r *routes) resetDurations(channel string) (codeTTL, resend time.Duration) 
 	return r.settings.emailCodeTTL(), r.settings.emailResend()
 }
 
-// resetAnswer writes the answer of the send, current and verify routes. It is one
-// function so every path answers one shape.
 func resetAnswer(c *call, status int, state string, expiresIn, resendAfter int) {
 	c.json(status, passwordResetState{State: state, ExpiresIn: expiresIn, ResendAfter: resendAfter})
 }
 
-// resetSeconds is d in whole seconds, rounded up.
 func resetSeconds(d time.Duration) int {
 	return int((d + time.Second - 1) / time.Second)
 }
 
-// passwordResetStart runs POST password-reset. The order is the one the surface
-// fixes: the switch and the channel, then the identifier shape, then the email
-// channel's human proof, then the source-address pre-throttle, then the record
-// and the same-cookie resend interval, then eligibility, then the channel's own
-// budgets and send. The SMS channel's human-verification proof travels with the
-// send and is checked there, before any budget; the email code does not pass
-// through that sender, so its branch checks the proof here.
-//
-// A target that is not eligible and a target the budgets suppress follow the same
-// path as an eligible one: they get the same record shape, the same 202 and the
-// same cookie. The only 429 answers are the same cookie's outstanding resend
-// interval and the source-address pre-throttle; every send budget overrun
-// suppresses and still answers 202.
 func (r *routes) passwordResetStart(ctx context.Context, in passwordResetStartInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	channel := in.Channel
@@ -531,10 +426,6 @@ func (r *routes) passwordResetStart(ctx context.Context, in passwordResetStartIn
 		c.fail(mount.CodeBadRequest)
 		return c.result()
 	}
-	// The email branch sends outside the SMS code engine, so it holds the proof
-	// here, before the source-address pre-throttle and before any record is
-	// written. The SMS branch passes its proof to SMSCodes.Send and must not
-	// check it a second time: the proof is single-use.
 	if channel == resetChannelEmail && !r.checkHumanProof(c, in.HumanProof) {
 		return c.result()
 	}
@@ -547,9 +438,7 @@ func (r *routes) passwordResetStart(ctx context.Context, in passwordResetStartIn
 	codeTTL, resend := r.resetDurations(channel)
 	ticketTTL := r.settings.passwordResetTicketTTL()
 
-	// A live record on the presented cookie decides whether this is a resend of
-	// the same flow or a fresh one. A record being completed is refused outright:
-	// a start cannot race a password write on the same binding.
+	// A live record on the presented cookie decides resend versus fresh flow; a record being completed is refused, so a start cannot race a password write on the same binding.
 	token := ""
 	oldToken := ""
 	var oldRaw []byte
@@ -580,9 +469,7 @@ func (r *routes) passwordResetStart(ctx context.Context, in passwordResetStartIn
 				c.throttled(resend - elapsed)
 				return c.result()
 			}
-			// The record's lifetime was fixed when it was created. A code whose
-			// ticket could not fit before that deadline is not sent into it; the
-			// flow starts again with a fresh binding instead.
+			// A code whose ticket cannot fit before the record's fixed deadline is not sent; the flow restarts with a fresh binding.
 			if !now.Add(codeTTL + ticketTTL).After(old.ExpiresAt) {
 				resendFlow = true
 			}
@@ -609,8 +496,6 @@ func (r *routes) passwordResetStart(ctx context.Context, in passwordResetStartIn
 		deadline = old.ExpiresAt
 	}
 
-	// The channel sends, or the suppressed path, produce the code material and the
-	// send count the record keeps.
 	var (
 		suppressed  = !eligible
 		challengeID string
@@ -620,9 +505,6 @@ func (r *routes) passwordResetStart(ctx context.Context, in passwordResetStartIn
 	if resendFlow {
 		sends = old.Sends
 	}
-	// The email channel reserves one work-pool slot for an eligible and a
-	// suppressed target alike, before the record is written. The slot is released
-	// at return unless a real message was handed to the pool.
 	var (
 		emailSlot    bool
 		emailReady   bool
@@ -661,8 +543,6 @@ func (r *routes) passwordResetStart(ctx context.Context, in passwordResetStartIn
 		case sendErr == nil:
 			challengeID = sentID
 		case errors.Is(sendErr, authn.ErrThrottled):
-			// Any send budget or resend window overrun suppresses and still answers
-			// 202; the target cannot tell it from a real send.
 			suppressed, deliver = true, false
 		case errors.Is(sendErr, authn.ErrUnsupportedRegion):
 			r.meters.resetOperation(c.ctx, resetOpSend, channel, outcomeFailed)
@@ -683,8 +563,6 @@ func (r *routes) passwordResetStart(ctx context.Context, in passwordResetStartIn
 		}
 		if deliver {
 			sends++
-			// The pre-throttle is charged for the message this call sent. A call
-			// that crosses the limit still sends, exactly as the login engine's does.
 			if !r.chargeSends(c, 1) {
 				r.meters.resetOperation(c.ctx, resetOpSend, channel, outcomeThrottled)
 				return c.result()
@@ -692,18 +570,12 @@ func (r *routes) passwordResetStart(ctx context.Context, in passwordResetStartIn
 		}
 
 	case resetChannelEmail:
-		// The work pool is judged for an eligible and a suppressed target alike,
-		// before the record is written, so neither learns anything from a full
-		// pool. The slot is released at return for a target that sends nothing.
 		if !r.resetMail.reserve() {
 			r.meters.resetOperation(c.ctx, resetOpSend, channel, outcomeUnavailable)
 			c.unavailable()
 			return c.result()
 		}
 		emailSlot = true
-		// A send to the address is only meaningful for an eligible target, and it
-		// still meets an inbox's resend window and the reset's own budgets. Every
-		// such overrun suppresses; none is a 429.
 		if !suppressed {
 			resendKey := resetEmailResendKey(normalized)
 			mark, merr := json.Marshal(struct {
@@ -736,10 +608,6 @@ func (r *routes) passwordResetStart(ctx context.Context, in passwordResetStartIn
 			}
 		}
 		if suppressed && !eligible {
-			// A decoy sends nothing, so it spends no inbox resend window and no
-			// account or global budget. The inbox and source dimensions are still
-			// counted, exactly as the SMS capability counts a suppressed row, so the
-			// two paths meet the same counters.
 			if _, state := r.reserveResetEmailBudgets(c, now, normalized, "", c.clientIP); state == resetBudgetFailed {
 				r.meters.resetOperation(c.ctx, resetOpSend, channel, outcomeUnavailable)
 				return c.result()
@@ -802,21 +670,15 @@ func (r *routes) passwordResetStart(ctx context.Context, in passwordResetStartIn
 			r.fail(c, err)
 			return c.result()
 		}
-		// A fresh flow replaces whatever the presented cookie named.
 		if old != nil && oldToken != token {
 			if err := r.deleteResetRecord(c.ctx, oldToken); err != nil {
-				// The old record is unreachable now that the cookie names the new
-				// one; a failed removal only leaves it to expire.
 				log.FromContext(c.ctx).Warn(ModuleName+": a replaced reset record could not be removed",
 					"cause", err.Error())
 			}
 		}
 	}
 
-	// The message is handed to the pool only once the record it belongs to is
-	// durable. The deferred function dispatches it on return, off the response
-	// path; every early return above leaves emailDeliver false and releases the
-	// slot instead.
+	// The message is dispatched only after its record is durable; an early return releases the slot instead.
 	emailDeliver = emailReady
 
 	r.setResetCookie(c, token, resetSeconds(deadline.Sub(now)))
@@ -829,8 +691,6 @@ func (r *routes) passwordResetStart(ctx context.Context, in passwordResetStartIn
 	return c.result()
 }
 
-// passwordResetCurrent runs GET password-reset/current. It reports the state and
-// the deadlines and never the account, the identifier or the code.
 func (r *routes) passwordResetCurrent(ctx context.Context, _ struct{}, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	if !r.resetOpen(c) {
@@ -856,15 +716,11 @@ func (r *routes) passwordResetCurrent(ctx context.Context, _ struct{}, meta *spe
 	case resetStateVerified:
 		resetAnswer(c, http.StatusOK, resetStateVerified, resetSeconds(r.settings.passwordResetTicketTTL()), 0)
 	default:
-		// processing is the internal state of a password write; failed and any
-		// other state are not readable as a live reset.
 		c.unauthorized(mount.CodeFlowInvalid)
 	}
 	return c.result()
 }
 
-// passwordResetDelete runs DELETE password-reset/current. It is idempotent, does
-// not change with the switch, sends nothing and changes no account.
 func (r *routes) passwordResetDelete(ctx context.Context, _ struct{}, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	token := c.cookieValue(r.resetCookie)
@@ -879,9 +735,6 @@ func (r *routes) passwordResetDelete(ctx context.Context, _ struct{}, meta *spee
 	return c.result()
 }
 
-// passwordResetVerify runs POST password-reset/verify. A suppressed record
-// compares against its local decoy and never calls the code verifier, so any code
-// answers the same login-failed as a wrong one on a real record.
 func (r *routes) passwordResetVerify(ctx context.Context, in passwordResetVerifyInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	if !r.resetOpen(c) {
@@ -906,10 +759,7 @@ func (r *routes) passwordResetVerify(ctx context.Context, in passwordResetVerify
 		return c.result()
 	}
 	if rec.State == resetStateVerified {
-		// The code that proved the record still answers success: a reply lost on
-		// the way back must not turn a verified reset into an invalid flow. The
-		// comparison is against the digest the successful verification kept, so
-		// the code capability is not asked a second time.
+		// A verified record answers the same code again as success, so a lost reply does not invalidate the reset.
 		if in.Code == "" || len(in.Code) > maxResetCodeLength {
 			c.fail(mount.CodeBadRequest)
 			return c.result()
@@ -943,8 +793,6 @@ func (r *routes) passwordResetVerify(ctx context.Context, in passwordResetVerify
 	matched := false
 	switch {
 	case rec.Suppressed:
-		// The decoy digest is random; the comparison is made in the same shape as a
-		// real email compare so a suppressed record does no less work.
 		matched = resetDigestMatches(rec.CodeDigest, resetCodeDigest(token, in.Code))
 	case rec.Channel == resetChannelSMS:
 		verr := r.smsCodes.Verify(c.ctx, rec.ChallengeID, in.Code)
@@ -969,9 +817,6 @@ func (r *routes) passwordResetVerify(ctx context.Context, in passwordResetVerify
 	if matched {
 		rec.State = resetStateVerified
 		rec.Attempts = 0
-		// The digest is what lets the same code answer success again. The email
-		// record has had one since the send; the SMS record kept only the
-		// challenge, which the verification just spent.
 		rec.CodeDigest = resetCodeDigest(token, in.Code)
 		if _, swapped, err := r.swapResetRecord(c.ctx, token, raw, rec); err != nil || !swapped {
 			if err != nil {
@@ -1007,10 +852,7 @@ func (r *routes) passwordResetVerify(ctx context.Context, in passwordResetVerify
 	return c.result()
 }
 
-// passwordResetComplete runs POST password-reset/complete. The record moves
-// verified -> processing before the mandatory audit row is written, so two
-// concurrent completions have one winner; the password write happens only after
-// the attempted row is durable.
+// The record moves to processing before the mandatory audit row is written, and the password is written only after the attempted row is durable.
 func (r *routes) passwordResetComplete(ctx context.Context, in passwordResetCompleteInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	if !r.resetOpen(c) {
@@ -1049,8 +891,6 @@ func (r *routes) passwordResetComplete(ctx context.Context, in passwordResetComp
 		return c.result()
 	}
 
-	// The compare-and-swap is the at-most-once gate: the winner writes the
-	// password, every concurrent loser is refused as an invalid flow.
 	proc := rec
 	proc.State = resetStateProcessing
 	procRaw, swapped, err := r.swapResetRecord(c.ctx, token, raw, proc)
@@ -1066,8 +906,6 @@ func (r *routes) passwordResetComplete(ctx context.Context, in passwordResetComp
 
 	actionID := event.NewID()
 	if !r.resetAudit(c, account, rec.Channel, outcomeAttempted, actionID) {
-		// The mandatory row is the path's leave-behind: without it no password is
-		// written, and the record returns to verified so the caller can try again.
 		r.revertReset(c, token, procRaw, rec)
 		r.meters.resetOperation(c.ctx, resetOpComplete, rec.Channel, outcomeUnavailable)
 		c.unavailable()
@@ -1088,8 +926,6 @@ func (r *routes) passwordResetComplete(ctx context.Context, in passwordResetComp
 		switch {
 		case errors.Is(setErr, authn.ErrAccountUnavailable), errors.Is(setErr, authn.ErrAccountNotFound),
 			errors.Is(setErr, authn.ErrIdentifierRequired):
-			// The account turned ineligible between the re-check and the write: it was
-			// disabled, deleted, lost its credential or no longer has a login name.
 			r.resetAudit(c, account, rec.Channel, resetOutcomeDenied, actionID)
 			r.meters.resetOperation(c.ctx, resetOpComplete, rec.Channel, outcomeFailed)
 			c.forbidden(mount.CodePasswordResetUnavailable)
@@ -1099,9 +935,6 @@ func (r *routes) passwordResetComplete(ctx context.Context, in passwordResetComp
 			r.meters.resetOperation(c.ctx, resetOpComplete, rec.Channel, outcomeFailed)
 			c.fail(mount.CodeBadRequest)
 		default:
-			// An outage is not a refusal and writes no terminal row; the attempted
-			// row already records that the path was entered. The completion never
-			// answers 429: only the send route has the two 429 answers.
 			r.meters.resetOperation(c.ctx, resetOpComplete, rec.Channel, outcomeUnavailable)
 			log.FromContext(c.ctx).Warn(ModuleName+": a password write could not be made",
 				"cause", setErr.Error())
@@ -1115,11 +948,7 @@ func (r *routes) passwordResetComplete(ctx context.Context, in passwordResetComp
 	}
 
 	r.resetAudit(c, account, rec.Channel, outcomeSuccess, actionID)
-	// The password is written. Revoking the account's sessions is the half a
-	// failure here cannot undo; a failed revocation is an Error and the answer
-	// stays 204. The target's bearer impersonation tokens lapse through
-	// valid_after; an operator's cookie impersonation session belongs to another
-	// account and is not revoked.
+	// A failed revocation is logged and the answer stays 204: the password is already written.
 	if _, revErr := r.sessions.RevokeAccount(c.ctx, account, "", authn.ReasonPasswordChange); revErr != nil {
 		log.FromContext(c.ctx).Error(ModuleName+": the sessions of a reset account could not be revoked",
 			"cause", revErr.Error())
@@ -1134,9 +963,7 @@ func (r *routes) passwordResetComplete(ctx context.Context, in passwordResetComp
 	return c.result()
 }
 
-// revertReset moves a processing record back to verified, best effort. A failed
-// revert leaves the record unreadable, which is the safe direction: the password
-// was not written, and the caller has to start again.
+// A failed revert leaves the record unreadable, the safe direction: the password was not written.
 func (r *routes) revertReset(c *call, token string, procRaw []byte, verified resetRecord) {
 	if _, swapped, err := r.swapResetRecord(c.ctx, token, procRaw, verified); err != nil || !swapped {
 		log.FromContext(c.ctx).Warn(ModuleName+": a reset record could not be returned to verified",
@@ -1144,11 +971,6 @@ func (r *routes) revertReset(c *call, token string, procRaw []byte, verified res
 	}
 }
 
-// resetAudit writes one row of the mandatory reset action under a context whose
-// identity is the account being reset; the derived context reaches this one
-// Record call and is never handed to a handler. It reports whether the row was
-// written. A failure is counted on the audit-failure instrument, which the reset
-// rows mark mandatory.
 func (r *routes) resetAudit(c *call, account authn.AccountID, channel, outcome, actionID string) bool {
 	if r.audit == nil {
 		return false
@@ -1170,9 +992,6 @@ func (r *routes) resetAudit(c *call, account authn.AccountID, channel, outcome, 
 	return true
 }
 
-// dispatchResetEmail hands one reset message to the bounded pool. The response has
-// already been written and does not wait for the carrier; a failure is an Error
-// and a count, never a change of the answer.
 func (r *routes) dispatchResetEmail(ctx context.Context, to, code string, ttl time.Duration, locale string) {
 	if r.emailReset == nil {
 		r.resetMail.release()
@@ -1180,36 +999,28 @@ func (r *routes) dispatchResetEmail(ctx context.Context, to, code string, ttl ti
 	}
 	go func() {
 		defer r.resetMail.release()
-		// The request's cancellation must not cancel the message it already
-		// accepted; its values, the logger among them, are kept.
+		// The request's cancellation must not cancel a message it already accepted; its values, the logger among them, are kept.
 		sendCtx := context.WithoutCancel(ctx)
 		if err := r.emailReset.SendResetCode(sendCtx, to, code, ttl, locale); err != nil {
 			log.FromContext(sendCtx).Error(ModuleName+": a password reset email could not be sent",
 				"cause", err.Error())
-			// The send this request answered was already counted as sent (or
-			// suppressed); only the failure the response could not carry is added.
 			r.meters.resetOperation(sendCtx, resetOpSend, resetChannelEmail, outcomeFailed)
 		}
 	}()
 }
 
-// The result of reserving the reset email budgets.
 const (
 	resetBudgetOK = iota
 	resetBudgetOver
 	resetBudgetFailed
 )
 
-// resetEmailBudget is one dimension of the reset email send budget.
 type resetEmailBudget struct {
 	key    string
 	limit  int
 	bucket time.Duration
 }
 
-// resetEmailResendKey is the inbox resend window, shared with the self-service
-// email branch: one inbox carries one code at a time whatever purpose asked for
-// it.
 func resetEmailResendKey(email string) string {
 	sum := sha256.Sum256([]byte(budgetalias.Canonical(email)))
 	return "authn:email-resend:" + hex.EncodeToString(sum[:])
@@ -1222,12 +1033,6 @@ func resetEmailCanonicalSource(source string) string {
 	return source
 }
 
-// reserveResetEmailBudgets counts one attempt against the reset's own email
-// budgets. eligible selects the full set; an ineligible target only counts the
-// inbox and source dimensions, because it has no account and sends no message.
-// An overrun is reported as resetBudgetOver with what the attempt took given back;
-// a counter that cannot be written is resetBudgetFailed with the answer already
-// set to 503.
 func (r *routes) reserveResetEmailBudgets(c *call, now time.Time, email string, account authn.AccountID, source string) ([]string, int) {
 	addressSum := sha256.Sum256([]byte(budgetalias.Canonical(email)))
 	address := hex.EncodeToString(addressSum[:])
@@ -1300,9 +1105,6 @@ func (r *routes) reserveResetEmailBudgets(c *call, now time.Time, email string, 
 	return taken, resetBudgetOK
 }
 
-// refundResetEmailBudgets gives back the counts one attempt took, by a
-// compare-and-swap per key rather than a negative increment, so an expired window
-// is not recreated.
 func (r *routes) refundResetEmailBudgets(ctx context.Context, keys []string) {
 	for _, key := range keys {
 		raw, present, err := r.kv.Get(ctx, key)
@@ -1321,8 +1123,6 @@ func (r *routes) refundResetEmailBudgets(ctx context.Context, keys []string) {
 	}
 }
 
-// releaseResetEmailWindow gives back an inbox's resend claim when no message was
-// sent.
 func (r *routes) releaseResetEmailWindow(ctx context.Context, key string) {
 	if err := r.kv.Delete(ctx, key); err != nil {
 		log.FromContext(ctx).Warn(ModuleName+": a password reset resend window could not be released",

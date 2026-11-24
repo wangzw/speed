@@ -25,7 +25,6 @@ func decode(t *testing.T, body string) map[string]any {
 	return out
 }
 
-// startPassword begins a password flow and returns the flow cookie.
 func startPassword(t *testing.T, r *rig) string {
 	t.Helper()
 	rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
@@ -35,13 +34,9 @@ func startPassword(t *testing.T, r *rig) string {
 	return flowCookie(t, rec)
 }
 
-// errBoom is the cause a fake refusal carries.
 var errBoom = errors.New("boom")
 
-// TestFirstFactorPromptRefuseAndProveWalksTheStateMachine holds the first
-// factor's moves: a prompt keeps the flow at the first factor and bumps the step
-// number, a refusal keeps it there at the same step number and answers
-// login-failed, and a proof moves it to ready.
+// TestFirstFactorPromptRefuseAndProveWalksTheStateMachine holds how a prompt, a refusal and a proof each move the first-factor flow.
 func TestFirstFactorPromptRefuseAndProveWalksTheStateMachine(t *testing.T) {
 	step := 0
 	m := &fakeMethod{name: "password"}
@@ -83,11 +78,7 @@ func TestFirstFactorPromptRefuseAndProveWalksTheStateMachine(t *testing.T) {
 	}
 }
 
-// TestARefusedFirstFactorKeepsItsStepForTheSameSequence holds the design's rule
-// for a submit-class refusal: the sequence number does not move and the method's
-// step and private state stay in the record, because that step is what the
-// retry answers. The refusal reply carries no sequence number, so the client has
-// nothing but the one it already holds.
+// TestARefusedFirstFactorKeepsItsStepForTheSameSequence holds that a refused submit keeps the sequence number and the method's step and private state for the retry.
 func TestARefusedFirstFactorKeepsItsStepForTheSameSequence(t *testing.T) {
 	private := []byte(`{"challenge":"abc"}`)
 	attempts := 0
@@ -139,10 +130,7 @@ func TestARefusedFirstFactorKeepsItsStepForTheSameSequence(t *testing.T) {
 	}
 }
 
-// TestARefusedSecondFactorKeepsItsChallengeForTheSameSequence holds that a code
-// the factor refuses leaves the flow at the second factor with its sequence
-// number and the started challenge in place, so the corrected code answers the
-// same number.
+// TestARefusedSecondFactorKeepsItsChallengeForTheSameSequence holds that a refused second-factor code keeps the sequence number and the started challenge.
 func TestARefusedSecondFactorKeepsItsChallengeForTheSameSequence(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -190,10 +178,7 @@ func TestARefusedSecondFactorKeepsItsChallengeForTheSameSequence(t *testing.T) {
 	}
 }
 
-// TestARefusedChallengeKeepsTheOfferedFactorsForTheSameSequence holds that a
-// factor whose challenge is refused leaves the flow at the second factor with
-// its sequence number and the whole offered list, so the same number may choose
-// another factor.
+// TestARefusedChallengeKeepsTheOfferedFactorsForTheSameSequence holds that a refused challenge keeps the sequence number and the whole offered list.
 func TestARefusedChallengeKeepsTheOfferedFactorsForTheSameSequence(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -238,10 +223,7 @@ func TestARefusedChallengeKeepsTheOfferedFactorsForTheSameSequence(t *testing.T)
 	}
 }
 
-// TestARefusalIsAnsweredByItsCause holds the design's rule that a first factor's
-// refusal is not always login-failed: a phone prefix outside the allow-list is a
-// 400 unsupported-region and an identifier that cannot name an account is a 400
-// bad-request, while a credential that did not hold stays a 401 login-failed.
+// TestARefusalIsAnsweredByItsCause holds that the two 400 causes answer unsupported-region and bad-request, and every other refusal login-failed.
 func TestARefusalIsAnsweredByItsCause(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -275,10 +257,7 @@ func TestARefusalIsAnsweredByItsCause(t *testing.T) {
 	}
 }
 
-// TestNegativeVectorsAreRefusedBeforeTheMethodRuns holds the request checks that
-// come before a method is called: a wrong step number, a step the state does not
-// take, a missing or mismatched binding, an unknown field, and the wrong content
-// type.
+// TestNegativeVectorsAreRefusedBeforeTheMethodRuns holds the step, binding, unknown-field and content-type checks that precede a method.
 func TestNegativeVectorsAreRefusedBeforeTheMethodRuns(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("credentials", nil), nil }
@@ -343,9 +322,7 @@ func TestWrongContentTypeIsRefused(t *testing.T) {
 	}
 }
 
-// TestMethodDefectsAreAnsweredWithoutLeakingTheCause holds the failure direction
-// for a method's own faults: a panic and an over-budget call are the method's
-// outage, and no answer at all is a server error.
+// TestMethodDefectsAreAnsweredWithoutLeakingTheCause holds that a panic or an over-budget call is an outage, and no answer at all a server error.
 func TestMethodDefectsAreAnsweredWithoutLeakingTheCause(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -363,8 +340,7 @@ func TestMethodDefectsAreAnsweredWithoutLeakingTheCause(t *testing.T) {
 	}
 }
 
-// TestKVUnavailableIsRefused holds the fail-closed direction of the key-value
-// store: beginning a flow against a store that cannot be read is a 503.
+// TestKVUnavailableIsRefused holds that beginning a flow against an unreadable store answers 503.
 func TestKVUnavailableIsRefused(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("credentials", nil), nil }
@@ -375,8 +351,7 @@ func TestKVUnavailableIsRefused(t *testing.T) {
 	}
 }
 
-// TestASecondFactorIsOfferedAndPassed holds the second-factor path: a different
-// kind is offered, its challenge is started, and a pass moves the flow to ready.
+// TestASecondFactorIsOfferedAndPassed holds that a factor of a different kind is offered, challenged and passed to ready.
 func TestASecondFactorIsOfferedAndPassed(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -418,9 +393,7 @@ func TestASecondFactorIsOfferedAndPassed(t *testing.T) {
 	}
 }
 
-// TestEnrollFlowCompletes holds the enrollment's terminal action: a registration
-// started on an authenticated identity reaches ready, and its completion revokes
-// the account's other sessions without changing the session's level.
+// TestEnrollFlowCompletes holds that an enrollment reaches ready and revokes the account's other sessions without raising the session's level.
 func TestEnrollFlowCompletes(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	r := newRig(t, m)
@@ -447,8 +420,7 @@ func TestEnrollFlowCompletes(t *testing.T) {
 	}
 }
 
-// TestStepUpWithASecondFactorCompletes holds the step-up: a session's factors are
-// offered, a challenge is started, and a pass elevates the session.
+// TestStepUpWithASecondFactorCompletes holds that a step-up offers the session's factors, challenges one and elevates the session.
 func TestStepUpWithASecondFactorCompletes(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	r := newRig(t, m)
@@ -490,10 +462,7 @@ func TestStepUpWithASecondFactorCompletes(t *testing.T) {
 	}
 }
 
-// TestAStepUpWithOnlyFactorsRegisteredThisSessionReprovesThePassword holds that
-// an account whose factors were all activated after the session authenticated
-// does not have its step-up refused: the flow starts at the password and offers
-// those factors as the second step once the password is proved again.
+// TestAStepUpWithOnlyFactorsRegisteredThisSessionReprovesThePassword holds that such a flow starts at the password and then offers those factors as the second step.
 func TestAStepUpWithOnlyFactorsRegisteredThisSessionReprovesThePassword(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -506,8 +475,6 @@ func TestAStepUpWithOnlyFactorsRegisteredThisSessionReprovesThePassword(t *testi
 	r.loginAsAuthenticated("acct1", "sid")
 	r.allowWithPassword("acct1")
 	r.mfa.outcome = authn.MFAFactor
-	// A factor activated after the session's own authentication time may
-	// strengthen it only once the password is proved again.
 	r.mfa.offered = []authn.FactorRecord{{
 		ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive, ActivatedAt: time.Now().Add(time.Minute),
 	}}
@@ -571,11 +538,7 @@ func TestAStepUpWithOnlyFactorsRegisteredThisSessionReprovesThePassword(t *testi
 	}
 }
 
-// TestAStepUpWithAFactorRegisteredThisSessionHonoursTheRequestedMethod holds
-// that a step-up whose only factors were registered during this session starts
-// at the method the request names when the deployment takes it in: that
-// method's own first step runs, not the password's, and the registered factors
-// stay on offer as the second step.
+// TestAStepUpWithAFactorRegisteredThisSessionHonoursTheRequestedMethod holds that such a flow starts at the named method when the deployment takes it in, keeping the factors on offer.
 func TestAStepUpWithAFactorRegisteredThisSessionHonoursTheRequestedMethod(t *testing.T) {
 	password := &fakeMethod{name: "password"}
 	password.begin = func(authn.Start) (authn.Step, error) {
@@ -622,10 +585,7 @@ func TestAStepUpWithAFactorRegisteredThisSessionHonoursTheRequestedMethod(t *tes
 	}
 }
 
-// TestAStepUpWithAFactorRegisteredThisSessionFallsBackToThePasswordForAnUnassembledMethod
-// holds the fallback a method this deployment does not take in gets: it is not
-// a bad request there, and the flow starts at the password the account holds
-// again, exactly as a request that named no method does.
+// TestAStepUpWithAFactorRegisteredThisSessionFallsBackToThePasswordForAnUnassembledMethod holds that an unassembled named method falls back to the password instead of a bad request.
 func TestAStepUpWithAFactorRegisteredThisSessionFallsBackToThePasswordForAnUnassembledMethod(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -656,11 +616,7 @@ func TestAStepUpWithAFactorRegisteredThisSessionFallsBackToThePasswordForAnUnass
 	}
 }
 
-// TestAStepUpNamingAPasswordTheAccountCannotProveIsRefused holds that a step-up
-// whose only factors were registered during this session does not start on a
-// password the account cannot prove: naming it explicitly is the same bad
-// request as naming a method this deployment does not take in, refused at the
-// start rather than left to fail when the password is asked for.
+// TestAStepUpNamingAPasswordTheAccountCannotProveIsRefused holds that naming an unprovable password is a bad request at the start, not a failed proof.
 func TestAStepUpNamingAPasswordTheAccountCannotProveIsRefused(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -690,10 +646,7 @@ func TestAStepUpNamingAPasswordTheAccountCannotProveIsRefused(t *testing.T) {
 	}
 }
 
-// TestAStepUpWithNoFactorNamingAPasswordTheAccountCannotProveIsRefused holds the
-// same refusal where the account holds no factor at all: the named password is
-// the account's only first factor there, and an account that cannot prove one
-// gets a bad request before any flow record is written.
+// TestAStepUpWithNoFactorNamingAPasswordTheAccountCannotProveIsRefused holds the same refusal when the account holds no factor at all.
 func TestAStepUpWithNoFactorNamingAPasswordTheAccountCannotProveIsRefused(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -719,11 +672,7 @@ func TestAStepUpWithNoFactorNamingAPasswordTheAccountCannotProveIsRefused(t *tes
 	}
 }
 
-// TestAStepUpWithNoFactorRefusesAMethodTheSessionWasNotEstablishedWith holds
-// REQ-security-016's first-factor channel: an account with no factors re-proves
-// the channel its session was established with, so a password session naming an
-// assembled SMS method is a bad request at the start, and the method never
-// begins.
+// TestAStepUpWithNoFactorRefusesAMethodTheSessionWasNotEstablishedWith holds that only the session's own channel may be re-proved, so another assembled method never begins.
 func TestAStepUpWithNoFactorRefusesAMethodTheSessionWasNotEstablishedWith(t *testing.T) {
 	password := &fakeMethod{name: "password"}
 	sms := &fakeMethod{name: "sms"}
@@ -748,9 +697,7 @@ func TestAStepUpWithNoFactorRefusesAMethodTheSessionWasNotEstablishedWith(t *tes
 	}
 }
 
-// TestAStepUpWithNoFactorStartsTheSessionChannel holds the positive half: a
-// session established by an SMS code may re-prove that code, and the method of
-// the same channel begins.
+// TestAStepUpWithNoFactorStartsTheSessionChannel holds that a session established by SMS may re-prove that code and the method begins.
 func TestAStepUpWithNoFactorStartsTheSessionChannel(t *testing.T) {
 	password := &fakeMethod{name: "password"}
 	sms := &fakeMethod{name: "sms"}
@@ -777,10 +724,7 @@ func TestAStepUpWithNoFactorStartsTheSessionChannel(t *testing.T) {
 	}
 }
 
-// TestAStepUpWithNoPasswordIsRefused holds the boundary: an account with no
-// password to prove again has no first factor that lets factors registered
-// during the session strengthen it, so the step-up is refused and the person
-// re-establishes the session instead.
+// TestAStepUpWithNoPasswordIsRefused holds that an account with no password has no first factor, so the step-up is refused.
 func TestAStepUpWithNoPasswordIsRefused(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	r := newRig(t, m)
@@ -797,9 +741,7 @@ func TestAStepUpWithNoPasswordIsRefused(t *testing.T) {
 	}
 }
 
-// TestCompleteMakesASessionOnce holds the terminal login action: a ready flow
-// completed twice makes a session once, the second completion refused by the
-// tombstone.
+// TestCompleteMakesASessionOnce holds that completing a ready flow twice makes a session once, the second refused by the tombstone.
 func TestCompleteMakesASessionOnce(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -831,12 +773,7 @@ func TestCompleteMakesASessionOnce(t *testing.T) {
 	}
 }
 
-// TestTheLoginAuditIsWrittenUnderADerivedIdentity holds that the audit row of a
-// completed login is written under an identity the engine derives for that one
-// call: the login runs on an Open route whose own context carries no identity,
-// yet the row's actor is the account the login just proved. The request's own
-// context is left as it was, so the login identity does not flow back into the
-// chain the request runs in.
+// TestTheLoginAuditIsWrittenUnderADerivedIdentity holds that the row carries the just-proved account as actor, though the Open route carries no identity.
 func TestTheLoginAuditIsWrittenUnderADerivedIdentity(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -846,8 +783,6 @@ func TestTheLoginAuditIsWrittenUnderADerivedIdentity(t *testing.T) {
 	r.allow("acct1")
 	sink := &auditing{}
 	r.p.audit = sink
-	// The route carries no identity, so anything on the request's own context
-	// after the handler came from the engine writing it back.
 	r.watchCtx.Store(true)
 
 	rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
@@ -866,10 +801,7 @@ func TestTheLoginAuditIsWrittenUnderADerivedIdentity(t *testing.T) {
 	}
 }
 
-// TestAMustChangeLoginRevokesTheAccountsOtherSessions holds the terminal action's
-// password-change branch: a login whose proof replaced the account's password
-// revokes the account's other sessions and keeps the new one, while a login that
-// did not touch the password leaves them alone.
+// TestAMustChangeLoginRevokesTheAccountsOtherSessions holds that a login whose proof changed the password revokes the other sessions, and a login that did not leaves them.
 func TestAMustChangeLoginRevokesTheAccountsOtherSessions(t *testing.T) {
 	login := func(passwordChanged bool) *rig {
 		t.Helper()
@@ -907,8 +839,7 @@ func TestAMustChangeLoginRevokesTheAccountsOtherSessions(t *testing.T) {
 	}
 }
 
-// TestAnswersAreCappedAtEight holds the per-flow answer limit: the ninth answer
-// makes the flow a tombstone and is refused.
+// TestAnswersAreCappedAtEight holds the per-flow answer limit: the ninth answer makes the flow a tombstone and is refused.
 func TestAnswersAreCappedAtEight(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("credentials", nil), nil }
@@ -930,8 +861,7 @@ func TestAnswersAreCappedAtEight(t *testing.T) {
 	}
 }
 
-// TestCrossSiteStartIsRefusedByTheWrapper holds that the cross-origin check runs
-// before the handler: a cross-site POST flows is refused without reaching it.
+// TestCrossSiteStartIsRefusedByTheWrapper holds that a cross-site POST flows is refused before the handler.
 func TestCrossSiteStartIsRefusedByTheWrapper(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("credentials", nil), nil }
@@ -946,8 +876,7 @@ func TestCrossSiteStartIsRefusedByTheWrapper(t *testing.T) {
 	}
 }
 
-// TestDisabledMethodIsRefused holds that a method the operator turned off answers
-// method-disabled without reaching its Begin.
+// TestDisabledMethodIsRefusedWithAMethodDisabledCode holds that a disabled method answers method-disabled without reaching Begin.
 func TestDisabledMethodIsRefusedWithAMethodDisabledCode(t *testing.T) {
 	m := &fakeMethod{name: "sms"}
 	m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("phone", nil), nil }
@@ -962,9 +891,7 @@ func TestDisabledMethodIsRefusedWithAMethodDisabledCode(t *testing.T) {
 	}
 }
 
-// TestThePasswordMethodIsNeverTurnedOffByTheSwitch holds that a raw value naming
-// password neither hides it from the listing nor refuses its flow, while the
-// other names in the same value still turn their methods off.
+// TestThePasswordMethodIsNeverTurnedOffByTheSwitch holds that a raw value naming password neither hides nor refuses it, while the other names still apply.
 func TestThePasswordMethodIsNeverTurnedOffByTheSwitch(t *testing.T) {
 	password := &fakeMethod{name: "password"}
 	password.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("credentials", nil), nil }
@@ -993,8 +920,6 @@ func TestThePasswordMethodIsNeverTurnedOffByTheSwitch(t *testing.T) {
 	}
 }
 
-// fakeStore is a settings store that answers string and int items and errors for
-// the rest.
 type fakeStore struct{ values map[string]string }
 
 func (s *fakeStore) Get(_ settings.Layer, key string, target any) error {
@@ -1042,8 +967,6 @@ func (s *fakeStore) Read(key string, reads ...settings.LayerRead) ([]settings.La
 	return results, nil
 }
 
-// readerWithDisabled builds a settings reader whose disabled-methods switch lists
-// the names given.
 func readerWithDisabled(t *testing.T, names ...string) *reader {
 	t.Helper()
 	encoded, err := json.Marshal(names)
@@ -1073,9 +996,7 @@ func itoa(n int) string {
 	return string(b)
 }
 
-// TestAStepUpOffersTheOtherFactorsWhenOneIsExcluded holds the deletion case
-// with factors to spare: the caller excludes the factor it is about to remove,
-// so the offered list carries the others and never the one leaving.
+// TestAStepUpOffersTheOtherFactorsWhenOneIsExcluded holds that excluding the factor about to be deleted leaves the others in the offered list.
 func TestAStepUpOffersTheOtherFactorsWhenOneIsExcluded(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	r := newRig(t, m)
@@ -1105,10 +1026,7 @@ func TestAStepUpOffersTheOtherFactorsWhenOneIsExcluded(t *testing.T) {
 	}
 }
 
-// TestDeletingTheLastFactorCanProveThePassword holds the lockout case: when the
-// excluded factor is the account's only one, the step-up starts at the password,
-// and a proved password alone completes the elevation. No factor is offered,
-// because the one being removed may not prove its own removal.
+// TestDeletingTheLastFactorCanProveThePassword holds that excluding the account's only factor starts the step-up at the password, whose proof alone completes it.
 func TestDeletingTheLastFactorCanProveThePassword(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -1167,9 +1085,7 @@ func TestDeletingTheLastFactorCanProveThePassword(t *testing.T) {
 	}
 }
 
-// TestDeletingTheLastFactorWithoutAPasswordStillNeedsRelogin holds the account
-// that cannot prove a password: excluding its only factor leaves no door, and
-// the start is the insufficient answer the dialog sends to re-login.
+// TestDeletingTheLastFactorWithoutAPasswordStillNeedsRelogin holds that excluding the only factor of an account with no password leaves no door and answers insufficient.
 func TestDeletingTheLastFactorWithoutAPasswordStillNeedsRelogin(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	r := newRig(t, m)

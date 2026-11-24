@@ -8,10 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// The pending-signup step: a first login that would open an account decides the
-// facts, writes nothing and keeps them in a Pending, and Create opens the
-// account once its person has chosen a username.
-
+// TestAPendingSignupCarriesTheFactsTheAccountIsOpenedWith checks the facts each of the social, phone and enterprise paths carries.
 func TestAPendingSignupCarriesTheFactsTheAccountIsOpenedWith(t *testing.T) {
 	t.Run("social", func(t *testing.T) {
 		e := newEnv(t, withSignup(SignupOpen))
@@ -65,6 +62,7 @@ func TestAPendingSignupCarriesTheFactsTheAccountIsOpenedWith(t *testing.T) {
 	})
 }
 
+// TestTheCollectedUsernameOpensThePendingAccount checks that Create opens the account for each source, binding the identity or writing the phone.
 func TestTheCollectedUsernameOpensThePendingAccount(t *testing.T) {
 	t.Run("social", func(t *testing.T) {
 		e := newEnv(t, withSignup(SignupOpen))
@@ -115,6 +113,8 @@ func TestTheCollectedUsernameOpensThePendingAccount(t *testing.T) {
 	})
 }
 
+// TestAUsernameAnotherAccountHoldsOpensNothing checks that a username another
+// account holds opens no account and writes nothing.
 func TestAUsernameAnotherAccountHoldsOpensNothing(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
 	e.s.seed(t, seed{id: "a1", status: authn.StatusActive, username: "taken"})
@@ -134,6 +134,8 @@ func TestAUsernameAnotherAccountHoldsOpensNothing(t *testing.T) {
 	}
 }
 
+// TestARefusedUsernameOpensNothing checks that an empty username is refused as
+// an invalid identifier and opens nothing.
 func TestARefusedUsernameOpensNothing(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
 	pending, err := e.pending(social("github", "gh1", "", false))

@@ -24,22 +24,12 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The cases built on this file hold what only the real entry point and the real
-// gateway can decide: that a route mounted through the capability is reached the
-// way its access level says, and that the wrapper's check and header are on what
-// the entry point serves. Both are the real modules, on a real loopback port per
-// endpoint, assembled by the real registry with this module between them.
-
-// listeningMsg is the record the entry point writes once an endpoint's address is
-// bound.
 const listeningMsg = "an HTTP listener is listening"
 
-// waitBound bounds every request these cases send.
 func waitBound() time.Duration {
 	return coretest.Scale(5 * time.Second)
 }
 
-// fakeVerifier is a credential-verifying backend that answers from a function.
 type fakeVerifier struct {
 	name    string
 	accepts authn.Accepts
@@ -52,15 +42,12 @@ func (f *fakeVerifier) Verify(_ context.Context, c authn.Credential) authn.Verdi
 	return f.verify(c)
 }
 
-// The credentials the backends below understand.
 const (
 	goodToken  = "good"
 	imperToken = "impersonating"
 	cookieName = "sid"
 )
 
-// bearerBackend takes Bearer credentials: goodToken is user-1, imperToken is an
-// administrator impersonating user-1, and anything else does not hold.
 func bearerBackend() *fakeVerifier {
 	return &fakeVerifier{
 		name:    "tokens",
@@ -82,8 +69,6 @@ func bearerBackend() *fakeVerifier {
 	}
 }
 
-// cookieBackend takes a cookie credential, which the gateway holds to its own
-// cross-origin check on an unsafe method, and passes any value.
 func cookieBackend() *fakeVerifier {
 	return &fakeVerifier{
 		name:    "sessions",
@@ -97,7 +82,6 @@ func cookieBackend() *fakeVerifier {
 	}
 }
 
-// backendModule registers a backend the way a backend subpackage does.
 func backendModule(v authn.Verifier) core.Module {
 	return core.Module{
 		Name:     "authn." + v.Name(),
@@ -109,9 +93,6 @@ func backendModule(v authn.Verifier) core.Module {
 	}
 }
 
-// reachedAs is what a handler answers with: who the gateway made the caller out
-// to be and the access level it recorded, so that a case reads from the body
-// whether the request got through and under which registration.
 func reachedAs(c *gin.Context) {
 	who, level := "nobody", "unknown"
 	if id, ok := authn.FromContext(c.Request.Context()); ok {
@@ -131,7 +112,6 @@ func reachedAs(c *gin.Context) {
 	c.String(nethttp.StatusOK, "%s [%s]", who, level)
 }
 
-// counted wraps a handler so that a case reads how many times it was called.
 func counted(n *atomic.Int64, h gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		n.Add(1)
@@ -139,29 +119,19 @@ func counted(n *atomic.Int64, h gin.HandlerFunc) gin.HandlerFunc {
 	}
 }
 
-// liveStack is one drive of the real registry to Serve.
 type liveStack struct {
-	// endpoints are the entry point's endpoints, "main" by default.
-	endpoints []string
-	// mountEndpoint is the ordinary scope's endpoint; empty leaves the key out.
+	endpoints     []string
 	mountEndpoint string
 	// gateItems is text for the gateway's section, JSON members without the
 	// braces, such as `"trusted-origins":["https://other.example.com"]`.
 	gateItems string
-	// publicURL is the public URL; a default is used when it is empty.
 	publicURL string
 	backends  []authn.Verifier
-	// scope, when set, is delivered as the tenant admission layer's scope guard.
-	scope authn.ScopeGuard
-	// register runs in the Init of a module that requires the capability.
-	register func(mount.Mounter)
-	// hand runs in the Init of a module that takes the entry point and the
-	// gateway up and registers on them directly, the way a host's own module
-	// does.
-	hand func(speedhttp.Router, authn.Gate)
+	scope     authn.ScopeGuard
+	register  func(mount.Mounter)
+	hand      func(speedhttp.Router, authn.Gate)
 }
 
-// defaultPublicURL is the public URL the cases use unless one says otherwise.
 const defaultPublicURL = "https://app.example.com"
 
 func (s liveStack) body(endpoints []string) string {
@@ -187,7 +157,6 @@ func (s liveStack) body(endpoints []string) string {
 		`},"endpoints":{` + strings.Join(declared, ",") + `}}}`
 }
 
-// live is what a case holds while the assembly serves.
 type live struct {
 	t         *testing.T
 	ctx       context.Context
@@ -196,14 +165,12 @@ type live struct {
 	mounter   mount.Mounter
 }
 
-// reply is what a client got back.
 type reply struct {
 	status int
 	header nethttp.Header
 	body   string
 }
 
-// send issues one request against a bound endpoint.
 func (l *live) send(endpoint, method, path string, edits ...func(*nethttp.Request)) reply {
 	l.t.Helper()
 	addr, ok := l.addresses[endpoint]
@@ -232,7 +199,6 @@ func (l *live) send(endpoint, method, path string, edits ...func(*nethttp.Reques
 	return reply{status: resp.StatusCode, header: resp.Header, body: string(body)}
 }
 
-// headers returns an edit that sets each pair on a request.
 func headers(pairs ...string) func(*nethttp.Request) {
 	return func(r *nethttp.Request) {
 		for i := 0; i+1 < len(pairs); i += 2 {
@@ -241,17 +207,12 @@ func headers(pairs ...string) func(*nethttp.Request) {
 	}
 }
 
-// bearer returns an edit that puts a Bearer credential on a request.
 func bearer(token string) func(*nethttp.Request) {
 	return headers("Authorization", "Bearer "+token)
 }
 
-// withCookie puts the session cookie on a request.
 func withCookie(r *nethttp.Request) { r.AddCookie(&nethttp.Cookie{Name: cookieName, Value: "x"}) }
 
-// run drives the assembly to Serve and hands the case the running entry point;
-// the assembly is stopped and closed when the case returns. It returns what the
-// drive returned, so that a case about a start that fails reads the error.
 func (s liveStack) run(t *testing.T, use func(l *live)) error {
 	t.Helper()
 
@@ -331,9 +292,7 @@ func (s liveStack) run(t *testing.T, use func(l *live)) error {
 			use(&live{
 				t: t, ctx: ctx, addresses: addresses, mounter: mounted,
 				client: &nethttp.Client{
-					Timeout: waitBound(),
-					// A connection of its own per request, so that what the
-					// server does to one is seen by that request alone.
+					Timeout:   waitBound(),
 					Transport: &nethttp.Transport{DisableKeepAlives: true},
 				},
 			})
@@ -342,7 +301,6 @@ func (s liveStack) run(t *testing.T, use func(l *live)) error {
 	})
 }
 
-// serve is run for a case that expects the start to succeed.
 func (s liveStack) serve(t *testing.T, use func(l *live)) {
 	t.Helper()
 	if err := s.run(t, use); err != nil {
@@ -350,8 +308,6 @@ func (s liveStack) serve(t *testing.T, use func(l *live)) {
 	}
 }
 
-// boundAddresses reads each endpoint's bound address out of the records the
-// entry point wrote when it bound them.
 func boundAddresses(logs *recorder, endpoints []string) (map[string]string, error) {
 	found := make(map[string]string, len(endpoints))
 	for _, r := range logs.recordsOf() {
@@ -367,7 +323,6 @@ func boundAddresses(logs *recorder, endpoints []string) (map[string]string, erro
 	return found, nil
 }
 
-// requireStatus reports a reply that is not the status the case expects.
 func requireStatus(t *testing.T, what string, got reply, want int) {
 	t.Helper()
 	if got.status != want {
@@ -375,7 +330,6 @@ func requireStatus(t *testing.T, what string, got reply, want int) {
 	}
 }
 
-// requireNoStore reports a reply that does not forbid being stored.
 func requireNoStore(t *testing.T, what string, got reply) {
 	t.Helper()
 	if v := got.header.Get("Cache-Control"); v != "no-store" {
@@ -383,13 +337,7 @@ func requireNoStore(t *testing.T, what string, got reply) {
 	}
 }
 
-// TestEachAccessLevelHoldsOnTheRealGatewayForTheRoutesTheModuleMounted holds the
-// pairing from the side a client sees: a route registered Public is reached
-// with no credential and the gateway reads none, Optional is reached with none
-// and still refuses a bad one, Guarded refuses a request with none, and a route
-// registered Impersonable lets an impersonating identity through where the
-// others do not. Each answer differs between the levels, so a registration
-// written at another level than the call asked for would show.
+// TestEachAccessLevelHoldsOnTheRealGatewayForTheRoutesTheModuleMounted holds each access level from a client's side.
 func TestEachAccessLevelHoldsOnTheRealGatewayForTheRoutesTheModuleMounted(t *testing.T) {
 	liveStack{
 		register: func(m mount.Mounter) {
@@ -452,11 +400,7 @@ func TestARouteIsMountedOnTheMountEndpointAndNotOnTheOthers(t *testing.T) {
 	})
 }
 
-// TestAHandWrittenPairWithATypoIsTheFailureTheModuleExcludes is the control for
-// the pairing: a route and an exemption written separately, the exemption with a
-// character wrong, leaves the route guarded, and a client with no credential is
-// refused at a route its author meant to be public. The same route mounted
-// through the capability is reached.
+// TestAHandWrittenPairWithATypoIsTheFailureTheModuleExcludes controls the pairing with a one-character-wrong exemption.
 func TestAHandWrittenPairWithATypoIsTheFailureTheModuleExcludes(t *testing.T) {
 	liveStack{
 		register: func(m mount.Mounter) { m.Public("GET", "/status", reachedAs) },
@@ -475,11 +419,7 @@ func TestAHandWrittenPairWithATypoIsTheFailureTheModuleExcludes(t *testing.T) {
 	})
 }
 
-// TestAPublicRouteThatIsAlsoImpersonableIsRefusedAtStart holds that the
-// gateway's own conflict rule sees the two registrations the module makes for
-// one route: an exempt route reads no credential, so it admits no impersonating
-// identity, and asking for both is a startup failure and not a route that
-// silently behaves as one of them.
+// TestAPublicRouteThatIsAlsoImpersonableIsRefusedAtStart holds that the gateway's conflict rule fails the start.
 func TestAPublicRouteThatIsAlsoImpersonableIsRefusedAtStart(t *testing.T) {
 	err := liveStack{
 		register: func(m mount.Mounter) { m.Public("GET", "/both", reachedAs, mount.Impersonable()) },
@@ -491,27 +431,20 @@ func TestAPublicRouteThatIsAlsoImpersonableIsRefusedAtStart(t *testing.T) {
 	}
 }
 
-// TestTheRoutesEndpointHasToBeOneTheGatewayGuards holds the integration with the
-// gateway's own check on the endpoint: with a module that mounts routes in the
-// assembly and the key naming an endpoint the gateway does not guard, the start
-// fails with ErrRoutesUnguarded.
+// TestTheRoutesEndpointHasToBeOneTheGatewayGuards holds that an unguarded endpoint fails the start with ErrRoutesUnguarded.
 func TestTheRoutesEndpointHasToBeOneTheGatewayGuards(t *testing.T) {
 	err := liveStack{
 		endpoints:     []string{"admin", "public"},
 		mountEndpoint: "public",
 		gateItems:     `"endpoints":["admin"]`,
-		// Only a guarded route: it registers nothing with the gateway, so nothing
-		// but the endpoint check can notice that it would be served unguarded.
-		register: func(m mount.Mounter) { m.Guarded("GET", "/me", reachedAs) },
+		register:      func(m mount.Mounter) { m.Guarded("GET", "/me", reachedAs) },
 	}.run(t, func(*live) { t.Error("the assembly served with the routes on an endpoint the gateway does not guard") })
 	if !errors.Is(err, authn.ErrRoutesUnguarded) {
 		t.Fatalf("the drive returned %v, want %v", err, authn.ErrRoutesUnguarded)
 	}
 }
 
-// TestTheRealEntryPointWithSeveralEndpointsAndNoKeyFailsWithErrRoutesUnconfigured
-// holds the first-phase leftover end to end: the endpoints the real entry point
-// declares are what the rule counts.
+// TestTheRealEntryPointWithSeveralEndpointsAndNoKeyFailsWithErrRoutesUnconfigured holds the first-phase leftover end to end.
 func TestTheRealEntryPointWithSeveralEndpointsAndNoKeyFailsWithErrRoutesUnconfigured(t *testing.T) {
 	err := liveStack{
 		endpoints: []string{"admin", "public"},
@@ -525,16 +458,11 @@ func TestTheRealEntryPointWithSeveralEndpointsAndNoKeyFailsWithErrRoutesUnconfig
 	}
 }
 
-// fakeScope is a scope guard that covers the endpoints it names.
 type fakeScope map[string]bool
 
 func (s fakeScope) Covers(endpoint string) bool { return s[endpoint] }
 
-// TestTheEndpointTheModuleDefaultsToIsJudgedByTheGatewayAgainstTheAdmissionLayer
-// holds the other half of the empty key: the module settles the only endpoint
-// and the gateway, which finds the module in the assembly by the capability it
-// delivers, judges that endpoint like a configured one. An admission layer that
-// covers it fails the start, and one that covers another endpoint does not.
+// TestTheEndpointTheModuleDefaultsToIsJudgedByTheGatewayAgainstTheAdmissionLayer holds that the settled endpoint is judged like a configured one.
 func TestTheEndpointTheModuleDefaultsToIsJudgedByTheGatewayAgainstTheAdmissionLayer(t *testing.T) {
 	register := func(m mount.Mounter) { m.Guarded("GET", "/me", reachedAs) }
 	err := liveStack{scope: fakeScope{"main": true}, register: register}.run(t, func(*live) {

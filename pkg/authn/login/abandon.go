@@ -8,24 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// abandonOwner is the collaborator that holds a flow's own private state and
-// offers the optional abandon callback, or nil when nothing does.
-//
-// An enrollment's state belongs to the multi-factor module, which wrote the
-// pending row and kept its identifier in the flow's private bytes; the record
-// names no method then. A flow at its first factor belongs to the method it
-// names. A second-factor flow's private state belongs to a factor, and a flow
-// that has settled has spent its state, so neither has an owner here: handing
-// one collaborator another's bytes would let it misread them.
-//
-// No shipped first-factor method keeps state of its own today, so the
-// stateFirst/stateProcessing/stateReprove branch has no production implementer
-// yet. It is kept because it is the designed seam for one that does: a redirect
-// method whose upstream transaction is still open while its flow is at its first
-// factor or swapped to processing. Such a method implements MethodAbandoner
-// and gets the flow's private bytes handed over before the record is removed,
-// instead of waiting for the upstream transaction to lapse.
-// TestAbandonHandsAProcessingRedirectFlowsStateToItsMethod pins that form.
+// abandonOwner is the collaborator holding a flow's private state; the first-factor branch is the reserved seam for a redirect method, not dead routing.
 func (r *routes) abandonOwner(rec record) authn.MethodAbandoner {
 	switch rec.State {
 	case stateEnroll:
@@ -46,10 +29,6 @@ func (r *routes) abandonOwner(rec record) authn.MethodAbandoner {
 	}
 }
 
-// releaseFlow hands the flow's private state to the collaborator that owns it,
-// before the record is removed. Abandoning is idempotent, so a callback that
-// fails -- or panics -- is logged and the flow is removed all the same: a
-// record left behind would keep a binding the client has already given up on.
 func (r *routes) releaseFlow(ctx context.Context, rec record, token string) {
 	owner := r.abandonOwner(rec)
 	if owner == nil {

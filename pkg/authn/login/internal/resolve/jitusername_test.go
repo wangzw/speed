@@ -8,11 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// A claim-strategy just-in-time login opens the account without an
-// intermediate step: the username comes from the assertion, is normalized to
-// the shared form entirely before the write, and the account carries the
-// provider's display name and the tenant membership exactly as the
-// user-confirm strategy does.
+// TestClaimStrategyOpensTheAccountImmediately holds that the assertion's username is normalized and the account takes the provider's name and membership.
 func TestClaimStrategyOpensTheAccountImmediately(t *testing.T) {
 	e := newEnv(t, withClaimProvider(authn.UsernameClaimPreferredUsername))
 	res, err := e.resolve(enterpriseWithUsername("u1", "ann@acme.com", "Ann-Smith"))
@@ -71,9 +67,7 @@ func TestClaimStrategyRefusesAMissingClaim(t *testing.T) {
 	}
 }
 
-// The email claim's local part can be present and still not be a username: a
-// local part with a dot is the common case, and it refuses rather than being
-// folded into one.
+// TestEmailClaimRefusesALocalPartThatIsNotAUsername holds that a dotted local part is refused rather than folded.
 func TestEmailClaimRefusesALocalPartThatIsNotAUsername(t *testing.T) {
 	e := newEnv(t, withClaimProvider(authn.UsernameClaimEmail))
 	_, err := e.resolve(enterprise("u1", "ann.smith@acme.com"))
@@ -98,9 +92,7 @@ func TestClaimStrategyRefusesAnInvalidClaim(t *testing.T) {
 	}
 }
 
-// A claim value the shared slug rule accepts but the account module keeps for
-// itself, such as one shaped like an account identifier, is a JIT username
-// refusal, not the field error a form would show.
+// TestClaimStrategyRefusesAValueTheAccountModuleKeepsForItself holds that a reserved value is a JIT username refusal.
 func TestClaimStrategyRefusesAValueTheAccountModuleKeepsForItself(t *testing.T) {
 	e := newEnv(t, withClaimProvider(authn.UsernameClaimPreferredUsername))
 	e.s.failLookup = authn.UsernameShape(authn.ErrInvalidIdentifier)
@@ -127,10 +119,7 @@ func TestClaimStrategyRefusesATakenUsername(t *testing.T) {
 	}
 }
 
-// A name a business tenant holds as its name is not visible to the account
-// lookup, so it surfaces when the creation writes the personal tenant. The
-// personal seam reports that collision as authn.ErrAccountExists, and the claim
-// strategy answers it as the same taken-name refusal the pre-check gives.
+// TestClaimStrategyMapsACreationTimeNameConflictToTheUsernameRefusal holds that a name held by a business tenant surfaces as the username refusal.
 func TestClaimStrategyMapsACreationTimeNameConflictToTheUsernameRefusal(t *testing.T) {
 	e := newEnv(t, withClaimProvider(authn.UsernameClaimPreferredUsername))
 	e.s.failCreate = fmt.Errorf("%w: creating an account: %w", authn.ErrAccountExists,
@@ -144,10 +133,8 @@ func TestClaimStrategyMapsACreationTimeNameConflictToTheUsernameRefusal(t *testi
 	}
 }
 
-// A stored provider whose strategy is absent or unknown cannot determine a
-// username, so the login is refused and no account is opened. The write path
-// refuses such a row; this is the fail-closed reading of one that got in
-// another way.
+// A stored provider whose strategy is absent or unknown cannot determine
+// a username, so the login is refused and no account is opened.
 func TestJustInTimeRefusesAProviderWithNoUsableStrategy(t *testing.T) {
 	for _, strategy := range []string{"", "surprise"} {
 		t.Run("strategy="+strategy, func(t *testing.T) {
@@ -180,9 +167,7 @@ func TestClaimStrategyRefusesAnUnknownClaimConfiguration(t *testing.T) {
 	}
 }
 
-// The user-confirm strategy is the existing pending signup: the resolution
-// writes nothing, and the account opens with the username the person confirms
-// in the same way every other user account does.
+// TestUserConfirmStrategyAsksBeforeItOpensTheAccount holds that the resolution writes nothing until the person confirms a username.
 func TestUserConfirmStrategyAsksBeforeItOpensTheAccount(t *testing.T) {
 	e := newEnv(t, withProvider(authn.ProvisioningJIT, false))
 	res, err := e.pending(enterprise("u1", "ann@acme.com"))

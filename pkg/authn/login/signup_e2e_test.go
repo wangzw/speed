@@ -12,12 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// The pending signup: a first login of a social provider, an SMS code or an
-// enterprise IdP parks the flow at a username step before any account row is
-// written, and opens the account only when the username arrives.
-
-// startSocialSignup begins a first social login over the stand-in provider and
-// returns the start reply, whose state is the pending signup.
 func (h *harness) startSocialSignup() reply {
 	h.t.Helper()
 	start := h.post("/api/v1/auth/flows", map[string]any{"method": "google"})
@@ -27,7 +21,6 @@ func (h *harness) startSocialSignup() reply {
 	return start
 }
 
-// signupStep reads the state, step number and next step of a flow reply.
 func signupStep(t *testing.T, r reply) (string, int, map[string]any) {
 	t.Helper()
 	doc := r.json(t)
@@ -37,7 +30,6 @@ func signupStep(t *testing.T, r reply) (string, int, map[string]any) {
 	return state, int(seq), next
 }
 
-// answerUsername sends one username answer to the flow.
 func (h *harness) answerUsername(seq int, username string) reply {
 	h.t.Helper()
 	return h.post("/api/v1/auth/flows/answer", map[string]any{
@@ -45,8 +37,6 @@ func (h *harness) answerUsername(seq int, username string) reply {
 	})
 }
 
-// answerPhoneSignup sends one phone signup answer carrying the username, the
-// optional display name and the password the step asks for.
 func (h *harness) answerPhoneSignup(seq int, username, displayName, password string) reply {
 	h.t.Helper()
 	return h.post("/api/v1/auth/flows/answer", map[string]any{
@@ -56,10 +46,7 @@ func (h *harness) answerPhoneSignup(seq int, username, displayName, password str
 	})
 }
 
-// TestARefusedUsernameKeepsTheAnswerPosition holds the retry the step invites:
-// a refusal leaves the answer position where it was, so the same step number
-// answers again and the legal name opens the account. A refusal that moved the
-// number would strand the retry, because the failure reply carries no new one.
+// TestARefusedUsernameKeepsTheAnswerPosition holds that a refusal leaves the position, so the same step number answers again.
 func TestARefusedUsernameKeepsTheAnswerPosition(t *testing.T) {
 	assembleWith(t, []core.Module{socialModule()}, func(h *harness) {
 		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
@@ -80,17 +67,12 @@ func TestARefusedUsernameKeepsTheAnswerPosition(t *testing.T) {
 	})
 }
 
-// TestARefusedUsernameCountsAgainstTheAnswerLimit holds that keeping the
-// position unchanged does not make the step free: every refusal is an answer,
-// and the flow fails once the limit is spent.
+// TestARefusedUsernameCountsAgainstTheAnswerLimit holds that each refusal is an answer, so keeping the position does not make the step free.
 func TestARefusedUsernameCountsAgainstTheAnswerLimit(t *testing.T) {
 	assembleWith(t, []core.Module{socialModule()}, func(h *harness) {
 		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
 		_, seq, _ := signupStep(t, h.startSocialSignup())
 
-		// The flow accepts eight answers; see design-authn-login's answer table
-		// and flow.go's maxAnswers. The case is external to the package, so the
-		// number is restated here as the contract's.
 		const answerLimit = 8
 		for i := 1; i <= answerLimit; i++ {
 			refused := h.answerSignup(seq, "admin", socialPassword)
@@ -105,11 +87,7 @@ func TestARefusedUsernameCountsAgainstTheAnswerLimit(t *testing.T) {
 	})
 }
 
-// TestASocialFirstLoginStopsAtTheUsernameStepBeforeOpeningAnAccount holds the
-// pending signup against the real account store: the login stops at the username
-// step with nothing written, an unusable name is 400 and a name another account
-// holds is 409 with the flow still retryable, and the legal name opens the
-// account, binds the identity and finishes the login.
+// TestASocialFirstLoginStopsAtTheUsernameStepBeforeOpeningAnAccount holds that nothing is written there, invalid and taken names refuse, and a legal name opens and finishes the login.
 func TestASocialFirstLoginStopsAtTheUsernameStepBeforeOpeningAnAccount(t *testing.T) {
 	assembleWith(t, []core.Module{socialModule()}, func(h *harness) {
 		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
@@ -130,7 +108,6 @@ func TestASocialFirstLoginStopsAtTheUsernameStepBeforeOpeningAnAccount(t *testin
 			t.Errorf("provided_email = %v, want the provider's verified address", got)
 		}
 
-		// Nothing of the account exists while the step stands.
 		if _, err := h.accounts.ByExternal(h.ctx, "google", "g1"); err == nil {
 			t.Error("the identity is bound before the username arrived")
 		}
@@ -155,7 +132,6 @@ func TestASocialFirstLoginStopsAtTheUsernameStepBeforeOpeningAnAccount(t *testin
 			t.Fatalf("GET flows/current after the refusal = %s %v, want the signup challenge", state, next)
 		}
 
-		// A reserved name is its own 400, and still nothing is written.
 		reserved := h.answerSignup(seq, "admin", socialPassword)
 		if reserved.status != http.StatusBadRequest || reserved.json(t)["type"] != "urn:speed:authn:username-reserved" {
 			t.Fatalf("a reserved username answered %d %s, want 400 username-reserved", reserved.status, reserved.body)
@@ -166,8 +142,6 @@ func TestASocialFirstLoginStopsAtTheUsernameStepBeforeOpeningAnAccount(t *testin
 			t.Fatalf("the flow left the signup step after a reserved name: %s", state)
 		}
 
-		// A name another account holds is 409 username-taken, and no account of
-		// this login exists.
 		h.createAccount("taken-one", "taken-one-password")
 		taken := h.answerSignup(seq, "taken-one", socialPassword)
 		if taken.status != http.StatusConflict || taken.json(t)["type"] != "urn:speed:authn:username-taken" {
@@ -182,7 +156,6 @@ func TestASocialFirstLoginStopsAtTheUsernameStepBeforeOpeningAnAccount(t *testin
 			t.Fatalf("the flow left the signup step after a taken name: %s", state)
 		}
 
-		// The legal name opens the account and the flow carries on to ready.
 		opened := h.answerSignup(seq, "newbie", socialPassword)
 		if opened.status != http.StatusOK {
 			t.Fatalf("the username answer answered %d: %s", opened.status, opened.body)
@@ -216,10 +189,7 @@ func TestASocialFirstLoginStopsAtTheUsernameStepBeforeOpeningAnAccount(t *testin
 	})
 }
 
-// TestASMSFirstLoginStopsAtTheUsernameStepAndItsPhoneSignsIn holds the SMS path
-// against the real account store: the flow stops at the username step with
-// nothing written, and the account it opens carries the proved phone as a
-// sign-in way.
+// TestASMSFirstLoginStopsAtTheUsernameStepAndItsPhoneSignsIn holds that the flow stops there and the opened account carries the proved phone as a sign-in way.
 func TestASMSFirstLoginStopsAtTheUsernameStepAndItsPhoneSignsIn(t *testing.T) {
 	const number = "+8613800000002"
 	assembleWith(t, []core.Module{smsSignupModule()}, func(h *harness) {
@@ -270,9 +240,7 @@ func TestASMSFirstLoginStopsAtTheUsernameStepAndItsPhoneSignsIn(t *testing.T) {
 	})
 }
 
-// TestAnEnterpriseFirstLoginStopsAtTheUsernameStepAndWritesItsMembership holds
-// the enterprise just-in-time path: the flow stops at the username step with no
-// account or membership, and the opened account joins the provider's tenant.
+// TestAnEnterpriseFirstLoginStopsAtTheUsernameStepAndWritesItsMembership holds that no account or membership exists until the username, which then joins the provider's tenant.
 func TestAnEnterpriseFirstLoginStopsAtTheUsernameStepAndWritesItsMembership(t *testing.T) {
 	assembleWith(t, []core.Module{jitMethodModule(), jitRegisterModule()}, func(h *harness) {
 		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
@@ -317,7 +285,6 @@ func TestAnEnterpriseFirstLoginStopsAtTheUsernameStepAndWritesItsMembership(t *t
 	})
 }
 
-// identifiersOf reads an account's identifiers.
 func identifiersOf(t *testing.T, accounts authn.Accounts, id authn.AccountID) []authn.Identifier {
 	t.Helper()
 	held, err := accounts.Identifiers(context.Background(), id)
@@ -327,8 +294,6 @@ func identifiersOf(t *testing.T, accounts authn.Accounts, id authn.AccountID) []
 	return held
 }
 
-// smsSignupMethod is a stand-in SMS method whose first step is already the proof
-// of a phone, so a case reaches the first SMS login without a code round trip.
 type smsSignupMethod struct{}
 
 func (smsSignupMethod) Name() string { return "sms-signup" }
@@ -356,8 +321,6 @@ func smsSignupModule() core.Module {
 	}
 }
 
-// jitMethod is a stand-in enterprise OIDC method whose first step is already the
-// proof of an identity of the tenant's enabled provider.
 type jitMethod struct{}
 
 func (jitMethod) Name() string { return "oidc-signup" }
@@ -391,8 +354,6 @@ func jitMethodModule() core.Module {
 	}
 }
 
-// noNameJitMethod is a stand-in enterprise OIDC method whose identity carries no
-// display name, so the account it opens has to fall back to the username.
 type noNameJitMethod struct{}
 
 func (noNameJitMethod) Name() string { return "oidc-signup-noname" }
@@ -425,12 +386,8 @@ func noNameJitMethodModule() core.Module {
 	}
 }
 
-// jitProviderID is the stand-in enterprise provider's identifier. It is UUID
-// text, the shape a session records a provider in.
 const jitProviderID = "0b8f0d3e-6f3a-4b3e-9c1e-2a4c5d6e7f80"
 
-// jitProviders is the register of one enabled just-in-time provider of tenant
-// acme, with acme.com among its verified domains.
 type jitProviders struct{ authn.SSOProviders }
 
 func jitProvider() authn.SSOProvider {
@@ -463,16 +420,10 @@ func jitRegisterModule() core.Module {
 	}
 }
 
-// socialPassword is the password the social first-login cases open an account
-// with: long enough for the policy's default length and unlike their usernames.
 const socialPassword = "ann-password-1"
 
-// phonePassword is the password the phone first-login cases open an account
-// with: long enough for the policy's default length and unlike their usernames.
 const phonePassword = "phone-password-1"
 
-// unverifiedSocialMethod is a stand-in social provider whose declared address
-// the provider says it did not verify.
 type unverifiedSocialMethod struct{ socialMethod }
 
 func (unverifiedSocialMethod) Begin(context.Context, authn.Start) (authn.Step, error) {
@@ -497,8 +448,6 @@ func unverifiedSocialModule() core.Module {
 	}
 }
 
-// noNameSocialMethod is a stand-in social provider that gave no name for the
-// person, so the account its first login opens has to fall back to the username.
 type noNameSocialMethod struct{ socialMethod }
 
 func (noNameSocialMethod) Begin(context.Context, authn.Start) (authn.Step, error) {
@@ -518,9 +467,7 @@ func noNameSocialModule() core.Module {
 	}
 }
 
-// TestAnEmptyUsernameOnTheSignupStepIsItsOwnRefusal holds that a blank name is
-// the username field's failure rather than the body's: the client that posts an
-// empty name gets 400 username-invalid, and nothing is written.
+// TestAnEmptyUsernameOnTheSignupStepIsItsOwnRefusal holds that a blank name answers 400 username-invalid and writes nothing.
 func TestAnEmptyUsernameOnTheSignupStepIsItsOwnRefusal(t *testing.T) {
 	assembleWith(t, []core.Module{socialModule()}, func(h *harness) {
 		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
@@ -536,8 +483,6 @@ func TestAnEmptyUsernameOnTheSignupStepIsItsOwnRefusal(t *testing.T) {
 	})
 }
 
-// answerSignup sends a pending-signup answer carrying the username and the
-// password a social first login asks for beside it.
 func (h *harness) answerSignup(seq int, username, password string) reply {
 	h.t.Helper()
 	return h.post("/api/v1/auth/flows/answer", map[string]any{
@@ -574,8 +519,6 @@ func checkSignupFields(t *testing.T, next map[string]any, names ...string) {
 	}
 }
 
-// checkNoProvidedIdentity checks that a pending-signup challenge carries none of
-// the read-only identity members, which only a social first login adds.
 func checkNoProvidedIdentity(t *testing.T, next map[string]any) {
 	t.Helper()
 	for _, key := range []string{"provided_method", "provided_display_name", "provided_email"} {
@@ -585,12 +528,7 @@ func checkNoProvidedIdentity(t *testing.T, next map[string]any) {
 	}
 }
 
-// TestASocialFirstLoginWritesTheDeclaredAddressAsAContactAndTakesAPassword holds
-// the social first login against the real account store: the step asks for a
-// password beside the username and shows the provider's verified address
-// read-only, and the account it opens holds that address as its default contact
-// and, being its only address, as a sign-in way. The password the step took opens
-// a login under the username and under that address afterwards.
+// TestASocialFirstLoginWritesTheDeclaredAddressAsAContactAndTakesAPassword holds that the step shows the verified address read-only and the account keeps it as default contact and sign-in way.
 func TestASocialFirstLoginWritesTheDeclaredAddressAsAContactAndTakesAPassword(t *testing.T) {
 	assembleWith(t, []core.Module{socialModule()}, func(h *harness) {
 		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
@@ -643,12 +581,7 @@ func TestASocialFirstLoginWritesTheDeclaredAddressAsAContactAndTakesAPassword(t 
 	})
 }
 
-// TestAnAddressTakenBeforeTheAccountWriteIsLinkRequiredAndLeavesNoAccount holds
-// the race the design settles: another account takes the address the provider
-// declared verified between the read that found it free and this login's
-// account write. The answer is the link-required refusal an address registered
-// all along gives, the flow is spent, and the failed write leaves no half-built
-// account or binding behind.
+// TestAnAddressTakenBeforeTheAccountWriteIsLinkRequiredAndLeavesNoAccount holds that an address taken between the read and the write answers link-required and leaves no account.
 func TestAnAddressTakenBeforeTheAccountWriteIsLinkRequiredAndLeavesNoAccount(t *testing.T) {
 	assembleWith(t, []core.Module{socialModule()}, func(h *harness) {
 		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
@@ -661,8 +594,6 @@ func TestAnAddressTakenBeforeTheAccountWriteIsLinkRequiredAndLeavesNoAccount(t *
 			t.Fatalf("provided_email = %v, want the provider's verified address", got)
 		}
 
-		// Another account takes the address after the step decided it was free
-		// and before this login writes its account.
 		if _, err := h.admin.Create(h.ctx, authn.CreateAccount{
 			Kind:             authn.KindUser,
 			Username:         "holder",
@@ -678,8 +609,6 @@ func TestAnAddressTakenBeforeTheAccountWriteIsLinkRequiredAndLeavesNoAccount(t *
 			t.Fatalf("the answer after the address was taken answered %d %s, want 401 link-required", refused.status, refused.body)
 		}
 
-		// The failed write left no account of this login: no username, no
-		// binding, and the fixture's one account is the only one there is.
 		if _, err := h.accounts.Lookup(h.ctx, authn.IdentifierUsername, "newbie"); err == nil {
 			t.Error("the refused signup opened the account it could not finish")
 		}
@@ -698,9 +627,7 @@ func TestAnAddressTakenBeforeTheAccountWriteIsLinkRequiredAndLeavesNoAccount(t *
 	})
 }
 
-// TestASocialFirstLoginWritesNoAddressTheProviderDidNotVerify holds that a
-// provider's unverified claim is no more written into the account than it is a
-// clue, and that the step carries no address for the client to show.
+// TestASocialFirstLoginWritesNoAddressTheProviderDidNotVerify holds that an unverified claim is neither written nor shown.
 func TestASocialFirstLoginWritesNoAddressTheProviderDidNotVerify(t *testing.T) {
 	assembleWith(t, []core.Module{unverifiedSocialModule()}, func(h *harness) {
 		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
@@ -731,10 +658,7 @@ func TestASocialFirstLoginWritesNoAddressTheProviderDidNotVerify(t *testing.T) {
 	})
 }
 
-// TestASocialSignupWithoutAPasswordOpensNothing holds that the password is part
-// of the social step: a submission that carries only the username is 400
-// bad-request, opens no account and leaves the flow at the step, and the same
-// step number answers again with a password.
+// TestASocialSignupWithoutAPasswordOpensNothing holds that a username-only submission answers 400 and the same step number answers again with a password.
 func TestASocialSignupWithoutAPasswordOpensNothing(t *testing.T) {
 	assembleWith(t, []core.Module{socialModule()}, func(h *harness) {
 		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
@@ -759,9 +683,7 @@ func TestASocialSignupWithoutAPasswordOpensNothing(t *testing.T) {
 	})
 }
 
-// TestASocialSignupWithAPasswordAgainstThePolicyOpensNothing holds that the
-// account store's policy governs the password the step takes: a short one is
-// 400 bad-request, opens no account and leaves the flow retryable.
+// TestASocialSignupWithAPasswordAgainstThePolicyOpensNothing holds that a short password answers 400 and the flow stays retryable.
 func TestASocialSignupWithAPasswordAgainstThePolicyOpensNothing(t *testing.T) {
 	assembleWith(t, []core.Module{socialModule()}, func(h *harness) {
 		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
@@ -786,10 +708,7 @@ func TestASocialSignupWithAPasswordAgainstThePolicyOpensNothing(t *testing.T) {
 	})
 }
 
-// TestAPhoneSignupWithoutAPasswordOpensNothing holds that the password is part
-// of the phone step too: a submission carrying the username and a display name
-// but no password is 400 bad-request, opens no account and leaves the flow at
-// the step, and the same step number answers again with a password.
+// TestAPhoneSignupWithoutAPasswordOpensNothing holds that a username and display name without a password answer 400 and the same step number retries.
 func TestAPhoneSignupWithoutAPasswordOpensNothing(t *testing.T) {
 	const number = "+8613800000002"
 	assembleWith(t, []core.Module{smsSignupModule()}, func(h *harness) {
@@ -826,9 +745,7 @@ func TestAPhoneSignupWithoutAPasswordOpensNothing(t *testing.T) {
 	})
 }
 
-// TestAPhoneSignupWithAPasswordAgainstThePolicyOpensNothing holds that the
-// account store's policy governs the password the phone step takes: a short one
-// is 400 bad-request, opens no account and leaves the flow retryable.
+// TestAPhoneSignupWithAPasswordAgainstThePolicyOpensNothing holds that a short password answers 400 and the flow stays retryable.
 func TestAPhoneSignupWithAPasswordAgainstThePolicyOpensNothing(t *testing.T) {
 	const number = "+8613800000002"
 	assembleWith(t, []core.Module{smsSignupModule()}, func(h *harness) {
@@ -864,11 +781,7 @@ func TestAPhoneSignupWithAPasswordAgainstThePolicyOpensNothing(t *testing.T) {
 	})
 }
 
-// TestTheSMSAndEnterpriseSignupStepsAskForTheirOwnFields holds that each first
-// login asks for the fields its account needs: the SMS step asks for the
-// username, an optional display name and a secret password, the enterprise step
-// asks for the username alone, and neither account takes the provider's declared
-// address.
+// TestTheSMSAndEnterpriseSignupStepsAskForTheirOwnFields holds that the SMS step asks username, optional display name and password, and the enterprise step only username.
 func TestTheSMSAndEnterpriseSignupStepsAskForTheirOwnFields(t *testing.T) {
 	t.Run("sms", func(t *testing.T) {
 		const number = "+8613800000002"
@@ -934,9 +847,7 @@ func TestTheSMSAndEnterpriseSignupStepsAskForTheirOwnFields(t *testing.T) {
 	})
 }
 
-// TestAPhoneSignupWithoutADisplayNameTakesTheUsername holds the fallback of a
-// phone signup whose step carried no display name: the account is named after
-// the username its person chose.
+// TestAPhoneSignupWithoutADisplayNameTakesTheUsername holds that an account without a display name is named after its username.
 func TestAPhoneSignupWithoutADisplayNameTakesTheUsername(t *testing.T) {
 	const number = "+8613800000002"
 	assembleWith(t, []core.Module{smsSignupModule()}, func(h *harness) {
@@ -983,7 +894,6 @@ func TestAPhoneSignupTakesTheDisplayNameItIsGiven(t *testing.T) {
 	})
 }
 
-// checkPhoneSignupAccount reads the account a phone signup opened.
 func (h *harness) checkPhoneSignupAccount(t *testing.T, number string) authn.Account {
 	t.Helper()
 	id, err := h.accounts.Lookup(h.ctx, authn.IdentifierPhone, number)
@@ -997,9 +907,7 @@ func (h *harness) checkPhoneSignupAccount(t *testing.T, number string) authn.Acc
 	return account
 }
 
-// TestEnterpriseJITSignupNamesTheAccountFromTheProviderOrTheUsername holds the
-// two names an enterprise just-in-time account may take: the provider's name
-// when it gave one, and the username when it did not.
+// TestEnterpriseJITSignupNamesTheAccountFromTheProviderOrTheUsername holds that the account takes the provider's name when given and the username otherwise.
 func TestEnterpriseJITSignupNamesTheAccountFromTheProviderOrTheUsername(t *testing.T) {
 	t.Run("provider name", func(t *testing.T) {
 		assembleWith(t, []core.Module{jitMethodModule(), jitRegisterModule()}, func(h *harness) {
@@ -1058,9 +966,7 @@ func TestEnterpriseJITSignupNamesTheAccountFromTheProviderOrTheUsername(t *testi
 	})
 }
 
-// TestSocialJITSignupNamesTheAccountFromTheProviderOrTheUsername holds the two
-// names a social first login's account may take: the provider's name when it
-// gave one, and the username when it did not.
+// TestSocialJITSignupNamesTheAccountFromTheProviderOrTheUsername holds that the account takes the provider's name when given and the username otherwise.
 func TestSocialJITSignupNamesTheAccountFromTheProviderOrTheUsername(t *testing.T) {
 	t.Run("provider name", func(t *testing.T) {
 		assembleWith(t, []core.Module{socialModule()}, func(h *harness) {

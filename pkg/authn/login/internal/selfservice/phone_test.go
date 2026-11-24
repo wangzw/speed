@@ -32,12 +32,7 @@ func (h *harness) startPhone() {
 	}
 }
 
-// TestStartingAVerificationSendsTheCodeAndKeepsTheRecord holds the whole of the
-// first step: the code is sent for the enroll purpose to the number, for the
-// caller's account, to be delivered; the record is in the store under the key of
-// the session, with the account, the number and the challenge, for as long as the
-// code lives; and the answer says when the code expires and when another may be
-// asked for and nothing else.
+// TestStartingAVerificationSendsTheCodeAndKeepsTheRecord holds the send, the record's fields and expiry, and the answer's two durations.
 func TestStartingAVerificationSendsTheCodeAndKeepsTheRecord(t *testing.T) {
 	h := newHarness(t)
 	w := h.post("/phone", `{"phone":"`+phoneNumber+`"}`)
@@ -70,10 +65,7 @@ func TestStartingAVerificationSendsTheCodeAndKeepsTheRecord(t *testing.T) {
 	}
 }
 
-// TestThePhoneSendCarriesTheRequestAddress holds that the enroll send carries
-// the address the request came from, which the code engine counts against the
-// source budget. The handler discarded the request's meta before this; the
-// address it resolves is now kept on the call and passed down.
+// TestThePhoneSendCarriesTheRequestAddress holds that the enroll send carries the request's source address.
 func TestThePhoneSendCarriesTheRequestAddress(t *testing.T) {
 	h := newHarness(t)
 	w := h.do(request{method: http.MethodPost, path: "/phone", body: `{"phone":"` + phoneNumber + `"}`, remote: "203.0.113.7:4567"})
@@ -88,9 +80,7 @@ func TestThePhoneSendCarriesTheRequestAddress(t *testing.T) {
 	}
 }
 
-// TestTheAnswerNeverCarriesTheChallenge holds that the challenge identifier,
-// which with a guess of the code is all verifying takes, is in the store and
-// nowhere the client reads.
+// TestTheAnswerNeverCarriesTheChallenge holds that the challenge identifier stays in the store and out of the answer.
 func TestTheAnswerNeverCarriesTheChallenge(t *testing.T) {
 	h := newHarness(t)
 	w := h.post("/phone", `{"phone":"`+phoneNumber+`"}`)
@@ -140,9 +130,7 @@ func TestTheDurationsFollowTheSettings(t *testing.T) {
 	}
 }
 
-// TestTheDurationSettingsAdmitTheirExactBounds holds that a value exactly at a
-// setting's low or high bound is inside its domain and is used as written, not
-// judged out of domain and read as the default.
+// TestTheDurationSettingsAdmitTheirExactBounds holds that a value at either bound is inside its domain and used as written.
 func TestTheDurationSettingsAdmitTheirExactBounds(t *testing.T) {
 	cases := []struct {
 		name         string
@@ -175,9 +163,7 @@ func TestTheDurationSettingsAdmitTheirExactBounds(t *testing.T) {
 	}
 }
 
-// TestTheRecordDoesNotOutliveTheChallenge holds that the time the send took is
-// taken off the record's life: the challenge row's expiry began when the code
-// was written, and a record that outlived it would be one that verifies nothing.
+// TestTheRecordDoesNotOutliveTheChallenge holds that the send's elapsed time is subtracted from the record's life.
 func TestTheRecordDoesNotOutliveTheChallenge(t *testing.T) {
 	var elapsed time.Duration
 	h := newHarness(t, func(c *config) {
@@ -189,7 +175,6 @@ func TestTheRecordDoesNotOutliveTheChallenge(t *testing.T) {
 		t.Errorf("record ttl = %v, want %v", got, want)
 	}
 
-	// A send that took the whole life of the code leaves nothing to keep.
 	elapsed = 0
 	h2 := newHarness(t, func(c *config) {
 		c.mutateDeps = func(d *selfservice.Deps) { d.Clock = func() time.Time { return now.Add(elapsed) } }
@@ -203,10 +188,7 @@ func TestTheRecordDoesNotOutliveTheChallenge(t *testing.T) {
 	}
 }
 
-// TestASecondCodeReplacesTheFirstOfTheSameSession holds that a session has one
-// record at a time: asking again overwrites it, so the number verified is the one
-// asked for last and the earlier challenge can no longer be verified through this
-// session.
+// TestASecondCodeReplacesTheFirstOfTheSameSession holds that a session has one record, so the last number asked for wins.
 func TestASecondCodeReplacesTheFirstOfTheSameSession(t *testing.T) {
 	h := newHarness(t)
 	h.startPhone()
@@ -231,9 +213,7 @@ type phoneRecordView struct {
 	ChallengeID string `json:"challenge_id"`
 }
 
-// TestTheRecordsOfTwoSessionsAreApart holds the key: one per session, so that one
-// session's request cannot overwrite another's, and a session cannot verify a
-// number another one started.
+// TestTheRecordsOfTwoSessionsAreApart holds that one session cannot overwrite or verify another's record.
 func TestTheRecordsOfTwoSessionsAreApart(t *testing.T) {
 	h := newHarness(t)
 	h.startPhone()
@@ -265,9 +245,7 @@ func TestTheRecordsOfTwoSessionsAreApart(t *testing.T) {
 	}
 }
 
-// TestANumberAnotherAccountHoldsIsSentACodeLikeAnyOther holds the enumeration
-// rule: the route does not look the number up, sends the code as it would to any
-// number, and answers in the same shape. The conflict is the verify step's.
+// TestANumberAnotherAccountHoldsIsSentACodeLikeAnyOther holds that the route does not look the number up and answers in the same shape.
 func TestANumberAnotherAccountHoldsIsSentACodeLikeAnyOther(t *testing.T) {
 	h := newHarness(t)
 	h.accounts.identifiers = []authn.Identifier{{ID: "x", Kind: authn.IdentifierPhone, Value: phoneNumber}}
@@ -284,9 +262,7 @@ func TestANumberAnotherAccountHoldsIsSentACodeLikeAnyOther(t *testing.T) {
 	}
 }
 
-// TestANumberThatIsNotE164IsRefusedBeforeAnythingIsSent holds the format check:
-// the number is not parsed or completed, so every spelling but the strict one is
-// a 400 with no code sent and no record written.
+// TestANumberThatIsNotE164IsRefusedBeforeAnythingIsSent holds that every non-strict spelling is a 400 with no send and no record.
 func TestANumberThatIsNotE164IsRefusedBeforeAnythingIsSent(t *testing.T) {
 	for _, phone := range []string{
 		"", "13800000000", "8613800000000", "+0123456789", "+123456", "+1234567890123456",
@@ -341,9 +317,7 @@ func TestTheSendersRefusalsAreAnswered(t *testing.T) {
 	}
 }
 
-// TestAStoreThatCannotBeReadIsA503BeforeAnythingIsSent holds that an unreadable
-// store fails both routes closed: no code is sent, none is verified, no back-off
-// is read, and the answer says only that the service is unavailable.
+// TestAStoreThatCannotBeReadIsA503BeforeAnythingIsSent holds that an unreadable store fails both routes closed with no send or verify.
 func TestAStoreThatCannotBeReadIsA503BeforeAnythingIsSent(t *testing.T) {
 	h := newHarness(t)
 	h.kv.getErr = errors.New("redis: connection refused")
@@ -366,9 +340,7 @@ func TestAStoreThatCannotBeReadIsA503BeforeAnythingIsSent(t *testing.T) {
 	}
 }
 
-// TestAStoreThatCannotBeWrittenIsA503 holds the answer when the code went out and
-// the record could not be kept: a 503 that tells the user to ask again, never a
-// 200 for a verification that cannot succeed.
+// TestAStoreThatCannotBeWrittenIsA503 holds that a sent code without a record answers 503, never 200.
 func TestAStoreThatCannotBeWrittenIsA503(t *testing.T) {
 	h := newHarness(t)
 	h.kv.setErr = errors.New("redis: read-only replica")
@@ -377,12 +349,7 @@ func TestAStoreThatCannotBeWrittenIsA503(t *testing.T) {
 	}
 }
 
-// TestACompletedVerificationBindsTheNumber is the success path from the first
-// request to the last, with the order of every call: the record is read, the
-// number's back-off is checked before the code is compared, a pass clears it, the
-// identifier is written as proven by a code, and the record is deleted. Proving
-// the number is not making it a way to sign in, so no factor is read and the
-// session is neither rotated nor the others revoked.
+// TestACompletedVerificationBindsTheNumber holds the call order: record read, back-off check, pass, proved identifier written, record deleted.
 func TestACompletedVerificationBindsTheNumber(t *testing.T) {
 	h := newHarness(t)
 	h.startPhone()
@@ -443,15 +410,9 @@ func TestACodeVerifiesOnce(t *testing.T) {
 	}
 }
 
-// TestAStepUpRefusalLeavesTheCodeReplayable holds the ordering the frontend
-// depends on: a verification whose consequence needs a fresh authentication is
-// refused before the single-use challenge is consumed, so the same code the
-// client submits again after stepping up still passes. A refusal that compared
-// the code first would spend it and turn the replay into a wrong code.
+// TestAStepUpRefusalLeavesTheCodeReplayable holds that the fresh-authentication refusal precedes consuming the single-use challenge.
 func TestAStepUpRefusalLeavesTheCodeReplayable(t *testing.T) {
 	h := newHarness(t)
-	// An active SMS factor makes the new number its target; a second active
-	// factor holds the stale single-factor session to a fresh multi-factor proof.
 	h.mfa.factors = []authn.FactorRecord{
 		{ID: "factor-sms", Account: account, Kind: authn.FactorSMS, Status: authn.FactorActive},
 		{ID: "factor-totp", Account: account, Kind: authn.FactorTOTP, Status: authn.FactorActive},
@@ -469,7 +430,6 @@ func TestAStepUpRefusalLeavesTheCodeReplayable(t *testing.T) {
 		t.Fatalf("the step-up refusal dropped the pending record: %v", h.kv.keys())
 	}
 
-	// The client steps up and replays the same code; the challenge is still there.
 	h.as(localMulti(time.Minute)...)
 	if w := h.post("/phone/verify", `{"code":"123456"}`); w.Code != http.StatusNoContent {
 		t.Fatalf("the replay answered %d %s, want 204", w.Code, w.Body)
@@ -479,9 +439,7 @@ func TestAStepUpRefusalLeavesTheCodeReplayable(t *testing.T) {
 	}
 }
 
-// does not match the request, each a 401 flow-invalid that calls neither the
-// back-off nor the verifier: there is none, it is not valid JSON, and it was
-// written for another account.
+// TestVerifyWithoutAMatchingRecordIsFlowInvalid holds that a missing, undecodable or foreign record is a 401 without calling the back-off or verifier.
 func TestVerifyWithoutAMatchingRecordIsFlowInvalid(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -515,9 +473,7 @@ func TestVerifyWithoutAMatchingRecordIsFlowInvalid(t *testing.T) {
 	}
 }
 
-// TestANumberInBackOffIsNotOfferedAGuess holds that the back-off is read before
-// the code is compared and that a number that has to wait is a 429 with the wait,
-// the verifier not called, and nothing counted.
+// TestANumberInBackOffIsNotOfferedAGuess holds that a waiting number is a 429 before the verifier and counts nothing.
 func TestANumberInBackOffIsNotOfferedAGuess(t *testing.T) {
 	h := newHarness(t)
 	h.startPhone()
@@ -549,10 +505,7 @@ func TestABackOffThatCannotBeReadIsA503(t *testing.T) {
 	}
 }
 
-// TestAWrongCodeIsCountedAgainstTheNumber holds the rejection: the failure is
-// counted under the phone scope and the number's key, nothing is bound or
-// revoked, the answer is the login failure, and the record stays so the user can
-// try again.
+// TestAWrongCodeIsCountedAgainstTheNumber holds the phone-scope count, no binding or revocation, login-failed, and the record kept.
 func TestAWrongCodeIsCountedAgainstTheNumber(t *testing.T) {
 	h := newHarness(t)
 	h.startPhone()
@@ -575,9 +528,7 @@ func TestAWrongCodeIsCountedAgainstTheNumber(t *testing.T) {
 	}
 }
 
-// TestAFailureThatStartsABackOffIsAnnounced holds that the failure that engaged
-// the back-off is published as authn.throttle.engaged under the phone scope, and
-// the module that counts engagements is told.
+// TestAFailureThatStartsABackOffIsAnnounced holds that the engaging failure is published under the phone scope.
 func TestAFailureThatStartsABackOffIsAnnounced(t *testing.T) {
 	h := newHarness(t)
 	h.startPhone()
@@ -596,9 +547,7 @@ func TestAFailureThatStartsABackOffIsAnnounced(t *testing.T) {
 	}
 }
 
-// TestAFailureThatCannotBeCountedIsA503 holds that a rejection the back-off could
-// not record is not answered as an ordinary wrong code, which would let guesses
-// go uncounted.
+// TestAFailureThatCannotBeCountedIsA503 holds that an unrecorded rejection is not answered as a wrong code.
 func TestAFailureThatCannotBeCountedIsA503(t *testing.T) {
 	h := newHarness(t)
 	h.startPhone()
@@ -609,9 +558,7 @@ func TestAFailureThatCannotBeCountedIsA503(t *testing.T) {
 	}
 }
 
-// TestAnAnswerThatCouldNotBeHadIsNeitherAFailureNorASuccess holds that a verifier
-// that cannot answer counts nothing in either direction: a code that was not
-// checked is not a wrong one.
+// TestAnAnswerThatCouldNotBeHadIsNeitherAFailureNorASuccess holds that an unavailable verifier counts nothing either way.
 func TestAnAnswerThatCouldNotBeHadIsNeitherAFailureNorASuccess(t *testing.T) {
 	for _, err := range []error{authn.ErrUnavailable, errors.New("db: down")} {
 		h := newHarness(t)
@@ -627,9 +574,7 @@ func TestAnAnswerThatCouldNotBeHadIsNeitherAFailureNorASuccess(t *testing.T) {
 	}
 }
 
-// TestANumberAnotherAccountHoldsIsAConflictAtVerify holds where the conflict
-// surfaces: after a correct code, when the identifier is written, as a 409 that
-// revokes no session; and that the record is gone because its challenge is spent.
+// TestANumberAnotherAccountHoldsIsAConflictAtVerify holds that the conflict surfaces after a correct code as a 409 revoking no session.
 func TestANumberAnotherAccountHoldsIsAConflictAtVerify(t *testing.T) {
 	h := newHarness(t)
 	h.startPhone()
@@ -669,9 +614,7 @@ func TestABindingThatFailsOtherwiseIsAnswered(t *testing.T) {
 	}
 }
 
-// TestHousekeepingThatFailsDoesNotFailAVerifiedNumber holds that a back-off that
-// cannot be cleared and a record that cannot be deleted are logged and do not
-// undo a number that was verified and bound.
+// TestHousekeepingThatFailsDoesNotFailAVerifiedNumber holds that a failed back-off clear or record delete is logged and does not undo the binding.
 func TestHousekeepingThatFailsDoesNotFailAVerifiedNumber(t *testing.T) {
 	h := newHarness(t)
 	h.startPhone()
@@ -688,10 +631,7 @@ func TestHousekeepingThatFailsDoesNotFailAVerifiedNumber(t *testing.T) {
 	}
 }
 
-// TestACodeThatCannotBeOneIsRefusedWithoutBeingCounted holds the shape check of
-// the code and of the body: an empty code, a very long one and a body the
-// decoder refuses are 400 or 415 and reach neither the store nor the verifier,
-// and so cost the number no failure.
+// TestACodeThatCannotBeOneIsRefusedWithoutBeingCounted holds that an empty or too-long code and a refused body reach neither store nor verifier.
 func TestACodeThatCannotBeOneIsRefusedWithoutBeingCounted(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -723,9 +663,7 @@ func TestACodeThatCannotBeOneIsRefusedWithoutBeingCounted(t *testing.T) {
 	}
 }
 
-// TestACodeAtTheLengthBoundPassesTheShapeGate holds the exact bound of the code
-// length check: a code of the maximum length is a shape the verifier is asked
-// about, and one character over is refused before it is counted.
+// TestACodeAtTheLengthBoundPassesTheShapeGate holds that a maximum-length code is checked and one character over is refused.
 func TestACodeAtTheLengthBoundPassesTheShapeGate(t *testing.T) {
 	const bound = 32
 	t.Run("at the bound", func(t *testing.T) {

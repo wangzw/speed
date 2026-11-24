@@ -19,7 +19,6 @@ import (
 // no input item.
 const gateNamespace = "authn.gate"
 
-// The keys this module reads, relative to gateNamespace.
 const (
 	endpointsItem      = "mount.endpoints"
 	basesItem          = "mount.bases"
@@ -27,7 +26,6 @@ const (
 	trustedOriginsItem = "trusted-origins"
 )
 
-// The item naming one scope's endpoint, relative to the mount section.
 const (
 	defaultMountItem = endpointsItem + ".default"
 	tenantsMountItem = endpointsItem + ".tenants"
@@ -53,7 +51,6 @@ type bases struct {
 	System  string `config:"system"`
 }
 
-// defaults is the base path of each scope when the deployment configures none.
 func defaultBases() bases {
 	return bases{
 		Default: mount.DefaultBasePath,

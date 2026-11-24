@@ -22,10 +22,7 @@ func panicText(f func()) (text string, panicked bool) {
 	return "", false
 }
 
-// TestARegistrationOutsideTheWindowPanicsAndNamesTheRoute holds the convention of
-// the entry point's own Route: a registration after the window has shut is a
-// call from the wrong stage, it panics, and the text names the route so that the
-// call site is found from the log. Every registration method is held to it.
+// TestARegistrationOutsideTheWindowPanicsAndNamesTheRoute holds the wrong-stage panic and the route in its text.
 func TestARegistrationOutsideTheWindowPanicsAndNamesTheRoute(t *testing.T) {
 	liveStack{
 		register: func(m mount.Mounter) { m.Public("GET", "/early", reachedAs) },
@@ -54,10 +51,7 @@ func TestARegistrationOutsideTheWindowPanicsAndNamesTheRoute(t *testing.T) {
 	})
 }
 
-// TestARegistrationBeforeTheModuleHasInitialisedPanicsAndNamesTheRoute holds that
-// a route is never written to a surface the module has not taken up: before Init
-// there is no endpoint and no gateway, and the call panics saying which route and
-// what to do, instead of dropping the registration.
+// TestARegistrationBeforeTheModuleHasInitialisedPanicsAndNamesTheRoute holds that a pre-Init registration panics rather than dropping the route.
 func TestARegistrationBeforeTheModuleHasInitialisedPanicsAndNamesTheRoute(t *testing.T) {
 	var s settings
 	s.Mount.Bases = defaultBases()
@@ -87,10 +81,7 @@ func TestARegistrationBeforeTheModuleHasInitialisedPanicsAndNamesTheRoute(t *tes
 	}
 }
 
-// TestARegistrationThatCannotMeanWhatItSaysPanicsAndRegistersNothing holds the
-// mistakes at the call site the module refuses before anything is written to
-// either surface: each panics naming the route, and neither the entry point nor
-// the gateway has heard of it afterwards.
+// TestARegistrationThatCannotMeanWhatItSaysPanicsAndRegistersNothing holds that a contradictory call panics naming the route and writes nothing.
 func TestARegistrationThatCannotMeanWhatItSaysPanicsAndRegistersNothing(t *testing.T) {
 	l := &ledger{}
 	var m mount.Mounter
@@ -134,14 +125,11 @@ func TestARegistrationThatCannotMeanWhatItSaysPanicsAndRegistersNothing(t *testi
 	}
 }
 
-// refusingGate is a gateway whose registration surface is shut.
 type refusingGate struct{ standInGate }
 
 func (refusingGate) Exempt(string, string, string) { panic("the registration gate is shut") }
 
-// TestARefusalFromTheGatewayNamesTheRouteToo holds the route in the panic when it
-// is the gateway's surface that refuses and not the entry point's, which is the
-// case where the two windows do not close together.
+// TestARefusalFromTheGatewayNamesTheRouteToo holds the route in a gateway-side panic.
 func TestARefusalFromTheGatewayNamesTheRouteToo(t *testing.T) {
 	l := &ledger{}
 	var m mount.Mounter

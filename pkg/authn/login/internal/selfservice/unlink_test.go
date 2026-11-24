@@ -11,9 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// TestRemovingAnIdentifierRemovesTheCallersOwn holds the success path: the
-// identifier is checked against the account's own, removed for the account, and
-// the answer is a 204.
+// TestRemovingAnIdentifierRemovesTheCallersOwn holds that the caller's own identifier is removed and the answer is 204.
 func TestRemovingAnIdentifierRemovesTheCallersOwn(t *testing.T) {
 	h := newHarness(t)
 	h.richAccount()
@@ -27,10 +25,7 @@ func TestRemovingAnIdentifierRemovesTheCallersOwn(t *testing.T) {
 	}
 }
 
-// TestAnIdentifierThatIsNotTheCallersIsNotRemoved holds that an identifier the
-// account does not hold, whether it does not exist or belongs to another
-// account, is refused the same way before the write is asked for, so that the
-// route cannot be used to remove or to probe another account's identifiers.
+// TestAnIdentifierThatIsNotTheCallersIsNotRemoved holds that a missing or foreign identifier is refused before the write.
 func TestAnIdentifierThatIsNotTheCallersIsNotRemoved(t *testing.T) {
 	h := newHarness(t)
 	h.richAccount()
@@ -45,11 +40,8 @@ func TestAnIdentifierThatIsNotTheCallersIsNotRemoved(t *testing.T) {
 	}
 }
 
-// TestRemovingAnIdentifierMapsTheAccountModulesAnswers holds each answer the
-// removal can give. The refusal to leave a password account with no login name
-// is a 409 login-identifier-required, and the refusal to leave it with no way
-// to sign in at all is its own 409 last-login-method. A non-last-way conflict
-// keeps the generic conflict code.
+// TestRemovingAnIdentifierMapsTheAccountModulesAnswers holds each answer
+// the removal can give.
 func TestRemovingAnIdentifierMapsTheAccountModulesAnswers(t *testing.T) {
 	for _, c := range []struct {
 		err  error
@@ -87,10 +79,7 @@ func TestTheIdentifiersThatCannotBeListedAreA503(t *testing.T) {
 	}
 }
 
-// TestUnlinkingRotatesRevokesTheOthersAndPublishes holds the success path of
-// DELETE /links/:id, with the order the design gives: the unbinding, then the
-// settling of the sessions, and the event with the provider's class and no
-// subject, and the audit row.
+// TestUnlinkingRotatesRevokesTheOthersAndPublishes holds the unbinding, session settling, the class-only event and the audit row.
 func TestUnlinkingRotatesRevokesTheOthersAndPublishes(t *testing.T) {
 	h := newHarness(t)
 	h.richAccount()
@@ -121,9 +110,7 @@ func TestUnlinkingRotatesRevokesTheOthersAndPublishes(t *testing.T) {
 	}
 }
 
-// TestTheLastWayToLogInIsNotUnlinked holds the refusal of the account module as
-// a 409 last-login-method, and that a refused unbinding revokes nothing,
-// rotates nothing, publishes nothing and leaves no success row.
+// TestTheLastWayToLogInIsNotUnlinked holds that the refusal is 409 last-login-method and nothing is revoked, rotated, published or audited.
 func TestTheLastWayToLogInIsNotUnlinked(t *testing.T) {
 	h := newHarness(t)
 	h.richAccount()
@@ -142,11 +129,7 @@ func TestTheLastWayToLogInIsNotUnlinked(t *testing.T) {
 	}
 }
 
-// TestAnIdPsMultiFactorDoesNotLetAnAccountWithFactorsUnlink holds the weaker of
-// the two proofs out: an account that has a factor, held to a local multi-factor
-// authentication, is refused for an identity whose second factor an IdP only
-// declared, and the unbinding is not attempted. The same identity may unlink on
-// an account with no factor, where a fresh first factor is what is asked.
+// TestAnIdPsMultiFactorDoesNotLetAnAccountWithFactorsUnlink holds that an IdP-declared factor does not satisfy the local multi-factor requirement.
 func TestAnIdPsMultiFactorDoesNotLetAnAccountWithFactorsUnlink(t *testing.T) {
 	h := newHarness(t)
 	h.richAccount()
@@ -208,10 +191,7 @@ func TestUnlinkingMapsTheAccountModulesAnswers(t *testing.T) {
 	}
 }
 
-// TestTheProviderClassIsInTheClosedSet holds the class of each provider
-// namespace of the account design, and that a provider outside them is unlinked
-// without an event, which is logged, rather than published with a value the
-// payload does not allow.
+// TestTheProviderClassIsInTheClosedSet holds each namespace's class and that an outside provider is unlinked without an event.
 func TestTheProviderClassIsInTheClosedSet(t *testing.T) {
 	for provider, class := range map[string]string{
 		"google": "google", "github": "github", "wechat": "wechat", "wechat-openid:wx123": "wechat",
@@ -245,9 +225,7 @@ func TestTheProviderClassIsInTheClosedSet(t *testing.T) {
 	}
 }
 
-// TestAnEventThatCannotBePublishedDoesNotFailTheUnlinking holds that an event is
-// a hint: a bus that refuses it, and an audit that cannot be written, are logged
-// and the unbinding stands.
+// TestAnEventThatCannotBePublishedDoesNotFailTheUnlinking holds that a refused event or audit write is logged and the unbinding stands.
 func TestAnEventThatCannotBePublishedDoesNotFailTheUnlinking(t *testing.T) {
 	h := newHarness(t)
 	h.richAccount()

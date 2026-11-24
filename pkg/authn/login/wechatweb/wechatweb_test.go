@@ -24,9 +24,6 @@ const (
 	testRedirect  = "https://app.example.com/api/v1/auth/callback/wechat.web"
 )
 
-// tokenServer serves one token answer over TLS and reports the request URL it
-// saw. The method reaches it through the restricted egress client, admitted to
-// the loopback address and trusting the server's own certificate.
 func tokenServer(t *testing.T, status int, body string) (*httptest.Server, *wechat.Client) {
 	t.Helper()
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -47,8 +44,6 @@ func tokenServer(t *testing.T, status int, body string) (*httptest.Server, *wech
 	return srv, client
 }
 
-// begin drives a login begin and returns the private state the callback needs
-// and the state value the provider would return.
 func begin(t *testing.T, m *method) (private []byte, state string, to string) {
 	t.Helper()
 	got, err := m.Begin(context.Background(), authn.Start{Purpose: authn.PurposeLogin})
@@ -66,8 +61,6 @@ func begin(t *testing.T, m *method) (private []byte, state string, to string) {
 	return step.PrivateOf(got), u.Query().Get("state"), to
 }
 
-// answer drives a callback with the given query against the flow's private
-// state.
 func answer(m *method, private []byte, query url.Values) authn.Step {
 	got, _ := m.Answer(context.Background(),
 		authn.FlowState{Purpose: authn.PurposeLogin, Private: private},
@@ -75,6 +68,7 @@ func answer(m *method, private []byte, query url.Values) authn.Step {
 	return got
 }
 
+// TestBeginRedirectsToTheWebsiteApplicationEndpoint checks the scope, app id, redirect URI and 64-character state.
 func TestBeginRedirectsToTheWebsiteApplicationEndpoint(t *testing.T) {
 	_, client := tokenServer(t, http.StatusOK, `{"openid":"x"}`)
 	m := newMethod(client, testRedirect)
@@ -106,6 +100,8 @@ func TestBeginRedirectsToTheWebsiteApplicationEndpoint(t *testing.T) {
 	}
 }
 
+// TestTheCallbackProvesTheIdentity checks that the callback proves the WeChat
+// identity under the union key and keeps the open-id key as an alias.
 func TestTheCallbackProvesTheIdentity(t *testing.T) {
 	_, client := tokenServer(t, http.StatusOK,
 		`{"access_token":"t","expires_in":7200,"openid":"OPEN-7","unionid":"UNION-7"}`)
@@ -125,6 +121,8 @@ func TestTheCallbackProvesTheIdentity(t *testing.T) {
 	}
 }
 
+// TestTheCallbackIsRefusedWhenTheStateIsWrongOrMissing checks that the callback is
+// refused when the state is wrong or missing, or the code is missing.
 func TestTheCallbackIsRefusedWhenTheStateIsWrongOrMissing(t *testing.T) {
 	_, client := tokenServer(t, http.StatusOK, `{"openid":"OPEN-7"}`)
 	m := newMethod(client, testRedirect)
@@ -147,6 +145,8 @@ func TestTheCallbackIsRefusedWhenTheStateIsWrongOrMissing(t *testing.T) {
 	}
 }
 
+// TestAnErrcodeIsRefusedAndTheSecretStaysIn checks that an errcode is a refusal
+// whose cause does not carry the secret.
 func TestAnErrcodeIsRefusedAndTheSecretStaysIn(t *testing.T) {
 	_, client := tokenServer(t, http.StatusOK, `{"errcode":40029,"errmsg":"invalid code"}`)
 	m := newMethod(client, testRedirect)
@@ -161,6 +161,7 @@ func TestAnErrcodeIsRefusedAndTheSecretStaysIn(t *testing.T) {
 	}
 }
 
+// TestANonTwoHundredStatusIsAnOutage checks that a non-200 answer is an outage.
 func TestANonTwoHundredStatusIsAnOutage(t *testing.T) {
 	_, client := tokenServer(t, http.StatusBadGateway, `{}`)
 	m := newMethod(client, testRedirect)
@@ -171,9 +172,7 @@ func TestANonTwoHundredStatusIsAnOutage(t *testing.T) {
 	}
 }
 
-// TestTheOutageCauseNeverCarriesTheSecret holds the ADR's invariant at the
-// method's boundary: the cause of an outage is what the engine logs, and it
-// carries no part of the token request.
+// TestTheOutageCauseNeverCarriesTheSecret holds that an outage's logged cause carries no part of the token request.
 func TestTheOutageCauseNeverCarriesTheSecret(t *testing.T) {
 	_, client := tokenServer(t, http.StatusInternalServerError, `{}`)
 	m := newMethod(client, testRedirect)
@@ -191,6 +190,8 @@ func TestTheOutageCauseNeverCarriesTheSecret(t *testing.T) {
 	}
 }
 
+// TestTheMethodServesLoginLinkAndStepUpOnly checks that the method serves login,
+// link and step-up only.
 func TestTheMethodServesLoginLinkAndStepUpOnly(t *testing.T) {
 	_, client := tokenServer(t, http.StatusOK, `{"openid":"x"}`)
 	m := newMethod(client, testRedirect)
@@ -207,6 +208,7 @@ func TestTheMethodServesLoginLinkAndStepUpOnly(t *testing.T) {
 	}
 }
 
+// TestASubmitAnswerIsRefused checks that a submit answer is refused.
 func TestASubmitAnswerIsRefused(t *testing.T) {
 	_, client := tokenServer(t, http.StatusOK, `{"openid":"x"}`)
 	m := newMethod(client, testRedirect)
@@ -218,6 +220,8 @@ func TestASubmitAnswerIsRefused(t *testing.T) {
 	}
 }
 
+// TestANameIsThePublishedOne checks that Name reports the published name
+// wechat.web.
 func TestANameIsThePublishedOne(t *testing.T) {
 	_, client := tokenServer(t, http.StatusOK, `{"openid":"x"}`)
 	if got := newMethod(client, testRedirect).Name(); got != "wechat.web" {
@@ -225,14 +229,11 @@ func TestANameIsThePublishedOne(t *testing.T) {
 	}
 }
 
-// describe names a step's kind for a failure message.
 func describe(s authn.Step) string {
 	return "kind " + step.KindOf(s).String()
 }
 
-// TestACancelledAuthorizationIsRefusedAsACancellation holds that a callback that
-// reports the authorization was cancelled is refused with the cancellation cause,
-// not read as a callback with a missing code.
+// TestACancelledAuthorizationIsRefusedAsACancellation holds that a cancelled callback carries the cancellation cause, not a missing code.
 func TestACancelledAuthorizationIsRefusedAsACancellation(t *testing.T) {
 	_, client := tokenServer(t, http.StatusOK, `{"openid":"x"}`)
 	m := newMethod(client, testRedirect)
@@ -247,9 +248,7 @@ func TestACancelledAuthorizationIsRefusedAsACancellation(t *testing.T) {
 	}
 }
 
-// TestACancelledContextIsUnavailable holds that a call under a context that has
-// already ended answers an outage rather than drawing a state or reaching the
-// provider.
+// TestACancelledContextIsUnavailable holds that an ended context answers an outage before drawing or reaching the provider.
 func TestACancelledContextIsUnavailable(t *testing.T) {
 	_, client := tokenServer(t, http.StatusOK, `{"openid":"x"}`)
 	m := newMethod(client, testRedirect)

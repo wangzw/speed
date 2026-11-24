@@ -20,14 +20,12 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// routeCall is one Route call a stand-in entry point received.
 type routeCall struct {
 	endpoint string
 	method   string
 	path     string
 }
 
-// accessCall is one registration a stand-in gateway received.
 type accessCall struct {
 	kind     string // Exempt, Optional or Impersonable
 	endpoint string
@@ -62,8 +60,6 @@ func (l *ledger) snapshot() ([]routeCall, []accessCall) {
 	return slices.Clone(l.routes), slices.Clone(l.access)
 }
 
-// standInRouter is an entry point that declares the endpoints it was given and
-// records the routes registered on them.
 type standInRouter struct {
 	names  []string
 	ledger *ledger
@@ -92,8 +88,6 @@ func (e standInEndpoint) Route(method, path string, handlers ...gin.HandlerFunc)
 func (standInEndpoint) Use(speedhttp.Middleware) {}
 func (standInEndpoint) Accepting() bool          { return false }
 
-// standInGate is a gateway of a host's own: it implements the registration
-// surface and nothing else, and records what it was asked.
 type standInGate struct{ ledger *ledger }
 
 var _ authn.Gate = standInGate{}
@@ -110,17 +104,10 @@ func (g standInGate) Impersonable(endpoint, method, path string) {
 	g.ledger.addAccess(accessCall{"Impersonable", endpoint, method, path})
 }
 
-// passthroughGuard is the pkg/http RouteGuard a case supplies when the point is
-// that a tenant-scoped group mounts at all: it checks nothing, and the guard's
-// own rule is held by the tenant capability's tests.
 type passthroughGuard struct{}
 
 func (passthroughGuard) Guard(next gin.HandlerFunc) gin.HandlerFunc { return next }
 
-// scopedGuard records which of the two route-guard seams the mounter used. The
-// mounter applies the shared identity guard to every tenant-scoped group; the
-// tenant administration modules apply the stricter guard themselves, so a
-// non-zero admin count here would mean the mounter narrowed the shared rule.
 type scopedGuard struct {
 	mu     sync.Mutex
 	shared int
@@ -147,14 +134,10 @@ func (g *scopedGuard) counts() (shared, admin int) {
 	return g.shared, g.admin
 }
 
-// standIn is a module that declares the capability token names and nothing
-// else, for an instance a case supplies to it.
 func standIn(name string, token core.Token) core.Module {
 	return core.Module{Name: name, Provides: []core.Provision{{Token: token}}}
 }
 
-// registrant is a module that mounts routes the way a real one does: it requires
-// the route-mounting capability and registers from its Init.
 func registrant(register func(mount.Mounter)) core.Module {
 	return core.Module{
 		Name:     "stand-in.registrant",
@@ -171,33 +154,19 @@ func registrant(register func(mount.Mounter)) core.Module {
 	}
 }
 
-// stack is one drive of a real registry through this module: the module itself,
-// the configuration reader, an entry point and a gateway that are stand-ins
-// unless a case brings the real ones.
 type stack struct {
-	// body is the whole configuration, JSON.
-	body string
-	// router is the stand-in entry point; nil leaves the command without one.
+	body   string
 	router *standInRouter
 	// realGateModule registers the real gateway module, so that the keys this
 	// module reads are declared the way they are in a real assembly. With gate
 	// set the instance is supplied to it, and its own callbacks do nothing.
 	realGateModule bool
-	// gate is the gateway of the host's own that is supplied. With
-	// realGateModule false it is delivered by a module of its own.
-	gate authn.Gate
-	// routeGuard, when set, is delivered as the pkg/http RouteGuard capability. A
-	// case that mounts a tenant-scoped group supplies one: the mounter refuses a
-	// tenant-scoped registration without it.
-	routeGuard speedhttp.RouteGuard
-	// register runs in the Init of a module that requires the capability.
-	register func(mount.Mounter)
-	// logs, when set, is where the logging capability's records go.
-	logs *recorder
+	gate           authn.Gate
+	routeGuard     speedhttp.RouteGuard
+	register       func(mount.Mounter)
+	logs           *recorder
 }
 
-// drive advances the stack to Start and runs action there, returning what the
-// drive returned once every Stop and Close has run.
 func (s stack) drive(t *testing.T, action func(ctx context.Context, reg *core.Registry) error) error {
 	t.Helper()
 
@@ -257,7 +226,6 @@ func (s stack) drive(t *testing.T, action func(ctx context.Context, reg *core.Re
 
 func nothing(context.Context, *core.Registry) error { return nil }
 
-// recorder is a slog handler that keeps every record written to it.
 type recorder struct {
 	mu      sync.Mutex
 	records []slog.Record
@@ -281,7 +249,6 @@ func (h *recorder) recordsOf() []slog.Record {
 	return slices.Clone(h.records)
 }
 
-// recordNamed returns the first record written with msg.
 func (h *recorder) recordNamed(msg string) (slog.Record, bool) {
 	for _, r := range h.recordsOf() {
 		if r.Message == msg {
@@ -291,7 +258,6 @@ func (h *recorder) recordNamed(msg string) (slog.Record, bool) {
 	return slog.Record{}, false
 }
 
-// attrText renders a record's attribute as the string it holds.
 func attrText(r slog.Record, key string) string {
 	var text string
 	r.Attrs(func(a slog.Attr) bool {
@@ -304,7 +270,6 @@ func attrText(r slog.Record, key string) string {
 	return text
 }
 
-// recordingLogging delivers the logging capability over a logger the case holds.
 type recordingLogging struct{ logger *slog.Logger }
 
 func (l recordingLogging) Named(string) *slog.Logger { return l.logger }
@@ -317,7 +282,6 @@ func (noRules) AddPattern(string, log.Matcher) {}
 
 var _ log.Logger = recordingLogging{}
 
-// loggingModule is the module that delivers the logging capability over logs.
 func loggingModule(logs *recorder) core.Module {
 	return core.Module{
 		Name:     "stand-in.logging",

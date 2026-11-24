@@ -1,21 +1,7 @@
-// Package resolve is the account resolution step of the login engine. A login
-// method hands the engine a [authn.Proof]; this package says which account the
-// proof belongs to, and for a first login it decides whether an account is
-// created, an existing one is bound to, or the login is refused.
-// The rules are those of the account design (A1 to A10 and first-login
-// provisioning), and the package holds nothing else: it writes no HTTP answer,
-// builds no session and imports neither the login engine nor a login method
-// nor the tenant module.
-//
-// The key of an external identity is always the provider and the subject, never
-// an email address. The email a provider declares is a hint, and whether it is
-// believed depends on where the identity came from: a social provider's claim
-// is believed only when it says the address is verified, and then only to refuse
-// a login whose address an account already holds; an enterprise provider's
-// claim is replaced by the proof that the address is in a domain its tenant
-// verified. No login resolves an account by a provider's address: the address
-// chooses neither the account of a login nor the account of a first-login
-// provisioning.
+// Package resolve is the account resolution step of the login engine: it turns
+// an authn.Proof into the account it belongs to, and for a first login decides
+// whether to create an account, bind an existing one, or refuse. An external
+// identity's key is always the provider and subject, never an email address.
 package resolve
 
 import (
@@ -31,17 +17,21 @@ import (
 // account. The zero value reads as closed.
 type Signup string
 
-// The values of Signup.
 const (
+	// SignupClosed refuses a first login that would open an account.
 	SignupClosed Signup = "closed"
-	SignupOpen   Signup = "open"
+	// SignupOpen lets a first login open an account.
+	SignupOpen Signup = "open"
 )
 
 // Config is what a [Resolver] is built from.
 type Config struct {
-	// Accounts, Admin and Memberships are required.
-	Accounts    authn.Accounts
-	Admin       authn.AccountAdmin
+	// Accounts reads the account store. Required.
+	Accounts authn.Accounts
+	// Admin is the account administrator the resolver reads through. Required.
+	Admin authn.AccountAdmin
+	// Memberships reads and writes the provider tenants an account joins.
+	// Required.
 	Memberships authn.Memberships
 	// SSO is the register of enterprise providers. Without it an enterprise
 	// identity cannot be resolved without a binding.
@@ -122,6 +112,7 @@ func (r *Resolver) signupOpen() bool {
 
 // Request is one resolution.
 type Request struct {
+	// Proof is the credential the method proved.
 	Proof authn.Proof
 	// Purpose is one of authn.PurposeLogin, PurposeLink, PurposeStepUp and
 	// PurposeEnroll. Any other value, the empty one included, is refused.
@@ -185,14 +176,10 @@ func credentialsFailure(why string, cause error) error {
 	return fmt.Errorf("%w: resolve: %s: %w", authn.ErrInvalidCredentials, why, cause)
 }
 
-// canLogIn reports whether an account is one an interactive login may land on:
-// an enabled account that is not a service account.
 func canLogIn(a authn.Account) bool {
 	return a.Status == authn.StatusActive && a.Kind != authn.KindService
 }
 
-// getAccount reads an account, passing a dependency's failure on. found is
-// false for an account that does not exist.
 func (r *Resolver) getAccount(ctx context.Context, id authn.AccountID) (a authn.Account, found bool, err error) {
 	a, err = r.accounts.Get(ctx, id)
 	switch {

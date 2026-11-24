@@ -14,8 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
 )
 
-// The parts of the bounce page a case reads back. The page is rendered from one
-// template, so its markup is fixed and a pattern per part reads it.
 var (
 	bounceActionPattern = regexp.MustCompile(`<form id="resume" method="post" action="([^"]*)">`)
 	bounceInputPattern  = regexp.MustCompile(`<input type="hidden" name="([^"]*)" value="([^"]*)">`)
@@ -23,17 +21,14 @@ var (
 	bouncePolicyPattern = regexp.MustCompile(`^default-src 'none'; script-src 'nonce-([^']+)'; form-action ([^;]+); frame-ancestors 'none'; base-uri 'none'$`)
 )
 
-// crossSiteIDP is the origin a provider's page posts from.
 const crossSiteIDP = "https://idp.example.org"
 
-// bounced is the bounce page a callback post was answered with, read back.
 type bounced struct {
 	reply  *httptest.ResponseRecorder
 	action string
 	fields [][2]string
 }
 
-// form is the page's hidden fields as the urlencoded body its form posts.
 func (b bounced) form() string {
 	pairs := make([]string, 0, len(b.fields))
 	for _, f := range b.fields {
@@ -42,8 +37,6 @@ func (b bounced) form() string {
 	return strings.Join(pairs, "&")
 }
 
-// postWith issues a urlencoded POST with the given headers and nothing else,
-// so a case states every fetch-metadata header the request carries.
 func (r *rig) postWith(path, body string, hdr ...string) *httptest.ResponseRecorder {
 	r.t.Helper()
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
@@ -54,9 +47,6 @@ func (r *rig) postWith(path, body string, hdr ...string) *httptest.ResponseRecor
 	return r.m.Do(req)
 }
 
-// bounceThrough posts body to a provider's callback as the provider's page does
-// in a browser: a cross-site top-level navigation that carries no Lax cookie. It
-// checks the answer is the bounce page and reads it back.
 func (r *rig) bounceThrough(t *testing.T, provider, body string) bounced {
 	t.Helper()
 	rec := r.postWith("/api/v1/auth/callback/"+provider, body,
@@ -76,9 +66,6 @@ func (r *rig) bounceThrough(t *testing.T, provider, body string) bounced {
 	return out
 }
 
-// resume posts the bounce page's form to its action as the page's script does:
-// a same-origin navigation carrying cookie, when one is given, and the site's
-// own origin.
 func (r *rig) resume(t *testing.T, page bounced, cookie string, hdr ...string) *httptest.ResponseRecorder {
 	t.Helper()
 	headers := []string{"Sec-Fetch-Site", "same-origin", "Origin", mounttest.DefaultPublicURL}
@@ -88,12 +75,7 @@ func (r *rig) resume(t *testing.T, page bounced, cookie string, hdr ...string) *
 	return r.postWith(page.action, page.form(), append(headers, hdr...)...)
 }
 
-// TestACookielessCrossSitePostToTheCallbackIsAnsweredTheBouncePage holds the
-// callback route's answer to a provider's cross-site form post that carries no
-// flow cookie: a 200 HTML page whose form carries the posted fields unchanged to
-// the same provider's resume route, whose one script carries the nonce the
-// response's policy admits, with the headers the page is served with. The route
-// asks no method and writes no record.
+// TestACookielessCrossSitePostToTheCallbackIsAnsweredTheBouncePage holds the page's echoed fields, nonce-bound script and headers.
 func TestACookielessCrossSitePostToTheCallbackIsAnsweredTheBouncePage(t *testing.T) {
 	m := &redirectMethod{name: "saml"}
 	r := newRigMethod(t, m)
@@ -146,13 +128,7 @@ func TestACookielessCrossSitePostToTheCallbackIsAnsweredTheBouncePage(t *testing
 	}
 }
 
-// TestTheBouncePagesFormActionAdmitsEveryTrustedOrigin holds the targets the
-// bounce page's policy lets its form submission reach. Chromium and WebKit hold
-// form-action to every redirect the submission follows, so the resume route's
-// 303 to a return target or a failure landing on another trusted origin is
-// reached only when the policy names that origin. The sources are the page's own
-// origin and every trusted origin, the public URL's among them, and nothing
-// else.
+// TestTheBouncePagesFormActionAdmitsEveryTrustedOrigin holds the targets the page's policy lets its form reach.
 func TestTheBouncePagesFormActionAdmitsEveryTrustedOrigin(t *testing.T) {
 	r := newRigMethod(t, &redirectMethod{name: "saml"})
 	r.p.trustedOrigins = []string{mounttest.DefaultPublicURL, "https://app.example.org", "http://127.0.0.1:9102"}
@@ -169,10 +145,7 @@ func TestTheBouncePagesFormActionAdmitsEveryTrustedOrigin(t *testing.T) {
 	}
 }
 
-// TestTheBouncePageEscapesWhatItEchoes holds that a posted name or value that is
-// markup reaches the page as text: the page carries no element the post wrote,
-// and the resume form carries the value back unchanged. A provider segment that
-// is markup is escaped into the form's target the same way.
+// TestTheBouncePageEscapesWhatItEchoes holds that posted markup reaches the page as text and comes back unchanged in the form.
 func TestTheBouncePageEscapesWhatItEchoes(t *testing.T) {
 	r := newRigMethod(t, &redirectMethod{name: "saml"})
 	value := `"><script>alert(1)</script><input name="x`
@@ -195,12 +168,7 @@ func TestTheBouncePageEscapesWhatItEchoes(t *testing.T) {
 	}
 }
 
-// TestResumingTheBouncedPostCompletesTheLogin holds the whole SP-initiated post
-// in a browser: the cross-site post is bounced, and the page's same-origin post
-// to the resume route, carrying the flow cookie and the session cookie of an
-// earlier sign-in, completes the login. The method is asked once with the posted
-// fields, the user agent is sent to the flow's return target with a new session
-// cookie, and the session the request came with is revoked.
+// TestResumingTheBouncedPostCompletesTheLogin holds that the bounce and the page's same-origin resume complete an SP-initiated login.
 func TestResumingTheBouncedPostCompletesTheLogin(t *testing.T) {
 	var seen url.Values
 	m := &redirectMethod{name: "saml"}
@@ -244,10 +212,7 @@ func TestResumingTheBouncedPostCompletesTheLogin(t *testing.T) {
 	}
 }
 
-// TestACrossSitePostToTheResumeRouteIsRefusedBeforeTheHandler holds that the
-// resume route keeps the cross-origin check: a cross-site post straight to it,
-// even one carrying the victim's flow cookie, is refused by the mount layer, the
-// method is never asked and the flow stays at its first factor.
+// TestACrossSitePostToTheResumeRouteIsRefusedBeforeTheHandler holds that the resume route keeps the check, so the method is never asked and the flow stays first.
 func TestACrossSitePostToTheResumeRouteIsRefusedBeforeTheHandler(t *testing.T) {
 	m := &redirectMethod{name: "saml"}
 	r := newRigMethod(t, m)
@@ -274,10 +239,7 @@ func TestACrossSitePostToTheResumeRouteIsRefusedBeforeTheHandler(t *testing.T) {
 	}
 }
 
-// TestAResumedResponseForAnotherFlowFailsTheVictimsFlow holds what a response
-// delivered into a victim's browser does: the bounce carries it into the
-// victim's flow, the method refuses it because its RelayState is not the flow's,
-// and the flow is spent with no session made.
+// TestAResumedResponseForAnotherFlowFailsTheVictimsFlow holds that a response with the wrong RelayState is refused and spends the victim's flow with no session.
 func TestAResumedResponseForAnotherFlowFailsTheVictimsFlow(t *testing.T) {
 	m := &redirectMethod{name: "saml"}
 	m.answer = func(_ authn.FlowState, in authn.StepInput) (authn.Step, error) {

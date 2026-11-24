@@ -13,6 +13,8 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/slug"
 )
 
+// TestNewHoldsItsDependenciesAndSwitchesToTheirSets checks that New refuses a
+// missing dependency or a signup value outside its set.
 func TestNewHoldsItsDependenciesAndSwitchesToTheirSets(t *testing.T) {
 	s := newStore()
 	good := Config{
@@ -37,6 +39,7 @@ func TestNewHoldsItsDependenciesAndSwitchesToTheirSets(t *testing.T) {
 	}
 }
 
+// TestZeroSwitchReadsAsClosed checks that a zero Config needs an explicit link and refuses a new login as signup-closed.
 func TestZeroSwitchReadsAsClosed(t *testing.T) {
 	e := newEnv(t)
 	e.s.seed(t, seed{id: "a1", status: authn.StatusActive, email: "ann@home.org", emailVia: "idp:google"})
@@ -77,7 +80,6 @@ func TestAFailureAfterTheAccountIsMadeUnwindsIt(t *testing.T) {
 			if _, ok := e.s.boundTo(tc.proof.External.Provider, tc.proof.External.Subject); ok {
 				t.Error("a binding survived the unwind")
 			}
-			// The next attempt, with the dependency back, is a clean first login.
 			e.s.failLink, e.s.failPut = nil, nil
 			if res, err := e.resolve(tc.proof); err != nil || res.Outcome != OutcomeCreated {
 				t.Errorf("retry = %+v, %v, want an account created", res, err)
@@ -86,6 +88,7 @@ func TestAFailureAfterTheAccountIsMadeUnwindsIt(t *testing.T) {
 	}
 }
 
+// TestAnUnwindSurvivesTheLogInsCancelledContext checks that the half-made account is unwound under a cancelled context.
 func TestAnUnwindSurvivesTheLogInsCancelledContext(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
 	pending, err := e.pending(social("google", "g1", "", false))
@@ -104,6 +107,8 @@ func TestAnUnwindSurvivesTheLogInsCancelledContext(t *testing.T) {
 	}
 }
 
+// TestACreateFailureIsPassedOn checks that a failure to create the account is
+// passed on as it came.
 func TestACreateFailureIsPassedOn(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
 	e.s.failCreate = authn.ErrUnavailable
@@ -112,6 +117,7 @@ func TestACreateFailureIsPassedOn(t *testing.T) {
 	}
 }
 
+// TestDisplayNameIsCutToHundredCharactersNotBytes checks the character cut and the control-character and whitespace trimming.
 func TestDisplayNameIsCutToHundredCharactersNotBytes(t *testing.T) {
 	long := strings.Repeat("名", 150)
 	got := displayNameOrDefault(long, "")
@@ -132,6 +138,8 @@ func TestDisplayNameIsCutToHundredCharactersNotBytes(t *testing.T) {
 	}
 }
 
+// TestEmailDomain checks that emailDomain accepts only a plain ASCII address and
+// returns its lower-cased domain, and is empty for anything else.
 func TestEmailDomain(t *testing.T) {
 	for in, want := range map[string]string{
 		"ann@acme.com":     "acme.com",

@@ -1,11 +1,6 @@
 // Package stepup builds the WWW-Authenticate value of a step-up refusal for a
-// typed handler.
-//
-// The mount package writes that answer for a gin handler (mount.StepUpRequired),
-// but its value builder is not exported and a typed handler has no response
-// writer to hand it. This package is the one reading of the rule inside
-// authn.login: the engine and the account self-service routes both return the
-// refusal as a fault, and the fault's header is this value.
+// typed handler, which has no response writer to hand the mount package's
+// builder.
 package stepup
 
 import (
@@ -17,14 +12,11 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 )
 
-// description is the error_description of the challenge. It names no
-// requirement of the route and nothing of the account.
 const description = "A stronger or more recent authentication is required"
 
 // Challenge is the WWW-Authenticate value of a step-up refusal: the scheme the
-// identity authenticated with, then the error, its description, the level's
-// number in acr_values and, when the requirement carries one, its MaxAge in
-// whole seconds, rounded up.
+// identity authenticated with, the error and its description, the level's number
+// in acr_values and, when set, MaxAge in whole seconds.
 func Challenge(id authn.Identity, r authn.Requirement) string {
 	var b strings.Builder
 	b.WriteString(scheme(id.Challenge()))

@@ -23,7 +23,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// recordedLogger is a log.Logger that remembers the names it was asked for.
 type recordedLogger struct {
 	mu    sync.Mutex
 	names []string
@@ -38,9 +37,6 @@ func (l *recordedLogger) Named(name string) *slog.Logger {
 }
 func (l *recordedLogger) Redaction() log.Redaction { return noopRedaction{} }
 
-// noopRedaction is a logging capability's registration face that keeps no rule.
-// New registers the subject table through it, and a stand-in whose records
-// nobody reads has nothing to mask.
 type noopRedaction struct{}
 
 func (noopRedaction) AddKeys(...string)              {}
@@ -176,11 +172,6 @@ func TestTheModuleTakesUpWhatTheAssemblyDeliversAndBuildsFromItsSection(t *testi
 	})
 }
 
-// wantWeakEntriesNamed holds what the startup says about a table of entries that
-// are cheap enough to be below what OWASP recommends: each one is named once, as
-// the line that tells an operator the table is cheap to guess against. The cases
-// that drive the module with such entries to read something else hold it too, so
-// the warning is something they assert and not noise in their output.
 func wantWeakEntriesNamed(t *testing.T, out *capture, names ...string) {
 	t.Helper()
 	var lines []string
@@ -245,8 +236,6 @@ func TestAnEmptyTableStopsTheStartupThroughTheLifecycle(t *testing.T) {
 		if !errors.Is(err, authn.ErrInvalidClaim) || !strings.Contains(err.Error(), ConfigNamespace+"."+subjectsItem) {
 			t.Errorf("%s: the startup failed with %v, want one wrapping %v that names %s.%s", name, err, authn.ErrInvalidClaim, ConfigNamespace, subjectsItem)
 		}
-		// An absent table is a missing required item as well, and both causes
-		// stay in the chain.
 		if absent := errors.Is(err, config.ErrMissingRequired); absent != (name == "absent") {
 			t.Errorf("%s: the startup failure wraps %v: %v, want %v: %v", name, config.ErrMissingRequired, absent, name == "absent", err)
 		}
@@ -276,7 +265,7 @@ func TestASettingsStoreThatCannotBeTakenUpStopsTheStartup(t *testing.T) {
 	}
 }
 
-// the module is registered under the name the design and the hosts' command
+// the module is registered under the name the command and the registry share
 // trees give it.
 func TestTheModuleAndItsSectionKeepTheirDocumentedNames(t *testing.T) {
 	if ModuleName != "authn.static" || ConfigNamespace != "authn.static" || backendName != "static" {

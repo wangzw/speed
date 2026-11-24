@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-// lockedBuffer is a buffer a handler writes to while the test reads it.
 type lockedBuffer struct {
 	mu sync.Mutex
 	b  bytes.Buffer
@@ -26,9 +25,8 @@ func (l *lockedBuffer) String() string {
 	return l.b.String()
 }
 
-// captureLogs points the process default logger, and the standard library's
-// log package that follows it, at a buffer for the length of the test. A case
-// that calls it does not run in parallel: the default logger is process state.
+// captureLogs replaces the process-wide default logger, so a test that calls it
+// must not run in parallel with another.
 func captureLogs(t *testing.T) *lockedBuffer {
 	t.Helper()
 	out := &lockedBuffer{}

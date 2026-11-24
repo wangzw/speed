@@ -8,7 +8,6 @@ import (
 	"time"
 )
 
-// logLines counts the captured log lines that carry every needle.
 func logLines(h *harness, needles ...string) int {
 	count := 0
 	for _, line := range strings.Split(h.logs.String(), "\n") {
@@ -29,7 +28,6 @@ func logLines(h *harness, needles ...string) int {
 	return count
 }
 
-// wideBudgets leaves only the budget under test in the way of a send.
 func wideBudgets() map[string]int {
 	return map[string]int{
 		budgetAddressHourly: 60, budgetAddressDaily: 200,
@@ -39,16 +37,11 @@ func wideBudgets() map[string]int {
 	}
 }
 
-// TestACountThatCannotBeReadUsesTheDefaultReportedOnce holds the failure
-// direction of counts.get: a budget setting that cannot be read reads as its
-// declared default, not as zero (which would turn the budget off) and not as a
-// failed request, and the fault is written at Error once across repeated reads.
+// TestACountThatCannotBeReadUsesTheDefaultReportedOnce holds that an unreadable count reads as the declared default, logged once.
 func TestACountThatCannotBeReadUsesTheDefaultReportedOnce(t *testing.T) {
 	h := budgetHarness(t, wideBudgets())
 	h.settings.errs[budgetAddressHourly] = errors.New("the settings store is unavailable")
 
-	// The declared default of the per-address hourly budget is five, so the
-	// sixth send inside the hour is the one refused.
 	for i := 0; i < 5; i++ {
 		h.reauthenticate()
 		if w := h.post("/identifiers", addBody("email", "ada@example.com")); w.Code != http.StatusOK {
@@ -68,10 +61,7 @@ func TestACountThatCannotBeReadUsesTheDefaultReportedOnce(t *testing.T) {
 	}
 }
 
-// TestACountOutsideItsDomainUsesTheDefaultReportedOnce holds the other fallback
-// of counts.get: a stored value outside the setting's domain reads as the
-// declared default and is written at Error once, never served as the tuning
-// value.
+// TestACountOutsideItsDomainUsesTheDefaultReportedOnce holds that an out-of-domain value reads as the default, logged once.
 func TestACountOutsideItsDomainUsesTheDefaultReportedOnce(t *testing.T) {
 	numbers := wideBudgets()
 	numbers[budgetAddressHourly] = 0 // below the domain's floor of 1

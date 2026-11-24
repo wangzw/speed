@@ -26,23 +26,17 @@ import (
 // lands in the document at all: a post from New panics inside the board, and a
 // conditional name the module did not declare fails the board's own seal.
 
-// stubSMSCodes and stubEmailSender stand in for the optional seams the account
-// self-service routes switch on. The engine only checks their presence; the
-// routes these cases reach call none of their methods.
 type (
 	stubSMSCodes    struct{ authn.SMSCodes }
 	stubEmailSender struct{ authn.EmailCodeSender }
 )
 
-// openGate stands in for the authentication gateway: the board registers its
-// route as impersonable and asks nothing else of it.
 type openGate struct{}
 
 func (openGate) Exempt(string, string, string)       {}
 func (openGate) Optional(string, string, string)     {}
 func (openGate) Impersonable(string, string, string) {}
 
-// featureCapture keeps what the board logs, so a case reads the frozen set back.
 type featureCapture struct {
 	mu      sync.Mutex
 	records []slog.Record
@@ -60,7 +54,6 @@ func (c *featureCapture) Handle(_ context.Context, r slog.Record) error {
 func (c *featureCapture) WithAttrs([]slog.Attr) slog.Handler { return c }
 func (c *featureCapture) WithGroup(string) slog.Handler      { return c }
 
-// names returns the set the board froze in Start.
 func (c *featureCapture) names(t *testing.T) []string {
 	t.Helper()
 	c.mu.Lock()
@@ -88,9 +81,6 @@ type captureLogger struct{ capture *featureCapture }
 func (l captureLogger) Named(string) *slog.Logger { return slog.New(l.capture) }
 func (captureLogger) Redaction() log.Redaction    { return noRules{} }
 
-// driveWithBoard assembles the login engine, the real board and the stand-ins
-// both need, and advances to Start. It returns the mounter, so a case reads the
-// routes the engine registered, and the frozen feature names.
 func driveWithBoard(t *testing.T, sms, email bool) (*mounttest.Mounter, []string) {
 	t.Helper()
 
@@ -140,10 +130,7 @@ func driveWithBoard(t *testing.T, sms, email bool) (*mounttest.Mounter, []string
 	return mounter, capture.names(t)
 }
 
-// TestThePhoneSurfaceAndItsFeatureShareOneJudgement holds the phone half:
-// SMSCodes present is exactly the post of authn.phone and exactly the two phone
-// routes. An unconditional post fails the absent case; a route registered
-// without the post fails the present one.
+// TestThePhoneSurfaceAndItsFeatureShareOneJudgement holds that SMSCodes present is exactly the authn.phone post and exactly the two phone routes.
 func TestThePhoneSurfaceAndItsFeatureShareOneJudgement(t *testing.T) {
 	for _, tc := range []struct {
 		name  string

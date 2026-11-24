@@ -9,14 +9,11 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// The names of the flow and reset cookies on an https origin, written out so
-// that the tests pin the strings a browser sees.
 const (
 	flowCookieName  = "__Host-authn-flow"
 	resetCookieName = "__Host-authn-reset"
 )
 
-// cookieNamed reads the one cookie of a reply that carries name.
 func cookieNamed(t *testing.T, rec *httptest.ResponseRecorder, name string) *http.Cookie {
 	t.Helper()
 	var found []*http.Cookie
@@ -43,11 +40,7 @@ func holdsHostCookie(t *testing.T, c *http.Cookie, sameSite http.SameSite) {
 	}
 }
 
-// TestTheFlowCookieIsASecureHostCookieWhenSetAndWhenCleared holds the flow
-// binding's carrier: the start writes __Host-authn-flow with the attributes its
-// prefix requires and SameSite=Lax, and the delete that abandons the flow clears
-// it with the same ones, so the browser replaces the cookie it holds instead of
-// keeping it.
+// TestTheFlowCookieIsASecureHostCookieWhenSetAndWhenCleared holds that the flow cookie is written and cleared with the same attributes.
 func TestTheFlowCookieIsASecureHostCookieWhenSetAndWhenCleared(t *testing.T) {
 	r := newRig(t, &fakeMethod{name: "password", begin: func(authn.Start) (authn.Step, error) {
 		return authn.StepPrompt("credentials", nil,
@@ -78,9 +71,7 @@ func TestTheFlowCookieIsASecureHostCookieWhenSetAndWhenCleared(t *testing.T) {
 	}
 }
 
-// TestTheResetCookieIsASecureHostCookieWhenSetAndWhenCleared holds the reset
-// binding's carrier the same way: __Host-authn-reset, SameSite=Strict, written by
-// the start and cleared by the delete with the same attributes.
+// TestTheResetCookieIsASecureHostCookieWhenSetAndWhenCleared holds that the reset cookie is Strict, written and cleared the same way.
 func TestTheResetCookieIsASecureHostCookieWhenSetAndWhenCleared(t *testing.T) {
 	r := newResetRig(t)
 	start := r.startReset(`{"channel":"email","identifier":"nobody@example.com"}`)

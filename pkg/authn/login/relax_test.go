@@ -12,8 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// relaxLogs is a slog.Handler that records each record's level, message and
-// attributes, so a case can see what a Warn line carried.
 type relaxLogs struct {
 	mu   sync.Mutex
 	recs []relaxRecord
@@ -55,7 +53,6 @@ func (l *relaxLogs) warns() []relaxRecord {
 	return out
 }
 
-// relaxAudit is an audit sink that records the entries the handler writes.
 type relaxAudit struct {
 	audit.Audit
 	mu      sync.Mutex
@@ -76,7 +73,6 @@ func (a *relaxAudit) rows() []audit.Entry {
 	return append([]audit.Entry(nil), a.entries...)
 }
 
-// subscribeBus is a bus that records the event types it was asked to subscribe.
 type subscribeBus struct {
 	event.Bus
 	mu    sync.Mutex
@@ -99,12 +95,10 @@ func (b *subscribeBus) subscribed() []string {
 // subscription only asks whether it is present and never calls it.
 type stubStore struct{ settings.Store }
 
-// changeEvent wraps a settings change as the bus would deliver it.
 func changeEvent(change settings.Change) event.Event {
 	return event.Event{Type: settings.ChangedEventType, Payload: change}
 }
 
-// deliver hands a settings change to the handler.
 func deliver(t *testing.T, p *product, change settings.Change) {
 	t.Helper()
 	if err := p.onSettingsChanged(context.Background(), changeEvent(change)); err != nil {
@@ -112,9 +106,7 @@ func deliver(t *testing.T, p *product, change settings.Change) {
 	}
 }
 
-// TestARelaxingChangeWritesAWarnAndAnAuditRow holds the visibility: a setting
-// moved in its relaxing direction writes one Warn naming the key and the
-// direction and one best-effort audit row, and nothing else.
+// TestARelaxingChangeWritesAWarnAndAnAuditRow holds that a relaxing move writes one Warn and one best-effort audit row, and nothing else.
 func TestARelaxingChangeWritesAWarnAndAnAuditRow(t *testing.T) {
 	watched := []struct {
 		key       string
@@ -158,9 +150,7 @@ func TestARelaxingChangeWritesAWarnAndAnAuditRow(t *testing.T) {
 	}
 }
 
-// TestATighteningOrEqualChangeWritesNothing holds the strictness of the
-// comparison: a move that checks more, and one that keeps a value the same,
-// relax nothing and are not reported.
+// TestATighteningOrEqualChangeWritesNothing holds that a move checking more, or one keeping the value, is not reported.
 func TestATighteningOrEqualChangeWritesNothing(t *testing.T) {
 	changes := []settings.Change{
 		{Key: flowTTLPath, Old: "8m0s", New: "5m0s"},                             // a shorter-lived flow
@@ -181,9 +171,7 @@ func TestATighteningOrEqualChangeWritesNothing(t *testing.T) {
 	}
 }
 
-// TestAnUnwatchedOrSensitiveChangeIsIgnored holds the filter: a key this module
-// does not watch and a change whose value was withheld are both dropped, even
-// when the withheld change would have relaxed.
+// TestAnUnwatchedOrSensitiveChangeIsIgnored holds that an unwatched key and a withheld value are dropped.
 func TestAnUnwatchedOrSensitiveChangeIsIgnored(t *testing.T) {
 	logs := &relaxLogs{}
 	sink := &relaxAudit{}
@@ -195,9 +183,7 @@ func TestAnUnwatchedOrSensitiveChangeIsIgnored(t *testing.T) {
 	}
 }
 
-// TestARelaxationWithoutAnAuditSeamStillWarns holds the best-effort direction:
-// the Warn is written whether or not the audit seam is present, and an audit
-// write that fails leaves the handler succeeding.
+// TestARelaxationWithoutAnAuditSeamStillWarns holds that the Warn is written with or without the audit seam.
 func TestARelaxationWithoutAnAuditSeamStillWarns(t *testing.T) {
 	logs := &relaxLogs{}
 	p := &product{logger: slog.New(logs)}
@@ -207,9 +193,7 @@ func TestARelaxationWithoutAnAuditSeamStillWarns(t *testing.T) {
 	}
 }
 
-// TestAnAuditWriteFailureLeavesTheHandlerSucceeding holds the other best-effort
-// direction: the Warn is still written and the change is not failed when the
-// audit record cannot be written.
+// TestAnAuditWriteFailureLeavesTheHandlerSucceeding holds that a failed audit write still writes the Warn and does not fail the change.
 func TestAnAuditWriteFailureLeavesTheHandlerSucceeding(t *testing.T) {
 	logs := &relaxLogs{}
 	sink := &relaxAudit{err: errors.New("the audit is down")}
@@ -220,9 +204,7 @@ func TestAnAuditWriteFailureLeavesTheHandlerSucceeding(t *testing.T) {
 	}
 }
 
-// TestSubscriptionIsWiredOnlyWithABusAndAStore holds the guard: the module
-// subscribes to the settings change only when both the event bus and the
-// settings store are present, and is inert and silent when either is absent.
+// TestSubscriptionIsWiredOnlyWithABusAndAStore holds that the subscription is inert when either the bus or the store is absent.
 func TestSubscriptionIsWiredOnlyWithABusAndAStore(t *testing.T) {
 	t.Run("neither present", func(t *testing.T) {
 		p := &product{logger: slog.New(&relaxLogs{})}

@@ -7,10 +7,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestDescribeReportsTheRedirect holds the descriptor the discovery endpoint
-// publishes for the WeChat web method: a redirect button that speaks OAuth 2.0,
-// opens an account, and whose bindings land under the union-id provider and the
-// open-id namespace prefix.
+// TestDescribeReportsTheRedirect holds the web descriptor: a redirect button speaking OAuth 2.0, bound as union-id and open-id prefix.
 func TestDescribeReportsTheRedirect(t *testing.T) {
 	got := (&method{}).Describe()
 	if got.Name != "wechat.web" || got.Kind != authn.MethodKindRedirect ||

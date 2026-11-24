@@ -9,8 +9,6 @@ import (
 	"strings"
 )
 
-// githubUser is the part of GET /user the method reads: the numeric account
-// number, which is the subject, and the two names, one of which is shown.
 type githubUser struct {
 	ID    int64  `json:"id"`
 	Login string `json:"login"`
@@ -35,7 +33,6 @@ func (e *providerError) Error() string {
 	return fmt.Sprintf("authn.login.github: the provider answered status %d", e.status)
 }
 
-// fetchUser reads the account the access token names.
 func (m *method) fetchUser(ctx context.Context, token string) (githubUser, error) {
 	var u githubUser
 	if err := m.get(ctx, userPath, token, &u); err != nil {

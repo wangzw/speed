@@ -17,15 +17,11 @@ const (
 	providerWeChatOpenPre = "wechat-openid:"
 )
 
-// The namespaces an enterprise provider's subjects are keyed in; the identifier
-// of the provider follows the colon.
 const (
 	namespaceOIDC = "oidc:"
 	namespaceSAML = "saml:"
 )
 
-// fromExternal resolves an external identity, the one source that can create or
-// bind.
 func (r *Resolver) fromExternal(ctx context.Context, req Request) (Result, error) {
 	ext := req.Proof.External
 	if ext.Provider == "" || ext.Subject == "" {
@@ -194,6 +190,4 @@ func (r *Resolver) externalWithoutWrite(ctx context.Context, req Request, l auth
 	return r.confirmed(req, owner)
 }
 
-// errNoSSO is the failure of an enterprise identity that arrives where no
-// register of providers is wired.
 func errNoSSO() error { return &seamFault{seam: "the SSO provider register"} }

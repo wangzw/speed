@@ -11,9 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 )
 
-// complete runs the terminal action of a ready flow: the record is swapped to
-// the done tombstone first, so that the winner alone executes the action and a
-// login completes at most once.
+// complete swaps the record to the done tombstone first, so the terminal action runs at most once.
 func (r *routes) complete(c *call, token string, rec record, raw []byte) {
 	if rec.State != stateReady {
 		c.unauthorized(mount.CodeFlowInvalid)
@@ -41,16 +39,6 @@ func (r *routes) complete(c *call, token string, rec record, raw []byte) {
 	}
 }
 
-// review re-checks, for a link, a step-up or an enrollment, that the session the
-// flow was started on is still valid and still the flow's own, that an
-// impersonating flow's record still holds, and that a link or an enrollment
-// still meets the freshness the account's factors call for. It answers the
-// request and returns false when it does not. A flow an impersonating identity
-// started is reviewed against the effective account: the session must still
-// belong to the operator and name the same record, and that record must still be
-// active for the flow's account, so neither an ended impersonation, nor another
-// one on the same session, nor a record that lapsed in the background carries
-// the flow onto the account it was started for.
 func (r *routes) review(c *call, rec record) bool {
 	status, err := r.sessions.StatusFresh(c.ctx, authn.SessionID(rec.Session))
 	if err != nil {
@@ -78,12 +66,7 @@ func (r *routes) review(c *call, rec record) bool {
 	return true
 }
 
-// flowOwnsSession reports whether a session is still the one the flow belongs
-// to: the account the flow is bound to, or, for a flow an impersonating identity
-// started, the operator's account and the same record. A non-impersonating flow
-// compares the session's account alone: a marker a lapsed record left behind
-// describes an earlier impersonation, not a different session, so it does not
-// stop the account acting on its own session.
+// flowOwnsSession accepts the flow's own account, or during impersonation the operator's account and the same record.
 func flowOwnsSession(rec record, st authn.SessionStatus) bool {
 	if rec.Impersonation != "" {
 		return st.Account == authn.AccountID(rec.Actor) && st.ImpersonationID == rec.Impersonation
@@ -91,13 +74,6 @@ func flowOwnsSession(rec record, st authn.SessionStatus) bool {
 	return st.Account == authn.AccountID(rec.Account)
 }
 
-// recordHolds reports whether the impersonation record the flow was started
-// under is still active and still binds the flow's actor and account. The marker
-// on a session row is left in place by a record that lapses without End -- by
-// expiry, a disabled initiator or target, or a removed membership -- so the
-// marker alone does not prove the window is still open. An assembly with no
-// impersonation capability cannot confirm the record and refuses, the direction
-// the session and token verifiers take.
 func (r *routes) recordHolds(c *call, rec record) bool {
 	if r.impersonation == nil {
 		c.unauthorized(mount.CodeFlowInvalid)
@@ -115,12 +91,6 @@ func (r *routes) recordHolds(c *call, rec record) bool {
 	return true
 }
 
-// requirementFor is the freshness a link or an enrollment asks for, as the flow
-// fixed it at its start: the fresh local multi-factor an account that held an
-// active factor started under, or the fresh first factor an account without one
-// did. A completion reads this back rather than recomputing it, so a
-// registration's own factor -- made active during its last step -- does not
-// raise the bar its own completion clears.
 func (r *routes) requirementFor(requireMulti bool) authn.Requirement {
 	if requireMulti {
 		return authn.FreshLocalMulti(r.settings.recentWindow())
@@ -128,8 +98,6 @@ func (r *routes) requirementFor(requireMulti bool) authn.Requirement {
 	return authn.FreshFirstFactor()
 }
 
-// accountHasActiveFactor reports whether the account holds at least one active
-// factor, which is what decides the freshness a security action asks for.
 func (r *routes) accountHasActiveFactor(ctx context.Context, account authn.AccountID) (bool, error) {
 	factors, err := r.mfa.Factors(ctx, account)
 	if err != nil {
@@ -143,10 +111,6 @@ func (r *routes) accountHasActiveFactor(ctx context.Context, account authn.Accou
 	return false, nil
 }
 
-// completeLogin makes the login session or issues the token pair, touches the
-// account, revokes the session the request came with, and writes the audit row
-// and the event. redirect is true on the callback route of a cookie login, whose
-// answer is a 303 to the flow's return target.
 func (r *routes) completeLogin(c *call, rec record, redirect bool) {
 	if rec.Proof == nil {
 		c.serverError()
@@ -192,9 +156,7 @@ func (r *routes) completeLogin(c *call, rec record, redirect bool) {
 		}
 	}
 
-	// A login that replaced the account's password while proving it leaves the
-	// account's other sessions alone no longer: the password changed. The new
-	// session is created already, so it is the one left standing.
+	// The new session is created first, so it is the one left standing.
 	if first.PasswordChanged {
 		if _, err := r.sessions.RevokeAccount(c.ctx, account, issued.ID, authn.ReasonSelf); err != nil {
 			r.logger.Warn(ModuleName+": the account's other sessions could not be revoked after a password change",
@@ -219,8 +181,6 @@ func (r *routes) completeLogin(c *call, rec record, redirect bool) {
 	r.publishLogin(c.ctx, account, issued.ID, methods, result, rec.Delivery)
 }
 
-// deliverToken issues the access token and the refresh token of a token login
-// and writes the answer.
 func (r *routes) deliverToken(c *call, account authn.AccountID, issued authn.Issued, methods []authn.Method, result authn.MFAResult, now time.Time) bool {
 	if r.tokens == nil {
 		c.serverError()
@@ -246,7 +206,6 @@ func (r *routes) deliverToken(c *call, account authn.AccountID, issued authn.Iss
 	return true
 }
 
-// completeLink binds the external identity the flow proved to the account.
 func (r *routes) completeLink(c *call, rec record) {
 	account := authn.AccountID(rec.Account)
 	if rec.Proof == nil || rec.Proof.External == nil {
@@ -273,8 +232,6 @@ func (r *routes) completeLink(c *call, rec record) {
 	writeAction(c, stateLinked)
 }
 
-// completeStepUp elevates the flow's session to the level the second factor (or
-// the first factor, when the account had none) reached.
 func (r *routes) completeStepUp(c *call, rec record) {
 	account := authn.AccountID(rec.Account)
 	status, err := r.sessions.StatusFresh(c.ctx, authn.SessionID(rec.Session))
@@ -282,9 +239,6 @@ func (r *routes) completeStepUp(c *call, rec record) {
 		r.fail(c, err)
 		return
 	}
-	// The elevation's level and IDPAssured come from MFA.Assurance over a Proof
-	// built from the session's method set, which is what the step-up policy was
-	// asked with too; the flow's own first-factor proof does not drive it.
 	first := authn.Proof{Methods: status.Methods}
 	second := rec.MFA.Passed.toPass()
 	result := r.mfa.Assurance(first, second)
@@ -312,10 +266,7 @@ func (r *routes) completeStepUp(c *call, rec record) {
 			Assurance: result.Assurance,
 			AuthTime:  now,
 		}
-		// A step-up an impersonating identity started keeps the token an
-		// impersonation token: its subject is the effective account and its actor
-		// and record are the ones the flow was started under, so a verifier does
-		// not mistake it for the target's own credential.
+		// The token must stay an impersonation token: its actor, impersonation and scope come from the record, never the target's own credential.
 		if rec.Impersonation != "" {
 			issue.Actor = authn.AccountID(rec.Actor)
 			issue.ImpersonationID = rec.Impersonation
@@ -340,10 +291,6 @@ func (r *routes) completeStepUp(c *call, rec record) {
 	writeSession(c, issued)
 }
 
-// completeEnroll ends a registration: the factor is already active, because the
-// multi-factor module makes a pending row active on the factor's last step. The
-// account's other sessions are revoked, and the session's level is not changed,
-// since a factor registered during this authentication does not strengthen it.
 func (r *routes) completeEnroll(c *call, rec record) {
 	account := authn.AccountID(rec.Account)
 	if _, err := r.sessions.RevokeAccount(c.ctx, account, authn.SessionID(rec.Session), authn.ReasonSelf); err != nil {
@@ -353,7 +300,6 @@ func (r *routes) completeEnroll(c *call, rec record) {
 	writeAction(c, stateEnrolled)
 }
 
-// passMethods is the second factor's methods, or nil when there was none.
 func passMethods(p *authn.Pass) []authn.Method {
 	if p == nil {
 		return nil
@@ -361,8 +307,6 @@ func passMethods(p *authn.Pass) []authn.Method {
 	return p.Methods
 }
 
-// unionMethods is the methods of a set of lists, in first-seen order and without
-// repeats.
 func unionMethods(lists ...[]authn.Method) []authn.Method {
 	var out []authn.Method
 	seen := map[authn.Method]bool{}
