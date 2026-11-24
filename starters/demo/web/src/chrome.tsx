@@ -23,6 +23,7 @@ import {
 } from '@speed/tenancy-ui'
 import type { TenantOption } from '@speed/tenancy-ui'
 import { themePresets } from '@speed/theme-presets'
+import { useInertBackground } from '@speed/ui-kit'
 import type { AppThemeModePreference } from '@speed/ui-kit'
 import { useAppServices } from './app-services.js'
 import {
@@ -349,6 +350,8 @@ export function UserMenu({
   const menuId = useId()
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const menuOpen = anchorEl !== null
+  const menuRef = useRef<HTMLDivElement>(null)
+  useInertBackground(menuOpen, menuRef)
   const [switchedTenant, setSwitchedTenant] = useState<string | null>(null)
   const personalOrganizationName = usePersonalOrganizationName()
   const selectTenant = (tenantName: string): void => {
@@ -420,6 +423,7 @@ export function UserMenu({
       />
       <TenantSwitchAnnouncement tenantName={switchedTenant} />
       <Menu
+        ref={menuRef}
         id={menuId}
         anchorEl={anchorEl}
         open={menuOpen}
@@ -934,6 +938,8 @@ export function AccountEntry({
   const menuId = useId()
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const menuOpen = anchorEl !== null
+  const menuRef = useRef<HTMLDivElement>(null)
+  useInertBackground(menuOpen, menuRef)
   const [switchedTenant, setSwitchedTenant] = useState<string | null>(null)
   const personalOrganizationName = usePersonalOrganizationName()
   const selectTenant = (tenantName: string): void => {
@@ -1058,6 +1064,7 @@ export function AccountEntry({
         />
       </Box>
       <Menu
+        ref={menuRef}
         id={menuId}
         anchorEl={anchorEl}
         open={menuOpen}

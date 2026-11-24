@@ -22,12 +22,16 @@ beforeEach(() => {
 describe('focus after a page change in the demo host', () => {
   it('lands on the account page heading when an account-menu entry navigates', async () => {
     await page.viewport(1280, 900)
-    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+    const { container } = renderDemoApp({
+      session: createTestSession(authenticatedSnapshot()),
+    })
     const user = userEvent.setup()
 
     const trigger = await screen.findByTestId('account-entry-trigger')
     trigger.focus()
     await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(container).toHaveAttribute('inert'))
 
     const entry = await screen.findByRole('menuitem', {
       name: demoEnUS.account.sections.profile,
@@ -42,6 +46,7 @@ describe('focus after a page change in the demo host', () => {
     await waitFor(() => {
       expect(document.activeElement).toBe(heading)
     })
+    await waitFor(() => expect(container).not.toHaveAttribute('inert'))
   })
 
   it('lands on the home heading when the session flips to authenticated', async () => {
