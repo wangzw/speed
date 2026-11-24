@@ -9,8 +9,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// derivation exercises every branch of the key rule: the config tag, the json
-// tag, a derived name, a skipped field, an acronym and a two-word name.
 type derivation struct {
 	FromConfig string `config:"from-config-tag"`
 	FromJSON   string `json:"from-json-tag"`
@@ -20,9 +18,6 @@ type derivation struct {
 	Skipped    string `config:"-"`
 }
 
-// textList is a declared type that carries its own text form and is a slice
-// underneath, which is the shape net.IP has. The closed type set admits it,
-// since it decodes itself from text.
 type textList []string
 
 func (t textList) MarshalText() ([]byte, error) { return []byte(strings.Join(t, ",")), nil }
@@ -36,13 +31,7 @@ func (t *textList) UnmarshalText(text []byte) error {
 	return nil
 }
 
-// A default that is a slice underneath is copied out of the prototype rather
-// than shared with it.
-//
-// The prototype is the declaration, and two registries may decode against one.
-// A caller that modified what it read out of the key table would otherwise be
-// editing the declaration itself, and the next read of that key would see the
-// edit.
+// TestADefaultIsCopiedOutOfThePrototype checks that a reference-carrying default is copied out of the prototype, not shared with it.
 func TestADefaultIsCopiedOutOfThePrototype(t *testing.T) {
 	prototype := struct {
 		Addrs textList
@@ -62,6 +51,7 @@ func TestADefaultIsCopiedOutOfThePrototype(t *testing.T) {
 
 // Base is embedded to pin the inlining of an anonymous field.
 type Base struct {
+	// Inherited is a field of the embedded struct.
 	Inherited string
 }
 
@@ -70,15 +60,13 @@ type withBase struct {
 	Own string
 }
 
-// keysOf collects the keys one declaration contributes, as a set.
 func keysOf(t *testing.T, s Schema) map[string]keyEntry {
 	t.Helper()
 	table := tableOf(t, declaring("test", s))
 	return table.entries
 }
 
-// The path rule is configuration's, so a parameter moving between the two
-// modules keeps its key.
+// TestKeysFollowTheDerivationRule checks that the key rule is configuration's.
 func TestKeysFollowTheDerivationRule(t *testing.T) {
 	entries := keysOf(t, Schema{Namespace: "ns", Mounts: []Mount{{Value: &derivation{}}}})
 	cases := []struct {
@@ -100,8 +88,7 @@ func TestKeysFollowTheDerivationRule(t *testing.T) {
 	}
 }
 
-// An anonymous struct field is inlined: its fields join the enclosing path
-// without a segment of their own.
+// TestAnEmbeddedStructIsInlined checks that an anonymous struct field is inlined.
 func TestAnEmbeddedStructIsInlined(t *testing.T) {
 	entries := keysOf(t, Schema{Namespace: "ns", Mounts: []Mount{{Value: &withBase{}}}})
 	if _, found := entries["ns.inherited"]; !found {
@@ -115,8 +102,7 @@ func TestAnEmbeddedStructIsInlined(t *testing.T) {
 	}
 }
 
-// The namespace and the mount path are part of the key, and both may be more
-// than one segment.
+// TestNamespaceAndMountPathComposeTheKey checks that namespace and mount path both form part of the key.
 func TestNamespaceAndMountPathComposeTheKey(t *testing.T) {
 	entries := keysOf(t, Schema{
 		Namespace: "a.b",
@@ -127,8 +113,7 @@ func TestNamespaceAndMountPathComposeTheKey(t *testing.T) {
 	}
 }
 
-// The declared default is the current value of the prototype's field, which is
-// what a read falls back to when no row holds the key.
+// TestTheDefaultComesFromThePrototype checks that the default is the prototype field's current value.
 func TestTheDefaultComesFromThePrototype(t *testing.T) {
 	type withDefault struct {
 		Window time.Duration
@@ -146,8 +131,7 @@ func TestTheDefaultComesFromThePrototype(t *testing.T) {
 	}
 }
 
-// The type set is closed: a mapping or a list is refused at collection, not
-// silently accepted and then found unencodable at the first write.
+// TestAContainerTypeIsRefused checks that a map or slice is refused at collection.
 func TestAContainerTypeIsRefused(t *testing.T) {
 	cases := []struct {
 		name string
@@ -168,9 +152,7 @@ func TestAContainerTypeIsRefused(t *testing.T) {
 	}
 }
 
-// The type set names no pointer, and a pointer would buy nothing: whether a
-// key was ever written is already answered by the layers, so a third state
-// ("set to nothing") has no reader.
+// TestAPointerLeafIsRefused checks that a pointer leaf is refused.
 func TestAPointerLeafIsRefused(t *testing.T) {
 	reg := registryWith(t, declaring("test", Schema{
 		Namespace: "ns",
@@ -182,15 +164,7 @@ func TestAPointerLeafIsRefused(t *testing.T) {
 	}
 }
 
-// A pointer to a type that carries its own text form is refused like any other
-// pointer.
-//
-// It would otherwise slip in: the method set of *T includes T's
-// pointer-receiver methods, so *time.Time satisfies TextUnmarshaler, and a
-// check that asked about that first would admit it. It cannot round-trip —
-// reflect.New of a pointer type gives a pointer to a pointer, which decodes
-// nothing — so such a declaration would be accepted at startup and then fail
-// every read of the key it names, once anything was written to it.
+// TestAPointerToATextTypeIsRefused checks that a pointer to a text-carrying type is refused like any other pointer.
 func TestAPointerToATextTypeIsRefused(t *testing.T) {
 	reg := registryWith(t, declaring("test", Schema{
 		Namespace: "ns",
@@ -202,7 +176,7 @@ func TestAPointerToATextTypeIsRefused(t *testing.T) {
 	}
 }
 
-// A type carrying its own text form is a leaf, however deeply its fields nest.
+// TestATextUnmarshalerIsALeaf checks that a text-carrying type is a leaf.
 func TestATextUnmarshalerIsALeaf(t *testing.T) {
 	type withTime struct {
 		StartsAt time.Time
@@ -217,9 +191,7 @@ func TestATextUnmarshalerIsALeaf(t *testing.T) {
 	}
 }
 
-// Two modules claiming one key is a startup failure, and the message names
-// both of them: which one to change is the reader's decision, and it cannot be
-// made without knowing who else is involved.
+// TestTwoModulesClaimingOneKeyConflict checks the conflict and that the message names both modules.
 func TestTwoModulesClaimingOneKeyConflict(t *testing.T) {
 	reg := registryWith(t,
 		declaring("first", Schema{Namespace: "ns", Mounts: []Mount{{Value: &derivation{}}}}),
@@ -236,8 +208,7 @@ func TestTwoModulesClaimingOneKeyConflict(t *testing.T) {
 	}
 }
 
-// One declaration reaching one key twice is defective in itself — no second
-// party is involved — and it is refused as such rather than as a conflict.
+// TestOneDeclarationReachingAKeyTwiceIsInvalid checks that it is a declaration defect, not a conflict.
 func TestOneDeclarationReachingAKeyTwiceIsInvalid(t *testing.T) {
 	reg := registryWith(t, declaring("test", Schema{
 		Namespace: "ns",
@@ -252,12 +223,7 @@ func TestOneDeclarationReachingAKeyTwiceIsInvalid(t *testing.T) {
 	}
 }
 
-// Two schemas of one module reaching one key are that module's defect too.
-// A module may put more than one Schema in its Resources, and nothing about
-// the key changes when the two mounts come in two schemas rather than one: no
-// second party is involved, so reporting it as a conflict between the module
-// and itself would send the reader looking for a second declarer that does not
-// exist.
+// TestTwoSchemasOfOneModuleReachingOneKeyAreInvalid checks that two schemas of one module reaching one key are that module defect.
 func TestTwoSchemasOfOneModuleReachingOneKeyAreInvalid(t *testing.T) {
 	reg := registryWith(t, core.Module{Name: "crm", Resources: []any{
 		Schema{Namespace: "ns", Mounts: []Mount{{Value: &derivation{}}}},
@@ -275,8 +241,7 @@ func TestTwoSchemasOfOneModuleReachingOneKeyAreInvalid(t *testing.T) {
 	}
 }
 
-// An Items key that reaches no field is a misspelling, and dropping it
-// silently would lose a Description or a Sensitive without a word.
+// TestAnItemKeyMatchingNoLeafIsInvalid checks that an Items key reaching no field is refused.
 func TestAnItemKeyMatchingNoLeafIsInvalid(t *testing.T) {
 	reg := registryWith(t, declaring("test", Schema{
 		Namespace: "ns",
@@ -289,8 +254,7 @@ func TestAnItemKeyMatchingNoLeafIsInvalid(t *testing.T) {
 	}
 }
 
-// A key segment outside the character set is refused, since the same rules
-// govern the keys configuration derives.
+// TestABadKeySegmentIsInvalid checks that a segment outside the character set is refused.
 func TestABadKeySegmentIsInvalid(t *testing.T) {
 	type bad struct {
 		Name string `config:"Not_Legal"`
@@ -302,12 +266,7 @@ func TestABadKeySegmentIsInvalid(t *testing.T) {
 	}
 }
 
-// A declaration whose expansion does not terminate is refused rather than
-// hanging the build.
-//
-// The link has to be non-nil for the walk to reach it at all: a struct pointer
-// field that is nil contributes nothing to expand, so it is skipped, and a
-// cycle that is not reachable is not a cycle the declaration has.
+// TestATypeCycleIsInvalid checks that a self-referencing declaration is refused rather than hanging the build.
 func TestATypeCycleIsInvalid(t *testing.T) {
 	c := &cyclic{}
 	c.Next = c
@@ -318,13 +277,11 @@ func TestATypeCycleIsInvalid(t *testing.T) {
 	}
 }
 
-// cyclic reaches itself, so walking it would never finish.
 type cyclic struct {
 	Next *cyclic
 }
 
-// A mount that is not a struct or a pointer to one has no fields to read, so
-// there is nothing the declaration could mean.
+// TestAMountThatIsNotAStructIsInvalid checks that a mount with no fields is refused.
 func TestAMountThatIsNotAStructIsInvalid(t *testing.T) {
 	reg := registryWith(t, declaring("test", Schema{Namespace: "ns", Mounts: []Mount{{Value: 7}}}))
 	_, err := buildKeyTable(reg)
@@ -333,8 +290,7 @@ func TestAMountThatIsNotAStructIsInvalid(t *testing.T) {
 	}
 }
 
-// The item metadata a declaration gives is carried into the table, since the
-// sensitive marker is what decides whether a change event may carry a value.
+// TestItemMetadataReachesTheTable checks that item metadata reaches the table.
 func TestItemMetadataReachesTheTable(t *testing.T) {
 	entries := keysOf(t, Schema{
 		Namespace: "ns",

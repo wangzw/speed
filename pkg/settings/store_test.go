@@ -15,8 +15,6 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// demo is the declaration the read and write cases are held to. Its field
-// values are the declared defaults.
 type demo struct {
 	Window   time.Duration
 	Limit    int
@@ -52,12 +50,10 @@ func TestReadFallsBackThroughTheThreeLayers(t *testing.T) {
 	ctx := context.Background()
 	b := store
 
-	// Nothing written: the declared default.
 	if got, err := Get[int](b, ForTenant("t1"), "demo.limit"); err != nil || got != 100 {
 		t.Fatalf("unset key read %v (%v), want the declared default 100", got, err)
 	}
 
-	// A global row covers every tenant that has no row of its own.
 	if err := b.Set(ctx, Write{Layer: Global(), Key: "demo.limit", Value: 200}); err != nil {
 		t.Fatalf("writing the global row: %v", err)
 	}
@@ -67,7 +63,6 @@ func TestReadFallsBackThroughTheThreeLayers(t *testing.T) {
 		}
 	}
 
-	// A tenant row wins over the global row, and leaves the other tenants on it.
 	if err := b.Set(ctx, Write{Layer: ForTenant("t1"), Key: "demo.limit", Value: 300}); err != nil {
 		t.Fatalf("writing the tenant row: %v", err)
 	}
@@ -79,9 +74,8 @@ func TestReadFallsBackThroughTheThreeLayers(t *testing.T) {
 	}
 }
 
-// The global layer's reads and writes land on the global row: the row whose
-// tenant column is empty. The column is how storage spells the layer, while
-// the interface names it with Global().
+// TestTheGlobalLayerReadsAndWritesTheGlobalRow checks that the global layer's
+// reads and writes land on the row with an empty tenant column.
 func TestTheGlobalLayerReadsAndWritesTheGlobalRow(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
@@ -90,9 +84,6 @@ func TestTheGlobalLayerReadsAndWritesTheGlobalRow(t *testing.T) {
 		t.Fatalf("writing the global row: %v", err)
 	}
 
-	// The row it landed on is the one with an empty tenant column, rather than
-	// one under a placeholder identifier. The read is of the table itself, so
-	// that this is not the layer's own filter answering for it.
 	var tenantID string
 	if err := store.handle.Raw("SELECT tenant_id FROM "+tableName+" WHERE key = ?", "demo.limit").
 		Row().Scan(&tenantID); err != nil {
@@ -102,8 +93,6 @@ func TestTheGlobalLayerReadsAndWritesTheGlobalRow(t *testing.T) {
 		t.Errorf("the global write landed on a row whose tenant column is %q, want empty", tenantID)
 	}
 
-	// The global layer reads that row, and it is the layer a tenant with no row
-	// of its own falls back to.
 	if got, _ := Get[int](store, Global(), "demo.limit"); got != 42 {
 		t.Errorf("the global layer read %v, want its own 42", got)
 	}
@@ -129,15 +118,12 @@ func TestDeleteFallsBackToTheLayerBelow(t *testing.T) {
 	if got, _ := Get[int](store, ForTenant("t1"), "demo.limit"); got != 200 {
 		t.Errorf("after the delete t1 read %v, want the global row's 200", got)
 	}
-	// Deleting a row that is not there is not an error: the row is gone, which
-	// is what the caller asked for.
 	if err := store.Delete(ctx, ForTenant("t9"), "demo.limit", "operator"); err != nil {
 		t.Errorf("deleting an absent row returned %v, want nil", err)
 	}
 }
 
-// A key with no declaration is refused by both directions, before anything is
-// read or written.
+// TestAnUndeclaredKeyIsRefused checks that both directions refuse an undeclared key before reading or writing.
 func TestAnUndeclaredKeyIsRefused(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
@@ -151,8 +137,7 @@ func TestAnUndeclaredKeyIsRefused(t *testing.T) {
 	}
 }
 
-// A target of the wrong type is a mismatch rather than a panic: the caller
-// asked for a key under a type its declaration does not have.
+// TestReadingIntoTheWrongTypeIsAMismatch checks that a wrong target type is a mismatch rather than a panic.
 func TestReadingIntoTheWrongTypeIsAMismatch(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
@@ -162,8 +147,7 @@ func TestReadingIntoTheWrongTypeIsAMismatch(t *testing.T) {
 	}
 }
 
-// The generic wrapper carries the same judgement: a type parameter that does
-// not match the declaration is refused rather than converted.
+// TestTheGenericReadReportsAMismatch checks that the generic wrapper reports the same mismatch.
 func TestTheGenericReadReportsAMismatch(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
@@ -172,9 +156,7 @@ func TestTheGenericReadReportsAMismatch(t *testing.T) {
 	}
 }
 
-// A target that is not a non-nil pointer is a mistake at the call site, and it
-// panics rather than returning an error, the way configuration's value-reading
-// side judges it.
+// TestABadTargetPanics checks that a target that is not a non-nil pointer panics.
 func TestABadTargetPanics(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
@@ -186,8 +168,6 @@ func TestABadTargetPanics(t *testing.T) {
 		{"a value", 0},
 		{"a nil pointer", (*int)(nil)},
 	} {
-		// The key does not decide it: a bad target is the call site's mistake
-		// whether or not the key it asks for is declared.
 		for _, key := range []string{"demo.limit", "demo.missing"} {
 			t.Run(c.name+"/"+key, func(t *testing.T) {
 				defer func() {
@@ -201,14 +181,7 @@ func TestABadTargetPanics(t *testing.T) {
 	}
 }
 
-// A layer that is the zero value is a mistake at the call site, and it panics
-// rather than returning an error — the judgement a bad target gets, for the
-// same reason: a nil Layer is not a layer, nothing has one on purpose, and the
-// call site has nothing to do with the error.
-//
-// This is the failure the layer selector exists to produce. Were the layer a
-// string tenant, a call site that dropped one would write the global row and
-// everything about the call would look right.
+// TestAZeroLayerPanics checks that a zero layer panics rather than returning an error, the judgement a bad target gets.
 func TestAZeroLayerPanics(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
@@ -225,10 +198,8 @@ func TestAZeroLayerPanics(t *testing.T) {
 		{"Set", func() { _ = store.Set(ctx, Write{Key: "demo.limit", Value: 1}) }},
 		{"Delete", func() { _ = store.Delete(ctx, nil, "demo.limit", "operator") }},
 		{"List", func() { _, _ = store.List(ctx, nil) }},
-		// The mistake is the call site's whatever the rest of the call holds:
-		// a check that ran only once the key and the value had passed would
-		// let the same line return an error on one run and panic on the next,
-		// and the first run that happened to carry a bad key would hide it.
+		// The mistake is the call site's whatever the rest of the call holds, so the
+		// panic must not wait for the key or value to pass.
 		{"Get of an undeclared key", func() { _ = store.Get(nil, "demo.missing", &target) }},
 		{"WrittenAt of an undeclared key", func() { _, _, _ = store.WrittenAt(nil, "demo.missing") }},
 		{"Set of an undeclared key", func() { _ = store.Set(ctx, Write{Key: "demo.missing", Value: 1}) }},
@@ -251,10 +222,7 @@ func TestAZeroLayerPanics(t *testing.T) {
 	}
 }
 
-// An empty identifier is a mistake at the call site too, and it panics at the
-// constructor rather than at the operation. The tenant identifier's value
-// domain has no empty string in it, so an empty one can only be a dropped
-// value — and honouring it would act on every tenant at once.
+// TestForTenantRejectsAnEmptyIdentifier checks that an empty identifier panics at the constructor.
 func TestForTenantRejectsAnEmptyIdentifier(t *testing.T) {
 	defer func() {
 		if recover() == nil {
@@ -264,14 +232,8 @@ func TestForTenantRejectsAnEmptyIdentifier(t *testing.T) {
 	_ = ForTenant("")
 }
 
-// TestForTenantRejectsAnIdentifierOutsideTheDomain covers the whole of the
-// tenant identifier's value domain, not just the empty string. The directory's
-// criteria are what this package can judge — an id is non-empty and free of
-// blanks and control characters anywhere — and an id failing either names no
-// tenant: a write would land on a row no tenant's read reaches, and a read would
-// fall through to the shared layer and answer with a value the caller never
-// asked for. The failures are silent, so the constructor refuses the id where it
-// is given.
+// TestForTenantRejectsAnIdentifierOutsideTheDomain checks the whole domain: an
+// id outside it names no tenant and is refused at the constructor.
 func TestForTenantRejectsAnIdentifierOutsideTheDomain(t *testing.T) {
 	for _, id := range []string{"", " ", "\t", " \t ", "acme ", " acme", "a b", "a\nb", "a\x00b"} {
 		t.Run(strconv.Quote(id), func(t *testing.T) {
@@ -283,9 +245,6 @@ func TestForTenantRejectsAnIdentifierOutsideTheDomain(t *testing.T) {
 			_ = ForTenant(id)
 		})
 	}
-	// A long identifier is inside the domain: this package defines no length
-	// for one, so it has none to refuse, and a case that started refusing a
-	// long identifier would fail here.
 	for _, id := range []string{"acme", "acme-1", "a.b", strings.Repeat("a", 200)} {
 		t.Run("accepted/"+id, func(t *testing.T) {
 			if got := ForTenant(id); got == nil {
@@ -295,8 +254,7 @@ func TestForTenantRejectsAnIdentifierOutsideTheDomain(t *testing.T) {
 	}
 }
 
-// A value written under a type its declaration does not have is refused: the
-// row would be unreadable under that key.
+// TestWritingAValueOfTheWrongTypeIsAMismatch checks that a wrongly typed write is refused.
 func TestWritingAValueOfTheWrongTypeIsAMismatch(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
@@ -306,9 +264,8 @@ func TestWritingAValueOfTheWrongTypeIsAMismatch(t *testing.T) {
 	}
 }
 
-// A row whose text does not decode under its declaration is reported when a
-// read lands on it, and every other key keeps working. The load itself does
-// not fail: one bad value must not keep the process from starting.
+// TestABrokenRowReportsItselfAndSparesTheRest checks that a row that does not
+// decode is reported on read while every other key keeps working.
 func TestABrokenRowReportsItselfAndSparesTheRest(t *testing.T) {
 	keys := demoTable(t)
 	handle := open(t)
@@ -330,18 +287,12 @@ func TestABrokenRowReportsItselfAndSparesTheRest(t *testing.T) {
 	if !strings.Contains(err.Error(), "demo.limit") {
 		t.Errorf("the mismatch does not name the key: %v", err)
 	}
-	// Another tenant falls back to the global row and is unaffected.
 	if got, err := Get[int](store, ForTenant("t2"), "demo.limit"); err != nil || got != 100 {
 		t.Errorf("an unrelated read returned %v (%v), want the declared default", got, err)
 	}
 }
 
-// A row that is present but does not decode is still what the layer held, and
-// a write that replaces it reports that rather than reporting an empty layer.
-//
-// The two facts are different and a subscriber acts on them differently: an
-// empty old value reads as "this key had no value here", while the row that
-// was there says a value existed and was unreadable.
+// TestAnOverwrittenBrokenRowReportsWhatWasThere checks that a write replacing a broken row reports the text that was there.
 func TestAnOverwrittenBrokenRowReportsWhatWasThere(t *testing.T) {
 	keys := demoTable(t)
 	handle := open(t)
@@ -374,8 +325,7 @@ func TestAnOverwrittenBrokenRowReportsWhatWasThere(t *testing.T) {
 	}
 }
 
-// The version is incremented by the statement that writes, and the value the
-// event carries is the one that was just written.
+// TestWriteIncrementsTheVersionAndPublishes checks the incremented version and the value the event carries.
 func TestWriteIncrementsTheVersionAndPublishes(t *testing.T) {
 	keys := demoTable(t)
 	bus := newRecordingBus()
@@ -409,8 +359,7 @@ func TestWriteIncrementsTheVersionAndPublishes(t *testing.T) {
 	}
 }
 
-// A sensitive item's change carries the fact and not the value, because an
-// event reaches a transport and every subscriber on it.
+// TestASensitiveValueNeverReachesTheEvent checks that a sensitive change carries the fact and not the value.
 func TestASensitiveValueNeverReachesTheEvent(t *testing.T) {
 	keys := demoTable(t)
 	bus := newRecordingBus()
@@ -434,8 +383,7 @@ func TestASensitiveValueNeverReachesTheEvent(t *testing.T) {
 	}
 }
 
-// A global row's change is a system-level event: the envelope carries no
-// tenant rather than a placeholder.
+// TestAGlobalChangeCarriesNoTenant checks that a global change carries no tenant on the envelope.
 func TestAGlobalChangeCarriesNoTenant(t *testing.T) {
 	keys := demoTable(t)
 	bus := newRecordingBus()
@@ -448,7 +396,7 @@ func TestAGlobalChangeCarriesNoTenant(t *testing.T) {
 	}
 }
 
-// A delete carries the value the row held and reports that it was a delete.
+// TestDeletePublishesTheOldValue checks that a delete carries the old value.
 func TestDeletePublishesTheOldValue(t *testing.T) {
 	keys := demoTable(t)
 	bus := newRecordingBus()
@@ -467,8 +415,7 @@ func TestDeletePublishesTheOldValue(t *testing.T) {
 	}
 }
 
-// A value over the size limit is refused before anything is written, since
-// every written row is kept in memory.
+// TestAnOversizedValueIsRefused checks that a value over the limit is refused before anything is written.
 func TestAnOversizedValueIsRefused(t *testing.T) {
 	keys := demoTable(t)
 	bus := newRecordingBus()
@@ -486,9 +433,7 @@ func TestAnOversizedValueIsRefused(t *testing.T) {
 	}
 }
 
-// A value of exactly the limit is admitted. The boundary is stated as an upper
-// bound on the text, so an implementation that refused it would narrow the
-// contract with nothing else reporting the change.
+// TestAValueOfExactlyTheLimitIsAdmitted checks that a value of exactly the limit is admitted.
 func TestAValueOfExactlyTheLimitIsAdmitted(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
@@ -498,12 +443,7 @@ func TestAValueOfExactlyTheLimitIsAdmitted(t *testing.T) {
 	}
 }
 
-// Delete clears a row whose declaration is gone.
-//
-// That is the one window in which a row for an undeclared key can still be
-// reached: Get and Set both refuse such a key before the table is consulted,
-// so refusing Delete too would leave the row with no way out through this
-// interface at all.
+// TestDeleteClearsARowWhoseDeclarationIsGone checks that Delete clears a row whose declaration is gone.
 func TestDeleteClearsARowWhoseDeclarationIsGone(t *testing.T) {
 	keys := demoTable(t)
 	bus := newRecordingBus()
@@ -526,15 +466,8 @@ func TestDeleteClearsARowWhoseDeclarationIsGone(t *testing.T) {
 	}
 }
 
-// A delete reports the value the removed row held, read back by the delete
-// itself, rather than whatever this replica's snapshot has for the cell.
-//
-// The snapshot is the wrong source twice over. It carries no row for a key
-// whose declaration is gone — which is exactly the row this path exists to
-// clear — and it trails the table when another replica wrote the row. Either
-// way a change built from it would report an empty old value for a row that
-// held one, and a subscriber recording the history would write down that
-// nothing was there.
+// TestADeleteReportsWhatTheRemovedRowHeld checks that a delete reports the value
+// read back by the deleting statement, not the snapshot.
 func TestADeleteReportsWhatTheRemovedRowHeld(t *testing.T) {
 	cases := []struct {
 		name string
@@ -548,8 +481,6 @@ func TestADeleteReportsWhatTheRemovedRowHeld(t *testing.T) {
 			keys := demoTable(t)
 			bus := newRecordingBus()
 			store, handle := storeOf(t, keys, bus)
-			// Planted behind the store's back: this replica's snapshot does
-			// not hold it.
 			if err := handle.Exec("INSERT INTO settings (tenant_id, key, value, version, updated_at) "+
 				"VALUES ('t1', ?, '41', 1, ?)", c.key, time.Now().UTC()).Error; err != nil {
 				t.Fatalf("planting a row: %v", err)
@@ -569,10 +500,7 @@ func TestADeleteReportsWhatTheRemovedRowHeld(t *testing.T) {
 	}
 }
 
-// A delete that removed no row publishes nothing: nothing in the table
-// changed, and an event saying otherwise would be recorded as a deletion that
-// never happened. It is still not an error — the row the caller wanted gone is
-// gone.
+// TestADeleteThatRemovedNothingPublishesNothing checks that a delete that removed no row publishes nothing and is not an error.
 func TestADeleteThatRemovedNothingPublishesNothing(t *testing.T) {
 	keys := demoTable(t)
 	bus := newRecordingBus()
@@ -585,10 +513,7 @@ func TestADeleteThatRemovedNothingPublishesNothing(t *testing.T) {
 	}
 }
 
-// A delete of a sensitive item withholds the value it held, the way a write
-// does: the delete path is the second place a payload is built, and a
-// credential must not reach an event because the row was removed rather than
-// written.
+// TestDeletingASensitiveItemWithholdsItsValue checks that a sensitive delete withholds the value.
 func TestDeletingASensitiveItemWithholdsItsValue(t *testing.T) {
 	keys := demoTable(t)
 	bus := newRecordingBus()
@@ -614,8 +539,7 @@ func TestDeletingASensitiveItemWithholdsItsValue(t *testing.T) {
 	}
 }
 
-// List hands out the written rows of one layer, in key order, and nothing
-// falls back.
+// TestListReportsWrittenRowsInKeyOrder checks that List reports written rows in key order with nothing falling back.
 func TestListReportsWrittenRowsInKeyOrder(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
@@ -639,9 +563,6 @@ func TestListReportsWrittenRowsInKeyOrder(t *testing.T) {
 	if global[1].Value != "true" {
 		t.Errorf("the boolean row holds %q, want true", global[1].Value)
 	}
-	// The timestamp and the version are both part of Entry's contract, and a
-	// column the scan does not map would leave either at its zero value with
-	// nothing reporting the gap.
 	if global[0].UpdatedAt.IsZero() {
 		t.Error("the listed row carries no timestamp")
 	}
@@ -660,12 +581,7 @@ func TestListReportsWrittenRowsInKeyOrder(t *testing.T) {
 	}
 }
 
-// Values round-trip: what a write encodes is what a read decodes, for every
-// arm of the closed type set.
-//
-// Every arm is written and read back, because an arm the suite never reaches
-// is an arm whose codec can be replaced by anything at all without a test
-// noticing.
+// TestValuesRoundTrip checks that every arm of the closed type set round-trips, written and read back.
 func TestValuesRoundTrip(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
@@ -712,15 +628,13 @@ func TestValuesRoundTrip(t *testing.T) {
 	}
 }
 
-// A delivered change reloads the snapshot, which is how a replica learns about
-// a write it did not make.
+// TestADeliveredEventReloadsTheSnapshot checks that a delivered change reloads the snapshot.
 func TestADeliveredEventReloadsTheSnapshot(t *testing.T) {
 	keys := demoTable(t)
 	bus := newRecordingBus()
 	store, handle := storeOf(t, keys, bus)
 	store.subscribe()
 
-	// A row written behind the store's back, as another replica would.
 	if err := handle.Exec("INSERT INTO settings (tenant_id, key, value, version, updated_at) "+
 		"VALUES ('', 'demo.limit', '777', 1, ?)", time.Now().UTC()).Error; err != nil {
 		t.Fatalf("planting a row: %v", err)
@@ -734,8 +648,7 @@ func TestADeliveredEventReloadsTheSnapshot(t *testing.T) {
 	}
 }
 
-// A write of this replica reloads its own snapshot at once, so a read after a
-// Set sees the new value without waiting for anything.
+// TestAWriteIsVisibleToTheWriterImmediately checks that a write reloads its own snapshot at once.
 func TestAWriteIsVisibleToTheWriterImmediately(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
@@ -747,8 +660,7 @@ func TestAWriteIsVisibleToTheWriterImmediately(t *testing.T) {
 	}
 }
 
-// A written row answers the time the table holds for it, and the answer comes
-// from the snapshot rather than a statement of its own.
+// TestWrittenAtReportsTheRowsWriteTime checks that a written row answers the time the table holds.
 func TestWrittenAtReportsTheRowsWriteTime(t *testing.T) {
 	keys := demoTable(t)
 	store, handle := storeOf(t, keys, newRecordingBus())
@@ -772,8 +684,6 @@ func TestWrittenAtReportsTheRowsWriteTime(t *testing.T) {
 		t.Errorf("the revision is %v, and the row's updated_at is %v", at, stored)
 	}
 
-	// The answer comes from the snapshot: with the table gone, the read still
-	// answers.
 	if err := handle.Exec("DROP TABLE " + tableName).Error; err != nil {
 		t.Fatalf("dropping the table: %v", err)
 	}
@@ -784,8 +694,7 @@ func TestWrittenAtReportsTheRowsWriteTime(t *testing.T) {
 	}
 }
 
-// The revision read has no fallback: a tenant holding only the global row
-// answers absent, even though a value read resolves through that row.
+// TestWrittenAtDoesNotFallBack checks that the revision read does not fall back.
 func TestWrittenAtDoesNotFallBack(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
@@ -808,15 +717,12 @@ func TestWrittenAtDoesNotFallBack(t *testing.T) {
 		t.Errorf("an absent revision carries %v, want the zero time", at)
 	}
 
-	// The global row it fell through to has a revision of its own.
 	if _, present, err := store.WrittenAt(Global(), "demo.limit"); err != nil || !present {
 		t.Errorf("the global layer reported present=%v, err=%v, want its row", present, err)
 	}
 }
 
-// Read answers every named layer from one snapshot: each layer's own value and
-// the moment its explicit row was written, with a layer holding no row
-// answering the declaration's default and reporting itself absent.
+// TestReadAnswersEveryLayerWithItsOwnRow checks that Read answers each layer with its own value and row's write time.
 func TestReadAnswersEveryLayerWithItsOwnRow(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
@@ -842,15 +748,12 @@ func TestReadAnswersEveryLayerWithItsOwnRow(t *testing.T) {
 		t.Errorf("tenant t2 answered %+v, want the declared default with no row", values[2])
 	}
 
-	// The tenant layer does not fall through to the global row: t2's answer is
-	// its own absence and the default, not the 200 a Get would resolve to.
 	if got, _ := Get[int](store, ForTenant("t2"), "demo.limit"); got != 200 {
 		t.Fatalf("the fallback read is %v, so the case is not testing the absence", got)
 	}
 }
 
-// Read is judged as Get and WrittenAt are: a read before the snapshot loads and
-// an undeclared key are errors, a bad target or layer panics.
+// TestReadJudgesItsArgumentsAsTheOtherReadsDo checks that Read judges its arguments as Get and WrittenAt do.
 func TestReadJudgesItsArgumentsAsTheOtherReadsDo(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
@@ -879,8 +782,7 @@ func TestReadJudgesItsArgumentsAsTheOtherReadsDo(t *testing.T) {
 	}
 }
 
-// A write moves the revision, and a reload keeps the row's own time rather
-// than the moment the replica read it.
+// TestWrittenAtMovesAfterASetAndSurvivesAReload checks that a write moves the revision and a reload keeps the row's own time.
 func TestWrittenAtMovesAfterASetAndSurvivesAReload(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
@@ -915,8 +817,7 @@ func TestWrittenAtMovesAfterASetAndSurvivesAReload(t *testing.T) {
 	}
 }
 
-// A revision a reload brings in is the column's value, not the moment the
-// replica read it.
+// TestAReloadedRevisionIsTheRowsOwnTime checks that a reloaded revision is the column's value.
 func TestAReloadedRevisionIsTheRowsOwnTime(t *testing.T) {
 	keys := demoTable(t)
 	store, handle := storeOf(t, keys, newRecordingBus())
@@ -936,9 +837,8 @@ func TestAReloadedRevisionIsTheRowsOwnTime(t *testing.T) {
 	}
 }
 
-// The revision read judges its arguments the way Get does, and a row whose
-// value does not decode still answers its write time: the revision belongs to
-// the row, and the value read is what refuses it.
+// TestWrittenAtJudgesItsArgumentsAsGetDoes checks that the revision read judges
+// its arguments as Get does and a broken row still answers its time.
 func TestWrittenAtJudgesItsArgumentsAsGetDoes(t *testing.T) {
 	keys := demoTable(t)
 	if _, _, err := (&settingsStore{keys: keys}).WrittenAt(ForTenant("t1"), "demo.limit"); !errors.Is(err, ErrNotLoaded) {
@@ -972,10 +872,6 @@ func TestWrittenAtJudgesItsArgumentsAsGetDoes(t *testing.T) {
 	}
 }
 
-// cancelWhenReadingBack cancels a context the moment the store starts reading
-// the table back, which on the write path is the moment the write's statement
-// has committed. It stands for a caller whose request ends just then: a client
-// that disconnected, a deadline that fell due.
 func cancelWhenReadingBack(t *testing.T, handle *gorm.DB, cancel context.CancelFunc) {
 	t.Helper()
 	err := handle.Callback().Row().Before("gorm:row").Register("test:cancel-when-reading-back",
@@ -989,15 +885,8 @@ func cancelWhenReadingBack(t *testing.T, handle *gorm.DB, cancel context.CancelF
 	}
 }
 
-// A write that has landed finishes its own work whatever becomes of the
-// caller's context: this replica reloads, and the change is published.
-//
-// The reload and the publish are this module's bookkeeping for a row that is
-// already in the table, not the caller's work. Were they to share the caller's
-// cancellation, a request that ended just after the statement committed would
-// get nil back from a write that this replica goes on not serving and that no
-// other replica hears about — until the next refresh, or with the refresh off
-// until a restart.
+// TestAWriteThatLandedFinishesAfterTheCallerLeaves checks that a landed write
+// reloads and publishes whatever becomes of the caller's context.
 func TestAWriteThatLandedFinishesAfterTheCallerLeaves(t *testing.T) {
 	keys := demoTable(t)
 	bus := newRecordingBus()
@@ -1023,7 +912,6 @@ func TestAWriteThatLandedFinishesAfterTheCallerLeaves(t *testing.T) {
 		t.Errorf("published %+v, want the second write's change as well", events)
 	}
 
-	// Delete is the same shape: its row is gone before the read-back starts.
 	deleting, stop := context.WithCancel(context.Background())
 	defer stop()
 	cancelOnDelete := func(tx *gorm.DB) {
@@ -1048,9 +936,7 @@ func TestAWriteThatLandedFinishesAfterTheCallerLeaves(t *testing.T) {
 	}
 }
 
-// A publish failure does not undo the write: the value is in the database, and
-// reporting the write as failed would tell the caller the opposite of what
-// happened.
+// TestAPublishFailureDoesNotFailTheWrite checks that a publish failure does not undo the write.
 func TestAPublishFailureDoesNotFailTheWrite(t *testing.T) {
 	keys := demoTable(t)
 	bus := newRecordingBus()
@@ -1064,8 +950,7 @@ func TestAPublishFailureDoesNotFailTheWrite(t *testing.T) {
 	}
 }
 
-// A load against a database without the table names the table and says what to
-// do about it; it is not folded in with the other read failures.
+// TestAMissingTableIsReportedAsSuch checks that a load against a database without the table names it and says what to do.
 func TestAMissingTableIsReportedAsSuch(t *testing.T) {
 	handle := openMemory(t)
 	keys := demoTable(t)
@@ -1078,10 +963,7 @@ func TestAMissingTableIsReportedAsSuch(t *testing.T) {
 	}
 }
 
-// A List failure names the layer it was listing once. describeLayer already
-// returns a noun phrase with its article, so it goes straight into the noun
-// slot: a second "the layer" in front of it would read "the layer the global
-// layer".
+// TestAListFailureNamesItsLayer checks that a List failure names the layer once.
 func TestAListFailureNamesItsLayer(t *testing.T) {
 	keys := demoTable(t)
 	store, handle := storeOf(t, keys, newRecordingBus())
@@ -1110,14 +992,7 @@ func TestAListFailureNamesItsLayer(t *testing.T) {
 	}
 }
 
-// The absent-table judgement reads each engine's own text, and tells the
-// absent table apart from the failures that are not it.
-//
-// TestTheStatementsRunOnPostgreSQL meets the PostgreSQL text live. The texts
-// are also pinned here, where nothing has to be running, because the judgement
-// is a string match: the live case belongs to the integration layer alone, so a
-// flattened match would otherwise go unnoticed until it reached the one backend
-// this module is deployed against.
+// TestTheAbsentTableJudgement checks the per-engine texts of the absent-table judgement where nothing has to be running.
 func TestTheAbsentTableJudgement(t *testing.T) {
 	cases := []struct {
 		name string
@@ -1140,15 +1015,12 @@ func TestTheAbsentTableJudgement(t *testing.T) {
 	}
 }
 
-// eventOf builds the envelope a change would arrive on.
 func eventOf(key string) event.Event {
 	return event.Event{Type: ChangedEventType, Payload: Change{Key: key}}
 }
 
-// demoDialect names the engine the in-memory handle speaks.
 func demoDialect() db.Dialect { return db.SQLite }
 
-// countRows counts the rows in the settings table.
 func countRows(t *testing.T, store *settingsStore) int {
 	t.Helper()
 	var n int
@@ -1158,7 +1030,6 @@ func countRows(t *testing.T, store *settingsStore) int {
 	return n
 }
 
-// collectingHandler keeps the lines a store writes.
 type collectingHandler struct{ lines *[]string }
 
 func (h collectingHandler) Enabled(context.Context, slog.Level) bool { return true }
@@ -1170,14 +1041,7 @@ func (h collectingHandler) Handle(_ context.Context, r slog.Record) error {
 	return nil
 }
 
-// TestReplacingTheSnapshotIsRecorded pins that the moment a snapshot takes
-// effect is written down.
-//
-// Nothing else records it: reads serve whatever the current snapshot holds,
-// and a row carries the time it was written rather than the time this process
-// last read it. Without the line, a value that was written and is not the one
-// being served leaves nothing to say how far behind the replica is — and that
-// moment is what the propagation record points a reader at.
+// TestReplacingTheSnapshotIsRecorded checks that the moment a snapshot takes effect is written down.
 func TestReplacingTheSnapshotIsRecorded(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
@@ -1197,9 +1061,6 @@ func TestReplacingTheSnapshotIsRecorded(t *testing.T) {
 		t.Fatal("a snapshot took effect and left no record of when it did")
 	}
 
-	// A reload that reads the same rows writes nothing. The refresh path runs
-	// on a ticker, on a write and on an event, and a line per run would be a
-	// line per request that writes a setting.
 	lines = nil
 	store.reload(context.Background())
 	if len(lines) != 0 {

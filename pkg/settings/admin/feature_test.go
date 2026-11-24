@@ -6,9 +6,7 @@ import (
 	"github.com/vislake/speed/pkg/feature"
 )
 
-// TestTheModuleDeclaresTheSettingsAdminFeature holds the declaration the
-// frontend gates the settings management surface on: one static Spec with the
-// exact name.
+// TestTheModuleDeclaresTheSettingsAdminFeature checks that the module declares one static feature.Spec with the exact name.
 func TestTheModuleDeclaresTheSettingsAdminFeature(t *testing.T) {
 	want := feature.Spec{Name: "settings.admin"}
 	var got []feature.Spec

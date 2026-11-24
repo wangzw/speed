@@ -10,12 +10,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// The refresh interval has a declared default, and it arrives through the
-// configuration data's base layer rather than from this module's code.
-//
-// The case goes through the real loader instead of a stub reader on purpose:
-// a stub that decodes nothing leaves the field at its zero value, so it would
-// pass whether or not the default was declared at all.
+// TestTheRefreshIntervalDefaultsToFiveMinutes checks that the declared default arrives through the real loader rather than a stub.
 func TestTheRefreshIntervalDefaultsToFiveMinutes(t *testing.T) {
 	reg := core.New()
 	reg.Register(Module())
@@ -33,8 +28,7 @@ func TestTheRefreshIntervalDefaultsToFiveMinutes(t *testing.T) {
 	}
 }
 
-// A negative interval is refused where the configuration is resolved, rather
-// than accepted and then silently leaving the refresh off.
+// TestANegativeRefreshIntervalIsRefused checks that a negative interval is refused at resolve.
 func TestANegativeRefreshIntervalIsRefused(t *testing.T) {
 	_, err := moduleConfig{RefreshInterval: -time.Second}.resolve()
 	if !errors.Is(err, ErrInvalidValue) {
@@ -42,8 +36,7 @@ func TestANegativeRefreshIntervalIsRefused(t *testing.T) {
 	}
 }
 
-// Zero is a legal choice rather than a defect: it is how a host accepts
-// convergence through change events alone.
+// TestZeroIsALegalInterval checks that zero is accepted.
 func TestZeroIsALegalInterval(t *testing.T) {
 	got, err := moduleConfig{RefreshInterval: 0}.resolve()
 	if err != nil {
@@ -54,21 +47,17 @@ func TestZeroIsALegalInterval(t *testing.T) {
 	}
 }
 
-// A zero interval starts no ticker at all, so nothing has to be stopped later.
+// TestAZeroIntervalStartsNoRefresher checks that a zero interval starts no ticker.
 func TestAZeroIntervalStartsNoRefresher(t *testing.T) {
 	s := &settingsStore{config: moduleSettings{refresh: 0}}
 	s.startRefresh(context.Background())
 	if s.cancelRefresh != nil {
 		t.Error("a zero refresh interval started a ticker")
 	}
-	s.stopRefresh() // must tolerate having nothing to cancel
+	s.stopRefresh()
 }
 
-// The ticker actually reloads the snapshot.
-//
-// It is the backstop for a replica the bus never delivered to, so a ticker
-// that woke up and did nothing would leave the design's stated path for
-// convergence absent, with nothing else reporting the gap.
+// TestTheRefreshTickerReloadsTheSnapshot checks that a tick reloads the snapshot, the backstop for a replica the bus never reached.
 func TestTheRefreshTickerReloadsTheSnapshot(t *testing.T) {
 	keys := demoTable(t)
 	handle := open(t)
@@ -79,7 +68,6 @@ func TestTheRefreshTickerReloadsTheSnapshot(t *testing.T) {
 		t.Fatalf("loading: %v", err)
 	}
 
-	// A row written behind this replica's back, as another replica's write is.
 	if err := handle.Exec("INSERT INTO settings (tenant_id, key, value, version, updated_at) "+
 		"VALUES ('', 'demo.limit', '777', 1, ?)", time.Now().UTC()).Error; err != nil {
 		t.Fatalf("planting a row: %v", err)
@@ -98,7 +86,7 @@ func TestTheRefreshTickerReloadsTheSnapshot(t *testing.T) {
 	t.Error("the refresh ticker never reloaded the snapshot")
 }
 
-// A configured interval does start one, and Stop cancels it.
+// TestAnIntervalStartsARefresherAndStopCancelsIt checks that an interval starts a refresher and Stop cancels it.
 func TestAnIntervalStartsARefresherAndStopCancelsIt(t *testing.T) {
 	s := &settingsStore{config: moduleSettings{refresh: time.Hour}}
 	s.startRefresh(context.Background())

@@ -15,8 +15,6 @@ import (
 	"github.com/vislake/speed/pkg/db"
 )
 
-// listingPolicy and listingNotify are two modules' declarations: the shape an
-// administrative surface lists without restating either of them.
 type listingPolicy struct {
 	Window  time.Duration
 	Limit   int
@@ -31,11 +29,8 @@ type listingNotify struct {
 	Channel  listingChannel
 }
 
-// listingChannel is a defined string, the ordinary shape of an enumeration.
 type listingChannel string
 
-// listingSecret is the sensitive default listingModules declares, which no
-// listing may carry.
 const listingSecret = "hunter2"
 
 func listingModules() []core.Module {
@@ -63,16 +58,8 @@ func listingModules() []core.Module {
 	}
 }
 
-// Declared lists every item of every declaring module, in the keys' byte
-// order, with the declarer, the declared type, the default in the text a row
-// would hold, and the metadata.
-//
-// Each field is one a surface over the settings cannot get elsewhere without
-// restating the declaration: the type is what a read's target has to be, the
-// default is what a key with no row reads as, and the description is written
-// nowhere else. The default is the declared type's own text — a time as its
-// MarshalText writes it, not as it prints — because that text is what Set
-// takes back and what List reports for a row holding the same value.
+// TestDeclaredListsEveryItemOfEveryModule checks that Declared lists every item of every
+// module in key order with its declarer, type, default text and metadata.
 func TestDeclaredListsEveryItemOfEveryModule(t *testing.T) {
 	keys := tableOf(t, listingModules()...)
 	store, _ := storeOf(t, keys, newRecordingBus())
@@ -107,12 +94,7 @@ func TestDeclaredListsEveryItemOfEveryModule(t *testing.T) {
 	}
 }
 
-// A sensitive item is listed with its metadata and without its default.
-//
-// The listing exists to reach a client: an administrative endpoint's response,
-// a command's output. A credential compiled in as a default does not earn that
-// reach by being declared, so the listing carries the fact that the item is
-// sensitive and nothing it holds.
+// TestDeclaredWithholdsASensitiveDefault checks that a sensitive item is listed with its metadata and without its default.
 func TestDeclaredWithholdsASensitiveDefault(t *testing.T) {
 	store, _ := storeOf(t, tableOf(t, listingModules()...), newRecordingBus())
 	listed := store.Declared()
@@ -127,9 +109,6 @@ func TestDeclaredWithholdsASensitiveDefault(t *testing.T) {
 	}
 }
 
-// listingSecrets carries one item of every kind the type set admits, each with
-// a default a credential could be: a PIN is an integer, a rotation period a
-// duration, a peer an address, a signing key a big number.
 type listingSecrets struct {
 	Password string
 	Channel  listingChannel
@@ -143,8 +122,6 @@ type listingSecrets struct {
 	Key      big.Int
 }
 
-// listingSecretsModule declares a listingSecrets under namespace, every item
-// marked sensitive or none of them.
 func listingSecretsModule(namespace string, sensitive bool) core.Module {
 	secrets := listingSecrets{
 		Password: listingSecret,
@@ -171,14 +148,7 @@ func listingSecretsModule(namespace string, sensitive bool) core.Module {
 	})
 }
 
-// A sensitive item's default is withheld whatever its declared type is.
-//
-// The marker is a property of the declaration, not of a type: a PIN compiled in
-// as an integer default, a rotation period as a duration or a peer as an
-// address reaches a client through the listing exactly as a string credential
-// would. The same carrier declared without the marker is the control: every one
-// of those defaults is listed there, so each one withheld is one that was there
-// to withhold.
+// TestDeclaredWithholdsTheDefaultOfASensitiveItemOfEveryKind checks that a sensitive item's default is withheld whatever its type.
 func TestDeclaredWithholdsTheDefaultOfASensitiveItemOfEveryKind(t *testing.T) {
 	keys := tableOf(t, listingSecretsModule("secret", true), listingSecretsModule("plain", false))
 	store, _ := storeOf(t, keys, newRecordingBus())
@@ -207,13 +177,7 @@ func TestDeclaredWithholdsTheDefaultOfASensitiveItemOfEveryKind(t *testing.T) {
 	}
 }
 
-// The listing answers before the snapshot is loaded, where a read does not.
-//
-// A read before the load is refused because the snapshot is not there to say
-// what the table holds; the listing reads the key table alone, which is
-// complete once the store is constructed. A module that lists the settings in
-// its own Init, or a command whose drive stops short of this module's Init,
-// gets the full listing either way.
+// TestDeclaredAnswersBeforeTheSnapshotLoads checks that the listing answers before the snapshot is loaded, where a read does not.
 func TestDeclaredAnswersBeforeTheSnapshotLoads(t *testing.T) {
 	store := newSettingsStore(tableOf(t, listingModules()...),
 		stubDatabase{handle: open(t), dialect: db.SQLite}, newRecordingBus(), moduleSettings{})
@@ -225,8 +189,7 @@ func TestDeclaredAnswersBeforeTheSnapshotLoads(t *testing.T) {
 	}
 }
 
-// The listing handed out is the caller's own: modifying it changes nothing
-// the next caller receives.
+// TestDeclaredHandsOutTheCallersOwnListing checks that the listing handed out is the caller's own.
 func TestDeclaredHandsOutTheCallersOwnListing(t *testing.T) {
 	store, _ := storeOf(t, tableOf(t, listingModules()...), newRecordingBus())
 	first := store.Declared()
@@ -237,15 +200,8 @@ func TestDeclaredHandsOutTheCallersOwnListing(t *testing.T) {
 	}
 }
 
-// A surface built on nothing but the listing reads every item under its
-// listed type, writes the listed default back as text, and finds that text in
-// the rows, on either dialect.
-//
-// This is the use the listing is for: an endpoint that knows no declaration
-// of its own. A read's target has to be exactly the declared type, which only
-// the listed Type lets such a surface build; a default in any form other than
-// the declared type's own text would read as a different value than the one
-// the key serves, or be refused when written back.
+// TestAListingDrivesAnAdministrativeSurfaceOnEveryDialect checks that a surface
+// built on the listing alone reads and writes every item on either dialect.
 func TestAListingDrivesAnAdministrativeSurfaceOnEveryDialect(t *testing.T) {
 	for _, d := range dialectsUnderTest {
 		t.Run(d.name, func(t *testing.T) {
@@ -295,11 +251,6 @@ func TestAListingDrivesAnAdministrativeSurfaceOnEveryDialect(t *testing.T) {
 	}
 }
 
-// listingNested is a carrier of every shape the key rule expands rather than
-// takes as a leaf: an embedded struct inlined, a nested struct and a pointer to
-// one under a segment of their own, a segment named by a tag, a field kept out.
-// The embedded type is exported: an unexported one is skipped whole, by
-// configuration as by this module.
 type listingNested struct {
 	ListingBase
 	Retry    listingRetry
@@ -308,19 +259,19 @@ type listingNested struct {
 	Scratch  string        `config:"-"`
 }
 
-type ListingBase struct{ Region string }
+// ListingBase is embedded to pin the inlining of an anonymous field.
+type ListingBase struct {
+	// Region is a field of the inlined embedded struct.
+	Region string
+}
 
 type listingRetry struct {
 	Attempts int
 	Backoff  time.Duration
 }
 
-// Declared lists the keys a carrier's expansion derives, however deep the
-// carrier is, with each key's own type and marker: the listing is the key
-// table's, not a second derivation of it. A surface that restated the key rule
-// to find another module's keys would have to follow every one of these
-// shapes, and a sensitive marker given to a nested item is what it would need
-// to mask that item's rows.
+// TestDeclaredListsTheKeysOfANonFlatCarrier checks that Declared lists the keys
+// a nested carrier's expansion derives, with each key's type and marker.
 func TestDeclaredListsTheKeysOfANonFlatCarrier(t *testing.T) {
 	carrier := listingNested{
 		ListingBase: ListingBase{Region: "eu"},

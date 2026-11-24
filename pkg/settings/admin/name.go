@@ -5,11 +5,6 @@ import (
 	"log/slog"
 )
 
-// tenantIDOf answers the identifier a tenant name addresses. The query string
-// names a tenant by its name, the only external name a tenant has, and the
-// settings layer keys by the identifier. An assembly with no roster has no
-// names to resolve, so the name is refused: the internal identifier is never a
-// value a request may carry, and reading the query as one would accept it.
 func (p *product) tenantIDOf(ctx context.Context, name string) (string, bool, error) {
 	if p.directory == nil {
 		return "", false, nil

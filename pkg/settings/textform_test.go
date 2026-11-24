@@ -11,7 +11,6 @@ import (
 	"time"
 )
 
-// decodeOnly decodes itself from text and has no way to write itself back.
 type decodeOnly struct{ text string }
 
 func (d *decodeOnly) UnmarshalText(text []byte) error {
@@ -19,8 +18,6 @@ func (d *decodeOnly) UnmarshalText(text []byte) error {
 	return nil
 }
 
-// hashed writes itself as a hash sign followed by its digits and reads back
-// the digits alone, so the text it writes is not one it reads.
 type hashed int
 
 func (h hashed) MarshalText() ([]byte, error) { return []byte("#" + strconv.Itoa(int(h))), nil }
@@ -34,20 +31,8 @@ func (h *hashed) UnmarshalText(text []byte) error {
 	return nil
 }
 
-// A type that decodes itself from text and cannot write itself back is refused
-// when the key table is built, as a defect of the type rather than of the
-// default, for a sensitive item as for any other.
-//
-// A write stores a value as the text the declared type writes, so no write of
-// such a key could store anything. Admitted, the declaration would start the
-// process and leave an item every Set refuses, found at the first write rather
-// than at startup.
-//
-// The fix is on the type — a MarshalText, or the item declared as the string
-// it is written as — and whatever the default holds, no default would do. A
-// refusal that blamed the default would send the reader to the wrong line of
-// the declaration, and for a sensitive item, whose default's failure withholds
-// its cause, it would not say what is missing at all.
+// TestATypeThatCannotWriteItselfBackIsRefused checks that a type that decodes
+// from text but cannot encode back is refused when the key table is built.
 func TestATypeThatCannotWriteItselfBackIsRefused(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -79,13 +64,8 @@ func TestATypeThatCannotWriteItselfBackIsRefused(t *testing.T) {
 	}
 }
 
-// A default that does not survive the text round trip is refused when the key
-// table is built, and a sensitive item's refusal carries neither its text nor
-// the type's own reason.
-//
-// The type set is closed so that every declared value round-trips through
-// text. A default that does not is one no write could restore once a row has
-// replaced it, and one no listing of the declared items could show.
+// TestADefaultThatDoesNotRoundTripIsRefused checks that a default that does not
+// survive the text round trip is refused, withholding a sensitive value.
 func TestADefaultThatDoesNotRoundTripIsRefused(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -140,12 +120,7 @@ func TestADefaultThatDoesNotRoundTripIsRefused(t *testing.T) {
 	}
 }
 
-// A type that declares its text methods on its pointer — math/big.Int is one —
-// is written and read back like any other that carries its own text form.
-//
-// The value's own method set has no MarshalText, so an encoder that asked the
-// value alone would refuse every write of the key while the type encodes
-// itself perfectly well.
+// TestATypeWritingItselfThroughItsPointerRoundTrips checks that a pointer-receiver text type round-trips.
 func TestATypeWritingItselfThroughItsPointerRoundTrips(t *testing.T) {
 	var prototype struct{ Amount big.Int }
 	prototype.Amount.SetInt64(1 << 40)
@@ -174,14 +149,7 @@ func TestATypeWritingItselfThroughItsPointerRoundTrips(t *testing.T) {
 	}
 }
 
-// A read of a type that carries its own text form hands out a value of its
-// own, even where copies of the type share storage in a way reflection cannot
-// see.
-//
-// math/big.Int is such a type: a copy of one shares its digits, and its
-// methods write into them in place. A caller that read one and computed with
-// it — the ordinary way to use the type — would otherwise rewrite the declared
-// default, or the snapshot's value, for every other reader in the process.
+// TestAReadOfATextFormTypeSharesNothingWithTheModule checks that a read of a shared-storage text type hands out a value of its own.
 func TestAReadOfATextFormTypeSharesNothingWithTheModule(t *testing.T) {
 	var prototype struct{ Amount big.Int }
 	prototype.Amount.SetInt64(1 << 40)
@@ -214,9 +182,7 @@ func TestAReadOfATextFormTypeSharesNothingWithTheModule(t *testing.T) {
 	computeWithARead(t, "12345")
 }
 
-// A value assignable to the declared type without being of it — a []string for
-// a textList item — is written in the declared type's own text form, the one a
-// read decodes.
+// TestAnAssignableValueIsWrittenInTheDeclaredTypesText checks that an assignable value is written in the declared type's own text.
 func TestAnAssignableValueIsWrittenInTheDeclaredTypesText(t *testing.T) {
 	prototype := struct{ Addrs textList }{}
 	keys := tableOf(t, declaring("test.list", Schema{Namespace: "list", Mounts: []Mount{{Value: &prototype}}}))

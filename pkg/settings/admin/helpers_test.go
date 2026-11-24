@@ -29,8 +29,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The stubs implement the seams the module takes up, so a stub and an interface
-// cannot drift apart without failing the build.
 var (
 	_ settings.Store     = (*stubStore)(nil)
 	_ guard.Guard        = (*stubGuard)(nil)
@@ -40,17 +38,10 @@ var (
 	_ log.Logger         = loggerStub{}
 )
 
-// decl builds a declared item the shape Declared reports: the full key, the
-// module that declared it, the declared type, the default's text and the
-// declaration's metadata.
 func decl(key, module string, typ reflect.Type, def string, item settings.Item) settings.DeclaredItem {
 	return settings.DeclaredItem{Key: key, Module: module, Type: typ, Default: def, Item: item}
 }
 
-// storeCall is one call the stub store recorded: the method's name, the layer
-// and key it named, and the value a write carried, so a case holds what the
-// handler passed on and that an action the module refused never reached the
-// store.
 type storeCall struct {
 	op    string
 	layer settings.Layer
@@ -59,8 +50,6 @@ type storeCall struct {
 	actor string
 }
 
-// stubStore is a stand-in settings.Store. It answers reads from what a case set,
-// fails the methods a case told it to, and records every call.
 type stubStore struct {
 	mu        sync.Mutex
 	calls     []storeCall
@@ -85,7 +74,6 @@ func (s *stubStore) recorded() []storeCall {
 	return append([]storeCall(nil), s.calls...)
 }
 
-// ops lists the operations a case's store was asked to do, in order.
 func (s *stubStore) ops() []string {
 	calls := s.recorded()
 	names := make([]string, len(calls))
@@ -95,8 +83,6 @@ func (s *stubStore) ops() []string {
 	return names
 }
 
-// holdsLayerKey reports whether the store was ever asked to act on this layer
-// and key with this operation.
 func (s *stubStore) holdsLayerKey(op string, layer settings.Layer, key string) bool {
 	for _, c := range s.recorded() {
 		if c.op == op && c.layer == layer && c.key == key {
@@ -136,9 +122,6 @@ func (s *stubStore) Delete(_ context.Context, layer settings.Layer, key, actor s
 	return s.deleteErr
 }
 
-// List returns the rows of the layer named. The stub matches a layer the way the
-// settings module does: the global layer is the rows whose tenant column is
-// empty, a tenant layer the rows whose column is that tenant.
 func (s *stubStore) List(_ context.Context, layer settings.Layer) ([]settings.Entry, error) {
 	s.record(storeCall{op: "List", layer: layer})
 	s.mu.Lock()
@@ -171,8 +154,6 @@ func (s *stubStore) WrittenAt(settings.Layer, string) (time.Time, bool, error) {
 	return time.Time{}, false, nil
 }
 
-// Read answers from the stub's Get and WrittenAt. The surfaces here never call
-// it; it is present because Store carries it.
 func (s *stubStore) Read(key string, reads ...settings.LayerRead) ([]settings.LayerReadResult, error) {
 	results := make([]settings.LayerReadResult, len(reads))
 	for i, read := range reads {
@@ -188,11 +169,6 @@ func (s *stubStore) Read(key string, reads ...settings.LayerRead) ([]settings.La
 	return results, nil
 }
 
-// stubGuard is a stand-in guard.Guard. It records the permission every decision
-// asked about and the domain it decided in, and answers from one setting: allow,
-// deny, or fail. The write-out matches the real guard's — a 403 for a denial and
-// a 503 for an outage — so a handler that returns on a shortfall writes the same
-// answer.
 type stubGuard struct {
 	mu      sync.Mutex
 	allow   bool
@@ -254,9 +230,6 @@ func (g *stubGuard) domainsAsked() []authz.Domain {
 	return append([]authz.Domain(nil), g.domains...)
 }
 
-// recordingAudit keeps the rows it was asked to write and can be told to fail,
-// which is how a case holds that a write whose mandatory row did not land
-// reached no settings call.
 type recordingAudit struct {
 	mu   sync.Mutex
 	rows []audit.Entry
@@ -281,10 +254,8 @@ func (a *recordingAudit) entries() []audit.Entry {
 
 func (a *recordingAudit) fail(err error) { a.mu.Lock(); a.err = err; a.mu.Unlock() }
 
-// mountedRoute is one (method, path) a registration recorded.
 type mountedRoute struct{ method, path string }
 
-// stubEndpoint records the routes registered on it.
 type stubEndpoint struct {
 	mu     sync.Mutex
 	routes []mountedRoute
@@ -306,9 +277,6 @@ func (e *stubEndpoint) registered() []mountedRoute {
 	return append([]mountedRoute(nil), e.routes...)
 }
 
-// stubRouter is a stand-in speedhttp.Router over a fixed set of endpoints. A
-// name it does not hold is an error, the way the real entry point answers an
-// undeclared endpoint.
 type stubRouter struct {
 	mu        sync.Mutex
 	endpoints map[string]*stubEndpoint
@@ -346,22 +314,16 @@ func (r *stubRouter) endpoint(name string) *stubEndpoint {
 	return r.endpoints[name]
 }
 
-// loggerStub delivers the logging capability over a recorder, so the module's
-// diagnostic lands in a case's buffer rather than on the test's output.
 type loggerStub struct{ logger *slog.Logger }
 
 func (l loggerStub) Named(string) *slog.Logger { return l.logger }
 func (loggerStub) Redaction() log.Redaction    { return noRules{} }
 
-// noRules takes redaction registrations and masks nothing: a case reads the
-// records themselves, not their masking.
 type noRules struct{}
 
 func (noRules) AddKeys(...string)              {}
 func (noRules) AddPattern(string, log.Matcher) {}
 
-// logBuffer collects what the module logs, so a case can hold the module's own
-// records apart from the test's output.
 type logBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -383,7 +345,6 @@ func (b *logBuffer) String() string {
 	return b.buf.String()
 }
 
-// decode reads a JSON response body into target.
 func decode(t *testing.T, w *httptest.ResponseRecorder, target any) {
 	t.Helper()
 	if err := json.Unmarshal(w.Body.Bytes(), target); err != nil {
@@ -391,13 +352,11 @@ func decode(t *testing.T, w *httptest.ResponseRecorder, target any) {
 	}
 }
 
-// problem is the default problem-details shape this module's refusals carry.
 type problem struct {
 	Type   string `json:"type"`
 	Status int    `json:"status"`
 }
 
-// problemOf reads the problem a recorder's body holds.
 func problemOf(t *testing.T, w *httptest.ResponseRecorder) problem {
 	t.Helper()
 	var p problem
@@ -405,8 +364,6 @@ func problemOf(t *testing.T, w *httptest.ResponseRecorder) problem {
 	return p
 }
 
-// standIn is a module that delivers instance for the tokens named, the way
-// another module delivers its capability exclusively.
 func standIn(name string, instance any, tokens ...core.Token) core.Module {
 	provides := make([]core.Provision, len(tokens))
 	for i, tk := range tokens {
@@ -419,10 +376,6 @@ func standIn(name string, instance any, tokens ...core.Token) core.Module {
 	}
 }
 
-// rig is the module with every dependency a case drives, mounted on a real gin
-// engine so a case reaches it over a real HTTP surface: the real routing, the
-// real path parameters and the real JSON binding, with the settings surface and
-// the other capabilities stood in for.
 type rig struct {
 	t      *testing.T
 	p      *product
@@ -431,14 +384,9 @@ type rig struct {
 	audit  *recordingAudit
 	logs   *logBuffer
 	engine *gin.Engine
-	// signup answers the acting account's self-registration state. Its zero
-	// value reports SignupNone, which is what an account created outside
-	// self-registration reads as.
 	signup *fakeSignupVerification
 }
 
-// newRig builds the module over the stubs and mounts its route set on a real
-// engine.
 func newRig(t *testing.T) *rig {
 	t.Helper()
 	logs := &logBuffer{}
@@ -455,22 +403,14 @@ func newRig(t *testing.T) *rig {
 		guard:        r.guard,
 		audit:        r.audit,
 		verification: r.signup,
-		// The route cases name the fixture tenant "acme", so the stand-in roster
-		// carries that name. A case that needs the name and the identifier apart
-		// replaces it with a mapping of its own; a case that wants the
-		// absent roster sets it to nil.
-		directory: directoryStub{"acme": "acme"},
-		logger:    logs.logger(),
-		cfg:       resolved{endpoints: []string{"public"}},
+		directory:    directoryStub{"acme": "acme"},
+		logger:       logs.logger(),
+		cfg:          resolved{endpoints: []string{"public"}},
 	}
 	r.engine = r.mount()
 	return r
 }
 
-// mount registers the module's whole route set on a fresh gin engine, the way
-// the real entry point mounts them, and binds the realm each handler reads. A
-// conflict among the routes panics here, which is how a case holds that the
-// route set is mountable.
 func (r *rig) mount() *gin.Engine {
 	r.t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -481,8 +421,6 @@ func (r *rig) mount() *gin.Engine {
 	return engine
 }
 
-// do sends one request through the engine with the identity the options build
-// and, when a body is given, a JSON body.
 func (r *rig) do(method, target string, body any, opts ...authntest.Option) *httptest.ResponseRecorder {
 	r.t.Helper()
 	var reader io.Reader
@@ -496,23 +434,17 @@ func (r *rig) do(method, target string, body any, opts ...authntest.Option) *htt
 	return r.send(method, target, reader, body != nil, authntest.Context(r.t, context.Background(), opts...))
 }
 
-// doRaw sends a body as written, so a case can put a body the handler cannot
-// read in front of it.
 func (r *rig) doRaw(method, target, raw string) *httptest.ResponseRecorder {
 	r.t.Helper()
 	return r.send(method, target, strings.NewReader(raw), true, authntest.Context(r.t, context.Background()))
 }
 
-// doAnonymous sends one request with no identity on it, an optional-access
-// anonymous request, the way one reaches a management route the middleware let
-// through.
 func (r *rig) doAnonymous(method, target string) *httptest.ResponseRecorder {
 	r.t.Helper()
 	ctx := authntest.Anonymous(r.t, context.Background(), authn.AccessOptional)
 	return r.send(method, target, nil, false, ctx)
 }
 
-// send builds the request, installs the context and drives the engine.
 func (r *rig) send(method, target string, reader io.Reader, jsonBody bool, ctx context.Context) *httptest.ResponseRecorder {
 	r.t.Helper()
 	req := httptest.NewRequest(method, target, reader)
@@ -525,10 +457,6 @@ func (r *rig) send(method, target string, reader io.Reader, jsonBody bool, ctx c
 	return w
 }
 
-// fakeSignupVerification answers the acting account's self-registration state
-// with what a case scripts, and counts the reads, so a case can hold that a
-// granted reader was not asked. The zero value reports SignupNone with no
-// failure, which is what an account created outside self-registration reads as.
 type fakeSignupVerification struct {
 	mu     sync.Mutex
 	state  authn.SignupState
@@ -545,27 +473,22 @@ func (v *fakeSignupVerification) SignupStateOf(_ context.Context, id authn.Accou
 	return authn.SignupStatus{State: v.state}, v.err
 }
 
-// PendingAccountByContact is not part of this surface.
 func (v *fakeSignupVerification) PendingAccountByContact(context.Context, string, string) (string, bool, error) {
 	return "", false, errors.New("settings.admin: the pending-contact read is not part of this surface")
 }
 
-// answer scripts the state and the failure the next reads report.
 func (v *fakeSignupVerification) answer(state authn.SignupState, err error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	v.state, v.err = state, err
 }
 
-// readCount is how many state reads the fake answered.
 func (v *fakeSignupVerification) readCount() int {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	return v.reads
 }
 
-// lastAccount is the account the last state read named, which a case holds to
-// the request's actor rather than its impersonation target.
 func (v *fakeSignupVerification) lastAccount() authn.AccountID {
 	v.mu.Lock()
 	defer v.mu.Unlock()

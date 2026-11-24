@@ -8,20 +8,14 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// tenantDeclaration is the carrier the tenant-facing declaration cases mount.
 type tenantDeclaration struct {
 	Flag bool
 }
 
-// textTenantDeclaration mounts a string item, which a switch control has to
-// refuse.
 type textTenantDeclaration struct {
 	Label string
 }
 
-// textBool is a bool underneath that writes and reads yes/no. classifyLeaf asks
-// about the text form before the kind, so it is kindText; the tenant listing
-// re-reads a switch's row with strconv.ParseBool, which cannot read its text.
 type textBool bool
 
 func (b textBool) MarshalText() ([]byte, error) {
@@ -43,12 +37,10 @@ func (b *textBool) UnmarshalText(text []byte) error {
 	return nil
 }
 
-// textBoolTenantDeclaration mounts a bool whose text form is not bool text.
 type textBoolTenantDeclaration struct {
 	Flag textBool
 }
 
-// tenantItem is metadata complete enough for a tenant-facing item.
 func tenantItem(access TenantAccess) Item {
 	return Item{
 		Description:    "whether the flag is on",
@@ -59,8 +51,6 @@ func tenantItem(access TenantAccess) Item {
 	}
 }
 
-// declarationError builds the key table from the given modules and returns the
-// failure it must produce.
 func declarationError(t *testing.T, mods ...core.Module) error {
 	t.Helper()
 	_, err := buildKeyTable(registryWith(t, mods...))
@@ -70,7 +60,6 @@ func declarationError(t *testing.T, mods ...core.Module) error {
 	return err
 }
 
-// tenantSchema is one module's declaration of a single tenant-facing item.
 func tenantSchema(tenantFacing bool, item Item) Schema {
 	return Schema{
 		Namespace:    "tenantns",
@@ -80,9 +69,7 @@ func tenantSchema(tenantFacing bool, item Item) Schema {
 	}
 }
 
-// An item that carries a tenant access requires the schema to say it is
-// tenant-facing. The pair is the fail-closed switch: forgetting the schema-level
-// declaration is a startup failure rather than an item exposed by accident.
+// TestATenantFacingItemRequiresATenantFacingSchema checks that a tenant access without the schema-level switch is a startup failure.
 func TestATenantFacingItemRequiresATenantFacingSchema(t *testing.T) {
 	err := declarationError(t, declaring("test.tenant", tenantSchema(false, tenantItem(TenantReadWrite))))
 	if !errors.Is(err, ErrInvalidDeclaration) {
@@ -95,9 +82,7 @@ func TestATenantFacingItemRequiresATenantFacingSchema(t *testing.T) {
 	}
 }
 
-// A tenant-facing item must carry the text and the control its surface renders.
-// Each missing piece is a declaration defect of its own, so a partially written
-// item cannot reach a tenant page as a bare key or an empty label.
+// TestATenantFacingItemCarriesItsPresentation checks that each missing presentation piece is a declaration defect.
 func TestATenantFacingItemCarriesItsPresentation(t *testing.T) {
 	complete := tenantItem(TenantReadWrite)
 	cases := []struct {
@@ -125,9 +110,7 @@ func TestATenantFacingItemCarriesItsPresentation(t *testing.T) {
 	}
 }
 
-// TenantAccess is a closed set. A value outside it is a declaration defect even
-// when the schema is tenant-facing, because a surface could not tell what it
-// grants.
+// TestTenantAccessIsAClosedSet checks that a value outside the set is a declaration defect.
 func TestTenantAccessIsAClosedSet(t *testing.T) {
 	err := declarationError(t, declaring("test.tenant", tenantSchema(true, tenantItem(TenantAccess("read_write")))))
 	if !errors.Is(err, ErrInvalidDeclaration) {
@@ -140,10 +123,7 @@ func TestTenantAccessIsAClosedSet(t *testing.T) {
 	}
 }
 
-// A switch renders a two-state control, so an item under one has to be declared
-// as bool. A non-boolean item behind a switch would pass the startup check and
-// then fail the encoding of the tenant's whole list on every read, so the
-// declaration is refused when the key table is built.
+// TestASwitchControlRequiresABooleanItem checks that a switch control on a non-boolean item is refused when the key table is built.
 func TestASwitchControlRequiresABooleanItem(t *testing.T) {
 	schema := Schema{
 		Namespace:    "tenantns",
@@ -162,12 +142,7 @@ func TestASwitchControlRequiresABooleanItem(t *testing.T) {
 	}
 }
 
-// A switch's item must be a plain bool, not merely a type whose underlying kind
-// is bool. A named bool that carries its own text form classifies as kindText,
-// and the tenant listing re-reads the stored text with strconv.ParseBool rather
-// than through that type; its text — yes and no here — would fail the parse and
-// turn every read of the list into a 503. Judging the classified kind rather
-// than reflect.Kind refuses it at startup, where the defect is.
+// TestASwitchControlRequiresAPlainBooleanItem checks that a named bool with its own text form is refused under a switch.
 func TestASwitchControlRequiresAPlainBooleanItem(t *testing.T) {
 	schema := Schema{
 		Namespace:    "tenantns",
@@ -186,9 +161,7 @@ func TestASwitchControlRequiresAPlainBooleanItem(t *testing.T) {
 	}
 }
 
-// A complete declaration builds, and the metadata the module wrote is the
-// metadata the key table keeps. TenantRead is part of the closed set even though
-// no item declares it yet.
+// TestACompleteTenantDeclarationBuilds checks that a complete declaration builds and keeps its metadata.
 func TestACompleteTenantDeclarationBuilds(t *testing.T) {
 	for _, access := range []TenantAccess{TenantRead, TenantReadWrite} {
 		item := tenantItem(access)
@@ -203,8 +176,7 @@ func TestACompleteTenantDeclarationBuilds(t *testing.T) {
 	}
 }
 
-// An item with no tenant access needs no tenant metadata, and a tenant-facing
-// schema may still carry platform-only items.
+// TestAPlatformItemNeedsNoTenantMetadata checks that a platform item needs no tenant metadata.
 func TestAPlatformItemNeedsNoTenantMetadata(t *testing.T) {
 	entries := keysOf(t, Schema{
 		Namespace:    "platformns",
@@ -221,10 +193,8 @@ func TestAPlatformItemNeedsNoTenantMetadata(t *testing.T) {
 	}
 }
 
-// Every registered schema is held to the tenant declaration, including the
-// schemas of modules that declare nothing tenant-facing, and the failure names
-// only the offending module's own key. A startup failure never reaches a
-// tenant surface, and it does not disclose another module's keys either.
+// TestEveryRegisteredSchemaIsHeldToTheTenantDeclaration checks that every registered schema
+// is held to the tenant declaration and the failure names only the offending module's key.
 func TestEveryRegisteredSchemaIsHeldToTheTenantDeclaration(t *testing.T) {
 	platform := declaring("test.platform", Schema{
 		Namespace: "platformns",

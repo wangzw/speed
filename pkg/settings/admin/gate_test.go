@@ -14,24 +14,14 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The problem type a write from an unverified self-registration answers with is
-// the authentication capability's code, read from that capability's exported
-// constant rather than restated here: a rename on that side has to reach this
-// surface, and a copy would let the two drift silently.
-
-// gateWriteTarget is a write the settings module accepts once it is reached:
-// the global layer carries no tenant and the item is declared by declareGateItem.
 const gateWriteTarget = "/api/v1/system/settings/app/mode?layer=global"
 
-// declareGateItem declares the item a write through gateWriteTarget acts on, so
-// the shape checks past the decision let an allowed write land.
 func declareGateItem(r *rig) {
 	r.store.declared = []settings.DeclaredItem{
 		decl("app.mode", "app", reflect.TypeFor[string](), "auto", settings.Item{}),
 	}
 }
 
-// gateWrites is every write route, with what a case sends to it.
 var gateWrites = []struct {
 	name   string
 	method string
@@ -42,12 +32,8 @@ var gateWrites = []struct {
 	{"the delete", http.MethodDelete, gateWriteTarget, nil},
 }
 
-// TestAWriteFromAnUnverifiedRegistrationIsRefusedBeforeAnythingRuns holds the
-// registration gate on both write routes: an account whose self-registration has
-// not proved an email address is answered 403 contact-required, the guard is
-// never asked, no audit row lands and no setting is touched. The same requests
-// as a verified account do reach the settings module, which is what makes the
-// refusal the gate's and not some other check's.
+// TestAWriteFromAnUnverifiedRegistrationIsRefusedBeforeAnythingRuns checks that both write routes
+// refuse an unverified registration 403 contact-required before anything runs.
 func TestAWriteFromAnUnverifiedRegistrationIsRefusedBeforeAnythingRuns(t *testing.T) {
 	for _, route := range gateWrites {
 		t.Run(route.name, func(t *testing.T) {
@@ -75,9 +61,7 @@ func TestAWriteFromAnUnverifiedRegistrationIsRefusedBeforeAnythingRuns(t *testin
 	}
 }
 
-// TestAReadIsNotGated holds that the registration gate covers writes alone: an
-// account in the same pending state reads the management face, and its state is
-// not even read.
+// TestAReadIsNotGated checks that the gate covers writes alone.
 func TestAReadIsNotGated(t *testing.T) {
 	r := newRig(t)
 	r.signup.answer(authn.SignupPending, nil)
@@ -94,9 +78,7 @@ func TestAReadIsNotGated(t *testing.T) {
 	}
 }
 
-// TestAVerifiedOrGivenAccountWrites holds the exemption of an account that
-// self-registered and proved an email address, and of one created outside
-// self-registration: both reach the settings module.
+// TestAVerifiedOrGivenAccountWrites checks that a verified account and one created outside self-registration both write.
 func TestAVerifiedOrGivenAccountWrites(t *testing.T) {
 	for name, state := range map[string]authn.SignupState{
 		"verified": authn.SignupVerified,
@@ -118,11 +100,8 @@ func TestAVerifiedOrGivenAccountWrites(t *testing.T) {
 	}
 }
 
-// TestAServiceAccountAndAStaticSubjectAreExempt holds the two callers the gate
-// never consults: a service account, whose kind is the client-secret method, and
-// a static-table subject, which has no account row at all. Each writes while the
-// scripted state is pending, and neither causes a state read — the exemption is
-// decided on the identity, not inferred from an answer.
+// TestAServiceAccountAndAStaticSubjectAreExempt checks that the two exempt
+// identities write while the scripted state is pending and cause no state read.
 func TestAServiceAccountAndAStaticSubjectAreExempt(t *testing.T) {
 	t.Run("a service account", func(t *testing.T) {
 		r := newRig(t)
@@ -155,9 +134,7 @@ func TestAServiceAccountAndAStaticSubjectAreExempt(t *testing.T) {
 	})
 }
 
-// TestAnUnreadableSignupStateIs503 holds the failure direction: a state that
-// cannot be read is a 503 and the write is not carried out, never read as
-// verified.
+// TestAnUnreadableSignupStateIs503 checks that an unreadable state is a 503 and the write does not run.
 func TestAnUnreadableSignupStateIs503(t *testing.T) {
 	r := newRig(t)
 	declareGateItem(r)
@@ -175,11 +152,8 @@ func TestAnUnreadableSignupStateIs503(t *testing.T) {
 	}
 }
 
-// TestTheRegistrationGatePrecedesThePermissionDecision holds the order: a pending
-// caller that would also be refused by the guard — no permission, or an outage —
-// is answered contact-required, and the guard is never asked. Without the gate
-// the answer would be the guard's 403 or 503, so the case distinguishes the two
-// placements.
+// TestTheRegistrationGatePrecedesThePermissionDecision checks that a pending
+// caller gets contact-required and the guard is never asked.
 func TestTheRegistrationGatePrecedesThePermissionDecision(t *testing.T) {
 	for name, script := range map[string]func(*rig){
 		"no permission": func(r *rig) { r.guard.allow = false },
@@ -205,14 +179,7 @@ func TestTheRegistrationGatePrecedesThePermissionDecision(t *testing.T) {
 	}
 }
 
-// TestTheGateIsDerivedFromTheMethod walks the registered route set and holds the
-// write decision to the method: every non-read route reads the acting account's
-// signup state, and every read route does not. The routes are taken from the
-// product's own table, so a write route added later is covered without editing
-// this case, and a route wired to the opposite decision shows up here rather than
-// in production. The body and the path parameters are deliberately absent: a
-// write is refused before either is looked at, and a read stops at the layer
-// selection, so the read count is the only observable this case needs.
+// TestTheGateIsDerivedFromTheMethod checks that every non-read route reads the actor's signup state and every read route does not.
 func TestTheGateIsDerivedFromTheMethod(t *testing.T) {
 	routes := newRig(t).p.routes()
 	for i := range routes {
@@ -242,11 +209,8 @@ func TestTheGateIsDerivedFromTheMethod(t *testing.T) {
 	}
 }
 
-// TestAnAccountWithNoSignupRecordWrites holds the sentinel's direction: an
-// account whose row is not there reads as no self-registration, so the write
-// reaches the settings module rather than answering 403 or 503. The store being
-// called is what makes the pass-through the gate's decision and not an earlier
-// refusal's.
+// TestAnAccountWithNoSignupRecordWrites checks that an account with no row reads
+// as no self-registration and the write reaches the store.
 func TestAnAccountWithNoSignupRecordWrites(t *testing.T) {
 	r := newRig(t)
 	declareGateItem(r)
@@ -264,9 +228,7 @@ func TestAnAccountWithNoSignupRecordWrites(t *testing.T) {
 	}
 }
 
-// TestTheNamespaceReadIsNotGated covers the settings read: GET
-// /settings/:namespace answers 200, reads no signup state and asks the guard
-// once.
+// TestTheNamespaceReadIsNotGated checks that the namespace read answers 200 and reads no signup state.
 func TestTheNamespaceReadIsNotGated(t *testing.T) {
 	r := newRig(t)
 	declareGateItem(r)
@@ -284,11 +246,7 @@ func TestTheNamespaceReadIsNotGated(t *testing.T) {
 	}
 }
 
-// TestTheGateRefusesBeforeTheLayerShape holds the order: a pending caller's
-// unreadable layer selection is answered contact-required, not the capability's
-// bad-request. Without the gate in front of the layer selection the answer would
-// be a 400 with the bad-request type, so the case distinguishes the two
-// placements.
+// TestTheGateRefusesBeforeTheLayerShape checks that a pending caller gets contact-required before the layer shape is judged.
 func TestTheGateRefusesBeforeTheLayerShape(t *testing.T) {
 	r := newRig(t)
 	declareGateItem(r)
@@ -306,10 +264,7 @@ func TestTheGateRefusesBeforeTheLayerShape(t *testing.T) {
 	}
 }
 
-// TestTheGateReadsTheActorNotTheImpersonationTarget holds the subject of the
-// read: under an impersonation the state is the operator's (the actor), not the
-// target's. The two identities are distinct in the fixture, so reading the wrong
-// one is visible in the account the fake recorded.
+// TestTheGateReadsTheActorNotTheImpersonationTarget checks that the state read is the actor's, not the impersonation target's.
 func TestTheGateReadsTheActorNotTheImpersonationTarget(t *testing.T) {
 	r := newRig(t)
 	declareGateItem(r)
@@ -329,15 +284,7 @@ func TestTheGateReadsTheActorNotTheImpersonationTarget(t *testing.T) {
 	}
 }
 
-// TestAnAccountCreatedOutsideSelfRegistrationIsExemptAfterTheRead holds the
-// exemption's two bases apart. A service account and a static subject are exempt
-// on the identity before any read (see TestAServiceAccountAndAStaticSubjectAreExempt);
-// an account created outside self-registration is exempt on its state, which
-// means the read happens and answers SignupNone. This case pins the second: the
-// write reaches the settings module and the state was read once. The three
-// management faces decide the identity exemptions on the actor's kind and method;
-// that is a deliberate departure from authn.admin, which reads Accounts.Get to
-// tell a service account from a user and gates in the account's own request path.
+// TestAnAccountCreatedOutsideSelfRegistrationIsExemptAfterTheRead checks that such an account is exempt on its state after one read.
 func TestAnAccountCreatedOutsideSelfRegistrationIsExemptAfterTheRead(t *testing.T) {
 	r := newRig(t)
 	declareGateItem(r)

@@ -8,8 +8,6 @@ import (
 	"github.com/vislake/speed/pkg/db"
 )
 
-// ordering declares keys whose byte order differs from the order a collation
-// that sets punctuation aside gives them.
 type ordering struct {
 	AZ     string `config:"a-z"`
 	AB     string `config:"ab"`
@@ -17,21 +15,11 @@ type ordering struct {
 	AA     string `config:"aa"`
 }
 
-// orderingDialects lists the dialects the byte-order case runs on. PostgreSQL
-// is appended by the tagged file, which gives its key column the linguistic
-// collation the case exists for.
 var orderingDialects = []dialectUnderTest{
 	{name: "sqlite", dialect: db.SQLite, open: open},
 }
 
-// List orders the rows by the key's bytes, on either dialect and under any
-// collation the database was created with.
-//
-// SQLite compares text byte by byte. A collation that sets punctuation aside at
-// its first level — PostgreSQL's en_US.UTF-8 default among them — sorts a-b
-// next to ab rather than before aa, so an order left to the statement would
-// bring the same rows back in a different order depending on the dialect a
-// command runs on.
+// TestListOrdersByTheKeysBytesOnEveryDialect checks that List orders by key bytes on either dialect and under any collation.
 func TestListOrdersByTheKeysBytesOnEveryDialect(t *testing.T) {
 	want := []string{"order.a-b", "order.a-z", "order.aa", "order.ab"}
 	if !slices.IsSorted(want) {

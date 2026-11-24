@@ -17,9 +17,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// disciplineCarrier holds one field of every shape the value discipline has a
-// rule for. It is declared to configuration and to this module alike, so the
-// two see one set of items with one set of types.
 type disciplineCarrier struct {
 	Window  time.Duration
 	Span    disciplineSpan
@@ -41,28 +38,15 @@ type disciplineCarrier struct {
 type (
 	disciplineMode   string
 	disciplineToggle bool
-	// disciplineSpan is built on time.Duration, and reflection sees nothing
-	// of that: it is an int64 of its own, and both sides hold it to the
-	// integer rules.
-	disciplineSpan time.Duration
+	disciplineSpan   time.Duration
 )
 
-// TestTheWriteDisciplineAgreesWithConfiguration holds the two statements of
-// the value discipline to one another.
-//
-// The design gives settings configuration's discipline and no rule of its own,
-// and the code states it twice, because nothing in pkg/config exports it. Each
-// case is one value written in a YAML document. Configuration reads it through
-// its real loading path; this module takes the same value out of the same
-// parser's tree — which is what an administrative endpoint decoding a request
-// body hands Set — and holds it to the declaration. The two must both refuse
-// it, or both accept it and arrive at the same value.
+// TestTheWriteDisciplineAgreesWithConfiguration checks that the value discipline and
+// configuration's agree: both refuse a value or both accept it and arrive at the same value.
 func TestTheWriteDisciplineAgreesWithConfiguration(t *testing.T) {
 	cases := []struct {
-		field string
-		yaml  string
-		// accepted is what both sides are expected to decide, so that a case
-		// on which the two agree for the wrong reason still fails.
+		field    string
+		yaml     string
 		accepted bool
 	}{
 		{"window", `"5m"`, true},
@@ -164,8 +148,6 @@ func TestTheWriteDisciplineAgreesWithConfiguration(t *testing.T) {
 	}
 }
 
-// decodeThroughConfiguration loads a YAML document the way a host does and
-// decodes the carrier, returning the value the one field holds.
 func decodeThroughConfiguration(t *testing.T, document, field string) (any, error) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "settings.yaml")
@@ -190,9 +172,6 @@ func decodeThroughConfiguration(t *testing.T, document, field string) (any, erro
 	return fieldValue(t, carrier, field), nil
 }
 
-// writeThroughSettings takes the field's value out of the parsed document,
-// encodes it the way Set does and decodes the stored text the way a snapshot
-// load does, returning what a read would hand out.
 func writeThroughSettings(t *testing.T, entry keyEntry, document, field string) (any, error) {
 	t.Helper()
 	formats := core.Resources[config.Format](registryWith(t, yamlformat.Module()))
@@ -218,7 +197,6 @@ func writeThroughSettings(t *testing.T, entry keyEntry, document, field string) 
 	return decoded, nil
 }
 
-// fieldValue returns the value of the carrier field a key segment names.
 func fieldValue(t *testing.T, carrier disciplineCarrier, segment string) any {
 	t.Helper()
 	v := reflect.ValueOf(carrier)

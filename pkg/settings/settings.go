@@ -1,23 +1,6 @@
 // Package settings carries the parameters that change at runtime: a module
 // declares the setting items it reads, an operator writes values per tenant or
-// globally while the process runs, and a consumer reads them back out of an
-// in-memory snapshot under the declared type.
-//
-// The line between configuration and settings is drawn by one judgement: a
-// value belongs to configuration when it is needed before a database is
-// reachable (ADR-config-scope). This module carries everything on
-// the other side of that line — rate-limit thresholds, feature switches,
-// notification templates.
-//
-// The root package is both the interface package and the implementation: it
-// defines the types, registers one module and delivers the settings surface
-// exclusively. Storage is the database alone, so no implementation subpackage
-// exists and no extension point does either — a second backend or a second
-// value type is a change to this package, not a registration.
-//
-// The declaration surface is the same shape configuration uses, down to the
-// field-name rules, so a parameter moving from configuration to settings keeps
-// its key and its carrier struct.
+// globally, and a consumer reads them back out of an in-memory snapshot.
 package settings
 
 import (
@@ -29,51 +12,28 @@ import (
 	"unicode"
 )
 
-// ModuleName is this module's name in the registry. It is also the namespace
-// this module's own input items are mounted under, which is what a registering
-// module's namespace always is.
+// ModuleName is this module's name in the registry and the namespace its own
+// input items are mounted under.
 const ModuleName = "settings"
 
 // ConfigNamespace is where this module's input items live in the config data.
 const ConfigNamespace = ModuleName
 
 // ChangedEventType is the type name of the change event published after every
-// successful write. It is agreed between publisher and subscriber with nothing
-// checking the two ends against each other.
+// successful write.
 const ChangedEventType = "settings.changed"
 
 // MaskedValue is the fixed text a management surface shows in place of a
-// sensitive item's value. A surface also refuses a write that carries this
-// text: it is what the client read, not a value anyone chose, and writing it
-// back would replace the credential with the mask.
+// sensitive item's value; a write carrying it is refused.
 const MaskedValue = "********"
 
-// Layer names the layer a read or write acts on: the global layer, or one
-// tenant's layer.
-//
-// The zero value is not a layer. A Layer comes from Global or ForTenant and
-// from nowhere else, so passing a nil one is a mistake at the call site:
-// nothing has a nil layer on purpose, it involves no second party and no data,
-// and the first time the line runs settles it. It therefore panics rather than
-// returning an error, the same judgement an illegal target for a read gets.
-//
-// The interface carries no accessor. The two constructors are the whole of its
-// surface, and the conversion to the tenant column a statement binds is this
-// package's own business (tenantOf).
+// Layer names the layer a read or write acts on: the global layer, or one named
+// by ForTenant. The zero value is not a layer, and passing one panics.
 type Layer interface {
-	// isLayer is unexported, which closes the set of implementations to this
-	// package: a Layer is what the two constructors below hand out.
+	// isLayer is unexported, which closes the set of implementations to this package.
 	isLayer()
 }
 
-// layer is the one implementation of Layer.
-//
-// Its tenant is the tenant column of the rows the layer names, empty for the
-// global layer. That is the storage column's spelling of the layer, not the
-// interface's: the interface has no empty value, since a tenant layer's
-// constructor refuses an identifier outside the tenant identifier's domain —
-// empty, or carrying a blank or a control character — and the global layer is
-// named by its own constructor.
 type layer struct {
 	tenant string
 }
@@ -83,16 +43,8 @@ func (layer) isLayer() {}
 // Global returns the global layer.
 func Global() Layer { return layer{} }
 
-// ForTenant returns the layer of the tenant identified by id.
-//
-// An id outside the tenant identifier's value domain is a mistake at the call
-// site, in the same class as a nil layer: it panics at once rather than
-// returning an error. That domain is the one the tenant directory enforces —
-// non-empty, and free of blanks and control characters anywhere in it — so an
-// id failing it can only be a caller that dropped or mangled one, and it names
-// no tenant: the row it would write is one no tenant's read ever reaches, while
-// a read of it falls through to the shared layer and answers with a value the
-// caller never asked for.
+// ForTenant returns the layer of the tenant identified by id. An id outside the
+// tenant identifier's domain is a mistake at the call site and panics at once.
 func ForTenant(id string) Layer {
 	if id == "" || strings.IndexFunc(id, notInAnIdentifier) >= 0 {
 		panic("settings: ForTenant was given an identifier outside the tenant identifier's " +
@@ -102,21 +54,12 @@ func ForTenant(id string) Layer {
 	return layer{tenant: id}
 }
 
-// notInAnIdentifier reports the characters no tenant identifier carries. It is
-// the tenant directory's criterion, restated here: an identifier reaches log
-// lines, diagnostics and error text, where a newline splits one record into
-// two.
+// notInAnIdentifier reports the characters no tenant identifier carries: whitespace
+// and control characters, which would split a log record.
 func notInAnIdentifier(r rune) bool {
 	return unicode.IsSpace(r) || unicode.IsControl(r)
 }
 
-// tenantOf returns the tenant column the layer names: empty for the global
-// layer, the identifier for a tenant's.
-//
-// A nil layer panics here, for the reason Layer gives. The assertion cannot
-// fail — the unexported method leaves this package the only implementer of
-// Layer, and both constructors return a layer — and it is written out anyway
-// because an unchecked assertion panics with no account of what arrived.
 func tenantOf(l Layer) string {
 	if l == nil {
 		panic("settings: a nil Layer names no layer. Name one with Global(), or with " +
@@ -130,13 +73,8 @@ func tenantOf(l Layer) string {
 	return named.tenant
 }
 
-// isGlobal reports whether the layer is the global one, the only layer the
-// fallback below a tenant's does not go through.
 func isGlobal(l Layer) bool { return tenantOf(l) == "" }
 
-// describeLayer names a layer the way a failure message needs it named: the
-// global layer, or the tenant identifier the layer carries. It is the layers'
-// counterpart of describeTarget.
 func describeLayer(l Layer) string {
 	if isGlobal(l) {
 		return "the global layer"
@@ -144,149 +82,46 @@ func describeLayer(l Layer) string {
 	return fmt.Sprintf("tenant %q", tenantOf(l))
 }
 
-// Store is the settings read and write surface. Its capability token is
+// Store is the settings read and write surface; its capability token is
 // (*Store)(nil).
 type Store interface {
-	// Get decodes the value of key into target, under the declared type.
-	//
-	// The value falls back tenant row, global row, declared default, starting
-	// at the layer the selector names: naming the global layer starts the
-	// fallback at the global row, which is also where it ends.
-	//
-	// An undeclared key is ErrUnknownKey. A value already written that does not
-	// decode under the declared type is ErrTypeMismatch, naming the key; one
-	// that decodes and lies outside the item's declared domain is handed out
-	// as it is, since the domain is judged when a value is written. A read
-	// before this module's Init has loaded the snapshot is ErrNotLoaded rather
-	// than the declared default: a module that reads in its own Init declares
-	// Requires (*Store)(nil) so that it is initialised after this one. A
-	// target that is not a non-nil pointer panics, and so does a layer that is
-	// the zero value: both are mistakes at the call site, not facts about the
-	// data.
-	//
-	// It takes no context because it reads the in-memory snapshot and starts no
-	// IO, so there is nothing to cancel.
+	// Get decodes the value of key into target under the declared type, falling back
+	// tenant row, global row, declared default. An undeclared key is ErrUnknownKey, a
+	// bad stored value ErrTypeMismatch, a read before the load ErrNotLoaded; a bad target or layer panics.
 	Get(layer Layer, key string, target any) error
 
-	// WrittenAt reports when key's explicit row in the layer was last written,
-	// and whether that layer holds such a row at all.
-	//
-	// It does not fall back: naming a tenant layer asks about the tenant's row
-	// alone, so a tenant whose value read resolves through the global row still
-	// answers no revision here. The two layers are therefore combined by the
-	// caller, which is what makes each answer a revision of one row rather
-	// than of a resolved value.
-	//
-	// An undeclared key is ErrUnknownKey, and a read before this module's Init
-	// loaded the snapshot is ErrNotLoaded, both as for Get. A row whose value
-	// does not decode still answers its write time: the revision is a fact
-	// about the row, and knowing it needs no decoding.
-	//
-	// It takes no context because it reads the in-memory snapshot and starts
-	// no IO, so there is nothing to cancel.
+	// WrittenAt reports when the key's explicit row in the layer was last written and
+	// whether the layer holds one. It does not fall back; an undeclared key and a
+	// read before the load are refused as for Get, and a layer or target mistake panics.
 	WrittenAt(layer Layer, key string) (time.Time, bool, error)
 
-	// Read answers, from one snapshot, what each named layer holds for a key:
-	// the layer's value decoded into that read's target, and the moment of the
-	// layer's own explicit row.
-	//
-	// The value is the layer's row when it holds one and the declaration's
-	// default when it does not; a layer never falls through to the layer below
-	// here, so the answer for a tenant is the tenant layer's alone. The result
-	// says whether the layer held a row, and carries that row's write time,
-	// which is zero when it held none.
-	//
-	// The layers are answered from a single snapshot rather than one read per
-	// layer, so a caller combining a value with the moment it was written — an
-	// admission decision comparing a session's authentication time with the
-	// write that switched a requirement on — sees one state rather than two
-	// that a reload can separate.
-	//
-	// Every judgement Get and WrittenAt make is made here: an undeclared key is
-	// ErrUnknownKey, a read before this module's Init loaded the snapshot is
-	// ErrNotLoaded, a row that fails to decode is ErrTypeMismatch, and an
-	// illegal target or layer panics. Results come back in the order the reads
-	// were given.
-	//
-	// It takes no context because it reads the in-memory snapshot and starts
-	// no IO, so there is nothing to cancel.
+	// Read answers, from one snapshot, what each named layer holds for a key: the
+	// layer's value decoded into that read target and its own row's write time. Every
+	// judgement Get makes applies; results come back in the order given.
 	Read(key string, reads ...LayerRead) ([]LayerReadResult, error)
 
-	// Set encodes w.Value under the declared type and writes it to the layer
-	// w.Layer names. A successful write publishes a settings.changed event.
-	//
-	// It validates, writes the row, reloads this replica's snapshot and
-	// publishes, in that order. Validating holds the value to the declared
-	// type (ErrTypeMismatch), then to the item's declared domain and to the
-	// size limit (ErrInvalidValue, naming the key and the rule it breaks). A
-	// failure before the row is written returns without touching anything; a
-	// failure to reload or to publish does not roll the write back and does
-	// not change the result.
-	//
-	// ctx bounds the wait for a connection and the statement. Once the row is
-	// written, the reload and the publish run whatever becomes of ctx, since
-	// they are this module's bookkeeping for a row already in the table: a
-	// caller that gives up at that point still leaves its value served here
-	// and announced to the other replicas.
-	//
-	// The write runs on a connection of its own from the delivered pool, never
-	// in a transaction the caller holds, and waits five seconds at most for
-	// that connection. Inside a transaction the caller holds on a database
-	// held to one connection, such as an in-memory SQLite one, the connection
-	// is the caller's, so the write fails there instead of waiting for it.
-	// Elsewhere it stays outside that transaction: rolling the transaction
-	// back does not undo a write that returned nil.
-	//
-	// The result is what happened to the row. An error means it was not
-	// changed, whatever point ctx was cancelled at; nil means the change is
-	// committed and the reload and the publish have run. Either of those
-	// failing after the commit is logged rather than returned, and a failed
-	// reload leaves this replica serving the value from before until its next
-	// one. A connection lost while the change commits is the one outcome only
-	// the database can settle.
+	// Set encodes w.Value under the declared type and writes it to the layer w.Layer
+	// names: validate, write, reload, publish. A failure before the row is written
+	// touches nothing; a reload or publish failure does not roll the write back.
 	Set(ctx context.Context, w Write) error
 
-	// Delete removes the explicit row the selector names. Deleting a row that
-	// is not there is not an error. ctx bounds the wait for a connection and
-	// the statement and nothing after it, the statement runs on a connection
-	// of its own, and the result is what happened to the row, all as for Set.
-	//
-	// Delete is the one operation that does not consult the key table: it is
-	// the cleanup path for rows left behind after a declaration is removed,
-	// and both Get and Set refuse an undeclared key before reaching the table.
+	// Delete removes the explicit row the selector names; a missing row is not an
+	// error. It does not consult the key table, and the result is what happened to
+	// the row, as for Set.
 	Delete(ctx context.Context, layer Layer, key, actor string) error
 
-	// List lists the explicit rows of the layer the selector names. The result
-	// is ordered by the keys' bytes, whatever collation the database orders
-	// text under, so it is the same order on every dialect.
-	//
-	// It hands out the written rows rather than the values reads resolve to:
-	// nothing falls back here. It reads on a connection of its own, waited for
-	// as Set waits for its.
+	// List lists the explicit rows of the named layer in the keys' byte order,
+	// whatever the database collation; nothing falls back.
 	List(ctx context.Context, layer Layer) ([]Entry, error)
 
-	// Declared lists every declared setting item, ordered by the keys' bytes
-	// as List is: its key, the module that declared it, its declared type,
-	// its default and the metadata its declaration gave, the rule of its
-	// domain among it. It is what lets a surface over the settings — an
-	// administrative endpoint, a command that prints them — name every item,
-	// its type, its default and the values it takes without restating another
-	// module's declaration.
-	//
-	// It reads the key table, which is built before Init and never changes,
-	// so it takes no context, starts no IO and answers before the snapshot
-	// is loaded. The result is the caller's own to modify.
-	//
-	// A sensitive item's default is withheld, so nothing in the result is a
-	// value a sensitive item holds and it can reach a client as it is. Get
-	// and List still hand out a sensitive item's value; a surface built on
-	// them masks it by the Sensitive the listing reports.
+	// Declared lists every declared setting item in key order with its module, type,
+	// default and metadata. It reads the key table, so it takes no context and answers
+	// before the load; a sensitive item's default is withheld.
 	Declared() []DeclaredItem
 }
 
-// Get is the generic wrapper over Store.Get, folding the assertion into the
-// function the way core.Resolve does. A type parameter that does not match the
-// declared type is ErrTypeMismatch.
+// Get is the generic wrapper over Store.Get; a type parameter that does not match
+// the declared type is ErrTypeMismatch.
 func Get[T any](s Store, layer Layer, key string) (T, error) {
 	var target T
 	if err := s.Get(layer, key, &target); err != nil {
@@ -295,8 +130,7 @@ func Get[T any](s Store, layer Layer, key string) (T, error) {
 	return target, nil
 }
 
-// WrittenAt is the function form of Store.WrittenAt, beside Get: a call site
-// that reads a value through Get reads the row's revision through this.
+// WrittenAt is the function form of Store.WrittenAt.
 func WrittenAt(s Store, layer Layer, key string) (time.Time, bool, error) {
 	return s.WrittenAt(layer, key)
 }
@@ -336,10 +170,8 @@ type LayerValue[T any] struct {
 	Present bool
 }
 
-// ReadLayers is the generic wrapper over Store.Read: it reads one key's value
-// and explicit row for each named layer from a single snapshot, in the order
-// the layers are given. A layer with no row answers the declaration's default
-// with Present false.
+// ReadLayers is the generic wrapper over Store.Read: one snapshot answers
+// each named layer's value and explicit row, in the order given.
 func ReadLayers[T any](s Store, key string, layers ...Layer) ([]LayerValue[T], error) {
 	targets := make([]T, len(layers))
 	reads := make([]LayerRead, len(layers))
@@ -382,10 +214,14 @@ type Entry struct {
 	// Tenant is the row's tenant column, and it stays a string: it reports the
 	// column as the row holds it, empty for a global row. Naming a layer to a
 	// read or a write is the layer selector's job, not a string's.
-	Tenant    string
-	Key       string
-	Value     string
-	Version   uint64
+	Tenant string
+	// Key is the item's full path.
+	Key string
+	// Value is the text as stored.
+	Value string
+	// Version is the row's write counter.
+	Version uint64
+	// UpdatedAt is when the row was last written.
 	UpdatedAt time.Time
 }
 
@@ -399,11 +235,8 @@ type DeclaredItem struct {
 	// Type is the declared type. A read's target is a pointer to exactly this
 	// type, so reflect.New(Type) is a target Get accepts for the key.
 	Type reflect.Type
-	// Default is the declared default in the declared type's own text form:
-	// the text a row holding it would carry, which Set accepts back and which
-	// List reports for such a row. A duration's default reads "1m0s" and a
-	// time's reads as its MarshalText writes it. It is empty for a sensitive
-	// item, whatever the declaration holds.
+	// Default is the declared default in the declared type's own text form, the
+	// text Set accepts back; empty for a sensitive item.
 	Default string
 	// Item is the metadata the declaration gave. Its Sensitive also says that
 	// Default was withheld, and its Domain's Rule states the values a write
@@ -424,11 +257,9 @@ type Schema struct {
 	// Items carries per-item metadata, keyed by the path relative to the
 	// namespace. An item absent from here takes the defaults.
 	Items map[string]Item
-	// TenantFacing declares that this schema states which of its items a tenant
-	// surface exposes. The zero value is false: a schema belongs to the
-	// platform alone unless it says otherwise, and an item that carries a
-	// tenant access under a schema that does not say so is a declaration
-	// defect.
+	// TenantFacing declares that the schema states which items a tenant surface
+	// exposes; an item with a tenant access under a schema that does not is a
+	// declaration defect.
 	TenantFacing bool
 }
 
@@ -443,20 +274,17 @@ type Mount struct {
 	Value any
 }
 
-// TenantAccess says how much of a setting item a tenant surface exposes. The
-// set is closed, and the zero value is TenantNone: an item belongs to the
-// platform alone unless its declaration says otherwise. A schema must also set
-// Schema.TenantFacing for any item to carry an access other than TenantNone, so
-// a declaration that states a tenant access without the schema-level switch
-// fails the startup instead of exposing the item by accident.
+// TenantAccess says how much of a setting item a tenant surface exposes. It is a
+// closed set and the zero value is TenantNone; the schema must also set
+// TenantFacing.
 type TenantAccess string
 
 const (
 	// TenantNone keeps the item on the platform surface alone. It is the zero
 	// value.
 	TenantNone TenantAccess = ""
-	// TenantRead exposes the item to a tenant for reading. The platform alone
-	// writes it. The value is part of the closed set; no item declares it yet.
+	// TenantRead exposes the item to a tenant for reading; the platform alone writes
+	// it.
 	TenantRead TenantAccess = "read"
 	// TenantReadWrite exposes the item to a tenant for reading and writing.
 	TenantReadWrite TenantAccess = "read-write"
@@ -533,49 +361,22 @@ type Item struct {
 	Domain Domain
 }
 
-// Domain is the value domain a declaring module gives one of its items: a
-// predicate over values of the declared type, and the rule the predicate
-// states, in words.
-//
-// It is judged when a value is written and nowhere else. Set holds the value
-// to the declared type first, then to the domain, and refuses a value outside
-// it with ErrInvalidValue naming the key and the rule, before anything is
-// written. A read hands out what a row holds, whether or not that lies in the
-// domain: a row stored before the domain was declared, or written around this
-// module, is served as it is, so a consumer that cannot act on a value outside
-// the domain still judges what it reads.
-//
-// The declaration is held to its domain when the key table is built: a domain
-// over a type other than the item's declared type, one with no rule or no
-// predicate, and a declared default the domain does not admit are all
-// declaration defects, ErrInvalidDeclaration. The last is one because a
-// default is a value a write has to be able to store back.
-//
-// The zero value is the domain of every value. A Domain is comparable, and so
-// is an Item carrying one: two Domains are equal when they are the zero value
-// or come from the same call to DomainOf.
+// Domain is the value domain a declaring module gives one of its items: a predicate
+// over values of the declared type and the rule it states. It is judged at a write
+// and at key-table build, never at a read; the zero value admits every value.
 type Domain struct {
 	judge *domainJudge
 }
 
-// domainJudge is what DomainOf records: the type its predicate takes, the
-// predicate over a value of that type, and the rule the refusal names.
 type domainJudge struct {
 	typ    reflect.Type
 	admits func(value any) bool
 	rule   string
 }
 
-// DomainOf builds the domain of an item declared as T: the values admits
-// reports true for. rule states that set in words, as a noun phrase the
-// refusal of a value outside it names — "the positive integers", "the
-// durations from one second to one hour" — and Declared reports.
-//
-// admits receives a value of exactly the declared type, after the write has
-// been held to it, and is called on the writer's goroutine, on several at once
-// when writes run concurrently: it is to be a function of its argument alone,
-// since the same value is judged the same way on every replica. It is called
-// once more, on the declared default, when the key table is built.
+// DomainOf builds the domain of an item declared as T. admits receives a value of
+// exactly T on the writer goroutine, possibly concurrently, so it must be a
+// function of its argument alone.
 func DomainOf[T any](rule string, admits func(value T) bool) Domain {
 	judge := &domainJudge{typ: reflect.TypeFor[T](), rule: rule}
 	if admits != nil {
@@ -587,8 +388,7 @@ func DomainOf[T any](rule string, admits func(value T) bool) Domain {
 	return Domain{judge: judge}
 }
 
-// Rule is the domain's rule, as DomainOf was given it. It is empty for the
-// zero Domain, which admits every value of the declared type.
+// Rule is the domain's rule, empty for the zero Domain.
 func (d Domain) Rule() string {
 	if d.judge == nil {
 		return ""
@@ -596,15 +396,8 @@ func (d Domain) Rule() string {
 	return d.judge.rule
 }
 
-// Change is the payload of a change event. The tenant the change applies to
-// travels on the event envelope's TenantID, empty for the global row, so the
-// payload does not repeat it.
-//
-// Old and New are the explicit values of the layer the write acted on, not the
-// values reads fall back to. For a Set, Old comes from the snapshot of the
-// replica that initiated the write, which may trail the database. For a
-// delete it is the text the removed row held, read back by the statement that
-// removed it; a delete that removed no row publishes no change at all.
+// Change is the payload of a change event. Old and New are the explicit values of
+// the layer the write acted on, not the values reads fall back to.
 type Change struct {
 	// Key is the full path of the setting item.
 	Key string

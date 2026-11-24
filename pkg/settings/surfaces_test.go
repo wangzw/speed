@@ -1,13 +1,5 @@
 package settings_test
 
-// This file drives both management surfaces over one real registration: the
-// settings module builds its key table from Schema resources registered by
-// modules, exactly as a host's assembly does, and the platform and tenant
-// routes are mounted from their own descriptors. The case exists because a
-// schema that says nothing about TenantFacing must stay on the platform
-// surface alone: it has to be visible and writable there, and absent from the
-// tenant listing and from every tenant write path.
-
 import (
 	"bytes"
 	"context"
@@ -39,26 +31,18 @@ import (
 	"github.com/vislake/speed/pkg/settings/tenantadmin"
 )
 
-// endpointName is the one endpoint both management modules mount on.
 const endpointName = "surface"
 
-// platformDefaults is a declaration whose schema never states TenantFacing:
-// the zero value keeps every item on the platform surface.
 type platformDefaults struct {
 	Token string
 }
 
-// tenantDefaults is the control case: a tenant-facing schema with one
-// read-write switch, so the tenant listing has something to show and the case
-// can tell an empty answer from a filtered one.
 type tenantDefaults struct {
 	Enabled bool
 }
 
 const tenantItemKey = "test.tenant.enabled"
 
-// platformDeclarer registers the platform-only schema through the real
-// resource path.
 func platformDeclarer() core.Module {
 	defaults := platformDefaults{Token: "seed"}
 	return core.Module{
@@ -70,7 +54,6 @@ func platformDeclarer() core.Module {
 	}
 }
 
-// tenantDeclarer registers the tenant-facing control schema.
 func tenantDeclarer() core.Module {
 	defaults := tenantDefaults{}
 	return core.Module{
@@ -92,10 +75,8 @@ func tenantDeclarer() core.Module {
 	}
 }
 
-// TestASchemaWithoutTenantFacingStaysOffTheTenantSurface registers a schema
-// that never states TenantFacing beside a tenant-facing control, then drives
-// both real surfaces: the platform listing and write reach the key, and the
-// tenant listing, namespace path and write routes do not.
+// TestASchemaWithoutTenantFacingStaysOffTheTenantSurface checks that a schema saying nothing about
+// TenantFacing is visible and writable on the platform surface, not the tenant one.
 func TestASchemaWithoutTenantFacingStaysOffTheTenantSurface(t *testing.T) {
 	const body = `{
 		"settings": {
@@ -164,7 +145,6 @@ func TestASchemaWithoutTenantFacingStaysOffTheTenantSurface(t *testing.T) {
 				return w
 			}
 
-			// The platform surface sees the key in the listing and can write it.
 			w := do(http.MethodGet, "/api/v1/system/settings?layer=global", nil)
 			if w.Code != http.StatusOK {
 				t.Fatalf("the platform listing ended with %d: %s", w.Code, w.Body.String())
@@ -183,8 +163,6 @@ func TestASchemaWithoutTenantFacingStaysOffTheTenantSurface(t *testing.T) {
 					w.Code, w.Body.String())
 			}
 
-			// The tenant listing shows the control item and never the platform
-			// key, and no tenant route answers for that key.
 			w = do(http.MethodGet, "/api/v1/tenants/acme/settings", nil)
 			if w.Code != http.StatusOK {
 				t.Fatalf("the tenant listing ended with %d: %s", w.Code, w.Body.String())
@@ -210,8 +188,6 @@ func TestASchemaWithoutTenantFacingStaysOffTheTenantSurface(t *testing.T) {
 				}
 			}
 
-			// Nothing was written on the tenant layer: the platform write landed
-			// globally and the tenant routes never reached the store.
 			rows, err := store.List(ctx, settings.ForTenant("acme"))
 			if err != nil {
 				t.Fatalf("listing the tenant layer: %v", err)
@@ -229,8 +205,6 @@ func TestASchemaWithoutTenantFacingStaysOffTheTenantSurface(t *testing.T) {
 	}
 }
 
-// applySettingsMigration creates the settings table from the module's own
-// embedded migration, so the store runs over the table it ships.
 func applySettingsMigration(t *testing.T, database db.Database) {
 	t.Helper()
 	for _, res := range settings.Module().Resources {
@@ -255,8 +229,6 @@ func applySettingsMigration(t *testing.T, database db.Database) {
 	t.Fatal("the settings module declares no migration")
 }
 
-// standIn is a module that delivers instance for the token named, the way
-// another module delivers its capability exclusively.
 func standIn(name string, instance any, token any) core.Module {
 	return core.Module{
 		Name:     name,
@@ -265,13 +237,11 @@ func standIn(name string, instance any, token any) core.Module {
 	}
 }
 
-// busStub accepts publishes and subscriptions without delivering anything.
 type busStub struct{}
 
 func (busStub) Publish(context.Context, event.Event) error { return nil }
 func (busStub) Subscribe(string, string, event.Handler)    {}
 
-// allowGuard grants every permission.
 type allowGuard struct{}
 
 func (allowGuard) Allowed(*gin.Context, authz.Permission) (bool, error)  { return true, nil }
@@ -280,12 +250,10 @@ func (allowGuard) RequirePermissionIn(*gin.Context, authz.Permission, authz.Doma
 	return true
 }
 
-// discardAudit accepts every entry.
 type discardAudit struct{}
 
 func (discardAudit) Record(context.Context, audit.Entry) error { return nil }
 
-// signupStub reports no self-registration for every account.
 type signupStub struct{}
 
 func (signupStub) SignupStateOf(context.Context, authn.AccountID) (authn.SignupStatus, error) {
@@ -296,18 +264,14 @@ func (signupStub) PendingAccountByContact(context.Context, string, string) (stri
 	return "", false, nil
 }
 
-// writeSettingsStub admits every tenant.
 type writeSettingsStub struct{}
 
 func (writeSettingsStub) Denied(context.Context, string) (bool, error) { return false, nil }
 
-// routeGuardStub passes every request through; the path-tenant rule is the
-// tenant capability's own case.
 type routeGuardStub struct{}
 
 func (routeGuardStub) GuardTenantAdmin(next gin.HandlerFunc) gin.HandlerFunc { return next }
 
-// discardLogger swallows the modules' own records.
 type discardLogger struct{}
 
 func (discardLogger) Named(string) *slog.Logger { return slog.New(slog.DiscardHandler) }
@@ -318,8 +282,6 @@ type noRedaction struct{}
 func (noRedaction) AddKeys(...string)              {}
 func (noRedaction) AddPattern(string, log.Matcher) {}
 
-// surfaceEndpoint mounts the routes it is handed on a real gin engine, so the
-// case reaches both modules over their real routing.
 type surfaceEndpoint struct {
 	engine *gin.Engine
 }
@@ -331,7 +293,6 @@ func (e *surfaceEndpoint) Route(method, path string, handlers ...gin.HandlerFunc
 func (e *surfaceEndpoint) Use(speedhttp.Middleware) {}
 func (e *surfaceEndpoint) Accepting() bool          { return true }
 
-// surfaceRouter declares the one endpoint.
 type surfaceRouter struct {
 	name string
 	ep   *surfaceEndpoint

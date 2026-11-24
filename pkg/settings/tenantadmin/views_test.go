@@ -9,8 +9,7 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// A switch's effective value is the platform policy OR the tenant policy, and
-// the platform policy is what locks it.
+// TestEffectiveValueIsTheBooleanOr checks the OR and that the platform policy locks the item.
 func TestEffectiveValueIsTheBooleanOr(t *testing.T) {
 	item := decl(mfaKey, "tenant.admission", reflect.TypeFor[bool](), "false", admissionItem())
 	cases := []struct {
@@ -38,8 +37,7 @@ func TestEffectiveValueIsTheBooleanOr(t *testing.T) {
 	}
 }
 
-// The tenant surface renders switches; another declared type is a declaration it
-// cannot resolve, reported rather than rendered as a boolean.
+// TestEffectiveValueRefusesANonBooleanItem checks that another declared type is reported, not rendered as a boolean.
 func TestEffectiveValueRefusesANonBooleanItem(t *testing.T) {
 	item := decl("app.mode", "app", reflect.TypeFor[string](), "auto", settings.Item{})
 	if _, _, err := effectiveValue(item, "auto", "manual"); err == nil {
@@ -47,8 +45,7 @@ func TestEffectiveValueRefusesANonBooleanItem(t *testing.T) {
 	}
 }
 
-// A stored text that is not a boolean is a corrupt value, reported rather than
-// read as false.
+// TestEffectiveValueRefusesAnUndecodableRow checks that a non-boolean stored text is reported, not read as false.
 func TestEffectiveValueRefusesAnUndecodableRow(t *testing.T) {
 	item := decl(mfaKey, "tenant.admission", reflect.TypeFor[bool](), "false", admissionItem())
 	if _, _, err := effectiveValue(item, "maybe", "false"); err == nil {
@@ -59,8 +56,7 @@ func TestEffectiveValueRefusesAnUndecodableRow(t *testing.T) {
 	}
 }
 
-// The view carries the declaration's control metadata, the two layers' values,
-// the effective value, the row existence and the source.
+// TestViewOfBuildsAnItem checks that the view carries the metadata, the layer values, the effective value, row existence and source.
 func TestViewOfBuildsAnItem(t *testing.T) {
 	p := &product{}
 	item := decl(mfaKey, "tenant.admission", reflect.TypeFor[bool](), "false", admissionItem())
@@ -88,9 +84,8 @@ func TestViewOfBuildsAnItem(t *testing.T) {
 	}
 }
 
-// A sensitive item's three value fields carry the mask; its row existence and
-// its source still answer, because they say which layer is configured and not
-// what the value is.
+// TestViewOfMasksASensitiveItem checks that a sensitive item's three value
+// fields carry the mask while existence and source still answer.
 func TestViewOfMasksASensitiveItem(t *testing.T) {
 	p := &product{}
 	item := decl("app.secret", "app", reflect.TypeFor[string](), "", settings.Item{
@@ -101,8 +96,6 @@ func TestViewOfMasksASensitiveItem(t *testing.T) {
 		TenantAccess:   settings.TenantReadWrite,
 		Sensitive:      true,
 	})
-	// The value is a string, which effectiveValue refuses; the case is about the
-	// masking, so it uses a boolean item instead.
 	item.Type = reflect.TypeFor[bool]()
 	item.Default = "false"
 	v, err := p.viewOf(context.Background(), item, "true", true, "false", false)
@@ -120,8 +113,7 @@ func TestViewOfMasksASensitiveItem(t *testing.T) {
 	}
 }
 
-// With no localizer the declared English text is the answer for both title and
-// description.
+// TestTextFallsBackToTheDeclaredEnglish checks that without a localizer the declared English text is the answer.
 func TestTextFallsBackToTheDeclaredEnglish(t *testing.T) {
 	p := &product{}
 	if got := p.text(context.Background(), "any.key", "the declared text"); got != "the declared text" {
@@ -129,8 +121,7 @@ func TestTextFallsBackToTheDeclaredEnglish(t *testing.T) {
 	}
 }
 
-// With a localizer the title and description render from the declaration's keys
-// in the request's language.
+// TestViewOfRendersTheRequestLanguage checks that a localizer renders the title and description in the request's language.
 func TestViewOfRendersTheRequestLanguage(t *testing.T) {
 	p := &product{localizer: localizerStub{
 		"tenant.admission.require-mfa.title":       "要求多因素认证",
@@ -149,8 +140,6 @@ func TestViewOfRendersTheRequestLanguage(t *testing.T) {
 	}
 }
 
-// localizerStub renders the keys it carries and writes every other key back as
-// itself, the way the engine's localizer reports a miss.
 type localizerStub map[string]string
 
 func (l localizerStub) Localize(_ context.Context, key i18n.Key, _ i18n.Args) string {

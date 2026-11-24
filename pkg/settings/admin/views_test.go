@@ -8,10 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// A resolved value is written in the declared type's own text form, the form the
-// settings module stores a row in, so a view's value reads the same way its
-// written and default do: a duration reads "5m0s" rather than a count of
-// nanoseconds, a float its shortest round-tripping text.
+// TestRenderValueWritesTheDeclaredTypesOwnTextForm checks that a resolved value is written in the declared type's own text form.
 func TestRenderValueWritesTheDeclaredTypesOwnTextForm(t *testing.T) {
 	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	cases := []struct {
@@ -42,7 +39,7 @@ func TestRenderValueWritesTheDeclaredTypesOwnTextForm(t *testing.T) {
 	}
 }
 
-// A value the declared type cannot hold is a failure, not a silent empty string.
+// TestRenderValueRefusesAValueOfTheWrongType checks that a wrong value is a failure, not an empty string.
 func TestRenderValueRefusesAValueOfTheWrongType(t *testing.T) {
 	if _, err := renderValue(reflect.TypeFor[time.Duration](), "5m"); err == nil {
 		t.Error("rendering a string as a duration returned nil, want a failure")
@@ -52,8 +49,7 @@ func TestRenderValueRefusesAValueOfTheWrongType(t *testing.T) {
 	}
 }
 
-// The view of an ordinary item carries the declaration's metadata and the two
-// texts it was built from.
+// TestViewOfBuildsAnOrdinaryItem checks that an ordinary view carries the metadata and the two texts.
 func TestViewOfBuildsAnOrdinaryItem(t *testing.T) {
 	item := settings.DeclaredItem{
 		Key:     "app.mode",
@@ -77,8 +73,7 @@ func TestViewOfBuildsAnOrdinaryItem(t *testing.T) {
 	}
 }
 
-// A row whose text is empty is still a row: has_row carries its existence so a
-// client does not read the empty text as the declared default.
+// TestViewOfReportsAnEmptyTextRowAsPresent checks that has_row reports an empty-text row as present.
 func TestViewOfReportsAnEmptyTextRowAsPresent(t *testing.T) {
 	item := settings.DeclaredItem{
 		Key:     "authn.sms.allowed-prefixes",
@@ -95,7 +90,7 @@ func TestViewOfReportsAnEmptyTextRowAsPresent(t *testing.T) {
 	}
 }
 
-// A missing row is reported as such even though its text is empty too.
+// TestViewOfReportsAMissingRow checks that a missing row is reported absent.
 func TestViewOfReportsAMissingRow(t *testing.T) {
 	item := settings.DeclaredItem{
 		Key:     "authn.sms.allowed-prefixes",
@@ -112,8 +107,7 @@ func TestViewOfReportsAMissingRow(t *testing.T) {
 	}
 }
 
-// A sensitive item's view carries no value: the default is empty and both the
-// written and the resolved text are the mask.
+// TestViewOfMasksASensitiveItem checks that a sensitive view's default is empty and both texts are the mask.
 func TestViewOfMasksASensitiveItem(t *testing.T) {
 	item := settings.DeclaredItem{
 		Key:     "authn.sms.secret",
@@ -137,8 +131,7 @@ func TestViewOfMasksASensitiveItem(t *testing.T) {
 	}
 }
 
-// A type that carries its own text form is classified as one; the scalar kinds
-// are not.
+// TestDecodesFromText checks that a text-carrying type is classified as one and the scalar kinds are not.
 func TestDecodesFromText(t *testing.T) {
 	if !decodesFromText(reflect.TypeFor[time.Time]()) {
 		t.Error("time.Time is not classified as carrying its own text form")
