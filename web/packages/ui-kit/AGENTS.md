@@ -122,7 +122,10 @@ plumbing and deliberately not exported.
   `rows` state, interactions report up through its callbacks, and the
   upload transport is host code — never package code.
 - **`useWriteFeedback` and `usePageRefresh` are the exported hooks that
-  hold state, and their state belongs to the calling host component.**
+  hold host-facing state, and their state belongs to the calling host
+  component.** `useInertSelectMenu` holds only the select's
+  interaction-local open state, the same allowed exception as the
+  confirm's arming; it is not host state.
   Every component above stays controlled; `useAppThemeMode`,
   `useDisplayTimeZone` and `usePhoneCountryDefault` read provider
   context and hold no state of their own (the mode hook also exposes the
@@ -334,6 +337,29 @@ plumbing and deliberately not exported.
   framework-adjacent packages need the single-copy argument stated in
   the same commit. `@speed/tokens` and `@speed/i18n` are regular
   dependencies; a new @speed consumer joins them.
+- **A modal overlay marks its background inert through the shared hook.**
+  Every `Dialog`, temporary `Drawer`, `Menu`, `Popover` or `Modal` this
+  package renders calls `useInertBackground` with its modal root ref, and
+  every `Select` or TextField select uses `useInertSelectMenu` so the hook
+  owns the menu's open state. The hook adds `inert` in the opening commit's
+  layout phase and lifts it in the closing commit's layout cleanup -- before
+  MUI's focus trap restores focus, because a focus call on an inert target
+  fails silently. Never mirror MUI's `aria-hidden` timing (it outlives the
+  exit transition) and never move the cleanup to `useEffect`. Holds are
+  counted per element; a host-set `inert` is left alone. `ConfirmDialog`
+  and `SidePanel` already follow this rule; a new overlay component must
+  too. The public hooks are `src/inert-background.ts`.
+  **The hook owns focus restore too.** It records the focused element at the
+  opening commit (skipping a node inside an overlay that is closing in the
+  same commit, which is about to leave the document) and focuses that
+  record on close when it is still connected; with no record or a detached
+  one it stays out and leaves focus to MUI's trap or the host. A
+  non-`keepMounted` portal mounts a commit after it opens: the hook decides
+  the background at once unless another overlay is still exiting in that
+  commit, in which case it waits for the root in bounded timer steps so the
+  exiting overlay can restore focus into the page. `useInertSelectMenu` clears its open
+  state when its menu root leaves the document without `onClose`, so a
+  select that unmounts while open still releases the background.
 - **Accessibility is asserted, with recorded exceptions.** Component
   tests run axe through `test-utils/axe.ts`; `color-contrast` and
   `region` are disabled with the rationale recorded there (jsdom cannot

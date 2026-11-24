@@ -364,6 +364,19 @@ describe('SidePanel', () => {
     await waitFor(() => expect(opener).toHaveFocus())
   })
 
+  it('marks the page behind the panel inert while open and lifts it on close', async () => {
+    const user = userEvent.setup()
+    const { container, getByRole } = renderWithProviders(<FocusHarness />)
+    expect(container).not.toHaveAttribute('inert')
+
+    await user.click(getByRole('button', { name: 'Open panel' }))
+    await waitFor(() => expect(container).toHaveAttribute('inert'))
+    expect(document.querySelector('.MuiModal-root')).not.toHaveAttribute('inert')
+
+    await user.click(getByRole('button', { name: zhCN.sidePanel.closeLabel }))
+    await waitFor(() => expect(container).not.toHaveAttribute('inert'))
+  })
+
   it('passes axe over an open panel', async () => {
     setup({ description: DESCRIPTION })
     await expectNoAxeViolations()

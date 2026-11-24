@@ -4,18 +4,20 @@
  * inert. It stacks at `theme.zIndex.modal` so the AppBar does not cover it.
  */
 
-import { forwardRef, useId } from 'react'
+import { forwardRef, useId, useRef } from 'react'
 import type { ReactNode, Ref } from 'react'
 import Box from '@mui/material/Box'
 import Drawer from '@mui/material/Drawer'
 import IconButton from '@mui/material/IconButton'
 import Typography from '@mui/material/Typography'
 import { useTheme } from '@mui/material/styles'
+import { useForkRef } from '@mui/material/utils'
 import { CloseIcon } from '../internal/icons.js'
 import { useUiKitTranslation } from '../internal/translation.js'
 import { layerSx } from '../internal/root-style-props.js'
 import type { RootStyleProps } from '../internal/root-style-props.js'
 import { useActivationGuard } from '../activation-guard.js'
+import { useInertBackground } from '../inert-background.js'
 import { ActionRow } from './ActionRow.js'
 
 /** The panel's width tier: 36rem (medium) or 52rem (wide) from `sm` up. */
@@ -71,6 +73,9 @@ function SidePanelInner(
   const titleId = useId()
   const descriptionId = useId()
   const hasDescription = description !== undefined && description !== null
+  const rootRef = useRef<HTMLDivElement>(null)
+  const drawerRef = useForkRef(ref, rootRef)
+  useInertBackground(open, rootRef)
 
   const requestClose = () => {
     if (busy) {
@@ -83,7 +88,7 @@ function SidePanelInner(
 
   return (
     <Drawer
-      ref={ref}
+      ref={drawerRef}
       className={className}
       open={open}
       onClose={requestClose}

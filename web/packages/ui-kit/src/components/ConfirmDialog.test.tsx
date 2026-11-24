@@ -1,6 +1,6 @@
 
 import { createRef, useState } from 'react'
-import { act, fireEvent, screen } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { restoreRealTimers } from '@speed/test-utils/timers'
@@ -34,6 +34,22 @@ function BatchDeleteHarness({ onItemBConfirmed }: { onItemBConfirmed: () => void
       onConfirm={handleConfirmed}
       onCancel={() => {}}
     />
+  )
+}
+
+function OpenFromPage() {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>
+        Open dialog
+      </button>
+      <ConfirmDialog
+        open={open}
+        onConfirm={() => undefined}
+        onCancel={() => setOpen(false)}
+      />
+    </>
   )
 }
 
@@ -456,6 +472,19 @@ describe('ConfirmDialog', () => {
     const dialog = getByRole('dialog')
     expect(dialog).toHaveAttribute('aria-labelledby')
     expect(dialog).toHaveAttribute('aria-describedby')
+  })
+
+  it('marks the page behind the dialog inert while open and lifts it on close', async () => {
+    const user = userEvent.setup()
+    const { container, getByRole } = renderWithProviders(<OpenFromPage />)
+    expect(container).not.toHaveAttribute('inert')
+
+    await user.click(getByRole('button', { name: 'Open dialog' }))
+    await waitFor(() => expect(container).toHaveAttribute('inert'))
+    expect(document.querySelector('.MuiModal-root')).not.toHaveAttribute('inert')
+
+    await user.click(getByRole('button', { name: zhCN.confirmDialog.cancelLabel }))
+    await waitFor(() => expect(container).not.toHaveAttribute('inert'))
   })
 
   it('passes axe over an open dialog', async () => {

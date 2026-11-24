@@ -15,8 +15,8 @@ cross-surface state primitives ship beside the components: the
 whole-attempt failure banner and its classifier
 (`InlineError` / `errorCodeOf`), its success twin (`InlineSuccess`, the
 mount-empty-then-fill `role="status"` notice), the write-feedback scope
-(`useWriteFeedback`, the one exported hook that holds state, paired with
-`WriteFeedbackRegion`, which renders that slot, and the optional
+(`useWriteFeedback`, the exported hook that holds host-facing state,
+paired with `WriteFeedbackRegion`, which renders that slot, and the optional
 `WriteFeedbackPageProvider` that coordinates a page's scopes into one
 visible result), the
 pending/error/empty/content branches of an async read (`ListSkeleton`,
@@ -49,6 +49,7 @@ reads no bundle of its own.
 | `components/PageHeader.tsx` | `PageHeader`, `PageHeaderProps`, `PageHeaderBreadcrumb` |
 | `components/ActionRow.tsx` | `ActionRow`, `ActionRowProps`, `ActionRowSize`, `ActionButton`, `ActionButtonProps`, `ActionButtonUnavailableExplanation`, `ActionEmphasis`, `ActionTone` |
 | `activation-guard.ts` | `useActivationGuard`, `ActivationGuardState` |
+| `inert-background.ts` | `useInertBackground`, `useInertSelectMenu`, `InertSelectMenuProps` |
 | `components/EmptyState.tsx` | `EmptyState`, `EmptyStateProps`, `EmptyStateVariant`, `EmptyStateHeadingLevel`, `EmptyStateNoHeading` |
 | `components/ConfirmDialog.tsx` | `ConfirmDialog`, `ConfirmDialogProps`, `ConfirmDialogVariant`, `CONFIRM_ARM_LOCKOUT_MS` |
 | `components/SidePanel.tsx` | `SidePanel`, `SidePanelProps`, `SidePanelSize` |
@@ -454,10 +455,83 @@ host-owned `rows` props, and every pick, cancel, retry and remove
 reports up through a callback -- an upload in flight is host state,
 running in the host's own transport code, and the component never holds
 a File past the event handler that received it. The one
-interaction-local detail anywhere in the family is ConfirmDialog's
+interaction-local details anywhere in the family are ConfirmDialog's
 double-confirm arming (interaction state that resets whenever the
-dialog closes); nothing else is local, and no component fetches or
-keeps business state.
+dialog closes) and `useInertSelectMenu`'s open state, which a `Select`
+must be controlled by for the background hook to follow its menu;
+nothing else is local, and no component fetches or keeps business
+state.
+
+### Modal overlay backgrounds (useInertBackground + useInertSelectMenu)
+
+MUI hides the page behind an open `Dialog`, `Drawer`, `Menu` or `Select`
+from assistive technology with `aria-hidden`, but leaves it in the tab
+order. `useInertBackground(open, overlayRef)` closes that gap: in the
+layout phase of the commit that opens the overlay it marks every
+background sibling of the overlay's path to `body` `inert`, and in the
+layout cleanup of the closing commit it lifts the attribute -- before
+MUI's focus trap restores focus, so the opener is reachable again when it
+does. Holds are counted per element: stacked overlays release only their
+own share, and a host-set `inert` is neither recorded nor removed. Nodes
+inserted into `body` while the overlay is open are not marked, matching
+MUI's `aria-hidden` behaviour; a host that adds a portal mid-overlay owns
+its own hiding.
+
+**Handing focus back is the hook's contract, not only MUI's.** At the
+opening commit it records the focused element as the restore target -- the
+element the host will want focused again when the overlay closes -- unless
+that element is inside an overlay that is itself closing, in which case it
+is about to leave the document. On close it focuses the record if the
+element is still connected; with no record, or a record that has left the
+document, it does nothing and focus follows MUI's trap or the host. This is
+what makes a non-`keepMounted` `Dialog` or `Drawer` return focus under
+StrictMode, whose simulated unmount discards MUI's own record. A select
+wired through `useInertSelectMenu` also gets a clean close here: when its
+menu root leaves the document without `onClose` (the select unmounted while
+open), the hook clears its open state and releases the background.
+
+`overlayRef` points at the overlay's modal root -- the `ref` a `Dialog`,
+`Drawer` or `Menu` forwards -- so the overlay's own subtree and its
+ancestors are never marked. A non-`keepMounted` portal mounts a commit
+after it opens. When nothing else is closing in that commit, the hook
+decides the background at once (with no root yet, every child of `body`
+counts); when another overlay is still exiting, it waits for this portal
+in bounded timer steps and scopes the background to that root, so the
+exiting overlay can finish restoring focus into the page. A `keepMounted`
+overlay's portal is already in the document, so it never takes that wait
+path and its background is decided in the opening commit. The wait path
+runs on zero-delay timers, so a jsdom test that installs fake timers must
+advance them before the background appears. `ConfirmDialog` and `SidePanel` call the hook
+themselves; any other component that renders a MUI modal directly calls it
+too. The hook never reads or writes `aria-hidden`; MUI keeps managing that
+attribute on its own schedule.
+
+A `Select` keeps its menu open state internally, so it needs
+`useInertSelectMenu()`, which owns that state and returns the four props
+the select needs; `MenuProps.ref` reaches the menu's modal root:
+
+```tsx
+function ChoiceSelect() {
+  const menu = useInertSelectMenu()
+  return (
+    <TextField
+      select
+      label="Choice"
+      value={value}
+      onChange={onChange}
+      slotProps={{ select: menu }}
+    >
+      <MenuItem value="a">Alpha</MenuItem>
+      <MenuItem value="b">Beta</MenuItem>
+    </TextField>
+  )
+}
+```
+
+A hook cannot run inside a loop, so a row of selects is one small
+component per select. `MenuProps.ref` is a callback ref that stores the
+menu's modal root in the hook's own `RefObject`; a caller that already
+passes `MenuProps` composes that callback with its own.
 
 ### PageLayout
 
