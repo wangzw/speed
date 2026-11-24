@@ -1,13 +1,3 @@
-/**
- * TenantMenuItems behaviour: the rows render every tenant, the current one is
- * disabled, marked `aria-current` and never re-triggers a selection; picking
- * another row dismisses the host's menu first and reports the id once. A
- * throwing onSelect is contained -- the rows render no error and nothing
- * escapes as an unhandled rejection. TenantSwitchAnnouncement mounts one
- * `role="status"` region from the first render and fills it with the
- * switched-to tenant; it stays clipped in its default form.
- */
-
 import type { ComponentProps } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
@@ -29,8 +19,6 @@ function renderRows(
   const onSelect = vi.fn()
   const onDismiss = vi.fn()
   renderWithProviders(
-    // The rows are always mounted inside a menu in production; MenuList is
-    // the minimal container that gives their MenuItems their menu context.
     <MenuList>
       <TenantMenuItems
         tenants={TENANTS}
@@ -73,8 +61,6 @@ describe('TenantMenuItems', () => {
 
   it('never report a pick from the current-tenant row', () => {
     const { onSelect, onDismiss } = renderRows()
-    // A disabled row takes no pointer input; a synthetic or assistive click
-    // still has to be refused by the row's own guard.
     fireEvent.click(screen.getByRole('menuitem', { name: 'Sunshine Dental' }))
     expect(onSelect).not.toHaveBeenCalled()
     expect(onDismiss).not.toHaveBeenCalled()
