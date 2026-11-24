@@ -385,17 +385,24 @@ python-version:
 # test-utils is left out because its build is its typecheck, which the static
 # phase already runs.
 #
-# The unit-test leg is also serial at the package level, but for the budget
-# rather than correctness: each package's `test` script starts its own vitest
+# The unit-test leg is serial at the package level, but for the budget rather
+# than correctness: each package's `test` script starts its own vitest
 # process, and pnpm -r's --workspace-concurrency and that process's
 # --maxWorkers multiply. Running the packages one at a time with
 # --workspace-concurrency=1 lets each vitest process take the whole GATE_JOBS
-# budget, so the product stays GATE_JOBS instead of GATE_JOBS squared. The lint
-# and typecheck legs start one process per package and carry no second width,
-# so they keep GATE_JOBS. Neither emits a file (every package extends
-# noEmit), so they also pass --no-sort: no ordering dependency exists to
-# respect. The a11y sweep and the browser tier each start a single vitest
-# process, so their --maxWorkers is already the budget.
+# budget, so the product stays GATE_JOBS instead of GATE_JOBS squared. The
+# install does not nest a second width: the workspace shares one lockfile, so
+# --workspace-concurrency does not apply to it; --child-concurrency=$(GATE_JOBS)
+# caps the single installation's child processes, and both flags only write
+# the width out explicitly. The lint leg nests the other way round: pnpm -r
+# starts GATE_JOBS packages at once, and each ESLint process is given
+# --concurrency=off so it lints on one thread rather than probing the host's
+# core count. The typecheck leg starts one process per package and carries no
+# second width, so it keeps GATE_JOBS.
+# The lint and typecheck legs emit no file (every package extends noEmit), so
+# they also pass --no-sort: no ordering dependency exists to respect. The a11y
+# sweep and the browser tier each start a single vitest process, so their
+# --maxWorkers is already the budget.
 #
 # The frontend gate is three phases, so `check` can run each at the point its
 # cost belongs: the static phase rejects most changes in a fraction of a run,
@@ -409,8 +416,8 @@ web-check: ## Run the frontend checks (pnpm install + lint, typecheck, rule test
 	@$(MAKE) web-check-build
 
 web-check-static: ## Install the frontend dependencies and run its static checks
-	@pnpm -C web install --frozen-lockfile
-	@pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) --no-sort lint
+	@pnpm -C web install --frozen-lockfile --workspace-concurrency=1 --child-concurrency=$(GATE_JOBS)
+	@pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) --no-sort lint --concurrency=off
 	@pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) --no-sort typecheck
 	@pnpm -C web exec vitest run --maxWorkers=$(GATE_JOBS) eslint-rules/ scripts/
 

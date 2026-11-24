@@ -97,6 +97,15 @@ pull-request run or a run on another branch, to granting `actions: read` to
 step carrying no `continue-on-error` and only the tip guard that lets it run,
 and to installing go alone through the setup action's `tools` input.
 
+`test_gate_width_workflows.py` is likewise no script's suite: it reads
+`.github/` and holds the frontend installs that run outside the `Makefile` to
+the gate's width. The check workflow's test job and the setup action install
+the workspace's shared lockfile in one pass, with `--child-concurrency` taken
+from `GATE_JOBS` (and `--workspace-concurrency`, which the install ignores on
+a shared lockfile, written alongside it to make the width explicit); the
+setup action fails when the calling workflow omits it, and the scheduled
+workflows that call it declare it at workflow level.
+
 `test_demo_redeploy_script.py` is likewise no script's suite: it holds
 `starters/demo/deploy/redeploy.sh` to a three-valued health verdict. It keeps
 the data when the machine checks pass (healthy), wakes a machine that

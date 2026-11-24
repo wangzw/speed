@@ -9,6 +9,9 @@
 #
 # The playwright input adds what a job needs on top of the toolchain, and is off
 # by default: a job that runs only Go and repository checks installs none of it.
+# That install takes the gate's width from GATE_JOBS, which the calling workflow
+# declares; a caller that omits it fails here rather than letting pnpm fall back
+# to its defaults.
 
 name: setup
 description: Install the .mise.toml toolchain, or a named subset of it, and optionally the frontend dependencies and Playwright's Chromium and WebKit
@@ -26,12 +29,16 @@ inputs:
     description: >-
       Install Playwright's Chromium and WebKit with the system libraries they
       need, after installing the frontend workspace's dependencies from its
-      lockfile (`pnpm -C web install --frozen-lockfile`): the browsers are
-      installed through the workspace's own Playwright package, and the browser and
-      end-to-end targets run from the same install. The demo host under
-      starters/demo/web is a member of that workspace, so one install covers
-      both. A job that runs the gate's frontend legs leaves this off:
-      `web-check-static` installs the dependencies for itself.
+      shared lockfile (`pnpm -C web install --frozen-lockfile
+      --workspace-concurrency=1 --child-concurrency="${GATE_JOBS}"`): the
+      browsers are installed through the workspace's own Playwright package,
+      and the browser and end-to-end targets run from the same install. The
+      calling workflow must set GATE_JOBS, which caps the install's child
+      processes; a caller that omits it fails here rather than letting pnpm
+      fall back to its defaults. The demo host under starters/demo/web is a
+      member of that workspace, so one install covers both. A job that runs
+      the gate's frontend legs leaves this off: `web-check-static` installs
+      the dependencies for itself.
     required: false
     default: "false"
 
@@ -56,7 +63,7 @@ runs:
     - name: Install the frontend dependencies Playwright runs from
       if: inputs.playwright == 'true'
       shell: bash
-      run: pnpm -C web install --frozen-lockfile
+      run: pnpm -C web install --frozen-lockfile --workspace-concurrency=1 --child-concurrency="${GATE_JOBS:?the calling workflow must set GATE_JOBS}"
 
     # The libraries come from apt and need root, which a hosted runner's
     # passwordless sudo provides; Playwright invokes sudo itself.
