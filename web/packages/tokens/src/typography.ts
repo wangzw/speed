@@ -1,26 +1,19 @@
-/**
- * Typography tokens: font stacks, sizes, weights, line heights, letter
- * spacing and an optional body text glow.
- *
- * The font stacks are Latin-first with CJK-capable fallbacks appended, so a
- * single family token serves both writing systems; a ui-kit theme adapter
- * maps them onto the MUI theme's fontFamily surface unchanged. Font sizes are
- * pixel numbers; the adapter converts to its own units when needed.
- */
-
-/** Named size steps; smaller than 2xl are spelled out, larger ones use the MUI-style numeric prefix. */
+/** Named font-size steps. */
 export type FontSizeStep = 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl'
 
+/** Font size in pixels per named step. */
 export type FontSizeScale = { readonly [Step in FontSizeStep]: number }
 
+/** Named font weights. */
 export type FontWeightKey = 'regular' | 'medium' | 'semibold' | 'bold'
 
+/** Font weight value per named weight. */
 export type FontWeightScale = { readonly [Weight in FontWeightKey]: number }
 
 /** The typography section of the speed token tree (SpeedTokens["typography"]). */
 export interface TypographyTokens {
   readonly fontFamily: {
-    /** Latin + CJK ("PingFang SC" et al.) humanist stack; maps to a MUI theme's fontFamily. */
+    /** Latin-first sans-serif stack with CJK fallbacks. */
     readonly sans: string
     readonly mono: string
   }
@@ -36,11 +29,7 @@ export interface TypographyTokens {
     readonly normal: string
     readonly wide: string
   }
-  /**
-   * A CSS text-shadow value painted on the body text; absent means no
-   * glow. Like `surface.backdropFilter`, it is a design value the theme
-   * adapter maps, not a component override.
-   */
+  /** A CSS text-shadow value painted on body text; absent means no glow. */
   readonly textGlow?: string
 }
 

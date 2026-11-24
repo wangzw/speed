@@ -1,14 +1,4 @@
-/**
- * Color tokens: the semantic role palette plus a neutral ramp.
- *
- * Field naming mirrors the MUI theme palette surface on purpose (semantic
- * roles carry main/light/dark/contrastText, neutrals use the grey-style
- * numeric steps), so the ui-kit theme adapter maps tokens onto the MUI
- * theme shape key by key. The hex values are the speed brand defaults;
- * projects override them through deepMerge (see README.md).
- */
-
-/** A semantic role's tonal family: default, light and dark variants plus the text color that reads on them. */
+/** A semantic role's tonal family: main, light and dark variants plus the text color that reads on them. */
 export interface SemanticColor {
   readonly main: string
   readonly light: string
@@ -22,7 +12,7 @@ export type SemanticRole = 'primary' | 'secondary' | 'error' | 'warning' | 'info
 /** Palette of the six semantic roles. */
 export type SemanticPalette = { readonly [Role in SemanticRole]: SemanticColor }
 
-/** Neutral ramp steps; the numeric names match the MUI grey scale so theme mapping stays 1:1. */
+/** Neutral ramp steps. */
 export type NeutralTone =
   | 50
   | 100
@@ -63,11 +53,7 @@ export interface ColorTokens {
   readonly background: {
     readonly default: string
     readonly paper: string
-    /**
-     * The page canvas gradient; absent means no gradient behind the page.
-     * Both modes carry their own stops because one pair cannot stay
-     * readable on both a light and a dark page.
-     */
+    /** The page canvas gradient; absent means no gradient behind the page. */
     readonly canvas?: CanvasTokens
   }
   readonly divider: string
@@ -75,11 +61,8 @@ export interface ColorTokens {
 
 export const colorTokens: ColorTokens = {
   semantic: {
-    // Every main carries a white label at 4.5:1 or better, and every main
-    // also clears 4.5:1 as text on the light surfaces (background.default,
-    // background.paper and the header tone). MUI paints Alert and status
-    // copy in the role's main, so the main has to serve both readings; the
-    // warning, info and success mains are the 700 tones for that reason.
+    // Every main clears 4.5:1 as a white-label background and as text on the
+    // light surfaces; warning, info and success use the 700 tones for that.
     primary: { main: '#2563EB', light: '#60A5FA', dark: '#1D4ED8', contrastText: '#FFFFFF' },
     secondary: { main: '#7C3AED', light: '#A78BFA', dark: '#6D28D9', contrastText: '#FFFFFF' },
     error: { main: '#DC2626', light: '#F87171', dark: '#B91C1C', contrastText: '#FFFFFF' },

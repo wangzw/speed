@@ -1,19 +1,8 @@
-/**
- * Contract tests for deepMerge, the token override mechanism.
- *
- * Each paragraph of the semantics documented on deepMerge is pinned here:
- * no input mutation, undefined overrides skipped, recursive object merging,
- * argument-order precedence, and the prototype-safety of hostile keys. The
- * "__proto__" case is constructed through JSON.parse so it really is an own
- * property, not a source-literal artifact.
- */
-
 import { describe, expect, it } from 'vitest'
 import { deepMerge } from './merge'
 import { defaultTokens } from './defaultTokens'
 import type { DeepPartial } from './types'
 
-/** Recursively freeze an object so any mutation attempt throws (tests run under strict mode). */
 function deepFreeze<T>(value: T): T {
   if (typeof value === 'object' && value !== null) {
     for (const child of Object.values(value as Record<string, unknown>)) {
@@ -24,12 +13,6 @@ function deepFreeze<T>(value: T): T {
   return value
 }
 
-/**
- * Escape hatch for exercising defensive runtime branches that the override
- * type deliberately makes unreachable (null and primitives cannot stand in
- * for an object-typed token field). The merge must still behave correctly
- * under untyped data such as JSON parsed at runtime.
- */
 function uncheckedPartial<T extends object>(value: unknown): DeepPartial<T> {
   return value as DeepPartial<T>
 }
@@ -71,16 +54,11 @@ describe('deepMerge', () => {
       a: { b: undefined, c: 1 },
       d: undefined,
     }
-    // An override that omits d (top level) or b (inside the a branch it
-    // enters) must not make the base's own keys vanish: the skip-undefined
-    // rule belongs to the override side only, and the result is a copy of
-    // base, not of base-minus-undefined-keys.
     const merged = deepMerge(base, { a: { c: 2 } })
     expect('d' in merged).toBe(true)
     expect('b' in merged.a).toBe(true)
     expect(merged.a.c).toBe(2)
     expect(merged.a.b).toBeUndefined()
-    // The no-override merge is a faithful copy too.
     const untouched = deepMerge(base)
     expect('d' in untouched).toBe(true)
     expect('b' in untouched.a).toBe(true)
@@ -88,10 +66,7 @@ describe('deepMerge', () => {
   })
 
   it('replaces object fields wholesale when the override value is not a plain record', () => {
-    // Typed path: arrays are leaves, so an array override replaces wholesale.
     expect(deepMerge({ a: [1, 2] }, { a: [3] })).toEqual({ a: [3] })
-    // Defensive paths (only reachable through untyped data such as JSON):
-    // null and primitives replace, they never merge.
     interface Sample {
       a: { b: number }
     }
@@ -120,15 +95,12 @@ describe('deepMerge', () => {
       surface: { container: { fill: 'rgba(255, 255, 255, 0.72)' } },
     })
     expect(merged.surface.container.fill).toBe('rgba(255, 255, 255, 0.72)')
-    // The role keeps the default field the override did not name.
     expect(merged.surface.container.borderWidth).toBe(1)
-    // Only the entered branch is rebuilt; the sibling roles stay shared.
     expect(merged.surface).not.toBe(defaultTokens.surface)
     expect(merged.surface.container).not.toBe(defaultTokens.surface.container)
     expect(merged.surface.page).toBe(defaultTokens.surface.page)
     expect(merged.surface.overlay).toBe(defaultTokens.surface.overlay)
     expect(merged.surface.header).toBe(defaultTokens.surface.header)
-    // The override never writes into the default tree.
     expect(defaultTokens.surface.container.fill).toBeUndefined()
   })
 
@@ -137,8 +109,6 @@ describe('deepMerge', () => {
       color: { background: { paper: '#FEFFFE' } },
     })
     expect(merged.color.background.paper).toBe('#FEFFFE')
-    // Inheritance contract: surfaces carry no fill of their own, so the
-    // section itself is not rebuilt by a background override.
     expect(merged.surface).toBe(defaultTokens.surface)
   })
 
@@ -176,12 +146,9 @@ describe('deepMerge', () => {
     const first = JSON.parse('{"__proto__": {"a": 1}}') as Record<string, unknown>
     const second = JSON.parse('{"__proto__": {"b": 2}}') as Record<string, unknown>
     const merged = deepMerge(first, second) as Record<string, unknown>
-    // Deep-merged like any other key: the payload is one own property ...
     expect(Object.prototype.hasOwnProperty.call(merged, '__proto__')).toBe(true)
     expect(merged['__proto__']).toEqual({ a: 1, b: 2 })
-    // ... but never enumerable, so no key or copy surface carries it ...
     expect(Object.keys(merged)).toEqual([])
-    // ... and the shared prototype is never touched.
     expect(Object.getPrototypeOf(merged)).toBe(Object.prototype)
     expect((Object.prototype as { a?: unknown; b?: unknown }).a).toBeUndefined()
     expect((Object.prototype as { a?: unknown; b?: unknown }).b).toBeUndefined()
@@ -192,12 +159,9 @@ describe('deepMerge', () => {
     const merged = deepMerge({ a: 1 }, hostile)
     const copy = {} as { polluted?: boolean }
     Object.assign(copy, merged)
-    // Object.assign copies through [[Set]]; a surviving enumerable own
-    // "__proto__" would have just swapped the copy's prototype.
     expect(Object.getPrototypeOf(copy)).toBe(Object.prototype)
     expect(copy.polluted).toBeUndefined()
     expect((Object.prototype as { polluted?: boolean }).polluted).toBeUndefined()
-    // Object spread is enumerability-based too: the payload stays off it.
     const spread = { ...merged } as { polluted?: boolean }
     expect(spread.polluted).toBeUndefined()
   })
@@ -206,9 +170,6 @@ describe('deepMerge', () => {
     interface WithFormatter {
       format: (value: number) => string
     }
-    // A non-function can never fill a function-typed slot (TS error before
-    // DeepPartial grew its function-leaf branch; this directive is checked
-    // by the package's strict typecheck leg).
     // @ts-expect-error a number cannot stand in for a function-typed field
     deepMerge<WithFormatter>({ format: (value: number) => String(value) }, { format: 42 })
     const merged = deepMerge<WithFormatter>(

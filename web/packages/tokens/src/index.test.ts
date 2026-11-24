@@ -1,9 +1,3 @@
-/**
- * Entry-point test: the runtime surface of @speed/tokens is exactly the two
- * symbols the README documents -- defaultTokens and deepMerge. Everything
- * else ships as types only, so no import site pays for unused runtime code.
- */
-
 import { describe, expect, it } from 'vitest'
 import * as tokens from './index'
 

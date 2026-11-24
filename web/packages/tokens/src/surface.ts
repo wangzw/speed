@@ -1,45 +1,20 @@
-/**
- * Surface tokens: the semantic layers the interface paints its chrome on.
- *
- * A role names where a piece of chrome sits -- page, container, overlay,
- * header -- and carries only the fields a project may sharpen: fill, fill
- * opacity, border color (per mode), border width, elevation and backdrop
- * filter. Every field is optional on purpose. An omitted field means
- * "inherit the slot the theme already reads", never a color of its own:
- *
- * - page    -> color.background.default
- * - container, overlay -> color.background.paper
- * - any border -> color.divider
- * - header  -> the neutral ramp (the theme takes 50 in light mode and 900
- *              in dark mode)
- *
- * This section therefore carries no surface color literals, and an
- * override that only changes color.background.paper keeps every surface
- * byte-identical. Resolving the inherited slot is the ui-kit theme
- * adapter's decision; this package states the contract, it does not
- * apply it. Border radius is not repeated here -- surfaces reuse
- * shape.borderRadius.
- */
+/** Surface tokens: the semantic layers the interface paints its chrome on. */
 
-/** The fields a surface role may set; an omitted field inherits its slot (see the module comment). */
+/** The fields a surface role may set; an omitted field inherits the theme's slot. */
 export interface SurfaceRoleTokens {
+  /** Surface fill color. */
   readonly fill?: string
-  /**
-   * The fill's alpha, 0-1; 1 is opaque. The theme adapter applies it to a
-   * resolved `#RRGGBB` fill in either color mode, so a translucent surface
-   * is one token value rather than one fill per mode.
-   */
+  /** Fill alpha, 0-1; 1 is opaque. Applies to a resolved `#RRGGBB` fill in either mode. */
   readonly opacity?: number
+  /** Border color. */
   readonly borderColor?: string
-  /**
-   * The border color in dark mode, when one color cannot read on both
-   * pages (a white rim reads on the dark canvas but disappears on a light
-   * one). Absent, `borderColor` serves both modes. The resolved border
-   * falls back to `color.divider` when neither is given.
-   */
+  /** Border color in dark mode; absent, `borderColor` serves both modes. */
   readonly borderColorDark?: string
+  /** Border width in pixels. */
   readonly borderWidth?: number
+  /** MUI elevation slot. */
   readonly elevation?: number
+  /** CSS backdrop-filter value. */
   readonly backdropFilter?: string
 }
 

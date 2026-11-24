@@ -1,30 +1,9 @@
-/**
- * Contract tests for the default token tree.
- *
- * These pin the *shape* guarantees a theme factory can rely on: every section
- * the SpeedTokens interface declares is populated, every color is a full hex
- * literal, scales are monotone where order matters, and the spots that
- * deliberately mirror MUI defaults -- breakpoint values, z-index slots and
- * the spacing unit -- equal those defaults, which is what keeps the ui-kit
- * theme mapping free of contortions. That parity is anchored on the real
- * installed MUI theme (a dev-only @mui/material import; the package itself
- * ships zero runtime dependencies), never on in-tree copies of the expected
- * values, so an MUI default change fails here instead of passing a
- * self-comparison. shape.borderRadius is deliberately NOT a parity spot --
- * tokens ship 8 where MUI defaults to 4 -- and the deviation is pinned as
- * one, so it is re-decided loudly rather than drifting silently.
- */
-
 import { createTheme } from '@mui/material/styles'
 import { describe, expect, it } from 'vitest'
 import { defaultTokens, deepMerge, type TokensOverride } from './index'
 
 const HEX_COLOR = /^#[0-9A-F]{6}$/i
 
-/**
- * WCAG 2 relative luminance of an sRGB hex color (channels linearized,
- * then weighted 0.2126/0.7152/0.0722).
- */
 function relativeLuminance(hex: string): number {
   const value = hex.slice(1)
   const linear = (offset: number): number => {
@@ -36,17 +15,12 @@ function relativeLuminance(hex: string): number {
   return 0.2126 * linear(0) + 0.7152 * linear(2) + 0.0722 * linear(4)
 }
 
-/** WCAG contrast ratio between two hex colors, from 1:1 to 21:1. */
 function contrastRatio(a: string, b: string): number {
   const brighter = Math.max(relativeLuminance(a), relativeLuminance(b))
   const darker = Math.min(relativeLuminance(a), relativeLuminance(b))
   return (brighter + 0.05) / (darker + 0.05)
 }
 
-// Pristine snapshots captured at module load, before any test can write
-// through a merged result: the isolation tests below prove the assembled
-// defaults stay byte-identical to these no matter what a merge result's
-// consumer tries.
 const DEFAULT_BEFORE = JSON.stringify(defaultTokens)
 const PRISTINE_ERROR_MAIN = defaultTokens.color.semantic.error.main
 
@@ -133,30 +107,18 @@ describe('defaultTokens', () => {
   })
 
   it('ships the MUI breakpoint keys and values unchanged', () => {
-    // Parity against the real installed MUI theme -- the values the ui-kit
-    // adapter assigns 1:1. The reference is the live library, never an
-    // in-tree copy of the expectation: a copied expectation could only
-    // agree with the tokens it was copied from.
     const { values } = createTheme({}).breakpoints
     expect(defaultTokens.breakpoints.values).toEqual(values)
   })
 
   it('ships the MUI z-index slots with the MUI default values', () => {
     const mui = createTheme({})
-    // Comparing the whole zIndex object also pins the slot-name set: an
-    // MUI slot added, renamed or revalued fails here.
     expect(defaultTokens.zIndex.values).toEqual(mui.zIndex)
   })
 
   it('anchors the spacing and border-radius claims on the installed MUI theme', () => {
     const mui = createTheme({})
-    // The spacing unit mirrors MUI's default spacing base: the token unit
-    // IS the MUI unit, so the adapter needs no rescaling.
     expect(mui.spacing(1)).toBe(`${defaultTokens.spacing.unit}px`)
-    // Border radius is the recorded deviation: MUI defaults to 4, tokens
-    // ship 8 (the README parity row documents both sides). Assert both
-    // against the live library so an MUI default change re-decides the
-    // deviation instead of letting it drift.
     expect(mui.shape.borderRadius).toBe(4)
     expect(defaultTokens.shape.borderRadius).not.toBe(mui.shape.borderRadius)
   })
@@ -177,12 +139,6 @@ describe('defaultTokens', () => {
   })
 
   it('carries no surface color literals: an omitted field inherits its slot', () => {
-    // The inheritance contract: page -> background.default, container and
-    // overlay -> background.paper, borders -> divider, header -> the neutral
-    // ramp. Spelling any of those values here would freeze the fallback into
-    // the token tree, so a project recoloring background.paper would stop
-    // reaching the surfaces. Only field presence is pinned; the hex values
-    // live in color.ts.
     for (const role of Object.values(defaultTokens.surface)) {
       expect('fill' in role).toBe(false)
       expect('borderColor' in role).toBe(false)
@@ -262,11 +218,6 @@ describe('defaultTokens optional effect fields', () => {
   })
 
   it('rejects a partial canvas override at compile time', () => {
-    // The canvas is one fixed shape: both modes, both stops. A branch that
-    // recursed into the optional field would accept a missing stop, and the
-    // baseline would then emit `linear-gradient(..., ..., undefined)`, an
-    // invalid declaration the browser drops wholesale -- the page silently
-    // loses its background rather than failing loudly.
     deepMerge(defaultTokens, {
       color: {
         background: {
@@ -306,11 +257,6 @@ describe('defaultTokens optional effect fields', () => {
 })
 
 describe('defaultTokens light-mode contrast', () => {
-  // The light palette's contrastText is the label inside a filled control
-  // painted with the role's main. Text needs 4.5:1 there. Both sides are
-  // read from defaultTokens, so a palette edit that breaks the floor fails
-  // here instead of at a later surface; the dark-mode counterpart lives in
-  // @speed/ui-kit's createAppTheme test, where the label is derived.
   const roles = [
     'primary',
     'secondary',
@@ -333,8 +279,6 @@ describe('defaultTokens surface freeze', () => {
     expect(Object.isFrozen(defaultTokens.surface)).toBe(true)
     expect(Object.isFrozen(defaultTokens.surface.page)).toBe(true)
     expect(Object.isFrozen(defaultTokens.surface.container)).toBe(true)
-    // Adding a field to a role's empty default must throw: a write through
-    // the shared branch would otherwise pollute every override layer.
     const writable = defaultTokens as unknown as {
       surface: { page: { fill?: string } }
     }
@@ -349,16 +293,6 @@ describe('defaultTokens shared-branch write enforcement', () => {
     const merged = deepMerge(defaultTokens, {
       color: { semantic: { primary: { main: '#000000' } } },
     })
-    // The type layer seals the tree at every depth (readonly modifiers), so
-    // a real write needs a trigger channel that bypasses it -- a JS
-    // consumer, an `any`, or a cast -- which is what the writable view
-    // below stands in for. The override rebuilt only the primary branch;
-    // untouched branches of the result ARE the defaultTokens nodes
-    // (copy-on-write sharing), so a write through one must throw in strict
-    // mode instead of silently polluting the module singleton. The default
-    // tree is deep-frozen at assembly (see defaultTokens.ts); these two
-    // writes sit at different sharing depths -- one branch the override
-    // never entered, one whole top-level section -- and both must refuse.
     const writable = merged as unknown as {
       color: { semantic: { error: { main: string } } }
       typography: { fontFamily: { sans: string } }
@@ -377,24 +311,15 @@ describe('defaultTokens shared-branch write enforcement', () => {
     const merged = deepMerge(defaultTokens, {
       color: { semantic: { primary: { main: '#000000' } } },
     })
-    // Writable view: the cast stands in for the JS-consumer trigger channel
-    // that bypasses the type layer's readonly seal (see the throws-when
-    // test above).
     const writable = merged as unknown as {
       color: { semantic: { error: { main: string } } }
     }
     let attemptThrew = false
     try {
-      // The branch this override never touched: the write must not land
-      // anywhere shared. Refusing loudly is the deep freeze's job (pinned
-      // by the throws-when test above); this test pins the outcome.
       writable.color.semantic.error.main = '#DEADBEEF'
     } catch {
       attemptThrew = true
     }
-    // No pollution: the branch the write aimed at still holds the pristine
-    // value, and the assembled defaults are byte-identical to the snapshot
-    // taken at module load.
     expect(defaultTokens.color.semantic.error.main).toBe(PRISTINE_ERROR_MAIN)
     expect(JSON.stringify(defaultTokens)).toBe(DEFAULT_BEFORE)
     expect(attemptThrew).toBe(true)
@@ -413,8 +338,6 @@ describe('defaultTokens shared-branch write enforcement', () => {
     } catch {
       attemptThrew = true
     }
-    // No leak: an independent merge after the attempt reads its own
-    // override and pristine defaults -- never the attempted value.
     const tenantB = deepMerge(defaultTokens, { zIndex: { values: { modal: 1600 } } })
     expect(tenantB.zIndex.values.modal).toBe(1600)
     expect(tenantB.color.semantic.error.main).toBe(PRISTINE_ERROR_MAIN)
