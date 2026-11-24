@@ -22,28 +22,14 @@ import (
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
-// pgDialect is the subdirectory of the migrations the module ships for
-// PostgreSQL. The cases below build the audit table from those files, so the
-// files themselves are what they exercise.
 const pgDialect = "postgres"
 
-// openPostgres builds a handle on a database of this test's own on the shared
-// PostgreSQL fixture, with the capture plugin installed, the orders table
-// created and the module's own PostgreSQL migrations applied.
-//
-// These are the cases the in-memory handle cannot stand in for: a statement
-// that fails inside a PostgreSQL transaction leaves that transaction unable to
-// run anything else, and two replicas' writers contend on one table from two
-// pools — properties of the engine and not of the plugin.
 func openPostgres(t *testing.T) *gorm.DB {
 	t.Helper()
 	handle, _ := openPostgresReplicas(t)
 	return handle
 }
 
-// openPostgresReplicas builds two handles on one database of this test's own, as
-// two replicas sharing an audit table hold them: a pool each, the capture plugin
-// on each, and the tables built once.
 func openPostgresReplicas(t *testing.T) (*gorm.DB, *gorm.DB) {
 	t.Helper()
 	dsn := pgtest.Acquire(t)
@@ -55,9 +41,6 @@ func openPostgresReplicas(t *testing.T) (*gorm.DB, *gorm.DB) {
 	return first, second
 }
 
-// connectPostgres is the handle the database module delivers over the database
-// the locator names, released when the case ends, with the capture plugin
-// installed. Each call is a pool of its own, as a replica's is.
 func connectPostgres(t *testing.T, dsn string) *gorm.DB {
 	t.Helper()
 	handle := quietly(dbtest.Postgres(t, dsn, nil).DB())
@@ -67,9 +50,8 @@ func connectPostgres(t *testing.T, dsn string) *gorm.DB {
 	return handle
 }
 
-// The PostgreSQL migration builds a table the statement path and the seam both
-// write into, with the absent tenant stored as NULL rather than as an empty
-// string and the masked key replaced before the row is written.
+// The PostgreSQL migration builds a table both the statement path and the seam
+// write, with the absent tenant as NULL and the masked key replaced.
 func TestPostgresMigrationTakesTheStatementAndTheSeam(t *testing.T) {
 	handle := openPostgres(t)
 	if err := handle.Create(&order{ID: "o1", Note: "first"}).Error; err != nil {
@@ -119,11 +101,8 @@ func TestPostgresStatementRowRidesTheTransaction(t *testing.T) {
 	}
 }
 
-// A duplicate key on PostgreSQL reaches the caller as the engine's own error.
-//
-// The engine refuses every further statement in a transaction one has failed
-// in, so a record attempted for the failed statement cannot be written there at
-// all; attempting it only adds a second failure to the caller's error.
+// A duplicate key on PostgreSQL reaches the caller as the engine's own
+// error.
 func TestPostgresDuplicateKeyKeepsTheEnginesError(t *testing.T) {
 	handle := openPostgres(t)
 	if err := handle.Create(&order{ID: "o1", Note: "first"}).Error; err != nil {
@@ -143,14 +122,8 @@ func TestPostgresDuplicateKeyKeepsTheEnginesError(t *testing.T) {
 	}
 }
 
-// Two replicas delivering one event at the same moment leave one row between
-// them, and neither reports a failure.
-//
-// Each replica writes from a pool of its own, so what decides is the table: a
-// replica that looked for the row before inserting would find none on both
-// sides and write two, and one that inserted into the unique key without
-// yielding on it would have every delivery after the first fail and reach the
-// failure signal, reporting a healthy table as broken.
+// Two replicas delivering one event at the same moment leave one row
+// between them, and neither reports a failure.
 func TestPostgresAnEventDeliveredToEveryReplicaIsRecordedOnce(t *testing.T) {
 	first, second := openPostgresReplicas(t)
 	var reports [2]bytes.Buffer
@@ -197,8 +170,6 @@ func TestPostgresTheFirstDeliveryOfAnEventIsTheOneKept(t *testing.T) {
 	requireTheFirstDeliveryIsKept(t, first, second)
 }
 
-// assembledOnPostgres drives the assembly on a PostgreSQL database of this
-// case's own and hands the action that database's locator.
 func assembledOnPostgres(t *testing.T, action func(ctx context.Context, reg *core.Registry, dsn string) error) {
 	t.Helper()
 	dsn := pgtest.Acquire(t)
@@ -207,10 +178,8 @@ func assembledOnPostgres(t *testing.T, action func(ctx context.Context, reg *cor
 	})
 }
 
-// A connection built with Open onto the delivered PostgreSQL database records
-// on the statement's own session, as the delivered connection does: a write it
-// rolls back leaves no row behind. The row written through the delivered handle
-// would be in a transaction of its own, and would stay.
+// An Open connection onto the delivered PostgreSQL database records on the
+// statement's own session.
 func TestPostgresAConnectionOpenedOntoTheDeliveredDatabaseRidesItsTransaction(t *testing.T) {
 	assembledOnPostgres(t, func(ctx context.Context, reg *core.Registry, dsn string) error {
 		database, err := core.Resolve[db.Database](reg)
@@ -252,17 +221,11 @@ func TestPostgresAConnectionOpenedOntoTheDeliveredDatabaseRidesItsTransaction(t 
 	})
 }
 
-// A connection built with Open that reaches an audit table other than the
-// delivered one — another database on the delivered server, or another schema
-// of the delivered database through its search path — does not take the row,
-// which goes to the delivered table.
-//
-// The second case is what a comparison of the database alone would miss: one
-// database, and the table's name resolving to two relations in it.
+// A connection on another database or schema does not take the row, which goes to
+// the delivered table.
 func TestPostgresAConnectionOpenedOntoAnotherAuditTableRecordsInTheDeliveredOne(t *testing.T) {
 	for _, target := range []struct {
-		name string
-		// build prepares the other table and returns the locator reaching it.
+		name  string
 		build func(t *testing.T, handle *gorm.DB, dsn string) string
 	}{
 		{name: "another database on the delivered server", build: func(t *testing.T, _ *gorm.DB, _ string) string {

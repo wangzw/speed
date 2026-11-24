@@ -21,21 +21,8 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The cases built on this file drive this module's descriptor through a real
-// registry: the configuration module with a reader the real loader produced,
-// this module itself, and stand-ins for the required capabilities and for the
-// entry point it takes up in Init. What a product built by hand cannot show is
-// which callback takes up which dependency, what a single missing capability
-// does at resolution, and what the descriptor says of its own delivery, which is
-// none.
-
-// managementBody is the configuration a default drive runs on: one endpoint of
-// the entry point, "public", that the query routes are mounted on.
 const managementBody = `{"audit": {"admin": {"endpoints": ["public"]}}}`
 
-// recordingModule is this module's descriptor with its New wrapped to record the
-// product it built. The wrapper records the instance and returns it unchanged,
-// so the descriptor behaves as it does when registered as it stands.
 func recordingModule(record *any) core.Module {
 	m := Module()
 	inner := m.New
@@ -50,31 +37,17 @@ func recordingModule(record *any) core.Module {
 	return m
 }
 
-// managementAssembly is one drive. The zero value mounts the query routes on
-// "public" with everything this module requires and a stand-in entry point; each
-// field takes one capability away, replaces one stand-in, or records the product
-// New built.
 type managementAssembly struct {
-	// body is the configuration. The zero value uses managementBody.
-	body string
-	// noReader and noGuard leave out the stand-in for the required capability
-	// named, so the drive reaches resolution without it.
+	body              string
 	noReader, noGuard bool
-	// noRouter leaves the entry point out, which fails Init.
-	noRouter bool
-	// reader is the read-surface stand-in delivered as that capability.
-	reader journal.Reader
-	// router is the entry point stand-in; nil uses one that declares "public".
-	router speedhttp.Router
-	// gate is the optional route-declaration surface, taken up in Init when set.
-	gate authz.Gate
-	// logger is the logging capability, taken up in Init; nil uses a recorder.
-	logger *slog.Logger
-	// record, when set, receives the product New built.
-	record *any
+	noRouter          bool
+	reader            journal.Reader
+	router            speedhttp.Router
+	gate              authz.Gate
+	logger            *slog.Logger
+	record            *any
 }
 
-// drive advances the assembly to depth and runs action there.
 func (a managementAssembly) drive(t *testing.T, depth core.Stage, action func(ctx context.Context, reg *core.Registry) error) error {
 	t.Helper()
 	body := a.body
@@ -129,7 +102,6 @@ func (a managementAssembly) drive(t *testing.T, depth core.Stage, action func(ct
 	return reg.Drive(t.Context(), core.Drive{Depth: depth, Participants: names, Action: action})
 }
 
-// productOfAssembly narrows a recorded instance to this module's product.
 func productOfAssembly(t *testing.T, instance any) *product {
 	t.Helper()
 	p, ok := instance.(*product)
@@ -147,9 +119,8 @@ func TestThisModuleDeliversNothing(t *testing.T) {
 	}
 }
 
-// The module requires the read surface and the guard, and it requires no audit
-// capability: its routes are reads and write no audit row, so it carries no way
-// to write one.
+// The module requires the read surface and the guard, and it requires no
+// audit capability.
 func TestTheModuleRequiresTheReadSurfaceAndTheGuardAlone(t *testing.T) {
 	var hasReader, hasGuard, hasAudit bool
 	for _, req := range Module().Requires {
@@ -170,9 +141,7 @@ func TestTheModuleRequiresTheReadSurfaceAndTheGuardAlone(t *testing.T) {
 	}
 }
 
-// The two required capabilities are each another module's to deliver: a command
-// that brings this one in without the read surface or the guard fails resolution
-// with ErrMissingProvider, before New builds anything.
+// The two required capabilities are each another module's to deliver.
 func TestAMissingRequiredCapabilityFailsResolution(t *testing.T) {
 	for name, missing := range map[string]managementAssembly{
 		"no read surface": {noReader: true},
@@ -258,9 +227,8 @@ func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) 
 	})
 }
 
-// A real registry mounts the module's whole route surface on the configured
-// endpoint and declares every route open on the surface, so the middleware lets
-// a request reach the handler, which makes the decision.
+// A real registry mounts the whole route surface open, so a request reaches the
+// handler, which makes the decision.
 func TestARealRegistryMountsEveryRouteAndDeclaresThemOpen(t *testing.T) {
 	router := newStubRouter("public")
 	gate := authztest.NewGate()
@@ -287,9 +255,8 @@ func TestARealRegistryMountsEveryRouteAndDeclaresThemOpen(t *testing.T) {
 	}
 }
 
-// The endpoint list refuses a shape the module cannot run on, naming the key:
-// an empty list mounts the routes nowhere, and the name that stands for every
-// endpoint is refused because it would put them on the public endpoints.
+// The endpoint list refuses a shape the module cannot run on, naming the
+// key.
 func TestTheEndpointListRefusesShapesItCannotRunOn(t *testing.T) {
 	cases := map[string]string{
 		"empty":      `[]`,

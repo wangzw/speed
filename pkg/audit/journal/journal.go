@@ -1,17 +1,6 @@
-// Package journal is the audit module: the capture paths that reach facts, the
-// table they are written into, and the seam other modules hand entries to.
-//
-// It is one module rather than several because the capture paths share a record
-// shape and a table. Split into one module per path, the table and the writer
-// would either be delivered by one of them and depended on by the rest — an
-// internal relationship turned into a public contract — or owned several times
-// over.
-//
-// The interface package registers nothing, and this one depends on the database
-// module, the log module, the event bus, the entry point, authentication and
-// tenancy. That split is what lets a module that only places a layer against
-// the audit anchor name the capability without pulling this package's
-// dependencies in — for the cost the anchor record states.
+// Package journal is the audit module: the capture paths that reach
+// facts, the table they are written into, and the seam other modules hand
+// entries to.
 package journal
 
 import (
@@ -43,9 +32,6 @@ const ModuleName = "audit.journal"
 // module's own name, the way a registering module's namespace always is.
 const ConfigNamespace = ModuleName
 
-// diagnosticPrefix starts every line this module writes to the startup
-// diagnostics, which have several writers. It names the capability directory
-// rather than the module, and the module follows it in the line itself.
 const diagnosticPrefix = "audit: "
 
 //go:embed migrations
@@ -64,43 +50,9 @@ var migrationsFS = func() fs.FS {
 	return sub
 }()
 
-// The module registers itself. Importing this package is what puts audit in a
-// binary's available set.
 func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.
-//
-// The capability and the read surface are both delivered exclusively, and for
-// the same reason: two journals in one assembly are two tables an entry could go
-// to, and which one a capture path reached, or a read landed on, is not a fact
-// anything could resolve — so each is deliberately unrepresentable and a second
-// one fails the startup instead. The reader is delivered here rather than by a
-// module of its own because the table is one: the read surface reads exactly
-// what the capture paths write.
-//
-// Both construction-time dependencies are hard, and neither is decoration. The
-// table is built on the handle the database module delivers, and the detail
-// masking rule set is the log module's. A run missing either cannot have an
-// audit trail at all, and that is a resolution failure rather than a path that
-// quietly does nothing.
-//
-// The event bus and the entry point are taken up in Init instead of being
-// declared. They exist already by then, so there is no order to arrange, and a
-// declaration would arrange nothing else: both are delivered exclusively, and
-// the closure follows no exclusive provider into a command.
-//
-// There is no stand-down. No input item can be missing — all three default to
-// empty — so a command that takes this module in gets a journal, and a command
-// that wants none leaves it out. Its stance is StateEnabled and never
-// StateAuto: the capability is delivered exclusively, and an exclusive provider
-// stating StateAuto is exactly the cell resolution disables, which would let
-// one journal yield to another.
-//
-// A module a drive includes has to start, so the stance says nothing about
-// whether it runs. Where it cannot — a configuration reader the host never
-// supplied, a section that will not decode — Prepare returns an error naming
-// what is absent and the startup ends with it, rather than the module standing
-// itself down.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -115,10 +67,10 @@ func Module() core.Module {
 		Resources: []any{schema(), db.Migrations{FS: migrationsFS}, db.Plugin{Plugin: newCapture()}},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
-			// A stance handed back beside a failure is not read, so the failing
-			// paths return the zero Enablement with their error.
 			reader, err := readerOf(reg)
 			if err != nil {
+				// A stance handed back beside a failure is not read, so the failing
+				// paths return the zero Enablement with their error.
 				return core.Enablement{}, err
 			}
 			if _, err := readSettings(reader); err != nil {
@@ -150,10 +102,7 @@ func Module() core.Module {
 			return newJournal(set, database.DB(), delivered.Named(ModuleName)), nil
 		},
 
-		// The capture paths are wired here and not in New. The entry point and
-		// the bus are resolved at this stage, and both are taken up rather than
-		// declared so that a host which never lists them is not made to carry
-		// them.
+		// The capture paths are wired here and not in New.
 		Init: func(ctx context.Context, reg *core.Registry, instance any) error {
 			j, ok := productOf(instance)
 			if !ok {
@@ -162,10 +111,8 @@ func Module() core.Module {
 			return j.wire(ctx, reg)
 		},
 
-		// The three paths this module drives begin accepting here. The fourth —
-		// statement capture — is not gated by this: its switch is whether the
-		// plugin was installed, which happened while the database module was
-		// constructing.
+		// The three paths this module drives begin accepting here; statement
+		// capture is gated by whether the plugin was installed instead.
 		Start: func(_ context.Context, _ *core.Registry, instance any) error {
 			if j, ok := productOf(instance); ok {
 				j.accepting.Store(true)
@@ -180,34 +127,22 @@ func Module() core.Module {
 			return nil
 		},
 
-		// Nothing to release. The handle belongs to the database module, which
-		// closes it; this module holds no connection of its own.
+		// Nothing to release: the handle belongs to the database module, which
+		// closes it.
 		Close: func(_ context.Context, _ *core.Registry, _ any) error { return nil },
 	}
 }
 
 // stance is what this module states in Prepare: StateEnabled, and never
 // StateAuto.
-//
-// The capability is delivered exclusively, and an exclusive provider stating
-// StateAuto is exactly the cell resolution disables — a journal would yield to
-// another one that is explicitly enabled. What this module states instead says
-// nothing about whether it runs: a module a drive includes has to start, and
-// where it cannot, Prepare returns the error that ends the startup.
 func stance() core.Enablement { return core.Enablement{State: core.StateEnabled} }
 
-// journal is the module's product. It delivers the audit capability.
 type journal struct {
-	settings  settings
-	handle    *gorm.DB
-	logger    *slog.Logger
-	signal    *signal
-	accepting atomic.Bool
-	// connectWithin is how long a row this module writes itself waits for a
-	// connection of the delivered pool. It is connectionWait unless a test
-	// widens it, which is how a case holds apart a wrong implementation that
-	// applies this wait to a lock from the engine's busy timeout that really
-	// bounds it.
+	settings      settings
+	handle        *gorm.DB
+	logger        *slog.Logger
+	signal        *signal
+	accepting     atomic.Bool
 	connectWithin time.Duration
 }
 
@@ -224,16 +159,6 @@ func newJournal(set settings, handle *gorm.DB, logger *slog.Logger) *journal {
 	}
 }
 
-// wire registers the capture layer on every guarded endpoint and subscribes to
-// every named event type.
-//
-// Both capabilities are taken up rather than declared, which is what makes them
-// optional in practice. The endpoint list arrives from the compiled-in document
-// rather than from the command, so a run with no entry point — seed, a one-shot
-// migration — is naming endpoints it has nothing to attach them to: that run
-// serves no request, so it skips the request-level layer and keeps the statement
-// and record capture. A configured endpoint name that the entry point does not
-// declare is still a startup failure, because there the run does serve.
 func (j *journal) wire(_ context.Context, reg *core.Registry) error {
 	if len(j.settings.endpoints) > 0 {
 		router, err := core.Resolve[speedhttp.Router](reg)
@@ -267,8 +192,6 @@ func (j *journal) wire(_ context.Context, reg *core.Registry) error {
 	return nil
 }
 
-// registerRequestCapture puts the middleware on the endpoints the configuration
-// names. A name the entry point does not declare is a startup failure.
 func (j *journal) registerRequestCapture(router speedhttp.Router) error {
 	for _, name := range unique(j.settings.endpoints) {
 		endpoint, err := router.Endpoint(name)
@@ -281,12 +204,6 @@ func (j *journal) registerRequestCapture(router speedhttp.Router) error {
 	return nil
 }
 
-// readerOf takes up the configuration reader.
-//
-// A reader that is not there means the host never supplied one, which is the
-// host's omission and not something to read as "nothing was configured". The
-// failure names this module, because a run can carry several modules each
-// wanting a reader and the sentinel alone does not say which one was asking.
 func readerOf(reg *core.Registry) (config.Reader, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
@@ -296,22 +213,11 @@ func readerOf(reg *core.Registry) (config.Reader, error) {
 	return reader, nil
 }
 
-// productOf narrows an instance to this module's product. The callbacks are
-// also handed an instance a host supplied for this module, which can be any
-// value that delivers the audit capability. They act on this module's own
-// product and leave a supplied instance as it is, so what such an instance
-// holds stays with the host that supplied it.
 func productOf(instance any) (*journal, bool) {
 	j, ok := instance.(*journal)
 	return j, ok
 }
 
-// unique drops repeated names, keeping the order they were first written in.
-//
-// A name written twice is the same name written twice, and passing it through
-// is not harmless: a second layer on one endpoint records every request twice
-// and stands for the audit capability a second time, and a second subscription
-// to one event type delivers it twice.
 func unique(names []string) []string {
 	if len(names) < 2 {
 		return names

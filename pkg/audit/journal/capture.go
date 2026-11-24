@@ -15,42 +15,15 @@ import (
 	"github.com/vislake/speed/pkg/db"
 )
 
-// captureCallbackName identifies this plugin's callbacks in GORM's own
-// registry, which is per processor.
 const captureCallbackName = "audit:capture"
 
-// commitStep is the step GORM ends a statement's transaction at, and the anchor
-// this plugin hangs its callbacks on.
-//
-// Anchoring on the statement's own step is not enough, and the difference is
-// the whole of what this path promises. GORM registers that step without an
-// anchor of its own, and its sort appends anything anchored *after* a step that
-// is already ordered to the end of the chain — so a callback anchored after
-// `gorm:create` lands after the commit, once the connection has been handed
-// back to the pool. A row written there is written on a connection of its own
-// again, after the fact: the record and the write stop being one unit of work,
-// and a failure is reported against a statement that has already committed.
-// Anchored before this step, the callback runs with the transaction still open,
-// which is the only place the promise holds.
-//
-// Only the model-path processors are registered on. `Exec` and `Raw` are not,
-// and leaving them out is what makes the self-reference judgement a comparison
-// rather than a guard: a statement this plugin never sees cannot recurse
-// through it. The price is stated as a non-guarantee — a host's own cleanup and
-// a migration file issue raw SQL and reach no audit row.
+// commitStep is where GORM ends a statement's transaction; anchor before it,
+// since a callback anchored after a step is appended to the chain's end and
+// would run after commit, when the connection is back in the pool.
 const commitStep = "gorm:commit_or_rollback_transaction"
 
-// capture is the plugin the descriptor declares.
-//
-// It holds nothing at all. The instance is frozen with the descriptor at init
-// time, and the database module hands that one instance to every handle it
-// builds, so a process driving two commands builds two registries that share
-// it; anything kept on it would be the other run's value on the second one. The
-// callbacks need nothing from it either — they take the session they are handed
-// — which is why there is no per-handle state here to get wrong.
 type capture struct{}
 
-// newCapture builds the plugin the descriptor declares.
 func newCapture() *capture { return &capture{} }
 
 // Name identifies this plugin in GORM's registry of plugins, which is what the
@@ -58,18 +31,9 @@ func newCapture() *capture { return &capture{} }
 // is the package path.
 func (c *capture) Name() string { return "github.com/vislake/speed/pkg/audit/journal" }
 
-// Initialize registers the capture callbacks on one handle.
-//
-// The handle is used to register and then dropped. GORM calls this once per
-// handle, and what each callback works on is the session it is handed when it
-// runs, so no handle has to be remembered. Where a row for a statement on a
-// connection built with Open belongs is asked of that session when the
-// statement runs; see captureOne.
-//
-// The anchor is the step the transaction ends at, so the callback runs after
-// the statement's own work and before the commit. The tenant filter registers
-// on the same processors ahead of their own steps, so the two orders are
-// decided by the anchors and not by which plugin was installed first.
+// Initialize hooks only the model-path processors: Exec and Raw never enter
+// the callbacks, and targetTable's table-name check keeps a model write from
+// recording itself.
 func (c *capture) Initialize(handle *gorm.DB) error {
 	registered := []func(*gorm.DB) error{
 		func(h *gorm.DB) error {
@@ -93,49 +57,6 @@ func (c *capture) Initialize(handle *gorm.DB) error {
 	return nil
 }
 
-// captureOne builds the callback for one processor.
-//
-// The row is written on the session the statement ran on, which is what makes
-// this path different from the three the module drives. The two consequences
-// are the reason for it. The record stands or falls with the write it records —
-// a transaction the caller opened and later rolled back takes the row with it,
-// and no row is left saying a write happened that did not. And there is only
-// ever one connection in play, so an engine that admits a single writer — the
-// one this repository ships migrations for — has nothing to contend over.
-//
-// The price is that a failure here is raised rather than reported: the
-// statement fails, because on this connection the record and the write are one
-// unit of work. That is the one path in the module where that is true.
-//
-// A connection the database module built with Open is the exception. It carries
-// this plugin but no migration, so the database it reaches usually has no audit
-// table, and one process keeps one audit table: the row goes to the delivered
-// database's, through the delivered handle the database module says the
-// connection was opened from. It is still written before the statement commits
-// and still fails the statement when it cannot be written, so a write that left
-// no record does not happen there either; what it loses is the shared unit of
-// work, because two databases have no transaction in common, and a statement
-// rolled back after its row was written leaves the row behind. The plugin
-// instance is shared by every registry in the process and holds nothing, so the
-// answer has to come from the session: a guess made here — the only journal
-// running, or whichever handle has the table — would hand one run's rows to
-// another's table. How long that row may wait for a connection is bounded, and
-// how long it waits for a lock is the engine's; see recordOpened. A
-// connection built with Open onto the delivered database itself is no
-// exception: its statement's session reaches the delivered table, and the row
-// is written there; see reachesDeliveredTable.
-//
-// A statement that has already failed is left alone. GORM runs every callback
-// of a processor whatever the ones before it did, so this one is reached by a
-// statement another plugin refused before it ran, by one GORM itself refused,
-// and by one the engine turned down — and none of those changed anything, so
-// there is no write to record. The row could not stand anyway: the transaction
-// underneath is on its way to a rollback that takes it along, and an engine that
-// refuses every further statement in a transaction one has failed in would not
-// take it at all. Attempting it is worse than pointless, because the session
-// the row goes out on carries the statement's error: the insert fails with that
-// same error, and raising it would hand the caller its own failure dressed up as
-// an audit store that could not be written to.
 func captureOne(action string) func(*gorm.DB) {
 	return func(tx *gorm.DB) {
 		if tx.Error != nil {
@@ -158,21 +79,14 @@ func captureOne(action string) func(*gorm.DB) {
 			},
 		}
 		if err := record(tx, assemble(st.Context, audit.SourceStatement, entry, "")); err != nil {
-			// The write that produced this row is not going to be reported any
-			// other way: there is no caller to return to and no signal this
-			// path reports through, because the row and the statement are one
-			// unit. Raising it on the session is what fails the statement.
+			// The write that produced this row is not going to be reported any other
+			// way: there is no caller to return to and no signal this path reports
+			// through, because the row and the statement are one unit.
 			_ = tx.AddError(err)
 		}
 	}
 }
 
-// record writes a statement's row.
-//
-// On the delivered connection it goes out on the statement's own session; see
-// onOwnSession. On a connection built with Open it goes out through the
-// delivered handle, unless that connection reaches the delivered table itself;
-// see recordOpened.
 func record(tx *gorm.DB, r row) error {
 	if delivered, opened := db.OpenedFrom(tx); opened {
 		return recordOpened(tx, delivered, r)
@@ -180,53 +94,15 @@ func record(tx *gorm.DB, r row) error {
 	return onOwnSession(tx, r)
 }
 
-// onOwnSession writes a statement's row on a session of its own on the
-// statement's connection: NewDB clears the conditions the statement being
-// recorded left on it, and the transaction underneath — if there is one — is not
-// one of them. Nothing is waited for there, because the row takes nothing the
-// statement does not already hold.
+// onOwnSession writes a statement's row on a session of its own on the statement's
+// connection; NewDB clears the statement's conditions but keeps its transaction.
 func onOwnSession(tx *gorm.DB, r row) error {
 	return insert(tx.Session(&gorm.Session{NewDB: true, Context: tx.Statement.Context}), r)
 }
 
-// recordOpened writes the row of a statement on a connection built with Open,
-// under the statement's context, which is where the actor and the tenant are
-// read from.
-//
-// A connection opened onto the delivered database itself reaches the delivered
-// table on its own session, and the row is written there, as it is for a
-// statement on the delivered connection: in the statement's own transaction,
-// waiting for nothing. Sent through the delivered handle instead, it would wait
-// for the write lock the statement itself holds on an engine with one writer,
-// and on the other engine it would leave its row behind a statement rolled back
-// on a database the two share. Which connection that is, is read from the two
-// databases rather than from their locators; see reachesDeliveredTable.
-//
-// Every other row goes out through the delivered handle. It needs a connection
-// of the delivered pool while the statement it records holds its own
-// transaction open on the other database, and a caller inside a transaction on
-// the delivered handle of a database held to one connection holds that
-// connection until after the statement returns. Nothing a statement can see
-// tells that from another caller's brief hold, so the wait is bounded rather
-// than recognised: the connection is taken through db.Connection within
-// openedRowWait, and past it the statement fails with ErrWriteFailed naming the
-// wait — a record the statement could not have without waiting on the caller
-// is a record it does not get, and the write it would record does not happen.
-// The connection that tells which of the two ways the row goes is the same one,
-// and telling it waits for no lock.
-//
-// The insert then waits for a lock another connection holds on the delivered
-// database as the engine waits for it: on SQLite, whose one writer the caller's
-// write transaction on the delivered handle may be, for the busy timeout of the
-// delivered connection, after which the statement fails with ErrWriteFailed and
-// the engine's refusal; on PostgreSQL, until the statement's context ends or
-// the session's lock_timeout or statement_timeout does. It runs under the
-// statement's context, so cutting it short is that context's, as it is for the
-// statement itself.
-//
-// The session carries the statement's own logger. The row is part of the
-// statement's work, so a caller that gave its statement a logger of its own
-// gets the record's failure reported the way the statement's is.
+// recordOpened writes the row of a statement on a connection built with
+// Open, under the statement's context, which is where the actor and the
+// tenant are read from.
 func recordOpened(tx, delivered *gorm.DB, r row) error {
 	ctx := tx.Statement.Context
 	var ran, same, told bool
@@ -260,24 +136,9 @@ func recordOpened(tx, delivered *gorm.DB, r row) error {
 	}
 }
 
-// reachesDeliveredTable reports whether the statement's own session reaches the
-// audit table a row written through the delivered connection would land in.
-//
-// The two databases are asked, not their locators. A locator is the database
-// module's to read, and one database answers to many of them — a relative path
-// and an absolute one, a link, a host name and its address — while each engine
-// can say which database a connection is on: SQLite by the file it keeps its
-// main database in, PostgreSQL by the server run, the database and the relation
-// the table's name resolves to on that connection. The statement's side is asked
-// on the statement's own connection, which it already holds; the delivered side
-// on a connection of the delivered pool, which is only ever read. Neither
-// question waits for a lock another connection holds, so the answer comes even
-// while the statement's own transaction, or another writer, holds the database.
-//
-// A database with no file behind it — SQLite's in-memory and temporary ones —
-// is never taken for the delivered one: it belongs to its own connection. On an
-// engine this plugin knows no question for, the answer is no, which sends the
-// row through the delivered handle.
+// reachesDeliveredTable reports whether the statement's own session
+// reaches the audit table a row written through the delivered connection
+// would land in.
 func reachesDeliveredTable(ctx context.Context, tx *gorm.DB, delivered gorm.ConnPool) (bool, error) {
 	own := tx.Statement.ConnPool
 	switch tx.Name() {
@@ -290,18 +151,8 @@ func reachesDeliveredTable(ctx context.Context, tx *gorm.DB, delivered gorm.Conn
 	}
 }
 
-// sqliteDialector is the name the SQLite engine's GORM dialector answers, which
-// is how a plugin holding nothing but a session tells that engine apart.
 const sqliteDialector = "sqlite"
 
-// sqliteMainFile reads the file SQLite keeps a connection's main database in,
-// as the engine resolved it, links followed; it is empty for a database with no
-// file behind it.
-//
-// It is the pragma rather than its table-valued form, which reads the same
-// list: the table-valued form is a query, and a query waits for a shared lock
-// that a writer committing, or a transaction holding the database, keeps from
-// it; the pragma takes no lock.
 func sqliteMainFile(ctx context.Context, conn gorm.ConnPool) (string, error) {
 	rows, err := conn.QueryContext(ctx, "PRAGMA database_list")
 	if err != nil {
@@ -325,10 +176,6 @@ func sqliteMainFile(ctx context.Context, conn gorm.ConnPool) (string, error) {
 	return "", errors.New("the connection lists no main database")
 }
 
-// sameSQLiteFile reports whether two SQLite connections keep their main
-// database in one file. The engine's own path decides, links resolved, and a
-// second name of one file the engine does not resolve to the same path — a hard
-// link — is recognised by the file system.
 func sameSQLiteFile(ctx context.Context, own, delivered gorm.ConnPool) (bool, error) {
 	ownFile, err := sqliteMainFile(ctx, own)
 	if err != nil {
@@ -352,23 +199,11 @@ func sameSQLiteFile(ctx context.Context, own, delivered gorm.ConnPool) (bool, er
 	return ownErr == nil && deliveredErr == nil && os.SameFile(ownInfo, deliveredInfo), nil
 }
 
-// postgresDialector is the name the PostgreSQL engine's GORM dialector answers.
 const postgresDialector = "postgres"
 
-// postgresTable names, on one connection, the server run, the database and the
-// relation the audit table's name resolves to there, quoted the way GORM writes
-// it. The relation is null where the name resolves to nothing.
 var postgresTable = fmt.Sprintf(
 	`SELECT pg_postmaster_start_time(), current_database(), to_regclass('"%s"')::oid::int8`, tableName)
 
-// samePostgresTable reports whether two PostgreSQL connections resolve the
-// audit table's name to one relation of one database on one server run.
-//
-// The relation is what a row goes into, and it is compared rather than the
-// database alone because a connection's search path decides which schema's
-// table the name reaches. The server run is when the server started, which two
-// servers holding copies of one database — a restored backup, a promoted
-// standby — do not share.
 func samePostgresTable(ctx context.Context, own, delivered gorm.ConnPool) (bool, error) {
 	var ownStarted, deliveredStarted time.Time
 	var ownDatabase, deliveredDatabase string
@@ -387,25 +222,8 @@ func samePostgresTable(ctx context.Context, own, delivered gorm.ConnPool) (bool,
 		ownRelation == deliveredRelation, nil
 }
 
-// openedRowWait is how long a row for a statement on a connection built with
-// Open waits for a connection of the delivered pool, through db.Connection.
-//
-// A connection another caller holds under load comes free in milliseconds.
-// Waiting longer only helps when another caller holds the pool for longer than
-// this, and every second of it keeps the statement's own transaction open on
-// the other database; inside a transaction on the delivered handle of a
-// database held to one connection no amount of waiting ends it, because the
-// connection the row waits for is the caller's. The insert's wait for a lock is
-// the engine's (recordOpened).
 const openedRowWait = time.Second
 
-// targetTable is the table a statement writes to.
-//
-// Statement.Table is what the model path sets; the schema's own name is the
-// fallback for a statement that reached this point without one. The comparison
-// against tableName is what keeps this plugin from recording its own writes,
-// and it holds because the write goes through the same model path — a write
-// issued as raw SQL would carry no table and would not reach here at all.
 func targetTable(st *gorm.Statement) string {
 	if st.Table != "" {
 		return st.Table
@@ -416,7 +234,4 @@ func targetTable(st *gorm.Statement) string {
 	return ""
 }
 
-// statementOutcome is what the result column holds on every statement row. A
-// statement that failed leaves no row, so the one that does has succeeded; how
-// much it changed is the detail's rows_affected.
 const statementOutcome = "ok"

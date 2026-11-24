@@ -29,7 +29,6 @@ const (
 	paramLimit   = "limit"
 )
 
-// listParams is the set the list route accepts.
 var listParams = map[string]bool{
 	paramSince:   true,
 	paramUntil:   true,
@@ -40,10 +39,6 @@ var listParams = map[string]bool{
 	paramLimit:   true,
 }
 
-// exportParams is the set the export route accepts. It is deliberately not
-// listParams: a cursor and a page size describe a page, and an export reads the
-// whole matching set, so either on an export request is a shape refusal rather
-// than a bound the route silently ignores.
 var exportParams = map[string]bool{
 	paramSince:   true,
 	paramUntil:   true,
@@ -52,16 +47,9 @@ var exportParams = map[string]bool{
 	paramActor:   true,
 }
 
-// handleRecordList answers GET /api/v1/system/audit/records: one page of audit records,
-// narrowed by a time window and sets of actions, outcomes and actors, read
-// newest first.
-//
-// The caller and the decision are the mounted route's: the guard in front of
-// this handler read the identity (401 with no identity) and asked for
-// audit.read (a shortfall is the guard's own answer) before any parsing ran.
-// The handler reads the parameters, checks their shape (a shape this module
-// cannot read is a 400), reads the table under a cross-tenant mark (a read
-// failure is a 503) and answers a page.
+// handleRecordList answers GET /api/v1/system/audit/records: one page of
+// audit records, narrowed by a time window and sets of actions, outcomes
+// and actors, read newest first.
 func (p *product) handleRecordList(ctx context.Context, in RecordListInput) (AuditAdminRecordPage, error) {
 	caller, ok := authn.FromContext(ctx)
 	if !ok {
@@ -87,16 +75,6 @@ func (p *product) handleRecordList(ctx context.Context, in RecordListInput) (Aud
 	return AuditAdminRecordPage{Entries: entries, Next: next}, nil
 }
 
-// handleRecordGet answers GET /api/v1/system/audit/records/:id: one audit record, taken
-// by the row identifier, which is unique over the whole table and so needs no
-// tenant.
-//
-// The caller and the decision are the mounted route's, as on the list route.
-// The handler reads the path parameter (a path that is not an identifier is a
-// 400), reads the table under a cross-tenant mark (a read failure is a 503) and
-// answers the record, or a bare 404 when the table holds no such row. The 404
-// carries no problem document: it says a row is not there, not which refusal it
-// was.
 func (p *product) handleRecordGet(ctx context.Context, in RecordGetInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	caller, ok := authn.FromContext(ctx)
 	if !ok {
@@ -125,11 +103,6 @@ func (p *product) handleRecordGet(ctx context.Context, in RecordGetInput, _ *spe
 	return speedhttp.JSONReply(http.StatusOK, recordViewOf(rows[0], name)), nil
 }
 
-// listQueryOf turns the list route's bound input into a read query. The filters
-// are the ones every query route shares; on top of them the list route takes the
-// page's cursor and size. A limit that is not a non-negative integer is a
-// refusal; a limit above the read surface's maximum is not refused, because the
-// read surface caps it.
 func listQueryOf(in RecordListInput) (journal.Query, bool) {
 	q, ok := filterQueryOf(in.Since, in.Until, in.Action, in.Outcome, in.Actor)
 	if !ok {
@@ -143,10 +116,6 @@ func listQueryOf(in RecordListInput) (journal.Query, bool) {
 	return q, true
 }
 
-// exportQueryOf turns the export route's bound input into a read query. It
-// carries the shared filters and the read surface's maximum page size: the
-// export is not a caller-sized page, it reads as much as one read can return and
-// continues with the cursor until the cursor is empty.
 func exportQueryOf(in RecordExportInput) (journal.Query, bool) {
 	q, ok := filterQueryOf(in.Since, in.Until, in.Action, in.Outcome, in.Actor)
 	if !ok {
@@ -156,9 +125,6 @@ func exportQueryOf(in RecordExportInput) (journal.Query, bool) {
 	return q, true
 }
 
-// filterQueryOf turns the filters every query route shares into a read query. A
-// time bound that is not RFC 3339 and an action, outcome or actor that names
-// nothing are each a refusal.
 func filterQueryOf(since, until string, actions, outcomes, actors []string) (journal.Query, bool) {
 	var q journal.Query
 	if since != "" {
@@ -196,13 +162,6 @@ func filterQueryOf(since, until string, actions, outcomes, actors []string) (jou
 	return q, true
 }
 
-// onlyAccepted reports whether every query parameter on the request is in the
-// accepted set. A nil set accepts none, which is the get route's shape.
-//
-// The typed binder reads only the parameters an operation declares and silently
-// ignores the rest, so this check stays in front of the handler to keep the set
-// closed: a misspelled bound is reported rather than swallowed by a read that
-// ignores it.
 func onlyAccepted(c *gin.Context, accepted map[string]bool) bool {
 	for key := range c.Request.URL.Query() {
 		if !accepted[key] {
@@ -223,8 +182,6 @@ func parseInstant(s string) (time.Time, bool) {
 	return t.UTC(), true
 }
 
-// parseRowID reads a path parameter as a row identifier: a non-negative decimal
-// integer that fits the identifier's type.
 func parseRowID(s string) (uint64, bool) {
 	n, err := strconv.ParseUint(s, 10, 64)
 	if err != nil {
@@ -233,11 +190,6 @@ func parseRowID(s string) (uint64, bool) {
 	return n, true
 }
 
-// logRead writes the diagnostic line one read leaves. Every route of this module
-// is a read and writes no audit row of its own — reading the table is not an
-// action, and a row per read would grow the table with its being read — so the
-// trace of a read is this line: the route, the caller and the number of rows the
-// read answered.
 func (p *product) logRead(route string, caller authn.Identity, hits int) {
 	p.logger.Info(ModuleName+": a query was read",
 		"route", route,
@@ -245,20 +197,6 @@ func (p *product) logRead(route string, caller authn.Identity, hits int) {
 		"hits", hits)
 }
 
-// answerErr maps a failure the read surface returned to the response it belongs
-// to.
-//
-// The mapping is closed and fail-closed. A cursor that is not one the read
-// surface handed out is a shape failure the handler could not see before the
-// read — the cursor is opaque — so it is a 400; anything else is a 503 whose
-// cause stays in the log and never reaches the caller. A failure the mapping
-// does not name does not fall through as a success: it is the same 503 an
-// unknown failure gets.
-//
-// A request that is already done is not a dependency failure: the read ends with
-// the request's cancellation, the caller has nothing left to receive the answer,
-// and the same cancellation ends a running export quietly. The answer stays the
-// mapped 503, but no error line is written for it.
 func (p *product) answerErr(ctx context.Context, op string, err error) error {
 	if errors.Is(err, journal.ErrInvalidQuery) {
 		return badRequestFault()

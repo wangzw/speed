@@ -28,26 +28,18 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// cancelled is a context whose caller has gone: net/http cancels a request's
-// context when the client closes its connection, and a publisher's context ends
-// the same way when the request that published has.
 func cancelled() context.Context {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	return ctx
 }
 
-// requestEndpoint is the endpoint the request-level cases register on and
-// configure the journal for.
 const requestEndpoint = "public"
 
 // requestWait bounds every wait in the request-level cases. It is generous on
 // purpose: what it guards against is a wait that never ends, not a slow machine.
 const requestWait = 10 * time.Second
 
-// served is what a request-level case is handed while the real entry point is
-// listening: where it listens, the delivered database the rows are read from,
-// and a client that opens a connection of its own for every request.
 type served struct {
 	t      *testing.T
 	addr   string
@@ -55,23 +47,12 @@ type served struct {
 	client *nethttp.Client
 }
 
-// reply is what a client got back from a request.
 type reply struct {
 	status int
 	header nethttp.Header
 	body   string
 }
 
-// servedRequests assembles the real entry point beside the journal and runs
-// action once the endpoint is listening.
-//
-// The journal is configured to record requests on the endpoint "public", and
-// those are the request items the case gives. The routes callback runs in the
-// Init stage of a module that depends on the entry point, which is when its
-// registration gate is open, so a case registers its routes and its own layers
-// the way a module does. What a case observes — the route a request was
-// dispatched to, the status a client received, the connection a handler gave
-// up — is the engine's own, and nothing here stands in for the engine.
 func servedRequests(t *testing.T, requests []string, routes func(speedhttp.Endpoint),
 	action func(ctx context.Context, s *served) error,
 ) {
@@ -139,10 +120,6 @@ func servedRequests(t *testing.T, requests []string, routes func(speedhttp.Endpo
 	}
 }
 
-// listeningAddress reads the address the entry point bound for an endpoint out
-// of the record it writes once it is listening. The endpoint is configured on
-// port 0, so the record is the one place that says which port the operating
-// system gave it.
 func listeningAddress(t *testing.T, logFile, endpoint string) (string, bool) {
 	t.Helper()
 	contents, err := os.ReadFile(logFile)
@@ -163,7 +140,6 @@ func listeningAddress(t *testing.T, logFile, endpoint string) (string, bool) {
 	return "", false
 }
 
-// ask sends one request and reads the whole response.
 func (s *served) ask(ctx context.Context, method, path string) (reply, error) {
 	request, err := nethttp.NewRequestWithContext(ctx, method, "http://"+s.addr+path, nil)
 	if err != nil {
@@ -178,10 +154,6 @@ func (s *served) ask(ctx context.Context, method, path string) (reply, error) {
 	return reply{status: response.StatusCode, header: response.Header, body: string(body)}, err
 }
 
-// expect sends one request and reports it as the case's failure when it did not
-// get the status it was asked for. The row a request leaves is written before
-// its response is complete, so a case reads the rows after its requests have
-// been answered.
 func (s *served) expect(ctx context.Context, method, path string, status int) reply {
 	s.t.Helper()
 	got, err := s.ask(ctx, method, path)
@@ -195,10 +167,8 @@ func (s *served) expect(ctx context.Context, method, path string, status int) re
 	return got
 }
 
-// rawStatus sends a request written out in full on a connection of its own and
-// reads the status line of the answer, for the cases a client of net/http would
-// not read as the answer: a connection a handler takes over, and a switch of
-// protocols.
+// rawStatus sends a raw request on its own connection and reads the status line,
+// for cases a net/http client would not.
 func (s *served) rawStatus(ctx context.Context, request string) (int, error) {
 	var dialer net.Dialer
 	conn, err := dialer.DialContext(ctx, "tcp", s.addr)
@@ -220,7 +190,6 @@ func (s *served) rawStatus(ctx context.Context, request string) (int, error) {
 	return response.StatusCode, nil
 }
 
-// rows reads the rows the request path has written.
 func (s *served) rows() []row {
 	s.t.Helper()
 	var rows []row
@@ -245,7 +214,6 @@ func (s *served) awaitRows(n int) []row {
 	}
 }
 
-// decodedDetail decodes the detail column of a row.
 func decodedDetail(t *testing.T, r row) map[string]string {
 	t.Helper()
 	var detail map[string]string
@@ -255,8 +223,6 @@ func decodedDetail(t *testing.T, r row) map[string]string {
 	return detail
 }
 
-// describe renders rows as method, route path and outcome, which is what a case
-// comparing the rows of several requests reads.
 func describe(rows []row) []string {
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
@@ -265,16 +231,8 @@ func describe(rows []row) []string {
 	return out
 }
 
-// A request whose method and route path equal a request item is recorded, with
-// the method as its action, the route path as its object and the path the client
-// asked for in the detail.
-//
-// The two paths are different things and the case keeps them apart: the route
-// path is the one the route was registered under, "/contacts/:id", and the
-// request path is the one that was asked, "/contacts/c1". An item is written in
-// the first form, so a layer comparing the second would never see one match.
-// The DELETE on the same route is served and not recorded, which is what the
-// method is compared for.
+// A request matching a request item is recorded with the method as action, the
+// route path as object and the asked path in the detail.
 func TestARequestIsRecordedWhenItsMethodAndRoutePathEqualARequestItem(t *testing.T) {
 	servedRequests(t, []string{"GET /contacts/:id"}, func(endpoint speedhttp.Endpoint) {
 		endpoint.Route("GET", "/contacts/:id", func(c *gin.Context) { c.String(nethttp.StatusOK, "a contact") })
@@ -306,16 +264,8 @@ func TestARequestIsRecordedWhenItsMethodAndRoutePathEqualARequestItem(t *testing
 	})
 }
 
-// A request item that differs from the registered spelling by one character
-// never matches, and the startup does not fail on it.
-//
-// Nothing lists the routes an endpoint has, so there is nothing to check an item
-// against: the host finds out by the rows that do not appear. The items here are
-// off by a letter's case in the parameter name, by the parameter name, by a
-// trailing slash and by the method's case, and one names a route that is not
-// registered at all. The request to the real route is served and not recorded,
-// which a layer that compared more loosely than character for character would
-// get wrong; the control request is recorded, and it is the only row.
+// A request item that differs from the registered spelling by one
+// character never matches, and the startup does not fail on it.
 func TestARequestItemOffByACharacterNeverMatchesAndFailsNothing(t *testing.T) {
 	servedRequests(t, []string{
 		"GET /contacts/:ID",
@@ -341,15 +291,6 @@ func TestARequestItemOffByACharacterNeverMatchesAndFailsNothing(t *testing.T) {
 
 // A request the engine matched no route for leaves no row, however it is
 // spelled in the items.
-//
-// A path nothing is registered on is a 404 and a method the path does not allow
-// is a 405, and both run through the layers before the engine answers them. The
-// route path they carry is empty, so they equal no item: the items here name the
-// very requests that were sent, which is what a layer comparing the request path
-// instead of the route path would record. A HEAD request to a route registered
-// for GET is among them, because the engine does not hand it to the GET route.
-// The requests still reach the engine's answer, and the control at the end is
-// recorded.
 func TestARequestWithNoMatchedRouteLeavesNoRow(t *testing.T) {
 	servedRequests(t, []string{
 		"GET /missing",
@@ -384,23 +325,8 @@ func TestARequestWithNoMatchedRouteLeavesNoRow(t *testing.T) {
 	})
 }
 
-// The outcome is the status the chain ended with, read after the inner chain has
-// returned.
-//
-// The requests end in different ways: a handler that sets a status, one that
-// writes nothing at all, an inner layer that refuses the request, a handler that
-// sets an informational status before the final one, one that sets only an
-// informational status and then writes a body, and one that sets a status after
-// its response has begun to go out. In every case the outcome is the status the
-// client received. A row written on the way in could hold a constant at best,
-// and one that read the status before the chain ran would hold 200 for all of
-// them.
-//
-// The informational status alone is the one the writer still reports after the
-// client has been answered with something else: net/http sends 103 ahead of the
-// response and supplies the 200 that follows, and a row holding 103 would name a
-// status no caller was answered with. 101 Switching Protocols is final, and the
-// last request here is answered with it.
+// The outcome is the status the chain ended with, read after the inner
+// chain has returned.
 func TestTheOutcomeIsTheStatusTheChainEndedWith(t *testing.T) {
 	servedRequests(t, []string{
 		"GET /created", "GET /silent", "GET /refused", "GET /informational", "GET /hinted", "GET /late",
@@ -483,12 +409,6 @@ func TestTheOutcomeIsTheStatusTheChainEndedWith(t *testing.T) {
 }
 
 // The row is written after the handler returns, and not before it.
-//
-// The handler sends the first part of a streamed response and holds the rest
-// back until the client has read it: while it is held, the request is still
-// being served and nothing is recorded. The layer puts nothing in the writer's
-// place, so the flush reaches the client straight away, and once the handler has
-// finished the row is there with the status it answered with.
 func TestTheRowIsWrittenOnlyOnceTheHandlerHasReturned(t *testing.T) {
 	release := make(chan struct{})
 	servedRequests(t, []string{"GET /stream"}, func(endpoint speedhttp.Endpoint) {
@@ -536,13 +456,6 @@ func TestTheRowIsWrittenOnlyOnceTheHandlerHasReturned(t *testing.T) {
 
 // A request whose client went away before the handler returned is still
 // recorded.
-//
-// The work the handler did has happened by then — a delete committed, an export
-// was read — and the row is the only trace of it this path leaves. Writing it
-// under the request's own context loses it to the cancellation, and the failure
-// signal then reports a healthy table as failing. The handler here waits for the
-// server to cancel the request's context, which it does when the client closes
-// the connection.
 func TestARequestWhoseClientHasGoneIsStillRecorded(t *testing.T) {
 	entered := make(chan struct{})
 	servedRequests(t, []string{"DELETE /things/:id"}, func(endpoint speedhttp.Endpoint) {
@@ -581,14 +494,8 @@ func TestARequestWhoseClientHasGoneIsStillRecorded(t *testing.T) {
 	})
 }
 
-// A request the configuration does not name is passed through untouched, and
-// records nothing, whether its handler returns or panics.
-//
-// The contrast with the panic case below is the point: a panic is recorded
-// because the request matched, not because it panicked. A layer that recorded
-// every panic it saw would be a different thing, and one that decided after the
-// fact could not know which requests the host asked for. The panic still ends in
-// the entry point's answer, because the layer neither swallows it nor adds to it.
+// A request the configuration does not name is passed through untouched,
+// and records nothing, whether its handler returns or panics.
 func TestARequestTheConfigurationDoesNotNameIsPassedThroughUnrecorded(t *testing.T) {
 	servedRequests(t, []string{"GET /named"}, func(endpoint speedhttp.Endpoint) {
 		endpoint.Route("GET", "/named", func(c *gin.Context) { c.String(nethttp.StatusOK, "named") })
@@ -609,14 +516,8 @@ func TestARequestTheConfigurationDoesNotNameIsPassedThroughUnrecorded(t *testing
 	})
 }
 
-// A handler that panics is recorded as a panic, and the panic goes on to the
-// entry point's fallback.
-//
-// The client gets the fallback's answer, a 500 in problem details whose body
-// leaves the panic's value out; the row says "panic" where a status code would
-// be a guess, because no status ever arrived. A layer that swallowed the panic
-// would leave the client an empty 200, and one that wrote the status the engine
-// held at that moment would record that instead of the panic.
+// A handler that panics is recorded as a panic, and the panic goes on to
+// the entry point's fallback.
 func TestAPanicIsRecordedAndReachesTheEntryPointFallback(t *testing.T) {
 	servedRequests(t, []string{"GET /boom"}, func(endpoint speedhttp.Endpoint) {
 		endpoint.Route("GET", "/boom", func(*gin.Context) { panic(errors.New("the handler fell over")) })
@@ -643,13 +544,8 @@ func TestAPanicIsRecordedAndReachesTheEntryPointFallback(t *testing.T) {
 	})
 }
 
-// A handler that abandons its connection is recorded as a panic too, and the
-// client sees the connection dropped.
-//
-// The layer cannot tell net/http's sentinel from a defect, so the row says
-// "panic" for a request whose caller was answered with nothing; the entry point's
-// fallback recognises the sentinel and writes no response. A layer that
-// recovered the value and let the request return would leave the client a 200.
+// A handler that abandons its connection is recorded as a panic too, and
+// the client sees the connection dropped.
 func TestAnAbandonedConnectionIsRecordedAsAPanic(t *testing.T) {
 	servedRequests(t, []string{"GET /abandon"}, func(endpoint speedhttp.Endpoint) {
 		endpoint.Route("GET", "/abandon", func(*gin.Context) { panic(nethttp.ErrAbortHandler) })
@@ -667,10 +563,6 @@ func TestAnAbandonedConnectionIsRecordedAsAPanic(t *testing.T) {
 }
 
 // The result column of a panicking request holds the word "panic".
-//
-// The word is part of what a reader of the table matches on, so the case spells
-// it out rather than reading it from the constant the layer writes: a constant
-// compared with itself would stay green if someone changed its value.
 func TestAPanicRowHoldsTheLiteralOutcomePanic(t *testing.T) {
 	servedRequests(t, []string{"GET /boom"}, func(endpoint speedhttp.Endpoint) {
 		endpoint.Route("GET", "/boom", func(*gin.Context) { panic("the handler fell over") })
@@ -684,12 +576,8 @@ func TestAPanicRowHoldsTheLiteralOutcomePanic(t *testing.T) {
 	})
 }
 
-// The row is built from the request the layer received, and not from the one a
-// layer inside handed the chain in its place.
-//
-// The layer inside replaces the request with a clone whose path is rewritten. The
-// identity and the tenant the row carries come from the context of the request
-// the layers outside settled, and the path is the one the client asked for.
+// The row is built from the request the layer received, and not from the
+// one a layer inside handed the chain in its place.
 func TestTheRowIsBuiltFromTheRequestTheLayerReceived(t *testing.T) {
 	servedRequests(t, []string{"GET /things/:id"}, func(endpoint speedhttp.Endpoint) {
 		endpoint.Use(speedhttp.Middleware{
@@ -717,15 +605,8 @@ func TestTheRowIsBuiltFromTheRequestTheLayerReceived(t *testing.T) {
 	})
 }
 
-// A handler that ends its goroutine with runtime.Goexit is recorded as a panic
-// as well, and the unwinding goes on to the connection.
-//
-// Such a handler neither returns nor throws a value, so there is no status to
-// read and nothing to catch: the row says "panic", as it does for a handler that
-// panicked, and the connection is closed on the client without an answer. A layer
-// that wrote its row only for a value it had caught would leave this request
-// without one, and one that swallowed the unwinding would leave the client an
-// answer.
+// A handler that ends its goroutine with runtime.Goexit is recorded as a
+// panic as well, and the unwinding goes on to the connection.
 func TestAGoexitIsRecordedAsAPanicAndTheConnectionIsClosed(t *testing.T) {
 	servedRequests(t, []string{"GET /exit"}, func(endpoint speedhttp.Endpoint) {
 		endpoint.Route("GET", "/exit", func(*gin.Context) { runtime.Goexit() })
@@ -742,13 +623,8 @@ func TestAGoexitIsRecordedAsAPanicAndTheConnectionIsClosed(t *testing.T) {
 	})
 }
 
-// A request whose connection the handler took over is recorded with the status
-// the writer holds, which is not the answer the handler wrote on the connection.
-//
-// After the takeover the status line is the handler's own, written on the raw
-// connection, where the layer cannot read it: here the client is answered 101
-// and the row holds 200, or the status the handler had set before the takeover.
-// The second half is what tells the writer's status from a constant.
+// A request whose connection the handler took over is recorded with the
+// writer's status, not the answer the handler wrote.
 func TestAHijackedRequestRecordsTheStatusTheWriterHolds(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -793,11 +669,8 @@ func TestAHijackedRequestRecordsTheStatusTheWriterHolds(t *testing.T) {
 	}
 }
 
-// An entry of the requests input item that is not a method, a space and a path
-// beginning with a slash fails the startup, and the failure names the item, the
-// entry and the way to write one.
-//
-// The control is the same assembly with a well-formed entry, which starts.
+// A requests entry that is not a method, a space and a slash-prefixed path
+// fails startup, naming the item, the entry and the correct form.
 func TestARequestItemThatIsNotAMethodAndAPathFailsTheStartup(t *testing.T) {
 	drive := func(t *testing.T, entry string) error {
 		t.Helper()
@@ -868,9 +741,7 @@ func TestParseRequestItem(t *testing.T) {
 	}
 }
 
-// The event path is the same shape: a process-local bus runs the subscriber on
-// the publisher's context, and the event was published whether or not that
-// context is still live.
+// The event path is the same shape.
 func TestAnEventPublishedOnAFinishedContextIsStillRecorded(t *testing.T) {
 	handle := open(t)
 	var reported bytes.Buffer

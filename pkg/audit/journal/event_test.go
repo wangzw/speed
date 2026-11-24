@@ -14,10 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// change is shaped like the settings module's change payload: untagged fields,
-// and the facts that tell one kind of change from another — a delete, a
-// withheld value, the version written — carried as a boolean and a number
-// rather than as text.
 type change struct {
 	Key       string
 	Old       string
@@ -28,8 +24,6 @@ type change struct {
 	Sensitive bool
 }
 
-// publishOne records one event of type "settings.changed" and returns the detail
-// of the row it left, decoded.
 func publishOne(t *testing.T, payload any) map[string]string {
 	t.Helper()
 	handle := open(t)
@@ -50,13 +44,8 @@ func publishOne(t *testing.T, payload any) map[string]string {
 	return detail
 }
 
-// A payload's boolean and numeric fields reach the detail, spelled the way the
-// payload's own serialization spells them.
-//
-// Without them a delete reads as a write of the empty value, a change to a
-// withheld value reads as a change from nothing to nothing, and the version the
-// change produced is gone — and the event path is where the settings module
-// leaves the history of its changes.
+// A payload's boolean and numeric fields reach the detail, spelled the
+// way the payload's own serialization spells them.
 func TestEventDetailKeepsScalarFields(t *testing.T) {
 	t.Run("a delete", func(t *testing.T) {
 		detail := publishOne(t, change{Key: "crm.stages", Old: "a", Deleted: true, Actor: "u_alice"})
@@ -83,9 +72,7 @@ func TestEventDetailKeepsScalarFields(t *testing.T) {
 	})
 }
 
-// Nested values stay out of the detail. Masking compares whole top-level keys,
-// so a key inside a nested value is never compared at all, and rendering the
-// value as text would put whatever it carries in the table unmasked.
+// Nested values stay out of the detail.
 func TestEventDetailLeavesNestedValuesOut(t *testing.T) {
 	detail := publishOne(t, map[string]any{
 		"object": "user/u1",
@@ -103,9 +90,6 @@ func TestEventDetailLeavesNestedValuesOut(t *testing.T) {
 	}
 }
 
-// replicas builds journals over one table, each subscribed on a bus of its own:
-// the shape a transport that broadcasts every event gives each replica. Every
-// journal reports its failures into the one buffer returned.
 func replicas(t *testing.T, handle *gorm.DB, n int) ([]*recordingBus, *bytes.Buffer) {
 	t.Helper()
 	var reported bytes.Buffer
@@ -119,7 +103,6 @@ func replicas(t *testing.T, handle *gorm.DB, n int) ([]*recordingBus, *bytes.Buf
 	return buses, &reported
 }
 
-// deliver hands one event to each bus in turn.
 func deliver(t *testing.T, evt event.Event, buses ...*recordingBus) {
 	t.Helper()
 	for _, bus := range buses {
@@ -129,14 +112,8 @@ func deliver(t *testing.T, evt event.Event, buses ...*recordingBus) {
 	}
 }
 
-// An event a broadcast bus hands to every replica is recorded once, and the row
-// carries the event's identifier.
-//
-// Every replica runs its own subscription into the one table, so without a key
-// the table holds a row per replica — and a row per redelivery — that a reader
-// cannot tell from separate events. The identifier on the row is what lets a
-// reader match the row to the event it records. A delivery that finds the row
-// already written has nothing to report: the fact is in the table.
+// An event a broadcast bus hands to every replica is recorded once, and
+// the row carries the event's identifier.
 func TestAnEventDeliveredToEveryReplicaIsRecordedOnce(t *testing.T) {
 	handle := open(t)
 	buses, reported := replicas(t, handle, 2)
@@ -159,16 +136,6 @@ func TestAnEventDeliveredToEveryReplicaIsRecordedOnce(t *testing.T) {
 	}
 }
 
-// requireTheFirstDeliveryIsKept delivers one event through a journal on the
-// first handle, then again, later and with everything a delivery carries changed
-// but the identifier, through a journal on the second, and checks that the
-// table still holds the row the first delivery wrote, unchanged.
-//
-// A later delivery that rewrote the row — an insert that updates on the key
-// instead of yielding to it — would leave one row with the right identifier, and
-// the count alone would not tell it from the row the first delivery wrote. What
-// tells them apart is the row's content: its acceptance time, its tenant and
-// what it read from the payload.
 func requireTheFirstDeliveryIsKept(t *testing.T, first, second *gorm.DB) {
 	t.Helper()
 	var reported bytes.Buffer
@@ -211,12 +178,10 @@ func requireTheFirstDeliveryIsKept(t *testing.T, first, second *gorm.DB) {
 	}
 }
 
-// sameText reports whether two nullable columns hold the same value.
 func sameText(a, b *string) bool {
 	return (a == nil && b == nil) || (a != nil && b != nil && *a == *b)
 }
 
-// text renders a nullable column for a failure message.
 func text(s *string) string {
 	if s == nil {
 		return "NULL"
@@ -231,9 +196,8 @@ func TestTheFirstDeliveryOfAnEventIsTheOneKept(t *testing.T) {
 	requireTheFirstDeliveryIsKept(t, handle, handle)
 }
 
-// Two events are two rows even when everything but the identifier agrees, and
-// an event that carries no identifier is recorded on every delivery rather than
-// merged with every other such event under an empty key.
+// Two events stay two rows when only their identifiers differ, and an event
+// without one is recorded on every delivery.
 func TestOnlyAnEventsOwnIdentifierMergesItsDeliveries(t *testing.T) {
 	handle := open(t)
 	buses, _ := replicas(t, handle, 2)
@@ -254,14 +218,6 @@ func TestOnlyAnEventsOwnIdentifierMergesItsDeliveries(t *testing.T) {
 	}
 }
 
-// requireTheUpgradeKeepsTheTable builds the audit table from the dialect's first
-// migration, puts a row in it, applies the rest, and checks that the row is
-// still there and that every capture path writes into the table afterwards.
-//
-// A table built before the event column existed is what a deployment already
-// running this module has, and the later migrations have to take it as it is:
-// a file rewritten in place would never run there, because the database module
-// records the first file as applied.
 func requireTheUpgradeKeepsTheTable(t *testing.T, handle *gorm.DB, dialect string) {
 	t.Helper()
 	entries, err := fs.ReadDir(migrationsFS, dialect)

@@ -1,29 +1,6 @@
-// Package admin is the audit capability's management module: it mounts the
-// record-query and export routes under /api/v1/system/audit/* and delivers no
-// capability of its own.
-//
-// The module holds no data and no rule. Every route's action is one or more
-// reads of the audit table, reached through the audit implementation
-// subpackage's read surface — journal.Reader — so the audit module owns the
-// table, its shape and its writing, and this module only decides who may ask and
-// how the answer is shaped. It is the query surface the audit capability
-// deliberately does not provide: reading an audit record needs an authorization
-// decision, which belongs to the permission model, so the capability leaves it
-// to a module that carries one.
-//
-// Every route is declared open on the authorization middleware, so the
-// middleware lets a request through and the handler makes the decision itself:
-// it reads the caller from the request, asks the handler-internal authz.guard
-// API for audit.read, and answers a shortfall before anything else runs. The
-// decision is made in the platform domain, because the audit table is a platform
-// asset; the read is issued under a cross-tenant mark, because the table holds
-// every tenant's rows and the rows that belong to none. A read writes no audit
-// row of its own — reading the table is not an action, and a row per read would
-// grow the table with its being read — so each read leaves a diagnostic line in
-// the log instead.
-//
-// The routes are mounted on the endpoints the audit.admin.endpoints list names,
-// and the start diagnostics name the endpoints and the group.
+// Package admin is the audit capability's management module: it mounts
+// the record-query and export routes under /api/v1/system/audit/* and
+// delivers no capability of its own.
 package admin
 
 import (
@@ -53,8 +30,6 @@ const ModuleName = "audit.admin"
 // module's own name, as a registering module's namespace always is.
 const ConfigNamespace = ModuleName
 
-// The configuration item this module accepts, relative to its namespace, and
-// the full path a failure names.
 const (
 	endpointsItem = "endpoints"
 	endpointsKey  = ConfigNamespace + "." + endpointsItem
@@ -65,20 +40,6 @@ const (
 // the public ones included, would put them where no gateway guards them.
 const allEndpoints = "*"
 
-// defaultEndpoint is the endpoint name this module's OpenAPI fragment is
-// declared against. The query routes are mounted on every endpoint
-// audit.admin.endpoints lists — data read only at start, which may name several
-// — and a resource is a static declaration fixed before configuration is read,
-// so the fragment carries this conventional name for the management surface
-// rather than the configured ones. A declared endpoint name that no endpoint
-// carries is not an error: the declaration and the mounting are separately
-// maintained facts, in the same way as the declared paths and the registered
-// routes (pkg/http's Spec).
-//
-// Unlike the ops module, this module does not rewrite the endpoint in Init:
-// ops is the merger and hands its own slice to the merge, while a declaring
-// module's resources are read back as copies, so a rewrite here would not reach
-// the merged document.
 const defaultEndpoint = "admin"
 
 // openAPIFragment is this module's OpenAPI fragment, read at build time. It is
@@ -87,9 +48,6 @@ const defaultEndpoint = "admin"
 //go:embed openapi/audit.admin.json
 var openAPIFragment []byte
 
-// auditSpec is the API root this module's fragment and routes hang off. The
-// fragment is generated from the operations the module declares; the routes are
-// mounted from the same declarations and resolved against this root.
 var auditSpec = speedhttp.Spec{
 	Endpoint: defaultEndpoint,
 	Prefix:   "api",
@@ -98,39 +56,9 @@ var auditSpec = speedhttp.Spec{
 	Document: openAPIFragment,
 }
 
-// init registers this module with the process registry. Registration travels
-// with the import, which is what makes "does this command mount the query
-// routes" a question the host answers by importing this package and writing
-// ModuleName into the command.
 func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.
-//
-// The read surface and the handler-internal guard are required. That the guard
-// is required is what makes the per-request decision available; that the read
-// surface is required is what makes an assembly without one fail before any
-// instance is built, rather than at the first request. The read surface is
-// delivered exclusively by the audit implementation module, and the guard by the
-// enforcement module, so the closure of a command that takes this one in does
-// not pull them in: the host writes them down. The logger is the one optional
-// requirement, taken up so that it is initialised first.
-//
-// The HTTP entry point and the route-declaration surface are taken up in Init
-// rather than declared: a command that mounts routes and has no entry point is a
-// failure to report at wiring time, and the declaration surface's absence is
-// legal — with no gate the routes carry no declaration and a guarded endpoint
-// answers them as undeclared.
-//
-// The outward declaration carries a speedhttp.Spec resource beside the schema:
-// it holds this module's OpenAPI fragment, which describes the query routes,
-// for a reader that merges the fragments into one document (the run's ops
-// module, or a build's gen command).
-//
-// It declares no permission vocabulary of its own: the permission every route is
-// held to, audit.read, is carried by the authorization capability, and this
-// module only asks for it. It delivers no capability and states StateEnabled and
-// never StateAuto: whether to mount the query routes is a decision on the
-// command tree, not a conclusion a configuration can infer.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -142,9 +70,6 @@ func Module() core.Module {
 		Resources: []any{
 			schema(),
 			auditSpec,
-			// The record-query surface: its routes are mounted whenever the
-			// module is in force and the process has an entry point, so the
-			// feature is static.
 			feature.Spec{Name: "audit.admin"},
 		},
 
@@ -177,36 +102,24 @@ func Module() core.Module {
 	}
 }
 
-// productOf narrows an instance to this module's product. The callbacks are also
-// handed an instance a host supplied for the module, which can be any value that
-// delivers the capability; this module delivers none, so a supplied instance is
-// left alone.
 func productOf(instance any) (*product, bool) {
 	p, ok := instance.(*product)
 	return p, ok && p != nil
 }
 
-// product is the module's instance. It holds the required capabilities and the
-// optional route-declaration surface taken up in Init.
 type product struct {
 	reader journal.Reader
 	guard  guard.Guard
 
 	// gate is the route-declaration surface, nil when the assembly delivers
-	// none. When it is there, Init declares every query route open on it so that
-	// a guarded endpoint lets the request reach the handler, which makes the
-	// decision.
-	gate authz.Gate
-	// names answers the name a tenant identifier is addressed by, nil when
-	// the assembly supplies no resolver. With none a record names no tenant
-	// rather than exposing the internal identifier.
+	// none.
+	gate   authz.Gate
 	names  tenant.NameResolver
 	logger *slog.Logger
 
 	cfg resolved
 }
 
-// newProduct takes up what the descriptor requires.
 func newProduct(reg *core.Registry) (*product, error) {
 	reader, err := core.Resolve[journal.Reader](reg)
 	if err != nil {
@@ -248,17 +161,7 @@ func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 	}
 }
 
-// wire runs in Init, where every instance exists. It takes up the optional
-// route-declaration surface and the logger, resolves the configured endpoints,
-// mounts the routes, declares them open, and writes the start diagnostic.
-//
-// The entry point is required: a command that mounts routes and has no entry
-// point has nothing to mount them on, and the failure names the module so the
-// fix — writing the entry point module's name into this command — is visible.
-// Every endpoint in the configured list is looked up on the entry point before
-// any route is mounted; a name the entry point does not declare is
-// ErrUnknownEndpoint and stops the startup, because a route on an endpoint
-// nobody serves is unreachable.
+// wire runs in Init, where every instance exists.
 func (p *product) wire(reg *core.Registry) error {
 	if delivered, err := core.Resolve[log.Logger](reg); err == nil {
 		p.logger = delivered.Named(ModuleName)
@@ -289,24 +192,12 @@ func (p *product) wire(reg *core.Registry) error {
 	return nil
 }
 
-// diagnose writes the start diagnostic: the endpoints the query routes were
-// mounted on and the group that was mounted. The line is the module's own, so
-// that a reader finds what the query routes did without scanning a chain
-// listing.
 func (p *product) diagnose() {
 	p.logger.Info(ModuleName+": the query routes are mounted",
 		"endpoints", p.cfg.endpoints,
 		"groups", managementGroups)
 }
 
-// schema declares this module's input items. The namespace is this module's own
-// name: two modules declaring one path is a startup failure even when only one
-// of them runs.
-//
-// The endpoint list takes the primary source alone. It decides where the query
-// routes are mounted, so an environment variable or a command-line argument that
-// could rewrite it would be a way to move them onto an endpoint from outside the
-// configuration file.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,
@@ -322,15 +213,8 @@ func schema() config.Schema {
 	}
 }
 
-// configDefaults is what this module is worth without a configuration file.
-//
-// There is no default for the endpoints: a list that mounted the query routes
-// nowhere would silently drop them, and guessing which endpoints should carry
-// them is a guess about what is exposed. A module that cannot answer fails the
-// startup, naming the key.
 var configDefaults = moduleConfig{}
 
-// moduleConfig is the set of input items this module accepts.
 type moduleConfig struct {
 	// Endpoints names the listening endpoints the query routes are mounted on,
 	// by the entry point's own names. The list is a set of concrete names: the
@@ -338,17 +222,10 @@ type moduleConfig struct {
 	Endpoints []string `config:"endpoints"`
 }
 
-// resolved is the configuration this module runs on.
 type resolved struct {
 	endpoints []string
 }
 
-// resolve turns decoded configuration into what the module runs on, refusing
-// what cannot be run on. A refusal names the key. The module has no failure
-// sentinel of its own — the audit capability carries no configuration sentinel
-// and this module declares none — so a shape it cannot run on is
-// authn.ErrInvalidConfig, the sentinel the other management surfaces judge an
-// endpoint list they cannot run on with.
 func (c moduleConfig) resolve() (resolved, error) {
 	if len(c.Endpoints) == 0 {
 		return resolved{}, fmt.Errorf("%w: %s is empty. The query routes are mounted on the endpoints "+
@@ -379,8 +256,6 @@ func (c moduleConfig) resolve() (resolved, error) {
 	return resolved{endpoints: c.Endpoints}, nil
 }
 
-// readConfig decodes this module's section and validates it. Prepare and New
-// both go through it, so the two see one configuration.
 func readConfig(reader config.Reader) (resolved, error) {
 	var cfg moduleConfig
 	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {

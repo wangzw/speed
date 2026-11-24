@@ -18,7 +18,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// exportRoute is the export route as the cases address it.
 const exportRoute = "/api/v1/system/audit/export"
 
 // A request with no identity is the 401 the admission and authorization layers
@@ -44,9 +43,8 @@ func TestNoIdentityOnTheExportIs401(t *testing.T) {
 	}
 }
 
-// The export asks the guard the same question the list route asks, in the same
-// platform domain: one permission, audit.read, covers reading a page and
-// exporting the whole matching set.
+// The export asks the guard the same question the list route asks, in the
+// same platform domain.
 func TestTheExportAsksForAuditReadInThePlatformDomain(t *testing.T) {
 	r := newRig(t)
 	if w := r.do(exportRoute); w.Code != http.StatusOK {
@@ -60,9 +58,8 @@ func TestTheExportAsksForAuditReadInThePlatformDomain(t *testing.T) {
 	}
 }
 
-// A shape the route cannot read is a 400 carrying the capability's problem type,
-// and it reaches the table for nothing. The export takes the list route's
-// filters and neither of the parameters that describe a page.
+// A shape the route cannot read is a 400 carrying the capability's
+// problem type, and it reaches the table for nothing.
 func TestAnExportShapeRefusalComesBeforeTheRead(t *testing.T) {
 	cases := map[string]string{
 		"a time bound that is not RFC 3339":           exportRoute + "?since=yesterday",
@@ -90,10 +87,7 @@ func TestAnExportShapeRefusalComesBeforeTheRead(t *testing.T) {
 	}
 }
 
-// The export writes one record view per line, page by page: it hands the read
-// surface the filters the request carried and the read surface's maximum page
-// size, continues with the cursor the read surface returned, and stops when the
-// cursor is empty. Every line is the record view, not a row and not a page.
+// The export writes one record view per line, page by page.
 func TestTheExportStreamsEveryPageAsNDJSON(t *testing.T) {
 	r := newRig(t)
 	at := time.Date(2026, 3, 1, 9, 30, 0, 0, time.UTC)
@@ -169,8 +163,6 @@ func TestTheExportStreamsEveryPageAsNDJSON(t *testing.T) {
 		}
 	}
 
-	// The export reads across tenants like every route of this module, under a
-	// context of its own rather than the request's.
 	if _, ok := tenant.FromContext(called[0].ctx); ok {
 		t.Error("the read context carries a tenant, want a context marked to cross tenants")
 	}
@@ -179,8 +171,6 @@ func TestTheExportStreamsEveryPageAsNDJSON(t *testing.T) {
 	}
 }
 
-// namedTenant answers one identifier with a name that differs from it, so a
-// case can tell which of the two a surface carries.
 type namedTenant struct {
 	id   string
 	name string
@@ -193,11 +183,8 @@ func (a namedTenant) NameOf(_ context.Context, id tenant.ID) (string, error) {
 	return "", nil
 }
 
-// TestTheExportNamesTheTenantByNameNeverTheIdentifier holds the tenant column
-// of an export file to the rule the list route follows: the row stores the
-// internal identifier, and the file a recipient downloads names the tenant by
-// its name. The fixture's values differ, so a file carrying either one is
-// distinguishable.
+// TestTheExportNamesTheTenantByNameNeverTheIdentifier holds the tenant
+// column of an export file to the rule the list route follows.
 func TestTheExportNamesTheTenantByNameNeverTheIdentifier(t *testing.T) {
 	const (
 		internalID = "ACME-INTERNAL"
@@ -222,9 +209,7 @@ func TestTheExportNamesTheTenantByNameNeverTheIdentifier(t *testing.T) {
 	}
 }
 
-// The export names the download and forbids caching it: the name is the record
-// set with the export's UTC instant written compactly, and the cache directive
-// is no-store because exported audit data is not kept by a cache.
+// The export names the download and forbids caching it.
 func TestTheExportNamesTheFileAndForbidsCaching(t *testing.T) {
 	r := newRig(t)
 	before := time.Now().UTC().Add(-time.Minute)
@@ -294,9 +279,7 @@ func TestAFirstPageFailureIs503(t *testing.T) {
 }
 
 // A request the caller abandoned before the first page came back is not a
-// dependency failure: the read ends with the request's cancellation, so there is
-// no fault to report. The failure is still mapped to the 503 the shape answers
-// with, but the log carries no error line for it.
+// dependency failure.
 func TestAFirstPageReadCancelledByTheCallerIsNotAFailure(t *testing.T) {
 	r := newRig(t)
 	r.reader.fail(fmt.Errorf("reading: %w", context.Canceled))
@@ -311,10 +294,8 @@ func TestAFirstPageReadCancelledByTheCallerIsNotAFailure(t *testing.T) {
 	}
 }
 
-// A failure after the first byte cannot change the status: the connection is
-// abandoned, and the caller sees an incomplete file. The case needs a real
-// server, because a recorder swallows the abort the reply raises. The filters
-// and the rows that reached the caller are in the log, with the cause.
+// A failure after the first byte cannot change the status: the connection
+// is abandoned, and the caller sees an incomplete file.
 func TestAnExportFailureAfterTheFirstByteAbandonsTheConnection(t *testing.T) {
 	r := newRig(t)
 	r.reader.script(

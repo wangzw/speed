@@ -15,8 +15,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// impersonated is a context carrying an identity the way the gateway leaves one
-// for an impersonation: admin-9 acting as customer-1, within the tenant acme.
 func impersonated(t *testing.T) context.Context {
 	t.Helper()
 	return authntest.Context(t, context.Background(),
@@ -26,7 +24,6 @@ func impersonated(t *testing.T) context.Context {
 		authntest.WithScope("acme"))
 }
 
-// detailOfRow decodes the detail column of a row.
 func detailOfRow(t *testing.T, r row) map[string]string {
 	t.Helper()
 	var out map[string]string
@@ -36,8 +33,6 @@ func detailOfRow(t *testing.T, r row) map[string]string {
 	return out
 }
 
-// wantImpersonation holds the three keys an impersonating identity adds and the
-// actor column that carries the one whose hands were on the request.
 func wantImpersonation(t *testing.T, what string, r row) {
 	t.Helper()
 	if r.Actor != "admin-9" {
@@ -55,12 +50,8 @@ func wantImpersonation(t *testing.T, what string, r row) {
 	}
 }
 
-// TestAnImpersonationAddsItsKeysToTheRowOfEveryPath holds the closed set of
-// detail keys an impersonating identity adds, on each of the four ways a row is
-// written. The actor column says who did it, because it carries the identity's
-// key, which is the actor; the detail says whose account it was done under, and
-// within which tenant, and in which session. A path that assembled a row some
-// other way would leave a row that recorded the actor and not the one acted for.
+// TestAnImpersonationAddsItsKeysToTheRowOfEveryPath holds the detail keys an
+// impersonating identity adds on each of the four write paths.
 func TestAnImpersonationAddsItsKeysToTheRowOfEveryPath(t *testing.T) {
 	t.Run("the seam", func(t *testing.T) {
 		handle := open(t)
@@ -128,10 +119,8 @@ func TestAnImpersonationAddsItsKeysToTheRowOfEveryPath(t *testing.T) {
 	})
 }
 
-// TestAnIdentityThatIsNotImpersonatingAddsNothing holds the other side of the
-// criterion: Impersonating() decides, so an ordinary identity records its key in
-// the actor column and no impersonation key, and a context with no identity
-// records neither.
+// TestAnIdentityThatIsNotImpersonatingAddsNothing holds the other side of
+// the criterion.
 func TestAnIdentityThatIsNotImpersonatingAddsNothing(t *testing.T) {
 	for name, c := range map[string]struct {
 		ctx   context.Context
@@ -162,10 +151,8 @@ func TestAnIdentityThatIsNotImpersonatingAddsNothing(t *testing.T) {
 	}
 }
 
-// TestACallerCannotWriteTheImpersonationKeysOfAnImpersonation holds that the
-// three keys are this module's: for an impersonating identity they are written
-// from the identity, over anything the caller put under the same names, and the
-// caller's own map is not changed.
+// TestACallerCannotWriteTheImpersonationKeysOfAnImpersonation holds that
+// the three keys are this module's.
 func TestACallerCannotWriteTheImpersonationKeysOfAnImpersonation(t *testing.T) {
 	detail := map[string]string{"on_behalf_of": "somebody-else", "impersonation_scope": "another", "session": "forged", "note": "n"}
 	got := assemble(impersonated(t), audit.SourceSeam, audit.Entry{Action: "x", Detail: detail}, "")
@@ -176,9 +163,8 @@ func TestACallerCannotWriteTheImpersonationKeysOfAnImpersonation(t *testing.T) {
 	}
 }
 
-// TestTheTenantOfAnImpersonationIsTheContextsAndNotTheScope holds that the
-// impersonation scope is detail and does not become the row's tenant: the tenant
-// column is the tenant the work was done under, which the context says.
+// TestTheTenantOfAnImpersonationIsTheContextsAndNotTheScope holds that
+// the impersonation scope is detail and does not become the row's tenant.
 func TestTheTenantOfAnImpersonationIsTheContextsAndNotTheScope(t *testing.T) {
 	got := assemble(impersonated(t), audit.SourceSeam, audit.Entry{Action: "x"}, "")
 	if got.TenantID != nil {
@@ -186,9 +172,8 @@ func TestTheTenantOfAnImpersonationIsTheContextsAndNotTheScope(t *testing.T) {
 	}
 }
 
-// TestTheActorOfARowIsTheIdentitysKey holds that the actor column is the key and
-// nothing the journal composes: the actor's account for an impersonation, the
-// account for an ordinary identity.
+// TestTheActorOfARowIsTheIdentitysKey holds that the actor column is the
+// key and nothing the journal composes.
 func TestTheActorOfARowIsTheIdentitysKey(t *testing.T) {
 	for _, ctx := range []context.Context{impersonated(t), authntest.Context(t, context.Background())} {
 		id, ok := authn.FromContext(ctx)
@@ -201,12 +186,8 @@ func TestTheActorOfARowIsTheIdentitysKey(t *testing.T) {
 	}
 }
 
-// TestARowThatIsNotAnImpersonationDropsTheCallersImpersonationKeys holds that
-// the three keys are written for an impersonation alone and are the journal's
-// everywhere: on any other row, a caller's detail under the same names is
-// removed, so that a row never carries an impersonation or a session the
-// identity in the context did not have. The caller's other keys are kept and
-// its own map is not changed.
+// TestARowThatIsNotAnImpersonationDropsTheCallersImpersonationKeys holds that the
+// three impersonation keys are written for an impersonation alone.
 func TestARowThatIsNotAnImpersonationDropsTheCallersImpersonationKeys(t *testing.T) {
 	for name, ctx := range map[string]context.Context{
 		"an ordinary identity": authntest.Context(t, context.Background(), authntest.WithAccount("alice-1"),
@@ -229,10 +210,8 @@ func TestARowThatIsNotAnImpersonationDropsTheCallersImpersonationKeys(t *testing
 	}
 }
 
-// TestTheCallersImpersonationKeysAreDroppedOnEveryPathThatTakesADetail holds the
-// same rule where the caller's keys actually arrive: the seam takes them in the
-// entry, and the event path takes them as payload fields. A row written there
-// under a context without an impersonation has none of the three.
+// TestTheCallersImpersonationKeysAreDroppedOnEveryPathThatTakesADetail
+// holds the same rule where the caller's keys actually arrive.
 func TestTheCallersImpersonationKeysAreDroppedOnEveryPathThatTakesADetail(t *testing.T) {
 	forged := map[string]string{"on_behalf_of": "x", "impersonation_scope": "y", "session": "z", "note": "n"}
 	check := func(t *testing.T, what string, r row) {
@@ -272,17 +251,13 @@ func TestTheCallersImpersonationKeysAreDroppedOnEveryPathThatTakesADetail(t *tes
 	})
 }
 
-// TestAnEventDeliveredUnderABareContextHasNoActorAndNoImpersonationKeys holds
-// the event path on a transport bus: the subscriber is called with a context
-// that carries no identity, so the row has no actor and none of the three keys,
-// whatever the publisher's identity was.
+// TestAnEventDeliveredUnderABareContextHasNoActorAndNoImpersonationKeys
+// holds the event path on a transport bus.
 func TestAnEventDeliveredUnderABareContextHasNoActorAndNoImpersonationKeys(t *testing.T) {
 	handle := open(t)
 	bus := newRecordingBus()
 	j := newTestJournal(handle, settings{events: []string{"order.updated"}})
 	j.subscribe(bus)
-	// A transport bus hands the subscriber a context of its own, not the
-	// publisher's, which is what the bare context stands for.
 	if err := bus.Publish(context.Background(), event.Event{Type: "order.updated", Payload: map[string]any{"object": "o1"}}); err != nil {
 		t.Fatalf("publishing: %v", err)
 	}
@@ -302,9 +277,7 @@ func TestAnEventDeliveredUnderABareContextHasNoActorAndNoImpersonationKeys(t *te
 }
 
 // TestARequestWithoutAnIdentityRecordsNoActorAndNoImpersonationKeys holds the
-// request path's row for a route that runs without an identity, an exempt one
-// or a system operation: the actor is empty, the row is written, and the
-// detail carries none of the impersonation keys.
+// request row for an anonymous, exempt or system operation route.
 func TestARequestWithoutAnIdentityRecordsNoActorAndNoImpersonationKeys(t *testing.T) {
 	handle := open(t)
 	j := newTestJournal(handle, settings{})
@@ -325,10 +298,8 @@ func TestARequestWithoutAnIdentityRecordsNoActorAndNoImpersonationKeys(t *testin
 	}
 }
 
-// TestTheKeysAnImpersonationAddsAreNotInTheMaskedSet holds that none of the
-// three names is one the masking step replaces: a name in the set would have its
-// value written as the mask, and the row would say nothing about whose behalf
-// or which session. The keys stay in the detail after masking, with their values.
+// TestTheKeysAnImpersonationAddsAreNotInTheMaskedSet holds that none of
+// the three names is one the masking step replaces.
 func TestTheKeysAnImpersonationAddsAreNotInTheMaskedSet(t *testing.T) {
 	for _, key := range []string{"on_behalf_of", "impersonation_scope", "session"} {
 		if slices.Contains(maskedKeySet, key) {
@@ -343,11 +314,8 @@ func TestTheKeysAnImpersonationAddsAreNotInTheMaskedSet(t *testing.T) {
 	wantImpersonation(t, "a row with a masked key beside", got)
 }
 
-// TestAnImpersonationWithoutASessionWritesNoSessionKey holds the session key's
-// own rule: an empty session writes no key, and a session key the caller put
-// there is removed rather than left to read as the identity's. The identity
-// carries a session whenever there is an actor, so the rule is held on the step
-// that takes the three values.
+// TestAnImpersonationWithoutASessionWritesNoSessionKey holds the session
+// key's own rule.
 func TestAnImpersonationWithoutASessionWritesNoSessionKey(t *testing.T) {
 	detail := map[string]string{"session": "forged", "note": "n"}
 	got := impersonationKeys(detail, "customer-1", "acme", "")

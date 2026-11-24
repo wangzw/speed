@@ -24,25 +24,11 @@ import (
 	"github.com/vislake/speed/pkg/tenant/catalog"
 )
 
-// assembled drives a real registry to Start and runs action there: the SQLite
-// engine, the log module and this module, each through its own descriptor,
-// beside whatever extra a case takes part, with the configuration loaded the way
-// a host loads it.
-//
-// These are the cases a handle built by hand cannot stand in for. The database
-// module builds the handles, installs this module's plugin on them and applies
-// its migrations; what these cases hold is what that assembly does with a
-// statement, and a handle built here would only show what the case built.
-//
-// The action reports through t.Errorf and returns an error to end the drive,
-// rather than calling t.Fatalf: the drive still shuts down, so the pools it
-// opened are released either way.
 func assembled(t *testing.T, extra []core.Module, action func(ctx context.Context, reg *core.Registry) error) {
 	t.Helper()
 	assembledAt(t, filepath.Join(t.TempDir(), "delivered.db"), extra, action)
 }
 
-// assembledAt is assembled on the delivered SQLite database the locator names.
 func assembledAt(t *testing.T, dsn string, extra []core.Module,
 	action func(ctx context.Context, reg *core.Registry) error,
 ) {
@@ -50,9 +36,6 @@ func assembledAt(t *testing.T, dsn string, extra []core.Module,
 	assembledOn(t, sqlite.Module(), "sqlite", dsn, extra, action)
 }
 
-// assembledOn is assembled on the engine the module delivers, over the database
-// the locator names; engine is the key the module's input items sit under in
-// the db namespace.
 func assembledOn(t *testing.T, database core.Module, engine, dsn string, extra []core.Module,
 	action func(ctx context.Context, reg *core.Registry) error,
 ) {
@@ -70,10 +53,6 @@ func assembledOn(t *testing.T, database core.Module, engine, dsn string, extra [
 	}
 }
 
-// assembly is one run of the module over a database: the engine and the
-// database it sits on, the modules that take part beside the three every case
-// has, the configuration sections beside the db and log ones, and the stage the
-// run advances to.
 type assembly struct {
 	database core.Module
 	engine   string
@@ -83,21 +62,12 @@ type assembly struct {
 	// under the first segment of its namespace: "http", or "audit" for the
 	// namespace this module is mounted under.
 	sections map[string]any
-	// dir is where the configuration and the log file are written.
-	dir   string
-	depth core.Stage
+	dir      string
+	depth    core.Stage
 }
 
-// logFile is where the log module of the run writes. The chain writes to a file
-// of the case's own, so the records the modules write at startup stay out of the
-// test's output, and the case can read them from there.
 func (a assembly) logFile() string { return filepath.Join(a.dir, "log.json") }
 
-// drive loads the configuration the way a host loads it, drives a registry to
-// the run's depth, runs action there and hands back what the drive ended with.
-//
-// A configuration that cannot be loaded fails the case, because that is the
-// case's own mistake; what the drive itself fails with is the caller's to read.
 func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core.Registry) error) error {
 	t.Helper()
 	document := map[string]any{
@@ -117,9 +87,6 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 	}
 	modules := append([]core.Module{a.database, log.Module(), Module()}, a.extra...)
 
-	// The loader reads its own registry. The command line is given as empty
-	// and the prefix is one no machine carries variables under, so nothing
-	// outside the case reaches the values.
 	loading := core.New()
 	loading.Register(jsonformat.Module())
 	loading.Register(filesource.Module())
@@ -141,9 +108,6 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 		reg.Register(m)
 		names = append(names, m.Name)
 	}
-	// The reader is the instance of the config module, which has no New. A module
-	// with a supplied instance takes part without being named, so the list above
-	// leaves it out.
 	reg.Register(config.Module())
 	reg.Supply(reader, config.ModuleName)
 	return reg.Drive(t.Context(), core.Drive{
@@ -153,7 +117,6 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 	})
 }
 
-// errCaseFailed ends a drive whose case has already reported what went wrong.
 var errCaseFailed = errors.New("the case failed")
 
 // openElsewhere builds a second connection through the delivered capability, to
@@ -173,7 +136,6 @@ func openElsewhere(ctx context.Context, t *testing.T, database db.Database) (*go
 	return opened, nil
 }
 
-// statementRows reads the statement rows a handle's audit table holds.
 func statementRows(t *testing.T, handle *gorm.DB) []row {
 	t.Helper()
 	var rows []row
@@ -183,13 +145,8 @@ func statementRows(t *testing.T, handle *gorm.DB) []row {
 	return rows
 }
 
-// A model write on a connection built with Open is recorded in the delivered
-// database's audit table, and the write succeeds although its own database has
-// no audit table at all.
-//
-// One process keeps one audit table. A row written on the statement's own
-// session would need that table on the second database, which carries no
-// migration, so every model write there would fail on account of its record.
+// A model write on an Open connection is recorded in the delivered database's
+// audit table even though its own database has none.
 func TestAWriteOnAnOpenedConnectionIsRecordedInTheDeliveredTable(t *testing.T) {
 	assembled(t, nil, func(ctx context.Context, reg *core.Registry) error {
 		database, err := core.Resolve[db.Database](reg)
@@ -219,12 +176,6 @@ func TestAWriteOnAnOpenedConnectionIsRecordedInTheDeliveredTable(t *testing.T) {
 
 // A statement on the delivered connection keeps riding the caller's
 // transaction in the assembly: rolled back, it leaves no row.
-//
-// This is the half the connections built with Open must not take from the
-// delivered one. A capture that sent every row through the delivered handle —
-// because it took the delivered connection for an opened one — would write the
-// row on a connection of its own, leave it behind after the rollback, and on
-// this engine wait for the lock the caller's transaction holds.
 func TestAWriteOnTheDeliveredConnectionRidesTheCallersTransaction(t *testing.T) {
 	assembled(t, nil, func(ctx context.Context, reg *core.Registry) error {
 		database, err := core.Resolve[db.Database](reg)
@@ -254,11 +205,8 @@ func TestAWriteOnTheDeliveredConnectionRidesTheCallersTransaction(t *testing.T) 
 	})
 }
 
-// A second database that has an audit table of its own still does not receive
-// the row: the row belongs to the delivered database whatever the second one
-// carries. Two tables an entry could land in is the split the module refuses,
-// and whether a second database happens to carry the table is not something a
-// host decides by writing the record.
+// A second database that has an audit table of its own still does not
+// receive the row.
 func TestAnOpenedConnectionsOwnAuditTableIsLeftAlone(t *testing.T) {
 	assembled(t, nil, func(ctx context.Context, reg *core.Registry) error {
 		database, err := core.Resolve[db.Database](reg)
@@ -288,14 +236,8 @@ func TestAnOpenedConnectionsOwnAuditTableIsLeftAlone(t *testing.T) {
 	})
 }
 
-// The row is written before the second connection's statement commits, in a
-// unit of work of its own: a transaction the caller commits on the second
-// connection is recorded, and one it rolls back leaves its row behind, because
-// the two databases share no transaction.
-//
-// The rolled-back half is what tells "before the commit" from "after it": a row
-// written once the statement had committed would never be written for one that
-// was rolled back.
+// The row is written before the second connection's statement commits, in
+// a unit of work of its own.
 func TestAnOpenedConnectionsTransactionIsRecordedBeforeItCommits(t *testing.T) {
 	assembled(t, nil, func(ctx context.Context, reg *core.Registry) error {
 		database, err := core.Resolve[db.Database](reg)
@@ -338,9 +280,8 @@ func TestAnOpenedConnectionsTransactionIsRecordedBeforeItCommits(t *testing.T) {
 	})
 }
 
-// A delivered audit table that cannot take the row fails the statement on the
-// second connection, and its write does not commit: the direction is the one a
-// statement on the delivered connection has.
+// A delivered audit table that cannot take the row fails the statement on
+// the second connection, and its write does not commit.
 func TestAnOpenedConnectionsWriteFailsWithItsRecord(t *testing.T) {
 	assembled(t, nil, func(ctx context.Context, reg *core.Registry) error {
 		database, err := core.Resolve[db.Database](reg)
@@ -359,9 +300,6 @@ func TestAnOpenedConnectionsWriteFailsWithItsRecord(t *testing.T) {
 			return errCaseFailed
 		}
 
-		// The delivered handle's logger writes a statement that fails as a record,
-		// and this one fails on purpose, so the session keeps that record out of the
-		// run's output.
 		quietly := opened.Session(&gorm.Session{Logger: logger.Discard}).WithContext(ctx)
 		if err := quietly.Create(&order{ID: "o1", Note: "no trail"}).Error; !errors.Is(err, audit.ErrWriteFailed) {
 			t.Errorf("the write gave %v, want ErrWriteFailed", err)
@@ -374,15 +312,8 @@ func TestAnOpenedConnectionsWriteFailsWithItsRecord(t *testing.T) {
 	})
 }
 
-// A connection built with Open onto the delivered database itself is recorded
-// the way the delivered connection is: in the delivered table, on the
-// statement's own session, inside the statement's own transaction — whichever
-// spelling of the database's file the connection was opened with.
-//
-// Sent through the delivered handle instead, the row would wait for the write
-// lock its own statement holds, and every such write would fail. The rolled-back
-// half is what tells the statement's own session from the delivered handle: a
-// row written through the delivered handle stays behind a rollback.
+// A connection built with Open onto the delivered database itself is
+// recorded the way the delivered connection is.
 func TestAConnectionOpenedOntoTheDeliveredDatabaseRecordsOnItsOwnSession(t *testing.T) {
 	for _, spelling := range []struct {
 		name string
@@ -476,8 +407,6 @@ type trailEntry struct {
 
 func (trailEntry) TableName() string { return tableName }
 
-// anyTenantsEntry reads the audit table across tenants, with a tenant field that
-// takes a NULL as the absence it is.
 type anyTenantsEntry struct {
 	ID       uint64  `gorm:"column:id"`
 	TenantID *string `gorm:"column:tenant_id"`
@@ -486,17 +415,8 @@ type anyTenantsEntry struct {
 
 func (anyTenantsEntry) TableName() string { return tableName }
 
-// A host reads one tenant's trail through the tenant filter, with a read-only
-// model that embeds the convention: it reads that tenant's rows and no row
-// without a tenant, a disabled tenant's trail is read after entering it with
-// EnterRegistered, and a read across tenants through a type whose tenant field
-// is nullable tells the rows with no tenant from the rest.
-//
-// This is the read the table's contract is for: the tenant column is tenant_id,
-// holding the identifier's text or NULL, and the id key is unique over the
-// table. The same read through the embedding type across tenants gives the rows
-// without a tenant an empty identifier and no error, which is why a read across
-// tenants takes a type of its own.
+// A host reads one tenant's trail through the tenant filter, with a
+// read-only model that embeds the convention.
 func TestATenantsTrailIsReadThroughTheTenantFilter(t *testing.T) {
 	assembled(t, []core.Module{catalog.Module()}, func(ctx context.Context, reg *core.Registry) error {
 		roster, err := core.Resolve[tenant.Catalog](reg)
@@ -602,15 +522,8 @@ func TestATenantsTrailIsReadThroughTheTenantFilter(t *testing.T) {
 	})
 }
 
-// A statement issued across tenants from a context that belonged to one has no
-// tenant in its row, and neither has an entry handed to the seam there.
-//
-// The context is a tenant's own, entered through the roster the way a path with
-// no request behind it enters one, so the case reaches the context shape a
-// request handler holds. A reader of the marked context that still found the
-// tenant it was derived from would file an unscoped statement under that
-// tenant's scope — and the control half of the case shows the tenant is filled
-// where it belongs.
+// A cross-tenant statement issued from a single-tenant context gets no tenant
+// in its row, and neither does a seam entry from it.
 func TestAWriteAcrossTenantsFromATenantsContextHasNoTenant(t *testing.T) {
 	assembled(t, []core.Module{catalog.Module()}, func(ctx context.Context, reg *core.Registry) error {
 		roster, err := core.Resolve[tenant.Catalog](reg)
