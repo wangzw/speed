@@ -291,8 +291,9 @@ check found no subject at all — the integration layer gone, or no library
 to read).
 
 `check_test_limits.py` — holds the test-side half of the load policy: a
-test does not choose its width from the machine, and a declared case or
-wait budget does not undercut the shared default. In test files and test
+test does not choose its width from the machine, a declared case or wait
+budget does not undercut the shared default, and a `coretest` bound is read
+when a case runs rather than at package initialization. In test files and test
 configuration only, it fails a read of the host's core count:
 `runtime.NumCPU()` under any `runtime` import alias; `runtime.GOMAXPROCS`
 with `0`, a negative argument or a variable argument of unknown origin (a
@@ -356,6 +357,21 @@ below it pass. The file is the one entry point for an intentional floor
 change: a change to it carries its reason in the commit message. A floors
 file that is missing, unreadable (invalid JSON), or lacks a positive finite
 value for any key is an infrastructure error, never a silent pass.
+
+The third ruling keeps `coretest` bounds out of package initialization. The
+Go test log opens at `M.Run`, and `go test` hashes into a result's cache key
+only the `getenv` lines that log records, so a `GATE_TIME_SCALE` read from a
+package-level declaration, an `init` body or `TestMain` never reaches the
+cache: a pass cached under one scale replays under another. The gate fails
+an exported `coretest` call qualified by its import name (an alias
+included) at those positions, a dot import of the package, and a call at
+those positions to a local function that reaches `coretest` by name through
+any number of layers in the same directory (the `foo` and `foo_test` packages
+are not separated, so a same-named function in the neighbouring package is
+treated as reaching `coretest` too). A call inside a case or helper
+function body passes, because the value is read when the case runs. Blind
+spots: a method called at a package-level position and a helper defined in
+another directory.
 
 Scope is Go `_test.go` files; any non-test Go file whose import block names
 `"testing"` (the test-support packages: dbsuite, bussuite, cutproxy,

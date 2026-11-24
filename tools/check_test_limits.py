@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Test-limit gate: a test does not choose its width, nor shorten its clock.
 
-Two rulings of the gate's load policy live here, each enforced only where a
-test decides it.
+Three rulings of the gate's load policy live here, each enforced only where
+a test decides it.
 
 Core count. A test or a test configuration must not derive a concurrency
 from the machine it happens to run on. In Go, `runtime.NumCPU()` (under any
@@ -54,6 +54,22 @@ because a lowered default would make every per-case limit below it pass. A
 wait timeout of `0` gets no exception: a wait that returns at once buys
 nothing and is still below the shared async default, unlike a case budget,
 where `0` means no limit.
+
+Cache-key timing. A test-side Go file that imports `coretest` must read its
+bounds when a case runs, not while the package initializes. The test log
+opens at `M.Run`, and `go test` hashes into the result's cache key only the
+`getenv` lines that log records, so a bound evaluated in a package-level
+declaration, an `init` body or `TestMain` lets a cached pass survive a
+changed `GATE_TIME_SCALE`. A finding is any exported call qualified by a
+coretest import name, an aliased import included. Reachability is by name
+across one directory (a `foo` and a `foo_test` package are not separated),
+so a package-level call to a local helper that reaches coretest two layers
+down is also a finding; a call made when a case runs passes. A dot import is
+itself a finding, because its calls are unqualified and a qualifier scan
+cannot see them. Only the files the Scope paragraph already calls test-side
+are read, and the `coretest` package itself is outside the rule. The known
+blind spots are a method called at a package-level position and a helper
+defined in another directory.
 
 `waitForCondition`, the project wrapper in `web/test-utils/src/wait.ts`, is
 exempt from the async wait rule. It passes the larger of the caller's
@@ -325,6 +341,11 @@ GO_IMPORT_BLOCK = re.compile(r"\bimport\s*\((.*?)\)", re.DOTALL)
 # so a `GOMAXPROCS` argument that is one is a width the test chose.
 GO_RANGE_VARS = re.compile(r"\bfor\s+([^;{\n]+?)\s*:?=\s*range\b")
 
+CORETEST_IMPORT_PATH = "github.com/vislake/speed/pkg/core/coretest"
+GO_TOP_FUNC = re.compile(r"(?m)^[ \t]*func\b")
+GO_CALL = re.compile(r"(?<![\w.])([A-Za-z_]\w*)\s*\(")
+GO_INIT_FUNCTIONS = ("init", "TestMain")
+
 
 def is_go_test_file(relative: str) -> bool:
     return GO_TEST_FILE.search(os.path.basename(relative)) is not None
@@ -432,6 +453,25 @@ def go_imports(text: str) -> list[tuple[str, str | None]]:
             found.append((path, alias or None))
     for alias, path in GO_IMPORT_SINGLE.findall(source):
         found.append((path, alias or None))
+    return found
+
+
+def go_import_specs(text: str) -> list[tuple[str, str | None, int]]:
+    """The (path, alias, offset) of every import, offset inside the path.
+
+    A dot import's alias is `.`; the offset points at the quoted path, so
+    `line_of` reports the import's own line.
+    """
+    source = strip_comments(text)
+    found: list[tuple[str, str | None, int]] = []
+    for block in GO_IMPORT_BLOCK.finditer(source):
+        body_start = block.start(1)
+        for spec in GO_IMPORT_SPEC.finditer(block.group(1)):
+            found.append(
+                (spec.group(2), spec.group(1) or None, body_start + spec.start(2))
+            )
+    for spec in GO_IMPORT_SINGLE.finditer(source):
+        found.append((spec.group(2), spec.group(1) or None, spec.start(2)))
     return found
 
 
@@ -678,6 +718,316 @@ def go_top_level_scopes(masked: str) -> list[tuple[int, int]]:
     if cursor < len(masked):
         scopes.append((cursor, len(masked)))
     return scopes
+
+
+def _skip_whitespace(masked: str, index: int) -> int:
+    while index < len(masked) and masked[index] in " \t\r\n":
+        index += 1
+    return index
+
+
+def _matching_close(
+    masked: str, opening: int, opening_char: str, closing_char: str
+) -> int | None:
+    depth = 0
+    index = opening
+    while index < len(masked):
+        if masked[index] == opening_char:
+            depth += 1
+        elif masked[index] == closing_char:
+            depth -= 1
+            if depth == 0:
+                return index
+        index += 1
+    return None
+
+
+def go_top_level_functions(
+    masked: str,
+) -> list[tuple[str, bool, int | None, int | None, int]]:
+    """The top-level func declarations: (name, is_method, body_open, body_close, name_offset).
+
+    A declaration's name offset lets an unqualified call scan skip the
+    declaration itself. A declaration with no balanced body (an assembly
+    stub) has no span. A `func` inside another body is not top-level.
+    """
+    functions: list[tuple[str, bool, int | None, int | None, int]] = []
+    bodies: list[tuple[int, int]] = []
+    for match in GO_TOP_FUNC.finditer(masked):
+        if any(start <= match.start() < end for start, end in bodies):
+            continue
+        index = _skip_whitespace(masked, match.end())
+        is_method = False
+        if index < len(masked) and masked[index] == "(":
+            close = _matching_close(masked, index, "(", ")")
+            if close is None:
+                continue
+            index = _skip_whitespace(masked, close + 1)
+            is_method = True
+        name_match = re.match(r"[A-Za-z_]\w*", masked[index:])
+        if name_match is None:
+            continue
+        name = name_match.group(0)
+        name_offset = index
+        index = _skip_whitespace(masked, index + len(name))
+        if index < len(masked) and masked[index] == "[":
+            close = _matching_close(masked, index, "[", "]")
+            if close is None:
+                continue
+            index = _skip_whitespace(masked, close + 1)
+        if index >= len(masked) or masked[index] != "(":
+            functions.append((name, is_method, None, None, name_offset))
+            continue
+        opening = _go_body_opening(masked, index)
+        closing = None if opening is None else _matching_close(
+            masked, opening, "{", "}"
+        )
+        if opening is None or closing is None:
+            functions.append((name, is_method, None, None, name_offset))
+            continue
+        functions.append((name, is_method, opening, closing, name_offset))
+        bodies.append((match.start(), closing + 1))
+    return functions
+
+
+def go_interface_spans(masked: str) -> list[tuple[int, int]]:
+    """The [start, end) bodies of `interface { ... }` type declarations.
+
+    An interface method declaration is a name followed by a parameter list,
+    which a call scan would otherwise read as a package-level call.
+    """
+    spans: list[tuple[int, int]] = []
+    for match in re.finditer(r"\binterface\s*\{", masked):
+        opening = match.end() - 1
+        closing = _matching_close(masked, opening, "{", "}")
+        if closing is not None:
+            spans.append((opening, closing))
+    return spans
+
+
+def go_package_level_literal_spans(masked: str) -> list[tuple[int, int]]:
+    """The [start, end) bodies of function literals outside every top-level body.
+
+    A literal at package level is judged as its own shape: a named top-level
+    function can be followed by name, while a literal cannot.
+    """
+    top_level = [
+        (opening, closing)
+        for _, _, opening, closing, _ in go_top_level_functions(masked)
+        if opening is not None and closing is not None
+    ]
+    spans: list[tuple[int, int]] = []
+    for match in re.finditer(r"\bfunc\b", masked):
+        params = _skip_whitespace(masked, match.end())
+        if params >= len(masked) or masked[params] != "(":
+            continue
+        close = _matching_close(masked, params, "(", ")")
+        if close is None:
+            continue
+        after = _skip_whitespace(masked, close + 1)
+        name = re.match(r"[A-Za-z_]\w*", masked[after:])
+        if name is not None:
+            # A method declaration's receiver is followed by the method name
+            # and then its parameter list; a literal's result type is not.
+            probe = _skip_whitespace(masked, after + name.end())
+            if probe < len(masked) and masked[probe] == "[":
+                bracket = _matching_close(masked, probe, "[", "]")
+                if bracket is not None:
+                    probe = _skip_whitespace(masked, bracket + 1)
+            if probe < len(masked) and masked[probe] == "(":
+                continue
+        opening = _go_body_opening(masked, params)
+        closing = None if opening is None else _matching_close(
+            masked, opening, "{", "}"
+        )
+        if opening is None or closing is None:
+            continue
+        if any(start <= match.start() < end for start, end in top_level):
+            continue
+        spans.append((opening, closing))
+    return spans
+
+
+def go_coretest_bindings(text: str) -> tuple[set[str], list[int]]:
+    """The names that qualify a coretest call, and the dot-import offsets.
+
+    A default import binds `coretest`, a named import binds its alias, and a
+    dot import binds the names unqualified, which a qualifier scan cannot
+    follow; its offset is returned for a finding of its own.
+    """
+    names: set[str] = set()
+    dots: list[int] = []
+    for path, alias, offset in go_import_specs(text):
+        if path != CORETEST_IMPORT_PATH:
+            continue
+        if alias == ".":
+            dots.append(offset)
+        else:
+            names.add(alias or "coretest")
+    return names, dots
+
+
+GO_CORETEST_REASON = (
+    "reads GATE_TIME_SCALE before the test log starts, so go test does not "
+    "hash the value into the result's cache key; evaluate the bound when the "
+    "case runs, from a function's body rather than a package-level "
+    "declaration, init or TestMain"
+)
+GO_CORETEST_INDIRECT_REASON = (
+    "calls a function that reaches coretest before the test log starts, so "
+    "go test does not hash GATE_TIME_SCALE into the result's cache key; "
+    "evaluate the bound when the case runs, from a function's body rather "
+    "than a package-level declaration, init or TestMain"
+)
+GO_CORETEST_LITERAL_REASON = (
+    "reads GATE_TIME_SCALE inside a package-level function literal, before "
+    "the test log starts, so go test does not hash the value into the result's "
+    "cache key; rewrite it as a named top-level function so the read is "
+    "checked where the case runs"
+)
+GO_CORETEST_INDIRECT_LITERAL_REASON = (
+    "calls a function that reaches coretest from a package-level function "
+    "literal, before the test log starts, so go test does not hash "
+    "GATE_TIME_SCALE into the result's cache key; rewrite it as a named "
+    "top-level function so the call is checked where the case runs"
+)
+GO_CORETEST_DOT_REASON = (
+    "imported with a dot import, so its calls are unqualified and a "
+    "qualifier scan cannot see them; import coretest under its package "
+    "name so a package-level read is checked"
+)
+
+
+def go_coretest_findings(files: list[tuple[str, str]]) -> list[str]:
+    """The coretest-init ruling over one directory's files.
+
+    A directory's Go files compile as one package set, and a `_test.go`
+    package calls the package under test, so reachability is computed by
+    name across the directory without separating `foo` from `foo_test`:
+    reporting one same-named function too many is cheaper than missing a
+    package-level read. A finding sits outside every top-level body, or in
+    an `init` or `TestMain` body; a call made when a case runs passes.
+    """
+    masked_files: list[tuple[str, str]] = []
+    functions_by_file: list[list[tuple[str, bool, int | None, int | None, int]]] = []
+    interfaces_by_file: list[list[tuple[int, int]]] = []
+    literals_by_file: list[list[tuple[int, int]]] = []
+    qualified: list[list[tuple[int, str]]] = []
+    dots_by_file: list[list[int]] = []
+    direct: set[str] = set()
+    calls_by_function: list[tuple[str, set[str]]] = []
+
+    for relative, text in files:
+        masked = mask_go(text)
+        masked_files.append((relative, masked))
+        functions = go_top_level_functions(masked)
+        functions_by_file.append(functions)
+        interfaces_by_file.append(go_interface_spans(masked))
+        literals_by_file.append(go_package_level_literal_spans(masked))
+        names, dots = go_coretest_bindings(text)
+        dots_by_file.append(dots)
+        file_qualified: list[tuple[int, str]] = []
+        for name in sorted(names):
+            pattern = re.compile(
+                rf"\b{re.escape(name)}\s*\.\s*([A-Z]\w*)\s*\("
+            )
+            for match in pattern.finditer(masked):
+                file_qualified.append((match.start(), f"{name}.{match.group(1)}"))
+        qualified.append(file_qualified)
+        for name, is_method, opening, closing, _ in functions:
+            if is_method or opening is None or closing is None:
+                continue
+            body = masked[opening:closing]
+            if any(opening <= offset < closing for offset, _ in file_qualified):
+                direct.add(name)
+            calls_by_function.append(
+                (name, {call.group(1) for call in GO_CALL.finditer(body)})
+            )
+
+    reachable = set(direct)
+    changed = True
+    while changed:
+        changed = False
+        for name, called in calls_by_function:
+            if name not in reachable and called & reachable:
+                reachable.add(name)
+                changed = True
+
+    problems: list[str] = []
+    for file_index, (relative, masked) in enumerate(masked_files):
+        functions = functions_by_file[file_index]
+        interfaces = interfaces_by_file[file_index]
+        literals = literals_by_file[file_index]
+        declarations = {function[4] for function in functions}
+        findings: list[tuple[int, str, str]] = []
+
+        def inside(spans: list[tuple[int, int]], offset: int) -> bool:
+            return any(start <= offset < end for start, end in spans)
+
+        def add(offset: int, token: str, message: str) -> None:
+            findings.append((offset, token, message))
+
+        for offset, token in qualified[file_index]:
+            if inside(interfaces, offset):
+                continue
+            enclosing = next(
+                (
+                    (name, is_method)
+                    for name, is_method, opening, closing, _ in functions
+                    if opening is not None
+                    and closing is not None
+                    and opening < offset < closing
+                ),
+                None,
+            )
+            if enclosing is None or (
+                not enclosing[1] and enclosing[0] in GO_INIT_FUNCTIONS
+            ):
+                literal = enclosing is None and inside(literals, offset)
+                add(
+                    offset,
+                    token,
+                    GO_CORETEST_LITERAL_REASON if literal else GO_CORETEST_REASON,
+                )
+
+        for name in sorted(reachable):
+            call = re.compile(rf"(?<![\w.]){re.escape(name)}\s*\(")
+            for match in call.finditer(masked):
+                if match.start() in declarations:
+                    continue
+                if inside(interfaces, match.start()):
+                    continue
+                enclosing = next(
+                    (
+                        (found, is_method)
+                        for found, is_method, opening, closing, _ in functions
+                        if opening is not None
+                        and closing is not None
+                        and opening < match.start() < closing
+                    ),
+                    None,
+                )
+                if enclosing is None or (
+                    not enclosing[1] and enclosing[0] in GO_INIT_FUNCTIONS
+                ):
+                    literal = enclosing is None and inside(literals, match.start())
+                    add(
+                        match.start(),
+                        name,
+                        GO_CORETEST_INDIRECT_LITERAL_REASON
+                        if literal
+                        else GO_CORETEST_INDIRECT_REASON,
+                    )
+
+        for offset in dots_by_file[file_index]:
+            add(offset, CORETEST_IMPORT_PATH, GO_CORETEST_DOT_REASON)
+
+        for offset, token, message in sorted(findings):
+            line = line_of(masked, offset)
+            finding = f"{relative}:{line}: {token}: {message}"
+            if finding not in problems:
+                problems.append(finding)
+    return problems
 
 
 class UnterminatedSource(Exception):
@@ -1757,7 +2107,31 @@ class Gate:
                     f"mask reaches end of file inside a {exc.kind} that is "
                     "never closed"
                 ) from None
+        problems.extend(self.coretest_findings())
         problems.extend(self.shared_default_findings())
+        return problems
+
+    def coretest_findings(self) -> list[str]:
+        """The coretest-init ruling, judged one directory at a time.
+
+        A directory's files share a package, so a helper defined in one
+        file can carry another file's package-level read to coretest.
+        """
+        directories: dict[str, list[tuple[str, str]]] = {}
+        for relative, text in self.files:
+            if not relative.endswith(".go"):
+                continue
+            directories.setdefault(os.path.dirname(relative), []).append(
+                (relative, text)
+            )
+        problems: list[str] = []
+        for directory in sorted(directories):
+            files = directories[directory]
+            # Without an import of the package, a directory has no qualified
+            # call and no reachable function; its files need no mask.
+            if not any(CORETEST_IMPORT_PATH in text for _, text in files):
+                continue
+            problems.extend(go_coretest_findings(files))
         return problems
 
     def scan_file(self, relative: str, text: str, problems: list[str]) -> None:
