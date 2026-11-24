@@ -19,7 +19,9 @@ import (
 
 // connectionTimer is how long a case waits for a call that should give up on
 // a connection within connectionWait, before reporting it as still waiting.
-var connectionTimer = connectionWait + coretest.Scale(3*time.Second)
+func connectionTimer() time.Duration {
+	return connectionWait + coretest.Scale(3*time.Second)
+}
 
 // storeOnOneConnection builds a loaded store over the in-memory database the
 // database module delivers for :memory:, which it holds to a single connection,
@@ -58,12 +60,13 @@ func insideTransaction(t *testing.T, handle *gorm.DB, call func() error) error {
 		}
 		done <- returned
 	}()
+	limit := connectionTimer()
 	select {
 	case err := <-done:
 		return err
-	case <-time.After(connectionTimer):
+	case <-time.After(limit):
 		t.Fatalf("the call inside the caller's transaction on a one-connection database was still "+
-			"waiting after %v", connectionTimer)
+			"waiting after %v", limit)
 		return nil
 	}
 }
@@ -181,6 +184,7 @@ func TestACallThatMeetsALockWaitsForTheBusyTimeout(t *testing.T) {
 			done := make(chan error, 1)
 			started := time.Now()
 			go func() { done <- call(s, context.Background()) }()
+			bound := connectionTimer()
 			select {
 			case gave := <-done:
 				took := time.Since(started)
@@ -194,8 +198,8 @@ func TestACallThatMeetsALockWaitsForTheBusyTimeout(t *testing.T) {
 				if limit := coretest.DeclaredAgainst(t, lockBusyTimeout, 2*time.Second, time.Hour); took > limit {
 					t.Errorf("%s gave up after %v, well past the busy timeout of %v", name, took, lockBusyTimeout)
 				}
-			case <-time.After(connectionTimer):
-				t.Errorf("%s was still waiting for the lock after %v", name, connectionTimer)
+			case <-time.After(bound):
+				t.Errorf("%s was still waiting for the lock after %v", name, bound)
 				_, _ = holder.ExecContext(context.Background(), "ROLLBACK")
 				<-done
 			}
@@ -315,7 +319,7 @@ func TestAReloadWaitingForTheCallersConnectionHoldsNoWriteUp(t *testing.T) {
 	}
 	select {
 	case <-reloaded:
-	case <-time.After(connectionTimer):
+	case <-time.After(connectionTimer()):
 		t.Fatal("the reload was still waiting after the caller's transaction ended")
 	}
 	if got, err := Get[int](s, Global(), "demo.limit"); err != nil || got != 3 {

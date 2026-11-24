@@ -42,7 +42,7 @@ func TestE2EImpersonationRecordsStayInThePlatformDomain(t *testing.T) {
 	// The platform administrator is not a member of acme and still reads the
 	// tenant's records, because the decision is made in the platform domain and
 	// the tenant is the data the records are confined to.
-	listed := send(t, &http.Client{Timeout: probeTimeout}, http.MethodGet,
+	listed := send(t, &http.Client{Timeout: probeTimeout()}, http.MethodGet,
 		base+"/api/v1/system/tenants/"+e2eTargetTenant+"/impersonations", nil, operatorAuth)
 	if listed.status != http.StatusOK {
 		t.Fatalf("the platform administrator was refused the tenant's records with %d:\n%s",
@@ -52,7 +52,7 @@ func TestE2EImpersonationRecordsStayInThePlatformDomain(t *testing.T) {
 		t.Errorf("the page does not hold the record %s just started:\n%s", grantID, listed.body)
 	}
 
-	revoked := send(t, &http.Client{Timeout: probeTimeout}, http.MethodDelete,
+	revoked := send(t, &http.Client{Timeout: probeTimeout()}, http.MethodDelete,
 		base+"/api/v1/system/tenants/"+e2eTargetTenant+"/impersonations/"+grantID, nil, operatorAuth)
 	if revoked.status != http.StatusNoContent {
 		t.Fatalf("the platform administrator could not revoke the record: %d\n%s",
@@ -64,13 +64,13 @@ func TestE2EImpersonationRecordsStayInThePlatformDomain(t *testing.T) {
 	// action is a platform permission, decided in the platform domain.
 	tenantAuth := map[string]string{"Authorization": "Bearer " +
 		signIn(t, base, e2eTargetIdentifier, e2eTargetPassword)}
-	refusedList := send(t, &http.Client{Timeout: probeTimeout}, http.MethodGet,
+	refusedList := send(t, &http.Client{Timeout: probeTimeout()}, http.MethodGet,
 		base+"/api/v1/system/tenants/"+e2eTargetTenant+"/impersonations", nil, tenantAuth)
 	if refusedList.status != http.StatusForbidden {
 		t.Errorf("the tenant administrator reached the tenant's records with %d, want 403:\n%s",
 			refusedList.status, refusedList.body)
 	}
-	refusedRevoke := send(t, &http.Client{Timeout: probeTimeout}, http.MethodDelete,
+	refusedRevoke := send(t, &http.Client{Timeout: probeTimeout()}, http.MethodDelete,
 		base+"/api/v1/system/tenants/"+e2eTargetTenant+"/impersonations/"+grantID, nil, tenantAuth)
 	if refusedRevoke.status != http.StatusForbidden {
 		t.Errorf("the tenant administrator revoked a record with %d, want 403:\n%s",
@@ -80,7 +80,7 @@ func TestE2EImpersonationRecordsStayInThePlatformDomain(t *testing.T) {
 	// The target-membership condition is structural: an enabled account outside
 	// the tenant is refused even for the platform administrator.
 	outsider := e2eCreateAccount(t, base, operatorAuth, "outsider")
-	refusedStart := send(t, &http.Client{Timeout: probeTimeout}, http.MethodPost,
+	refusedStart := send(t, &http.Client{Timeout: probeTimeout()}, http.MethodPost,
 		base+"/api/v1/auth/impersonation", map[string]any{
 			"account": outsider, "tenant": e2eTargetTenant, "reason": "not a member",
 		}, operatorAuth)
@@ -114,7 +114,7 @@ func e2eRecordsServer(t *testing.T) (base, token string) {
 // platform account list, the read the console uses to resolve an account.
 func e2eAccountID(t *testing.T, base string, headers map[string]string, kind, value string) string {
 	t.Helper()
-	listed := send(t, &http.Client{Timeout: probeTimeout}, http.MethodGet,
+	listed := send(t, &http.Client{Timeout: probeTimeout()}, http.MethodGet,
 		base+"/api/v1/system/auth/accounts?identifier_kind="+kind+"&identifier_prefix="+value,
 		nil, headers)
 	if listed.status != http.StatusOK {
@@ -147,7 +147,7 @@ func e2eAccountID(t *testing.T, base string, headers map[string]string, kind, va
 // tenant and answers the record's identifier.
 func e2eStartImpersonation(t *testing.T, base string, headers map[string]string, account string) string {
 	t.Helper()
-	started := send(t, &http.Client{Timeout: probeTimeout}, http.MethodPost,
+	started := send(t, &http.Client{Timeout: probeTimeout()}, http.MethodPost,
 		base+"/api/v1/auth/impersonation", map[string]any{
 			"account": account, "tenant": e2eTargetTenant, "reason": "a support case",
 		}, headers)
@@ -172,7 +172,7 @@ func e2eStartImpersonation(t *testing.T, base string, headers map[string]string,
 // answers its identifier.
 func e2eCreateAccount(t *testing.T, base string, headers map[string]string, username string) string {
 	t.Helper()
-	created := send(t, &http.Client{Timeout: probeTimeout}, http.MethodPost,
+	created := send(t, &http.Client{Timeout: probeTimeout()}, http.MethodPost,
 		base+"/api/v1/system/auth/accounts", map[string]any{
 			"kind": "user", "username": username, "password": "outsider-dev-secret",
 		}, headers)

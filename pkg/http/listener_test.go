@@ -185,7 +185,7 @@ func TestStopClosesListenerSynchronously(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Stop: %v", err)
 		}
-	case <-time.After(waitDeadline):
+	case <-time.After(waitDeadline()):
 		t.Fatal("stop did not return while a request was in flight; waiting for the drain " +
 			"belongs to close, or the module's other endpoints go on accepting meanwhile")
 	}
@@ -193,7 +193,7 @@ func TestStopClosesListenerSynchronously(t *testing.T) {
 	if l.isAccepting() {
 		t.Error("the endpoint still reports that it is accepting requests after Stop returned")
 	}
-	conn, err := net.DialTimeout("tcp", addr, waitDeadline)
+	conn, err := net.DialTimeout("tcp", addr, waitDeadline())
 	if err == nil {
 		conn.Close()
 		t.Error("a new connection was accepted after Stop returned, so the socket outlived the promise")
@@ -240,7 +240,7 @@ func TestCloseWaitsForDrain(t *testing.T) {
 		if err != nil {
 			t.Errorf("Close reported a failure on a clean drain: %v", err)
 		}
-	case <-time.After(waitDeadline):
+	case <-time.After(waitDeadline()):
 		t.Fatal("Close did not return after the in-flight request finished")
 	}
 	if err := <-inFlight; err != nil {
@@ -278,7 +278,7 @@ func TestDrainTimeoutCutsInflight(t *testing.T) {
 		if clientErr == nil {
 			t.Error("the client got a complete response, so the connection was not cut")
 		}
-	case <-time.After(waitDeadline):
+	case <-time.After(waitDeadline()):
 		t.Fatal("the client was left hanging, so the connection was not cut")
 	}
 }
@@ -402,7 +402,7 @@ func TestCloseWithoutStop(t *testing.T) {
 	if l.isAccepting() {
 		t.Error("the endpoint still reports that it is accepting requests after Close")
 	}
-	conn, err := net.DialTimeout("tcp", addr, waitDeadline)
+	conn, err := net.DialTimeout("tcp", addr, waitDeadline())
 	if err == nil {
 		conn.Close()
 		t.Error("the socket was still open after Close")
@@ -490,19 +490,20 @@ func TestDrainsOfSeveralEndpointsRunTogether(t *testing.T) {
 	// the caller does next, so waiting for all of them here separates the two
 	// designs without comparing elapsed times.
 	began, ended := make([]time.Time, 0, endpoints), make([]time.Time, 0, endpoints)
+	limit := waitDeadline()
 	for i := range bound {
 		select {
 		case at := <-ends[i]:
 			ended = append(ended, at)
-		case <-time.After(waitDeadline):
+		case <-time.After(limit):
 			t.Fatalf("the drain of endpoint-%d had not finished within %s of the endpoint "+
 				"stopping, with no close called: each drain has to run from the moment its own "+
-				"socket closed, not start when the caller waits", i, waitDeadline)
+				"socket closed, not start when the caller waits", i, limit)
 		}
 		select {
 		case at := <-starts[i]:
 			began = append(began, at)
-		case <-time.After(waitDeadline):
+		case <-time.After(limit):
 			t.Fatalf("the drain of endpoint-%d never began", i)
 		}
 	}

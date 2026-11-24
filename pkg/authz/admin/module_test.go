@@ -520,12 +520,13 @@ func TestTheManagementRoutesServeOnTheRealEntryPoint(t *testing.T) {
 		defer close(done)
 		runErr = reg.Run(ctx)
 	}()
+	limit := waitLimit()
 	t.Cleanup(func() {
 		cancel()
 		select {
 		case <-done:
-		case <-time.After(waitLimit):
-			t.Errorf("the assembly did not stop within %s", waitLimit)
+		case <-time.After(limit):
+			t.Errorf("the assembly did not stop within %s", limit)
 		}
 	})
 
@@ -533,8 +534,8 @@ func TestTheManagementRoutesServeOnTheRealEntryPoint(t *testing.T) {
 	case <-served:
 	case <-done:
 		t.Fatalf("the assembly stopped before it served: %v", runErr)
-	case <-time.After(waitLimit):
-		t.Fatalf("the assembly did not reach Serve within %s", waitLimit)
+	case <-time.After(limit):
+		t.Fatalf("the assembly did not reach Serve within %s", limit)
 	}
 
 	address := logs.address("public")
@@ -569,12 +570,14 @@ func TestTheManagementRoutesServeOnTheRealEntryPoint(t *testing.T) {
 
 // waitLimit bounds every wait, so a startup that never reaches Serve fails the
 // case with a message and not the binary at the global timeout.
-var waitLimit = coretest.Scale(60 * time.Second)
+func waitLimit() time.Duration {
+	return coretest.Scale(60 * time.Second)
+}
 
 // statusOf sends a GET and returns the status code.
 func statusOf(t *testing.T, url string) int {
 	t.Helper()
-	client := &http.Client{Timeout: waitLimit, Transport: &http.Transport{DisableKeepAlives: true}}
+	client := &http.Client{Timeout: waitLimit(), Transport: &http.Transport{DisableKeepAlives: true}}
 	resp, err := client.Get(url)
 	if err != nil {
 		t.Fatalf("sending the request: %v", err)
@@ -588,7 +591,7 @@ func statusOf(t *testing.T, url string) int {
 // case can hold the shape of an answer besides its status.
 func requestOf(t *testing.T, url string) (int, http.Header, string) {
 	t.Helper()
-	client := &http.Client{Timeout: waitLimit, Transport: &http.Transport{DisableKeepAlives: true}}
+	client := &http.Client{Timeout: waitLimit(), Transport: &http.Transport{DisableKeepAlives: true}}
 	resp, err := client.Get(url)
 	if err != nil {
 		t.Fatalf("sending the request: %v", err)

@@ -38,7 +38,9 @@ const listeningMsg = "an HTTP listener is listening"
 
 // waitBound bounds every request these cases send, so that a request that
 // would hang fails the case instead of holding the binary.
-var waitBound = coretest.Scale(5 * time.Second)
+func waitBound() time.Duration {
+	return coretest.Scale(5 * time.Second)
+}
 
 // liveRoute names a route, or an exemption, on one endpoint.
 type liveRoute struct {
@@ -346,7 +348,7 @@ func (a liveAssembly) serve(t *testing.T, use func(l *live)) *recorder {
 				addresses: addresses,
 				logs:      logs,
 				client: &nethttp.Client{
-					Timeout: waitBound,
+					Timeout: waitBound(),
 					// A connection of its own per request, so that what
 					// the server does to one is seen by that request
 					// alone and no idle connection holds the drain.

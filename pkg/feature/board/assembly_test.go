@@ -41,7 +41,9 @@ const (
 )
 
 // requestBound bounds each request, so one that would hang fails the case.
-var requestBound = coretest.Scale(5 * time.Second)
+func requestBound() time.Duration {
+	return coretest.Scale(5 * time.Second)
+}
 
 // memory is a log handler that keeps what it is handed, so a case can read back
 // where the entry point bound itself.
@@ -237,7 +239,8 @@ type reply struct {
 // ask issues one request against an address.
 func ask(t *testing.T, address, path, credential string) reply {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), requestBound)
+	limit := requestBound()
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+address+path, nil)
 	if err != nil {
@@ -247,7 +250,7 @@ func ask(t *testing.T, address, path, credential string) reply {
 		req.Header.Set("Authorization", "Bearer "+credential)
 	}
 	client := &http.Client{
-		Timeout:   requestBound,
+		Timeout:   limit,
 		Transport: &http.Transport{DisableKeepAlives: true},
 	}
 	resp, err := client.Do(req)

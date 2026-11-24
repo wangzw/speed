@@ -41,20 +41,23 @@ import (
 // hostBinary is the compiled program every case runs.
 var hostBinary string
 
-// The bounds a case waits within. Exceeding one means the program hung, and the
-// case says so with the output attached rather than with a timeout of the test
-// binary. They are generous on purpose and go through coretest.Scale, so a
-// loaded machine or a run with several gates at once makes the program slower
-// rather than failing the case.
-var (
-	startLimit   = coretest.Scale(60 * time.Second)
-	stopLimit    = coretest.Scale(30 * time.Second)
-	commandLimit = coretest.Scale(60 * time.Second)
-)
+func startLimit() time.Duration {
+	return coretest.Scale(60 * time.Second)
+}
+
+func stopLimit() time.Duration {
+	return coretest.Scale(30 * time.Second)
+}
+
+func commandLimit() time.Duration {
+	return coretest.Scale(60 * time.Second)
+}
 
 // probeTimeout bounds one request of a running program. It is a wait for an
 // answer, so it is generous: a passing case returns as soon as the answer does.
-var probeTimeout = coretest.Scale(30 * time.Second)
+func probeTimeout() time.Duration {
+	return coretest.Scale(30 * time.Second)
+}
 
 // raceWarning starts every report the race detector writes. A child that writes
 // one has a data race in the program or in a module it runs, and the case fails
@@ -336,7 +339,8 @@ func runCommandOn(t *testing.T, binary, config string, args ...string) commandRe
 // tree.
 func runCommandArgs(t *testing.T, binary, dir string, args, extraEnv []string) commandResult {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), commandLimit)
+	limit := commandLimit()
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.Dir = dir
@@ -346,7 +350,7 @@ func runCommandArgs(t *testing.T, binary, dir string, args, extraEnv []string) c
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if ctx.Err() != nil {
-		err = fmt.Errorf("the command was still running after %s and was killed: %w", commandLimit, ctx.Err())
+		err = fmt.Errorf("the command was still running after %s and was killed: %w", limit, ctx.Err())
 	}
 	res := commandResult{stdout: stdout.String(), stderr: stderr.String(), err: err}
 	if strings.Contains(res.stderr, raceWarning) {
@@ -499,12 +503,13 @@ func (p *process) stop(t *testing.T) {
 			return
 		}
 		_ = p.cmd.Process.Signal(syscall.SIGTERM)
+		limit := stopLimit()
 		select {
 		case <-p.done:
-		case <-time.After(stopLimit):
+		case <-time.After(limit):
 			_ = p.cmd.Process.Kill()
 			<-p.done
-			t.Errorf("serve did not leave within %s of SIGTERM\n%s", stopLimit, p.output())
+			t.Errorf("serve did not leave within %s of SIGTERM\n%s", limit, p.output())
 		}
 		// The readers drain before Wait runs, so done closes only once the
 		// captured diagnostics are complete.
@@ -603,7 +608,7 @@ func startServingFrom(t *testing.T, source func(*testing.T, int) []int,
 ) (*process, []int, error) {
 	t.Helper()
 	return startWithRetry(t, source, listenerCount, attempt,
-		func(p *process) error { return p.waitReadyErr(startLimit) },
+		func(p *process) error { return p.waitReadyErr(startLimit()) },
 		(*process).bindFailure,
 		func(p *process) { p.stop(t) },
 	)
@@ -619,7 +624,7 @@ type response struct {
 // answer.
 func get(t *testing.T, url string) response {
 	t.Helper()
-	return send(t, &http.Client{Timeout: probeTimeout}, http.MethodGet, url, nil, nil)
+	return send(t, &http.Client{Timeout: probeTimeout()}, http.MethodGet, url, nil, nil)
 }
 
 // rawResponse is one answer with its headers, for the cases that compare two
@@ -637,7 +642,7 @@ func getRaw(t *testing.T, url string) rawResponse {
 	if err != nil {
 		t.Fatalf("building GET %s: %v", url, err)
 	}
-	res, err := (&http.Client{Timeout: probeTimeout}).Do(req)
+	res, err := (&http.Client{Timeout: probeTimeout()}).Do(req)
 	if err != nil {
 		t.Fatalf("GET %s: %v", url, err)
 	}
@@ -752,7 +757,7 @@ func signIn(t *testing.T, accountBase, identifier, password string) string {
 	if err != nil {
 		t.Fatalf("building a cookie jar: %v", err)
 	}
-	client := &http.Client{Timeout: probeTimeout, Jar: jar}
+	client := &http.Client{Timeout: probeTimeout(), Jar: jar}
 	credentials := map[string]any{
 		"method":   "password",
 		"delivery": "token",
@@ -977,7 +982,7 @@ func TestTheGuardsOfferNoBasicChallenge(t *testing.T) {
 	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
-	client := &http.Client{Timeout: probeTimeout}
+	client := &http.Client{Timeout: probeTimeout()}
 	// One guarded endpoint per gateway chain: the account endpoint, the admin
 	// endpoint and the api endpoint, whose chain also carries tenant resolution
 	// and the authorization guard.
@@ -1393,7 +1398,7 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 		if tenant := tenantOfPath(path); tenant != "" {
 			headers = withTenant(headers, tenant)
 		}
-		return send(t, &http.Client{Timeout: probeTimeout}, http.MethodGet,
+		return send(t, &http.Client{Timeout: probeTimeout()}, http.MethodGet,
 			adminBase+path, nil, headers)
 	}
 
@@ -1826,7 +1831,7 @@ func TestAnUnprovedEmailIsGatedAndAnAccountWithoutOneIsNot(t *testing.T) {
 	operator := signIn(t, base, seedIdentifier, seedPassword)
 	headers := map[string]string{"Authorization": "Bearer " + operator}
 
-	created := send(t, &http.Client{Timeout: probeTimeout}, http.MethodPost,
+	created := send(t, &http.Client{Timeout: probeTimeout()}, http.MethodPost,
 		base+"/api/v1/system/auth/accounts", map[string]any{
 			"kind":               "user",
 			"username":           "unproved",
@@ -1840,7 +1845,7 @@ func TestAnUnprovedEmailIsGatedAndAnAccountWithoutOneIsNot(t *testing.T) {
 	}
 
 	gated := signIn(t, base, "unproved", "unproved-password")
-	refused := send(t, &http.Client{Timeout: probeTimeout}, http.MethodPost,
+	refused := send(t, &http.Client{Timeout: probeTimeout()}, http.MethodPost,
 		base+"/api/v1/system/auth/accounts", map[string]any{
 			"kind": "user", "username": "another",
 		}, map[string]string{"Authorization": "Bearer " + gated})
@@ -1874,7 +1879,7 @@ func TestSeedBindsTheAdministratorInEveryServedTenant(t *testing.T) {
 
 	accountBase := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	adminBase := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
-	client := &http.Client{Timeout: probeTimeout}
+	client := &http.Client{Timeout: probeTimeout()}
 	token := signIn(t, accountBase, seedIdentifier, seedPassword)
 	for _, tenant := range []string{demoTenant, secondTenant} {
 		// The SSO provider group is not here for the reason the tenant-admin
@@ -1912,7 +1917,7 @@ func TestCreatingATenantWritesTheFirstTenantAdminBinding(t *testing.T) {
 	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
-	client := &http.Client{Timeout: probeTimeout}
+	client := &http.Client{Timeout: probeTimeout()}
 	token := signIn(t, base, seedIdentifier, seedPassword)
 	auth := map[string]string{"Authorization": "Bearer " + token}
 
@@ -2006,7 +2011,7 @@ func TestRemovingASystemMembershipWithdrawsThePlatformBinding(t *testing.T) {
 	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
-	client := &http.Client{Timeout: probeTimeout}
+	client := &http.Client{Timeout: probeTimeout()}
 	operator := signIn(t, base, seedIdentifier, seedPassword)
 	auth := map[string]string{"Authorization": "Bearer " + operator}
 
@@ -2126,7 +2131,7 @@ func TestTheNotificationSurfaceIsReachable(t *testing.T) {
 		"/api/v1/notifications/preferences",
 		"/api/v1/notifications/types",
 	} {
-		res := send(t, &http.Client{Timeout: probeTimeout}, http.MethodGet, base+path, nil, headers)
+		res := send(t, &http.Client{Timeout: probeTimeout()}, http.MethodGet, base+path, nil, headers)
 		if res.status != http.StatusOK {
 			t.Errorf("GET %s answered %d, want 200:\n%s", path, res.status, res.body)
 		}
@@ -2183,7 +2188,7 @@ func TestTheJournalRecordsTheSeamWritesAndNoRequestRow(t *testing.T) {
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	token := signIn(t, base, seedIdentifier, seedPassword)
-	client := &http.Client{Timeout: probeTimeout}
+	client := &http.Client{Timeout: probeTimeout()}
 	headers := map[string]string{
 		"Authorization": "Bearer " + token,
 		"X-Tenant":      demoTenant,

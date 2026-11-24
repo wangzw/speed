@@ -123,7 +123,7 @@ func e2eConfigBody(t *testing.T, root, backendAddress, dsn string) string {
 // the run that follows finds the rows the assembly needs.
 func seedE2E(t *testing.T, binary, config string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), commandLimit)
+	ctx, cancel := context.WithTimeout(context.Background(), commandLimit())
 	defer cancel()
 	cmd := exec.CommandContext(ctx, binary, "--config", config, "sqlite", seedCommand)
 	cmd.Env = childEnv()

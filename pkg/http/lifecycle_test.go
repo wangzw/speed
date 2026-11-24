@@ -151,14 +151,15 @@ func TestNoModuleIsReleasedUnderAnInFlightRequest(t *testing.T) {
 	}
 
 	a := startAssembly(t,
-		endpointsAt(waitDeadline, "public"),
+		endpointsAt(waitDeadline(), "public"),
 		Module(), stoppedAfter.module(), constructedAfter.module())
 
 	var r *router
+	limit := waitDeadline()
 	select {
 	case r = <-serving:
-	case <-time.After(waitDeadline):
-		t.Fatalf("timed out after %s waiting for the endpoint to bind", waitDeadline)
+	case <-time.After(limit):
+		t.Fatalf("timed out after %s waiting for the endpoint to bind", limit)
 	}
 	addr, err := boundAddr(r, "public")
 	if err != nil {
@@ -188,7 +189,7 @@ func TestNoModuleIsReleasedUnderAnInFlightRequest(t *testing.T) {
 			t.Errorf("the in-flight request was answered %d, not the %d its handler writes",
 				status, nethttp.StatusNoContent)
 		}
-	case <-time.After(waitDeadline):
+	case <-time.After(waitDeadline()):
 		t.Fatal("the in-flight request was never answered")
 	}
 
@@ -621,7 +622,7 @@ func TestAGinHandlerLearnsTheDrainHasBegun(t *testing.T) {
 			select {
 			case <-signal:
 				told <- signal != nil
-			case <-time.After(waitDeadline):
+			case <-time.After(waitDeadline()):
 				told <- false
 			}
 		}),
@@ -631,7 +632,7 @@ func TestAGinHandlerLearnsTheDrainHasBegun(t *testing.T) {
 		},
 	}
 
-	a := startAssembly(t, endpointsAt(waitDeadline, "public"), Module(), stream.module())
+	a := startAssembly(t, endpointsAt(waitDeadline(), "public"), Module(), stream.module())
 	a.waitForOrEnd(t, serving, "the endpoint to be served")
 	r, err := routerFrom(a.reg)
 	if err != nil {
@@ -651,7 +652,7 @@ func TestAGinHandlerLearnsTheDrainHasBegun(t *testing.T) {
 	if !<-told {
 		t.Error("the handler was never told that the drain had begun")
 	}
-	if waited := time.Since(started); waited >= waitDeadline {
+	if waited := time.Since(started); waited >= waitDeadline() {
 		t.Errorf("the shutdown took %s, as long as the stream's own deadline, so the signal did not end it", waited)
 	}
 }

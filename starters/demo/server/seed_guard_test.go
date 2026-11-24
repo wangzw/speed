@@ -292,14 +292,15 @@ func TestSeedGuardRefusesServeOnAnExternalListener(t *testing.T) {
 
 	serve := startArgs(t, dir, []string{"sqlite", serveCommand},
 		[]string{"DEMO_HTTP__LISTENERS=" + listeners})
+	limit := startLimit()
 	select {
 	case <-serve.done:
 	case <-serve.ready:
 		t.Fatalf("serve reached its ready record on an external listener with the compiled seed:\n%s",
 			serve.output())
-	case <-time.After(startLimit):
+	case <-time.After(limit):
 		t.Fatalf("serve neither refused nor reached its ready record within %s\n%s\n%s",
-			startLimit, serve.output(), serve.stderr())
+			limit, serve.output(), serve.stderr())
 	}
 	if serve.waitErr == nil {
 		t.Fatalf("serve exited successfully on an external listener with the compiled seed")

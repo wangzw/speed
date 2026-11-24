@@ -814,7 +814,7 @@ func startChild(t *testing.T, binary, dir string, env []string, args ...string) 
 		p.waitErr = cmd.Wait()
 		close(p.done)
 	}()
-	t.Cleanup(func() { p.stop(stopLimit) })
+	t.Cleanup(func() { p.stop(stopLimit()) })
 	return p
 }
 
@@ -1027,9 +1027,9 @@ func startVariantWith(t *testing.T, topo topology, without []string,
 			child, byName := launchOn(t, topo, without, ports)
 			return variantRun{child: child, byName: byName}
 		},
-		func(run variantRun) error { return run.child.waitReady(startLimit) },
+		func(run variantRun) error { return run.child.waitReady(startLimit()) },
 		func(run variantRun) bool { return bindFailure(run.child) },
-		func(run variantRun) { run.child.stop(stopLimit) },
+		func(run variantRun) { run.child.stop(stopLimit()) },
 	)
 	return run.child, run.byName, err
 }
@@ -1098,7 +1098,7 @@ func TestATakenPortLeavesTheChildUnableToBind(t *testing.T) {
 	ports := []int{blocker.Addr().(*net.TCPAddr).Port}
 
 	child, _ := launchOn(t, topo, nil, ports)
-	if err := child.waitReady(startLimit); err == nil {
+	if err := child.waitReady(startLimit()); err == nil {
 		t.Fatalf("the child became ready on a port another listener holds")
 	}
 	if !bindFailure(child) {
@@ -1178,7 +1178,7 @@ func TestStartVariantRetriesAPortTakenInTheGap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the launch did not recover from a taken port: %v", err)
 	}
-	defer child.stop(stopLimit)
+	defer child.stop(stopLimit())
 	if attempts < 2 {
 		t.Fatalf("the launch became ready on its first attempt, so the retry was not exercised")
 	}
@@ -1246,7 +1246,7 @@ func TestTheStartupFailureCriterionRejectsABindFailure(t *testing.T) {
 	defer func() { _ = blocker.Close() }()
 	taken := []int{blocker.Addr().(*net.TCPAddr).Port}
 	collided, _ := launchOn(t, topo, nil, taken)
-	waitErr := collided.waitReady(startLimit)
+	waitErr := collided.waitReady(startLimit())
 	if waitErr == nil {
 		t.Fatalf("the child became ready on a port another listener holds")
 	}
@@ -1258,7 +1258,7 @@ func TestTheStartupFailureCriterionRejectsABindFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the run did not become ready: %v", err)
 	}
-	defer started.stop(stopLimit)
+	defer started.stop(stopLimit())
 	if miss := startupFailureMiss(started, nil, want); miss == "" {
 		t.Fatalf("a run that started read as the held startup failure")
 	}
@@ -1381,7 +1381,7 @@ func runDifferential(t *testing.T, topo topology) {
 	// own answers follow. A prefix the table says belongs to a guarded endpoint
 	// answers 401 in that endpoint's realm, so the probes below really are
 	// judged against the endpoint they are expected to reach.
-	client := &http.Client{Timeout: probeTimeout}
+	client := &http.Client{Timeout: probeTimeout()}
 	for prefix, endpoint := range expectedOwners {
 		if !guarded[endpoint] {
 			continue
@@ -1441,7 +1441,7 @@ func runDifferential(t *testing.T, topo topology) {
 		t.Run(group.id, func(t *testing.T) {
 			t.Parallel()
 			variant, variantPorts, err := startVariant(t, topo, group.modules)
-			defer variant.stop(stopLimit)
+			defer variant.stop(stopLimit())
 			if err != nil {
 				exemption, failure := variantStartOutcome(group, err, variant.stderrOutput())
 				if exemption != "" {

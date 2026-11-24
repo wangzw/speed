@@ -46,7 +46,9 @@ import (
 const listening = "an HTTP listener is listening"
 
 // requestBound bounds each request a case sends.
-var requestBound = coretest.Scale(5 * time.Second)
+func requestBound() time.Duration {
+	return coretest.Scale(5 * time.Second)
+}
 
 // capture is a log handler that keeps what it is handed, so that a case can read
 // back where the entry point bound itself.
@@ -226,7 +228,7 @@ func assembleWithSections(t *testing.T, extra []core.Module, sections map[string
 				t:       t,
 				ctx:     ctx,
 				address: address,
-				client:  &http.Client{Jar: jar, Timeout: requestBound},
+				client:  &http.Client{Jar: jar, Timeout: requestBound()},
 			}
 			if h.admin, err = core.Resolve[authn.AccountAdmin](reg); err != nil {
 				return err

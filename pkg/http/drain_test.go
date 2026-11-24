@@ -85,7 +85,7 @@ func (h *hijackingHandler) letGo() {
 // connection open, which is what a client of an upgraded protocol does.
 func openHijackedConnection(t *testing.T, addr string) {
 	t.Helper()
-	conn, err := net.DialTimeout("tcp", addr, waitDeadline)
+	conn, err := net.DialTimeout("tcp", addr, waitDeadline())
 	if err != nil {
 		t.Fatalf("dialling the endpoint: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestTheDrainWaitsForAHijackedConnectionsHandler(t *testing.T) {
 		if err != nil {
 			t.Errorf("the drain reported a failure once the handler returned: %v", err)
 		}
-	case <-time.After(waitDeadline):
+	case <-time.After(waitDeadline()):
 		t.Fatal("the drain did not end after the handler of the hijacked connection returned")
 	}
 	select {
@@ -193,7 +193,7 @@ func (h *streamingHandler) ServeHTTP(w nethttp.ResponseWriter, r *nethttp.Reques
 	select {
 	case <-draining:
 		h.signalled <- true
-	case <-time.After(waitDeadline):
+	case <-time.After(waitDeadline()):
 		h.signalled <- false
 	}
 }
@@ -225,7 +225,7 @@ func TestALongLivedHandlerLearnsTheDrainHasBegun(t *testing.T) {
 	if !<-h.signalled {
 		t.Fatal("the stream never learnt that the drain had begun")
 	}
-	if waited := time.Since(started); waited >= waitDeadline {
+	if waited := time.Since(started); waited >= waitDeadline() {
 		t.Errorf("the drain took %s, as long as the stream's own deadline, so the signal did not end it", waited)
 	}
 }

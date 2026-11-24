@@ -58,7 +58,9 @@ const (
 )
 
 // chainBound bounds each request the chain sends.
-var chainBound = coretest.Scale(5 * time.Second)
+func chainBound() time.Duration {
+	return coretest.Scale(5 * time.Second)
+}
 
 // The parts of the bounce page the chain reads back.
 var (
@@ -214,7 +216,7 @@ func runChainWith(t *testing.T, edit func(*authn.SSOProvider), use func(c *chain
 			use(&chain{
 				t: t, ctx: ctx, address: address, idp: identity, metrics: reader,
 				client: &http.Client{
-					Timeout: chainBound,
+					Timeout: chainBound(),
 					// Every redirect is read as the answer it is.
 					CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 				},

@@ -424,12 +424,13 @@ func TestAConnectionOpenedOntoTheDeliveredDatabaseRecordsOnItsOwnSession(t *test
 				}
 				defer func() { _ = db.Close(again) }()
 
-				returned, err := within(selfWaitTimer, func() error {
+				limit := selfWaitTimer()
+				returned, err := within(limit, func() error {
 					return quietly(again).WithContext(ctx).Create(&order{ID: "o1", Note: "committed"}).Error
 				})
 				if !returned {
 					t.Errorf("a write on a connection opened onto the delivered database was still waiting "+
-						"after %v", selfWaitTimer)
+						"after %v", limit)
 					return errCaseFailed
 				}
 				if err != nil {

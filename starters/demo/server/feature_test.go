@@ -159,7 +159,7 @@ func authenticatedGet(t *testing.T, url, token string) rawResponse {
 		t.Fatalf("building GET %s: %v", url, err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	res, err := (&http.Client{Timeout: probeTimeout}).Do(req)
+	res, err := (&http.Client{Timeout: probeTimeout()}).Do(req)
 	if err != nil {
 		t.Fatalf("GET %s: %v", url, err)
 	}

@@ -70,7 +70,9 @@ const (
 // waitLimit bounds every wait and every request, so a startup or a request that
 // never answers fails the case with a message and not the binary at the global
 // timeout.
-var waitLimit = coretest.Scale(60 * time.Second)
+func waitLimit() time.Duration {
+	return coretest.Scale(60 * time.Second)
+}
 
 // record is one log record a case reads back.
 type record struct {
@@ -431,6 +433,7 @@ func run(t *testing.T, c chain, enforcer *authztest.Enforcer, use func(l *live))
 		defer close(done)
 		runErr = reg.Run(ctx)
 	}()
+	limit := waitLimit()
 	stopped := false
 	stop := func() {
 		if stopped {
@@ -440,8 +443,8 @@ func run(t *testing.T, c chain, enforcer *authztest.Enforcer, use func(l *live))
 		cancel()
 		select {
 		case <-done:
-		case <-time.After(waitLimit):
-			t.Errorf("the assembly did not stop within %s", waitLimit)
+		case <-time.After(limit):
+			t.Errorf("the assembly did not stop within %s", limit)
 		}
 		if runErr != nil {
 			t.Errorf("the assembly ended with %v", runErr)
@@ -453,8 +456,8 @@ func run(t *testing.T, c chain, enforcer *authztest.Enforcer, use func(l *live))
 	case <-servedCh:
 	case <-done:
 		t.Fatalf("the run ended before it served: %v", runErr)
-	case <-time.After(waitLimit):
-		t.Fatalf("the assembly did not reach Serve within %s", waitLimit)
+	case <-time.After(limit):
+		t.Fatalf("the assembly did not reach Serve within %s", limit)
 	}
 
 	addresses := map[string]string{}
@@ -474,7 +477,7 @@ func run(t *testing.T, c chain, enforcer *authztest.Enforcer, use func(l *live))
 		addresses: addresses,
 		logs:      logs,
 		client: &nethttp.Client{
-			Timeout: waitLimit,
+			Timeout: limit,
 			// A connection of its own per request, so that no idle connection
 			// holds the drain when the assembly stops.
 			Transport: &nethttp.Transport{DisableKeepAlives: true},

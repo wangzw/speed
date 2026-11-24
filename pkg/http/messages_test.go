@@ -605,7 +605,7 @@ func requestWithLanguage(ctx context.Context, addr, path, lang string) (answer, 
 		req.Header.Set("Accept-Language", lang)
 	}
 	client := &nethttp.Client{
-		Timeout:   waitDeadline,
+		Timeout:   waitDeadline(),
 		Transport: &nethttp.Transport{DisableKeepAlives: true, DisableCompression: true},
 	}
 	resp, err := client.Do(req)

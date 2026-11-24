@@ -26,7 +26,7 @@ import (
 func TestThePersonalTenantSettingsWriteIsRefused(t *testing.T) {
 	t.Parallel()
 	base, token := seededServe(t, "")
-	client := &http.Client{Timeout: probeTimeout}
+	client := &http.Client{Timeout: probeTimeout()}
 	auth := map[string]string{"Authorization": "Bearer " + token}
 	personal := personalTenantName(t, client, base, token)
 
