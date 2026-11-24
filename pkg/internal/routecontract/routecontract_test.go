@@ -7,10 +7,8 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The check reads an OpenAPI path that writes its parameter as {name} and a
-// registration that writes it as :name. The rewrite is what makes the two
-// comparable, so a case that let either form through unread would report every
-// parameterised route as both undeclared and unregistered.
+// The check reads an OpenAPI path that writes its parameter as {name} and a registration that
+// writes it as :name.
 func TestGinPathRewritesAnOpenAPIParameter(t *testing.T) {
 	for _, c := range []struct{ in, want string }{
 		{"/api/v1/objects", "/api/v1/objects"},
@@ -24,8 +22,7 @@ func TestGinPathRewritesAnOpenAPIParameter(t *testing.T) {
 	}
 }
 
-// The check reads only the operations a path item carries. A path item with
-// no method in it contributes nothing, and a method is compared case-folded.
+// The check reads only the operations a path item carries.
 func TestOperationsReadsMethodsAndRewritesTheirPath(t *testing.T) {
 	got := operations(t, "example", []byte(`{"paths":{
 		"/things": {"get": {}, "POST": {}, "parameters": []},
@@ -46,10 +43,8 @@ func TestOperationsReadsMethodsAndRewritesTheirPath(t *testing.T) {
 	}
 }
 
-// The comparison has to be discriminating in both directions, and it has to
-// say which direction each difference is: a route served and undocumented is a
-// different defect from an operation a client would call and the process would
-// not answer.
+// TestDifferencesReportsBothDirections checks that differences lists the served-but-undeclared
+// routes and the declared-but-unserved operations, including a wrong method on a served path.
 func TestDifferencesReportsBothDirections(t *testing.T) {
 	registered := []Route{
 		{Method: "GET", Path: "/declared"},
@@ -70,8 +65,8 @@ func TestDifferencesReportsBothDirections(t *testing.T) {
 	}
 }
 
-// The comparison over two sets that are one reports nothing, which is what the
-// whole check comes to when the fragment and the registrations agree.
+// The comparison over two sets that are one reports nothing, which is what the whole check comes
+// to when the fragment and the registrations agree.
 func TestDifferencesIsSilentWhenTheTwoSetsAreOne(t *testing.T) {
 	routes := []Route{{Method: "GET", Path: "/things/:id"}, {Method: "DELETE", Path: "/things/:id"}}
 	undeclared, unregistered := differences(routes, routes)
@@ -80,10 +75,8 @@ func TestDifferencesIsSilentWhenTheTwoSetsAreOne(t *testing.T) {
 	}
 }
 
-// readParams reads an operation's declared query parameters and skips every
-// parameter that is not in the query, so that the per-operation set the
-// parameter check compares is the query surface alone; a parameter a path item
-// writes above its methods is not read either.
+// TestReadParamsReadsQueryParametersOnly checks that readParams collects query parameters and
+// ignores path and header ones.
 func TestReadParamsReadsQueryParametersOnly(t *testing.T) {
 	into := map[Route]map[string]bool{}
 	readParams(t, "example", speedhttp.Spec{Document: []byte(`{"paths":{
@@ -103,9 +96,8 @@ func TestReadParamsReadsQueryParametersOnly(t *testing.T) {
 	}
 }
 
-// The parameter comparison is discriminating in both directions, and a route
-// present in only one of the two sets is compared against the empty set, so an
-// unaccepted declaration and an undeclared acceptance are both caught.
+// TestParamDifferencesReportsBothDirections checks that paramDifferences reports the declared
+// parameters no handler accepts and the accepted ones no fragment declares, sorted.
 func TestParamDifferencesReportsBothDirections(t *testing.T) {
 	list := Route{Method: "GET", Path: "/things"}
 	declared := map[Route]map[string]bool{
@@ -125,8 +117,8 @@ func TestParamDifferencesReportsBothDirections(t *testing.T) {
 	}
 }
 
-// The comparison over two per-operation sets that are one reports nothing, which
-// is what the whole check comes to when the fragment and the handlers agree.
+// The comparison over two per-operation sets that are one reports nothing, which is what the whole
+// check comes to when the fragment and the handlers agree.
 func TestParamDifferencesIsSilentWhenTheTwoSetsAreOne(t *testing.T) {
 	sets := map[Route]map[string]bool{
 		{Method: "GET", Path: "/things"}: {"limit": true, "after": true},
@@ -137,11 +129,8 @@ func TestParamDifferencesIsSilentWhenTheTwoSetsAreOne(t *testing.T) {
 	}
 }
 
-// Config merges two subtrees that write the same mapping, which is what lets a
-// fixture's "authn" section and a case's "authn.session" section live in one
-// document, and it panics when the two write the same leaf: one silently
-// replacing the other is how a case comes to test a configuration it did not
-// write.
+// TestConfigMergesMappingsAndRefusesToOverwriteALeaf checks that Config merges disjoint sections
+// and panics when two parts write the same leaf.
 func TestConfigMergesMappingsAndRefusesToOverwriteALeaf(t *testing.T) {
 	merged := Config(
 		map[string]any{"authn": map[string]any{"gate": map[string]any{"public-url": "https://a.example.com"}}},
