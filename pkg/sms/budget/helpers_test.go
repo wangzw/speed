@@ -16,16 +16,11 @@ import (
 	"github.com/vislake/speed/pkg/internal/dbtest"
 )
 
-// dialect is one engine the ledger's cases run on: its migration directory and
-// how to reach an empty database of the case's own on it.
 type dialect struct {
 	name string
 	open func(t *testing.T, items dbtest.Items) db.Database
 }
 
-// dialects lists the engines whose fixture needs nothing installed. The
-// integration build appends PostgreSQL, so an untagged run cannot name a
-// dialect whose opener would fail for want of a server.
 var dialects = []dialect{{
 	name: "sqlite",
 	open: func(t *testing.T, items dbtest.Items) db.Database {
@@ -34,7 +29,6 @@ var dialects = []dialect{{
 	},
 }}
 
-// forEachDialect runs a case on every engine this build's cases run on.
 func forEachDialect(t *testing.T, run func(t *testing.T, store Store)) {
 	t.Helper()
 	for _, d := range dialects {
@@ -45,8 +39,6 @@ func forEachDialect(t *testing.T, run func(t *testing.T, store Store)) {
 	}
 }
 
-// openLedger delivers the engine's database, applies the ledger's own migration
-// files and returns the store over its handle.
 func openLedger(t *testing.T, d dialect) Store {
 	t.Helper()
 	handle := d.open(t, nil).DB()
@@ -55,8 +47,6 @@ func openLedger(t *testing.T, d dialect) Store {
 	return New(handle)
 }
 
-// applyMigrations builds the ledger's table from the files the module ships,
-// so a case cannot drift from the schema a deployment gets.
 func applyMigrations(t *testing.T, handle *gorm.DB, dialect string) {
 	t.Helper()
 	entries, err := fs.ReadDir(migrationsFS, dialect)
@@ -76,10 +66,6 @@ func applyMigrations(t *testing.T, handle *gorm.DB, dialect string) {
 	}
 }
 
-// splitStatements splits a migration on the semicolons that end statements,
-// after removing whole-line comments. A comment can carry a semicolon of its
-// own — this module's rows explain "then; refunded_at" — and splitting before
-// the comment is gone would turn half a sentence into a statement.
 func splitStatements(sql string) []string {
 	var body strings.Builder
 	for _, line := range strings.Split(sql, "\n") {
@@ -99,11 +85,8 @@ func splitStatements(sql string) []string {
 	return out
 }
 
-// at is a fixed UTC instant a case can reason about.
 var at = time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
 
-// attempt builds a valid attempt with the given shape. An empty source or
-// account is nil, which is the "none" the table carries.
 func attempt(channel Channel, purpose, source, destination, tenant string, when time.Time) Attempt {
 	a := Attempt{
 		Channel:        channel,
@@ -119,8 +102,6 @@ func attempt(channel Channel, purpose, source, destination, tenant string, when 
 	return a
 }
 
-// suppressedAttempt builds a suppressed attempt — one the caller deliberately
-// did not send — refunded at write time as the store requires.
 func suppressedAttempt(channel Channel, purpose, source, destination, tenant string, when time.Time) Attempt {
 	a := attempt(channel, purpose, source, destination, tenant, when)
 	a.Suppressed = true
@@ -129,14 +110,11 @@ func suppressedAttempt(channel Channel, purpose, source, destination, tenant str
 	return a
 }
 
-// withAccount names the account an attempt is for, which the account dimension
-// counts by.
 func withAccount(a Attempt, account string) Attempt {
 	a.AccountID = &account
 	return a
 }
 
-// record writes one attempt and fails the case if it is refused.
 func record(t *testing.T, store Store, a Attempt) ID {
 	t.Helper()
 	id, err := store.Record(context.Background(), a)
@@ -146,7 +124,6 @@ func record(t *testing.T, store Store, a Attempt) ID {
 	return id
 }
 
-// count reads one count and fails the case if it errors.
 func count(t *testing.T, store Store, q Query) int64 {
 	t.Helper()
 	n, err := store.Count(context.Background(), q)
@@ -156,7 +133,6 @@ func count(t *testing.T, store Store, q Query) int64 {
 	return n
 }
 
-// distinct counts destinations and fails the case if it errors.
 func distinct(t *testing.T, store Store, q Query) int64 {
 	t.Helper()
 	n, err := store.CountDistinctDestinations(context.Background(), q)
@@ -166,7 +142,6 @@ func distinct(t *testing.T, store Store, q Query) int64 {
 	return n
 }
 
-// refund marks an attempt refunded and fails the case if it errors.
 func refund(t *testing.T, store Store, id ID, when time.Time) {
 	t.Helper()
 	if err := store.MarkRefunded(context.Background(), id, when); err != nil {
@@ -174,7 +149,6 @@ func refund(t *testing.T, store Store, id ID, when time.Time) {
 	}
 }
 
-// assertCount compares one count and reports the query that produced it.
 func assertCount(t *testing.T, got, want int64, q Query) {
 	t.Helper()
 	if got != want {
@@ -182,8 +156,6 @@ func assertCount(t *testing.T, got, want int64, q Query) {
 	}
 }
 
-// requireInvalidAttempt asserts that Record refused a with ErrInvalidAttempt
-// and wrote nothing.
 func requireInvalidAttempt(t *testing.T, store Store, a Attempt) {
 	t.Helper()
 	before := count(t, store, Query{Since: at.Add(-time.Hour), IncludeRefunded: true})

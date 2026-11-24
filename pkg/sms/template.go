@@ -7,40 +7,25 @@ import (
 	"time"
 )
 
-// placeholderOpen and placeholderClose bracket a named placeholder in a body.
-// The syntax is ${name}; a body is otherwise literal text.
 const (
 	placeholderOpen  = "${"
 	placeholderClose = "}"
 )
 
 // TemplateSpec is one template in a set: what it is for, the ordered parameter
-// names it substitutes, the vendor's code for each language, the locally
-// rendered body for each language, and the vendor registration identifiers it
-// carries.
-//
-// The shape is nested, not one flat map mixing languages and parameters,
-// because it is what the configuration decoder types: the templates item is a
-// container leaf, and each template's own section decodes into this struct by
-// these tags. A single map of mixed values could only be decoded as an untyped
-// map, and a mistyped key in it would be dropped in silence.
+// names it substitutes, the vendor code and rendered body per language, and the
+// registration identifiers it carries.
 type TemplateSpec struct {
 	// Kind is what the template is for. Empty means notification.
 	Kind Kind `config:"kind"`
-	// Params are the parameter names the template substitutes, in the order the
-	// approved template expects them: a positional carrier lays them out in this
-	// order, and a body names them as ${name}. It may be empty — a body can carry
-	// no placeholder — and no name may repeat.
+	// Params are the parameter names the template substitutes, in the approved order;
+	// it may be empty and no name may repeat.
 	Params []string `config:"params"`
-	// Codes maps a language to the carrier's approved code for that language. It
-	// is for a carrier that sends by vendor code. It may be empty, but every
-	// language it names needs a non-empty code.
+	// Codes maps a language to the carrier's approved code; every language it names
+	// needs a non-empty code.
 	Codes map[string]string `config:"codes"`
-	// Bodies maps a language to the body this package renders for that language.
-	// It is for a carrier that sends by body, and for a carrier that creates a
-	// vendor content resource when a template is offered. It may be empty, but
-	// every language it names needs a non-empty body whose placeholders all name
-	// declared parameters.
+	// Bodies maps a language to the body this package renders; every body must be
+	// non-empty and use only declared parameters.
 	Bodies map[string]string `config:"bodies"`
 	// Attributes are the vendor registration identifiers the template carries,
 	// such as a DLT template identifier. Their keys are bounded by the mounted
@@ -48,15 +33,16 @@ type TemplateSpec struct {
 	Attributes map[string]string `config:"attributes"`
 }
 
-// Template is the read-only view of one declared template: its name, what it is
-// for, the ordered parameter names it substitutes and the languages it can be
-// sent in. It carries no vendor code and no body, so a consumer sees what a set
-// holds without learning the vendor's numbering, and the order of Params is the
-// layout a positional carrier uses.
+// Template is the read-only view of one declared template: its name, kind, ordered
+// parameter names and languages. It carries no vendor code and no body.
 type Template struct {
-	Name    string
-	Kind    Kind
-	Params  []string
+	// Name is the logical template name.
+	Name string
+	// Kind is what the template is for.
+	Kind Kind
+	// Params are the parameter names in declared order.
+	Params []string
+	// Locales is the effective language set.
 	Locales []string
 }
 
@@ -65,10 +51,6 @@ type Declaration struct {
 	byName map[string]declaredTemplate
 }
 
-// declaredTemplate is one template as the declaration holds it: its kind, the
-// ordered parameter names, the language-to-code and language-to-body tables and
-// the registration attributes, private so a caller cannot change any of it after
-// startup. Locales is the effective language set, codes and bodies together.
 type declaredTemplate struct {
 	kind       Kind
 	params     []string
@@ -78,22 +60,9 @@ type declaredTemplate struct {
 	locales    []string
 }
 
-// NewDeclaration checks a template set for self-consistency and freezes it.
-//
-// Each template may declare no parameter, but no repeated parameter name; must
-// name at least one language; must give every language it names a non-empty code
-// or a non-empty body; and must have every placeholder in every body name a
-// declared parameter. A set that fails is ErrInvalidConfig naming the template
-// and, where it applies, the language or the placeholder: a template no message
-// could be sent under is a startup failure, not a surprise when a message is
-// first built. Whether the templates cover what a consumer needs is the
-// consumer's check, made against Declared.
-//
-// It checks the declaration alone. Whether a template fits the carrier this
-// process mounted — a code where the carrier does not send by code, a missing
-// code where the vendor reviews per template, an attribute key the carrier does
-// not accept, a body over the carrier's bound — is the registry's check, against
-// the carrier's CarrierModel.
+// NewDeclaration checks a template set for self-consistency and freezes it,
+// refusing a defect with ErrInvalidConfig naming the template. Whether a template
+// fits the mounted carrier is the registry's check.
 func NewDeclaration(specs map[string]TemplateSpec) (Declaration, error) {
 	if len(specs) == 0 {
 		return Declaration{}, fmt.Errorf("%w: the set holds no template", ErrInvalidConfig)
@@ -118,7 +87,6 @@ func NewDeclaration(specs map[string]TemplateSpec) (Declaration, error) {
 	return Declaration{byName: byName}, nil
 }
 
-// declare checks one template for self-consistency and freezes it.
 func declare(name string, spec TemplateSpec) (declaredTemplate, error) {
 	kind := spec.Kind
 	if kind == "" {
@@ -184,7 +152,6 @@ func declare(name string, spec TemplateSpec) (declaredTemplate, error) {
 	}, nil
 }
 
-// declaredCodes validates and freezes the language-to-code table of one template.
 func declaredCodes(name string, spec map[string]string) (map[string]string, error) {
 	codes := make(map[string]string, len(spec))
 	for _, locale := range sortedKeys(spec) {
@@ -201,9 +168,6 @@ func declaredCodes(name string, spec map[string]string) (map[string]string, erro
 	return codes, nil
 }
 
-// declaredBodies validates and freezes the language-to-body table of one
-// template: every body is non-empty and every placeholder in it names a declared
-// parameter.
 func declaredBodies(name string, spec map[string]string, declared map[string]bool) (map[string]string, error) {
 	bodies := make(map[string]string, len(spec))
 	for _, locale := range sortedKeys(spec) {
@@ -232,8 +196,6 @@ func declaredBodies(name string, spec map[string]string, declared map[string]boo
 	return bodies, nil
 }
 
-// sortedKeys reports the keys of a string map in a stable order, so a failure
-// names the same language on every run.
 func sortedKeys(m map[string]string) []string {
 	keys := make([]string, 0, len(m))
 	for key := range m {
@@ -243,9 +205,6 @@ func sortedKeys(m map[string]string) []string {
 	return keys
 }
 
-// bodyPlaceholders reports the placeholder names a body names, in the order they
-// appear, and the tail from an opening ${ that is never closed; ok is false for
-// that tail. Text that merely holds a dollar sign is not a placeholder.
 func bodyPlaceholders(body string) (names []string, unclosed string, ok bool) {
 	rest := body
 	for {
@@ -263,17 +222,9 @@ func bodyPlaceholders(body string) (names []string, unclosed string, ok bool) {
 	}
 }
 
-// RenderBody substitutes the named placeholders in a body with the values in
-// params, in one pass.
-//
-// A placeholder is written ${name}: the scan walks the body once, writes each
-// placeholder's value in its place, and never scans that value again, so a value
-// that itself holds ${...} stays literal. A placeholder naming a key params does
-// not carry, and an opening ${ with no closing brace, are both ErrInvalidConfig:
-// they say the body and the parameter set disagree, which NewDeclaration refuses
-// when it freezes a template rather than anything a message can repair. Resolve
-// has already checked that every declared parameter is present, so a body that
-// came through NewDeclaration renders without one of these errors.
+// RenderBody substitutes the named ${name} placeholders in one pass, so a value
+// that itself holds ${...} stays literal. An undeclared placeholder or an unclosed
+// ${ is ErrInvalidConfig.
 func RenderBody(body string, params map[string]string) (string, error) {
 	var out strings.Builder
 	out.Grow(len(body))
@@ -325,16 +276,8 @@ func (d Declaration) Declared() []Template {
 }
 
 // Resolved is one message resolved against a template set: everything a carrier
-// needs to build one vendor request, and nothing more.
-//
-// It carries the destination and the dedupe identifier as well as the vendor code
-// or the rendered body, because a carrier is handed this and not the Message:
-// the decision of which template a message goes out under belongs to the template
-// registry, and a carrier that had to look one up would be holding a template set
-// of its own. Params is the keyed view, for a carrier that takes a JSON object;
-// Ordered is the same values laid out in the declared order, for a positional
-// carrier. A carrier that sends by code takes Code and ignores Body; one that
-// sends by body takes Body and ignores Code.
+// needs to build one vendor request. Params is the keyed view and Ordered the
+// declared order; a code carrier takes Code, a body carrier Body.
 type Resolved struct {
 	// To is the destination, in E.164.
 	To string
@@ -368,25 +311,9 @@ type Resolved struct {
 	DedupeID string
 }
 
-// Resolve turns a message into what a carrier request needs.
-//
-// It refuses a message the carrier could not send: an empty locale (the caller's
-// to normalize), a template the declaration does not hold, a language the
-// template has neither a code nor a body for, a declared parameter the message
-// does not carry, and a parameter the message carries that the template never
-// declared. Each failure is ErrRejected and names the template, the language or
-// the parameter it is about — none reached the carrier, so none is uncertain.
-//
-// When the template has a body for the language, Resolve renders it through
-// RenderBody and answers it in Resolved.Body; when it has a code, the code goes
-// into Resolved.Code, so a template that declares both answers both. It does not
-// check Originator: a Declaration holds no identities, and the carrier checks the
-// name in Send.
-//
-// It answers for one declaration alone. Whether a template is disabled, or
-// whether its vendor review has come back, is not a property of a declaration
-// and is not decided here; the registry that holds the declaration decides it
-// before reaching this.
+// Resolve turns a message into what a carrier request needs. An empty locale, an
+// unknown template, a missing language, a missing parameter and a surplus
+// parameter are each ErrRejected; the carrier checks Originator in Send.
 func (d Declaration) Resolve(m Message) (Resolved, error) {
 	if strings.TrimSpace(m.Locale) == "" {
 		return Resolved{}, fmt.Errorf("%w: the message for the template %q names no language, and the "+
@@ -457,7 +384,6 @@ func (d Declaration) Resolve(m Message) (Resolved, error) {
 	}, nil
 }
 
-// hasParam reports whether the template declares the parameter name.
 func (t declaredTemplate) hasParam(name string) bool {
 	for _, p := range t.params {
 		if p == name {

@@ -6,8 +6,7 @@ import (
 	"github.com/vislake/speed/pkg/feature"
 )
 
-// TestTheModuleDeclaresTheSMSAdminFeature holds the declaration the frontend
-// gates the template-management surface on: one static Spec with the exact name.
+// TestTheModuleDeclaresTheSMSAdminFeature checks that the module declares one static feature.Spec with the exact name.
 func TestTheModuleDeclaresTheSMSAdminFeature(t *testing.T) {
 	want := feature.Spec{Name: "sms.admin"}
 	var got []feature.Spec

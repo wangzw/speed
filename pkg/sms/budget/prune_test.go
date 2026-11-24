@@ -6,10 +6,7 @@ import (
 	"time"
 )
 
-// TestTheLedgerModuleRunsARetentionSweep holds that the module that owns the
-// table is the one that prunes it. PruneBefore existed with no caller, so
-// sms_budget_events grew without bound; the sweep is the behaviour that keeps it
-// bounded, and it lives on the descriptor's Start and Stop.
+// TestTheLedgerModuleRunsARetentionSweep checks that the descriptor starts and stops the sweep that keeps the table bounded.
 func TestTheLedgerModuleRunsARetentionSweep(t *testing.T) {
 	m := Module()
 	if m.Start == nil {
@@ -20,11 +17,8 @@ func TestTheLedgerModuleRunsARetentionSweep(t *testing.T) {
 	}
 }
 
-// TestTheRetentionWindowIsTheDocumentedOne pins how long a row stays: the design
-// states twenty-five hours — the longest budget window, one day, plus an hour of
-// margin. The boundary case derives its cutoff from the same constant, so it
-// passes whatever the constant is; this case names the window independently, so
-// shrinking it below the consumers' longest window fails here.
+// TestTheRetentionWindowIsTheDocumentedOne pins the retention window at
+// twenty-five hours independently of the constant, so shrinking it fails here.
 func TestTheRetentionWindowIsTheDocumentedOne(t *testing.T) {
 	const documented = 25 * time.Hour
 	if pruneRetention < documented {
@@ -35,10 +29,8 @@ func TestTheRetentionWindowIsTheDocumentedOne(t *testing.T) {
 	}
 }
 
-// TestTheSweepRemovesOnlyRowsPastTheRetentionWindow holds the cutoff the module
-// derives: a row attempted before now minus the retention window goes, a row at
-// the boundary or inside the window stays, so no count over a budget window is
-// under-counted.
+// TestTheSweepRemovesOnlyRowsPastTheRetentionWindow checks the derived cutoff: a
+// row before the window goes, a row at the boundary or inside it stays.
 func TestTheSweepRemovesOnlyRowsPastTheRetentionWindow(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, store Store) {
 		now := at
@@ -72,9 +64,7 @@ func TestTheSweepRemovesOnlyRowsPastTheRetentionWindow(t *testing.T) {
 	})
 }
 
-// TestTheSweepOfAnEmptyLedgerReportsNothing holds that a ledger with no rows is
-// swept cleanly: nothing to delete is an answer of zero, not an error, so an
-// empty table does not turn the periodic job into a stream of warnings.
+// TestTheSweepOfAnEmptyLedgerReportsNothing checks that an empty ledger is swept with an answer of zero rather than an error.
 func TestTheSweepOfAnEmptyLedgerReportsNothing(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, store Store) {
 		sweep := newLedger(store)
@@ -91,9 +81,6 @@ func TestTheSweepOfAnEmptyLedgerReportsNothing(t *testing.T) {
 	})
 }
 
-// drivenLedger builds a ledger whose clock is fixed and whose interval is short
-// enough for a case to watch. The interval is a field so a case drives the sweep
-// without waiting the default hour.
 func drivenLedger(store Store, now time.Time) *ledger {
 	l := newLedger(store)
 	l.now = func() time.Time { return now }
@@ -102,18 +89,14 @@ func drivenLedger(store Store, now time.Time) *ledger {
 	return l
 }
 
-// TestTheSweepRunsOnItsInterval holds the periodic wiring rather than the
-// cutoff: after the startup sweep completes, a row written past the window is
-// removed by a later tick of the injected interval. The startup sweep is proved
-// finished first, so only the ticker can remove the row the case inserts.
+// TestTheSweepRunsOnItsInterval checks that a later tick of the injected
+// interval removes a row past the window after the startup sweep has finished.
 func TestTheSweepRunsOnItsInterval(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, store Store) {
 		now := at
 		contextAt := now.Add(-48 * time.Hour)
 		sweep := drivenLedger(store, now)
 
-		// A row the startup sweep removes proves that sweep has run before the
-		// case writes the row only the interval can find.
 		record(t, store, attempt(ChannelAuthn, "login", "S1", "D-startup", "T1", now.Add(-pruneRetention-time.Minute)))
 		sweep.start(context.Background())
 		defer func() {
@@ -128,11 +111,8 @@ func TestTheSweepRunsOnItsInterval(t *testing.T) {
 	})
 }
 
-// TestTheModuleStartBeginsTheSweepAndStopEndsIt covers the descriptor's wiring
-// rather than the sweep method: the row is past the window before Start runs,
-// and only Start or Stop can remove it or end the goroutine. Start sweeps once
-// as it begins, so the row goes without waiting for a tick; Stop has to return
-// with the goroutine finished, or the process leaves one behind.
+// TestTheModuleStartBeginsTheSweepAndStopEndsIt checks the descriptor's wiring:
+// Start sweeps once and Stop returns with the goroutine finished.
 func TestTheModuleStartBeginsTheSweepAndStopEndsIt(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, store Store) {
 		now := at
@@ -163,8 +143,6 @@ func TestTheModuleStartBeginsTheSweepAndStopEndsIt(t *testing.T) {
 	})
 }
 
-// awaitPruned fails the case if destination is still in the ledger after a
-// short bound, which gives the goroutine several intervals to tick.
 func awaitPruned(t *testing.T, store Store, since time.Time, destination string) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)

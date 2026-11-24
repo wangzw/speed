@@ -8,10 +8,8 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// TestTheModuleShipsAMigrationForEveryDialect holds the descriptor's migration
-// resource to the two engines the database module runs on: a dialect with no
-// subdirectory is zero migrations, which fails silently, so the files are
-// checked here rather than discovered at a deployment.
+// TestTheModuleShipsAMigrationForEveryDialect checks that both engines have
+// migration files, since a dialect with no subdirectory is zero migrations.
 func TestTheModuleShipsAMigrationForEveryDialect(t *testing.T) {
 	for _, dialect := range []string{string(db.Postgres), string(db.SQLite)} {
 		entries, err := fs.ReadDir(migrationsFS, dialect)
@@ -24,9 +22,8 @@ func TestTheModuleShipsAMigrationForEveryDialect(t *testing.T) {
 	}
 }
 
-// TestTheModuleDeliversTheStoreAndItsMigrations holds the descriptor's shape: a
-// consumer's requirement on Store has to find one provider, and the database
-// module has to find the table's migration set on the module's resources.
+// TestTheModuleDeliversTheStoreAndItsMigrations checks that Store has one
+// provider and that the table's migration set is on the module's resources.
 func TestTheModuleDeliversTheStoreAndItsMigrations(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName {
@@ -52,10 +49,8 @@ func TestTheModuleDeliversTheStoreAndItsMigrations(t *testing.T) {
 	}
 }
 
-// TestTheModuleDeclaresTheCrossChannelCeiling holds the one setting this module
-// owns to its declaration: the shared sms namespace, the key both sending
-// channels read, the deployment default of 5000, and a domain that admits a
-// count of sends in an hour and nothing else.
+// TestTheModuleDeclaresTheCrossChannelCeiling checks the shared sms namespace, the key both
+// channels read, the default of 5000 and a domain admitting a count of sends in an hour.
 func TestTheModuleDeclaresTheCrossChannelCeiling(t *testing.T) {
 	var declared settings.Schema
 	found := false
@@ -105,10 +100,8 @@ func TestTheModuleDeclaresTheCrossChannelCeiling(t *testing.T) {
 	}
 }
 
-// TestTheExportedCeilingConstantsAreTheDeclaredOnes holds the one statement both
-// sending channels read: the deployment default and the domain bounds are
-// exported so a consumer's fallback and domain check cannot drift from the
-// declaration.
+// TestTheExportedCeilingConstantsAreTheDeclaredOnes checks that the exported default and
+// bounds agree with the declaration, so a consumer's fallback cannot drift.
 func TestTheExportedCeilingConstantsAreTheDeclaredOnes(t *testing.T) {
 	if DefaultCeilingHourly != 5000 {
 		t.Errorf("DefaultCeilingHourly = %d, want 5000", DefaultCeilingHourly)

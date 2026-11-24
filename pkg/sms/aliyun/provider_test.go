@@ -10,7 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// oneSubmission is a template the cases offer to the carrier.
 func oneSubmission() sms.Submission {
 	return sms.Submission{
 		Name:    "login code",
@@ -23,9 +22,7 @@ func oneSubmission() sms.Submission {
 }
 
 // TestOfferCarriesTheTemplateContentAndSignature holds the CreateSmsTemplate
-// request shape: the template's name, body and remark, the configured signature,
-// and the content passed through with its ${name} placeholders intact — Aliyun's
-// approved templates use that same syntax, so this carrier rewrites nothing.
+// request shape, with the body's ${name} placeholders intact.
 func TestOfferCarriesTheTemplateContentAndSignature(t *testing.T) {
 	var got struct {
 		method, name, content, templateType, signName, remark string
@@ -71,9 +68,7 @@ func TestOfferCarriesTheTemplateContentAndSignature(t *testing.T) {
 	}
 }
 
-// TestTheKindMapsToTheTemplateType holds the mapping from this package's kind
-// vocabulary to Aliyun's own template type: 0 is a verification code, 1 a
-// notification and 2 a promotional message.
+// TestTheKindMapsToTheTemplateType checks the mapping from this package's kind vocabulary to Aliyun's template type.
 func TestTheKindMapsToTheTemplateType(t *testing.T) {
 	for _, c := range []struct {
 		kind sms.Kind
@@ -106,8 +101,7 @@ func TestTheKindMapsToTheTemplateType(t *testing.T) {
 	}
 }
 
-// TestOfferRefusesAnUnknownKind holds that a kind this carrier has no Aliyun
-// template type for is a caller defect, refused before the carrier is reached.
+// TestOfferRefusesAnUnknownKind checks that a kind this carrier has no template type for is refused before the carrier is reached.
 func TestOfferRefusesAnUnknownKind(t *testing.T) {
 	called := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -128,11 +122,8 @@ func TestOfferRefusesAnUnknownKind(t *testing.T) {
 	}
 }
 
-// TestOfferFailuresAreUncertain holds that a status that is not OK, a response
-// that carries no template code and a call that did not complete are all
-// uncertain: the offer interface is not idempotent, so a call that fell over may
-// still have created the template, and offering it again would be a second one
-// nobody approved.
+// TestOfferFailuresAreUncertain checks that a status that is not OK, a response
+// with no template code and a call that did not complete are all uncertain.
 func TestOfferFailuresAreUncertain(t *testing.T) {
 	for name, c := range map[string]struct {
 		status int
@@ -165,12 +156,8 @@ func TestOfferFailuresAreUncertain(t *testing.T) {
 	})
 }
 
-// TestTheApprovalStatesFollowTheReviewCode is the per-code vector for the review
-// mapping: Aliyun's TemplateStatus 0, 1, 2 and 10 become this package's pending,
-// approved, rejected and withdrawn states. The vectors are written from the SDK's
-// own doc comment on GetSmsTemplateResponseBody.TemplateStatus; the mapping is an
-// assumption until a code is confirmed against live credentials, and this case is
-// what holds it.
+// TestTheApprovalStatesFollowTheReviewCode checks that Aliyun's TemplateStatus
+// 0, 1, 2 and 10 become pending, approved, rejected and withdrawn.
 func TestTheApprovalStatesFollowTheReviewCode(t *testing.T) {
 	for _, c := range []struct {
 		status string
@@ -197,8 +184,7 @@ func TestTheApprovalStatesFollowTheReviewCode(t *testing.T) {
 	}
 }
 
-// TestAnUnknownApprovalStatusIsUncertain holds that a review status this carrier
-// does not know is uncertain rather than guessed into a state.
+// TestAnUnknownApprovalStatusIsUncertain checks that a review status this carrier does not know is uncertain rather than guessed.
 func TestAnUnknownApprovalStatusIsUncertain(t *testing.T) {
 	server := httptest.NewServer(jsonReply(`{"Code":"OK","TemplateStatus":"7"}`))
 	defer server.Close()
@@ -209,8 +195,7 @@ func TestAnUnknownApprovalStatusIsUncertain(t *testing.T) {
 	}
 }
 
-// TestTheApprovalCarriesTheRejectReason holds that the carrier's refusal text
-// comes back as the approval's reason.
+// TestTheApprovalCarriesTheRejectReason checks that the carrier's refusal text comes back as the approval reason.
 func TestTheApprovalCarriesTheRejectReason(t *testing.T) {
 	server := httptest.NewServer(jsonReply(`{"Code":"OK","TemplateStatus":"2",` +
 		`"AuditInfo":{"RejectInfo":"contains a typo"}}`))
@@ -255,8 +240,7 @@ func TestRetireDeletesTheTemplateByCode(t *testing.T) {
 	}
 }
 
-// TestRetireFailuresAreUncertain holds that a status that is not OK and a call
-// that did not complete are uncertain, on the same reasoning as a send.
+// TestRetireFailuresAreUncertain checks that a status that is not OK and a call that did not complete are uncertain.
 func TestRetireFailuresAreUncertain(t *testing.T) {
 	t.Run("a status that is not OK", func(t *testing.T) {
 		server := httptest.NewServer(jsonReply(`{"Code":"isv.SMS_TEMPLATE_ILLEGAL","Message":"no"}`))
@@ -276,14 +260,11 @@ func TestRetireFailuresAreUncertain(t *testing.T) {
 	})
 }
 
-// TestAProviderCallIsNotRetried holds the no-retry rule on the management seam:
-// the vendor interface is not idempotent, so a failing call is never made again,
-// neither by this module nor by the SDK's own retry, which is switched off.
+// TestAProviderCallIsNotRetried checks that a failing management call is never made again.
 func TestAProviderCallIsNotRetried(t *testing.T) {
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
-		// A server error, the shape the SDK's retry would have picked up.
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = io.WriteString(w, `{"Code":"InternalError"}`)
 	}))

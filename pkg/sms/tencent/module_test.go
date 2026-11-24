@@ -13,8 +13,6 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// driveSender assembles the module the way a host does, with the real
-// configuration loader, and returns the sender it delivers.
 func driveSender(t *testing.T, document string) *sender {
 	t.Helper()
 	reader := configtest.Reader(t, document, Module())
@@ -44,8 +42,8 @@ func driveSender(t *testing.T, document string) *sender {
 	return found
 }
 
-// The module registers under its name and delivers a sender that reports the
-// carrier it is.
+// TestTheModuleDeliversTheSenderNamedTencent checks that the module registers
+// under its name and delivers a sender reporting the carrier it is.
 func TestTheModuleDeliversTheSenderNamedTencent(t *testing.T) {
 	s := driveSender(t, body(t, section(nil)))
 	if got := s.Name(); got != "tencent" {
@@ -56,9 +54,7 @@ func TestTheModuleDeliversTheSenderNamedTencent(t *testing.T) {
 	}
 }
 
-// The module delivers both seams over one product: a consumer that resolves the
-// sending seam and one that resolves the template-management seam reach the same
-// carrier.
+// TestTheModuleDeliversBothSeamsOverOneProduct checks that both seams resolve to the same carrier.
 func TestTheModuleDeliversBothSeamsOverOneProduct(t *testing.T) {
 	reader := configtest.Reader(t, body(t, section(nil)), Module())
 	reg := core.New()
@@ -94,8 +90,7 @@ func TestTheModuleDeliversBothSeamsOverOneProduct(t *testing.T) {
 	}
 }
 
-// The claim is exclusive: a run that also holds another carrier fails the
-// resolution rather than letting two senders stand.
+// TestASecondExclusiveCarrierFailsTheResolution checks that a run holding another carrier fails the resolution.
 func TestASecondExclusiveCarrierFailsTheResolution(t *testing.T) {
 	reader := configtest.Reader(t, body(t, section(nil)), Module())
 	reg := core.New()
@@ -119,7 +114,6 @@ func TestASecondExclusiveCarrierFailsTheResolution(t *testing.T) {
 	}
 }
 
-// otherCarrier is a stand-in carrying the other exclusive claim.
 type otherCarrier struct{}
 
 func (otherCarrier) Name() string { return "other" }
@@ -128,7 +122,6 @@ func (otherCarrier) Send(context.Context, sms.Resolved) (sms.Receipt, error) {
 	return sms.Receipt{}, nil
 }
 
-// capturingRedaction records the rules registered with it.
 type capturingRedaction struct {
 	names   []string
 	matches []log.Matcher
@@ -141,14 +134,12 @@ func (c *capturingRedaction) AddPattern(name string, match log.Matcher) {
 	c.matches = append(c.matches, match)
 }
 
-// capturingLogger is a logging capability that records redaction registrations.
 type capturingLogger struct{ red *capturingRedaction }
 
 func (l *capturingLogger) Named(string) *slog.Logger { return slog.Default() }
 
 func (l *capturingLogger) Redaction() log.Redaction { return l.red }
 
-// providingLoggerModule is a logging capability the drive can construct.
 func providingLoggerModule(red *capturingRedaction) core.Module {
 	return core.Module{
 		Name:     "stand-in.logger",
@@ -157,9 +148,8 @@ func providingLoggerModule(red *capturingRedaction) core.Module {
 	}
 }
 
-// The credentials are registered as literal redaction rules through the module
-// factory, so a credential that turns up in any log line of the process is
-// masked.
+// TestTheCredentialsAreRegisteredAsRedactionRules checks that the credentials
+// are registered as literal redaction rules through the module factory.
 func TestTheCredentialsAreRegisteredAsRedactionRules(t *testing.T) {
 	red := &capturingRedaction{}
 	reg := core.New()
@@ -187,8 +177,7 @@ func TestTheCredentialsAreRegisteredAsRedactionRules(t *testing.T) {
 	}
 }
 
-// With no logging capability the registration is skipped, not failed: a module
-// without logs has no log to protect.
+// TestWithoutLoggingTheRegistrationIsSkipped checks that with no logging capability the registration is skipped rather than failed.
 func TestWithoutLoggingTheRegistrationIsSkipped(t *testing.T) {
 	reg := core.New()
 	reg.Register(config.Module())

@@ -9,12 +9,8 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// TestAProviderErrorNeverRepeatsTheAccessKeySecret holds that a module holding a
-// secret configuration value keeps it out of the text of every failure its
-// management seam returns, even when the carrier echoes the value back in its own
-// answer. The value is registered as a literal redaction rule for logs; this is
-// the other half: what the seam returns must not carry it either, so the module
-// reports the carrier's status code and never its message text.
+// TestAProviderErrorNeverRepeatsTheAccessKeySecret checks that the management seam's
+// failures never carry the access-key secret, even when the carrier echoes it back.
 func TestAProviderErrorNeverRepeatsTheAccessKeySecret(t *testing.T) {
 	echoed := `{"Code":"isv.SMS_TEMPLATE_ILLEGAL","Message":"the key ` + testAccessKeySecret + ` was rejected"}`
 

@@ -16,7 +16,6 @@ import (
 	smslog "github.com/vislake/speed/pkg/sms/log"
 )
 
-// capture is a logging capability that writes every record to a buffer.
 type capture struct{ buf *bytes.Buffer }
 
 func (c *capture) Named(name string) *slog.Logger {
@@ -26,14 +25,11 @@ func (c *capture) Named(name string) *slog.Logger {
 
 func (c *capture) Redaction() speedlog.Redaction { return noRedaction{} }
 
-// noRedaction accepts registrations and masks nothing; these cases hold the
-// warning, not the redaction layer.
 type noRedaction struct{}
 
 func (noRedaction) AddKeys(...string)                   {}
 func (noRedaction) AddPattern(string, speedlog.Matcher) {}
 
-// loggerModule provides the logging capability over buf.
 func loggerModule(buf *bytes.Buffer) core.Module {
 	return core.Module{
 		Name:     "test.logger",
@@ -44,8 +40,6 @@ func loggerModule(buf *bytes.Buffer) core.Module {
 	}
 }
 
-// absentCarrier is a non-fallback carrier whose section is wholly unset, so it
-// stands itself down and leaves the log carrier as the only candidate.
 func absentCarrier() core.Module {
 	prototype := struct{}{}
 	return sms.NewModule(sms.Spec[struct{}]{
@@ -62,9 +56,6 @@ func absentCarrier() core.Module {
 	})
 }
 
-// driveErr runs an assembly over body and answers the registry it built and the
-// error the drive returned, so a case can hold a configuration the carrier
-// refuses at startup.
 func driveErr(t *testing.T, body string, buf *bytes.Buffer, participants ...string) (*core.Registry, error) {
 	t.Helper()
 	modules := []core.Module{smslog.Module(), loggerModule(buf), absentCarrier()}
@@ -82,7 +73,6 @@ func driveErr(t *testing.T, body string, buf *bytes.Buffer, participants ...stri
 	return reg, err
 }
 
-// drive runs an assembly over body and answers the registry it built.
 func drive(t *testing.T, body string, buf *bytes.Buffer, participants ...string) *core.Registry {
 	t.Helper()
 	reg, err := driveErr(t, body, buf, participants...)
@@ -92,7 +82,6 @@ func drive(t *testing.T, body string, buf *bytes.Buffer, participants ...string)
 	return reg
 }
 
-// provider resolves the carrier this assembly mounted.
 func provider(t *testing.T, reg *core.Registry) sms.Provider {
 	t.Helper()
 	mounted, err := core.Resolve[sms.Provider](reg)
@@ -102,9 +91,8 @@ func provider(t *testing.T, reg *core.Registry) sms.Provider {
 	return mounted
 }
 
-// TestTheLogCarrierIsTheFallbackAndWarns holds the fallback and the warning: with
-// no other carrier enabled the log carrier runs, and it says the channel puts
-// messages into the process log.
+// TestTheLogCarrierIsTheFallbackAndWarns checks that with no other carrier
+// enabled the log carrier runs and warns that messages go to the process log.
 func TestTheLogCarrierIsTheFallbackAndWarns(t *testing.T) {
 	var buf bytes.Buffer
 	reg := drive(t, `{}`, &buf,
@@ -122,11 +110,8 @@ func TestTheLogCarrierIsTheFallbackAndWarns(t *testing.T) {
 	}
 }
 
-// TestTheFallbackCarrierWritesTheMessageToTheProcessLog holds the channel
-// itself: a resolved message handed to the sender the fallback resolves to
-// lands in the process log, number, template and verification code included.
-// Without it the fallback would be a warning about a channel nothing proves
-// carries anything.
+// TestTheFallbackCarrierWritesTheMessageToTheProcessLog checks that a resolved message handed to
+// the fallback sender lands in the process log with its number, template and verification code.
 func TestTheFallbackCarrierWritesTheMessageToTheProcessLog(t *testing.T) {
 	var buf bytes.Buffer
 	reg := drive(t, `{}`, &buf,
@@ -158,9 +143,8 @@ func TestTheFallbackCarrierWritesTheMessageToTheProcessLog(t *testing.T) {
 	}
 }
 
-// TestSelectionNoneLeavesNoCarrierAndNoWarning holds the explicit off value:
-// none switches the capability off without falling back, and no carrier is
-// constructed, so no warning claims a log channel is running.
+// TestSelectionNoneLeavesNoCarrierAndNoWarning checks that selecting none
+// switches the capability off without falling back and without a warning.
 func TestSelectionNoneLeavesNoCarrierAndNoWarning(t *testing.T) {
 	var buf bytes.Buffer
 	reg := drive(t, `{"sms":{"carrier":"none"}}`, &buf,
@@ -178,9 +162,8 @@ func TestSelectionNoneLeavesNoCarrierAndNoWarning(t *testing.T) {
 	}
 }
 
-// TestAConfiguredVerdictAnswersForItsCode holds the item itself: each state the
-// per-template review defines is accepted for its code, and the reason is
-// reported with it.
+// TestAConfiguredVerdictAnswersForItsCode checks that each state the per-template review
+// defines is accepted for its code, and the reason is reported with it.
 func TestAConfiguredVerdictAnswersForItsCode(t *testing.T) {
 	const body = `{"sms":{"log":{"approvals":{
 		"log-signin":{"state":"approved","reason":"the vendor approved it"},
@@ -212,11 +195,8 @@ func TestAConfiguredVerdictAnswersForItsCode(t *testing.T) {
 	}
 }
 
-// TestAConfiguredVerdictSurvivesOfferAndRetire holds that the configuration is
-// the only source of an answer: a code the configuration names answers with the
-// configured verdict before Offer, after Offer and after Retire, because neither
-// seam records or changes any review state. Checking one point alone would pin
-// only that point; the contract is that no call moves the answer.
+// TestAConfiguredVerdictSurvivesOfferAndRetire checks that a configured verdict
+// answers the same before Offer, after Offer and after Retire.
 func TestAConfiguredVerdictSurvivesOfferAndRetire(t *testing.T) {
 	const body = `{"sms":{"log":{"approvals":{"log-notice":{"state":"approved","reason":"pinned"}}}}}`
 	reg := drive(t, body, &bytes.Buffer{},
@@ -235,7 +215,6 @@ func TestAConfiguredVerdictSurvivesOfferAndRetire(t *testing.T) {
 		}
 	}
 
-	// The configuration already answers, before anything runs.
 	check("before Offer")
 
 	code, err := mounted.Offer(t.Context(), sms.Submission{Name: "notice", Locale: "en-US"})
@@ -253,11 +232,8 @@ func TestAConfiguredVerdictSurvivesOfferAndRetire(t *testing.T) {
 	check("after Retire")
 }
 
-// TestAnUnconfiguredCodeAnswersPending holds the fallback answer: a code the
-// configuration does not name is pending before Offer, after Offer and after
-// Retire, because the carrier keeps no state for either call to write or drop.
-// A test that checked only one of those points would not tell an Offer or a
-// Retire that recorded state from a no-op.
+// TestAnUnconfiguredCodeAnswersPending checks that a code the configuration does
+// not name answers pending before Offer, after Offer and after Retire.
 func TestAnUnconfiguredCodeAnswersPending(t *testing.T) {
 	const body = `{"sms":{"log":{"approvals":{"log-signin":{"state":"approved"}}}}}`
 	reg := drive(t, body, &bytes.Buffer{},
@@ -275,7 +251,6 @@ func TestAnUnconfiguredCodeAnswersPending(t *testing.T) {
 		}
 	}
 
-	// Never offered: the registry has not asked this carrier about it yet.
 	check("before Offer")
 
 	code, err := mounted.Offer(t.Context(), sms.Submission{Name: "unknown", Locale: "en-US"})
@@ -293,18 +268,12 @@ func TestAnUnconfiguredCodeAnswersPending(t *testing.T) {
 	check("after Retire")
 }
 
-// TestAnIllegalConfiguredStateFailsStartup holds the startup check: a state the
-// per-template review does not define fails the assembly, and the error names
-// the item and the code so the operator can find the entry. An unlisted state,
-// the review-only "not-required", and an empty or missing state all fail: an
-// entry that names no reviewable state must not start the carrier.
+// TestAnIllegalConfiguredStateFailsStartup checks that a state the per-template
+// review does not define fails the assembly and names the item and the code.
 func TestAnIllegalConfiguredStateFailsStartup(t *testing.T) {
 	cases := []struct {
-		name string
-		// entry is the configured verdict under the code log-signin.
+		name  string
 		entry string
-		// state is the value the failure must name, or "" when the entry names
-		// no state at all.
 		state string
 	}{
 		{"an unlisted state", `{"state":"approved-ish"}`, "approved-ish"},
@@ -352,9 +321,8 @@ func TestAConfiguredVerdictNeedsACode(t *testing.T) {
 	}
 }
 
-// TestAnEmptyApprovalsMapKeepsTheOldAnswers holds the default: with no verdict
-// configured, every code answers pending, before and after Offer and after
-// Retire, exactly as before the item existed.
+// TestAnEmptyApprovalsMapKeepsTheOldAnswers holds the default: with no verdict configured,
+// every code answers pending, before and after Offer and after Retire.
 func TestAnEmptyApprovalsMapKeepsTheOldAnswers(t *testing.T) {
 	for _, body := range []string{`{}`, `{"sms":{"log":{"approvals":{}}}}`} {
 		reg := drive(t, body, &bytes.Buffer{},

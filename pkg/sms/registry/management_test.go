@@ -11,9 +11,8 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// TestRegisterWritesAndPublishes covers a registration: the row is written
-// pending and enabled, the returned record carries the spec, and a change event
-// is published.
+// TestRegisterWritesAndPublishes checks that a registration writes the row
+// pending and enabled, returns the spec and publishes a change event.
 func TestRegisterWritesAndPublishes(t *testing.T) {
 	r := newSQLiteRig(t)
 	rec, err := r.s.Register(context.Background(), "otp",
@@ -31,7 +30,6 @@ func TestRegisterWritesAndPublishes(t *testing.T) {
 	if r.rowCount() != 1 {
 		t.Errorf("the table holds %d rows, want 1", r.rowCount())
 	}
-	// A registered template is not yet approved, so it is not in force.
 	if _, err := r.s.Resolve(sms.Message{
 		Template: "otp", Locale: "en",
 		Params: map[string]string{"code": "x", "ttl": "y"},
@@ -43,8 +41,7 @@ func TestRegisterWritesAndPublishes(t *testing.T) {
 	}
 }
 
-// TestRegisterRefusesConfigurationName covers ErrImmutable: a name the
-// configuration holds cannot be registered at runtime.
+// TestRegisterRefusesConfigurationName checks that a configured name is ErrImmutable.
 func TestRegisterRefusesConfigurationName(t *testing.T) {
 	r := configuredRig(t)
 	if _, err := r.s.Register(context.Background(), "welcome",
@@ -53,8 +50,7 @@ func TestRegisterRefusesConfigurationName(t *testing.T) {
 	}
 }
 
-// TestRegisterRefusesDuplicateName covers ErrTemplateExists and that a second
-// registration does not append a duplicate row.
+// TestRegisterRefusesDuplicateName checks ErrTemplateExists and that no duplicate row is appended.
 func TestRegisterRefusesDuplicateName(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, database db.Database, _ string) {
 		r := newRig(t, database, newProvider(), settingsOf(t, nil, 0))
@@ -73,9 +69,8 @@ func TestRegisterRefusesDuplicateName(t *testing.T) {
 	})
 }
 
-// TestRegisterValidatesSpec covers ErrInvalidConfig: a spec with no language, an
-// empty code and a body naming an undeclared placeholder are each refused, and
-// nothing is written.
+// TestRegisterValidatesSpec checks that a no-language spec, an empty code and an
+// undeclared placeholder are each refused and nothing is written.
 func TestRegisterValidatesSpec(t *testing.T) {
 	r := newSQLiteRig(t)
 	if _, err := r.s.Register(context.Background(), "bad", sms.TemplateSpec{}); !errors.Is(err, sms.ErrInvalidConfig) {
@@ -94,9 +89,7 @@ func TestRegisterValidatesSpec(t *testing.T) {
 	}
 }
 
-// TestSetEnabledChangesTheState covers an effective enable or disable: the
-// version is bumped, the snapshot's column flips, and a change event is
-// published.
+// TestSetEnabledChangesTheState checks that an effective enable or disable bumps the version, flips the snapshot and publishes.
 func TestSetEnabledChangesTheState(t *testing.T) {
 	r := newSQLiteRig(t)
 	if _, err := r.s.Register(context.Background(), "otp", spec([]string{"code"}, map[string]string{"en": "c"})); err != nil {
@@ -116,15 +109,12 @@ func TestSetEnabledChangesTheState(t *testing.T) {
 	}
 }
 
-// TestSetEnabledIsIdempotent covers the conditional write: setting a template to
-// the state it already has changes nothing and does not bump the version or
-// publish.
+// TestSetEnabledIsIdempotent checks that setting the current state changes nothing and publishes nothing.
 func TestSetEnabledIsIdempotent(t *testing.T) {
 	r := newSQLiteRig(t)
 	if _, err := r.s.Register(context.Background(), "otp", spec([]string{"code"}, map[string]string{"en": "c"})); err != nil {
 		t.Fatalf("registering: %v", err)
 	}
-	// Register leaves it enabled; enabling an enabled template is a no-op.
 	if err := r.s.SetEnabled(context.Background(), "otp", true); err != nil {
 		t.Fatalf("re-enabling: %v", err)
 	}
@@ -136,8 +126,7 @@ func TestSetEnabledIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestSetEnabledRefusesImmutableAndMissing covers the two refusals a management
-// call makes.
+// TestSetEnabledRefusesImmutableAndMissing checks the two refusals a management call makes.
 func TestSetEnabledRefusesImmutableAndMissing(t *testing.T) {
 	r := configuredRig(t)
 	if err := r.s.SetEnabled(context.Background(), "welcome", false); !errors.Is(err, sms.ErrImmutable) {
@@ -148,8 +137,8 @@ func TestSetEnabledRefusesImmutableAndMissing(t *testing.T) {
 	}
 }
 
-// TestRemoveDropsAndPublishes covers a removal: the row goes, the published
-// event is marked deleted, and the template leaves the set in force.
+// TestRemoveDropsAndPublishes checks that a removal deletes the row, publishes a
+// deleted event and drops the template from the set in force.
 func TestRemoveDropsAndPublishes(t *testing.T) {
 	r := newSQLiteRig(t)
 	r.plant("otp", []string{"code"}, map[string]string{"en": "c"},
@@ -176,7 +165,7 @@ func TestRemoveDropsAndPublishes(t *testing.T) {
 	}
 }
 
-// TestRemoveRefusesImmutableAndMissing covers the two refusals a removal makes.
+// TestRemoveRefusesImmutableAndMissing checks the two refusals a removal makes.
 func TestRemoveRefusesImmutableAndMissing(t *testing.T) {
 	r := configuredRig(t)
 	if err := r.s.Remove(context.Background(), "welcome"); !errors.Is(err, sms.ErrImmutable) {
@@ -187,8 +176,7 @@ func TestRemoveRefusesImmutableAndMissing(t *testing.T) {
 	}
 }
 
-// TestOfferRecordsVendorCode covers an offer: the vendor is called once, its
-// code is stored, and the template starts pending.
+// TestOfferRecordsVendorCode checks that an offer calls the vendor once, stores its code and starts the template pending.
 func TestOfferRecordsVendorCode(t *testing.T) {
 	r := newSQLiteRig(t)
 	r.provider.offerCode = "vendor-123"
@@ -213,8 +201,7 @@ func TestOfferRecordsVendorCode(t *testing.T) {
 	}
 }
 
-// TestOfferVendorFailureLeavesNoRow covers that a failed vendor call writes
-// nothing: no half-record this process would serve as pending for good.
+// TestOfferVendorFailureLeavesNoRow checks that a failed vendor call writes nothing.
 func TestOfferVendorFailureLeavesNoRow(t *testing.T) {
 	r := newSQLiteRig(t)
 	r.provider.offerErr = errors.New("the vendor refused the offer")
@@ -230,8 +217,7 @@ func TestOfferVendorFailureLeavesNoRow(t *testing.T) {
 	}
 }
 
-// TestOfferRefusesImmutableAndDuplicate covers the two refusals an offer makes,
-// and that neither reaches the vendor.
+// TestOfferRefusesImmutableAndDuplicate checks the two refusals an offer makes, with neither reaching the vendor.
 func TestOfferRefusesImmutableAndDuplicate(t *testing.T) {
 	r := configuredRig(t)
 	sub := sms.Submission{
@@ -255,9 +241,7 @@ func TestOfferRefusesImmutableAndDuplicate(t *testing.T) {
 	}
 }
 
-// TestOfferMergesANewLanguage covers the merge path: a name already offered in
-// one language takes a second language, the vendor answering each with its own
-// code, and the record carries both.
+// TestOfferMergesANewLanguage checks that a second language merges into a held name and the record carries both codes.
 func TestOfferMergesANewLanguage(t *testing.T) {
 	r := newSQLiteRig(t)
 	r.provider.offerCode = "code-en"
@@ -299,9 +283,7 @@ func TestOfferMergesANewLanguage(t *testing.T) {
 	}
 }
 
-// TestOfferRefusesAHeldLanguage covers the duplicate-language refusal: a second
-// offer of a language the name already holds is ErrTemplateExists and never
-// reaches the vendor.
+// TestOfferRefusesAHeldLanguage checks that a language the name already holds is ErrTemplateExists and never reaches the vendor.
 func TestOfferRefusesAHeldLanguage(t *testing.T) {
 	r := newSQLiteRig(t)
 	if _, err := r.s.Offer(context.Background(), sms.Submission{
@@ -328,9 +310,7 @@ func TestOfferRefusesAHeldLanguage(t *testing.T) {
 	}
 }
 
-// TestOfferRefusesAMismatchedShape covers the shape refusal on a merge: a new
-// language whose parameters disagree with the ones the name already describes is
-// ErrInvalidConfig, and never reaches the vendor.
+// TestOfferRefusesAMismatchedShape checks that a new language whose parameters disagree with the held shape is ErrInvalidConfig.
 func TestOfferRefusesAMismatchedShape(t *testing.T) {
 	r := newSQLiteRig(t)
 	if _, err := r.s.Offer(context.Background(), sms.Submission{
@@ -354,9 +334,7 @@ func TestOfferRefusesAMismatchedShape(t *testing.T) {
 	}
 }
 
-// TestRegisterMergesANewLanguage covers the merge path through Register: a
-// registered name takes a second language, both codes are kept and both
-// languages start pending.
+// TestRegisterMergesANewLanguage checks that Register merges a second language and both codes are kept.
 func TestRegisterMergesANewLanguage(t *testing.T) {
 	r := newSQLiteRig(t)
 	if _, err := r.s.Register(context.Background(), "otp",
@@ -380,9 +358,7 @@ func TestRegisterMergesANewLanguage(t *testing.T) {
 	}
 }
 
-// TestRegisterMergePreservesASettledLanguage covers that a merge leaves the
-// languages already present untouched: a language already approved keeps its
-// verdict when another is merged in.
+// TestRegisterMergePreservesASettledLanguage checks that a merge leaves an already-approved language untouched.
 func TestRegisterMergePreservesASettledLanguage(t *testing.T) {
 	r := newSQLiteRig(t)
 	r.plant("otp", []string{"code"}, map[string]string{"en": "en-code"},
@@ -402,9 +378,6 @@ func TestRegisterMergePreservesASettledLanguage(t *testing.T) {
 	}
 }
 
-// concurrentRig builds a loaded rig whose pool holds one connection, so the
-// concurrent management calls serialise at the pool rather than at the engine's
-// own lock and the assertions below are deterministic.
 func concurrentRig(t *testing.T, dialect string) *rig {
 	t.Helper()
 	database := openDialectItems(t, dialect, dbtest.Items{"max-open-conns": 1})
@@ -413,9 +386,7 @@ func concurrentRig(t *testing.T, dialect string) *rig {
 	return r
 }
 
-// TestConcurrentRegisterSameName covers the conditional insert: many callers
-// register one name at once, and exactly one row survives while the rest are
-// told it already exists.
+// TestConcurrentRegisterSameName checks that concurrent registrations of one name leave exactly one row.
 func TestConcurrentRegisterSameName(t *testing.T) {
 	for _, d := range dialects {
 		t.Run(d.name, func(t *testing.T) {
@@ -457,9 +428,7 @@ func TestConcurrentRegisterSameName(t *testing.T) {
 	}
 }
 
-// TestConcurrentSetEnabled covers the conditional update: many callers set one
-// template to the same state at once, and the version is bumped once and the
-// change published once, because only the first call changes anything.
+// TestConcurrentSetEnabled checks that concurrent calls setting the same state bump the version once and publish once.
 func TestConcurrentSetEnabled(t *testing.T) {
 	for _, d := range dialects {
 		t.Run(d.name, func(t *testing.T) {
@@ -467,7 +436,6 @@ func TestConcurrentSetEnabled(t *testing.T) {
 			if _, err := r.s.Register(context.Background(), "otp", spec([]string{"code"}, map[string]string{"en": "c"})); err != nil {
 				t.Fatalf("registering: %v", err)
 			}
-			// Start disabled, so every concurrent call has a change to make.
 			if err := r.s.SetEnabled(context.Background(), "otp", false); err != nil {
 				t.Fatalf("disabling: %v", err)
 			}
@@ -506,11 +474,8 @@ func TestConcurrentSetEnabled(t *testing.T) {
 	}
 }
 
-// TestConcurrentRegisterMergesDifferentLanguages covers the concurrent merge:
-// two callers register one name with a different language each, both succeed, the
-// row carries both languages and exactly one row exists. Each insert-or-merge is
-// conditional on the version it read, so the loser of a race re-reads the row and
-// merges into it rather than overwriting it.
+// TestConcurrentRegisterMergesDifferentLanguages checks that two callers registering one
+// name with a different language each both succeed and leave one row carrying both.
 func TestConcurrentRegisterMergesDifferentLanguages(t *testing.T) {
 	for _, d := range dialects {
 		t.Run(d.name, func(t *testing.T) {

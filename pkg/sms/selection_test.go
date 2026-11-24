@@ -11,10 +11,8 @@ import (
 	"github.com/vislake/speed/pkg/internal/configtest"
 )
 
-// pickConfig is the empty configuration the selection cases' carriers accept.
 type pickConfig struct{}
 
-// pickProduct is a carrier that answers both seams and does nothing.
 type pickProduct struct{}
 
 func (pickProduct) Name() string { return "pick" }
@@ -29,7 +27,6 @@ func (pickProduct) Approval(context.Context, string) (Approval, error) { return 
 
 func (pickProduct) Retire(context.Context, string) error { return nil }
 
-// pickModule builds a carrier whose stance the case controls.
 func pickModule(moduleName, carrierName string, fallback bool, stance func(*pickConfig) (core.Enablement, error)) core.Module {
 	prototype := pickConfig{}
 	return NewModule(Spec[pickConfig]{
@@ -45,13 +42,10 @@ func pickModule(moduleName, carrierName string, fallback bool, stance func(*pick
 	})
 }
 
-// configured is the stance of a carrier that is ready to run.
 func configured(*pickConfig) (core.Enablement, error) {
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 
-// pickRegistry builds a registry with a real configuration reader over body and
-// the given carrier modules registered.
 func pickRegistry(t *testing.T, body string, modules ...core.Module) *core.Registry {
 	t.Helper()
 	declared := append([]core.Module{{
@@ -68,8 +62,7 @@ func pickRegistry(t *testing.T, body string, modules ...core.Module) *core.Regis
 	return reg
 }
 
-// TestSelectionRefusesAnUnknownCarrierName holds the compiled-name check: a name
-// no carrier answers to is a startup error naming the value and the capability.
+// TestSelectionRefusesAnUnknownCarrierName checks that a name no carrier answers to is a startup error naming the value.
 func TestSelectionRefusesAnUnknownCarrierName(t *testing.T) {
 	aliyun := pickModule("sms.pick.aliyun", "aliyun", false, configured)
 	reg := pickRegistry(t, `{"sms":{"carrier":"carrier-pigeon"}}`, aliyun)
@@ -85,9 +78,8 @@ func TestSelectionRefusesAnUnknownCarrierName(t *testing.T) {
 	}
 }
 
-// TestTwoEnabledCarriersFailNamingBothModules holds the exclusive claim: with no
-// selection and two configured carriers, resolution refuses the run and names
-// both modules.
+// TestTwoEnabledCarriersFailNamingBothModules checks that two configured
+// carriers with no selection fail the resolution naming both modules.
 func TestTwoEnabledCarriersFailNamingBothModules(t *testing.T) {
 	first := pickModule("sms.pick.one", "one", false, configured)
 	second := pickModule("sms.pick.two", "two", false, configured)
@@ -111,9 +103,6 @@ func TestTwoEnabledCarriersFailNamingBothModules(t *testing.T) {
 	}
 }
 
-// registrySchema declares the template set the registry module owns. The case
-// reads only whether any template is configured, so it declares the item
-// without importing the registry module's own dependency closure.
 func registrySchema() core.Module {
 	return core.Module{
 		Name: "test.registry",
@@ -125,11 +114,8 @@ func registrySchema() core.Module {
 	}
 }
 
-// TestOffByMissingTemplatesJudgesTheAllEmptyCase holds the boundary between an
-// absent SMS configuration and a half-configured one: with neither a carrier
-// selection nor a template the capability has nothing to send and stands down,
-// while either one present leaves the module to run (and its own contract check
-// to name a missing required template).
+// TestOffByMissingTemplatesJudgesTheAllEmptyCase checks the boundary: neither a selection
+// nor a template stands the capability down, while either present lets it run.
 func TestOffByMissingTemplatesJudgesTheAllEmptyCase(t *testing.T) {
 	cases := map[string]struct {
 		body string
@@ -161,8 +147,6 @@ func TestOffByMissingTemplatesJudgesTheAllEmptyCase(t *testing.T) {
 		})
 	}
 
-	// An assembly with no configuration reader is not judged by a configuration
-	// it does not have.
 	got, _, err := OffByMissingTemplates(core.New())
 	if err != nil {
 		t.Fatalf("OffByMissingTemplates without a reader: %v", err)
@@ -172,9 +156,7 @@ func TestOffByMissingTemplatesJudgesTheAllEmptyCase(t *testing.T) {
 	}
 }
 
-// TestSelectionNoneStandsEveryCarrierDown holds the explicit off value: none
-// switches the capability off, so the carriers stand down rather than fall back
-// to the log channel.
+// TestSelectionNoneStandsEveryCarrierDown checks that none stands every carrier down rather than falling back to the log channel.
 func TestSelectionNoneStandsEveryCarrierDown(t *testing.T) {
 	primary := pickModule("sms.pick.primary", "primary", false, configured)
 	fallback := pickModule("sms.pick.fallback", "log", true, configured)

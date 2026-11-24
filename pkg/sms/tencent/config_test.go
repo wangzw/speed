@@ -10,7 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// section renders this module's section out of the given override of the items.
 func section(override map[string]any) map[string]any {
 	out := map[string]any{
 		"secret-id":  "AKIDexample",
@@ -29,7 +28,6 @@ func section(override map[string]any) map[string]any {
 	return out
 }
 
-// body renders a whole configuration document holding this module's section.
 func body(t *testing.T, s map[string]any) string {
 	t.Helper()
 	doc := map[string]any{"sms": map[string]any{"tencent": s}}
@@ -40,9 +38,6 @@ func body(t *testing.T, s map[string]any) string {
 	return string(encoded)
 }
 
-// readBody loads a document with the real configuration loader and decodes this
-// module's section, returning the configuration the module runs on or the error
-// the loader refused the startup with.
 func readBody(t *testing.T, document string) (resolved, error) {
 	t.Helper()
 	reader := configtest.Reader(t, document, Module())
@@ -56,8 +51,7 @@ func readBody(t *testing.T, document string) (resolved, error) {
 	return cfg.resolve(), nil
 }
 
-// A section with every item resolves into the credentials and the signature the
-// module runs on.
+// A section with every item resolves into the credentials and the signature the module runs on.
 func TestACompleteSectionResolves(t *testing.T) {
 	cfg, err := readBody(t, body(t, section(nil)))
 	if err != nil {
@@ -69,8 +63,7 @@ func TestACompleteSectionResolves(t *testing.T) {
 	}
 }
 
-// Each item is required by the stance: a section that leaves one out while the
-// rest are set is half-configured and fails the startup.
+// Each item is required: a section that leaves one out while the rest are set is half-configured and fails the startup.
 func TestEachItemIsRequired(t *testing.T) {
 	for _, item := range []string{"secret-id", "secret-key", "sdk-app-id", "region", "sign-name"} {
 		t.Run(item, func(t *testing.T) {
@@ -82,8 +75,7 @@ func TestEachItemIsRequired(t *testing.T) {
 	}
 }
 
-// The declaration marks the secret sensitive, which is what keeps the key out of
-// help output.
+// The declaration marks the secret sensitive, which keeps the key out of help output.
 func TestTheSchemaDeclaresTheSensitiveItems(t *testing.T) {
 	s, ok := Module().Resources[0].(config.Schema)
 	if !ok {

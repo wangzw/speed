@@ -21,10 +21,8 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// base is the instant injected writes are stamped from.
 var base = time.Date(2026, time.March, 14, 12, 0, 0, 0, time.UTC)
 
-// logBuffer collects what the module logs, as text lines.
 type logBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -57,12 +55,6 @@ func (b *logBuffer) lines(with ...string) []string {
 	return out
 }
 
-// fakeProvider is the template-management seam a case scripts. It answers the
-// approval state a case set for each vendor code, records every code it was
-// asked about and every submission it was handed, and fails the calls a case
-// told it to. Its carrier model defaults to one that sends by code and reviews
-// every template, which is the shape the pre-carrier cases were written
-// against.
 type fakeProvider struct {
 	mu            sync.Mutex
 	name          string
@@ -75,8 +67,6 @@ type fakeProvider struct {
 	approvalCalls []string
 }
 
-// codeCarrier is a carrier that sends by vendor code and reviews every template,
-// the shape aliyun and tencent declare.
 func codeCarrier() sms.CarrierModel {
 	return sms.CarrierModel{
 		Content: sms.ContentSupport{TemplateCode: true},
@@ -84,8 +74,6 @@ func codeCarrier() sms.CarrierModel {
 	}
 }
 
-// textCarrier is a carrier that sends a rendered body and has no per-template
-// review, the shape aws declares.
 func textCarrier() sms.CarrierModel {
 	return sms.CarrierModel{
 		Content:       sms.ContentSupport{TextBody: true},
@@ -96,8 +84,6 @@ func textCarrier() sms.CarrierModel {
 	}
 }
 
-// contentCarrier is a carrier that sends by vendor code, has no per-template
-// review and creates a content resource on offer, the shape twilio declares.
 func contentCarrier() sms.CarrierModel {
 	return sms.CarrierModel{
 		Content:      sms.ContentSupport{TemplateCode: true},
@@ -116,15 +102,12 @@ func newProvider() *fakeProvider {
 	}
 }
 
-// newNamedProvider is the same seam answering another carrier name, so a case
-// can mount two carriers over one database.
 func newNamedProvider(name string) *fakeProvider {
 	p := newProvider()
 	p.name = name
 	return p
 }
 
-// newModelProvider is the same seam declaring another carrier shape.
 func newModelProvider(model sms.CarrierModel) *fakeProvider {
 	p := newProvider()
 	p.model = model
@@ -184,8 +167,6 @@ func (p *fakeProvider) submissions() []sms.Submission {
 	return append([]sms.Submission(nil), p.offered...)
 }
 
-// recordingBus is a bus that keeps what it was given and delivers to the
-// handlers subscribed, which is what a process-local bus does.
 type recordingBus struct {
 	mu        sync.Mutex
 	published []event.Event
@@ -230,8 +211,6 @@ func (b *recordingBus) subscribed(eventType string) int {
 	return len(b.handlers[eventType])
 }
 
-// settingsOf builds the module settings from a configuration template set and a
-// poll interval, through the same resolve the module uses.
 func settingsOf(t *testing.T, templates map[string]sms.TemplateSpec, poll time.Duration) moduleSettings {
 	t.Helper()
 	s, err := moduleConfig{Templates: templates, PollInterval: poll}.resolve()
@@ -241,12 +220,10 @@ func settingsOf(t *testing.T, templates map[string]sms.TemplateSpec, poll time.D
 	return s
 }
 
-// spec builds a template spec from an ordered parameter list and a code table.
 func spec(params []string, codes map[string]string) sms.TemplateSpec {
 	return sms.TemplateSpec{Params: params, Codes: codes}
 }
 
-// rig is the module over a real database with the dependencies a case drives.
 type rig struct {
 	t        *testing.T
 	s        *registryStore
@@ -256,9 +233,6 @@ type rig struct {
 	logs     *logBuffer
 }
 
-// newRig builds the module over the handle, with the bus and the log buffer a
-// case can inspect. The snapshot is not loaded: a case calls load for the state
-// Init leaves, or leaves it unloaded to drive the before-load behaviour.
 func newRig(t *testing.T, database db.Database, provider *fakeProvider, cfg moduleSettings) *rig {
 	t.Helper()
 	h := database.DB().Session(&gorm.Session{Logger: logger.Discard})
@@ -266,8 +240,6 @@ func newRig(t *testing.T, database db.Database, provider *fakeProvider, cfg modu
 	return newRigOn(t, h, provider, cfg)
 }
 
-// newRigOn builds the module over a handle whose table is already there, which
-// is how a case mounts a second carrier on a database the first one built.
 func newRigOn(t *testing.T, h *gorm.DB, provider *fakeProvider, cfg moduleSettings) *rig {
 	t.Helper()
 	logs := &logBuffer{}
@@ -283,7 +255,6 @@ func newRigOn(t *testing.T, h *gorm.DB, provider *fakeProvider, cfg moduleSettin
 	return &rig{t: t, s: s, h: h, provider: provider, bus: bus, logs: logs}
 }
 
-// load replaces the snapshot, which is the state Init leaves.
 func (r *rig) load() {
 	r.t.Helper()
 	if err := r.s.load(context.Background()); err != nil {
@@ -291,10 +262,8 @@ func (r *rig) load() {
 	}
 }
 
-// rowCount counts the rows the mounted carrier holds in the runtime table.
 func (r *rig) rowCount() int64 { return r.rowCountFor(r.provider.Name()) }
 
-// rowCountFor counts the rows one carrier holds in the runtime table.
 func (r *rig) rowCountFor(carrier string) int64 {
 	r.t.Helper()
 	var n int64
@@ -304,21 +273,16 @@ func (r *rig) rowCountFor(carrier string) int64 {
 	return n
 }
 
-// plant writes a runtime row of the mounted carrier directly, the way another
-// replica would. The approvals are keyed by language, as the column holds them.
 func (r *rig) plant(name string, params []string, codes map[string]string, approvals map[string]sms.Approval, enabled bool, at time.Time) {
 	r.t.Helper()
 	r.plantRow(r.provider.Name(), name, sms.KindNotification, params, codes, nil, nil, approvals, enabled, at)
 }
 
-// plantLegacy writes a row with no carrier, the shape a database written before
-// the carrier column holds.
 func (r *rig) plantLegacy(name string, params []string, codes map[string]string, approvals map[string]sms.Approval, enabled bool, at time.Time) {
 	r.t.Helper()
 	r.plantRow("", name, sms.KindNotification, params, codes, nil, nil, approvals, enabled, at)
 }
 
-// plantRow writes one complete row.
 func (r *rig) plantRow(carrier, name string, kind sms.Kind, params []string, codes, bodies,
 	attributes map[string]string, approvals map[string]sms.Approval, enabled bool, at time.Time,
 ) {
@@ -336,7 +300,6 @@ func (r *rig) plantRow(carrier, name string, kind sms.Kind, params []string, cod
 	}
 }
 
-// approvalsOf reads one row's review table, keyed by language.
 func (r *rig) approvalsOf(name string) map[string]sms.Approval {
 	r.t.Helper()
 	var rows []struct {
@@ -356,8 +319,6 @@ func (r *rig) approvalsOf(name string) map[string]sms.Approval {
 	return approvals
 }
 
-// carrierOf reads the carrier column of the row under a name, whatever carrier
-// it names.
 func (r *rig) carrierOf(name string) string {
 	r.t.Helper()
 	var rows []struct {
@@ -372,7 +333,6 @@ func (r *rig) carrierOf(name string) string {
 	return rows[0].Carrier
 }
 
-// ownerOf reads the ownership marker, and whether it is there at all.
 func (r *rig) ownerOf() (string, bool) {
 	r.t.Helper()
 	var rows []struct {
@@ -387,13 +347,11 @@ func (r *rig) ownerOf() (string, bool) {
 	return rows[0].Carrier, true
 }
 
-// approvalOf reads one row's review state for one language.
 func (r *rig) approvalOf(name, locale string) string {
 	r.t.Helper()
 	return string(r.approvalsOf(name)[locale].State)
 }
 
-// versionOf reads one row's version.
 func (r *rig) versionOf(name string) int64 {
 	r.t.Helper()
 	var rows []struct {
@@ -409,22 +367,13 @@ func (r *rig) versionOf(name string) int64 {
 	return rows[0].Version
 }
 
-// sqliteDialect is the dialect every run exercises; the integration build adds
-// PostgreSQL beside it.
 const sqliteDialect = "sqlite"
 
-// dialect is one engine a case iterates: its name, and how to reach an empty
-// database of the case's own on it.
 type dialect struct {
 	name string
 	open func(t *testing.T, items dbtest.Items) db.Database
 }
 
-// dialects lists the engines a case iterates, SQLite first.
-//
-// Only the engines whose fixture needs nothing installed belong here. The
-// integration build appends the ones that reach a server, so an untagged run
-// cannot name a dialect whose opener would fail for want of one.
 var dialects = []dialect{{
 	name: sqliteDialect,
 	open: func(t *testing.T, items dbtest.Items) db.Database {
@@ -432,7 +381,6 @@ var dialects = []dialect{{
 	},
 }}
 
-// applyMigrations builds the module's table from the files it ships.
 func applyMigrations(t *testing.T, h *gorm.DB, dialect string) {
 	t.Helper()
 	entries, err := fs.ReadDir(migrationsFS, dialect)
@@ -452,8 +400,6 @@ func applyMigrations(t *testing.T, h *gorm.DB, dialect string) {
 	}
 }
 
-// splitStatements splits a migration on the semicolons that end statements,
-// dropping the comment-only and blank fragments.
 func splitStatements(sql string) []string {
 	var out []string
 	for _, part := range strings.Split(sql, ";") {
@@ -476,20 +422,11 @@ func onlyCommentsOrBlank(text string) bool {
 	return true
 }
 
-// openDialect delivers the database of the dialect with the module's table
-// built.
 func openDialect(t *testing.T, dialect string) db.Database {
 	t.Helper()
 	return openDialectItems(t, dialect, nil)
 }
 
-// openDialectItems delivers the database of the dialect with the module's table
-// built and input items configured beside the locator, so a concurrency case can
-// hold the pool to one connection and let the writes serialise at the pool
-// rather than at the engine's own lock.
-//
-// A dialect no engine of this build answers to is a programming error, since
-// dialects never names one.
 func openDialectItems(t *testing.T, dialect string, items dbtest.Items) db.Database {
 	t.Helper()
 	for _, d := range dialects {
@@ -501,7 +438,6 @@ func openDialectItems(t *testing.T, dialect string, items dbtest.Items) db.Datab
 	return nil
 }
 
-// forEachDialect runs a case on every engine this build's cases run on.
 func forEachDialect(t *testing.T, run func(t *testing.T, database db.Database, dialect string)) {
 	t.Helper()
 	for _, d := range dialects {
@@ -511,8 +447,6 @@ func forEachDialect(t *testing.T, run func(t *testing.T, database db.Database, d
 	}
 }
 
-// newSQLiteRig builds a loaded rig over a fresh SQLite database with no
-// configuration templates, which is the common starting point.
 func newSQLiteRig(t *testing.T) *rig {
 	t.Helper()
 	r := newRig(t, openDialect(t, sqliteDialect), newProvider(), settingsOf(t, nil, 0))

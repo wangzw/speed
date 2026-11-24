@@ -11,9 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// registryWithReader builds a registry with a real configuration reader over a
-// body, supplied under the config module's name, which is what a module that
-// reads configuration needs before its Prepare runs.
 func registryWithReader(t *testing.T, body string) *core.Registry {
 	t.Helper()
 	reader := configtest.Reader(t, body, Module())
@@ -23,15 +20,13 @@ func registryWithReader(t *testing.T, body string) *core.Registry {
 	return reg
 }
 
-// completeBody is the configuration body a working assembly is built from.
 func completeBody() string {
 	return `{"sms":{"aliyun":{` +
 		`"access-key-id":"the-id","access-key-secret":"the-secret","sign-name":"Speed"}}}`
 }
 
-// TestTheDescriptorDeliversBothSeamsExclusively holds the shape the design names:
-// the sms.Sender and sms.Provider claimed for this module alone, so a command
-// names exactly one carrier, and the logging capability taken up optionally.
+// TestTheDescriptorDeliversBothSeamsExclusively checks that the module claims
+// both carrier seams exclusively and takes the logging capability optionally.
 func TestTheDescriptorDeliversBothSeamsExclusively(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName {
@@ -67,8 +62,7 @@ func TestTheDescriptorDeliversBothSeamsExclusively(t *testing.T) {
 	}
 }
 
-// TestPrepareStatesEnabledForARunnableConfiguration holds that a complete
-// configuration lets the module state it runs.
+// TestPrepareStatesEnabledForARunnableConfiguration checks that a complete configuration lets the module state it runs.
 func TestPrepareStatesEnabledForARunnableConfiguration(t *testing.T) {
 	reg := registryWithReader(t, completeBody())
 	got, err := Module().Prepare(t.Context(), reg)
@@ -80,9 +74,8 @@ func TestPrepareStatesEnabledForARunnableConfiguration(t *testing.T) {
 	}
 }
 
-// TestTheModuleDeliversBothSeamsThroughTheRegistry drives a real registry through
-// this module's descriptor to Init, resolves both carrier seams from the one
-// product and names it.
+// TestTheModuleDeliversBothSeamsThroughTheRegistry checks that a drive through
+// the descriptor resolves both seams from one product and names it.
 func TestTheModuleDeliversBothSeamsThroughTheRegistry(t *testing.T) {
 	reg := registryWithReader(t, completeBody())
 	reg.Register(Module())

@@ -9,8 +9,7 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// TestACompleteConfigurationResolves holds the control: a complete section
-// resolves and carries the values through, with the identities in a stable order.
+// TestACompleteConfigurationResolves checks that a complete section resolves with the identities in a stable order.
 func TestACompleteConfigurationResolves(t *testing.T) {
 	got, err := completeConfig(defaultAPIBaseURL, defaultContentBaseURL).resolve()
 	if err != nil {
@@ -33,9 +32,8 @@ func TestACompleteConfigurationResolves(t *testing.T) {
 	}
 }
 
-// TestTheDeclaredItemsCarryTheDesignsFlags holds the schema: the credentials, the
-// default identity and the identity list are required, the auth token is
-// sensitive, and the two access points have declared defaults.
+// TestTheDeclaredItemsCarryTheDesignsFlags checks the schema: the credentials, default identity and
+// identity list are required, the auth token is sensitive, and the access points have defaults.
 func TestTheDeclaredItemsCarryTheDesignsFlags(t *testing.T) {
 	s, ok := Module().Resources[0].(config.Schema)
 	if !ok {
@@ -61,8 +59,8 @@ func TestTheDeclaredItemsCarryTheDesignsFlags(t *testing.T) {
 	}
 }
 
-// TestAnIncompleteSectionIsRefused holds that a section missing one of the
-// items that make a usable carrier is half-configured: the stance refuses it.
+// TestAnIncompleteSectionIsRefused checks that a section missing one of the
+// items that make a usable carrier is half-configured and refused.
 func TestAnIncompleteSectionIsRefused(t *testing.T) {
 	for name, body := range map[string]string{
 		"no account SID": `{"sms":{"twilio":{` +
@@ -84,7 +82,6 @@ func TestAnIncompleteSectionIsRefused(t *testing.T) {
 	}
 }
 
-// completeBody is the configuration body a working assembly is built from.
 func completeBody() string {
 	return `{"sms":{"twilio":{` +
 		`"account-sid":"` + testAccountSID + `","auth-token":"` + testAuthToken + `",` +
@@ -92,7 +89,7 @@ func completeBody() string {
 		`"identities":[{"name":"service","kind":"messaging-service","value":"MG1"}]}}}`
 }
 
-// TestTheReaderServesACompleteSection is the control for the loader cases.
+// TestTheReaderServesACompleteSection checks that the loader serves a complete section.
 func TestTheReaderServesACompleteSection(t *testing.T) {
 	reader := configtest.Reader(t, completeBody(), Module())
 	var cfg moduleConfig
@@ -111,9 +108,7 @@ func TestTheReaderServesACompleteSection(t *testing.T) {
 	}
 }
 
-// TestOpenRefusesAnUndeclaredDefaultIdentity holds the design's startup check at
-// the seam a host reaches: a default identity that names nothing is refused when
-// the product is built, not when a message is first sent.
+// TestOpenRefusesAnUndeclaredDefaultIdentity checks that a default identity naming nothing is refused when the product is built.
 func TestOpenRefusesAnUndeclaredDefaultIdentity(t *testing.T) {
 	cfg := completeConfig(defaultAPIBaseURL, defaultContentBaseURL)
 	cfg.DefaultIdentity = "nobody"
@@ -122,8 +117,7 @@ func TestOpenRefusesAnUndeclaredDefaultIdentity(t *testing.T) {
 	}
 }
 
-// TestResolveRefusesASectionItCannotRunOn holds each startup refusal: all of them
-// fail before a message is built.
+// TestResolveRefusesASectionItCannotRunOn checks that each startup refusal fails before a message is built.
 func TestResolveRefusesASectionItCannotRunOn(t *testing.T) {
 	for name, mutate := range map[string]func(*moduleConfig){
 		"an unknown default identity": func(cfg *moduleConfig) { cfg.DefaultIdentity = "nobody" },

@@ -10,17 +10,7 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// classify turns a failed vendor call into one of the sending sentinels, for the
-// sending seam and the template-management seam alike.
-//
-// The vendor reports an HTTP status: 429 is a limit, another 4xx is a refusal of
-// the request as built, and a 5xx is a failure whose outcome is unknown. A
-// failure that carries no vendor status at all — a timeout, a network error, an
-// ended context — is uncertain for the same reason: none of the vendor's calls
-// is idempotent and whether one landed is unknown. Only the status and the
-// vendor's numeric code are carried into the text; the vendor's message text is
-// left out, because it can quote the request and the request carries the
-// credentials and the message content.
+// classify turns 429 into ErrThrottled, another 4xx into ErrRejected and anything else into ErrUncertain; only the status and the vendor's code reach the text, never its message.
 func classify(err error) error {
 	status, code, ok := vendorStatus(err)
 	if !ok {
@@ -36,10 +26,6 @@ func classify(err error) error {
 	}
 }
 
-// vendorStatus reads the HTTP status and the vendor's numeric code out of a
-// vendor error. The SDK reports two error shapes: the legacy
-// client.TwilioRestError the account and content APIs answer with, and the
-// newer client.RestErrorV1. A value that is neither carries no status.
 func vendorStatus(err error) (status, code int, ok bool) {
 	var rest *twclient.TwilioRestError
 	if errors.As(err, &rest) {
@@ -52,8 +38,6 @@ func vendorStatus(err error) (status, code int, ok bool) {
 	return 0, 0, false
 }
 
-// alreadyGone reports whether a vendor error says the resource was not there.
-// Retire treats it as success: the template is removed either way.
 func alreadyGone(err error) bool {
 	status, _, ok := vendorStatus(err)
 	return ok && status == http.StatusNotFound

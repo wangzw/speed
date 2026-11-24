@@ -9,9 +9,8 @@ import (
 	"time"
 )
 
-// TestCountsArePerDimensionAndChannel holds the four count dimensions apart:
-// each count returns the rows of its own dimension and channel, and a filter
-// left empty widens the count rather than silently taking a default.
+// TestCountsArePerDimensionAndChannel checks that each count returns the rows of its own
+// dimension and channel, and an empty filter widens rather than taking a default.
 func TestCountsArePerDimensionAndChannel(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, store Store) {
 		since := at.Add(-time.Second)
@@ -43,9 +42,7 @@ func TestCountsArePerDimensionAndChannel(t *testing.T) {
 	})
 }
 
-// TestDistinctDestinationsDoNotDoubleCount holds the diversity dimension: two
-// attempts to one destination are one destination, so a source that keeps
-// sending to the same number is not made to look like a source fanning out.
+// TestDistinctDestinationsDoNotDoubleCount checks that attempts to one destination count as one destination.
 func TestDistinctDestinationsDoNotDoubleCount(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, store Store) {
 		since := at.Add(-time.Second)
@@ -64,11 +61,8 @@ func TestDistinctDestinationsDoNotDoubleCount(t *testing.T) {
 	})
 }
 
-// TestARefundedAttemptLeavesTheSendCountAndStaysInTheAttemptCount holds the
-// distinction the ledger exists for. A message the carrier certainly did not
-// take costs no send budget, so a resend is not charged twice for one message;
-// it stays in the attempt count, so repeatedly aiming a send at a destination
-// that always fails still spends the attempt budget.
+// TestARefundedAttemptLeavesTheSendCountAndStaysInTheAttemptCount checks that a
+// refunded attempt costs no send budget but stays in the attempt count.
 func TestARefundedAttemptLeavesTheSendCountAndStaysInTheAttemptCount(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, store Store) {
 		first := record(t, store, attempt(ChannelAuthn, "login", "S1", "D1", "T1", at))
@@ -100,8 +94,6 @@ func TestARefundedAttemptLeavesTheSendCountAndStaysInTheAttemptCount(t *testing.
 			t.Errorf("the oldest attempt = %v (present %v), want %v", oldest, ok, at)
 		}
 
-		// A second refund is the idempotent case: it leaves the first refund
-		// time alone, which the counts observe as no change.
 		refund(t, store, first, at.Add(3*time.Minute))
 		assertCount(t, count(t, store, sends), 1, sends)
 		assertCount(t, count(t, store, attempts), 2, attempts)
@@ -113,8 +105,7 @@ func TestARefundedAttemptLeavesTheSendCountAndStaysInTheAttemptCount(t *testing.
 	})
 }
 
-// TestTheCeilingCountsBothChannels holds the emergency cap: one count over both
-// channels, and an attempt that was refunded spends none of it.
+// TestTheCeilingCountsBothChannels checks that the ceiling counts both channels and that a refunded attempt spends none of it.
 func TestTheCeilingCountsBothChannels(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, store Store) {
 		record(t, store, attempt(ChannelAuthn, "login", "S1", "D1", "T1", at))
@@ -142,9 +133,8 @@ func TestTheCeilingCountsBothChannels(t *testing.T) {
 	})
 }
 
-// TestTheWindowBoundaryIsInclusive holds since to its documented meaning: an
-// attempt written exactly at since is inside the window, and one a second
-// earlier is not.
+// TestTheWindowBoundaryIsInclusive checks that an attempt written exactly at
+// since is inside the window and one a second earlier is not.
 func TestTheWindowBoundaryIsInclusive(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, store Store) {
 		record(t, store, attempt(ChannelAuthn, "login", "S1", "D0", "T1", at.Add(-time.Second)))
@@ -175,10 +165,8 @@ func TestTheWindowBoundaryIsInclusive(t *testing.T) {
 	})
 }
 
-// TestConcurrentRecordsDoNotLoseCounts holds the implementation's concurrency
-// promise: Record is one INSERT and Count reads the table, so concurrent
-// writers cannot lose a row to a shared counter. Every row a case writes is
-// counted, and every destination it writes is distinct.
+// TestConcurrentRecordsDoNotLoseCounts checks that concurrent writers lose no
+// row, since Record is one INSERT and Count reads the table.
 func TestConcurrentRecordsDoNotLoseCounts(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, store Store) {
 		const (
@@ -213,9 +201,7 @@ func TestConcurrentRecordsDoNotLoseCounts(t *testing.T) {
 	})
 }
 
-// TestRecordRefusesAMalformedAttempt holds the table's contract at the write:
-// every field the schema requires is required here too, and a refused attempt
-// leaves no row behind.
+// TestRecordRefusesAMalformedAttempt checks that every required field is enforced at the write and a refused attempt leaves no row.
 func TestRecordRefusesAMalformedAttempt(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, store Store) {
 		good := attempt(ChannelAuthn, "login", "S1", "D1", "T1", at)
@@ -242,18 +228,12 @@ func TestRecordRefusesAMalformedAttempt(t *testing.T) {
 			t.Run(c.name, func(t *testing.T) { requireInvalidAttempt(t, store, c.attempt) })
 		}
 
-		// A sourceless attempt and an accountless one are the two legal
-		// absences the model documents.
 		record(t, store, attempt(ChannelAuthn, "login", "", "D2", "T1", at))
-		// A suppressed attempt is legal when it carries the refund time the
-		// store requires of it.
 		record(t, store, suppressedAttempt(ChannelAuthn, "login", "S1", "D3", "T1", at))
 	})
 }
 
-// TestCountRefusesAMalformedQuery holds the count's contract: a query the
-// implementation cannot compile is refused rather than read as a default that
-// silently widens or narrows the window.
+// TestCountRefusesAMalformedQuery checks that a query the implementation cannot compile is refused rather than read as a default.
 func TestCountRefusesAMalformedQuery(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, store Store) {
 		queries := []struct {
@@ -293,9 +273,7 @@ func TestCountRefusesAMalformedQuery(t *testing.T) {
 	})
 }
 
-// TestMarkRefundedRefusesAnUnknownAttempt holds the refund's identifiers: an
-// absent attempt is reported rather than silently accepted as a no-op, so a
-// caller that names the wrong row finds out.
+// TestMarkRefundedRefusesAnUnknownAttempt checks that an absent attempt is reported rather than accepted as a no-op.
 func TestMarkRefundedRefusesAnUnknownAttempt(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, store Store) {
 		if err := store.MarkRefunded(context.Background(), ID(9999), at); !errors.Is(err, ErrNotFound) {

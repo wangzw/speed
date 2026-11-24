@@ -12,10 +12,8 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// TestNewRefusesAConfiguredTemplateTheCarrierCannotCarry covers the first of the
-// three shape checks: a configured template that declares vendor codes on a
-// carrier which sends only a rendered body stops the module in New, naming the
-// template and the sentinel.
+// TestNewRefusesAConfiguredTemplateTheCarrierCannotCarry checks that a configured template
+// declaring vendor codes stops the module in New on a carrier that sends only a rendered body.
 func TestNewRefusesAConfiguredTemplateTheCarrierCannotCarry(t *testing.T) {
 	reg := core.New()
 	reg.Register(config.Module())
@@ -39,10 +37,7 @@ func TestNewRefusesAConfiguredTemplateTheCarrierCannotCarry(t *testing.T) {
 	}
 }
 
-// TestSnapshotLoadRefusesARowTheCarrierCannotCarry covers the second shape
-// check: a row written under a carrier that sends by code is refused when a
-// carrier that sends only a body mounts the database, rather than surfacing at
-// the first send.
+// TestSnapshotLoadRefusesARowTheCarrierCannotCarry checks that a row the mounted body-only carrier cannot carry is refused at load.
 func TestSnapshotLoadRefusesARowTheCarrierCannotCarry(t *testing.T) {
 	r := newRig(t, openDialect(t, sqliteDialect), newModelProvider(textCarrier()), settingsOf(t, nil, 0))
 	r.plant("legacy", []string{"code"}, map[string]string{"en": "c"},
@@ -57,11 +52,7 @@ func TestSnapshotLoadRefusesARowTheCarrierCannotCarry(t *testing.T) {
 	}
 }
 
-// TestSnapshotLoadRefusesARowWithAnUnknownKind covers the declaration check the
-// load repeats over every row. A row reaches the table only through a write that
-// already checked it, but the table is also a thing people edit, and a kind
-// outside the closed set would otherwise fall through to the carrier's default
-// spelling at the first send.
+// TestSnapshotLoadRefusesARowWithAnUnknownKind checks that a row with a kind outside the closed set fails the load.
 func TestSnapshotLoadRefusesARowWithAnUnknownKind(t *testing.T) {
 	r := newRig(t, openDialect(t, sqliteDialect), newModelProvider(textCarrier()), settingsOf(t, nil, 0))
 	r.plantRow(r.provider.Name(), "promo", sms.Kind("promo"), []string{"code"}, nil,
@@ -77,8 +68,8 @@ func TestSnapshotLoadRefusesARowWithAnUnknownKind(t *testing.T) {
 	}
 }
 
-// TestWritesRefuseATemplateTheCarrierCannotCarry covers the third shape check,
-// over Register and Offer, and that nothing reaches the vendor or the table.
+// TestWritesRefuseATemplateTheCarrierCannotCarry checks the shape refusal over
+// Register and Offer, with nothing reaching the vendor or the table.
 func TestWritesRefuseATemplateTheCarrierCannotCarry(t *testing.T) {
 	provider := newModelProvider(textCarrier())
 	r := newRig(t, openDialect(t, sqliteDialect), provider, settingsOf(t, nil, 0))
@@ -102,9 +93,8 @@ func TestWritesRefuseATemplateTheCarrierCannotCarry(t *testing.T) {
 	}
 }
 
-// TestWritesRefuseAnAttributeKeyAndAnOverlongBody covers the remaining two
-// shape rules: an attribute key outside the carrier's declaration and a body
-// over its bound are each ErrInvalidConfig naming the template.
+// TestWritesRefuseAnAttributeKeyAndAnOverlongBody checks that an undeclared
+// attribute key and a body over the carrier's bound are each ErrInvalidConfig.
 func TestWritesRefuseAnAttributeKeyAndAnOverlongBody(t *testing.T) {
 	model := textCarrier()
 	model.MaxBodyRunes = 8
@@ -133,10 +123,8 @@ func TestWritesRefuseAnAttributeKeyAndAnOverlongBody(t *testing.T) {
 	}
 }
 
-// TestOfferRecordsTheBodyLocallyWhenTheCarrierDoesNotReview covers a carrier
-// with no per-template review: Offer calls no vendor, records the body and the
-// kind, starts the language NotRequired, and the template resolves and is in
-// force at once.
+// TestOfferRecordsTheBodyLocallyWhenTheCarrierDoesNotReview checks that Offer
+// calls no vendor, records the body and starts the language NotRequired.
 func TestOfferRecordsTheBodyLocallyWhenTheCarrierDoesNotReview(t *testing.T) {
 	provider := newModelProvider(textCarrier())
 	r := newRig(t, openDialect(t, sqliteDialect), provider, settingsOf(t, nil, 0))
@@ -182,9 +170,7 @@ func TestOfferRecordsTheBodyLocallyWhenTheCarrierDoesNotReview(t *testing.T) {
 	}
 }
 
-// TestOfferTakesUpTheVendorCodeOnAContentCarrier covers a carrier that creates a
-// vendor resource and has no per-template review: the vendor is called once, its
-// code and the body are both stored, and the language is sendable at once.
+// TestOfferTakesUpTheVendorCodeOnAContentCarrier checks that a content carrier is called once and its code and body are stored.
 func TestOfferTakesUpTheVendorCodeOnAContentCarrier(t *testing.T) {
 	provider := newModelProvider(contentCarrier())
 	provider.offerCode = "HX123"
@@ -220,9 +206,8 @@ func TestOfferTakesUpTheVendorCodeOnAContentCarrier(t *testing.T) {
 	}
 }
 
-// TestOfferRefusesALanguageHeldOnlyAsABody covers the effective locale set in
-// conflict detection: a language a name holds a body for is held, so a second
-// offer of it is ErrTemplateExists even though no code exists for it.
+// TestOfferRefusesALanguageHeldOnlyAsABody checks that a language held only as a
+// body counts as held, so a second offer is ErrTemplateExists.
 func TestOfferRefusesALanguageHeldOnlyAsABody(t *testing.T) {
 	provider := newModelProvider(textCarrier())
 	r := newRig(t, openDialect(t, sqliteDialect), provider, settingsOf(t, nil, 0))
@@ -240,10 +225,7 @@ func TestOfferRefusesALanguageHeldOnlyAsABody(t *testing.T) {
 	}
 }
 
-// TestNotRequiredIsSendableAndUnknownIsNot covers the two states the sendable
-// rule turns on: a template whose carrier has no review is in force and
-// resolves, while one whose review this process merely does not follow is
-// neither.
+// TestNotRequiredIsSendableAndUnknownIsNot checks that a NotRequired template resolves while an Unknown one does not.
 func TestNotRequiredIsSendableAndUnknownIsNot(t *testing.T) {
 	r := newSQLiteRig(t)
 	r.plantRow("fake", "no-review", sms.KindNotification, nil, map[string]string{"en": "c1"}, nil, nil,
@@ -264,9 +246,8 @@ func TestNotRequiredIsSendableAndUnknownIsNot(t *testing.T) {
 	}
 }
 
-// TestARuntimeBodyOnlyRowResolvesToTheRenderedBody covers a row whose locale set
-// comes from the body table alone, which is the shape a body-sending carrier
-// stores.
+// TestARuntimeBodyOnlyRowResolvesToTheRenderedBody checks that a row whose
+// locale set comes from the body table alone resolves to the rendered body.
 func TestARuntimeBodyOnlyRowResolvesToTheRenderedBody(t *testing.T) {
 	r := newRig(t, openDialect(t, sqliteDialect), newModelProvider(textCarrier()), settingsOf(t, nil, 0))
 	r.plantRow("fake", "notice", sms.KindMarketing, []string{"name"},
@@ -289,9 +270,8 @@ func TestARuntimeBodyOnlyRowResolvesToTheRenderedBody(t *testing.T) {
 	}
 }
 
-// TestTwoCarriersShareOneDatabaseWithoutSeeingEachOthersTemplates covers the
-// carrier column: each carrier's reads are filtered by its own name, and a
-// database that holds no legacy row carries no ownership marker.
+// TestTwoCarriersShareOneDatabaseWithoutSeeingEachOthersTemplates checks that reads are
+// filtered by carrier and a database with no legacy row gets no ownership marker.
 func TestTwoCarriersShareOneDatabaseWithoutSeeingEachOthersTemplates(t *testing.T) {
 	database := openDialect(t, sqliteDialect)
 	alpha := newNamedProvider("alpha")

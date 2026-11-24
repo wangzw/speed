@@ -24,12 +24,8 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// testAccessKeySecret is the value the cases configure and then look for in
-// everything the module produces.
 const testAccessKeySecret = "test-access-key-secret-9f3a2c"
 
-// senderOver builds a sender whose client points at the given endpoint and
-// protocol, which is how a case reaches the vendor SDK with a loopback server.
 func senderOver(t *testing.T, endpoint, protocol string) *sender {
 	t.Helper()
 	client, err := dysmsapi.NewClient(&openapiutil.Config{
@@ -44,7 +40,6 @@ func senderOver(t *testing.T, endpoint, protocol string) *sender {
 	return newSender(resolved{signName: "Speed"}, client)
 }
 
-// jsonReply answers every request with one body.
 func jsonReply(body string) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -52,9 +47,6 @@ func jsonReply(body string) http.HandlerFunc {
 	}
 }
 
-// oneResolved is the send the cases drive: a message the registry has already
-// resolved to a vendor code and the parameters the approved template
-// substitutes.
 func oneResolved() sms.Resolved {
 	return sms.Resolved{
 		To:       "+8613800000000",
@@ -67,6 +59,7 @@ func oneResolved() sms.Resolved {
 	}
 }
 
+// TestTheSenderReportsTheCarrierName checks that the sender reports the carrier name.
 func TestTheSenderReportsTheCarrierName(t *testing.T) {
 	s := newSender(resolved{signName: "Speed"}, nil)
 	if got := s.Name(); got != "aliyun" {
@@ -77,9 +70,8 @@ func TestTheSenderReportsTheCarrierName(t *testing.T) {
 	}
 }
 
-// TestTheRequestCarriesTheSignatureTemplateAndParameters holds the request shape
-// the vendor interface takes: the approved signature, the resolved destination
-// and template code, and the parameters as a JSON object keyed by name.
+// TestTheRequestCarriesTheSignatureTemplateAndParameters holds the request shape: the signature,
+// the destination, the template code and the parameters as a JSON object keyed by name.
 func TestTheRequestCarriesTheSignatureTemplateAndParameters(t *testing.T) {
 	var got struct {
 		method, phoneNumbers, signName, templateCode, templateParam string
@@ -125,9 +117,8 @@ func TestTheRequestCarriesTheSignatureTemplateAndParameters(t *testing.T) {
 	}
 }
 
-// TestTheStatusCodesFallToUncertain is the per-code vector: until a code is
-// verified against the vendor's list, every status the carrier can answer falls
-// to the uncertain sentinel, and OK is the only success.
+// TestTheStatusCodesFallToUncertain checks that every status the carrier can answer falls
+// to the uncertain sentinel until a code is verified, and OK is the only success.
 func TestTheStatusCodesFallToUncertain(t *testing.T) {
 	codes := []string{
 		"isv.BUSINESS_LIMIT_CONTROL",
@@ -171,9 +162,8 @@ func TestTheStatusCodesFallToUncertain(t *testing.T) {
 	})
 }
 
-// TestATransportFailureIsUncertain holds that a call that did not complete — a
-// network error and a timeout alike — falls to the uncertain sentinel, the
-// direction which never resends a message the carrier may already hold.
+// TestATransportFailureIsUncertain checks that a call that did not complete falls to the
+// uncertain sentinel, which never resends a message the carrier may already hold.
 func TestATransportFailureIsUncertain(t *testing.T) {
 	t.Run("a network error", func(t *testing.T) {
 		// A port nothing listens on: the dial fails inside the SDK.
@@ -204,10 +194,8 @@ func TestATransportFailureIsUncertain(t *testing.T) {
 	})
 }
 
-// TestACancelledContextDoesNotReachTheCarrier holds that the adapter passes the
-// caller's context to the vendor call: a send whose context is already ended is
-// refused as uncertain without the endpoint being reached, so a cancelled caller
-// does not leave a connection open to the carrier.
+// TestACancelledContextDoesNotReachTheCarrier checks that an ended context is
+// refused as uncertain without the endpoint being reached.
 func TestACancelledContextDoesNotReachTheCarrier(t *testing.T) {
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -229,12 +217,8 @@ func TestACancelledContextDoesNotReachTheCarrier(t *testing.T) {
 	}
 }
 
-// TestTheCodeAndTheCredentialsReachNoErrorOrLog holds the facts the design
-// fixes: the access-key secret only signs the request and is not carried in it,
-// and neither the secret nor the message code turns up in the error text, even
-// when the carrier echoes them back in its own answer. A status that is not OK
-// and a transport failure are both driven, since the two leave by different
-// paths.
+// TestTheCodeAndTheCredentialsReachNoErrorOrLog checks that the access-key secret and the message
+// code appear in neither the error text nor the log, even when the carrier echoes them.
 func TestTheCodeAndTheCredentialsReachNoErrorOrLog(t *testing.T) {
 	const code = "135790"
 	echoed := `{"Code":"isv.SMS_TEMPLATE_ILLEGAL","Message":"the code ` + code +
@@ -287,14 +271,12 @@ func TestTheCodeAndTheCredentialsReachNoErrorOrLog(t *testing.T) {
 	}
 }
 
-// TestTheCarrierIsCalledExactlyOnceEvenWhenItFails holds the no-retry rule: the
-// vendor interface is not idempotent, so a failing call is never made again,
-// neither by this module nor by the SDK's own retry, which is switched off.
+// TestTheCarrierIsCalledExactlyOnceEvenWhenItFails checks that a failing call is
+// never made again, neither by this module nor by the SDK's own retry.
 func TestTheCarrierIsCalledExactlyOnceEvenWhenItFails(t *testing.T) {
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
-		// A server error, the shape the SDK's retry would have picked up.
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = io.WriteString(w, `{"Code":"InternalError"}`)
 	}))
@@ -309,10 +291,7 @@ func TestTheCarrierIsCalledExactlyOnceEvenWhenItFails(t *testing.T) {
 	}
 }
 
-// TestALifetimeTheCarrierCannotHonourIsRefused holds that a message asking for a
-// lifetime is refused before the vendor is called. Aliyun's interface has no
-// expiry for a queued message, so carrying the flag no further would deliver a
-// code hours after it stopped being useful, with nothing reported.
+// TestALifetimeTheCarrierCannotHonourIsRefused checks that a message asking for a lifetime is refused before the vendor is called.
 func TestALifetimeTheCarrierCannotHonourIsRefused(t *testing.T) {
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
@@ -331,18 +310,13 @@ func TestALifetimeTheCarrierCannotHonourIsRefused(t *testing.T) {
 	}
 }
 
-// mustJSON encodes a status body, so a code with a quote or a backslash still
-// produces valid JSON.
 func mustJSON(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
 }
 
-// TestNoVendorTypeReachesTheExportedSurface holds that the vendor SDK is an
-// implementation detail: the package exports the module name, its config
-// namespace and the module descriptor and nothing else, and neither signature
-// names a vendor type, so a host that imports this package to register it never
-// has to name the SDK.
+// TestNoVendorTypeReachesTheExportedSurface checks that the package exports only the module name,
+// its config namespace and the module descriptor, and no signature names a vendor type.
 func TestNoVendorTypeReachesTheExportedSurface(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -365,8 +339,6 @@ func TestNoVendorTypeReachesTheExportedSurface(t *testing.T) {
 		for _, decl := range file.Decls {
 			switch d := decl.(type) {
 			case *ast.FuncDecl:
-				// A method on an unexported type is not on the
-				// package's surface.
 				if d.Recv != nil || !d.Name.IsExported() {
 					continue
 				}
@@ -398,8 +370,6 @@ func TestNoVendorTypeReachesTheExportedSurface(t *testing.T) {
 	}
 }
 
-// vendorImportNames returns the local names a file gives the vendor packages,
-// so a selector on one of them can be told apart from a type of this package.
 func vendorImportNames(file *ast.File) map[string]bool {
 	names := make(map[string]bool)
 	for _, imp := range file.Imports {
@@ -419,8 +389,6 @@ func vendorImportNames(file *ast.File) map[string]bool {
 	return names
 }
 
-// namesVendorType reports whether a type expression is a selector on a vendor
-// package.
 func namesVendorType(node ast.Node, aliases map[string]bool) bool {
 	found := false
 	ast.Inspect(node, func(n ast.Node) bool {
@@ -436,8 +404,6 @@ func namesVendorType(node ast.Node, aliases map[string]bool) bool {
 	return found
 }
 
-// exportedSpec names the exported declarations a spec introduces, under the
-// keyword of the declaration it belongs to.
 func exportedSpec(tok token.Token, spec ast.Spec) []string {
 	var names []string
 	switch s := spec.(type) {
@@ -468,9 +434,8 @@ func containsString(haystack []string, needle string) bool {
 	return false
 }
 
-// One identifier reaches the carrier once, and a second call is answered with the
-// first call's outcome rather than sending the message again. The interface is
-// not idempotent, so a re-call would deliver and bill a second message.
+// TestOneIdentifierReachesTheCarrierOnce checks that one identifier reaches the
+// carrier once and a second call is answered with the first call's outcome.
 func TestOneIdentifierReachesTheCarrierOnce(t *testing.T) {
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -497,8 +462,7 @@ func TestOneIdentifierReachesTheCarrierOnce(t *testing.T) {
 	}
 }
 
-// Distinct identifiers each reach the carrier: a resend builds a new challenge
-// and so a new identifier, which is not held back by the one before it.
+// TestDistinctIdentifiersEachReachTheCarrier checks that distinct identifiers each reach the carrier.
 func TestDistinctIdentifiersEachReachTheCarrier(t *testing.T) {
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -521,8 +485,8 @@ func TestDistinctIdentifiersEachReachTheCarrier(t *testing.T) {
 	}
 }
 
-// Calls for one identifier that arrive together still reach the carrier once: the
-// first reserves it and the rest wait for that call's outcome.
+// TestConcurrentCallsForOneIdentifierReachTheCarrierOnce checks that calls for
+// one identifier arriving together reach the carrier once.
 func TestConcurrentCallsForOneIdentifierReachTheCarrierOnce(t *testing.T) {
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

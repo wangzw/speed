@@ -7,10 +7,8 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// The carrier route answers the mounted provider's declaration, shaped field by
-// field: the model is read once from the Provider seam and every part of it —
-// content support, review support, identities, countries, attribute keys, the
-// body bound and the receipt mode — reaches the answer.
+// TestTheCarrierRouteAnswersTheMountedModel checks that the carrier route
+// answers the provider's declaration with every part of it shaped into the view.
 func TestTheCarrierRouteAnswersTheMountedModel(t *testing.T) {
 	r := newRig(t)
 	r.provider.name = "aws"
@@ -71,9 +69,7 @@ func TestTheCarrierRouteAnswersTheMountedModel(t *testing.T) {
 	}
 }
 
-// The carrier view is built field by field: it carries the model's fields and
-// nothing else, so a field added to a carrier model later does not reach a client
-// by being there.
+// TestTheCarrierViewCarriesOnlyTheDeclaredFields checks that the view carries the model's fields and nothing else.
 func TestTheCarrierViewCarriesOnlyTheDeclaredFields(t *testing.T) {
 	r := newRig(t)
 	w := r.do(http.MethodGet, pathCarrier, nil)
@@ -98,8 +94,7 @@ func TestTheCarrierViewCarriesOnlyTheDeclaredFields(t *testing.T) {
 	}
 }
 
-// A guard denial is answered 403 and the provider's model is never read: the
-// decision comes before the read.
+// TestADeniedCarrierReadReachesNoProvider checks that a guard denial is answered 403 and the provider's model is never read.
 func TestADeniedCarrierReadReachesNoProvider(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false

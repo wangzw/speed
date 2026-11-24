@@ -17,8 +17,6 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// stubDatabase is the database capability over a real handle. The module calls
-// only DB, so the rest of the interface is there to satisfy it.
 type stubDatabase struct {
 	handle  *gorm.DB
 	dialect db.Dialect
@@ -29,15 +27,10 @@ func (d stubDatabase) Dialect() db.Dialect                            { return d
 func (d stubDatabase) BlindIndex(string) string                       { return "" }
 func (d stubDatabase) Open(context.Context, string) (*gorm.DB, error) { return nil, nil }
 
-// noConfig is the reader a host supplies when nothing is configured. It decodes
-// nothing, which leaves the module's zero configuration in place — no templates
-// and no poll interval.
 type noConfig struct{}
 
 func (noConfig) Decode(string, any) error { return nil }
 
-// configWith is a reader that hands the module a fixed configuration template
-// set.
 type configWith struct{ templates map[string]sms.TemplateSpec }
 
 func (c configWith) Decode(_ string, target any) error {
@@ -47,7 +40,6 @@ func (c configWith) Decode(_ string, target any) error {
 	return nil
 }
 
-// providingDB delivers the database capability.
 func providingDB(handle *gorm.DB) core.Module {
 	return core.Module{
 		Name:     "test.database",
@@ -58,7 +50,6 @@ func providingDB(handle *gorm.DB) core.Module {
 	}
 }
 
-// providingProvider delivers the template-management seam.
 func providingProvider(p sms.Provider) core.Module {
 	return core.Module{
 		Name:     "test.provider",
@@ -67,7 +58,6 @@ func providingProvider(p sms.Provider) core.Module {
 	}
 }
 
-// providingBus delivers the event capability.
 func providingBus(bus event.Bus) core.Module {
 	return core.Module{
 		Name:     "test.event",
@@ -76,7 +66,6 @@ func providingBus(bus event.Bus) core.Module {
 	}
 }
 
-// openHandle delivers a quiet handle with the module's table built.
 func openHandle(t *testing.T) *gorm.DB {
 	t.Helper()
 	handle := dbtest.SQLite(t, filepath.Join(t.TempDir(), "sms_registry.db"), nil).DB().
@@ -85,9 +74,8 @@ func openHandle(t *testing.T) *gorm.DB {
 	return handle
 }
 
-// TestTheModuleDeliversAndManages drives the module through a full lifecycle and
-// exercises the delivered capability: the registry resolves, registers, lists
-// and disables, and the module subscribed to the change event.
+// TestTheModuleDeliversAndManages drives the module through a full lifecycle: the delivered
+// registry resolves, registers, lists and disables, and the module subscribes to the change event.
 func TestTheModuleDeliversAndManages(t *testing.T) {
 	handle := openHandle(t)
 	bus := newBus()
@@ -138,12 +126,8 @@ func TestTheModuleDeliversAndManages(t *testing.T) {
 	}
 }
 
-// TestTheDescriptorDeclaresTheLoggingCapability holds that the descriptor
-// declares the logging capability the module resolves in Init. The declaration
-// is what orders this module after the logging module, so the records reach the
-// logger the assembly configured; without it the module is ordered by name
-// alone, may be constructed first, and falls back to the process default logger
-// — silently writing around the configured destination and redaction.
+// TestTheDescriptorDeclaresTheLoggingCapability checks that the descriptor declares the
+// logging capability Init resolves, which orders this module after the logging module.
 func TestTheDescriptorDeclaresTheLoggingCapability(t *testing.T) {
 	loggerToken := core.Token((*log.Logger)(nil))
 	declared := false
@@ -164,15 +148,11 @@ func TestTheDescriptorDeclaresTheLoggingCapability(t *testing.T) {
 	}
 }
 
-// TestPrepareRefusesAnInconsistentConfiguration covers the startup check: a
-// configuration whose template set is not self-consistent stops the drive in
-// Prepare.
+// TestPrepareRefusesAnInconsistentConfiguration checks that a self-inconsistent template set stops the drive in Prepare.
 func TestPrepareRefusesAnInconsistentConfiguration(t *testing.T) {
 	reg := core.New()
 	reg.Register(config.Module())
 	reg.Supply(configWith{templates: map[string]sms.TemplateSpec{
-		// No language: a template no message could be sent under is not one this
-		// capability can resolve.
 		"bad": {Params: []string{"code"}, Codes: map[string]string{}},
 	}}, config.ModuleName)
 	reg.Register(providingDB(openHandle(t)))

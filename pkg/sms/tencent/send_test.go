@@ -20,8 +20,6 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// testConfig is the configuration the fake-endpoint cases run on: the
-// credentials that sign a request and the approved signature.
 func testConfig() resolved {
 	return resolved{
 		secretID:  "AKIDexample",
@@ -32,8 +30,6 @@ func testConfig() resolved {
 	}
 }
 
-// resolvedMessage is one SendSms the cases hand the sender: the login template's
-// zh-CN number with its two values in the declared order.
 func resolvedMessage(id string) sms.Resolved {
 	return sms.Resolved{
 		To:       "+8613800138000",
@@ -46,8 +42,6 @@ func resolvedMessage(id string) sms.Resolved {
 	}
 }
 
-// fakeServer runs an HTTP endpoint the carrier client is pointed at, and returns
-// the host it listens on.
 func fakeServer(t *testing.T, handler http.HandlerFunc) string {
 	t.Helper()
 	srv := httptest.NewServer(handler)
@@ -59,7 +53,6 @@ func fakeServer(t *testing.T, handler http.HandlerFunc) string {
 	return u.Host
 }
 
-// newTestSender builds the product against a fake endpoint.
 func newTestSender(t *testing.T, host string) *sender {
 	t.Helper()
 	s, err := newSender(testConfig(), options{endpoint: host, scheme: "http"})
@@ -69,13 +62,11 @@ func newTestSender(t *testing.T, host string) *sender {
 	return s
 }
 
-// okBody is a SendSms answer for one accepted number.
 func okBody() string {
 	return `{"Response":{"SendStatusSet":[{"Code":"Ok","SerialNo":"sn-1",` +
 		`"PhoneNumber":"+8613800138000"}],"RequestId":"req-1"}}`
 }
 
-// statusBody is an answer whose per-number status carries code.
 func statusBody(code string) string {
 	encoded, _ := json.Marshal(map[string]any{"Response": map[string]any{
 		"SendStatusSet": []map[string]any{{"Code": code, "PhoneNumber": "+8613800138000"}},
@@ -84,7 +75,6 @@ func statusBody(code string) string {
 	return string(encoded)
 }
 
-// errBody is an answer whose top level carries a carrier error with code.
 func errBody(code string) string {
 	encoded, _ := json.Marshal(map[string]any{"Response": map[string]any{
 		"Error":     map[string]any{"Code": code, "Message": "denied"},
@@ -93,7 +83,6 @@ func errBody(code string) string {
 	return string(encoded)
 }
 
-// answerServer serves one fixed body to every request.
 func answerServer(t *testing.T, body string) string {
 	t.Helper()
 	return fakeServer(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -102,8 +91,6 @@ func answerServer(t *testing.T, body string) string {
 	})
 }
 
-// wireRequest is the request the carrier client posts, read back by its JSON
-// field names.
 type wireRequest struct {
 	PhoneNumberSet   []string
 	SmsSdkAppID      string
@@ -112,9 +99,8 @@ type wireRequest struct {
 	TemplateParamSet []string
 }
 
-// Send builds the carrier request out of the resolved message: the destination,
-// the signature and application, the resolved vendor number, and the values in
-// the order the approved template expects.
+// TestSendBuildsTheRequestFromTheMessage checks that Send builds the carrier
+// request from the resolved message, with the values in the approved order.
 func TestSendBuildsTheRequestFromTheMessage(t *testing.T) {
 	var got wireRequest
 	var calls int32
@@ -167,10 +153,8 @@ func TestSendBuildsTheRequestFromTheMessage(t *testing.T) {
 	}
 }
 
-// The carrier's answer is sorted into the sentinels: its rate-limit codes are
-// throttles, a parameter mismatch is a rejection, and every other code is
-// uncertain. The codes arrive both as a per-number status and as a top-level
-// error, and both shapes are classified the same way.
+// TestSendClassifiesTheCarrierAnswer checks that rate-limit codes are throttles, a parameter
+// mismatch is a rejection and every other code is uncertain, in both answer shapes.
 func TestSendClassifiesTheCarrierAnswer(t *testing.T) {
 	cases := []struct {
 		name string
@@ -197,10 +181,8 @@ func TestSendClassifiesTheCarrierAnswer(t *testing.T) {
 	}
 }
 
-// Every rate-limit code the vendor's list names is throttled, and the one code it
-// names for a parameter mismatch is a rejection. The codes are asserted one by
-// one against the SDK's own list: a code the adapter sorted elsewhere would fail
-// here, which is what holds the classification table to the design's assumption.
+// TestEveryRateLimitCodeIsThrottled checks that every rate-limit code the vendor's list
+// names is throttled and the parameter-mismatch code is a rejection.
 func TestEveryRateLimitCodeIsThrottled(t *testing.T) {
 	codes := []string{
 		tc.LIMITEXCEEDED_APPCOUNTRYORREGIONDAILYLIMIT,
@@ -229,8 +211,7 @@ func TestEveryRateLimitCodeIsThrottled(t *testing.T) {
 	}
 }
 
-// The parameter-mismatch code is a rejection whether it arrives as a per-number
-// status or as a top-level error.
+// TestTheParameterMismatchCodeIsARejection checks that the mismatch code is a rejection in both answer shapes.
 func TestTheParameterMismatchCodeIsARejection(t *testing.T) {
 	code := tc.FAILEDOPERATION_TEMPLATEPARAMSETNOTMATCHAPPROVEDTEMPLATE
 	for _, body := range []string{statusBody(code), errBody(code)} {
@@ -241,9 +222,7 @@ func TestTheParameterMismatchCodeIsARejection(t *testing.T) {
 	}
 }
 
-// A send whose server never answers before the context ends is uncertain: the
-// carrier's call is not idempotent, so the adapter must not treat the timeout as
-// either a definite success or a definite failure.
+// TestATimedOutSendIsUncertain checks that a send whose server never answers before the context ends is uncertain.
 func TestATimedOutSendIsUncertain(t *testing.T) {
 	release := make(chan struct{})
 	host := fakeServer(t, func(_ http.ResponseWriter, _ *http.Request) {
@@ -253,17 +232,14 @@ func TestATimedOutSendIsUncertain(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	_, err := s.Send(ctx, resolvedMessage("chal-timeout"))
-	// Let the server handler return, so its server can close, before asserting.
 	close(release)
 	if !errors.Is(err, sms.ErrUncertain) {
 		t.Fatalf("a timed-out send gave %v, want ErrUncertain", err)
 	}
 }
 
-// Neither the verification code nor the credential reaches the error text. The
-// code does reach the carrier, which is the whole point of the message, so its
-// absence from the error is a choice about what is written and not about what is
-// sent.
+// TestNeitherTheCodeNorTheCredentialReachesTheErrorText checks that neither the
+// verification code nor the credential reaches the error text.
 func TestNeitherTheCodeNorTheCredentialReachesTheErrorText(t *testing.T) {
 	const code = "424242"
 	const secret = "secret-key-example"
@@ -295,8 +271,8 @@ func TestNeitherTheCodeNorTheCredentialReachesTheErrorText(t *testing.T) {
 	}
 }
 
-// One identifier reaches the carrier once, and a second call is answered with the
-// first call's outcome rather than sending the message again.
+// TestOneIdentifierReachesTheCarrierOnce checks that one identifier reaches the
+// carrier once and a second call is answered with the first call's outcome.
 func TestOneIdentifierReachesTheCarrierOnce(t *testing.T) {
 	var calls int32
 	host := fakeServer(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -321,10 +297,7 @@ func TestOneIdentifierReachesTheCarrierOnce(t *testing.T) {
 	}
 }
 
-// A message asking for a lifetime is refused before the vendor is called:
-// Tencent's interface has no expiry for a queued message, so carrying the flag
-// no further would deliver a code hours after it stopped being useful, with
-// nothing reported.
+// TestALifetimeTheCarrierCannotHonourIsRefused checks that a message asking for a lifetime is refused before the vendor is called.
 func TestALifetimeTheCarrierCannotHonourIsRefused(t *testing.T) {
 	var calls int32
 	host := fakeServer(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -344,8 +317,7 @@ func TestALifetimeTheCarrierCannotHonourIsRefused(t *testing.T) {
 	}
 }
 
-// Distinct identifiers each reach the carrier: a resend builds a new challenge
-// and so a new identifier, which is not held back by the one before it.
+// TestDistinctIdentifiersEachReachTheCarrier checks that distinct identifiers each reach the carrier.
 func TestDistinctIdentifiersEachReachTheCarrier(t *testing.T) {
 	var calls int32
 	host := fakeServer(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -364,8 +336,8 @@ func TestDistinctIdentifiersEachReachTheCarrier(t *testing.T) {
 	}
 }
 
-// Calls for one identifier that arrive together still reach the carrier once: the
-// first reserves it and the rest wait for that call's outcome.
+// TestConcurrentCallsForOneIdentifierReachTheCarrierOnce checks that calls for
+// one identifier arriving together reach the carrier once.
 func TestConcurrentCallsForOneIdentifierReachTheCarrierOnce(t *testing.T) {
 	var calls int32
 	host := fakeServer(t, func(w http.ResponseWriter, _ *http.Request) {

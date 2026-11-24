@@ -8,7 +8,6 @@ import (
 	"time"
 )
 
-// codeSpec is a code-only template the cases start from.
 func codeSpec() TemplateSpec {
 	return TemplateSpec{
 		Params: []string{"code", "ttl_minutes"},
@@ -16,8 +15,6 @@ func codeSpec() TemplateSpec {
 	}
 }
 
-// declaration builds a declaration the cases resolve messages against, failing
-// the case if the templates are not self-consistent.
 func declaration(t *testing.T, specs map[string]TemplateSpec) Declaration {
 	t.Helper()
 	decl, err := NewDeclaration(specs)
@@ -27,15 +24,9 @@ func declaration(t *testing.T, specs map[string]TemplateSpec) Declaration {
 	return decl
 }
 
-// TestNewDeclarationRejectsAnInconsistentSet is the declaration's
-// self-consistency check: a blank or repeated parameter, no language, a blank
-// code or body, an undeclared placeholder and an unclosed placeholder are each
-// refused with ErrInvalidConfig naming the template and, where it applies, the
-// language or the placeholder — so a set stops at startup rather than at the
-// first message it cannot build. An empty parameter list is not a defect.
+// TestNewDeclarationRejectsAnInconsistentSet checks that an inconsistent template is
+// refused with ErrInvalidConfig naming it, while an empty parameter list is not a defect.
 func TestNewDeclarationRejectsAnInconsistentSet(t *testing.T) {
-	// The template name the single-template cases declare, distinctive so the
-	// naming assertion reads the combination and not an accidental substring.
 	const tpl = "code.tpl"
 	cases := []struct {
 		name     string
@@ -90,10 +81,8 @@ func TestNewDeclarationRejectsAnInconsistentSet(t *testing.T) {
 	}
 }
 
-// TestNewDeclarationAcceptsASelfConsistentSet is the control: a code-only, a
-// body-only and a mixed template all freeze, and Declared reports them in a
-// stable order with the parameter order preserved, the languages as the union of
-// codes and bodies, sorted, and the kind carried.
+// TestNewDeclarationAcceptsASelfConsistentSet checks that code-only, body-only
+// and mixed templates freeze and Declared reports them in a stable order.
 func TestNewDeclarationAcceptsASelfConsistentSet(t *testing.T) {
 	decl := declaration(t, map[string]TemplateSpec{
 		"b.template": {Params: []string{"v"}, Bodies: map[string]string{"en-US": "value ${v}"}, Kind: KindMarketing},
@@ -114,8 +103,7 @@ func TestNewDeclarationAcceptsASelfConsistentSet(t *testing.T) {
 	}
 }
 
-// TestNewDeclarationDefaultsKindToNotification holds that a template that names
-// no kind is a notification and one that names a kind keeps it.
+// TestNewDeclarationDefaultsKindToNotification checks that a template naming no kind is a notification.
 func TestNewDeclarationDefaultsKindToNotification(t *testing.T) {
 	decl := declaration(t, map[string]TemplateSpec{
 		"default": {Codes: map[string]string{"en-US": "E"}},
@@ -132,8 +120,7 @@ func TestNewDeclarationDefaultsKindToNotification(t *testing.T) {
 	}
 }
 
-// TestDeclaredReturnsCopies holds that a caller cannot change what the
-// declaration holds through the view it is handed.
+// TestDeclaredReturnsCopies checks that a caller cannot change what the declaration holds through the view it is handed.
 func TestDeclaredReturnsCopies(t *testing.T) {
 	decl := declaration(t, map[string]TemplateSpec{"t": codeSpec()})
 	first := decl.Declared()
@@ -145,9 +132,8 @@ func TestDeclaredReturnsCopies(t *testing.T) {
 	}
 }
 
-// TestRenderBodySubstitutesInOnePass holds the substitution rule: every
-// placeholder takes its value, text around it is kept, a value that itself holds
-// placeholder syntax is not scanned again, and a bare dollar sign is literal.
+// TestRenderBodySubstitutesInOnePass checks that placeholders take their values,
+// inserted values are not rescanned, and a bare dollar sign is literal.
 func TestRenderBodySubstitutesInOnePass(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -182,10 +168,7 @@ func TestRenderBodySubstitutesInOnePass(t *testing.T) {
 	}
 }
 
-// TestRenderBodyRefusesADeclarationDefect holds that a placeholder naming a
-// value the parameters do not carry and an opening ${ with no closing brace are
-// both ErrInvalidConfig: the body and the parameter set disagree, which is what
-// NewDeclaration refuses.
+// TestRenderBodyRefusesADeclarationDefect checks that an undeclared placeholder and an unclosed ${ are both ErrInvalidConfig.
 func TestRenderBodyRefusesADeclarationDefect(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -209,9 +192,8 @@ func TestRenderBodyRefusesADeclarationDefect(t *testing.T) {
 	}
 }
 
-// TestResolveNamesTheCodeAndOrdersTheParameters is the control: a message the
-// declaration holds resolves to the carrier code, the parameter map and the
-// ordered values.
+// TestResolveNamesTheCodeAndOrdersTheParameters checks that a message resolves
+// to the carrier code, the parameter map and the ordered values.
 func TestResolveNamesTheCodeAndOrdersTheParameters(t *testing.T) {
 	decl := declaration(t, map[string]TemplateSpec{"t": codeSpec()})
 	got, err := decl.Resolve(Message{
@@ -239,10 +221,8 @@ func TestResolveNamesTheCodeAndOrdersTheParameters(t *testing.T) {
 	}
 }
 
-// TestResolveRendersTheBody holds the body path: a locale with a body answers the
-// rendered body, a locale with only a code answers an empty body, a template that
-// declares both answers both, and a template with no parameter renders its body
-// as written.
+// TestResolveRendersTheBody checks the body path: a declared body answers the
+// rendered body and a code-only language answers an empty body.
 func TestResolveRendersTheBody(t *testing.T) {
 	decl := declaration(t, map[string]TemplateSpec{
 		"both": {
@@ -278,10 +258,8 @@ func TestResolveRendersTheBody(t *testing.T) {
 	}
 }
 
-// TestResolveCarriesTheSendFields holds that Resolve hands the carrier the
-// message's originator, lifetime and dedupe identifier, the template's
-// registration attributes — as a copy the caller cannot use to change the
-// declaration — and the template's kind.
+// TestResolveCarriesTheSendFields checks that Resolve hands the carrier the
+// message's originator, lifetime and dedupe identifier and the template's kind.
 func TestResolveCarriesTheSendFields(t *testing.T) {
 	decl := declaration(t, map[string]TemplateSpec{"t": {
 		Kind:       KindVerification,
@@ -316,10 +294,7 @@ func TestResolveCarriesTheSendFields(t *testing.T) {
 	}
 }
 
-// TestResolveRejectsACallerDefect holds that an empty locale, an undeclared
-// template, a language with neither a code nor a body, a missing parameter and a
-// surplus parameter are each refused with ErrRejected naming what is wrong: none
-// reached the carrier, so none is uncertain.
+// TestResolveRejectsACallerDefect checks that each caller defect is ErrRejected naming what is wrong.
 func TestResolveRejectsACallerDefect(t *testing.T) {
 	decl := declaration(t, map[string]TemplateSpec{"t": codeSpec()})
 	cases := []struct {
@@ -346,8 +321,6 @@ func TestResolveRejectsACallerDefect(t *testing.T) {
 	}
 }
 
-// templatesEqual compares two declared views field by field, since slices are not
-// comparable with ==.
 func templatesEqual(a, b Template) bool {
 	return a.Name == b.Name && a.Kind == b.Kind && slices.Equal(a.Params, b.Params) &&
 		slices.Equal(a.Locales, b.Locales)
