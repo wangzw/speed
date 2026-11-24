@@ -3,11 +3,14 @@
  * one right rail. The rows are a list, not a table, so there is no header
  * cell to line up with; what a reader sees is the action column of the
  * rows -- a short device name and a long one -- ending on the same vertical
- * line, and that line is the list's own content edge. jsdom lays nothing
- * out, so only Chromium can tell the rail from a per-row shrink-wrap.
+ * line, and that line is the list's own content edge. Each action is a
+ * labelled button carrying its sign-out icon, so the rail is the button's
+ * own edge rather than a glyph's. jsdom lays nothing out, so only Chromium
+ * can tell the rail from a per-row shrink-wrap.
  */
 import { describe, expect, it } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { page } from 'vitest/browser'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import {
@@ -83,18 +86,18 @@ describe('SessionsSection action rail in Chromium', () => {
     const second = await screen.findByRole('button', {
       name: revokeAria(deviceOf(CLI_UA)),
     })
-    const firstGlyph = first.querySelector('svg')
-    const secondGlyph = second.querySelector('svg')
-    expect(firstGlyph).not.toBeNull()
-    expect(secondGlyph).not.toBeNull()
+    // Each action is a labelled button with its sign-out icon beside the
+    // word, and the visible word is the label the row action carries.
+    expect(first.querySelector('svg')).not.toBeNull()
+    expect(second.querySelector('svg')).not.toBeNull()
+    expect(first).toHaveTextContent(zhCN.sessions.revokeRowLabel)
+    expect(second).toHaveTextContent(zhCN.sessions.revokeRowLabel)
     await document.fonts.ready
 
-    // One right rail: the two glyphs end on the same vertical line however
+    // One right rail: the two actions end on the same vertical line however
     // long their rows' device names are.
-    const firstRight =
-      (firstGlyph as SVGSVGElement).getBoundingClientRect().right
-    const secondRight =
-      (secondGlyph as SVGSVGElement).getBoundingClientRect().right
+    const firstRight = first.getBoundingClientRect().right
+    const secondRight = second.getBoundingClientRect().right
     expect(
       Math.abs(firstRight - secondRight),
       `desktop=${firstRight} cli=${secondRight}`,
@@ -109,5 +112,70 @@ describe('SessionsSection action rail in Chromium', () => {
       Math.abs(buttonRight - listRight),
       `button=${buttonRight} list=${listRight}`,
     ).toBeLessThanOrEqual(0.5)
+  })
+
+  it('lands focus on the list with a shell drawer dialog mounted', async () => {
+    // Below the md breakpoint the host's shell keeps its temporary Drawer
+    // mounted, and that paper carries role="dialog" for the page's whole
+    // life. The bulk revoke's landing must wait for this section's own
+    // confirmation to leave, then hand focus to the list in a real browser's
+    // transition and focus-trap timing.
+    let revoked = false
+    const bulkResponder: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return jsonResponse(200, { time_zone: '' })
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: [
+            { ...session('session-current', ''), current: true },
+            ...(revoked
+              ? []
+              : [session('session-2', DESKTOP_UA), session('session-3', CLI_UA)]),
+          ],
+        })
+      }
+      if (call.method === 'DELETE' && call.path === SESSIONS_PATH) {
+        revoked = true
+        return jsonResponse(200, { revoked: 2 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRigWithoutSession(bulkResponder)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <>
+        <div role="dialog" aria-label="shell drawer" />
+        <SessionsSection />
+      </>,
+    )
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.sessions.revokeOthers.label,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog', {
+      name: zhCN.sessions.revokeOthers.confirmTitle,
+    })
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.sessions.revokeOthers.confirmLabel,
+      }),
+    )
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', {
+          name: zhCN.sessions.revokeOthers.label,
+        }),
+      ).toBeNull(),
+    )
+    // The page stays aria-hidden until the confirmation's exit transition
+    // ends, so the list becomes queryable only after the node leaves.
+    const list = await screen.findByRole('list', {
+      name: zhCN.sessions.title,
+    })
+    await waitFor(() => expect(document.activeElement).toBe(list))
   })
 })
