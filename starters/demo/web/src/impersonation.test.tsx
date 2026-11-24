@@ -49,6 +49,7 @@ import {
   authenticatedSnapshot,
   createTestSession,
 } from './test-utils/session.js'
+import { restoreRealTimers } from './test-utils/timers.js'
 
 /** The account menu trigger's accessible name: the visible initials, then the
  * display name, exactly as the shell composes it (WCAG 2.5.3). */
@@ -683,41 +684,6 @@ async function pickStartAccount(
       name: `${PICKER_ACCOUNT.display_name} (target-one)`,
     }),
   )
-}
-
-/** One jsdom rendering frame: the period of the interval jsdom starts for
- * requestAnimationFrame and its focus fixups (1000 / 60 ms). */
-const FRAME_INTERVAL_MS = 1000 / 60
-
-/**
- * How many rendering frames the fake clock is advanced before real timers
- * come back. Two, not one: jsdom clears its rendering interval only on a
- * tick that finds no pending frame callback and no pending focus fixup, and
- * the tick that runs a fixup can arm the interval again -- the fixup moves
- * focus, which asks for another update. The second tick is the idle one
- * that lets jsdom clear the interval.
- */
-const RESTORE_DRAIN_FRAMES = 2
-
-/**
- * Hands the clock back to real timers at the end of a fake-timer case.
- *
- * jsdom 31 serves requestAnimationFrame and its focus fixups from one
- * lazily created setInterval, started on first demand and cleared only when
- * a tick finds nothing left to do. A focus change made while the clock is
- * fake arms that interval as a fake timer. Restoring real timers while it
- * is still armed strands animation for the rest of the worker: the interval
- * never fires again, and jsdom keeps its non-null handle, so it never
- * schedules another and every later requestAnimationFrame here goes
- * unserved. Advancing the fake clock first runs the pending fixup and lets
- * the interval go idle before the clock changes hands.
- */
-async function restoreRealTimers(): Promise<void> {
-  try {
-    await vi.advanceTimersByTimeAsync(RESTORE_DRAIN_FRAMES * FRAME_INTERVAL_MS)
-  } finally {
-    vi.useRealTimers()
-  }
 }
 
 beforeEach(() => {
@@ -1439,32 +1405,6 @@ describe('the impersonation shell', () => {
       ),
     )
     expect(window.location.pathname).toBe('/')
-  })
-
-  it('keeps animation frames running after a fake-timer case restores the real clock', async () => {
-    // The shape every fake-timer case in this file produces: a focus change
-    // while the clock is fake leaves jsdom's rendering interval armed.
-    vi.useFakeTimers({ shouldAdvanceTime: true })
-    try {
-      const button = document.createElement('button')
-      button.textContent = 'focus target'
-      document.body.append(button)
-      button.focus()
-      button.blur()
-      button.remove()
-    } finally {
-      await restoreRealTimers()
-    }
-
-    // After the real clock is back, a frame requested now has to run. jsdom
-    // serves requestAnimationFrame from one lazily created interval; left
-    // behind on the fake clock, no frame ever runs again in this worker and
-    // every later case that waits on one fails on the clock.
-    let frameRan = false
-    requestAnimationFrame(() => {
-      frameRan = true
-    })
-    await waitFor(() => expect(frameRan).toBe(true))
   })
 
   it('expires: the identity change runs at the recorded time and the banner goes within the check-ttl bound', async () => {
