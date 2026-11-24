@@ -8,19 +8,9 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// MemberRoles implements authn.MemberRoleReader: one tenant's role names keyed
-// by account, read through the manager's own binding listing.
-//
-// The read is bulk on purpose. A member page names every account it shows, and
-// asking the policy table once per row would turn one page into as many reads as
-// it has members. The names are the tenant's own role identifiers, ascending and
-// without duplicates, as the seam promises; an account with no binding is absent
-// from the answer, which the caller reads as no roles.
-//
-// The read is cross-tenant at the session level and names the tenant in the
-// statement, the same shape every other read of these tables uses. An empty
-// tenant names no rows and is refused rather than answered with an empty map,
-// because an empty answer would read as "this tenant has no roles".
+// MemberRoles implements authn.MemberRoleReader: one tenant's role names keyed by
+// account, ascending and without duplicates. An account with no binding is
+// absent. An empty tenant is refused rather than answered with an empty map.
 func (p *product) MemberRoles(ctx context.Context, tenant string) (map[authn.AccountID][]string, error) {
 	if tenant == "" {
 		return nil, fmt.Errorf("%w: the member role read names no tenant", authn.ErrInvalidArgument)

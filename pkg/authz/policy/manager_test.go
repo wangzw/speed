@@ -125,10 +125,8 @@ func TestBindingsOfScopesToOneTenant(t *testing.T) {
 	}
 }
 
-// PutRole carries the role's free-text description and its rewrite updates it.
-// Description is not DescriptionKey: the key stays the host's builtin-role
-// marker, while the description is what a reader shows for a role the
-// management surface created.
+// PutRole carries the role's free-text description and its rewrite updates
+// it.
 func TestPutRoleWritesAndRewritesTheDescription(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -162,9 +160,7 @@ func TestPutRoleWritesAndRewritesTheDescription(t *testing.T) {
 	}
 }
 
-// GrantCounts counts each role's grants in one tenant in one grouped read. A role
-// with no grant is absent from the map, which a caller reads as zero, and
-// another tenant's grants are not counted.
+// GrantCounts counts each role's grants in one tenant in one grouped read.
 func TestGrantCountsCountsEachRolesGrantsInOneTenant(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -198,10 +194,8 @@ func TestGrantCountsCountsEachRolesGrantsInOneTenant(t *testing.T) {
 	}
 }
 
-// BindingsOfRole lists one role's bindings in one tenant, in account order, with
-// an exclusive account cursor and a page size. The role and the tenant both
-// scope it: another role's binding and another tenant's same-named role are not
-// on the page.
+// BindingsOfRole lists one role's bindings in one tenant, in account order,
+// with an exclusive account cursor and a page size.
 func TestBindingsOfRoleFiltersAndPagesByAccount(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -289,10 +283,8 @@ func TestClearAccountBindingsClearsOneAccountWithinOneTenant(t *testing.T) {
 	}
 }
 
-// Deleting a role revokes it: its grants and bindings go with its row, so the
-// account it was bound to stops being allowed. The engine decides from the
-// grant and binding tables and never reads the role table, so a leftover row
-// would keep deciding for a role that no longer exists.
+// Deleting a role revokes it: its grants and bindings go with its row, so
+// the account it was bound to stops being allowed.
 func TestDeleteRoleRevokesItsGrantsAndBindings(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -381,8 +373,7 @@ func TestDeleteGrantRemovesTheRow(t *testing.T) {
 }
 
 // Rewriting a role that is not builtin replaces its description: PutRole is
-// create-or-rewrite, not create-only. The rewrite leaves the builtin mark where
-// it is — the mark has its own write, and a role write never carries it.
+// create-or-rewrite, not create-only.
 func TestPutRoleRewritesANonBuiltinRole(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -404,11 +395,9 @@ func TestPutRoleRewritesANonBuiltinRole(t *testing.T) {
 	}
 }
 
-// A grant and a binding are create-or-keep, not create-only: writing the same
-// rule twice names the same row, and the second write is a no-op rather than a
-// duplicate-key failure. The management surface addresses grants and bindings
-// with PUT, and the host's role provisioner re-issues a tenant's grants on every
-// grant — both rely on a re-run adding no row.
+// A grant and a binding are create-or-keep, not create-only: writing the
+// same rule twice names the same row, and the second write is a no-op rather
+// than a duplicate-key failure.
 func TestPutGrantAndPutBindingAreIdempotent(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()

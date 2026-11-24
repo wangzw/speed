@@ -11,9 +11,7 @@ import (
 )
 
 // handleBindingList answers GET /api/v1/system/tenants/:tenant/bindings: every
-// role binding of the tenant. It is a read, so the action is role.read; the
-// identity and the permission are decided by the route's guard wrapper before
-// this handler is called.
+// role binding of the tenant.
 func (p *product) handleBindingList(ctx context.Context, in tenantInput) (bindingListBody, error) {
 	bindings, err := p.manager.Bindings(ctx, in.Tenant)
 	if err != nil {
@@ -28,7 +26,7 @@ func (p *product) handleBindingList(ctx context.Context, in tenantInput) (bindin
 
 // handleBindingOf answers GET
 // /api/v1/system/tenants/:tenant/bindings/:account: every binding the account
-// holds within the tenant. It is a read, so the action is role.read.
+// holds within the tenant.
 func (p *product) handleBindingOf(ctx context.Context, in tenantAccountInput) (accountBindingListBody, error) {
 	bindings, err := p.manager.BindingsOf(ctx, in.Tenant, in.Account)
 	if err != nil {
@@ -41,8 +39,6 @@ func (p *product) handleBindingOf(ctx context.Context, in tenantAccountInput) (a
 	return accountBindingListBody{Bindings: bindingViewsOf(bindings, tenantName)}, nil
 }
 
-// bindingViewsOf builds the views of a binding read. Every row of one read
-// belongs to the tenant the request named, so the name is resolved once.
 func bindingViewsOf(bindings []authz.Binding, tenantName string) []AuthzAdminBindingView {
 	views := make([]AuthzAdminBindingView, len(bindings))
 	for i, b := range bindings {
@@ -53,14 +49,7 @@ func bindingViewsOf(bindings []authz.Binding, tenantName string) []AuthzAdminBin
 
 // handleBindingPut answers PUT
 // /api/v1/system/tenants/:tenant/bindings/:account/:role: it binds a role to an
-// account within the tenant. It is a write, so the action is role.manage. The
-// optional host WriteGuard is asked after the shape checks; the mandatory audit
-// row lands before the manager writes.
-//
-// An empty account is refused on shape before the manager is called: a binding
-// addresses an account, and the empty account names the zero subject, so a
-// request that carries none is a 400 rather than a write the manager would
-// refuse without a code the module maps.
+// account within the tenant. An empty account is a 400.
 func (p *product) handleBindingPut(ctx context.Context, in bindingInput) (struct{}, error) {
 	if in.Account == "" {
 		return struct{}{}, badRequest()
@@ -92,19 +81,11 @@ func (p *product) handleBindingPut(ctx context.Context, in bindingInput) (struct
 
 // handleBindingDelete answers DELETE
 // /api/v1/system/tenants/:tenant/bindings/:account/:role: it removes an account's
-// binding to a role within the tenant. It is a write, so the action is
-// role.manage. The optional host WriteGuard is asked after the shape checks and
-// the own-binding refusal; the mandatory audit row lands before the manager
-// writes.
+// binding to a role within the tenant.
 //
-// An empty account is refused on shape before the manager is called, the same
-// as the binding write: the route addresses a binding by its account, and an
-// empty account names no row.
-//
-// A caller may not remove its own tenant-admin binding: the manager enforces the
-// domain's last-tenant-administrator floor but reads no actor, so the rule that
-// one administrator cannot take its own permission away is made here, before the
-// mandatory audit and before the manager. Another administrator removes it.
+// A caller may not remove its own tenant-admin binding: the manager reads no
+// actor, so the rule is made here, before the audit and the manager. Another
+// administrator removes it.
 func (p *product) handleBindingDelete(ctx context.Context, in bindingInput) (struct{}, error) {
 	if in.Account == "" {
 		return struct{}{}, badRequest()
@@ -136,10 +117,8 @@ func (p *product) handleBindingDelete(ctx context.Context, in bindingInput) (str
 	return struct{}{}, nil
 }
 
-// removingOwnBinding reports whether the account the delete names is the caller
-// the request is taken to be from. The effective account is the subject an
-// authorization decision uses, and it is the one an impersonated request is
-// decided for, so the same account is the one whose own binding is protected.
+// removingOwnBinding reports whether the account the delete names is the
+// effective account the request is made for.
 func removingOwnBinding(ctx context.Context, account string) bool {
 	id, ok := authn.FromContext(ctx)
 	if !ok {

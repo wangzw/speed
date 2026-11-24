@@ -40,8 +40,6 @@ m = g(r.sub, p.sub, r.dom, r.obj) && r.dom == p.dom && r.obj == p.obj && r.act =
 `
 
 // A rule that does not carry one field per column of its table is refused.
-// Accepting one would write a row from the fields it happens to hold and drop
-// the rest without a word.
 func TestARuleOfTheWrongLengthIsRefused(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)
@@ -70,8 +68,7 @@ func TestARuleOfTheWrongLengthIsRefused(t *testing.T) {
 }
 
 // A policy type the adapter has no table for is refused as such, on both the
-// write and the filtered removal. The refusal names the missing table rather
-// than some other misreading of the call.
+// write and the filtered removal.
 func TestAnUnknownPolicyTypeIsRefused(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)
@@ -95,10 +92,9 @@ func TestAnUnknownPolicyTypeIsRefused(t *testing.T) {
 	})
 }
 
-// A rule that cannot be loaded is reported by the policy type it belongs to and
-// not by its values: the error names the p or g rule, never the role, the
-// tenant, the resource or the action it carries. The caller logs this error, and
-// a policy value reaches no log line.
+// A rule that cannot be loaded is reported by the policy type it belongs to
+// and not by its values: the error names the p or g rule, never the role,
+// the tenant, the resource or the action it carries.
 func TestLoadPolicyNamesTheRuleAndNotItsValues(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)

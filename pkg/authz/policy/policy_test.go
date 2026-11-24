@@ -192,10 +192,8 @@ func TestManagerStillChangesANonBuiltinRole(t *testing.T) {
 	}
 }
 
-// A role write never carries the builtin mark, whether it creates or rewrites
-// the role. A role created with the mark could never receive the grants that
-// give it meaning, and a rewrite that could add it would turn any role into one
-// the management surface may neither rewrite nor delete, with no path back.
+// A role write never carries the builtin mark, whether it creates or
+// rewrites the role.
 func TestManagerRefusesARoleWriteCarryingTheBuiltinMark(t *testing.T) {
 	f := newFixture(t)
 	const tenant = "acme"
@@ -226,8 +224,7 @@ func TestManagerRefusesARoleWriteCarryingTheBuiltinMark(t *testing.T) {
 	}
 }
 
-// The builtin mark has its own write. It sets the mark on an existing role,
-// refuses one that is not there, and an already-marked role is no work.
+// The builtin mark has its own write.
 func TestManagerMarksARoleBuiltin(t *testing.T) {
 	f := newFixture(t)
 	const tenant = "acme"
@@ -324,16 +321,10 @@ func TestDeleteBindingAndAccountCleanup(t *testing.T) {
 	}
 }
 
-// buildCatalog unions every registered module's PermissionSpec: a permission two
-// modules declare is kept once, one only a single module declares still arrives,
-// Declared answers a copy while Has reads the set, and DescriptionKey reports the
-// key of a declared permission.
-//
-// This is the piece the vocabulary guard in pkg/authz cannot reach: that guard
-// holds the declared permissions to the root package's constants but reads the
-// specs through the registry rather than building the catalog, so the union
-// itself is held here. Together the two cover Catalog.Declared(), which is what
-// the design's guard requires.
+// buildCatalog unions every registered module's PermissionSpec: a permission
+// two modules declare is kept once, one only a single module declares still
+// arrives, Declared answers a copy while Has reads the set, and
+// DescriptionKey reports the key of a declared permission.
 func TestCatalogUnionsTheDeclaredSpecs(t *testing.T) {
 	spec := func(perms ...authz.Permission) authz.PermissionSpec {
 		keys := make(map[authz.Permission]string, len(perms))
@@ -412,10 +403,8 @@ func (rosterStub) EnterRegistered(context.Context, tenant.ID) (context.Context, 
 	return nil, nil
 }
 
-// A roster with no tenant carrying the platform domain stops the startup; one
-// that carries it passes. The platform domain's policy rows hang on that
-// tenant's identifier, so an assembly with a roster and no such tenant has
-// nowhere for a platform decision to land.
+// A roster with no tenant carrying the platform domain stops the startup;
+// one that carries it passes.
 func TestCheckPlatformDomain(t *testing.T) {
 	ctx := t.Context()
 	err := checkPlatformDomain(ctx, rosterStub{ids: map[tenant.ID]bool{"acme": true}})

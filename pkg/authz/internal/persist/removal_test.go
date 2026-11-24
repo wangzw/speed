@@ -22,11 +22,9 @@ func clear(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// The filter of a p rule reads the rule's own positions, and every position a
-// caller may name is legal while one past the rule is refused rather than run.
-// The refusal is checked for both the lower and the upper bound, because a
-// negative position that reached the column lookup would panic on the index
-// rather than return.
+// The filter of a p rule reads the rule's own positions, and every position
+// a caller may name is legal while one past the rule is refused rather than
+// run.
 func TestAFilteredRemovalReadsEveryFieldPosition(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)
@@ -70,10 +68,9 @@ func TestAFilteredRemovalReadsEveryFieldPosition(t *testing.T) {
 	})
 }
 
-// A filter value that is empty matches any value in its position, so a removal
-// naming an empty value deletes every one of the caller's rows and no other
-// tenant's. Dropping that reading would turn the removal into a match on an
-// empty column, which reaches nothing.
+// A filter value that is empty matches any value in its position, so a
+// removal naming an empty value deletes every one of the caller's rows and
+// no other tenant's.
 func TestAFilteredRemovalWithAnEmptyValueMatchesAny(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)
@@ -91,9 +88,8 @@ func TestAFilteredRemovalWithAnEmptyValueMatchesAny(t *testing.T) {
 	})
 }
 
-// Several filter values name several positions, each one the position before it
-// plus one. A removal that read the values at the wrong positions would match a
-// different column, or none.
+// Several filter values name several positions, each one the position before
+// it plus one.
 func TestAFilteredRemovalAdvancesThroughSeveralValues(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)
@@ -111,10 +107,8 @@ func TestAFilteredRemovalAdvancesThroughSeveralValues(t *testing.T) {
 }
 
 // A filter over a g rule removes the caller's bindings and no other table's
-// rows, and a filter naming another tenant's domain is refused rather than run.
-// The two rows the two tenants hold are the same role in their own domain, so
-// the removal reaches acme's bindings only where it is held to the tenant and
-// reads the g rule's own positions.
+// rows, and a filter naming another tenant's domain is refused rather than
+// run.
 func TestAFilteredRemovalOfABindingIsHeldToTheCaller(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)
@@ -144,10 +138,10 @@ func TestAFilteredRemovalOfABindingIsHeldToTheCaller(t *testing.T) {
 	})
 }
 
-// A read-only adapter binds the empty identifier, and every removal through it
-// is refused: a rule naming a domain is a mismatch, a removal naming no domain
-// is refused at the binding, and a filtered removal names no tenant to act on.
-// None of them reaches a row.
+// A read-only adapter binds the empty identifier, and every removal through
+// it is refused: a rule naming a domain is a mismatch, a removal naming no
+// domain is refused at the binding, and a filtered removal names no tenant
+// to act on.
 func TestAReadOnlyAdapterRefusesEveryRemoval(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)
@@ -183,8 +177,6 @@ func TestAReadOnlyAdapterRefusesEveryRemoval(t *testing.T) {
 }
 
 // A removal addressed by a rule's whole key reaches the caller's row alone.
-// Both tenants hold the same rule, so a removal that dropped the tenant from
-// the key would take both rows and the count would show it.
 func TestRemovePolicyTouchesOnlyTheCallersIdenticalRow(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)
@@ -225,8 +217,7 @@ func TestRemovePolicyTouchesOnlyTheCallersIdenticalRow(t *testing.T) {
 }
 
 // A removal propagates the store's failure rather than swallowing it into a
-// success. On a handle whose pool is closed the delete cannot run, and the
-// error comes back.
+// success.
 func TestARemovalReportsTheStoresFailure(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)

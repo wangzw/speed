@@ -199,13 +199,9 @@ func productOfAssembly(t *testing.T, instance any) *product {
 	return p
 }
 
-// Each callback takes up the dependency the design places on it: New takes the
-// policy manager and the permission catalog, and Init takes the entry point and
-// the optional route-declaration surface. The manager and the catalog are held
-// to the very stand-ins the drive delivered, so a New that took up something
-// else fails. Init's read of the entry point is held from the other side by the
-// no-router and unknown-endpoint cases below; the surface and the logger are
-// read back directly.
+// Each callback takes up the dependency the design places on it: New takes
+// the policy manager and the permission catalog, and Init takes the entry
+// point and the optional route-declaration surface.
 func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) {
 	manager := &stubManager{}
 	catalog := newStubCatalog(authz.PermissionRoleRead)
@@ -300,16 +296,11 @@ func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) 
 	})
 }
 
-// The six required capabilities are each another module's to deliver: a command
-// that brings this one in without the manager, the catalog, the handler-internal
-// guard, the audit capability, the registration-verification read or the
-// caller's permission read fails resolution with ErrMissingProvider, before New
-// builds anything. The manager and the catalog are what New takes up to read and
-// write the policy tables through; the guard is what makes the per-request
-// decision available; the audit capability is what makes a write's mandatory row
-// land; the verification read is what lets a write refuse an account that has
-// not proved an email address; the permission read is what lets the role list
-// tell a caller whether it may manage roles.
+// The six required capabilities are each another module's to deliver: a
+// command that brings this one in without the manager, the catalog, the
+// handler-internal guard, the audit capability, the
+// registration-verification read or the caller's permission read fails
+// resolution with ErrMissingProvider, before New builds anything.
 func TestAMissingRequiredCapabilityFailsResolution(t *testing.T) {
 	for name, missing := range map[string]managementAssembly{
 		"no manager":      {noManager: true},

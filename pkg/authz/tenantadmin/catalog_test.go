@@ -9,9 +9,9 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// TestTheCatalogRouteListsOnlyTheGovernedSet holds the catalog read's defining
-// rule: it lists Catalog.TenantGoverned() and never Catalog.Declared(). A
-// declared permission outside the governed set does not appear.
+// TestTheCatalogRouteListsOnlyTheGovernedSet holds the catalog read's
+// defining rule: it lists Catalog.TenantGoverned() and never
+// Catalog.Declared().
 func TestTheCatalogRouteListsOnlyTheGovernedSet(t *testing.T) {
 	governed := []authz.Permission{authz.PermissionTenantRoleRead, authz.PermissionTenantRoleManage}
 	declared := append(append([]authz.Permission(nil), governed...), authz.PermissionAccountRead)

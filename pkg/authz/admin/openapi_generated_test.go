@@ -13,12 +13,8 @@ import (
 // `go test` runs in.
 const fragmentPath = "openapi/authz.admin.json"
 
-// TestTheFragmentIsGeneratedFromTheDeclarations holds the embedded fragment to
-// what the declarations generate. The fragment is a build product: a handler
-// or a route that changes without the declaration fails here, and the fix is
-// to change the declaration and regenerate.
-//
-// Run with UPDATE_FRAGMENTS=1 to write the generated fragment.
+// TestTheFragmentIsGeneratedFromTheDeclarations holds the embedded fragment
+// to what the declarations generate.
 func TestTheFragmentIsGeneratedFromTheDeclarations(t *testing.T) {
 	generated, err := openapigen.Generate(fragmentTitle, fragmentVersion, operations)
 	if err != nil {
@@ -40,12 +36,10 @@ func TestTheFragmentIsGeneratedFromTheDeclarations(t *testing.T) {
 }
 
 // TestTheRoleWriteBodySchemaCarriesItsDescription holds the published schema
-// against the hand-written fragment it replaced: the role write's body keeps its
-// description, and the object stays open because the mounted route drops the
-// members the declaration does not describe rather than refusing them —
-// role_test.go sends a builtin member and holds that it reaches nothing. Neither
-// property is visible in the generation check, which compares the fragment with
-// a declaration that could have lost them.
+// against the hand-written fragment it replaced: the role write's body keeps
+// its description, and the object stays open because the mounted route drops
+// the members the declaration does not describe rather than refusing them
+// — role_test.go sends a builtin member and holds that it reaches nothing.
 func TestTheRoleWriteBodySchemaCarriesItsDescription(t *testing.T) {
 	generated, err := openapigen.Generate(fragmentTitle, fragmentVersion, operations)
 	if err != nil {

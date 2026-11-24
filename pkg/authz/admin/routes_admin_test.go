@@ -56,11 +56,9 @@ func (r *rig) sendBody(e *gin.Engine, method, target string, body any, opts ...a
 	return w
 }
 
-// TestEachReadRouteIsWiredToItsOwnHandler holds the route table's path-to-handler
-// wiring: each read sent through the mounted table answers the view its path
-// names and no other. A registration-only case checks (method, path) pairs; the
-// roles path answered by the bindings handler, or the grants path by the roles
-// handler, passes that and fails here.
+// TestEachReadRouteIsWiredToItsOwnHandler holds the route table's
+// path-to-handler wiring: each read sent through the mounted table answers
+// the view its path names and no other.
 func TestEachReadRouteIsWiredToItsOwnHandler(t *testing.T) {
 	r := newRig(t, authz.PermissionRoleRead)
 	r.manager.roles = []authz.RoleRecord{{Tenant: "t1", Role: "editor"}}
@@ -107,12 +105,9 @@ func TestThePermissionsReadRouteIsWired(t *testing.T) {
 	}
 }
 
-// TestEveryWriteRouteAsksForRoleManage holds the write side of the route table's
-// permission mapping: every write sent through the mounted table asks the guard
-// for authz.role.manage. The permission now lives in the route table's perm
-// field, so a case that binds the guard through a test helper would assert the
-// helper's constant and not the table's; sending through routes() makes the
-// table's entry the thing under test.
+// TestEveryWriteRouteAsksForRoleManage holds the write side of the route
+// table's permission mapping: every write sent through the mounted table
+// asks the guard for authz.role.manage.
 func TestEveryWriteRouteAsksForRoleManage(t *testing.T) {
 	cases := map[string]struct {
 		method string

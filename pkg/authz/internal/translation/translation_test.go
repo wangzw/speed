@@ -67,11 +67,9 @@ func sortedKeys(rows map[authz.Permission]authz.Translation) []authz.Permission 
 	return keys
 }
 
-// The built-in set is exactly the rows this capability carries: every permission
-// of the two vocabularies maps to its one (object, action) pair, and the set
-// holds no row beyond them. A permission with no row is a decision the
-// authorization layer cannot express, and a row with no permission is a mapping
-// nothing can reach.
+// The built-in set is exactly the rows this capability carries: every
+// permission of the two vocabularies maps to its one (object, action) pair,
+// and the set holds no row beyond them.
 func TestTheBuiltinSetIsTheWholeClosedSet(t *testing.T) {
 	want := map[authz.Permission][2]string{
 		authz.PermissionTenantAccess:        {"tenant", "access"},
@@ -147,12 +145,10 @@ func TestTheBuiltinRowsSurviveTheUnion(t *testing.T) {
 	}
 }
 
-// A module may not disagree with a row already in the set, on either axis of the
-// pair: a row that names a permission already translated as another pair fails
-// the resolution, wrapped around the same sentinel the declaration check uses,
-// and the failed resolution installs nothing. The two cases disagree in the
-// action alone and in the object alone, so a check that compared one axis and
-// not the other is refused.
+// A module may not disagree with a row already in the set, on either axis of
+// the pair: a row that names a permission already translated as another pair
+// fails the resolution, wrapped around the same sentinel the declaration
+// check uses, and the failed resolution installs nothing.
 func TestATranslationConflictFailsResolution(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -245,9 +241,8 @@ func TestEveryRowOfAModuleReachesTheTranslation(t *testing.T) {
 }
 
 // A row that agrees with one already in the set is kept once and is not a
-// failure: a module may re-declare a built-in row, and two modules may declare
-// one permission between them. A resolution that failed on any repeated key
-// would refuse both shapes.
+// failure: a module may re-declare a built-in row, and two modules may
+// declare one permission between them.
 func TestAnAgreeingTranslationRowIsKept(t *testing.T) {
 	t.Run("a module may re-declare a built-in row", func(t *testing.T) {
 		reg := core.New()
@@ -282,12 +277,7 @@ func TestAnAgreeingTranslationRowIsKept(t *testing.T) {
 	})
 }
 
-// Two permissions may not translate to one pair. The engine matches the pair
-// verbatim and never sees the permission key, so a grant written for one
-// permission would authorize the other wherever their domains overlap; the pair
-// is unique across the whole set, and a module row that reuses a pair already
-// held by another permission — carried or a peer module's — fails the
-// resolution.
+// Two permissions may not translate to one pair.
 func TestASharedPairFailsResolution(t *testing.T) {
 	t.Run("a module row reusing a carried row's pair", func(t *testing.T) {
 		moduleRow := authz.Permission("crm.account.read")

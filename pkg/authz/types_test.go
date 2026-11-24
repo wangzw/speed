@@ -6,10 +6,8 @@ import (
 	"testing"
 )
 
-// TestModelTextIsThePublishedModel pins the model text to the one the design
-// states, character for character. The model is fixed in code and a host cannot
-// change it, so a matcher written wrong here silently decides the wrong way —
-// this holds every line, the effect and the matcher included.
+// TestModelTextIsThePublishedModel checks that the model text matches the design
+// character for character.
 func TestModelTextIsThePublishedModel(t *testing.T) {
 	const want = `[request_definition]
 r = sub, dom, obj, act
@@ -59,11 +57,8 @@ func interfaceMethods(t *testing.T, v any) []string {
 	return out
 }
 
-// TestTheSharedTypesHoldTheirFields pins the field set and the field types of
-// every type a consumer or an implementer of this package names. These shapes
-// are a published surface: a field added, dropped, renamed or retyped is a
-// breaking change for whoever builds or reads one, so each is held to its exact
-// set here.
+// TestTheSharedTypesHoldTheirFields checks that every shared type keeps its
+// exact field set and field types.
 func TestTheSharedTypesHoldTheirFields(t *testing.T) {
 	cases := []struct {
 		name string
@@ -128,11 +123,8 @@ func TestTheSharedTypesHoldTheirFields(t *testing.T) {
 	}
 }
 
-// TestTheCapabilityInterfacesHoldTheirMethodSets pins the method set and each
-// signature of the interfaces a module implements and a consumer takes up. The
-// signature and the method set are the stable part of an interface: a method
-// added, dropped or re-signed breaks every implementer and every consumer, so
-// each is held here.
+// TestTheCapabilityInterfacesHoldTheirMethodSets checks that every capability
+// interface keeps its exact method set and signatures.
 func TestTheCapabilityInterfacesHoldTheirMethodSets(t *testing.T) {
 	cases := []struct {
 		name string

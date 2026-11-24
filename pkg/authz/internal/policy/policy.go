@@ -1,12 +1,6 @@
 // Package policy loads the process's policy into an immutable snapshot and
-// holds the one the enforcement path reads.
-//
-// It owns the one place the Casbin engine is constructed: a snapshot is a model
-// parsed from the root package's ModelText with every tenant's rows loaded
-// through the thin adapter, and a decision is one run of that model's matcher.
-// The package imports the Casbin library and the adapter and is imported by the
-// policy module alone, so the library stays out of every other package's
-// closure.
+// holds the one the enforcement path reads. It owns the one place the Casbin
+// engine is constructed and is imported by the policy module alone.
 package policy
 
 import (
@@ -23,19 +17,14 @@ import (
 )
 
 // Snapshot is one fully loaded policy: a parsed model holding every tenant's
-// rows. It is immutable once Load returns; a decision reads it and writes
-// nothing, so the same snapshot serves concurrent reads without a lock.
+// rows. It is immutable once Load returns, so the same snapshot serves
+// concurrent reads without a lock.
 type Snapshot struct {
 	enforcer *casbin.Enforcer
 }
 
 // Load reads every tenant's grants and bindings through the thin adapter and
-// builds a snapshot over text.
-//
-// The read crosses tenants, which is what the deciding process holds: the
-// adapter is built with the empty caller, so it reads the whole table and every
-// write through it would be refused. ctx bounds the read; a load whose context
-// ends before the rows are read fails with the context's error.
+// builds a snapshot over text. ctx bounds the read.
 func Load(ctx context.Context, handle *gorm.DB, text string) (*Snapshot, error) {
 	model, err := casbinmodel.NewModelFromString(text)
 	if err != nil {
@@ -58,18 +47,11 @@ func (s *Snapshot) Allowed(q authz.Query) (bool, error) {
 	return allowed, nil
 }
 
-// Held returns every (object, action) pair the subject holds in domain: the
-// union over the roles it is bound to there, read through the engine's implicit
-// permissions and with a pair reached through several roles kept once.
-//
-// The model's policy is (subject, domain, object, action), so a rule the engine
-// returns carries the object at index 2 and the action at index 3; the domain is
-// the one asked about, because the engine filters the rules to it. A subject
-// with no binding in the domain holds nothing and gets an empty result. The
-// result is a copy, so a caller sorting or trimming it does not disturb the
-// snapshot.
-//
-// A non-nil error is the engine failing, and not an empty permission set.
+// Held returns every (object, action) pair the subject holds in domain, read
+// through the engine's implicit permissions, with a pair reached through several
+// roles kept once and the result a copy. A subject with no binding in the domain
+// gets an empty result. A non-nil error is the engine failing, never an empty
+// set.
 func (s *Snapshot) Held(domain authz.Domain, subject string) ([][2]string, error) {
 	rules, err := s.enforcer.GetImplicitPermissionsForUser(subject, string(domain))
 	if err != nil {
@@ -91,14 +73,9 @@ func (s *Snapshot) Held(domain authz.Domain, subject string) ([][2]string, error
 	return pairs, nil
 }
 
-// Holder holds the current snapshot behind an atomic pointer.
-//
-// The replacement happens on whichever goroutine triggered a reload — a
-// writer's, a subscription's, the refresh ticker's, the lifecycle driver's —
-// while reads happen on every request goroutine, so the pointer is swapped
-// atomically and a reader takes either the old snapshot or the new one, never a
-// mixture. A Holder that has not loaded holds no snapshot: reads it hands back
-// are nil, which the enforcement path reads as unavailable rather than as a
+// Holder holds the current snapshot behind an atomic pointer. A reader takes
+// either the old snapshot or the new one, never a mixture; before the first load
+// it holds nil, which the enforcement path reads as unavailable rather than as a
 // denial.
 type Holder struct {
 	current atomic.Pointer[Snapshot]

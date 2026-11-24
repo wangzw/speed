@@ -11,13 +11,11 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// TestTheCatalogRouteListsDeclaredPermissions drives GET /api/v1/system/permissions
-// over the shared rig: the set the catalog declares appears in the answer
-// verbatim, one view per permission and in the order the catalog gave them, and
-// each view carries the one field the route declares and nothing else. The
-// answer is a view built field by field, never the catalog value handed through
-// as it stands, so a field added to the record later cannot reach a client by
-// being there.
+// TestTheCatalogRouteListsDeclaredPermissions drives GET
+// /api/v1/system/permissions over the shared rig: the set the catalog
+// declares appears in the answer verbatim, one view per permission and in
+// the order the catalog gave them, and each view carries the one field the
+// route declares and nothing else.
 func TestTheCatalogRouteListsDeclaredPermissions(t *testing.T) {
 	declared := []authz.Permission{
 		authz.PermissionRoleRead,
@@ -111,12 +109,10 @@ func viewBool(t *testing.T, view map[string]json.RawMessage, key string) bool {
 	return value
 }
 
-// TestTheCatalogRouteRendersTheDescriptionInTheRequestLocale drives the catalog
-// route with a localizer assembled and the same request in two languages: the
-// description is the text the declaring module gave the permission's key,
-// rendered in the locale the request carries. The route adds no text of its own,
-// so a permission in a language the catalogue carries comes back in that
-// language and not in another.
+// TestTheCatalogRouteRendersTheDescriptionInTheRequestLocale drives the
+// catalog route with a localizer assembled and the same request in two
+// languages: the description is the text the declaring module gave the
+// permission's key, rendered in the locale the request carries.
 func TestTheCatalogRouteRendersTheDescriptionInTheRequestLocale(t *testing.T) {
 	const (
 		readKey   = "authz.permission.authz-role-read"
@@ -164,11 +160,10 @@ func TestTheCatalogRouteRendersTheDescriptionInTheRequestLocale(t *testing.T) {
 	}
 }
 
-// TestTheCatalogRouteAnswersNoDescriptionWhenThereIsNothingToRender holds the
-// fallback rule for the two cases where the route has no text: the assembly
-// carries no localizer, and the declaring module gave the permission no key.
-// Both answer an empty description, never the key and never another
-// permission's text.
+// TestTheCatalogRouteAnswersNoDescriptionWhenThereIsNothingToRender holds
+// the fallback rule for the two cases where the route has no text: the
+// assembly carries no localizer, and the declaring module gave the
+// permission no key.
 func TestTheCatalogRouteAnswersNoDescriptionWhenThereIsNothingToRender(t *testing.T) {
 	t.Run("no localizer assembled", func(t *testing.T) {
 		r := newRig(t, authz.PermissionRoleRead)
@@ -195,11 +190,10 @@ func TestTheCatalogRouteAnswersNoDescriptionWhenThereIsNothingToRender(t *testin
 	})
 }
 
-// TestTheCatalogRouteWritesBackAKeyNoCatalogCarries holds the engine's fallback:
-// a declaring module gave the permission a key, no catalogue carries text for
-// it, and the localizer writes the key itself back, so the field says the text
-// is missing rather than claiming there is none. A client shows what it received
-// and does not resolve keys of its own.
+// TestTheCatalogRouteWritesBackAKeyNoCatalogCarries holds the engine's
+// fallback: a declaring module gave the permission a key, no catalogue
+// carries text for it, and the localizer writes the key itself back, so the
+// field says the text is missing rather than claiming there is none.
 func TestTheCatalogRouteWritesBackAKeyNoCatalogCarries(t *testing.T) {
 	const key = "tenant.permission.untranslated"
 	r := newRig(t, authz.PermissionTenantAccess)
@@ -215,12 +209,10 @@ func TestTheCatalogRouteWritesBackAKeyNoCatalogCarries(t *testing.T) {
 	}
 }
 
-// TestTheCatalogRouteCarriesTheMetadataAndTheCallersHeldSet holds the catalog
-// view's remaining fields: group and dangerous come from the declaring module's
-// metadata, and grantable is the caller's own held permission in the platform
-// domain. A permission the caller does not hold is still listed, marked not
-// grantable; a permission with no metadata answers an empty group and a false
-// dangerous mark.
+// TestTheCatalogRouteCarriesTheMetadataAndTheCallersHeldSet holds the
+// catalog view's remaining fields: group and dangerous come from the
+// declaring module's metadata, and grantable is the caller's own held
+// permission in the platform domain.
 func TestTheCatalogRouteCarriesTheMetadataAndTheCallersHeldSet(t *testing.T) {
 	r := newRig(t, authz.PermissionRoleRead, authz.PermissionRoleManage, authz.PermissionAccountRead)
 	r.catalog.metadata[authz.PermissionRoleRead] = authz.PermissionMeta{Group: "authorization"}

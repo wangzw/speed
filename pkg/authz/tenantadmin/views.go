@@ -8,15 +8,11 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// The views the tenant management routes answer with. Each is built field by
-// field from a root-package value and never handed through as it stands, so that
-// a field added to a record later does not reach a client by being there. The
-// names are exported because the OpenAPI fragment publishes them as components
-// named after the type; they are distinct from the platform surface's views so
-// that merging the two fragments has no component to reconcile.
-
 // AuthzTenantAdminPermissionView is one governed permission as the catalog route
-// shows it.
+// shows it. The name is exported because the OpenAPI fragment names each
+// component after its Go type; keep it distinct from the platform management
+// surface's views, since the merge refuses one component name carrying
+// different content.
 type AuthzTenantAdminPermissionView struct {
 	_ struct{} `description:"One permission of the tenant-governed set."`
 
@@ -31,10 +27,7 @@ type AuthzTenantAdminPermissionView struct {
 	Grantable bool `json:"grantable" required:"true" description:"True when the caller holds the permission in the tenant and may therefore grant it to a role. A permission the caller does not hold is still listed: the catalog is the whole governed set, not the caller's grantable subset."`
 }
 
-// permissionViewOf builds one permission's view from the governed catalog. The
-// description is the key the declaring module gave the permission, rendered
-// through the optional message localizer in the request's locale. The metadata
-// is the declaring module's, and grantable is the caller's own held set.
+// permissionViewOf builds one permission's view from the governed catalog.
 func (p *product) permissionViewOf(ctx context.Context, perm authz.Permission, grantable bool) AuthzTenantAdminPermissionView {
 	view := AuthzTenantAdminPermissionView{Permission: string(perm), Grantable: grantable}
 	if meta, ok := p.catalog.Metadata(perm); ok {
@@ -68,10 +61,6 @@ type AuthzTenantAdminRoleView struct {
 	CreatedAt time.Time `json:"created_at" required:"true" description:"When the role was written, as an RFC 3339 instant in UTC."`
 }
 
-// roleViewOf builds one role's view. The description is the reader's choice of
-// the role's two stored texts: a builtin role's key is rendered in the request's
-// language, and a role the management face created carries the free text as
-// written.
 func (p *product) roleViewOf(ctx context.Context, r authz.RoleRecord, permissionCount int, memberCount *int, canManage bool, tenantName string) AuthzTenantAdminRoleView {
 	return AuthzTenantAdminRoleView{
 		Tenant:          tenantName,
@@ -85,11 +74,8 @@ func (p *product) roleViewOf(ctx context.Context, r authz.RoleRecord, permission
 	}
 }
 
-// roleDescription resolves a role's description. A builtin role's description is
-// the localised text of the key the host seeded; a key no catalog carries comes
-// back as the key itself, which is the i18n fallback and the stored
-// description_key. A role the management face created carries the operator's
-// free text as written.
+// roleDescription resolves a role's description: a builtin role's key localised,
+// or the operator's free text.
 func (p *product) roleDescription(ctx context.Context, r authz.RoleRecord) string {
 	if !r.Builtin {
 		return r.Description
@@ -103,10 +89,7 @@ func (p *product) roleDescription(ctx context.Context, r authz.RoleRecord) strin
 	return p.localizer.Localize(ctx, i18n.Key(r.DescriptionKey), nil)
 }
 
-// AuthzTenantAdminGrantView is one permission grant as the grant routes show
-// it. The resource and the action are the pair the engine matches on; the
-// permission a route names is translated to it on the way in, and the view
-// translates it back so a client can name the grant without a local table.
+// AuthzTenantAdminGrantView is one permission grant as the grant routes show it.
 type AuthzTenantAdminGrantView struct {
 	_ struct{} `description:"One permission grant of a role: the permission it was written as, and the (resource, action) pair the policy engine matches on."`
 
@@ -118,9 +101,8 @@ type AuthzTenantAdminGrantView struct {
 	CreatedAt  time.Time `json:"created_at" required:"true" description:"When the grant was written, as an RFC 3339 instant in UTC."`
 }
 
-// grantViewOf builds one grant's view. The permission is read back from the
-// catalog's reverse index; a pair no declared permission translates to leaves
-// the field empty and the pair itself on the view.
+// grantViewOf builds one grant's view. A pair no declared permission translates
+// to leaves the permission field empty and the pair on the view.
 func (p *product) grantViewOf(g authz.GrantRecord, tenantName string) AuthzTenantAdminGrantView {
 	view := AuthzTenantAdminGrantView{
 		Tenant:    tenantName,
@@ -154,8 +136,6 @@ func bindingViewOf(b authz.Binding, tenantName string) AuthzTenantAdminBindingVi
 	}
 }
 
-// bindingViewsOf builds the views of a binding read. Every binding of a read
-// belongs to the tenant the request named, so the name is resolved once.
 func bindingViewsOf(bindings []authz.Binding, tenantName string) []AuthzTenantAdminBindingView {
 	views := make([]AuthzTenantAdminBindingView, len(bindings))
 	for i, b := range bindings {
@@ -180,8 +160,6 @@ type AuthzTenantAdminRoleBindingView struct {
 	GrantedAt time.Time `json:"granted_at" required:"true" description:"When the binding was written, as an RFC 3339 instant in UTC."`
 }
 
-// roleBindingViewOf builds one role-usage view from a binding and the identity
-// the reader answered for its account.
 func roleBindingViewOf(b authz.Binding, identity authz.AccountIdentity, known bool) AuthzTenantAdminRoleBindingView {
 	view := AuthzTenantAdminRoleBindingView{
 		Account:   b.Account,
@@ -197,8 +175,6 @@ func roleBindingViewOf(b authz.Binding, identity authz.AccountIdentity, known bo
 	return view
 }
 
-// roleBindingViewsOf builds the views of one role page. identities is nil when
-// the assembly delivers no identity reader.
 func roleBindingViewsOf(bindings []authz.Binding, identities map[string]authz.AccountIdentity) []AuthzTenantAdminRoleBindingView {
 	views := make([]AuthzTenantAdminRoleBindingView, len(bindings))
 	for i, b := range bindings {
@@ -208,10 +184,8 @@ func roleBindingViewsOf(bindings []authz.Binding, identities map[string]authz.Ac
 	return views
 }
 
-// roleMemberCounts counts the active members of every role from one tenant-wide
-// binding read and one batch identity read. A nil result member is the unknown
-// state: with no identity reader the count cannot be told from an unavailable
-// one, so it is reported as null and never as zero.
+// roleMemberCounts counts the active members of every role. With no identity
+// reader a count is null, never zero.
 func (p *product) roleMemberCounts(ctx context.Context, tenant string, roles []authz.RoleRecord) (map[authz.Role]*int, error) {
 	counts := make(map[authz.Role]*int, len(roles))
 	if p.identities == nil {
@@ -255,9 +229,8 @@ func (p *product) roleMemberCounts(ctx context.Context, tenant string, roles []a
 	return counts, nil
 }
 
-// accountIdentities resolves the accounts a role-usage read names. A nil reader
-// answers nil: the identity state is unknown and the caller reports it as such.
-// A reader that cannot answer is a 503, never an empty or inactive set.
+// accountIdentities resolves the accounts a role-usage read names. A reader that
+// cannot answer is a 503, never an empty or inactive set.
 func (p *product) accountIdentities(ctx context.Context, tenant string, accounts []string) (map[string]authz.AccountIdentity, error) {
 	if p.identities == nil {
 		return nil, nil

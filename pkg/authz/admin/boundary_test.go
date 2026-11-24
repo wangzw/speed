@@ -121,13 +121,12 @@ func forbiddenImports(imports []string) []string {
 	return out
 }
 
-// TestTheAdminImportsTheInterfaceNotTheImplementation is the executable form of
-// the packaging decision's dependency statement for this module: the Manager and
-// the Catalog come from the root package and the decision API from the guard
-// subpackage, the routes are mounted through the http module, and the policy
-// subpackage, Casbin, gorm and the db module are not in the non-test imports.
-// The types the routes read and write are the root package's, so a command that
-// only mounts the management routes does not carry the engine or its store.
+// TestTheAdminImportsTheInterfaceNotTheImplementation is the executable form
+// of the packaging decision's dependency statement for this module: the
+// Manager and the Catalog come from the root package and the decision API
+// from the guard subpackage, the routes are mounted through the http module,
+// and the policy subpackage, Casbin, gorm and the db module are not in the
+// non-test imports.
 func TestTheAdminImportsTheInterfaceNotTheImplementation(t *testing.T) {
 	imports := adminImports(t)
 	for _, v := range missingImports(imports) {
@@ -138,11 +137,9 @@ func TestTheAdminImportsTheInterfaceNotTheImplementation(t *testing.T) {
 	}
 }
 
-// TestTheListingReadsTheModule is the positive control: a listing that came back
-// empty, or that never named the module, would let the rules pass while looking
-// at nothing. The gin import holds that the listing reads the handler files,
-// which are the ones that bind the route surface, and the root import holds that
-// what is read is this module and not another package of the same name.
+// TestTheListingReadsTheModule is the positive control: a listing that came
+// back empty, or that never named the module, would let the rules pass while
+// looking at nothing.
 func TestTheListingReadsTheModule(t *testing.T) {
 	imports := adminImports(t)
 	if len(imports) == 0 {

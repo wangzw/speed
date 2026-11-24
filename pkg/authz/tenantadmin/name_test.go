@@ -7,10 +7,9 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// TestTheViewsNameTheTenantName holds the tenant management views to the name:
-// the policy store keys every row by the internal identifier, and a client reads
-// the name. The fixture maps one identifier to a name unlike it, so a view
-// that echoed the row's tenant would be told apart.
+// TestTheViewsNameTheTenantName holds the tenant management views to the
+// name: the policy store keys every row by the internal identifier, and a
+// client reads the name.
 func TestTheViewsNameTheTenantName(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleRead)
 	r.withNames(map[string]string{"t1": "acme"})

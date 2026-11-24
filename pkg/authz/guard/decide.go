@@ -10,25 +10,14 @@ import (
 
 // Decide implements authn.Decider.
 //
-// It translates the action to a query and puts it to the engine, reading the
-// permission-to-(object, action) mapping the whole process decides by from
-// pkg/authz/internal/translation, where the policy module resolves it. The
-// subject is the actor's accountability key and the domain is the tenant the
+// The subject is the actor's accountability key and the domain is the tenant the
 // decision names, or the platform domain when it names none. The three
-// impersonation actions are a second exception: they are platform capabilities,
-// so they decide in the platform domain whatever tenant the decision names. An
-// action with no row in the translation is refused without an error: the
-// authentication side may add an action this mapping does not know, and the safe
-// answer is a denial rather than an allow or a failure the caller reads as an
-// outage.
-//
-// authn.tenant.access is the one action with a platform-domain fallback: a
-// cross-tenant operator holds their role in the platform domain, so a query
-// that does not match in the tenant's own domain is put again in the platform
-// domain before it is denied. Every other action decides in one domain.
-//
-// An engine error is returned as it stands and is neither a denial nor a
-// permission: the caller reads it as an outage.
+// impersonation actions decide in the platform domain whatever tenant the
+// decision names; an action with no row in the translation is refused without
+// an error. authn.tenant.access is the one action with a platform-domain
+// fallback: a query that does not match in the tenant's own domain is put again
+// in the platform domain before it is denied. An engine error is returned as it
+// stands and is neither a denial nor a permission.
 func (p *product) Decide(ctx context.Context, d authn.Decision) (bool, error) {
 	object, action, ok := translation.Lookup(authz.Permission(d.Action))
 	if !ok {
@@ -66,13 +55,7 @@ func (p *product) Decide(ctx context.Context, d authn.Decision) (bool, error) {
 }
 
 // platformCapability reports whether an action is a platform capability, whose
-// decision is made in the platform domain whatever tenant it names. The tenant
-// of an impersonation is the data the record is confined to, not the policy
-// domain: the operator needs no grant in it, and the target's membership in it
-// is a structural restriction the impersonation capability enforces, not a
-// permission. A platform administrator holds platform-admin in the platform
-// domain; a tenant administrator's role lives in the tenant domain and carries
-// no permission here.
+// decision is made in the platform domain whatever tenant it names.
 func platformCapability(action authn.Action) bool {
 	switch action {
 	case authn.ActionImpersonateStart, authn.ActionImpersonationRead, authn.ActionImpersonationRevoke:
@@ -82,9 +65,7 @@ func platformCapability(action authn.Action) bool {
 }
 
 // targetHoldsPlatformPermission reports whether an impersonation target holds
-// any platform-domain permission. An account that holds one is an administrator
-// and is never a target. A process with no permission reader has no policy, so
-// no platform permission is in force and no target can hold one.
+// any platform-domain permission. An account that holds one is never a target.
 func (p *product) targetHoldsPlatformPermission(ctx context.Context, target string) (bool, error) {
 	if p.permissions == nil {
 		return false, nil
@@ -96,7 +77,6 @@ func (p *product) targetHoldsPlatformPermission(ctx context.Context, target stri
 	return len(held) > 0, nil
 }
 
-// allowed puts one query to the engine for a subject in a domain.
 func (p *product) allowed(ctx context.Context, subject string, domain authz.Domain, object, action string) (bool, error) {
 	return p.enforcer.Allowed(ctx, authz.Query{
 		Subject: subject,

@@ -27,10 +27,9 @@ func TestTheRoleWriteCarriesTheFreeTextDescription(t *testing.T) {
 	}
 }
 
-// TestTheRoleWriteIgnoresTheRemovedDescriptionKey holds the removal: the request
-// no longer declares description_key, so a client that still sends it reaches
-// nothing. The role is written with no key and no description, and the removed
-// member is not a refusal.
+// TestTheRoleWriteIgnoresTheRemovedDescriptionKey holds the removal: the
+// request no longer declares description_key, so a client that still sends
+// it reaches nothing.
 func TestTheRoleWriteIgnoresTheRemovedDescriptionKey(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleManage)
 	w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/tenants/t1/roles/ops",

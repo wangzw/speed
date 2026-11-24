@@ -139,12 +139,9 @@ func productOfAssembly(t *testing.T, reg *core.Registry) *product {
 	return p
 }
 
-// Each callback takes up the dependency the design places on it: New takes the
-// engine and the catalog, building the declaration table over the catalog; Init
-// takes the entry point and the optional capabilities. The engine and the
-// catalog are held to the very stand-ins the assembly delivered, so a New that
-// resolved something else fails. Init's read of the entry point is held from the
-// other side by the no-entry-point and unknown-endpoint cases below.
+// Each callback takes up the dependency the design places on it: New takes
+// the engine and the catalog, building the declaration table over the
+// catalog; Init takes the entry point and the optional capabilities.
 func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	catalog := authztest.NewCatalog(authz.PermissionAccountRead)
@@ -221,11 +218,9 @@ func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) 
 	})
 }
 
-// The registry answers the three faces this module delivers, and all three are
-// one instance of its product: a module that asked for the declaration anchor
-// and one that asked for the seam decide from the same table. The descriptor
-// declares each delivery exclusive, which is what makes a second provider a
-// startup failure rather than a resolution.
+// The registry answers the three faces this module delivers, and all three
+// are one instance of its product: a module that asked for the declaration
+// anchor and one that asked for the seam decide from the same table.
 func TestTheAssemblyAnswersAllThreeFacesExclusively(t *testing.T) {
 	t.Run("the registry answers each face from one instance", func(t *testing.T) {
 		var gate authz.Gate
@@ -268,10 +263,9 @@ func TestTheAssemblyAnswersAllThreeFacesExclusively(t *testing.T) {
 	})
 }
 
-// The engine and the catalog are required as each other: a command that brings
-// this module in without either fails resolution with ErrMissingProvider, before
-// New builds anything. Without an engine the module has nothing to decide with;
-// without a catalog the declaration surface it delivers can check nothing.
+// The engine and the catalog are required as each other: a command that
+// brings this module in without either fails resolution with
+// ErrMissingProvider, before New builds anything.
 func TestAMissingEngineOrCatalogFailsResolution(t *testing.T) {
 	for name, a := range map[string]assembly{
 		"no engine":  {noEnforcer: true},
@@ -286,9 +280,9 @@ func TestAMissingEngineOrCatalogFailsResolution(t *testing.T) {
 	}
 }
 
-// A second provider of any of the three faces fails the startup: each is claimed
-// exclusively, and the stand-in claims nothing, so the guard module's own claim
-// is what catches it. The failure is at resolution, before any request.
+// A second provider of any of the three faces fails the startup: each is
+// claimed exclusively, and the stand-in claims nothing, so the guard
+// module's own claim is what catches it.
 func TestASecondProviderOfAnyFaceFailsAssembly(t *testing.T) {
 	for name, p := range map[string]authztest.Provider{
 		"the declaration anchor": authztest.GateProvider(authztest.NewGate()),
@@ -336,12 +330,8 @@ func TestAGuardedEndpointTheEntryPointDoesNotServeFailsAssembly(t *testing.T) {
 	}
 }
 
-// A route that declares a permission the catalog does not hold fails Start with
-// ErrUnknownPermission, naming the route and the permission. A registrant writes
-// its route from its own Init, so the declaration lands after New and before
-// Start, where the gate holds every declaration to the catalog once and for all:
-// a route that decides on a permission nothing declares is a startup failure and
-// not a route that decides nothing.
+// A route that declares a permission the catalog does not hold fails Start
+// with ErrUnknownPermission, naming the route and the permission.
 func TestADeclaredPermissionOutsideTheCatalogFailsAssembly(t *testing.T) {
 	err := assembly{
 		extra: []core.Module{registrantModule},
@@ -361,14 +351,9 @@ func TestADeclaredPermissionOutsideTheCatalogFailsAssembly(t *testing.T) {
 	}
 }
 
-// A module that declares a permission of its own declares its translation row
-// beside it — the permission in the catalog and the (object, action) pair beside
-// it. A route the module declares in its own Init then passes Start: Init
-// resolves the process's translation before the declaration window closes, so the
-// module's row reaches the set the declaration check reads. The case fails if
-// Init does not resolve it at all, and if the resolution drops a module's row —
-// either leaves the route's permission with no translation, which aborts the
-// start.
+// A module that declares a permission of its own declares its translation
+// row beside it — the permission in the catalog and the (object, action)
+// pair beside it.
 func TestAModuleDeclaredTranslationRowLetsAssemblyStart(t *testing.T) {
 	permission := authz.Permission("crm.deal.read")
 	t.Cleanup(translation.Reset)
@@ -412,10 +397,9 @@ func translationRegistrant(permission authz.Permission) core.Module {
 }
 
 // Start holds the declarations to the catalog before it registers the metric
-// callback: a route on a permission outside the catalog aborts the startup, and
-// the meter is never asked for the counter, so a layer that did not start
-// registers nothing on a provider that outlives it. Registering the callback
-// first would ask the meter for the counter before the abort.
+// callback: a route on a permission outside the catalog aborts the startup,
+// and the meter is never asked for the counter, so a layer that did not
+// start registers nothing on a provider that outlives it.
 func TestStartAbortsBeforeRegisteringTheCounter(t *testing.T) {
 	provider := sdkmetric.NewMeterProvider()
 	probe := &meterProbe{MeterProvider: provider}
@@ -463,7 +447,7 @@ func (p *meterProbe) askedForMeter() bool {
 }
 
 // The module names its logger for itself, so its lines are recognisable in a
-// host's log. The stand-in records the name it was handed.
+// host's log.
 func TestTheLoggerIsNamedForTheModule(t *testing.T) {
 	var name string
 	err := assembly{supplied: []authztest.Provider{

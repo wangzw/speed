@@ -119,11 +119,8 @@ func sortedNames(m map[string]string) []string {
 	return names
 }
 
-// Each authn.Action has a Permission constant of the same string, and each
-// permission whose string names an action names one that exists: the two
-// vocabularies are one, neither missing a counterpart nor carrying an extra one.
-// The translation covers every action as well, so an action a Decider is asked
-// about is one it can put to the engine.
+// TestEveryActionHasAMatchingPermission checks that authn.Action and Permission
+// are one vocabulary in both directions.
 func TestEveryActionHasAMatchingPermission(t *testing.T) {
 	actions := actionVocabulary(t)
 	permissions := permissionVocabulary(t)
@@ -170,11 +167,8 @@ func TestEveryActionHasAMatchingPermission(t *testing.T) {
 	}
 }
 
-// Every permission constant has exactly one row in the guard's translation, and
-// that row's object and action are non-empty. The translation is the single
-// place a permission becomes the engine's (object, action) pair, so a permission
-// with no row is a decision the module cannot express, and the guard fails the
-// build until the row is added.
+// TestTheTranslationCoversEveryPermission checks that every permission constant
+// has exactly one translation row with a non-empty object and action.
 func TestTheTranslationCoversEveryPermission(t *testing.T) {
 	permissions := permissionVocabulary(t)
 	if len(permissions) == 0 {
@@ -194,17 +188,8 @@ func TestTheTranslationCoversEveryPermission(t *testing.T) {
 	}
 }
 
-// The catalog is the union of the permission specs the registry holds. The
-// policy module's own spec is the capability's vocabulary: it declares every
-// permission constant and nothing else, one-to-one. A module may declare a
-// permission of its own beside them, and every declared permission — the
-// constants and a module's own alike — must carry a translation row, because a
-// permission the translation cannot express is one no route may name and no
-// grant can hold.
-//
-// The catalog's declaration is read from the module the way its own build reads
-// it, rather than by driving the module: the module's construction needs a
-// database, and what is under guard here is the vocabulary and not the store.
+// TestTheCatalogDeclaresEveryPermission checks that the catalog declares every
+// permission constant and every module-declared permission.
 func TestTheCatalogDeclaresEveryPermission(t *testing.T) {
 	permissions := permissionVocabulary(t)
 
@@ -305,12 +290,9 @@ func sortedValues(set map[string]bool) []string {
 	return values
 }
 
-// The vocabulary reading is held to be one: it finds every constant of the
-// named type whatever the shape of its declaration — an explicit type, a
-// conversion, or a value the compiler folds from a longer expression — and
-// ignores a constant of another type or an untyped one, so a vocabulary guard
-// built on it is not a check that would read nothing and not one that would miss
-// a constant spelled the long way.
+// TestTheVocabularyReadSeesWhatItIsMeantToSee checks that the vocabulary guard
+// finds every constant of the named type whatever its declaration shape and
+// ignores constants of another or no type.
 func TestTheVocabularyReadSeesWhatItIsMeantToSee(t *testing.T) {
 	dir := t.TempDir()
 	body := `package sample

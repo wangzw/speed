@@ -12,11 +12,10 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// TestAnUnauthorisedRoleDeleteReachesNoManagerAndWritesNoAudit holds the delete
-// route's decision: the guard is asked for the write's permission, and a
-// shortfall ends the handler before the manager is called and before any audit
-// row is written. The delete is a write, so the permission is role.manage and
-// not the read's.
+// TestAnUnauthorisedRoleDeleteReachesNoManagerAndWritesNoAudit holds the
+// delete route's decision: the guard is asked for the write's permission,
+// and a shortfall ends the handler before the manager is called and before
+// any audit row is written.
 func TestAnUnauthorisedRoleDeleteReachesNoManagerAndWritesNoAudit(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
@@ -64,9 +63,8 @@ func TestDeletingARoleAsksForRoleManageAndLandsOneSuccessRow(t *testing.T) {
 }
 
 // TestARoleListWhoseManagerFailsIsMapped holds the read's failure path: a
-// manager failure that a read reaches is mapped by the same closed answer the
-// writes use, and the answer carries no list. A read that swallowed the error
-// would answer 200 with an empty roles view.
+// manager failure that a read reaches is mapped by the same closed answer
+// the writes use, and the answer carries no list.
 func TestARoleListWhoseManagerFailsIsMapped(t *testing.T) {
 	t.Run("a tenant mismatch is a 400", func(t *testing.T) {
 		r := newRig(t)
@@ -126,11 +124,9 @@ func TestAnonymousRequestsAreRefusedOnEveryRoleRoute(t *testing.T) {
 	}
 }
 
-// TestARolePutFailureLeavesAFailedRow holds the write's failure path on the put
-// verb: a put the manager refuses leaves the mandatory success row and a failed
-// row linked to it by the action id, the same shape a delete leaves. Only the
-// delete was held to two rows, so a put that wrote its failed row differently
-// was invisible.
+// TestARolePutFailureLeavesAFailedRow holds the write's failure path on the
+// put verb: a put the manager refuses leaves the mandatory success row and a
+// failed row linked to it by the action id, the same shape a delete leaves.
 func TestARolePutFailureLeavesAFailedRow(t *testing.T) {
 	r := newRig(t)
 	r.manager.fail(errors.New("the store is down"))
@@ -155,12 +151,10 @@ func TestARolePutFailureLeavesAFailedRow(t *testing.T) {
 	}
 }
 
-// TestTheRoleListViewCarriesEveryField holds the role view's field mapping: the
-// answer decodes into the view with the tenant, the role, the builtin flag and
-// the rendered description each in its own field, and the timestamp normalized
-// to UTC. A list that only carried the role name as a substring would let a view
-// that swapped the tenant and the role, dropped the builtin flag, or left a
-// non-UTC timestamp pass.
+// TestTheRoleListViewCarriesEveryField holds the role view's field mapping:
+// the answer decodes into the view with the tenant, the role, the builtin
+// flag and the rendered description each in its own field, and the timestamp
+// normalized to UTC.
 func TestTheRoleListViewCarriesEveryField(t *testing.T) {
 	created := time.Date(2021, 6, 7, 8, 9, 10, 0, time.FixedZone("plus-one", 3600))
 	r := newRig(t)
@@ -200,11 +194,9 @@ func TestTheRoleListViewCarriesEveryField(t *testing.T) {
 	}
 }
 
-// TestARoleWriteAuditCarriesTheObjectAndDetail holds the audit row's object and
-// detail: the object is the row the write acted on, and the detail names the
-// tenant, the natural key and — for the put — the change. Asserting only the
-// action, the outcome and the action-id link lets the object and the detail be
-// swapped or emptied.
+// TestARoleWriteAuditCarriesTheObjectAndDetail holds the audit row's object
+// and detail: the object is the row the write acted on, and the detail names
+// the tenant, the natural key and — for the put — the change.
 func TestARoleWriteAuditCarriesTheObjectAndDetail(t *testing.T) {
 	t.Run("the put", func(t *testing.T) {
 		r := newRig(t)
@@ -268,11 +260,9 @@ func TestAMalformedRoleBodyIsRefused(t *testing.T) {
 	}
 }
 
-// TestTheRoleRefusalProblemTypes holds the problem-type codes this module writes
-// for a refusal it judges: a 400 carries urn:speed:authz:bad-request and a 409
-// carries urn:speed:authz:conflict. The codes and the namespace prefix are the
-// wire contract, so a 400 and a 409 that carried each other's code, or a
-// renamed prefix, must fail.
+// TestTheRoleRefusalProblemTypes holds the problem-type codes this module
+// writes for a refusal it judges: a 400 carries urn:speed:authz:bad-request
+// and a 409 carries urn:speed:authz:conflict.
 func TestTheRoleRefusalProblemTypes(t *testing.T) {
 	t.Run("a 400 is the bad-request code", func(t *testing.T) {
 		r := newRig(t)
@@ -302,8 +292,7 @@ func TestTheRoleRefusalProblemTypes(t *testing.T) {
 
 // TestAnAnonymousRoleRequestWritesA401WithoutAType holds the shape of the
 // module's own 401: the status alone and no problem type, and the realm
-// challenge the admission and authorization layers write. A 401 that carried a
-// type, or dropped the challenge, would not be the same shape as theirs.
+// challenge the admission and authorization layers write.
 func TestAnAnonymousRoleRequestWritesA401WithoutAType(t *testing.T) {
 	r := newRig(t)
 	w := r.serveAnonymous(rolePutRoute(r.p), http.MethodPut, "/api/v1/system/tenants/t1/roles/editor",

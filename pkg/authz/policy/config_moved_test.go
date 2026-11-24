@@ -50,11 +50,9 @@ func policyAssembly(t *testing.T, body string) (*core.Registry, db.Database, []s
 	return reg, database, []string{module.Name, stand.name}
 }
 
-// A configured refresh interval drives the periodic reload without a settings
-// store or an event bus: a row written behind the module's back reaches the
-// snapshot only when the ticker reloads it. The row is planted after the startup
-// load, so the decision turning from refusal to allowance is the ticker's doing
-// and nothing else.
+// A configured refresh interval drives the periodic reload without a
+// settings store or an event bus: a row written behind the module's back
+// reaches the snapshot only when the ticker reloads it.
 func TestTheConfiguredRefreshIntervalDrivesThePeriodicReload(t *testing.T) {
 	reg, database, names := policyAssembly(t, `{"authz":{"policy":{"refresh-interval":"5ms"}}}`)
 

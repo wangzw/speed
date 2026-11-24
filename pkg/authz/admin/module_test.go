@@ -248,11 +248,9 @@ func TestThePermissionTheRouteAsksFor(t *testing.T) {
 	})
 }
 
-// TestTheDecisionIsAskedInThePlatformDomain holds the domain the handler asks
-// the guard to decide in: the platform domain, whatever tenant the path names.
-// The tenant in the path is the data the route acts on, so a decision made in
-// the request's own tenant would let a caller authorized in one tenant reach
-// another's roles by naming that tenant in the path.
+// TestTheDecisionIsAskedInThePlatformDomain holds the domain the handler
+// asks the guard to decide in: the platform domain, whatever tenant the path
+// names.
 func TestTheDecisionIsAskedInThePlatformDomain(t *testing.T) {
 	r := newRig(t)
 	r.serve(readRoute(r.p, roleListOperation.Handle(r.p.handleRoleList)), http.MethodGet, "/api/v1/system/tenants/other/roles", params("tenant", "other"), nil)
@@ -481,11 +479,8 @@ func TestTheCatalogRouteShowsTheDeclaredPermissions(t *testing.T) {
 	}
 }
 
-// TestTheManagementRoutesServeOnTheRealEntryPoint drives the module together
-// with the real entry point on a loopback port and sends real requests. What it
-// holds that the stub router cannot is that the entry point assembles its chain
-// over the mounted routes — a conflict among them would fail its Serve — and
-// that a request reaches a handler through the real router.
+// TestTheManagementRoutesServeOnTheRealEntryPoint checks that the management
+// routes answer through the real entry point.
 func TestTheManagementRoutesServeOnTheRealEntryPoint(t *testing.T) {
 	logs := newCapturedLogs()
 	body := `{

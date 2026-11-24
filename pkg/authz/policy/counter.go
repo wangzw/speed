@@ -11,26 +11,14 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// SoleTenantAdminTenant implements authz.TenantAdminCounter: it reads every
-// tenant-administrator binding the account holds, keeps the tenants where that
-// binding is the domain's only one, and answers the first such tenant that is a
-// business tenant still in service.
+// SoleTenantAdminTenant implements authz.TenantAdminCounter: it answers the
+// first tenant, by identifier, where the account holds the only
+// tenant-administrator binding and which is a business tenant still in service.
 //
-// The count is over the whole table, across tenants: a policy row carries its
-// tenant in the row, and an account's bindings in several domains are one
-// account's rows, so the read crosses tenants under the cross-tenant mark.
-//
-// A tenant is in service when the roster carries it with the active status. A
-// tenant the host's write guard refuses is not a business tenant: the guard is
-// the host's statement of which domains are personal or otherwise outside
-// management, and this capability does not infer a tenant's kind from its
-// identifier or its grants. With no guard assembled every active tenant counts,
-// which is the fail-closed side — the deletion is protected more widely, never
-// less.
-//
-// A roster that is absent or cannot answer, and a guard that cannot answer, are
-// failures. The caller treats them as unavailable; answering "not sole" would
-// let a deletion through while the floor is unknown.
+// A tenant is in service when the roster carries it active, and a tenant the
+// host's write guard refuses is not a business tenant. With no guard assembled
+// every active tenant counts, the fail-closed side. A roster or guard that cannot
+// answer is a failure, never "not sole".
 func (p *product) SoleTenantAdminTenant(ctx context.Context, account string) (string, bool, error) {
 	if account == "" {
 		return "", false, nil
@@ -81,19 +69,10 @@ func (p *product) SoleTenantAdminTenant(ctx context.Context, account string) (st
 	return "", false, nil
 }
 
-// OwnsActiveBusinessTenant implements authz.TenantOwnerCounter: it reads the
-// roster and answers the first active business tenant whose owner column names
-// account.
-//
-// A personal tenant is not a business tenant: the host's write guard is the
-// statement of which domains are personal or otherwise outside management, and
-// this capability does not infer a tenant's kind from its identifier or its
-// grants. With no guard assembled every active tenant counts, which is the
-// fail-closed side: the account is protected more widely, never less.
-//
-// A roster that is absent or cannot answer, and a guard that cannot answer, are
-// failures. The caller treats them as unavailable; answering "owns nothing"
-// would let a deletion or suspension through while the owner is unknown.
+// OwnsActiveBusinessTenant implements authz.TenantOwnerCounter: it answers the
+// first active business tenant whose owner column names the account. A tenant
+// the host's write guard refuses is not a business tenant. A roster or guard that
+// cannot answer is a failure, never "owns nothing".
 func (p *product) OwnsActiveBusinessTenant(ctx context.Context, account string) (string, bool, error) {
 	if account == "" {
 		return "", false, nil
@@ -134,29 +113,13 @@ func (p *product) OwnsActiveBusinessTenant(ctx context.Context, account string) 
 }
 
 // LockAccountAdministration implements authz.TenantAdminCounter: it takes the
-// tenant lock of every tenant in which account holds a tenant-administrator
-// binding and of every active business tenant in which account is an active
+// tenant lock of every tenant in which the account holds a tenant-administrator
+// binding and of every active business tenant in which the account is an active
 // member, in identifier order, and answers one release for all of them.
 //
-// The binding tenants are read from the policy table, not from the roster: the
-// lock's job is to exclude every other removal that judges one of these tenants'
-// floors, and a tenant that is not in service is still a floor some other path
-// counts against. Locking it costs nothing and closing the set over the roster
-// would make a changing status a hole in the exclusion.
-//
-// The membership tenants are the active business tenants the account belongs to
-// without administering. An ownership transfer hands the organization to an
-// active member and makes them its owner, so a suspension or deletion that
-// judged only the tenants the account administers could interleave with that
-// transfer and commit while the transfer makes the account an owner. Reading the
-// memberships closes that hole. A personal or disabled tenant is left out, as
-// the owner counter leaves it out: the transfer cannot make an account the owner
-// of a domain the host has declared outside management. With no roster or write
-// guard assembled the set is not narrowed, which is the fail-closed side.
-//
-// The release is idempotent, and a lock that cannot be taken releases the ones
-// already taken before returning the failure, so a deletion that does not
-// proceed holds nothing.
+// The membership tenants are included because an ownership transfer could make
+// the account the owner of a tenant it does not administer. The release is
+// idempotent, and a lock that cannot be taken releases the ones already taken.
 func (p *product) LockAccountAdministration(ctx context.Context, account string) (func(), error) {
 	if account == "" {
 		return func() {}, nil
@@ -209,10 +172,7 @@ func (p *product) LockAccountAdministration(ctx context.Context, account string)
 }
 
 // activeMembershipTenants is the set of active business tenants the account is
-// an active member of, the tenants an ownership transfer could hand to it. A
-// membership read, a roster read or a write-guard read that cannot answer is a
-// failure: the caller must never take fewer locks than the transfers it is
-// excluding.
+// an active member of, the tenants an ownership transfer could hand to it.
 func (p *product) activeMembershipTenants(ctx context.Context, account string) (map[string]bool, error) {
 	memberships, err := p.membershipReads.Tenants(ctx, authn.AccountID(account))
 	if err != nil {
@@ -287,9 +247,7 @@ func (p *product) adminBindings(ctx context.Context, account string) (map[string
 	return tally, nil
 }
 
-// serviceableTenants is the set of tenants the roster carries as active. The
-// read is one snapshot read; a tenant disabled after it is judged on the next
-// call, and a tenant another replica registered since is simply absent here.
+// serviceableTenants is the set of tenants the roster carries as active.
 func (p *product) serviceableTenants(ctx context.Context) (map[string]bool, error) {
 	tenants, err := p.roster.List(ctx)
 	if err != nil {

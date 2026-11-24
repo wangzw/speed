@@ -144,14 +144,9 @@ func TestHolderSwapsAtomically(t *testing.T) {
 	}
 }
 
-// A reader takes one whole snapshot: the pointer is replaced as a whole while
-// readers run, so a concurrent read sees either the old policy or the new one
-// and never a mixture of the two. Run under -race, this is what the lock-free
-// request-path read rests on.
-//
-// The two snapshots answer one query oppositely, so a read that landed in a
-// snapshot that was neither version — a half-built one, one mutated in place,
-// or a fresh empty one — answers other than the version it holds and is caught.
+// A reader takes one whole snapshot: the pointer is replaced as a whole
+// while readers run, so a concurrent read sees either the old policy or the
+// new one and never a mixture of the two.
 func TestConcurrentReadsSeeOneWholeSnapshot(t *testing.T) {
 	allows := openHandle(t)
 	seed(t, allows)

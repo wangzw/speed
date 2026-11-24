@@ -145,13 +145,8 @@ func authztestViolations(pkgs []listed) []string {
 	return out
 }
 
-// TestTheRootPackageImportsOnlyTheStandardLibrary is the executable form of the
-// packaging decision's dependency statement: the root package's direct imports
-// and its whole closure are the standard library, holding neither the Casbin,
-// gin and gorm libraries nor a subpackage of this directory.
-//
-// The positive controls hold that the listing is reading this module: a listing
-// that came back empty would let both rules pass while looking at nothing.
+// TestTheRootPackageImportsOnlyTheStandardLibrary checks that the root package
+// and its closure import only the standard library.
 func TestTheRootPackageImportsOnlyTheStandardLibrary(t *testing.T) {
 	pkgs := goList(t)
 
@@ -182,8 +177,8 @@ func TestTheRootPackageImportsOnlyTheStandardLibrary(t *testing.T) {
 	}
 }
 
-// TestNoProductionCodeImportsAuthztest is the third rule's executable form: the
-// fixtures are imported from tests alone, across every package of the module.
+// TestNoProductionCodeImportsAuthztest checks that authztest is imported from
+// tests alone across every package of the module.
 func TestNoProductionCodeImportsAuthztest(t *testing.T) {
 	pkgs := goList(t)
 	if _, ok := find(pkgs, authztestPath); !ok {
@@ -194,12 +189,8 @@ func TestNoProductionCodeImportsAuthztest(t *testing.T) {
 	}
 }
 
-// TestTheRulesFailOnAViolation holds every rule to be a rule and not a check
-// that accepts anything: a root import of a third-party library or a subpackage,
-// a casbin, gin or gorm package and a subpackage of this directory in the root's
-// closure, and an import of authztest from another package's non-test code are
-// each reported, while a standard-library import and authztest's own files are
-// not.
+// TestTheRulesFailOnAViolation checks that each import rule reports a violating
+// import and accepts a legal one.
 func TestTheRulesFailOnAViolation(t *testing.T) {
 	root := listed{ImportPath: rootPath, Imports: []string{"context", "time", "example.com/lib", rootPath + "/policy"}}
 	if got := rootImportViolations(root); !slices.Equal(got, []string{

@@ -40,9 +40,8 @@ func TestTheTenantProfilePermissionsAreDeclaredAndGoverned(t *testing.T) {
 	}
 }
 
-// TestTheTenantProfileDescriptionsExistInEveryLocale holds each description key
-// the catalog hands out to a row in each locale file. A permission whose key no
-// locale carries renders as the key itself, which is the picker's gap.
+// TestTheTenantProfileDescriptionsExistInEveryLocale holds each description
+// key the catalog hands out to a row in each locale file.
 func TestTheTenantProfileDescriptionsExistInEveryLocale(t *testing.T) {
 	keys := []string{
 		"authz.permission.tenant-profile-read",

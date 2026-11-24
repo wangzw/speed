@@ -8,8 +8,7 @@ import (
 	casbinmodel "github.com/casbin/casbin/v3/model"
 )
 
-// The fixed facts the self-check is built from. The names are the fixtures'
-// own; nothing in the module matches on them.
+// The fixed facts the self-check is built from.
 const (
 	checkDomainA = "selfcheck-a"
 	checkDomainB = "selfcheck-b"
@@ -21,10 +20,6 @@ const (
 
 // fixture is one assertion about the model's behaviour: the policy rows it is
 // given and the query it puts, with the answer the model must give.
-//
-// The rows are written directly into a fresh in-memory model, never through the
-// store: the self-check is about the shape of the model text, not about what
-// any database holds.
 type fixture struct {
 	name     string
 	grants   [][4]string // role, domain, object, action
@@ -32,19 +27,14 @@ type fixture struct {
 	query    [4]string   // account, domain, object, action
 
 	// again asks the query a second time and holds the second answer to the
-	// first: it is the fixture for the decision being a pure function of the
-	// model and the query, with nothing carried between two calls.
+	// first.
 	again bool
 
 	want bool
 }
 
-// fixtures are the whole self-check. Each case turns on a clause a wrong model
-// text silently changes: the pair of domain cases catches a matcher missing the
-// subject's domain argument and one missing the policy's, the object and action
-// cases catch a field compared by anything but equality, the no-binding case
-// catches a matcher that allows in the absence of a match, and the repeat case
-// catches a decision that is not a pure function.
+// fixtures are the whole self-check: each case turns on a clause a wrong model
+// text silently changes.
 var fixtures = []fixture{
 	{
 		name:     "a role's grant reaches the account bound to it in the same domain",
@@ -98,18 +88,8 @@ var fixtures = []fixture{
 }
 
 // SelfCheck builds a model from text and asserts the closed set of behaviours
-// the enforcement path depends on.
-//
-// A model text that is wrong does not fail to load; it evaluates to true or
-// false where the design says the opposite, and nothing downstream would say
-// so. The self-check is what stands in for that: it runs on the exact text the
-// process will enforce with, before the process serves a request, and a
-// mismatch fails the startup.
-//
-// Every fixture that disagrees is reported, one line each, rather than stopping
-// at the first: a text with several wrong clauses names them all in one run.
-// The line names the fixture and the answer the model gave, so the clause to
-// fix is where a reader looks.
+// the enforcement path depends on. Every fixture that disagrees is reported,
+// one line each, and a mismatch fails the startup.
 func SelfCheck(text string) error {
 	var reports []string
 	for _, f := range fixtures {
@@ -130,8 +110,7 @@ func SelfCheck(text string) error {
 }
 
 // runFixture evaluates one fixture on a fresh model, so that no case's rows
-// reach another's. A repeat fixture runs its query a second time and holds the
-// second answer to the first.
+// reach another's.
 func runFixture(text string, f fixture) (bool, error) {
 	model, err := casbinmodel.NewModelFromString(text)
 	if err != nil {

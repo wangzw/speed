@@ -12,12 +12,8 @@ import (
 // `go test` runs in.
 const fragmentPath = "openapi/authz.self.json"
 
-// TestTheFragmentIsGeneratedFromTheDeclarations holds the embedded fragment to
-// what the declarations generate. The fragment is a build product: a handler
-// or a route that changes without the declaration fails here, and the fix is
-// to change the declaration and regenerate.
-//
-// Run with UPDATE_FRAGMENTS=1 to write the generated fragment.
+// TestTheFragmentIsGeneratedFromTheDeclarations holds the embedded fragment
+// to what the declarations generate.
 func TestTheFragmentIsGeneratedFromTheDeclarations(t *testing.T) {
 	generated, err := openapigen.Generate(fragmentTitle, fragmentVersion, operations)
 	if err != nil {

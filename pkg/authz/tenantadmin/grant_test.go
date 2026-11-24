@@ -290,11 +290,9 @@ func TestAnonymousRequestsAreRefusedOnEveryGrantRoute(t *testing.T) {
 }
 
 // TestTheGrantViewCarriesThePermissionCode holds the grant view the tenant
-// administration face reads: a grant written in the permission vocabulary comes
-// back with that permission code, so a client can name and edit it without
-// translating the engine's (resource, action) pair. A grant whose pair no
-// declared permission translates to still comes back, with an empty permission
-// and its pair, so an operator can diagnose a stale row rather than losing it.
+// administration face reads: a grant written in the permission vocabulary
+// comes back with that permission code, so a client can name and edit it
+// without translating the engine's (resource, action) pair.
 func TestTheGrantViewCarriesThePermissionCode(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleRead, authz.PermissionTenantRoleManage)
 	object, action, ok := translation.Lookup(authz.PermissionTenantRoleManage)

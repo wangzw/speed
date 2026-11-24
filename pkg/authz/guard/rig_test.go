@@ -285,9 +285,8 @@ func TestARequiredRouteWithAnAllowedIdentityPasses(t *testing.T) {
 	r.onlyCounted(allowed)
 }
 
-// A route the engine denies is a 403 with this module's problem type, never a
-// 503. Reading the denial as an outage, or the outage as a denial, fails the two
-// cases that hold the boundary.
+// A route the engine denies is a 403 with this module's problem type, never
+// a 503.
 func TestARouteTheEngineDeniesIsA403(t *testing.T) {
 	r := newRig(t)
 	r.enforcer.answer = func(authz.Query) (bool, error) { return false, nil }
@@ -331,10 +330,7 @@ func TestAnEngineErrorIsA503(t *testing.T) {
 }
 
 // A route that requires identity and carries none is a 401 with the realm
-// challenge. The reachable shape of that request on a guarded endpoint reads as
-// AccessUnknown: AccessRequired with no identity is refused by the gateway
-// before any handler, so it never reaches this layer, and the middleware's
-// default branch answers 401 for it as it does for AccessUnknown.
+// challenge.
 func TestNoIdentityWhereItIsRequiredIsA401(t *testing.T) {
 	r := newRig(t)
 	rp := r.orders(base(), requireAccountRead)
@@ -478,11 +474,10 @@ func TestGuardAllowedAnswersWithoutWriting(t *testing.T) {
 	})
 }
 
-// The Guard API puts the same query the middleware would for the same context:
-// the subject is the account the request is taken to be from, the (object,
-// action) pair is the translation's row, and
-// the domain is the platform domain when the request carries no tenant. The
-// engine is asked exactly this and nothing else.
+// The Guard API puts the same query the middleware would for the same
+// context: the subject is the account the request is taken to be from, the
+// (object, action) pair is the translation's row, and the domain is the
+// platform domain when the request carries no tenant.
 func TestGuardAllowedNamesTheSameQuery(t *testing.T) {
 	r := newRig(t)
 	r.enforcer.answer = func(authz.Query) (bool, error) { return true, nil }
@@ -550,12 +545,10 @@ func TestGuardRequireWritesTheRefusal(t *testing.T) {
 	})
 }
 
-// The handler API's explicit-domain form decides in the domain it is given and
-// not in the domain the request carries: a caller that names a domain of its own
-// — a management surface whose path tenant is data and not a scope — is not
-// steered by the tenant the request resolved to. The context here carries no
-// tenant, so the context-based form reads the platform domain, while the
-// explicit form decides in the domain it was handed.
+// The handler API's explicit-domain form decides in the domain it is given
+// and not in the domain the request carries: a caller that names a domain of
+// its own — a management surface whose path tenant is data and not a scope
+// — is not steered by the tenant the request resolved to.
 func TestGuardRequirePermissionInDecidesInTheGivenDomain(t *testing.T) {
 	t.Run("the explicit domain is used", func(t *testing.T) {
 		r := newRig(t)
@@ -728,10 +721,10 @@ func TestTheDescriptorIsWhatTheDesignSays(t *testing.T) {
 	}
 }
 
-// The module registers itself with the process registry: importing the package
-// is what puts the enforcement middleware and the decider in a binary's
-// available set, and a host writes neither the descriptor nor a Register call.
-// Removing the init registration leaves the module undiscoverable.
+// The module registers itself with the process registry: importing the
+// package is what puts the enforcement middleware and the decider in a
+// binary's available set, and a host writes neither the descriptor nor a
+// Register call.
 func TestTheProcessRegistryCarriesTheModule(t *testing.T) {
 	registered, ok := core.ProcessRegistry.Lookup(ModuleName)
 	if !ok {
@@ -901,14 +894,9 @@ func TestARouteOnAnUndeclaredPermissionFailsStart(t *testing.T) {
 	}
 }
 
-// A failed Start leaves no resolved translation installed: the set Init built is
-// given back when Start refuses the assembly, so a later assembly sharing the
-// process does not read a set this one never accepted.
-//
-// The drive carries a module of its own that declares a row, so the set it
-// installs differs from the built-in rows alone. Without that the two states
-// this case tells apart — cleared, and left installed — would hold the same
-// rows, and the assertion would pass whatever Start did.
+// A failed Start leaves no resolved translation installed: the set Init
+// built is given back when Start refuses the assembly, so a later assembly
+// sharing the process does not read a set this one never accepted.
 func TestAFailedStartClearsTheProcessTranslation(t *testing.T) {
 	translator := declaredModule("stand-in.translator", map[authz.Permission]authz.Translation{
 		declaredPermission: {Object: "deal", Action: "read"},
@@ -1157,11 +1145,9 @@ var liveRegistrant = core.Module{
 	},
 }
 
-// The live case runs the real entry point on a loopback port with the real
-// tenant resolution layer and this module on the chain, and reads one request's
-// decision end to end: the query this module puts to the engine names the tenant
-// identifier the roster maps the request's name to — never the name — and the
-// account whose hands are on the request.
+// TestTheQueryNamesTheTenantIdentifierOnTheChain checks that the guard's query
+// names the tenant identifier the roster maps the request's name to, not the
+// name, and the account whose hands are on the request.
 func TestTheQueryNamesTheTenantIdentifierOnTheChain(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	enforcer := authztest.NewEnforcer()

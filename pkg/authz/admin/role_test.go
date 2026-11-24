@@ -10,13 +10,9 @@ import (
 )
 
 // TestListingRolesRequiresRoleRead holds the role read: the handler asks the
-// guard for authz.role.read and, when the decision allows, passes the tenant the
-// path named to the manager as the policy domain's identifier and answers 200.
-//
-// The tenant the manager is called with is read off the path parameter and not
-// off any name: the case addresses tenant "t1" and holds that "t1" — the
-// identifier itself — is what reached the manager, so an implementation that
-// replaced it with a looked-up name would fail here.
+// guard for authz.role.read and, when the decision allows, passes the tenant
+// the path named to the manager as the policy domain's identifier and
+// answers 200.
 func TestListingRolesRequiresRoleRead(t *testing.T) {
 	r := newRig(t)
 	r.manager.roles = []authz.RoleRecord{
@@ -43,11 +39,6 @@ func TestListingRolesRequiresRoleRead(t *testing.T) {
 // write: the handler asks the guard for authz.role.manage and, when allowed,
 // writes the record the manager stores with the tenant the path named as the
 // record's Tenant and the body's free-text description forwarded.
-//
-// The body is sent with a `builtin` member the schema no longer carries: a
-// client that sends it anyway must not reach the manager with the mark set. The
-// mark is what freezes a role for good, and the management surface is not a
-// path that sets it.
 func TestPutRoleRequiresRoleManageAndWritesTheIdentifierAsTenant(t *testing.T) {
 	r := newRig(t)
 	w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/system/tenants/t1/roles/ops",
@@ -106,9 +97,8 @@ func TestDeletingABuiltinRoleIsRefused(t *testing.T) {
 	})
 }
 
-// TestAnUnknownRoleIsRefused holds that a role the manager does not know is a
-// 400: the request named something that is not there. The manager judges it, so
-// it is called; the refusal is its sentinel mapped to the bad-request answer.
+// TestAnUnknownRoleIsRefused holds that a role the manager does not know is
+// a 400: the request named something that is not there.
 func TestAnUnknownRoleIsRefused(t *testing.T) {
 	r := newRig(t)
 	r.manager.fail(authz.ErrUnknownRole)
@@ -123,13 +113,8 @@ func TestAnUnknownRoleIsRefused(t *testing.T) {
 	}
 }
 
-// TestAnEmptyTenantIsForwardedAndItsRefusalIsABadRequest holds the empty-tenant
-// case. The empty tenant is not this module's to interpret: the path identifier
-// is forwarded to the manager verbatim, and it is the manager — its store's
-// tenant columns and checks — that refuses an empty tenant with ErrTenantMismatch,
-// which the handler maps to a 400. The case holds that the empty tenant reaches
-// the manager as the empty string, so an implementation that substituted a
-// tenant of its own (the reserved platform domain, or a name) would fail here.
+// TestAnEmptyTenantIsForwardedAndItsRefusalIsABadRequest holds the
+// empty-tenant case.
 func TestAnEmptyTenantIsForwardedAndItsRefusalIsABadRequest(t *testing.T) {
 	r := newRig(t)
 	r.manager.fail(authz.ErrTenantMismatch)
@@ -167,11 +152,10 @@ func TestAnUnauthorisedRoleWriteReachesNoManagerAndWritesNoAudit(t *testing.T) {
 	}
 }
 
-// TestARoleWriteWhoseAuditDoesNotLandIsA503AndDoesNothing holds the mandatory
-// audit row's grip on the action: a row that does not land refuses the write
-// with a 503 before the manager is called, so a change that could not be
-// recorded is not made. An implementation that called the manager first would
-// reach it here.
+// TestARoleWriteWhoseAuditDoesNotLandIsA503AndDoesNothing holds the
+// mandatory audit row's grip on the action: a row that does not land refuses
+// the write with a 503 before the manager is called, so a change that could
+// not be recorded is not made.
 func TestARoleWriteWhoseAuditDoesNotLandIsA503AndDoesNothing(t *testing.T) {
 	r := newRig(t)
 	r.audit.fail(errors.New("the audit store is down"))
@@ -186,13 +170,9 @@ func TestARoleWriteWhoseAuditDoesNotLandIsA503AndDoesNothing(t *testing.T) {
 }
 
 // TestARoleWriteWritesTheMandatoryRowBeforeTheActionAndAFailedRowLinksByActionID
-// holds the role write's audit order: the mandatory success row lands before the
-// action, so even a write the manager refuses leaves it, and the failed row that
-// closes the refusal is linked to it by the action identifier.
-//
-// That the mandatory row is written before the action is what its survival of a
-// refused action observes: an implementation that wrote it only after a
-// successful action would have one row here, not two.
+// holds the role write's audit order: the mandatory success row lands before
+// the action, so even a write the manager refuses leaves it, and the failed
+// row that closes the refusal is linked to it by the action identifier.
 func TestARoleWriteWritesTheMandatoryRowBeforeTheActionAndAFailedRowLinksByActionID(t *testing.T) {
 	r := newRig(t)
 	r.manager.fail(errors.New("the store is down"))

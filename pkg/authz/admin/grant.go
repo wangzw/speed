@@ -7,9 +7,7 @@ import (
 )
 
 // handleGrantList answers GET /api/v1/system/tenants/:tenant/roles/:role/grants:
-// every permission grant the role holds. It is a read, so the action is
-// role.read; the identity and the permission are decided by the route's guard
-// wrapper before this handler is called.
+// every permission grant the role holds.
 func (p *product) handleGrantList(ctx context.Context, in roleInput) (grantListBody, error) {
 	grants, err := p.manager.Grants(ctx, in.Tenant, authz.Role(in.Role))
 	if err != nil {
@@ -28,14 +26,8 @@ func (p *product) handleGrantList(ctx context.Context, in roleInput) (grantListB
 
 // handleGrantPut answers PUT
 // /api/v1/system/tenants/:tenant/roles/:role/grants/:permission: it grants a
-// permission to a role. It is a write, so the action is role.manage.
-//
-// The permission named in the path is checked against the catalog and
-// translated to the (resource, action) pair the engine matches on before the
-// manager is called; a permission the catalog does not hold, or one the
-// translation has no row for, is a 400 and the manager is not touched. The
-// optional host WriteGuard is asked after those checks; the mandatory audit row
-// lands before the manager writes.
+// permission to a role. A permission the catalog does not hold, or one the
+// translation has no row for, is a 400 before the manager is touched.
 func (p *product) handleGrantPut(ctx context.Context, in grantInput) (struct{}, error) {
 	role := authz.Role(in.Role)
 	permission := authz.Permission(in.Permission)
@@ -72,12 +64,7 @@ func (p *product) handleGrantPut(ctx context.Context, in grantInput) (struct{}, 
 
 // handleGrantDelete answers DELETE
 // /api/v1/system/tenants/:tenant/roles/:role/grants/:permission: it revokes a
-// permission from a role. It is a write, so the action is role.manage.
-//
-// The permission named in the path is translated to the (resource, action) pair
-// before the manager is called; a permission the translation has no row for is a
-// 400. The optional host WriteGuard is asked after that check; the mandatory
-// audit row lands before the manager writes.
+// permission from a role. A permission the translation has no row for is a 400.
 func (p *product) handleGrantDelete(ctx context.Context, in grantInput) (struct{}, error) {
 	role := authz.Role(in.Role)
 	permission := authz.Permission(in.Permission)

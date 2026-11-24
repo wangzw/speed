@@ -15,10 +15,9 @@ import (
 // response is one answer a case drives.
 type response struct{ status int }
 
-// TestPlatformAdminIsRefusedByRoleNameUnconditionally holds the first rule: a
-// write whose role segment is platform-admin is refused with the protected code
-// on every route, and nothing downstream runs. The refusal does not depend on
-// the tenant, the caller's permissions or the role existing.
+// TestPlatformAdminIsRefusedByRoleNameUnconditionally holds the first rule:
+// a write whose role segment is platform-admin is refused with the protected
+// code on every route, and nothing downstream runs.
 func TestPlatformAdminIsRefusedByRoleNameUnconditionally(t *testing.T) {
 	const reserved = string(authz.PlatformAdminRole)
 	cases := map[string]func(*rig) *response{
@@ -134,9 +133,7 @@ func TestBindingTenantAdminIsAllowedSubjectToTheOtherRules(t *testing.T) {
 }
 
 // TestAGrantOutsideTheGovernedSetIsABadRequest holds the third rule: a grant
-// write names only a governed permission. The refusal is a 400 with the
-// bad-request code, because the request named a code this surface cannot grant,
-// and nothing downstream runs.
+// write names only a governed permission.
 func TestAGrantOutsideTheGovernedSetIsABadRequest(t *testing.T) {
 	const ungoverned = authz.PermissionSessionRead // declared and translated, but not governed
 	r := newRig(t, ungoverned)
@@ -155,10 +152,8 @@ func TestAGrantOutsideTheGovernedSetIsABadRequest(t *testing.T) {
 	assertRefusedBeforeDownstream(t, r)
 }
 
-// TestAGrantTheCallerDoesNotHoldIsProtected holds the fourth rule: a caller may
-// not grant a permission it does not hold. The refusal is a 403 with the
-// protected code — the target is not permitted, not the caller short a
-// permission — and nothing downstream runs.
+// TestAGrantTheCallerDoesNotHoldIsProtected holds the fourth rule: a caller
+// may not grant a permission it does not hold.
 func TestAGrantTheCallerDoesNotHoldIsProtected(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleRead, authz.PermissionTenantRoleManage)
 	r.subject.answer(authz.PermissionTenantRoleRead) // holds read, not manage
@@ -193,8 +188,7 @@ func TestAnUnreadableHeldSetIsA503(t *testing.T) {
 
 // TestABindingToARoleHigherThanTheCallerIsProtected holds the fifth rule: a
 // binding may not hand out a role holding a permission the caller does not
-// hold. The role's grants are read and mapped back through the catalog; a grant
-// the caller does not hold is a protected refusal.
+// hold.
 func TestABindingToARoleHigherThanTheCallerIsProtected(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleRead, authz.PermissionTenantRoleManage)
 	r.subject.answer(authz.PermissionTenantRoleRead) // holds read only

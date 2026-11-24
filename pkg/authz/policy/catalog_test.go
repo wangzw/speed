@@ -9,11 +9,9 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// TestTheCentralCatalogSplitsTheAdministrationGrantSets holds the governed set
-// the process declares: the tenant-administration codes, membership management
-// and identity-provider management, and nothing else. The platform
-// administrator's full declared set is not narrowed; the tenant administrator's
-// exact set is this one.
+// TestTheCentralCatalogSplitsTheAdministrationGrantSets holds the governed
+// set the process declares: the tenant-administration codes, membership
+// management and identity-provider management, and nothing else.
 func TestTheCentralCatalogSplitsTheAdministrationGrantSets(t *testing.T) {
 	reg := core.New()
 	reg.Register(Module())
@@ -66,11 +64,10 @@ func TestTheCentralCatalogSplitsTheAdministrationGrantSets(t *testing.T) {
 	}
 }
 
-// TestTheCatalogTranslatesAPairBackToItsPermission holds the catalog's reverse
-// read: the engine matches a grant's (object, action) pair and never sees the
-// permission, so a view built from the pair names the permission a client wrote
-// it as. Every declared permission with a translation row round-trips, and a
-// pair no declared permission translates to answers false rather than a name.
+// TestTheCatalogTranslatesAPairBackToItsPermission holds the catalog's
+// reverse read: the engine matches a grant's (object, action) pair and never
+// sees the permission, so a view built from the pair names the permission a
+// client wrote it as.
 func TestTheCatalogTranslatesAPairBackToItsPermission(t *testing.T) {
 	reg := core.New()
 	reg.Register(Module())
@@ -99,10 +96,8 @@ func TestTheCatalogTranslatesAPairBackToItsPermission(t *testing.T) {
 }
 
 // TestTheGovernedPermissionsCarryTheirGovernanceMetadata holds the catalog's
-// metadata for the closed governance set: the group each permission belongs to
-// and whether granting it is dangerous. The capability fills this in
-// declaredPermissions, so a permission that quietly loses its mark would make
-// the management surface show a dangerous grant as ordinary.
+// metadata for the closed governance set: the group each permission belongs
+// to and whether granting it is dangerous.
 func TestTheGovernedPermissionsCarryTheirGovernanceMetadata(t *testing.T) {
 	reg := core.New()
 	reg.Register(Module())

@@ -2,13 +2,8 @@ package authz
 
 import "testing"
 
-// TestPermissionConstantsHoldTheirPublishedValues pins every permission
-// constant to the exact string it publishes, and the platform domain to its
-// reserved value. These strings are the vocabulary shared with authn.Action and
-// the reserved domain a platform policy row is scoped by, both of which are
-// published surfaces: a wrong value fails here. The test names each constant,
-// so a rename or a removal fails to build rather than passing on the ones that
-// remain.
+// TestPermissionConstantsHoldTheirPublishedValues checks that every permission
+// constant and the platform domain hold their published strings.
 func TestPermissionConstantsHoldTheirPublishedValues(t *testing.T) {
 	permissions := []struct {
 		name string
@@ -64,10 +59,8 @@ func TestPermissionConstantsHoldTheirPublishedValues(t *testing.T) {
 	}
 }
 
-// TestAdministrationRoleNamesHoldTheirPublishedValues pins the two
-// administration roles to the names the design publishes. A binding is written
-// and read by name, and the domain each role may appear in is decided by these
-// values, so a wrong value would place a role in the wrong domain.
+// TestAdministrationRoleNamesHoldTheirPublishedValues checks that the two
+// administration roles hold the names the design publishes.
 func TestAdministrationRoleNamesHoldTheirPublishedValues(t *testing.T) {
 	if PlatformAdminRole != Role("platform-admin") {
 		t.Errorf("PlatformAdminRole is %q, want %q", PlatformAdminRole, "platform-admin")

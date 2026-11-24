@@ -31,10 +31,7 @@ func grantedPairs(t *testing.T, f *fixture, tenant string, role authz.Role) []au
 }
 
 // Seeding adds a grant the role does not hold, including on a builtin role,
-// and a repeated seed adds nothing. The manager's own grant writes on the same
-// role stay refused, which is the path the management surface takes, and the
-// refusal covers deleting a grant the seed added: the seeding surface only
-// grows the set.
+// and a repeated seed adds nothing.
 func TestSeedingGrowsABuiltinRolesGrantsAndTheManagerStaysRefused(t *testing.T) {
 	f := newFixture(t)
 	// Binding the platform administrator role in the platform domain requires a
@@ -133,8 +130,7 @@ func TestSeedingGrowsABuiltinRolesGrantsAndTheManagerStaysRefused(t *testing.T) 
 	}
 }
 
-// Seeding names a role that has to exist, and a tenant. Both refusals land
-// before any row is written.
+// Seeding names a role that has to exist, and a tenant.
 func TestSeedingRefusesAnUnknownRoleAndAnEmptyTenant(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()

@@ -19,6 +19,8 @@ type txAfter = func(context.Context) error
 
 var errRollback = errors.New("caller rolled back")
 
+// TestPutRoleTxWritesInTheCallersTransaction checks that PutRoleTx writes a
+// role inside the transaction the caller hands it.
 func TestPutRoleTxWritesInTheCallersTransaction(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -65,6 +67,8 @@ func TestPutRoleTxWritesInTheCallersTransaction(t *testing.T) {
 	}
 }
 
+// TestDeleteRoleTxWritesInTheCallersTransaction checks that DeleteRoleTx
+// writes inside the transaction the caller hands it.
 func TestDeleteRoleTxWritesInTheCallersTransaction(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -99,6 +103,8 @@ func TestDeleteRoleTxWritesInTheCallersTransaction(t *testing.T) {
 	}
 }
 
+// TestSeedGrantsTxAndPutBindingTxWriteInTheCallersTransaction checks that
+// SeedGrantsTx and PutBindingTx both write inside the caller's transaction.
 func TestSeedGrantsTxAndPutBindingTxWriteInTheCallersTransaction(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -168,6 +174,8 @@ func TestSeedGrantsTxAndPutBindingTxWriteInTheCallersTransaction(t *testing.T) {
 	}
 }
 
+// TestClearAccountBindingsTxWritesInTheCallersTransaction checks that
+// ClearAccountBindingsTx writes inside the transaction the caller hands it.
 func TestClearAccountBindingsTxWritesInTheCallersTransaction(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()

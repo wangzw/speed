@@ -11,9 +11,7 @@ import (
 )
 
 // The paths the tenant management routes are mounted on, resolved from the
-// declarations against the API root the module's Spec carries. The declarations
-// write them relative to that root, so the fragment and the registration share
-// one source.
+// declarations against the API root the module's Spec carries.
 var (
 	pathPermissions = tenantAdminSpec.ResolvePath(pathPermissionsFragment)
 
@@ -28,18 +26,15 @@ var (
 )
 
 // managementGroups names the route groups in the order the start diagnostic
-// writes them. Every group is always mounted, because the manager, the catalog,
-// the permission reader and the membership checker it needs are required.
+// writes them.
 var managementGroups = []string{"catalog", "roles", "grants", "bindings"}
 
 // realmKey is where the name of the endpoint a route was mounted on is put for
-// the handler to read back. A handler that answers 401 itself writes the
-// endpoint's name as the realm of its challenge — the name of the protection
-// space, the same realm the admission and authorization layers use.
+// the handler to read back as the realm of its 401.
 const realmKey = "authz.tenantadmin.realm"
 
-// withRealm wraps a route handler so the endpoint it was mounted on reaches it
-// as the realm of its 401.
+// withRealm binds a route handler to the endpoint it was mounted on, so the
+// endpoint reaches it as the realm of its 401.
 func withRealm(endpoint string, handler gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Set(realmKey, endpoint)
@@ -47,8 +42,8 @@ func withRealm(endpoint string, handler gin.HandlerFunc) gin.HandlerFunc {
 	}
 }
 
-// route is one route: the method and path it answers, the permission the
-// handler-internal decision asks for, and the handler that serves it.
+// route is one route: its method and path, the permission the handler-internal
+// decision asks for, and its handler.
 type route struct {
 	method  string
 	path    string
@@ -57,10 +52,7 @@ type route struct {
 }
 
 // routes is the closed set of tenant management routes, in the order they are
-// mounted. Each handler is bound from the operation declared for it, and each
-// is put behind the guard that makes the identity, registration and permission
-// decision in the tenant the path names before the entry point binds the
-// request.
+// mounted.
 func (p *product) routes() []route {
 	routes := []route{
 		{
@@ -123,14 +115,11 @@ func (p *product) routes() []route {
 
 // mount resolves every configured endpoint on the entry point and registers the
 // tenant management routes on each. Every name is looked up before any route is
-// registered, so a name the entry point does not declare fails the startup
-// naming that endpoint rather than leaving a partial mounting behind.
+// registered.
 //
-// Every route is wrapped with the tenant administration guard the tenant
-// capability delivers, and a mount with no such guard is refused: a route
-// mounted without it would let a caller authorized in one tenant reach another
-// tenant's policy data by naming that tenant in the path, and would let a
-// caller address the platform domain, which this surface does not administer.
+// Every route is wrapped with the tenant administration guard; a mount with no
+// such guard is refused, since a route mounted without it would let a caller
+// authorized in one tenant reach another's data or the platform domain.
 func (p *product) mount(router speedhttp.Router) error {
 	if p.routeGuard == nil {
 		return fmt.Errorf("%s: the tenant-scoped routes need the tenant administration guard, and no "+
@@ -157,13 +146,8 @@ func (p *product) mount(router speedhttp.Router) error {
 }
 
 // declareOpen records every route as needing no permission on the
-// route-declaration surface, when one is present.
-//
-// The routes are declared open so that the authorization middleware lets a
-// request reach the guard wrapper: the wrapper makes the decision, in the
-// tenant the path names, on the permission the route table carries. Declaring
-// them to require a permission would make the middleware decide, and the module
-// grants itself no permission.
+// route-declaration surface, when one is present, so the middleware lets a
+// request reach the guard wrapper, which makes the decision.
 func (p *product) declareOpen() {
 	if p.gate == nil {
 		return

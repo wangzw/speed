@@ -113,11 +113,11 @@ func TestGrantableAsksTheWriteGuard(t *testing.T) {
 	}
 }
 
-// TestGrantableFailsClosedWithoutAMembershipChecker holds the assembly rule: an
-// invitation an account issues is accepted only after the inviter's standing is
-// replayed through the membership checker, so without one the issue itself is
-// refused rather than written into an invitation that could never be accepted.
-// A host command has no standing to replay and needs none.
+// TestGrantableFailsClosedWithoutAMembershipChecker holds the assembly rule:
+// an invitation an account issues is accepted only after the inviter's
+// standing is replayed through the membership checker, so without one the
+// issue itself is refused rather than written into an invitation that could
+// never be accepted.
 func TestGrantableFailsClosedWithoutAMembershipChecker(t *testing.T) {
 	f := roleFixture(t)
 	f.membership = nil
@@ -150,10 +150,10 @@ func TestGrantableJudgesThePermissionBeforeTheRole(t *testing.T) {
 	}
 }
 
-// TestGrantableAcceptsAHostCommand holds the host path: a host command issuing
-// an invitation has no acting account, and it may bind roles directly, so the
-// judgement is the role's existence, the platform-administrator refusal and the
-// write guard. The held set is not consulted.
+// TestGrantableAcceptsAHostCommand holds the host path: a host command
+// issuing an invitation has no acting account, and it may bind roles
+// directly, so the judgement is the role's existence, the
+// platform-administrator refusal and the write guard.
 func TestGrantableAcceptsAHostCommand(t *testing.T) {
 	f := roleFixture(t)
 	ctx := t.Context()
@@ -175,9 +175,8 @@ func TestGrantableAcceptsAHostCommand(t *testing.T) {
 }
 
 // TestStillGrantableReplaysTheInvitersHeldSet holds the acceptance-time
-// judgement: the role has to still exist and every permission it carries has to
-// still be within the inviter's held set. A host-issued invitation has no
-// inviter, so only the role's existence is checked.
+// judgement: the role has to still exist and every permission it carries has
+// to still be within the inviter's held set.
 func TestStillGrantableReplaysTheInvitersHeldSet(t *testing.T) {
 	f := roleFixture(t)
 	ctx := t.Context()

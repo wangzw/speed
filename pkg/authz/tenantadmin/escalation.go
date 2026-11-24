@@ -8,25 +8,17 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// errNoIdentity is what an anti-escalation read reports when the request
-// carries no identity. The route's guard wrapper refuses such a request before
-// any handler runs, so this is unreachable through the mounted surface; a
-// handler called directly is answered as an outage rather than granted an empty
-// held set.
+// errNoIdentity is what an anti-escalation read reports when the request carries
+// no identity.
 var errNoIdentity = errors.New("authz.tenantadmin: the request carries no identity")
 
-// The anti-escalation rules, each one a named check that runs before the host
-// write guard, the mandatory audit and the manager. They are the tenant
-// surface's own: the manager enforces what it enforces for every caller, and
-// these narrow it further for a tenant administrator.
+// The anti-escalation rules run before the host write guard, the mandatory audit
+// and the manager.
 
 // refuseRoleRowWrite refuses a role create, rewrite or delete that names a
-// reserved role. platform-admin exists only in the platform domain, and
-// tenant-admin is the domain's builtin administrator whose grant set only the
-// host's seeding and reconciling surfaces change; neither role row belongs to
-// this surface. The check is on the name alone, unconditionally: it does not
-// depend on the role existing, on the caller's permissions or on the tenant
-// being protected.
+// reserved role: platform-admin exists only in the platform domain, and
+// tenant-admin's grant set only the host's seeding and reconciling surfaces
+// change. The check is on the name alone, unconditionally.
 func refuseRoleRowWrite(role authz.Role) error {
 	switch role {
 	case authz.PlatformAdminRole, authz.TenantAdminRole:
@@ -35,17 +27,13 @@ func refuseRoleRowWrite(role authz.Role) error {
 	return nil
 }
 
-// refuseRoleGrantsWrite refuses a grant write that names a reserved role. It is
-// the same protection refuseRoleRowWrite gives the role rows, applied to the
-// grants under them: a tenant administrator may not add to or remove from
-// either role's grant set.
+// refuseRoleGrantsWrite refuses a grant write that names a reserved role.
 func refuseRoleGrantsWrite(role authz.Role) error {
 	return refuseRoleRowWrite(role)
 }
 
 // refuseBindingRole refuses a binding that names the platform administrator
-// role. tenant-admin is deliberately allowed: a tenant administrator may bind
-// another account as an administrator, subject to the subset, membership and
+// role. tenant-admin is allowed, subject to the subset, membership and
 // last-administrator rules.
 func refuseBindingRole(role authz.Role) error {
 	if role == authz.PlatformAdminRole {
@@ -54,11 +42,8 @@ func refuseBindingRole(role authz.Role) error {
 	return nil
 }
 
-// heldPermissions reads the caller's effective permissions in the tenant domain
-// through SubjectPermissions. The subject is the request's effective account —
-// the one an authorization decision uses — and not the path or body. A read
-// that fails is a 503 and is never read as an empty set: an empty set is a
-// conclusion, a fault is not.
+// heldPermissions reads the caller's effective permissions in the tenant domain.
+// A read that fails is a 503, never an empty set.
 func (p *product) heldPermissions(ctx context.Context, tenant string) (map[authz.Permission]bool, error) {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
@@ -76,8 +61,7 @@ func (p *product) heldPermissions(ctx context.Context, tenant string) (map[authz
 }
 
 // requireMembership refuses a binding whose account is not an active member of
-// the tenant. A checker that answers false is a 400; a checker that cannot
-// answer is a 503 and is never read as a member.
+// the tenant. A checker that cannot answer is a 503, never a member.
 func (p *product) requireMembership(ctx context.Context, tenant, account string) error {
 	member, err := p.membership.IsMember(ctx, tenant, account)
 	if err != nil {
@@ -90,14 +74,9 @@ func (p *product) requireMembership(ctx context.Context, tenant, account string)
 }
 
 // requireRoleSubset refuses a binding of a role that holds a permission the
-// caller does not hold. The rule itself lives in the policy module, where the
-// invitation's role judgement reads it too; this surface maps its two outcomes
-// to its own answers. A read that fails is a 503; a role outside the held set is
-// the protected refusal.
-//
-// The rule is what makes binding tenant-admin allowed but not free: the role
-// holds the whole governed set, so only a caller that holds the whole governed
-// set — the tenant's own administrator — may bind it.
+// caller does not hold. A read that fails is a 503; a role outside the held set
+// is the protected refusal. It is what makes binding tenant-admin allowed but
+// not free: only a caller holding the whole governed set may bind it.
 func (p *product) requireRoleSubset(ctx context.Context, tenant string, role authz.Role, held map[authz.Permission]bool) error {
 	within, err := p.manager.RoleSubsetHeld(ctx, tenant, role, held)
 	if err != nil {
@@ -110,9 +89,7 @@ func (p *product) requireRoleSubset(ctx context.Context, tenant string, role aut
 }
 
 // removingOwnBinding reports whether the account a tenant-admin binding delete
-// names is the caller the request is taken to be from. The effective account is
-// the subject an authorization decision uses, and it is the one an impersonated
-// request is decided for.
+// names is the effective account the request is made for.
 func removingOwnBinding(ctx context.Context, role authz.Role, account string) bool {
 	if role != authz.TenantAdminRole {
 		return false

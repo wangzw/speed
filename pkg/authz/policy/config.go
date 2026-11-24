@@ -17,29 +17,20 @@ const (
 	refreshIntervalKey  = ConfigNamespace + "." + refreshIntervalItem
 )
 
-// configDefaults is what this module is worth without a configuration file. The
-// load timeout has a default, so no command can fail to supply what this module
-// needs by omitting it. The refresh interval defaults to zero, which turns the
-// periodic reload off, so an assembly with an event bus relies on events alone.
+// configDefaults is what this module is worth without a configuration file: a
+// five-second load timeout and no periodic reload.
 var configDefaults = moduleConfig{
 	LoadTimeout: 5 * time.Second,
 }
 
 // moduleConfig is the set of input items this module accepts.
-//
-// Both items are configuration rather than settings. The load timeout is read
-// before the snapshot exists: a value that had to come from the database could
-// not bound the read of the snapshot that comes out of it. The refresh interval
-// sizes the ticker a startup raises, so a change to it takes a restart anyway.
 type moduleConfig struct {
-	// LoadTimeout bounds the startup load of the whole policy. A load that has
-	// not finished within it fails the startup: a process that began serving
-	// with a half-read snapshot would answer from a policy it cannot vouch for.
+	// LoadTimeout bounds the startup load of the whole policy; a load that has
+	// not finished within it fails the startup.
 	LoadTimeout time.Duration `config:"load-timeout"`
 
-	// RefreshInterval is how often the snapshot is reloaded from the table when
-	// no event bus carries a change. Zero means no periodic reload: a change
-	// this replica never hears about stays invisible until it restarts.
+	// RefreshInterval is how often the snapshot is reloaded when no event bus
+	// carries a change. Zero means no periodic reload.
 	RefreshInterval time.Duration `config:"refresh-interval"`
 }
 
@@ -50,10 +41,7 @@ type resolution struct {
 }
 
 // resolve turns the declared configuration into what the module uses. A
-// non-positive timeout is refused: no load finishes in zero time, so accepting
-// it would fail every startup, and a negative one names no duration at all. A
-// negative refresh interval is refused for the same reason; zero is the "off"
-// value the item is given.
+// non-positive timeout and a negative refresh interval are refused.
 func (c moduleConfig) resolve() (resolution, error) {
 	if c.LoadTimeout <= 0 {
 		return resolution{}, fmt.Errorf("%w: %s is %s, and the load of the whole policy must be "+
@@ -68,8 +56,7 @@ func (c moduleConfig) resolve() (resolution, error) {
 	return resolution{loadTimeout: c.LoadTimeout, refreshInterval: c.RefreshInterval}, nil
 }
 
-// schema declares this module's input items. The namespace is this module's own
-// name, as it is for every registering module.
+// schema declares this module's input items.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,
@@ -87,8 +74,7 @@ func schema() config.Schema {
 	}
 }
 
-// readConfig decodes this module's section and validates it. Prepare and New
-// both go through it, so the two see one configuration.
+// readConfig decodes this module's section and validates it.
 func readConfig(reader config.Reader) (resolution, error) {
 	var cfg moduleConfig
 	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {

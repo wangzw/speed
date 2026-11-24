@@ -76,11 +76,9 @@ func decodeProblem(t *testing.T, body []byte) problemDoc {
 
 // TestAForbiddenWriteIsA403WithTheModuleType holds the shape of both 403s: a
 // policy denial and an undeclared route are written the same way, with the
-// module's problem type and the status the outcome set states, and the detail is
-// the class of the refusal alone — non-empty, the same for both permissions, and
-// naming no permission of the vocabulary. The permission a route asked for
-// reaches neither the body nor any response header. Writing the permission into
-// the detail or a header, or answering 503 for a denial, fails the case.
+// module's problem type and the status the outcome set states, and the
+// detail is the class of the refusal alone — non-empty, the same for both
+// permissions, and naming no permission of the vocabulary.
 func TestAForbiddenWriteIsA403WithTheModuleType(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -215,10 +213,9 @@ func TestTheOutcomeNamesAreTheClosedDesignSet(t *testing.T) {
 	}
 }
 
-// TestTheOutcomeStatusIsTheClosedSet holds the refusal codes to the closed set:
-// 403 for a denial or an undeclared route, 401 for a missing identity, 503 for an
-// outage, and 200 for the one that passes. A case table that misses a member
-// fails the case.
+// TestTheOutcomeStatusIsTheClosedSet holds the refusal codes to the closed
+// set: 403 for a denial or an undeclared route, 401 for a missing identity,
+// 503 for an outage, and 200 for the one that passes.
 func TestTheOutcomeStatusIsTheClosedSet(t *testing.T) {
 	want := map[outcome]int{
 		allowed:    nethttp.StatusOK,

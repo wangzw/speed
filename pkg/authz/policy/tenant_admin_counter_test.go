@@ -189,8 +189,7 @@ func TestTheCounterFailsClosedWhenTheGuardCannotAnswer(t *testing.T) {
 }
 
 // With no write guard assembled every active tenant counts as a business
-// tenant. The answer may protect the deletion more widely than the host
-// intends, which is the side to fail on; it never lets one through.
+// tenant.
 func TestWithoutAWriteGuardEveryActiveTenantCounts(t *testing.T) {
 	p := newProductOver(t)
 	bindTenantAdmin(t, p, "personal-acc1", "acc1")
@@ -236,11 +235,11 @@ func TestTheCounterAnswersTheFirstTenantByIdentifier(t *testing.T) {
 	}
 }
 
-// TestLockAccountAdministrationSerialisesOneTenantsDeletions holds the lock a
-// deletion takes: one holding of the lock excludes another account's deletion
-// in the same tenant, so the two cannot each read the other's binding as
-// present and then together leave the tenant with no administrator. The release
-// is idempotent, and a second acquire succeeds once the first is released.
+// TestLockAccountAdministrationSerialisesOneTenantsDeletions holds the lock
+// a deletion takes: one holding of the lock excludes another account's
+// deletion in the same tenant, so the two cannot each read the other's
+// binding as present and then together leave the tenant with no
+// administrator.
 func TestLockAccountAdministrationSerialisesOneTenantsDeletions(t *testing.T) {
 	p := newProductOver(t)
 	bindTenantAdmin(t, p, "acme", "acc1")
