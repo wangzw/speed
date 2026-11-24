@@ -3,18 +3,16 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, configure } from '@testing-library/react'
 import { afterEach, beforeEach } from 'vitest'
-import { userEvent } from 'vitest/browser'
+import 'vitest/browser'
 import { asyncBudgetMs } from './gate-time.js'
-import type { AxeKeyboardDriver } from './axe.js'
 
 // `vitest/browser` stays in this browser-only setup: it augments Vitest's
 // matchers with an older jest-dom set, and the harness is compiled into
 // every jsdom program too.
-const keyboardDriverHost = globalThis as {
-  __speedAxeKeyboardDriver?: AxeKeyboardDriver
+const browserTierHost = globalThis as {
+  __speedAxeBrowserTier?: boolean
 }
-keyboardDriverHost.__speedAxeKeyboardDriver = (keys) =>
-  userEvent.keyboard(keys)
+browserTierHost.__speedAxeBrowserTier = true
 
 declare const __SPEED_GATE_TIME_SCALE__: number
 

@@ -7,6 +7,8 @@ const DIALOG_ID = 'axe-jsdom-fixture-dialog'
 const MENU_ID = 'axe-jsdom-fixture-menu'
 const TOOLTIP_ID = 'axe-jsdom-fixture-tooltip'
 const NESTED_HOST_ID = 'axe-jsdom-fixture-nested-host'
+const HIDDEN_CONTROL_ID = 'axe-jsdom-fixture-hidden-control'
+const HEADING_ID = 'axe-jsdom-fixture-heading'
 
 const CHROMIUM_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
@@ -24,14 +26,32 @@ function stubUserAgent(ua: string): void {
   })
 }
 
-function buildOpenDialog(): void {
+interface BackgroundOptions {
+  readonly ariaHidden?: boolean
+  readonly inert?: boolean
+}
+
+function buildBackground({
+  ariaHidden = true,
+  inert = true,
+}: BackgroundOptions = {}): void {
   const background = document.createElement('div')
   background.id = BACKGROUND_ID
-  background.setAttribute('aria-hidden', 'true')
+  if (ariaHidden) {
+    background.setAttribute('aria-hidden', 'true')
+  }
+  if (inert) {
+    background.setAttribute('inert', '')
+  }
   const backgroundButton = document.createElement('button')
   backgroundButton.type = 'button'
   backgroundButton.textContent = 'Background action'
   background.append(backgroundButton)
+  document.body.append(background)
+}
+
+function buildOpenDialog(options: BackgroundOptions = {}): void {
+  buildBackground(options)
 
   const root = document.createElement('div')
   root.id = DIALOG_ID
@@ -47,18 +67,11 @@ function buildOpenDialog(): void {
   paper.append(first)
   root.append(paper)
 
-  document.body.append(background, root)
+  document.body.append(root)
 }
 
-function buildOpenMenu(): void {
-  const background = document.createElement('div')
-  background.id = BACKGROUND_ID
-  background.setAttribute('aria-hidden', 'true')
-  const backgroundButton = document.createElement('button')
-  backgroundButton.type = 'button'
-  backgroundButton.textContent = 'Background action'
-  background.append(backgroundButton)
-  document.body.append(background)
+function buildOpenMenu(options: BackgroundOptions = {}): void {
+  buildBackground(options)
 
   const root = document.createElement('div')
   root.id = MENU_ID
@@ -69,8 +82,11 @@ function buildOpenMenu(): void {
   backdrop.style.inset = '0'
   const paper = document.createElement('div')
   paper.className = 'MuiMenu-paper'
+  paper.setAttribute('role', 'menu')
+  paper.setAttribute('aria-label', 'Fixture menu')
   const copy = document.createElement('button')
   copy.type = 'button'
+  copy.setAttribute('role', 'menuitem')
   copy.setAttribute('aria-label', 'Copy setup key')
   copy.textContent = 'Copy'
   paper.append(copy)
@@ -78,15 +94,52 @@ function buildOpenMenu(): void {
   document.body.append(root)
 }
 
-function buildOpenDialogWithMismatch(): void {
+function buildHiddenFocusable(): void {
+  const hidden = document.createElement('div')
+  hidden.id = HIDDEN_CONTROL_ID
+  hidden.setAttribute('aria-hidden', 'true')
+  const action = document.createElement('button')
+  action.type = 'button'
+  action.textContent = 'Hidden action'
+  hidden.append(action)
+  document.querySelector<HTMLElement>('.MuiMenu-paper')?.append(hidden)
+}
+
+function buildExitingDialog(): void {
+  const heading = document.createElement('h1')
+  heading.id = HEADING_ID
+  heading.textContent = 'Fixture page'
+  document.body.append(heading)
+
+  // A background still aria-hidden but no longer inert is exactly the exit
+  // window: MUI keeps aria-hidden until the transition ends while the hook
+  // lifted inert at close. It carries no focusable control, so only the
+  // overlay-open decision can make this scan fail.
   const background = document.createElement('div')
   background.id = BACKGROUND_ID
   background.setAttribute('aria-hidden', 'true')
-  const backgroundButton = document.createElement('button')
-  backgroundButton.type = 'button'
-  backgroundButton.textContent = 'Background action'
-  background.append(backgroundButton)
   document.body.append(background)
+
+  const root = document.createElement('div')
+  root.id = DIALOG_ID
+  root.className = 'MuiModal-root MuiDialog-root'
+  const sentinelStart = document.createElement('div')
+  sentinelStart.setAttribute('data-testid', 'sentinelStart')
+  sentinelStart.setAttribute('tabindex', '-1')
+  const paper = document.createElement('div')
+  paper.className = 'MuiDialog-paper'
+  paper.setAttribute('role', 'dialog')
+  paper.setAttribute('aria-modal', 'true')
+  paper.setAttribute('aria-label', 'Fixture dialog')
+  const sentinelEnd = document.createElement('div')
+  sentinelEnd.setAttribute('data-testid', 'sentinelEnd')
+  sentinelEnd.setAttribute('tabindex', '-1')
+  root.append(sentinelStart, paper, sentinelEnd)
+  document.body.append(root)
+}
+
+function buildOpenDialogWithMismatch(): void {
+  buildBackground()
 
   const root = document.createElement('div')
   root.id = DIALOG_ID
@@ -170,8 +223,9 @@ afterEach(() => {
   document.getElementById(MENU_ID)?.remove()
   document.getElementById(TOOLTIP_ID)?.remove()
   document.getElementById(NESTED_HOST_ID)?.remove()
-  delete (globalThis as { __speedAxeKeyboardDriver?: () => Promise<void> })
-    .__speedAxeKeyboardDriver
+  document.getElementById(HEADING_ID)?.remove()
+  delete (globalThis as { __speedAxeBrowserTier?: boolean })
+    .__speedAxeBrowserTier
   if (userAgentDescriptor === undefined) {
     delete (window.navigator as { userAgent?: string }).userAgent
   } else {
@@ -193,30 +247,21 @@ describe('the tier decision under jsdom', () => {
     )
   })
 
-  it('reports a rule other than the one a jsdom case declares', async () => {
+  it('does not report the rule a jsdom case declares decided in the browser', async () => {
     buildOpenDialogWithMismatch()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    try {
-      await expect(
-        expectNoAxeViolations({ decidedInBrowser: 'accountsDetailPanel' }),
-      ).resolves.toBeUndefined()
-      expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining('label-content-name-mismatch'),
-      )
-      expect(warn).not.toHaveBeenCalledWith(
-        expect.stringContaining('aria-hidden-focus'),
-      )
-    } finally {
-      warn.mockRestore()
-    }
+    await expect(
+      expectNoAxeViolations({ decidedInBrowser: 'totpManualDisclosure' }),
+    ).resolves.toBeUndefined()
+    expect(warn).not.toHaveBeenCalledWith(
+      expect.stringContaining('label-content-name-mismatch'),
+    )
   })
 
   it('fails a browser-tier declaration whose rule stays incomplete', async () => {
     buildOpenMenu()
-    const host = globalThis as {
-      __speedAxeKeyboardDriver?: () => Promise<void>
-    }
-    host.__speedAxeKeyboardDriver = async () => undefined
+    const host = globalThis as { __speedAxeBrowserTier?: boolean }
+    host.__speedAxeBrowserTier = true
     await expect(
       expectNoAxeViolations({ decidedInBrowser: 'totpManualDisclosure' }),
     ).rejects.toThrow(/left it incomplete/)
@@ -232,14 +277,14 @@ describe('the tier decision under jsdom', () => {
     buildOpenDialog()
     buildTooltipPortal(true)
     await expect(expectNoAxeViolations()).rejects.toThrow(
-      /background is not aria-hidden/,
+      /Without aria-hidden/,
     )
   })
 
   it('does not exempt a tooltip portal nested inside the overlay ancestor chain', async () => {
     buildNestedTooltipPortal()
     await expect(expectNoAxeViolations()).rejects.toThrow(
-      /background is not aria-hidden/,
+      /Without aria-hidden/,
     )
   })
 
@@ -247,7 +292,7 @@ describe('the tier decision under jsdom', () => {
     buildOpenDialog()
     buildTooltipPortalFocusableRoot()
     await expect(expectNoAxeViolations()).rejects.toThrow(
-      /background is not aria-hidden/,
+      /Without aria-hidden/,
     )
   })
 
@@ -255,7 +300,63 @@ describe('the tier decision under jsdom', () => {
     buildOpenDialog()
     buildTooltipPortalWithHiddenControl()
     await expect(expectNoAxeViolations()).rejects.toThrow(
-      /background is not aria-hidden/,
+      /Without aria-hidden/,
     )
+  })
+})
+
+describe('the background of an open overlay under jsdom', () => {
+  it('fails the scan when a dialog background is aria-hidden but not inert', async () => {
+    buildOpenDialog({ inert: false })
+    await expect(expectNoAxeViolations()).rejects.toThrow(/Without inert/)
+  })
+
+  it('passes when a dialog background is both aria-hidden and inert', async () => {
+    buildOpenDialog()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      await expect(expectNoAxeViolations()).resolves.toBeUndefined()
+      expect(warn).not.toHaveBeenCalledWith(
+        expect.stringContaining('aria-hidden-focus'),
+      )
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('fails the scan when a dialog background is inert but not aria-hidden', async () => {
+    buildOpenDialog({ ariaHidden: false })
+    await expect(expectNoAxeViolations()).rejects.toThrow(/Without aria-hidden/)
+  })
+
+  it('fails the scan when a menu background is aria-hidden but not inert', async () => {
+    buildOpenMenu({ inert: false })
+    await expect(expectNoAxeViolations()).rejects.toThrow(/Without inert/)
+  })
+
+  it('passes when a menu background is both aria-hidden and inert', async () => {
+    buildOpenMenu()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      await expect(expectNoAxeViolations()).resolves.toBeUndefined()
+      expect(warn).not.toHaveBeenCalledWith(
+        expect.stringContaining('aria-hidden-focus'),
+      )
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('fails the scan on an aria-hidden-focus violation instead of reporting it', async () => {
+    buildOpenMenu()
+    buildHiddenFocusable()
+    await expect(expectNoAxeViolations()).rejects.toThrow(
+      /axe violations found[\s\S]*aria-hidden-focus/,
+    )
+  })
+
+  it('does not treat a modal that is still exiting as an open overlay', async () => {
+    buildExitingDialog()
+    await expect(expectNoAxeViolations()).resolves.toBeUndefined()
   })
 })

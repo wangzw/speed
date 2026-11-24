@@ -361,11 +361,7 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
     await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
-    // The open panel's focus trap needs a real Tab, which jsdom lacks; the
-    // named browser case exercises it and decides aria-hidden-focus.
-    await expectNoAxeViolations({
-      decidedInBrowser: 'accountsDetailPanel',
-    })
+    await expectNoAxeViolations()
   })
 
   it('has no axe violations with the one-time secret displayed', async () => {
@@ -383,9 +379,7 @@ describe('AccountsPage', () => {
       }),
     )
     expect(await screen.findByRole('tooltip')).toBeInTheDocument()
-    await expectNoAxeViolations({
-      decidedInBrowser: 'accountsOneTimeSecret',
-    })
+    await expectNoAxeViolations()
   })
 
   it('declares the designed column priorities and caps the primary identity', async () => {

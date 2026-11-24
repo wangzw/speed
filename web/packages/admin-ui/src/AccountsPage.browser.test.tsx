@@ -114,6 +114,36 @@ function describeActiveElement(): string {
   return parts.join(' ')
 }
 
+const WALK_CONTROL_SELECTOR =
+  'a[href], button, input, select, textarea, [tabindex]'
+
+/** Presses `keys` through one full cycle of `root`'s controls, failing at
+ * the first step that lands focus outside `root`. */
+async function walkFocusTrap(root: HTMLElement, keys: string): Promise<void> {
+  const controls = [
+    ...root.querySelectorAll<HTMLElement>(WALK_CONTROL_SELECTOR),
+  ].filter(
+    (control) =>
+      control.tabIndex >= 0 &&
+      !control.hasAttribute('disabled') &&
+      control.getClientRects().length > 0,
+  )
+  expect(controls.length).toBeGreaterThan(0)
+  expect(
+    document.activeElement instanceof HTMLElement
+      && root.contains(document.activeElement),
+    `focus should start inside the panel; document.activeElement is ${describeActiveElement()}`,
+  ).toBe(true)
+  for (let step = 0; step <= controls.length; step += 1) {
+    await userEvent.keyboard(keys)
+    const active = document.activeElement
+    expect(
+      active instanceof HTMLElement && root.contains(active),
+      `step ${step} of the ${keys} walk left the panel; document.activeElement is ${describeActiveElement()}`,
+    ).toBe(true)
+  }
+}
+
 describe('AccountsPage horizontal overflow in Chromium', () => {
   for (const width of FLOOR_WIDTHS) {
     it(`keeps the account table inside a ${width}px viewport`, async () => {
@@ -656,14 +686,14 @@ describe('AccountsPage focus traps in Chromium', () => {
   })
 
   it('keeps the detail panel focus trap holding over a hidden page', async () => {
-    // The unit suite's open-panel scan cannot press Tab, so aria-hidden-focus
-    // is indeterminate there; the helper's browser pass exercises the trap
-    // and decides it (@speed/test-utils/axe).
     const panel = await openDetail()
     expect(panel).toBeInTheDocument()
-    await expectNoAxeViolations({
-      decidedInBrowser: 'accountsDetailPanel',
-    })
+    expect(
+      screen.getByRole('table', { hidden: true }).closest('[inert]'),
+    ).not.toBeNull()
+    await walkFocusTrap(panel, '{Tab}')
+    await walkFocusTrap(panel, '{Shift>}{Tab}{/Shift}')
+    await expectNoAxeViolations()
   })
 
   it('keeps the one-time secret focus trap holding over a hidden page', async () => {
@@ -684,8 +714,11 @@ describe('AccountsPage focus traps in Chromium', () => {
     // The reason tooltip is portaled outside the modal's aria-hidden chain;
     // the helper exempts a tooltip portal with no focusable control.
     expect(await screen.findByRole('tooltip')).toBeInTheDocument()
-    await expectNoAxeViolations({
-      decidedInBrowser: 'accountsOneTimeSecret',
-    })
+    expect(
+      screen.getByRole('table', { hidden: true }).closest('[inert]'),
+    ).not.toBeNull()
+    await walkFocusTrap(panel, '{Tab}')
+    await walkFocusTrap(panel, '{Shift>}{Tab}{/Shift}')
+    await expectNoAxeViolations()
   })
 })

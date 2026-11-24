@@ -42,6 +42,47 @@ function renderShell(
   return renderWithProviders(ui, { language: 'en-US', ...options })
 }
 
+const WALK_CONTROL_SELECTOR =
+  'a[href], button, input, select, textarea, [tabindex]'
+
+function describeActiveElement(): string {
+  const active = document.activeElement
+  if (!(active instanceof HTMLElement)) {
+    return 'no element'
+  }
+  const label = (active.getAttribute('aria-label') ?? active.textContent ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return label === ''
+    ? active.tagName.toLowerCase()
+    : `${active.tagName.toLowerCase()} "${label.slice(0, 60)}"`
+}
+
+async function walkFocusTrap(root: HTMLElement, keys: string): Promise<void> {
+  const controls = [
+    ...root.querySelectorAll<HTMLElement>(WALK_CONTROL_SELECTOR),
+  ].filter(
+    (control) =>
+      control.tabIndex >= 0 &&
+      !control.hasAttribute('disabled') &&
+      control.getClientRects().length > 0,
+  )
+  expect(controls.length).toBeGreaterThan(0)
+  expect(
+    document.activeElement instanceof HTMLElement
+      && root.contains(document.activeElement),
+    `focus should start inside the drawer; document.activeElement is ${describeActiveElement()}`,
+  ).toBe(true)
+  for (let step = 0; step <= controls.length; step += 1) {
+    await userEvent.keyboard(keys)
+    const active = document.activeElement
+    expect(
+      active instanceof HTMLElement && root.contains(active),
+      `step ${step} of the ${keys} walk left the drawer; document.activeElement is ${describeActiveElement()}`,
+    ).toBe(true)
+  }
+}
+
 function Banner({ height }: { readonly height: number }) {
   return (
     <div data-testid="banner" style={{ height, backgroundColor: '#f0c040' }}>
@@ -234,7 +275,7 @@ describe('AppShell geometry in Chromium', () => {
 
   it('keeps the temporary drawer focus trap holding on the mobile layout', async () => {
     await page.viewport(400, VIEWPORT_HEIGHT)
-    renderShell(
+    const { container } = renderShell(
       <AppShell navItems={NAV_ITEMS}>
         <h1>Main content</h1>
       </AppShell>,
@@ -248,9 +289,14 @@ describe('AppShell geometry in Chromium', () => {
           ?.getBoundingClientRect().width ?? 0,
       ).toBeGreaterThan(0)
     })
-    await expectNoAxeViolations({
-      decidedInBrowser: 'appShellMobileDrawer',
-    })
+    const drawer = document.querySelector<HTMLElement>(
+      `.${drawerClasses.root}`,
+    )
+    expect(drawer).not.toBeNull()
+    expect(container).toHaveAttribute('inert')
+    await walkFocusTrap(drawer as HTMLElement, '{Tab}')
+    await walkFocusTrap(drawer as HTMLElement, '{Shift>}{Tab}{/Shift}')
+    await expectNoAxeViolations()
   })
 })
 
@@ -691,9 +737,7 @@ describe('AppShell sidebar layout in Chromium', () => {
       Math.abs(bottomRow.getBoundingClientRect().bottom - paperRect.bottom),
     ).toBeLessThanOrEqual(1)
 
-    await expectNoAxeViolations({
-      decidedInBrowser: 'appShellSidebarDrawer',
-    })
+    await expectNoAxeViolations()
   })
 
   it('keeps the sidebar minimal top bar on the theme gutter below md', async () => {

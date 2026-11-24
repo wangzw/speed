@@ -1171,9 +1171,7 @@ describe('AppShell', () => {
         </AppShell>,
       )
       await user.click(getByRole('button', { name: zhCN.appShell.openNav }))
-      await expectNoAxeViolations({
-        decidedInBrowser: 'appShellSidebarDrawer',
-      })
+      await expectNoAxeViolations()
     })
   })
 
@@ -2070,9 +2068,7 @@ describe('AppShell', () => {
           .querySelector(`.${drawerClasses.paper}`)
           ?.getAttribute('aria-modal'),
       ).toBe('true')
-      await expectNoAxeViolations({
-        decidedInBrowser: 'appShellMobileDrawer',
-      })
+      await expectNoAxeViolations()
     })
   })
 })

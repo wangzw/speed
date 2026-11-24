@@ -5,42 +5,23 @@ const BACKGROUND_ID = 'axe-fixture-background'
 const DIALOG_ID = 'axe-fixture-dialog'
 const MENU_ID = 'axe-fixture-menu'
 
-function tabbables(root: HTMLElement): HTMLElement[] {
-  return [...root.querySelectorAll<HTMLElement>('button, [href], [tabindex]')]
-    .filter((element) => element.tabIndex >= 0)
+interface BackgroundOptions {
+  readonly ariaHidden?: boolean
+  readonly inert?: boolean
 }
 
-type TrapDirections = 'both' | 'forward' | 'none'
-
-function trapTab(root: HTMLElement, directions: TrapDirections): void {
-  if (directions === 'none') {
-    return
-  }
-  root.addEventListener('keydown', (event) => {
-    if (event.key !== 'Tab') {
-      return
-    }
-    const order = tabbables(root)
-    const firstTabbable = order[0]
-    const lastTabbable = order[order.length - 1]
-    if (
-      event.shiftKey &&
-      directions === 'both' &&
-      document.activeElement === firstTabbable
-    ) {
-      event.preventDefault()
-      lastTabbable.focus()
-    } else if (!event.shiftKey && document.activeElement === lastTabbable) {
-      event.preventDefault()
-      firstTabbable.focus()
-    }
-  })
-}
-
-function buildBackground(): void {
+function buildBackground({
+  ariaHidden = true,
+  inert = true,
+}: BackgroundOptions = {}): void {
   const background = document.createElement('div')
   background.id = BACKGROUND_ID
-  background.setAttribute('aria-hidden', 'true')
+  if (ariaHidden) {
+    background.setAttribute('aria-hidden', 'true')
+  }
+  if (inert) {
+    background.setAttribute('inert', '')
+  }
   const backgroundButton = document.createElement('button')
   backgroundButton.type = 'button'
   backgroundButton.textContent = 'Background action'
@@ -48,8 +29,8 @@ function buildBackground(): void {
   document.body.append(background)
 }
 
-function buildOpenDialog(directions: TrapDirections): void {
-  buildBackground()
+function buildOpenDialog(options: BackgroundOptions = {}): void {
+  buildBackground(options)
 
   const root = document.createElement('div')
   root.id = DIALOG_ID
@@ -69,14 +50,12 @@ function buildOpenDialog(directions: TrapDirections): void {
   paper.append(first, second)
   root.append(paper)
 
-  trapTab(root, directions)
-
   document.body.append(root)
   first.focus()
 }
 
-function buildOpenMenu(): void {
-  buildBackground()
+function buildOpenMenu(options: BackgroundOptions = {}): void {
+  buildBackground(options)
 
   const root = document.createElement('div')
   root.id = MENU_ID
@@ -101,15 +80,44 @@ function buildOpenMenu(): void {
   document.body.append(root)
 }
 
+function buildExitingDialog(): void {
+  const background = document.createElement('div')
+  background.id = BACKGROUND_ID
+  background.setAttribute('aria-hidden', 'true')
+  document.body.append(background)
+
+  const root = document.createElement('div')
+  root.id = DIALOG_ID
+  root.className = 'MuiModal-root MuiDialog-root'
+  const sentinelStart = document.createElement('div')
+  sentinelStart.setAttribute('data-testid', 'sentinelStart')
+  sentinelStart.setAttribute('tabindex', '-1')
+  const paper = document.createElement('div')
+  paper.className = 'MuiDialog-paper'
+  paper.setAttribute('role', 'dialog')
+  paper.setAttribute('aria-modal', 'true')
+  paper.setAttribute('aria-label', 'Fixture dialog')
+  const sentinelEnd = document.createElement('div')
+  sentinelEnd.setAttribute('data-testid', 'sentinelEnd')
+  sentinelEnd.setAttribute('tabindex', '-1')
+  root.append(sentinelStart, paper, sentinelEnd)
+  document.body.append(root)
+}
+
 afterEach(() => {
   document.getElementById(BACKGROUND_ID)?.remove()
   document.getElementById(DIALOG_ID)?.remove()
   document.getElementById(MENU_ID)?.remove()
 })
 
-describe('aria-hidden-focus under an open aria-modal dialog', () => {
-  it('is determined by a trap that holds, and prints no report', async () => {
-    buildOpenDialog('both')
+describe('an inert background under an open dialog in Chromium', () => {
+  it('fails the scan when the background is aria-hidden but not inert', async () => {
+    buildOpenDialog({ inert: false })
+    await expect(expectNoAxeViolations()).rejects.toThrow(/Without inert/)
+  })
+
+  it('passes when the background is both aria-hidden and inert', async () => {
+    buildOpenDialog()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     try {
       await expect(expectNoAxeViolations()).resolves.toBeUndefined()
@@ -121,39 +129,32 @@ describe('aria-hidden-focus under an open aria-modal dialog', () => {
     }
   })
 
-  it('fails the scan when Tab escapes to the aria-hidden background', async () => {
-    buildOpenDialog('none')
-    await expect(expectNoAxeViolations()).rejects.toThrow(
-      /focus trap does not hold/,
-    )
-  })
-
-  it('fails the scan when only Shift+Tab escapes to the aria-hidden background', async () => {
-    buildOpenDialog('forward')
-    await expect(expectNoAxeViolations()).rejects.toThrow(
-      /Shift\+Tab moved focus to .*outside the overlay/,
-    )
-  })
-
-  it('fails the scan when the open overlay leaves its background readable', async () => {
-    buildOpenDialog('both')
-    document.getElementById(BACKGROUND_ID)?.removeAttribute('aria-hidden')
-    await expect(expectNoAxeViolations()).rejects.toThrow(
-      /page-context exemption refused/,
-    )
+  it('fails the scan when the background is inert but not aria-hidden', async () => {
+    buildOpenDialog({ ariaHidden: false })
+    await expect(expectNoAxeViolations()).rejects.toThrow(/Without aria-hidden/)
   })
 })
 
-describe('aria-hidden-focus under an open menu', () => {
-  it('reports the unexercised trap with the reason, and does not fail the scan', async () => {
+describe('a modal still exiting in Chromium', () => {
+  it('is not asserted as an open overlay over its aria-hidden background', async () => {
+    buildExitingDialog()
+    await expect(expectNoAxeViolations()).resolves.toBeUndefined()
+  })
+})
+
+describe('an inert background under an open menu in Chromium', () => {
+  it('fails the scan when the background is aria-hidden but not inert', async () => {
+    buildOpenMenu({ inert: false })
+    await expect(expectNoAxeViolations()).rejects.toThrow(/Without inert/)
+  })
+
+  it('passes when the background is both aria-hidden and inert', async () => {
     buildOpenMenu()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     try {
       await expect(expectNoAxeViolations()).resolves.toBeUndefined()
-      expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining(
-          'the open overlay is not an aria-modal dialog or drawer, so its focus trap was not exercised',
-        ),
+      expect(warn).not.toHaveBeenCalledWith(
+        expect.stringContaining('aria-hidden-focus'),
       )
     } finally {
       warn.mockRestore()
