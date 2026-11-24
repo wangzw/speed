@@ -12,27 +12,15 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// localesFS carries this module's message catalog: one file per language, each
-// naming the subject and the two bodies of the verification message. It is
-// declared to the i18n engine as an i18n.Catalog resource, so the engine merges
-// it with every other module's and a Translate of one of these keys resolves to
-// words rather than to itself.
-//
 //go:embed locales/*.json
 var localesFS embed.FS
 
-// catalogPattern selects the message files under localesFS, one per locale.
 const catalogPattern = "locales/*.json"
 
-// messageCatalog is the catalog resource this module declares to the engine.
 func messageCatalog() i18n.Catalog {
 	return i18n.Catalog{FS: localesFS, Pattern: catalogPattern}
 }
 
-// catalogLocales lists the locales the embedded catalog carries, read off the
-// file names, sorted. The startup check renders every message in every one of
-// them, so a catalog with a language that is missing a message fails before any
-// code is sent rather than at the first request in that language.
 func catalogLocales() ([]i18n.Locale, error) {
 	names, err := fs.Glob(localesFS, catalogPattern)
 	if err != nil {
@@ -53,16 +41,6 @@ func catalogLocales() ([]i18n.Locale, error) {
 	return locales, nil
 }
 
-// catalogCarriesReset reports whether the catalog at fsys carries every reset
-// message, and carries it non-empty, in every locale file matching pattern. It
-// is a fact about the compiled-in catalog, read once per Module call, and it is
-// what puts the reset channel into the descriptor's Provides: a catalog with one
-// locale missing a leaf offers only the verifying channel rather than a channel
-// that would fail at the first send in that language.
-//
-// A pattern that matches nothing, a file that cannot be read or parsed, and an
-// empty leaf all read as not carried, because each leaves the reset message
-// unable to reach a recipient.
 func catalogCarriesReset(fsys fs.FS, pattern string) bool {
 	names, err := fs.Glob(fsys, pattern)
 	if err != nil || len(names) == 0 {
