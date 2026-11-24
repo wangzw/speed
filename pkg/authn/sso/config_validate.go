@@ -10,9 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/model"
 )
 
-// The config keys each protocol accepts. A key outside a protocol's set is an
-// unknown key and is refused, so a SAML setting written into an OIDC config is
-// reported rather than quietly ignored.
 var (
 	commonConfigKeys = map[string]bool{
 		"claims":         true,
@@ -35,19 +32,12 @@ var (
 	}
 )
 
-// The closed set of NameID formats a provider may take. transient carries no
-// stable subject, and any other format leaves nothing to bind on.
 const (
 	nameIDPersistent   = "persistent"
 	nameIDUnspecified  = "unspecified"
 	nameIDEmailAddress = "emailAddress"
 )
 
-// validateConfig checks a config against a protocol and returns its canonical
-// form, with the map keys sorted. It refuses an unknown key, a missing required
-// key and a value outside its rule, each as ErrInvalidConfig naming the key.
-// spKeyConfigured says whether the deployment carries the service provider's key,
-// which a SAML provider that signs its requests requires.
 func validateConfig(protocol string, raw []byte, spKeyConfigured bool) (json.RawMessage, error) {
 	if len(raw) == 0 {
 		return nil, fmt.Errorf("%w: the config is empty", authn.ErrInvalidConfig)
@@ -95,7 +85,6 @@ func validateConfig(protocol string, raw []byte, spKeyConfigured bool) (json.Raw
 	return out, nil
 }
 
-// validateCommonConfig checks the keys both protocols share.
 func validateCommonConfig(fields map[string]json.RawMessage) error {
 	if raw, ok := fields["claims"]; ok {
 		if err := validateClaims(raw); err != nil {
@@ -110,7 +99,6 @@ func validateCommonConfig(fields map[string]json.RawMessage) error {
 	return nil
 }
 
-// validateOIDCConfig checks an OIDC config's own keys.
 func validateOIDCConfig(fields map[string]json.RawMessage) error {
 	issuerRaw, ok := fields["issuer"]
 	if !ok {
@@ -152,7 +140,6 @@ func validateOIDCConfig(fields map[string]json.RawMessage) error {
 	return nil
 }
 
-// validateIssuer holds an OIDC issuer to a concrete https one.
 func validateIssuer(issuer string) error {
 	u, err := url.Parse(issuer)
 	if err != nil || u.Scheme != "https" || u.Host == "" {
@@ -165,9 +152,6 @@ func validateIssuer(issuer string) error {
 	return nil
 }
 
-// validateALGs refuses a signature algorithm set that admits an unsigned or
-// symmetric algorithm: none leaves the token unbound, and an HS algorithm lets a
-// holder of the client secret mint one.
 func validateALGs(algs []string) error {
 	for _, alg := range algs {
 		switch {
@@ -180,7 +164,6 @@ func validateALGs(algs []string) error {
 	return nil
 }
 
-// validateSAMLConfig checks a SAML config's own keys.
 func validateSAMLConfig(fields map[string]json.RawMessage, spKeyConfigured bool) error {
 	for _, key := range []string{"idp_entity_id", "idp_sso_url", "idp_certs"} {
 		if _, ok := fields[key]; !ok {
@@ -257,9 +240,6 @@ func validateSAMLConfig(fields map[string]json.RawMessage, spKeyConfigured bool)
 	return nil
 }
 
-// validateNameIDFormat holds a NameID format to the closed set that can carry a
-// stable subject. transient is refused for having none, and emailAddress needs a
-// subject attribute because the address itself is unstable.
 func validateNameIDFormat(format, subjectAttribute string) error {
 	switch format {
 	case nameIDPersistent, nameIDUnspecified:
@@ -276,11 +256,6 @@ func validateNameIDFormat(format, subjectAttribute string) error {
 	}
 }
 
-// validateClaims holds a claims mapping to the closed set of targets and the
-// attribute-name bound. The subject is the key of an external binding, so the
-// claim it is taken from has to be a stable identifier; an email address claim
-// is not one, because a provider-side address change would stop finding the
-// binding made before it.
 func validateClaims(raw json.RawMessage) error {
 	var claims map[string]string
 	if err := json.Unmarshal(raw, &claims); err != nil {
@@ -317,16 +292,10 @@ func validateClaims(raw json.RawMessage) error {
 	return nil
 }
 
-// isEmailAddressClaim reports whether a claim name is the standard one carrying
-// an email address. SAML attribute names vary, so a subject attribute is held to
-// the attribute the mapping actually sends the address from instead.
 func isEmailAddressClaim(name string) bool {
 	return strings.EqualFold(strings.TrimSpace(name), "email")
 }
 
-// validateSubjectAttribute refuses a SAML subject attribute the claims mapping
-// uses for the address: the address is not a stable identifier, so a binding
-// keyed on it would be lost when the provider changes it.
 func validateSubjectAttribute(fields map[string]json.RawMessage, subjectAttribute string) error {
 	raw, ok := fields["claims"]
 	if !ok {
@@ -345,8 +314,6 @@ func validateSubjectAttribute(fields map[string]json.RawMessage, subjectAttribut
 	return nil
 }
 
-// validateHTTPSURL holds a URL to https, and refuses user information unless it
-// is allowed: a metadata URL and a single sign-on URL carry none.
 func validateHTTPSURL(key, raw string, allowEmpty bool) error {
 	if raw == "" {
 		if allowEmpty {
@@ -364,12 +331,10 @@ func validateHTTPSURL(key, raw string, allowEmpty bool) error {
 	return nil
 }
 
-// missingKey is the failure of a required key that is not there.
 func missingKey(key string) error {
 	return fmt.Errorf("%w: %s is required", authn.ErrInvalidConfig, key)
 }
 
-// decodeString reads one key as a string.
 func decodeString(key string, raw json.RawMessage) (string, error) {
 	var value string
 	if err := json.Unmarshal(raw, &value); err != nil {
@@ -378,7 +343,6 @@ func decodeString(key string, raw json.RawMessage) (string, error) {
 	return value, nil
 }
 
-// decodeBool reads one key as a boolean.
 func decodeBool(key string, raw json.RawMessage) (bool, error) {
 	var value bool
 	if err := json.Unmarshal(raw, &value); err != nil {
@@ -387,7 +351,6 @@ func decodeBool(key string, raw json.RawMessage) (bool, error) {
 	return value, nil
 }
 
-// decodeStringList reads one key as a list of strings.
 func decodeStringList(key string, raw json.RawMessage) ([]string, error) {
 	var value []string
 	if err := json.Unmarshal(raw, &value); err != nil {
@@ -396,8 +359,6 @@ func decodeStringList(key string, raw json.RawMessage) ([]string, error) {
 	return value, nil
 }
 
-// decodeNonEmptyStringList reads one key as a list of strings and refuses an
-// empty element.
 func decodeNonEmptyStringList(key string, raw json.RawMessage) ([]string, error) {
 	value, err := decodeStringList(key, raw)
 	if err != nil {

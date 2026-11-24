@@ -6,28 +6,17 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The fragment's info section: the title this module's fragment carries and the
-// version of the fragment's shape.
 const (
 	fragmentTitle   = "authn sso saml"
 	fragmentVersion = "1.0.0"
 )
 
-// metadataPath is the metadata route as the fragment writes it, relative to the
-// module's API root. The provider segment is an enterprise provider's
-// identifier. The mounter registration resolves the same declaration against its
-// base, so the route is written once.
 const metadataPath = "/auth/sso/saml/:provider/metadata"
 
-// metadataInput is the declaration's input for the metadata route: the provider
-// identifier is a path parameter and the operation takes no body.
 type metadataInput struct {
 	Provider string `path:"provider" description:"The identifier of the enterprise provider whose service provider metadata is requested; the provider must be enabled and registered with the saml protocol."`
 }
 
-// metadataOperation declares the route that publishes one provider's service
-// provider metadata. The handler builds the answer because the success body is
-// an XML document rather than a JSON value.
 var metadataOperation = speedhttp.NewReplyOperation[metadataInput](
 	"authn.sso.saml.metadata",
 	http.MethodGet,
@@ -62,8 +51,6 @@ var metadataOperation = speedhttp.NewReplyOperation[metadataInput](
 	speedhttp.Public(),
 )
 
-// operations is this module's declaration of the API it serves. The fragment is
-// generated from it; the routes are mounted from the same declarations.
 var operations = speedhttp.Operations{
 	metadataOperation,
 }

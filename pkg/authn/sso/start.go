@@ -8,9 +8,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// start runs in Start: the tables must be there, the root key must be usable for
-// the encrypted column, and the sweep begins. New touched no table, so on a
-// first start the tables are not there until the migration has run.
 func (p *product) start(ctx context.Context, reg *core.Registry) error {
 	if err := p.register.probe(ctx); err != nil {
 		return err
@@ -27,7 +24,6 @@ func (p *product) start(ctx context.Context, reg *core.Registry) error {
 	return nil
 }
 
-// stop ends the module's background work: the sweep stops within its own bound.
 func (p *product) stop() error {
 	return p.stopSweep()
 }

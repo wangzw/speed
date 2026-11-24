@@ -6,10 +6,7 @@ import (
 	"time"
 )
 
-// TestTheSweepsHoldUnderAnotherLocalZone holds that the module's time comparisons
-// survive a machine whose local zone is not UTC: every time the module writes or
-// binds goes through internal/clock and is UTC, so the text SQLite compares is
-// UTC on both sides even when the clock reads in America/New_York.
+// TestTheSweepsHoldUnderAnotherLocalZone checks that both sweeps hold when the clock reads in another zone.
 func TestTheSweepsHoldUnderAnotherLocalZone(t *testing.T) {
 	newYork, err := time.LoadLocation("America/New_York")
 	if err != nil {
@@ -20,7 +17,6 @@ func TestTheSweepsHoldUnderAnotherLocalZone(t *testing.T) {
 	t.Cleanup(func() { time.Local = saved })
 
 	r := newRigSQLite(t)
-	// The clock reads in New York, which is not UTC.
 	r.clock = newClock(base.In(newYork))
 	r.p.clock = r.clock.read
 
@@ -32,10 +28,8 @@ func TestTheSweepsHoldUnderAnotherLocalZone(t *testing.T) {
 	if _, err := r.p.ClaimDomain(context.Background(), idp.ID, "example.com"); err != nil {
 		t.Fatalf("ClaimDomain: %v", err)
 	}
-	// An assertion written the way the SAML module writes one, under this zone.
 	r.insertAssertion(idp.ID, "expired", base.In(newYork).Add(-time.Minute), base.In(newYork).Add(-10*time.Minute))
 
-	// Eight days later, in the same zone, both are past their windows.
 	r.clock.advance(8 * 24 * time.Hour)
 	if err := r.p.Sweep(context.Background()); err != nil {
 		t.Fatalf("Sweep: %v", err)

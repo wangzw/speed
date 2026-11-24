@@ -1,30 +1,4 @@
-// Package saml carries the SAML 2.0 enterprise single sign-on method: the first
-// factor that proves an external identity by a signed assertion a tenant's
-// identity provider issues, together with the service provider metadata an IdP
-// is registered against and the on-demand refresher of that IdP's metadata.
-//
-// The method answers with a Step and does nothing else. In Begin it reads the
-// provider row, builds an AuthnRequest and answers the redirect the user agent
-// leaves for. In Answer it takes the POSTed SAMLResponse and runs the design's
-// ordered checks: it never calls the library's RetrieveAssertionInfo, which uses
-// the first assertion only, does not check InResponseTo and skips a comparison
-// against an empty issuer or destination. It validates the response's signature
-// in a single parse, then checks the destination, the request identifiers, the
-// assertion count, the conditions, the issuer and confirmation, and finally
-// records the assertion's identifier on the register's replay line. It touches
-// no HTTP route of the engine, no session, token or flow record, and it never
-// writes a value the client sent into an answer.
-//
-// Every outbound request the method makes goes through the restricted egress
-// client, because the IdP's URLs come from a tenant administrator's input. The
-// metadata refresher fetches an IdP's metadata through the same client. Each
-// fetch leaves one log record naming the endpoint, the status and the duration;
-// the query and the body are never recorded.
-//
-// A host takes the method in by writing ModuleName into a command alongside the
-// login engine and the enterprise provider register. It delivers the login
-// method and the metadata refresher non-exclusively, so it stands beside the
-// other methods and refreshers.
+// Package saml carries the SAML 2.0 enterprise single sign-on method, the service provider metadata an IdP is registered against, and the on-demand metadata refresher. It runs its own ordered assertion checks instead of the library's retrieval, and every outbound request goes through the restricted egress client.
 package saml
 
 import (
@@ -56,34 +30,17 @@ const ModuleName = "authn.sso.saml"
 // module name.
 const ConfigNamespace = ModuleName
 
-// methodName is the name this method reports. It is a constant of the code: it
-// appears in routes, flow records and metric attributes, and a published name
-// never changes.
 const methodName = "saml"
 
-// providerProtocol is the value of a provider row's Protocol this method
-// answers.
 const providerProtocol = "saml"
 
-// diagnosticPrefix starts every line the authentication capability writes to the
-// startup diagnostics, which have several writers.
 const diagnosticPrefix = "authn: "
 
-// defaultEndpoint is the endpoint this module's fragment is declared on: the
-// account endpoint under the gateway's base path, which is where the reference
-// assembly mounts the authentication capability's own routes. A resource is a
-// static declaration fixed before configuration is read, so the field carries
-// this default; the merged document takes it as the endpoint of these
-// operations. A deployment that mounts the routes elsewhere is drift, which the
-// fragment is allowed to have and which produces no failure signal (see pkg/ops).
 const defaultEndpoint = "account"
 
 //go:embed openapi/saml.json
 var samlFragment []byte
 
-// samlSpec is the API root this module's fragment and routes hang off. The
-// fragment is generated from operations; the routes are mounted from the same
-// declarations and resolved against this root.
 var samlSpec = speedhttp.Spec{
 	Endpoint: defaultEndpoint,
 	Prefix:   "api",
@@ -91,36 +48,14 @@ var samlSpec = speedhttp.Spec{
 	Document: samlFragment,
 }
 
-// product must satisfy the capabilities it delivers.
 var (
 	_ authn.LoginMethod          = (*product)(nil)
 	_ authn.SSOMetadataRefresher = (*product)(nil)
 )
 
-// init registers this module with the process registry.
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// Module is the descriptor a host registers.
-//
-// The enterprise provider register, the account reads and the route mounter are
-// required, and each is delivered exclusively by another module, so a command
-// that names this one without them fails in resolution. The settings store, the
-// event bus, the audit capability and the metric capability are taken up in
-// Init, each with a stated behaviour for its absence, so none is declared. The
-// logging capability is declared as an optional requirement: the declaration
-// is what orders this module's construction after the logging capability's,
-// which is what lets the logger taken up in Init be the configured one. The
-// enable switch is read in Prepare and the key and certificate paths in New, so
-// the configuration reader is resolved where each of them is used.
-//
-// The login method and the metadata refresher are delivered without being
-// claimed, which is what lets several methods and refreshers stand side by side.
-// Prepare reads this module's own enable switch: its providers are rows created
-// at run time, so an empty register would not mean a deployment never intended
-// to offer SAML sign-in. Off, the method and the metadata refresher stand
-// themselves down; on, the service provider's key and certificates are
-// validated and a missing or illegal one fails the startup there. The stance is
-// never StateAuto.
+// Module is the descriptor a host registers. It requires the enterprise provider register, the account reads and the route mounter, declares the logging capability as optional to order construction, and delivers the login method and metadata refresher without claiming them.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -162,10 +97,6 @@ func Module() core.Module {
 	}
 }
 
-// prepare decides whether this run includes the enterprise SAML method. The
-// switch is off by default, so a deployment that never named the method stands
-// it down without validating anything else. On, the service provider's key and
-// certificates decide, and their failures are startup failures.
 func prepare(reader config.Reader) (core.Enablement, error) {
 	enabled, err := readEnabled(reader)
 	if err != nil {
@@ -184,27 +115,19 @@ func prepare(reader config.Reader) (core.Enablement, error) {
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 
-// productOf narrows an instance to this module's product. An instance of another
-// shape is one a host supplied for this module, and the callbacks leave it
-// alone.
 func productOf(instance any) (*product, bool) {
 	p, ok := instance.(*product)
 	return p, ok && p != nil
 }
 
-// product is the module's instance.
 type product struct {
-	// Required capabilities, taken up by New.
 	providers authn.SSOProviders
 	accounts  authn.Accounts
 	mounter   mount.Mounter
 
-	// The restricted egress client every outbound call goes through, and the
-	// service provider key the whole deployment shares.
 	client *http.Client
 	sp     resolved
 
-	// Optional capabilities, taken up by Init and read-only afterwards.
 	assertions assertionLog
 	store      settings.Store
 	audit      audit.Audit
@@ -213,13 +136,10 @@ type product struct {
 	logger     *slog.Logger
 	settings   *reader
 
-	// Assembled by Init.
 	cache *spCache
 	clock clock.Source
 }
 
-// newProduct takes up the required capabilities, reads the service provider key
-// configuration and builds the restricted egress client.
 func newProduct(reg *core.Registry) (*product, error) {
 	providers, err := core.Resolve[authn.SSOProviders](reg)
 	if err != nil {
@@ -252,13 +172,6 @@ func newProduct(reg *core.Registry) (*product, error) {
 		return nil, err
 	}
 	client := egress.New(egress.Options{AllowLoopback: allowLoopback})
-	// The restricted client is wrapped from outside, so the metadata refresh and
-	// every other outbound request carries the span of the call's context across
-	// the hop; internal/egress offers no constructor of its own for it. The
-	// client is wrapped for the outbound record as well, inside the span
-	// injection: every request this method makes leaves one record naming the
-	// endpoint, the status and the time and carrying neither the query nor a
-	// body.
 	client.Transport = observability.Transport(log.Transport(client.Transport))
 	return &product{
 		providers:  providers,
@@ -271,7 +184,6 @@ func newProduct(reg *core.Registry) (*product, error) {
 	}, nil
 }
 
-// wire runs in Init, where every instance exists.
 func (p *product) wire(reg *core.Registry) error {
 	if delivered, err := core.Resolve[log.Logger](reg); err == nil {
 		p.logger = delivered.Named(ModuleName)
@@ -303,7 +215,6 @@ func (p *product) wire(reg *core.Registry) error {
 	return nil
 }
 
-// optional takes up a capability whose absence is a legal assembly.
 func optional[T any](reg *core.Registry, what string) (T, error) {
 	var zero T
 	v, err := core.Resolve[T](reg)
@@ -317,8 +228,6 @@ func optional[T any](reg *core.Registry, what string) (T, error) {
 	}
 }
 
-// diagnose writes the startup lines: whether the service provider key is
-// configured and whether the audit and event capabilities are present.
 func (p *product) diagnose() {
 	if !p.sp.configured() {
 		p.logger.Info(diagnosticPrefix + ModuleName + ": no service provider key is configured, so no " +
@@ -337,16 +246,10 @@ func (p *product) diagnose() {
 	}
 }
 
-// registerConfig is the part of the enterprise provider register's configuration
-// this module reads across namespaces: the switch that admits loopback addresses
-// to the restricted egress client.
 type registerConfig struct {
 	AllowPrivateEgress bool `config:"allow-private-egress"`
 }
 
-// readAllowPrivateEgress reads the register's egress relaxation. A namespace
-// that cannot be read and a value that is off both leave the client refusing
-// loopback addresses, the strict direction.
 func readAllowPrivateEgress(reader config.Reader) (bool, error) {
 	var rc registerConfig
 	if err := reader.Decode("authn.sso", &rc); err != nil {

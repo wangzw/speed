@@ -16,8 +16,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The stand-in modules a driven registry is built from, each delivering one of
-// the capabilities this method requires.
 const (
 	providersModule = "stand-in.providers"
 	accountsModule  = "stand-in.accounts"
@@ -25,9 +23,6 @@ const (
 	configModule    = "stand-in.config"
 )
 
-// accountsStandIn satisfies authn.Accounts without being called: the SAML method
-// requires the account reads for the assembly to be complete, and does not read
-// through them itself.
 type accountsStandIn struct{ authn.Accounts }
 
 func providersStandIn() core.Module {
@@ -58,18 +53,11 @@ func configModuleDef() core.Module {
 	}
 }
 
-// fakeReader answers this module's own namespace with the values a case chose.
-// The zero value is a deployment whose switch is off and whose configuration
-// carries no service provider key.
 type fakeReader struct {
-	enabled        bool
-	spKeyFile      string
-	spCertFile     string
-	spNextCertFile string
-	// refuseElsewhere makes every path but this module's own namespace fail. It
-	// cannot tell whether the module read the rest of its own configuration: that
-	// configuration arrives under the same namespace, so only reads aimed at
-	// another namespace are caught here.
+	enabled         bool
+	spKeyFile       string
+	spCertFile      string
+	spNextCertFile  string
 	refuseElsewhere bool
 }
 
@@ -96,7 +84,6 @@ func buildRegistry(t *testing.T, providers *fakeProviders) *core.Registry {
 	return buildRegistryWith(t, providers, fakeReader{enabled: true})
 }
 
-// buildRegistryWith is buildRegistry over a reader a case chose.
 func buildRegistryWith(t *testing.T, providers *fakeProviders, reader config.Reader) *core.Registry {
 	t.Helper()
 	reg := core.New()
@@ -116,6 +103,7 @@ func participants() []string {
 	return []string{ModuleName, providersModule, accountsModule, mounterModule, configModule}
 }
 
+// TestTheDescriptorRequiresTheCapabilitiesAndDeliversBoth checks that the descriptor requires its capabilities and delivers both the method and the refresher.
 func TestTheDescriptorRequiresTheCapabilitiesAndDeliversBoth(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "authn.sso.saml" {
@@ -146,10 +134,7 @@ func TestTheDescriptorRequiresTheCapabilitiesAndDeliversBoth(t *testing.T) {
 	}
 }
 
-// TestPrepareStandsDownWhenTheSwitchIsOff holds the unconfigured case: the
-// method has nothing of its own to infer the intent from, so an absent switch
-// means the deployment did not offer SAML sign-in, and the module stands down
-// without reading the rest of its configuration or failing the startup.
+// TestPrepareStandsDownWhenTheSwitchIsOff checks that Prepare stands the method down when the switch is off.
 func TestPrepareStandsDownWhenTheSwitchIsOff(t *testing.T) {
 	got, err := prepare(fakeReader{refuseElsewhere: true})
 	if err != nil {
@@ -163,8 +148,7 @@ func TestPrepareStandsDownWhenTheSwitchIsOff(t *testing.T) {
 	}
 }
 
-// TestPrepareStatesEnabledWhenTheSwitchIsOn holds the configured case: the
-// switch alone admits the module when the rest of its configuration is legal.
+// TestPrepareStatesEnabledWhenTheSwitchIsOn checks that Prepare states enabled when the switch is on.
 func TestPrepareStatesEnabledWhenTheSwitchIsOn(t *testing.T) {
 	got, err := prepare(fakeReader{enabled: true, refuseElsewhere: true})
 	if err != nil {
@@ -175,9 +159,7 @@ func TestPrepareStatesEnabledWhenTheSwitchIsOn(t *testing.T) {
 	}
 }
 
-// TestPrepareRefusesAnIncompleteKeyConfigurationWhenTheSwitchIsOn holds that the
-// rest of the configuration is validated once the switch is on: a key with no
-// certificate fails the startup rather than serving a half-configured provider.
+// TestPrepareRefusesAnIncompleteKeyConfigurationWhenTheSwitchIsOn checks that Prepare refuses an incomplete key configuration when the switch is on.
 func TestPrepareRefusesAnIncompleteKeyConfigurationWhenTheSwitchIsOn(t *testing.T) {
 	_, err := prepare(fakeReader{enabled: true, spKeyFile: "/tmp/sp-key.pem"})
 	if !errors.Is(err, authn.ErrInvalidConfig) {
@@ -185,10 +167,7 @@ func TestPrepareRefusesAnIncompleteKeyConfigurationWhenTheSwitchIsOn(t *testing.
 	}
 }
 
-// TestPrepareRefusesAKeyThatIsNotAPEMFileWhenTheSwitchIsOn holds that a key and
-// a certificate are paired and then actually loaded: a key file whose content is
-// not a PEM key fails the startup even though a certificate file is named beside
-// it.
+// TestPrepareRefusesAKeyThatIsNotAPEMFileWhenTheSwitchIsOn checks that Prepare refuses a key that is not a PEM file when the switch is on.
 func TestPrepareRefusesAKeyThatIsNotAPEMFileWhenTheSwitchIsOn(t *testing.T) {
 	dir := t.TempDir()
 	keyFile := filepath.Join(dir, "sp-key.pem")
@@ -205,11 +184,7 @@ func TestPrepareRefusesAKeyThatIsNotAPEMFileWhenTheSwitchIsOn(t *testing.T) {
 	}
 }
 
-// TestPrepareDoesNotValidateTheRestWhenTheSwitchIsOff holds that the switch is
-// decided before anything else in the section is read: a key with no
-// certificate would fail the startup with the switch on, and standing the
-// module down must not fail on it, or a deployment that never wanted the method
-// could not start beside a half-written section.
+// TestPrepareDoesNotValidateTheRestWhenTheSwitchIsOff checks that Prepare validates nothing else when the switch is off.
 func TestPrepareDoesNotValidateTheRestWhenTheSwitchIsOff(t *testing.T) {
 	got, err := prepare(fakeReader{spKeyFile: "/tmp/sp-key.pem"})
 	if err != nil {
@@ -224,8 +199,7 @@ func TestPrepareDoesNotValidateTheRestWhenTheSwitchIsOff(t *testing.T) {
 	}
 }
 
-// TestTheRegistryStandsTheMethodDownWhenTheSwitchIsOff drives the descriptor's
-// own Prepare through a registry: the verdict it records is the switch's.
+// TestTheRegistryStandsTheMethodDownWhenTheSwitchIsOff checks that the registry stands the method down when the switch is off.
 func TestTheRegistryStandsTheMethodDownWhenTheSwitchIsOff(t *testing.T) {
 	reg := buildRegistryWith(t, newFakeProviders(providerRow(nil)), fakeReader{})
 	err := reg.Drive(context.Background(), core.Drive{
@@ -247,6 +221,7 @@ func TestTheRegistryStandsTheMethodDownWhenTheSwitchIsOff(t *testing.T) {
 	}
 }
 
+// TestTheRegistryDeliversTheMethodAndTheRefresher checks that the registry delivers the method and the refresher.
 func TestTheRegistryDeliversTheMethodAndTheRefresher(t *testing.T) {
 	idp := newIDP(t)
 	providers := newFakeProviders(providerRow(providerConfigJSON(t, idp, nil)))

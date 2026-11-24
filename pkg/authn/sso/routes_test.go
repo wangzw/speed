@@ -14,10 +14,8 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// discoverFullPath is the discovery route as the mounter mounts it.
 const discoverFullPath = "/api/v1/auth/sso/discover"
 
-// routed builds a rig with the routes mounted.
 func routed(t *testing.T) *rig {
 	t.Helper()
 	r := newRigSQLite(t)
@@ -25,8 +23,6 @@ func routed(t *testing.T) *rig {
 	return r
 }
 
-// routedAtBase builds a rig whose mounter is configured with base, with the
-// routes mounted.
 func routedAtBase(t *testing.T, base string) *rig {
 	t.Helper()
 	r := newRigAtBase(t, openSQLite(t), base)
@@ -34,7 +30,6 @@ func routedAtBase(t *testing.T, base string) *rig {
 	return r
 }
 
-// problemType reads a problem document's type.
 func problemType(t *testing.T, w *httptest.ResponseRecorder) string {
 	t.Helper()
 	var p struct {
@@ -46,8 +41,6 @@ func problemType(t *testing.T, w *httptest.ResponseRecorder) string {
 	return p.Type
 }
 
-// post sends a POST with a JSON body and an origin the cross-origin check
-// trusts, which is what a same-site fetch carries.
 func (r *rig) post(path, body string) *httptest.ResponseRecorder {
 	r.t.Helper()
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
@@ -56,8 +49,7 @@ func (r *rig) post(path, body string) *httptest.ResponseRecorder {
 	return r.mounter.Do(req)
 }
 
-// TestTheDiscoveryRouteIsMountedPublic holds the route's registration: the
-// discovery is exempt from authentication.
+// TestTheDiscoveryRouteIsMountedPublic checks that the discovery route is mounted public.
 func TestTheDiscoveryRouteIsMountedPublic(t *testing.T) {
 	r := routed(t)
 	reg, ok := r.mounter.Registered(http.MethodPost, discoverFullPath)
@@ -70,8 +62,7 @@ func TestTheDiscoveryRouteIsMountedPublic(t *testing.T) {
 	}
 }
 
-// TestTheDiscoveryAnswersTheShape holds the answer shape and its content: an
-// enabled provider with a verified domain is named by id, name and protocol.
+// TestTheDiscoveryAnswersTheShape checks that the discovery answers the declared shape.
 func TestTheDiscoveryAnswersTheShape(t *testing.T) {
 	r := routed(t)
 	idp := r.verified("tenant-a", "acme", "example.com")
@@ -93,15 +84,7 @@ func TestTheDiscoveryAnswersTheShape(t *testing.T) {
 	}
 }
 
-// TestTheDiscoveryListsOnlyDeliveredProtocols holds that the answer names a
-// provider only when its protocol is delivered in this run: with the OIDC
-// method taken in the OIDC provider is named and the SAML one is not, with the
-// SAML method the other way, and with neither nothing is named.
-//
-// The two providers sit under separate verified domains. A verified domain is
-// globally unique (the partial index admits one verified provider per domain),
-// so one domain cannot carry a provider of each protocol; the filter is held
-// per protocol instead.
+// TestTheDiscoveryListsOnlyDeliveredProtocols checks that the discovery lists only delivered protocols.
 func TestTheDiscoveryListsOnlyDeliveredProtocols(t *testing.T) {
 	r := routed(t)
 	oidc := r.verified("tenant-a", "oidc-idp", "oidc.example.com")
@@ -110,7 +93,7 @@ func TestTheDiscoveryListsOnlyDeliveredProtocols(t *testing.T) {
 	cases := []struct {
 		name      string
 		delivered []string
-		want      map[string]string // domain to the one provider it should name
+		want      map[string]string
 	}{
 		{"only oidc", []string{authn.SSOProtocolOIDC}, map[string]string{"oidc.example.com": oidc.ID}},
 		{"only saml", []string{authn.SSOProtocolSAML}, map[string]string{"saml.example.com": saml.ID}},
@@ -143,10 +126,7 @@ func TestTheDiscoveryListsOnlyDeliveredProtocols(t *testing.T) {
 	}
 }
 
-// TestTheDiscoveryWithNoDeliveredSetListsNothing holds that an absent delivered
-// set means nothing is delivered rather than everything: a product whose set is
-// nil lists no provider, so a run that took up no login method cannot leak a
-// provider into the answer.
+// TestTheDiscoveryWithNoDeliveredSetListsNothing checks that the discovery with no delivered set lists nothing.
 func TestTheDiscoveryWithNoDeliveredSetListsNothing(t *testing.T) {
 	r := routed(t)
 	r.verified("tenant-a", "oidc-idp", "oidc.example.com")
@@ -165,9 +145,7 @@ func TestTheDiscoveryWithNoDeliveredSetListsNothing(t *testing.T) {
 	}
 }
 
-// TestTheDiscoveryWithNothingDeliveredMatchesNoMatch holds the shape: a verified
-// domain whose protocol is not delivered answers exactly what an unknown domain
-// answers, down to the body.
+// TestTheDiscoveryWithNothingDeliveredMatchesNoMatch checks that a discovery request with nothing delivered matches no route.
 func TestTheDiscoveryWithNothingDeliveredMatchesNoMatch(t *testing.T) {
 	r := routed(t)
 	r.verified("tenant-a", "oidc-idp", "oidc.example.com")
@@ -191,24 +169,13 @@ func TestTheDiscoveryWithNothingDeliveredMatchesNoMatch(t *testing.T) {
 	}
 }
 
-// TestTheDiscoveryAnswersUnavailableWhenTheSwitchCannotBeRead holds that a
-// failed read of the run-time switch answers 503 unavailable, and that the
-// answer does not depend on whether the domain matches: a domain with a
-// provider, one without, and an address that reduces to no domain at all
-// answer the same problem document. A successful read followed by a failing one
-// answers 503, so a failure is never answered from the last result.
-//
-// The address with no domain pins the order of the two readings: the switch is
-// read before the address is reduced, so a failing read answers 503 rather than
-// the 400 the reduction would give.
+// TestTheDiscoveryAnswersUnavailableWhenTheSwitchCannotBeRead checks that the discovery answers 503 when the switch cannot be read.
 func TestTheDiscoveryAnswersUnavailableWhenTheSwitchCannotBeRead(t *testing.T) {
 	r := routed(t)
 	r.verified("tenant-a", "oidc-idp", "oidc.example.com")
 	sw := &standInSwitch{}
 	r.p.loginSwitch = sw
 
-	// The successful read answers 200; the failing read that follows must not
-	// be answered from it.
 	if w := r.post(discoverFullPath, `{"email":"someone@oidc.example.com"}`); w.Code != http.StatusOK {
 		t.Fatalf("the discovery with a readable switch answered %d: %s", w.Code, w.Body.String())
 	}
@@ -234,16 +201,7 @@ func TestTheDiscoveryAnswersUnavailableWhenTheSwitchCannotBeRead(t *testing.T) {
 	}
 }
 
-// TestTheDiscoveryReadsTheRunTimeSwitchOncePerRequest holds the read count: one
-// read answers one request, however many providers the register holds. The
-// request naming no provider is what holds the read out of the filter loop,
-// which runs over the answer rather than the register: a read per iteration
-// would leave that request with no read at all, and a read per provider with
-// more than one.
-//
-// A verified domain is globally unique, so one domain cannot carry two
-// providers; the last case is a register of two providers, with the request
-// naming one of their domains.
+// TestTheDiscoveryReadsTheRunTimeSwitchOncePerRequest checks that the discovery reads the run-time switch once per request.
 func TestTheDiscoveryReadsTheRunTimeSwitchOncePerRequest(t *testing.T) {
 	r := routed(t)
 	sw := &standInSwitch{}
@@ -285,9 +243,7 @@ func TestTheDiscoveryReadsTheRunTimeSwitchOncePerRequest(t *testing.T) {
 	}
 }
 
-// TestTheDiscoveryOfAnUnknownDomainIsTheSameEmptyShape holds that a domain
-// nobody holds answers the same shape with an empty list, whatever the local
-// part is.
+// TestTheDiscoveryOfAnUnknownDomainIsTheSameEmptyShape checks that an unknown domain answers the same empty shape.
 func TestTheDiscoveryOfAnUnknownDomainIsTheSameEmptyShape(t *testing.T) {
 	r := routed(t)
 
@@ -306,8 +262,7 @@ func TestTheDiscoveryOfAnUnknownDomainIsTheSameEmptyShape(t *testing.T) {
 	}
 }
 
-// TestTheDiscoveryRefusesADomainThatIsNotOne holds the 400 a request whose
-// domain cannot be reduced carries, with the capability's problem code.
+// TestTheDiscoveryRefusesADomainThatIsNotOne checks that the discovery refuses a domain that cannot be normalized.
 func TestTheDiscoveryRefusesADomainThatIsNotOne(t *testing.T) {
 	r := routed(t)
 	w := r.post(discoverFullPath, `{"email":"someone@例子.测试"}`)
@@ -323,14 +278,12 @@ func TestTheDiscoveryRefusesADomainThatIsNotOne(t *testing.T) {
 	if want := "urn:speed:authn:" + mount.CodeBadRequest; p.Type != want {
 		t.Errorf("the 400's type = %q, want %q", p.Type, want)
 	}
-	// An address with no domain is the same refusal.
 	if w := r.post(discoverFullPath, `{"email":"not-an-address"}`); w.Code != http.StatusBadRequest {
 		t.Errorf("the discovery answered %d for an address with no domain, want 400", w.Code)
 	}
 }
 
-// TestTheDiscoveryRefusesAnotherMediaType holds the 415 a body that is not
-// declared as JSON carries, with the capability's problem code.
+// TestTheDiscoveryRefusesAnotherMediaType checks that the discovery refuses another media type.
 func TestTheDiscoveryRefusesAnotherMediaType(t *testing.T) {
 	r := routed(t)
 	req := httptest.NewRequest(http.MethodPost, discoverFullPath, strings.NewReader(`{"email":"a@example.com"}`))
@@ -345,9 +298,7 @@ func TestTheDiscoveryRefusesAnotherMediaType(t *testing.T) {
 	}
 }
 
-// TestTheDiscoveryRefusesABodyThatIsNotJSON holds the 400 a body under the
-// declared media type that is not a JSON object carries, with the capability's
-// problem code.
+// TestTheDiscoveryRefusesABodyThatIsNotJSON checks that the discovery refuses a body that is not JSON.
 func TestTheDiscoveryRefusesABodyThatIsNotJSON(t *testing.T) {
 	r := routed(t)
 	for _, body := range []string{``, `null`, `[]`, `{"email":`, `{"email":"a@example.com"} {}`} {
@@ -362,11 +313,7 @@ func TestTheDiscoveryRefusesABodyThatIsNotJSON(t *testing.T) {
 	}
 }
 
-// TestTheDiscoveryRefusesABodyOverTheCapabilityLimit holds the capability's
-// own body bound: a body of mount.MaxBodyBytes is read and answered, and one
-// byte more is refused as a bad request with the capability's problem code, the
-// answer the capability's decoder gave before the route was declared as an
-// operation.
+// TestTheDiscoveryRefusesABodyOverTheCapabilityLimit checks that the discovery refuses a body over the capability's limit.
 func TestTheDiscoveryRefusesABodyOverTheCapabilityLimit(t *testing.T) {
 	r := routed(t)
 	base := `{"email":"a@example.com"}`
@@ -385,9 +332,7 @@ func TestTheDiscoveryRefusesABodyOverTheCapabilityLimit(t *testing.T) {
 	}
 }
 
-// TestTheDiscoveryRefusesAnUnknownField holds that the body decoder rejects a
-// field the request does not carry, so a caller cannot slip a filter in, with
-// the capability's problem code.
+// TestTheDiscoveryRefusesAnUnknownField checks that the discovery refuses an unknown field.
 func TestTheDiscoveryRefusesAnUnknownField(t *testing.T) {
 	r := routed(t)
 	w := r.post(discoverFullPath, `{"email":"a@example.com","local":"b"}`)
@@ -399,10 +344,7 @@ func TestTheDiscoveryRefusesAnUnknownField(t *testing.T) {
 	}
 }
 
-// TestTheDiscoveryFollowsAConfiguredBase holds that a host's configured mount
-// base moves the route without moving the contract: the declaration is written
-// against the default base and the relative form is joined to the configured
-// one.
+// TestTheDiscoveryFollowsAConfiguredBase checks that the discovery route follows a configured base.
 func TestTheDiscoveryFollowsAConfiguredBase(t *testing.T) {
 	const base = "/identity"
 	r := routedAtBase(t, base)
@@ -419,9 +361,7 @@ func TestTheDiscoveryFollowsAConfiguredBase(t *testing.T) {
 	}
 }
 
-// TestTheModuleDeclaresItsOperationsAsAResource holds that the module's
-// operations are declared beside its Spec, which is the declaration the
-// contract generation reads.
+// TestTheModuleDeclaresItsOperationsAsAResource checks that the module declares its operations as a resource.
 func TestTheModuleDeclaresItsOperationsAsAResource(t *testing.T) {
 	var spec, operationsDeclared bool
 	for _, resource := range Module().Resources {
@@ -438,8 +378,7 @@ func TestTheModuleDeclaresItsOperationsAsAResource(t *testing.T) {
 	}
 }
 
-// TestTheDiscoveryRefusesAnotherSite holds the cross-origin check the mounter
-// wraps every unsafe request in.
+// TestTheDiscoveryRefusesAnotherSite checks that the discovery refuses another site.
 func TestTheDiscoveryRefusesAnotherSite(t *testing.T) {
 	r := routed(t)
 	req := httptest.NewRequest(http.MethodPost, discoverFullPath, strings.NewReader(`{"email":"a@example.com"}`))

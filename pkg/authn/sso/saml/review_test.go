@@ -14,11 +14,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/step"
 )
 
-// TestTheSHA1PreCheckSeesEveryXMLSpellingOfAnAlgorithm holds that the pre-check
-// reads the parsed document and not the raw text, so every legal XML spelling of
-// an attribute value — a single-quoted delimiter, a decimal or hexadecimal
-// character reference, and an upper-case value — is seen as the SHA-1 algorithm
-// it names.
+// TestTheSHA1PreCheckSeesEveryXMLSpellingOfAnAlgorithm checks that the SHA-1 pre-check sees every XML spelling of an algorithm.
 func TestTheSHA1PreCheckSeesEveryXMLSpellingOfAnAlgorithm(t *testing.T) {
 	cases := map[string]string{
 		"double quotes":   `<a><SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/></a>`,
@@ -36,11 +32,7 @@ func TestTheSHA1PreCheckSeesEveryXMLSpellingOfAnAlgorithm(t *testing.T) {
 
 var algorithmAttrQuoted = regexp.MustCompile(`Algorithm="([^"]*)"`)
 
-// TestASHA1SignatureWrittenWithSingleQuotesIsRefused holds the design's claim
-// that the pre-check is the one place a SHA-1 signature is turned away: a
-// response whose Algorithm attributes are delimited with single quotes is the
-// same document to the parser, so the pre-check has to refuse it before the
-// library, which accepts SHA-1, ever runs.
+// TestASHA1SignatureWrittenWithSingleQuotesIsRefused checks that a SHA-1 signature written with single quotes is refused.
 func TestASHA1SignatureWrittenWithSingleQuotesIsRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -66,9 +58,7 @@ func TestASHA1SignatureWrittenWithSingleQuotesIsRefused(t *testing.T) {
 	}
 }
 
-// TestAnAssertionWithNoIdentifierIsRefused holds the replay line's guard: an
-// assertion that names no identifier cannot be recorded, so it is refused rather
-// than collapsed onto a single replay key with every other id-less assertion.
+// TestAnAssertionWithNoIdentifierIsRefused checks that an assertion with no identifier is refused.
 func TestAnAssertionWithNoIdentifierIsRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -82,9 +72,7 @@ func TestAnAssertionWithNoIdentifierIsRefused(t *testing.T) {
 	}
 }
 
-// TestATransientReplayFailureIsAnOutage holds the direction of the replay write:
-// a failure that is not a replay is an outage, never an acceptance, so an
-// assertion is not proven without being recorded.
+// TestATransientReplayFailureIsAnOutage checks that a transient replay-line failure is an outage.
 func TestATransientReplayFailureIsAnOutage(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -101,9 +89,7 @@ func TestATransientReplayFailureIsAnOutage(t *testing.T) {
 	}
 }
 
-// TestAnIdPInitiatedResponseThatAnswersARequestIsRefused holds that a response on
-// the request-less path may not name a request at all: the flow drew none, so an
-// envelope that names one did not come from this flow.
+// TestAnIdPInitiatedResponseThatAnswersARequestIsRefused checks that an IdP-initiated response that answers a request is refused.
 func TestAnIdPInitiatedResponseThatAnswersARequestIsRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -120,10 +106,7 @@ func TestAnIdPInitiatedResponseThatAnswersARequestIsRefused(t *testing.T) {
 	}
 }
 
-// TestAnAssertionThatAnswersAnotherRequestIsRefused holds the assertion-level
-// binding: an envelope that matches the drawn request but whose subject
-// confirmation answers another one is refused, so an assertion substituted within
-// a valid envelope is turned away.
+// TestAnAssertionThatAnswersAnotherRequestIsRefused checks that an assertion answering another request is refused.
 func TestAnAssertionThatAnswersAnotherRequestIsRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -138,9 +121,7 @@ func TestAnAssertionThatAnswersAnotherRequestIsRefused(t *testing.T) {
 	}
 }
 
-// TestAnIdPInitiatedAssertionOlderThanItsTightWindowIsRefused holds the shorter
-// freshness bound of the request-less path: an assertion four minutes old is
-// refused there even though it is inside the configured assertion-max-age.
+// TestAnIdPInitiatedAssertionOlderThanItsTightWindowIsRefused checks that an IdP-initiated assertion older than its tight window is refused.
 func TestAnIdPInitiatedAssertionOlderThanItsTightWindowIsRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -159,10 +140,7 @@ func TestAnIdPInitiatedAssertionOlderThanItsTightWindowIsRefused(t *testing.T) {
 	}
 }
 
-// TestATamperedAssertionIsRefused holds the wrapping defence in the direction the
-// design states it: the element the checks read is the element the library
-// verified, so a change to the assertion after signing is refused rather than
-// proven from an unverified element.
+// TestATamperedAssertionIsRefused checks that a tampered assertion is refused.
 func TestATamperedAssertionIsRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -184,9 +162,7 @@ func TestATamperedAssertionIsRefused(t *testing.T) {
 	_ = rejectOutcome(sink)
 }
 
-// TestAProxyRestrictionIsRefused holds that an assertion carrying a
-// ProxyRestriction is refused, which the library reports and does not itself
-// turn away.
+// TestAProxyRestrictionIsRefused checks that a proxy restriction is refused.
 func TestAProxyRestrictionIsRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -200,9 +176,7 @@ func TestAProxyRestrictionIsRefused(t *testing.T) {
 	}
 }
 
-// TestParseIDPMetadataRefusesADescriptorWithNoIDPDescriptor holds the guard that
-// keeps a metadata document naming no identity provider descriptor from being
-// dereferenced.
+// TestParseIDPMetadataRefusesADescriptorWithNoIDPDescriptor checks that metadata without an IdP descriptor is refused.
 func TestParseIDPMetadataRefusesADescriptorWithNoIDPDescriptor(t *testing.T) {
 	doc := `<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://sp.example.com">` +
 		`<md:SPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"/></md:EntityDescriptor>`
@@ -211,9 +185,7 @@ func TestParseIDPMetadataRefusesADescriptorWithNoIDPDescriptor(t *testing.T) {
 	}
 }
 
-// TestParseIDPMetadataRefusesMetadataWithNoCertificate holds the guard that stops
-// a certificate-less document from overwriting a provider's trusted certificates
-// with an empty list.
+// TestParseIDPMetadataRefusesMetadataWithNoCertificate checks that metadata without a certificate is refused.
 func TestParseIDPMetadataRefusesMetadataWithNoCertificate(t *testing.T) {
 	doc := `<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://idp.example.com">` +
 		`<md:IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">` +
@@ -224,8 +196,7 @@ func TestParseIDPMetadataRefusesMetadataWithNoCertificate(t *testing.T) {
 	}
 }
 
-// TestRefreshRefusesANonOKStatus holds that a metadata endpoint that does not
-// answer 200 is an outage, even when its body happens to parse as metadata.
+// TestRefreshRefusesANonOKStatus checks that Refresh refuses a non-OK status.
 func TestRefreshRefusesANonOKStatus(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, map[string]any{
@@ -243,9 +214,7 @@ func TestRefreshRefusesANonOKStatus(t *testing.T) {
 	}
 }
 
-// TestRefreshRefusesANonSAMLProvider holds the refresher's protocol guard: a
-// provider that is not a SAML one is refused rather than overwritten with SAML
-// keys.
+// TestRefreshRefusesANonSAMLProvider checks that Refresh refuses a non-SAML provider.
 func TestRefreshRefusesANonSAMLProvider(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, map[string]any{
@@ -264,9 +233,7 @@ func TestRefreshRefusesANonSAMLProvider(t *testing.T) {
 	}
 }
 
-// TestBuildServiceProviderRefusesAnEmptyCertificateList holds that a provider
-// whose certificate trust store would be empty is refused as a bad configuration
-// rather than built.
+// TestBuildServiceProviderRefusesAnEmptyCertificateList checks that a service provider with no certificate is refused.
 func TestBuildServiceProviderRefusesAnEmptyCertificateList(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, map[string]any{"idp_certs": []string{}}))
@@ -277,16 +244,12 @@ func TestBuildServiceProviderRefusesAnEmptyCertificateList(t *testing.T) {
 	}
 }
 
-// TestSPCacheRebuildsOnAVersionChangeAndOnExpiry holds the cache invalidation:
-// an entry is reused only while both its version matches the row's and its
-// lifetime has not run out.
+// TestSPCacheRebuildsOnAVersionChangeAndOnExpiry checks that the service provider cache rebuilds on a version change and on expiry.
 func TestSPCacheRebuildsOnAVersionChangeAndOnExpiry(t *testing.T) {
 	now := time.Unix(0, 0)
 	c := newSPCache()
 	builds := 0
 	row := authn.SSOProvider{ID: "idp-1", Version: 1}
-	// The real build stamps the row's version on the built value; the fake does
-	// the same, so the version comparison the cache makes is exercised.
 	build := func() (built, error) { builds++; return built{version: row.Version}, nil }
 
 	if _, err := c.get(row, time.Hour, now, build); err != nil {
@@ -319,8 +282,7 @@ func TestSPCacheRebuildsOnAVersionChangeAndOnExpiry(t *testing.T) {
 	}
 }
 
-// TestReadStateRefusesMalformedState holds the private state's integrity check: a
-// wrong version, an empty field and trailing data all name no drawn flow.
+// TestReadStateRefusesMalformedState checks that ReadState refuses malformed state.
 func TestReadStateRefusesMalformedState(t *testing.T) {
 	valid := writeState("_request-1", "relay", testProviderID)
 	if _, ok := readState(valid); !ok {
@@ -341,9 +303,7 @@ func TestReadStateRefusesMalformedState(t *testing.T) {
 	}
 }
 
-// TestTheSAMLSettingsDefaultsAndDomains holds the declared defaults against
-// literal values and every settings domain at its bounds, so a changed default
-// or bound is caught.
+// TestTheSAMLSettingsDefaultsAndDomains checks that the SAML settings declare the expected defaults and domains.
 func TestTheSAMLSettingsDefaultsAndDomains(t *testing.T) {
 	r := quietReader(nil)
 	if got := r.assertionMaxAge(); got != 5*time.Minute {

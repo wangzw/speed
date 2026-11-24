@@ -11,7 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/db"
 )
 
-// verifyState reads whether a provider's claim of a domain is verified.
 func (r *rig) verifyState(idpID, domain string) bool {
 	r.t.Helper()
 	var rows []domainRow
@@ -24,9 +23,7 @@ func (r *rig) verifyState(idpID, domain string) bool {
 	return rows[0].VerifiedAt != nil
 }
 
-// TestClaimAndVerifyDomain walks the ownership proof: a claim returns a token,
-// publishing it in the TXT record verifies the domain, and removing the claim
-// takes it away.
+// TestClaimAndVerifyDomain checks that a claimed domain is verified once the TXT record holds the token.
 func TestClaimAndVerifyDomain(t *testing.T) {
 	r := newRigSQLite(t)
 	idp := r.putOIDC("tenant-a", "idp")
@@ -42,7 +39,6 @@ func TestClaimAndVerifyDomain(t *testing.T) {
 		t.Fatal("a fresh claim is verified")
 	}
 
-	// Without the record the verification changes nothing.
 	if err := r.p.VerifyDomain(context.Background(), idp.ID, "example.com"); !errors.Is(err, errTXTNotFound) {
 		t.Errorf("VerifyDomain without a record returned %v, want errTXTNotFound", err)
 	}
@@ -72,10 +68,7 @@ func TestClaimAndVerifyDomain(t *testing.T) {
 	}
 }
 
-// TestDomainsReportsEachClaimAndItsState holds the domain read the management
-// surface builds its list from: every claim is reported, a claim still awaiting
-// its DNS record as unverified and the one that record proved as verified. The
-// batch read reports the same state for every provider named.
+// TestDomainsReportsEachClaimAndItsState checks that Domains reports every claim with its state.
 func TestDomainsReportsEachClaimAndItsState(t *testing.T) {
 	r := newRigSQLite(t)
 	idp := r.putOIDC("tenant-a", "idp")
@@ -123,8 +116,7 @@ func TestDomainsReportsEachClaimAndItsState(t *testing.T) {
 	}
 }
 
-// TestClaimRefusedOnceAnotherProviderVerifiedIt holds the global uniqueness of a
-// verified domain.
+// TestClaimRefusedOnceAnotherProviderVerifiedIt checks that a claim is refused with ErrDomainClaimed once another provider verified the domain.
 func TestClaimRefusedOnceAnotherProviderVerifiedIt(t *testing.T) {
 	r := newRigSQLite(t)
 	first := r.putOIDC("tenant-a", "first")
@@ -144,8 +136,7 @@ func TestClaimRefusedOnceAnotherProviderVerifiedIt(t *testing.T) {
 	}
 }
 
-// TestTwoProvidersVerifyingOneDomainHaveOneWinner holds the unique index's role:
-// two providers that both hold a matching record race, and exactly one wins.
+// TestTwoProvidersVerifyingOneDomainHaveOneWinner checks that two providers verifying one domain leave one winner under the unique constraint.
 func TestTwoProvidersVerifyingOneDomainHaveOneWinner(t *testing.T) {
 	run := func(t *testing.T, database db.Database, _ string) {
 		r := newRig(t, database)
@@ -160,8 +151,6 @@ func TestTwoProvidersVerifyingOneDomainHaveOneWinner(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ClaimDomain B: %v", err)
 		}
-		// Both tokens are published, so both pass the record check and race on
-		// the uniqueness constraint.
 		r.txt[txtName("example.com")] = []string{"speed-authn=" + tokenA, "speed-authn=" + tokenB}
 
 		var wg sync.WaitGroup
@@ -190,7 +179,6 @@ func TestTwoProvidersVerifyingOneDomainHaveOneWinner(t *testing.T) {
 		if winners != 1 || claimed != 1 {
 			t.Fatalf("winners=%d claimed=%d, want exactly one of each", winners, claimed)
 		}
-		// The uniqueness holds in the table too.
 		var n int64
 		if err := r.h.Table(domainTable).Where("domain = ? AND verified_at IS NOT NULL", "example.com").Count(&n).Error; err != nil {
 			t.Fatalf("counting verified rows: %v", err)
@@ -202,8 +190,7 @@ func TestTwoProvidersVerifyingOneDomainHaveOneWinner(t *testing.T) {
 	forEachDialect(t, run)
 }
 
-// TestReverifyWithdrawsADomainNoLongerProven holds that a verified domain whose
-// record is gone is withdrawn and the change published.
+// TestReverifyWithdrawsADomainNoLongerProven checks that Reverify withdraws a verification whose record is gone.
 func TestReverifyWithdrawsADomainNoLongerProven(t *testing.T) {
 	r := newRigSQLite(t)
 	idp := r.putOIDC("tenant-a", "idp")
@@ -217,7 +204,6 @@ func TestReverifyWithdrawsADomainNoLongerProven(t *testing.T) {
 		t.Fatalf("VerifyDomain: %v", err)
 	}
 
-	// The record is gone.
 	delete(r.txt, txtName("example.com"))
 	if err := r.p.ReverifyDomains(context.Background(), idp.ID); err != nil {
 		t.Fatalf("ReverifyDomains: %v", err)
@@ -230,9 +216,7 @@ func TestReverifyWithdrawsADomainNoLongerProven(t *testing.T) {
 	}
 }
 
-// TestReverifyKeepsAPageableLookupFailure holds that a lookup that fails leaves
-// the verification as it was and the call returns the failure, so a resolver
-// outage does not silently de-verify domains.
+// TestReverifyKeepsAPageableLookupFailure checks that Reverify keeps the verification when the lookup fails and returns the failure.
 func TestReverifyKeepsAPageableLookupFailure(t *testing.T) {
 	r := newRigSQLite(t)
 	idp := r.putOIDC("tenant-a", "idp")
@@ -276,7 +260,6 @@ func TestNormalizeDomainRefusesWhatIsNotADomain(t *testing.T) {
 	}
 }
 
-// hasChange reports whether a change value is in the list.
 func hasChange(changes []string, want string) bool {
 	for _, c := range changes {
 		if c == want {

@@ -47,9 +47,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The deployment the chain runs as: a loopback public address, the default
-// base path, and the identifier of the provider the fixture signs for, which is
-// UUID text as a register's identifier is, because a session records it.
 const (
 	chainProvider  = "0198f0aa-0000-7000-8000-0000000000aa"
 	chainPublicURL = "http://127.0.0.1"
@@ -57,19 +54,15 @@ const (
 	chainListening = "an HTTP listener is listening"
 )
 
-// chainBound bounds each request the chain sends.
 func chainBound() time.Duration {
 	return coretest.Scale(5 * time.Second)
 }
 
-// The parts of the bounce page the chain reads back.
 var (
 	chainAction = regexp.MustCompile(`<form id="resume" method="post" action="([^"]*)">`)
 	chainInput  = regexp.MustCompile(`<input type="hidden" name="([^"]*)" value="([^"]*)">`)
 )
 
-// chainLog keeps the records the entry point writes, so the chain can read back
-// the address the operating system picked for the endpoint.
 type chainLog struct {
 	mu      sync.Mutex
 	records []slog.Record
@@ -104,7 +97,6 @@ func (c *chainLog) address() string {
 	return ""
 }
 
-// chainLogging delivers the logging capability over the kept records.
 type chainLogging struct{ logger *slog.Logger }
 
 func (l chainLogging) Named(string) *slog.Logger { return l.logger }
@@ -115,7 +107,6 @@ type chainNoRules struct{}
 func (chainNoRules) AddKeys(...string)              {}
 func (chainNoRules) AddPattern(string, log.Matcher) {}
 
-// chain is one running assembly of the login engine and this method.
 type chain struct {
 	t       *testing.T
 	ctx     context.Context
@@ -125,23 +116,17 @@ type chain struct {
 	metrics *sdkmetric.ManualReader
 }
 
-// chainReply is what one request got back.
 type chainReply struct {
 	status int
 	header http.Header
 	body   string
 }
 
-// runChain assembles the real login stack with this method, a provider register
-// holding the fixture's provider and a metric reader, serves it on loopback and
-// runs use against it.
 func runChain(t *testing.T, use func(c *chain, admin authn.AccountAdmin)) {
 	t.Helper()
 	runChainWith(t, func(*authn.SSOProvider) {}, use)
 }
 
-// runChainWith is runChain with the fixture provider's row passed through edit
-// before the register holds it.
 func runChainWith(t *testing.T, edit func(*authn.SSOProvider), use func(c *chain, admin authn.AccountAdmin)) {
 	t.Helper()
 	identity := newIDP(t)
@@ -216,8 +201,7 @@ func runChainWith(t *testing.T, edit func(*authn.SSOProvider), use func(c *chain
 			use(&chain{
 				t: t, ctx: ctx, address: address, idp: identity, metrics: reader,
 				client: &http.Client{
-					Timeout: chainBound(),
-					// Every redirect is read as the answer it is.
+					Timeout:       chainBound(),
 					CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 				},
 			}, admin)
@@ -229,7 +213,6 @@ func runChainWith(t *testing.T, edit func(*authn.SSOProvider), use func(c *chain
 	}
 }
 
-// loadChainConfig loads the configuration the way a host does.
 func loadChainConfig(t *testing.T, document map[string]any, modules []core.Module) config.Reader {
 	t.Helper()
 	body, err := json.Marshal(document)
@@ -257,8 +240,6 @@ func loadChainConfig(t *testing.T, document map[string]any, modules []core.Modul
 	return reader
 }
 
-// post sends a POST with the given body, content type and headers, and no
-// cookie but the one a header names.
 func (c *chain) post(path, contentType, body string, hdr ...string) chainReply {
 	c.t.Helper()
 	req, err := http.NewRequestWithContext(c.ctx, http.MethodPost, "http://"+c.address+path, strings.NewReader(body))
@@ -272,7 +253,6 @@ func (c *chain) post(path, contentType, body string, hdr ...string) chainReply {
 	return c.do(req)
 }
 
-// get sends a GET carrying the given cookie.
 func (c *chain) get(path, cookie string) chainReply {
 	c.t.Helper()
 	req, err := http.NewRequestWithContext(c.ctx, http.MethodGet, "http://"+c.address+path, nil)
@@ -297,8 +277,6 @@ func (c *chain) do(req *http.Request) chainReply {
 	return chainReply{status: resp.StatusCode, header: resp.Header, body: string(raw)}
 }
 
-// cookieOf is the "name=value" pair of the cookie a reply set under a name that
-// contains part.
 func cookieOf(t *testing.T, r chainReply, part string) string {
 	t.Helper()
 	for _, line := range r.header.Values("Set-Cookie") {
@@ -311,10 +289,6 @@ func cookieOf(t *testing.T, r chainReply, part string) string {
 	return ""
 }
 
-// holdsLoopbackCookies checks every cookie a reply set on the chain's loopback
-// http public URL: its name carries no __Host- or __Secure- prefix and it is not
-// Secure, since WebKit refuses either over http, and it keeps HttpOnly, Path=/,
-// no Domain and an explicit SameSite.
 func holdsLoopbackCookies(t *testing.T, r chainReply) {
 	t.Helper()
 	cookies := (&http.Response{Header: r.header}).Cookies()
@@ -332,8 +306,6 @@ func holdsLoopbackCookies(t *testing.T, r chainReply) {
 	}
 }
 
-// spStart begins an SP-initiated SAML login and returns the flow cookie, the
-// identifier of the AuthnRequest the method drew and the RelayState it sent.
 func (c *chain) spStart() (cookie, requestID, relay string) {
 	c.t.Helper()
 	body := `{"method":"saml","input":{"provider":"` + chainProvider + `"},"return_to":"/after"}`
@@ -374,8 +346,6 @@ func (c *chain) spStart() (cookie, requestID, relay string) {
 	return cookieOf(c.t, start, "authn-flow"), requestID, relay
 }
 
-// response is a valid response to requestID, signed by the fixture's provider,
-// for the deployment's ACS and entity.
 func (c *chain) response(requestID, assertionID string) string {
 	c.t.Helper()
 	acs := chainPublicURL + chainBase + "/callback/" + chainProvider
@@ -389,9 +359,6 @@ func (c *chain) response(requestID, assertionID string) string {
 	return signResponse(c.t, c.idp, o)
 }
 
-// deliver posts a response to the ACS as the provider's page does in a browser,
-// a cross-site navigation that carries no Lax cookie, and returns the bounce
-// page's resume target and form.
 func (c *chain) deliver(encoded, relay string) (action, form string) {
 	c.t.Helper()
 	body := url.Values{"SAMLResponse": {encoded}, "RelayState": {relay}}.Encode()
@@ -414,7 +381,6 @@ func (c *chain) deliver(encoded, relay string) (action, form string) {
 	return html.UnescapeString(match[1]), resume.Encode()
 }
 
-// assertions is the authn.sso.assertions count for SAML and an outcome.
 func (c *chain) assertions(outcome string) int64 {
 	c.t.Helper()
 	var rm metricdata.ResourceMetrics
@@ -440,12 +406,7 @@ func (c *chain) assertions(outcome string) int64 {
 	return total
 }
 
-// TestAnSPInitiatedLoginCompletesThroughTheBounce holds the SP-initiated SAML
-// login on a Lax flow cookie, over the real routes: the response the provider's
-// page posts cross-site reaches the ACS without the cookie and is bounced, and
-// the same-origin resume post carrying the cookie completes the login. A valid
-// response for another flow, delivered into a victim's browser the same way,
-// fails the victim's flow with no session, and the method counts it as other.
+// TestAnSPInitiatedLoginCompletesThroughTheBounce checks that an SP-initiated login completes through the bounce.
 func TestAnSPInitiatedLoginCompletesThroughTheBounce(t *testing.T) {
 	runChain(t, func(c *chain, admin authn.AccountAdmin) {
 		acct, err := admin.Create(c.ctx, authn.CreateAccount{Kind: authn.KindUser, Username: "alice", Via: "admin"})
@@ -509,12 +470,7 @@ func TestAnSPInitiatedLoginCompletesThroughTheBounce(t *testing.T) {
 	})
 }
 
-// TestAStaleFlowCookieDoesNotBlockAnIdPInitiatedSAMLSignIn holds the
-// IdP-initiated SAML sign-in of a browser that still holds the flow cookie of a
-// finished SP-initiated login, over the real routes: the response the
-// provider's page posts cross-site is bounced, and the same-origin resume post
-// carrying the stale cookie signs the user in as a post without the cookie
-// would.
+// TestAStaleFlowCookieDoesNotBlockAnIdPInitiatedSAMLSignIn checks that a stale flow cookie does not block an IdP-initiated sign-in.
 func TestAStaleFlowCookieDoesNotBlockAnIdPInitiatedSAMLSignIn(t *testing.T) {
 	allow := func(row *authn.SSOProvider) { row.AllowIDPInitiated = true }
 	runChainWith(t, allow, func(c *chain, admin authn.AccountAdmin) {

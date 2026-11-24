@@ -9,8 +9,6 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
-// counterValue reads the value of a counter for the data points whose attributes
-// carry every string pair given.
 func counterValue(t *testing.T, reader *sdkmetric.ManualReader, name string, pairs ...string) int64 {
 	t.Helper()
 	var rm metricdata.ResourceMetrics

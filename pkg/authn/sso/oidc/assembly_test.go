@@ -10,21 +10,16 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// The stand-in modules the descriptor names: the enterprise provider register,
-// the account module and the configuration reader.
 const (
 	providersModule = "stand-in.providers"
 	accountsModule  = "stand-in.accounts"
 	readerModule    = "stand-in.config"
 )
 
-// standIn declares a capability the way the real module does.
 func standIn(name string, token any) core.Module {
 	return core.Module{Name: name, Provides: []core.Provision{{Token: token}}}
 }
 
-// fakeAccounts is a stand-in for the account module: this method reads no
-// account, so every answer is the zero value.
 type fakeAccounts struct{}
 
 func (fakeAccounts) Get(context.Context, authn.AccountID) (authn.Account, error) {
@@ -59,7 +54,6 @@ func (fakeAccounts) ListServiceSecrets(context.Context, authn.AccountID) ([]auth
 	return nil, nil
 }
 
-// fakeReader is a configuration reader whose sections a case chooses.
 type fakeReader struct {
 	gm      gateMount
 	sso     ssoConfig
@@ -88,14 +82,10 @@ func (f *fakeReader) Decode(path string, target any) error {
 	return nil
 }
 
-// validReader is a reader with a complete configuration and the switch on.
 func validReader() *fakeReader {
 	return &fakeReader{gm: gateMount{PublicURL: "https://app.example.com"}, enabled: moduleConfig{Enabled: true}}
 }
 
-// driveWith registers this module beside the stand-in modules and drives a real
-// registry to the stage where the instance exists, handing the registry to
-// action.
 func driveWith(t *testing.T, reader config.Reader, action func(ctx context.Context, reg *core.Registry) error) error {
 	t.Helper()
 	reg := core.New()
@@ -115,10 +105,7 @@ func driveWith(t *testing.T, reader config.Reader, action func(ctx context.Conte
 	})
 }
 
-// TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt holds the descriptor
-// shape: the login method capability delivered non-exclusively, the provider
-// register and the account module required, and the settings store and logging
-// capability optional.
+// TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt checks that the descriptor delivers the login method without claiming it.
 func TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "authn.sso.oidc" {
@@ -145,10 +132,7 @@ func TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt(t *testing.T) {
 	}
 }
 
-// TestPrepareStandsDownWhenTheSwitchIsOff holds the unconfigured case: the
-// method has nothing of its own to infer the intent from, so an absent switch
-// means the deployment did not offer enterprise sign-in; the module is absent
-// from the run without failing the startup.
+// TestPrepareStandsDownWhenTheSwitchIsOff checks that Prepare stands the method down when its switch is off.
 func TestPrepareStandsDownWhenTheSwitchIsOff(t *testing.T) {
 	err := driveWith(t, &fakeReader{}, func(_ context.Context, reg *core.Registry) error {
 		got, ok := reg.Enablement(ModuleName)
@@ -168,9 +152,7 @@ func TestPrepareStandsDownWhenTheSwitchIsOff(t *testing.T) {
 	}
 }
 
-// TestPrepareStatesEnabledAndRefusesAnIncompleteConfiguration holds that a
-// complete configuration enables the module and a missing public address fails
-// the start once the switch is on.
+// TestPrepareStatesEnabledAndRefusesAnIncompleteConfiguration checks that Prepare states enabled and refuses an incomplete configuration.
 func TestPrepareStatesEnabledAndRefusesAnIncompleteConfiguration(t *testing.T) {
 	if err := driveWith(t, validReader(), func(context.Context, *core.Registry) error { return nil }); err != nil {
 		t.Fatalf("drive with a complete configuration: %v", err)
@@ -184,8 +166,7 @@ func TestPrepareStatesEnabledAndRefusesAnIncompleteConfiguration(t *testing.T) {
 	}
 }
 
-// TestARealRegistryDeliversTheOIDCMethod holds that the method is delivered and
-// wired to the configuration the registry resolved.
+// TestARealRegistryDeliversTheOIDCMethod checks that a real registry delivers the OIDC method.
 func TestARealRegistryDeliversTheOIDCMethod(t *testing.T) {
 	var methods []authn.LoginMethod
 	err := driveWith(t, validReader(), func(_ context.Context, reg *core.Registry) error {
@@ -207,17 +188,14 @@ func TestARealRegistryDeliversTheOIDCMethod(t *testing.T) {
 	}
 }
 
-// TestOptionalCapabilitiesAbsentIsALegalAssembly holds that an assembly with no
-// settings store, no logging, no audit, no event bus and no metric capability
-// still builds.
+// TestOptionalCapabilitiesAbsentIsALegalAssembly checks that an assembly without the optional capabilities is legal.
 func TestOptionalCapabilitiesAbsentIsALegalAssembly(t *testing.T) {
 	if err := driveWith(t, validReader(), func(context.Context, *core.Registry) error { return nil }); err != nil {
 		t.Fatalf("drive with no optional capability: %v", err)
 	}
 }
 
-// TestImportingThePackageRegistersTheModuleWithTheProcess holds that a host that
-// imports the package finds the module.
+// TestImportingThePackageRegistersTheModuleWithTheProcess checks that importing the package registers the module with the process registry.
 func TestImportingThePackageRegistersTheModuleWithTheProcess(t *testing.T) {
 	got, ok := core.ProcessRegistry.Lookup(ModuleName)
 	if !ok {
@@ -228,8 +206,7 @@ func TestImportingThePackageRegistersTheModuleWithTheProcess(t *testing.T) {
 	}
 }
 
-// TestTheSettingsReaderFallsBackToTheDeclaredDefault holds that a reader with no
-// store answers the declared default.
+// TestTheSettingsReaderFallsBackToTheDeclaredDefault checks that an unreadable setting falls back to the declared default.
 func TestTheSettingsReaderFallsBackToTheDeclaredDefault(t *testing.T) {
 	r := newReader(nil, nil)
 	if got := r.providerCacheTTL(); got != defaultProviderCacheTTL {

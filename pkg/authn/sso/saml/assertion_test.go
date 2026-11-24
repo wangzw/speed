@@ -16,14 +16,9 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/step"
 )
 
-// The design names the library version's return type as an assumption the
-// single-parse verification rests on. This compile-time assertion breaks if a
-// future gosaml2 changes it.
 var _ func(*saml2.SAMLServiceProvider, string) (*types.Response, error) = (*saml2.SAMLServiceProvider).ValidateEncodedResponse
 
-// A SAML provider sends the standard preferred_username under an attribute of
-// that name or friendly name, and a claim-strategy just-in-time login reads it
-// there. A provider that sends neither asserts no preferred username.
+// TestPreferredUsernameIsReadFromItsAttribute checks that preferred_username is read from its attribute.
 func TestPreferredUsernameIsReadFromItsAttribute(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -43,8 +38,6 @@ func TestPreferredUsernameIsReadFromItsAttribute(t *testing.T) {
 	}
 }
 
-// consumeWith drives the assertion checks with a chosen method state, as
-// Answer does after resolving the provider and building the service provider.
 func consumeWith(t *testing.T, p *product, row authn.SSOProvider, st methodState, encoded, relay string) authn.Step {
 	t.Helper()
 	b, err := p.buildServiceProvider(row)
@@ -58,8 +51,6 @@ func spState() methodState {
 	return methodState{Version: stateVersion, Request: "_request-1", Relay: "relay", Provider: testProviderID}
 }
 
-// mustRefuse fails unless the step is a refusal whose cause wraps
-// ErrInvalidCredentials, and returns the outcome it was counted under.
 func mustRefuse(t *testing.T, got authn.Step, sink *fakeAudit) string {
 	t.Helper()
 	if step.KindOf(got) != step.KindRefused {
@@ -71,6 +62,7 @@ func mustRefuse(t *testing.T, got authn.Step, sink *fakeAudit) string {
 	return rejectOutcome(sink)
 }
 
+// TestAValidAssertionProvesTheExternalIdentity checks that a valid assertion proves the external identity.
 func TestAValidAssertionProvesTheExternalIdentity(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -105,11 +97,11 @@ func TestAValidAssertionProvesTheExternalIdentity(t *testing.T) {
 	}
 }
 
+// TestAnUnsignedResponseIsRefused checks that an unsigned response is refused.
 func TestAnUnsignedResponseIsRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
 	p, sink := newTestProduct(t, newFakeProviders(row))
-	// The valid response, but with its signature stripped before transport.
 	signed := signResponse(t, idp, defaultOpts())
 	unsigned := stripSignature(t, signed)
 
@@ -119,6 +111,7 @@ func TestAnUnsignedResponseIsRefused(t *testing.T) {
 	}
 }
 
+// TestAnEmptyDestinationIsRefused checks that an empty destination is refused.
 func TestAnEmptyDestinationIsRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -132,6 +125,7 @@ func TestAnEmptyDestinationIsRefused(t *testing.T) {
 	}
 }
 
+// TestAMismatchedInResponseToIsRefused checks that a mismatched InResponseTo is refused.
 func TestAMismatchedInResponseToIsRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -146,11 +140,12 @@ func TestAMismatchedInResponseToIsRefused(t *testing.T) {
 	}
 }
 
+// TestAMismatchedRelayStateIsRefused checks that a mismatched RelayState is refused.
 func TestAMismatchedRelayStateIsRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
 	p, sink := newTestProduct(t, newFakeProviders(row))
-	st := spState() // its Relay is "relay"
+	st := spState()
 
 	got := consumeWith(t, p, row, st, signResponse(t, idp, defaultOpts()), "another-relay")
 	if out := mustRefuse(t, got, sink); out != outcomeOther {
@@ -158,6 +153,7 @@ func TestAMismatchedRelayStateIsRefused(t *testing.T) {
 	}
 }
 
+// TestTwoAssertionsAreRefused checks that two assertions are refused.
 func TestTwoAssertionsAreRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -171,6 +167,7 @@ func TestTwoAssertionsAreRefused(t *testing.T) {
 	}
 }
 
+// TestAnAssertionWithNoAudienceRestrictionIsRefused checks that an assertion with no audience restriction is refused.
 func TestAnAssertionWithNoAudienceRestrictionIsRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -184,12 +181,13 @@ func TestAnAssertionWithNoAudienceRestrictionIsRefused(t *testing.T) {
 	}
 }
 
+// TestConditionsWithoutAnAudienceRestrictionAreRefused checks that conditions without an audience restriction are refused.
 func TestConditionsWithoutAnAudienceRestrictionAreRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
 	p, sink := newTestProduct(t, newFakeProviders(row))
 	o := defaultOpts()
-	o.noAudienceListing = true // Conditions present, but no AudienceRestriction
+	o.noAudienceListing = true
 
 	got := consume(t, p, row, signResponse(t, idp, o), "relay")
 	if out := mustRefuse(t, got, sink); out != outcomeAudience {
@@ -197,6 +195,7 @@ func TestConditionsWithoutAnAudienceRestrictionAreRefused(t *testing.T) {
 	}
 }
 
+// TestAnAudienceOfAnotherServiceProviderIsRefused checks that an audience of another service provider is refused.
 func TestAnAudienceOfAnotherServiceProviderIsRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -210,12 +209,13 @@ func TestAnAudienceOfAnotherServiceProviderIsRefused(t *testing.T) {
 	}
 }
 
+// TestAnAssertionOutsideItsValidityIsRefused checks that an assertion outside its validity is refused.
 func TestAnAssertionOutsideItsValidityIsRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
 	p, sink := newTestProduct(t, newFakeProviders(row))
 	o := defaultOpts()
-	o.notBefore = time.Now().UTC().Add(time.Hour) // invalid time, not yet valid
+	o.notBefore = time.Now().UTC().Add(time.Hour)
 
 	got := consume(t, p, row, signResponse(t, idp, o), "relay")
 	if out := mustRefuse(t, got, sink); out != outcomeTime {
@@ -223,6 +223,7 @@ func TestAnAssertionOutsideItsValidityIsRefused(t *testing.T) {
 	}
 }
 
+// TestAnAssertionOlderThanTheAllowedAgeIsRefused checks that an assertion older than the allowed age is refused.
 func TestAnAssertionOlderThanTheAllowedAgeIsRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -237,6 +238,7 @@ func TestAnAssertionOlderThanTheAllowedAgeIsRefused(t *testing.T) {
 	}
 }
 
+// TestAnAssertionWithTooLongALifetimeIsRefused checks that an assertion with too long a lifetime is refused.
 func TestAnAssertionWithTooLongALifetimeIsRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -251,6 +253,7 @@ func TestAnAssertionWithTooLongALifetimeIsRefused(t *testing.T) {
 	}
 }
 
+// TestASHA1SignatureIsRefusedBeforeTheLibraryRuns checks that a SHA-1 signature is refused before the library runs.
 func TestASHA1SignatureIsRefusedBeforeTheLibraryRuns(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -266,6 +269,7 @@ func TestASHA1SignatureIsRefusedBeforeTheLibraryRuns(t *testing.T) {
 	}
 }
 
+// TestAPermittedSHA1AssertionSkipsThePreCheck checks that a permitted SHA-1 assertion skips the pre-check.
 func TestAPermittedSHA1AssertionSkipsThePreCheck(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -273,9 +277,6 @@ func TestAPermittedSHA1AssertionSkipsThePreCheck(t *testing.T) {
 	p, _ := newTestProduct(t, newFakeProviders(row))
 	encoded := signSHA1Response(t, idp, defaultOpts())
 
-	// With SHA-1 permitted, the pre-check does not refuse; the library's own
-	// validation decides. The observation that matters is that the pre-check no
-	// longer turns the response away on the algorithm alone.
 	if usesSHA1(encoded) && row.AllowSHA1 {
 		got := consume(t, p, row, encoded, "relay")
 		if cause := step.CauseOf(got); cause != nil && strings.Contains(cause.Error(), "SHA-1 algorithm") {
@@ -284,9 +285,8 @@ func TestAPermittedSHA1AssertionSkipsThePreCheck(t *testing.T) {
 	}
 }
 
+// TestTheSHA1PreCheckOnlyReadsAlgorithmAttributes checks that the SHA-1 pre-check reads algorithm attributes only.
 func TestTheSHA1PreCheckOnlyReadsAlgorithmAttributes(t *testing.T) {
-	// A digest value that happens to spell "sha1" in its base64 must not trip
-	// the pre-check, which reads Algorithm attributes alone.
 	body := `<root><Data>c2hhMQ==</Data><SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha256"/></root>`
 	if usesSHA1(base64Of(body)) {
 		t.Error("a non-algorithm occurrence of sha1 tripped the pre-check")
@@ -297,6 +297,7 @@ func TestTheSHA1PreCheckOnlyReadsAlgorithmAttributes(t *testing.T) {
 	}
 }
 
+// TestAReplayOfAnAssertionIsRefused checks that a replay of an assertion is refused.
 func TestAReplayOfAnAssertionIsRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -312,6 +313,7 @@ func TestAReplayOfAnAssertionIsRefused(t *testing.T) {
 	}
 }
 
+// TestANameIDWithAnXMLCommentIsNotTruncated checks that a NameID containing an XML comment is not truncated.
 func TestANameIDWithAnXMLCommentIsNotTruncated(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -327,12 +329,12 @@ func TestANameIDWithAnXMLCommentIsNotTruncated(t *testing.T) {
 			t.Fatalf("the subject was truncated at the comment: %q", subject)
 		}
 	case step.KindRefused:
-		// A refusal is the other safe outcome: nothing was taken from a comment.
 	default:
 		t.Fatalf("answer = %s, want proven with the full subject or a refusal", step.KindOf(got))
 	}
 }
 
+// TestASubjectFromAConfiguredAttributeIsProven checks that a subject from a configured attribute is proven.
 func TestASubjectFromAConfiguredAttributeIsProven(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, map[string]any{
@@ -356,6 +358,7 @@ func TestASubjectFromAConfiguredAttributeIsProven(t *testing.T) {
 	}
 }
 
+// TestAnIdPInitiatedAssertionIsAcceptedWhenFresh checks that an IdP-initiated assertion is accepted when fresh.
 func TestAnIdPInitiatedAssertionIsAcceptedWhenFresh(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -372,6 +375,7 @@ func TestAnIdPInitiatedAssertionIsAcceptedWhenFresh(t *testing.T) {
 	}
 }
 
+// TestAnIdPInitiatedAssertionIsRefusedWhenStale checks that an IdP-initiated assertion is refused when stale.
 func TestAnIdPInitiatedAssertionIsRefusedWhenStale(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -390,6 +394,7 @@ func TestAnIdPInitiatedAssertionIsRefusedWhenStale(t *testing.T) {
 	}
 }
 
+// TestAnIdPInitiatedAssertionIsRefusedWhenTheProviderForbidsIt checks that an IdP-initiated assertion is refused when the provider forbids it.
 func TestAnIdPInitiatedAssertionIsRefusedWhenTheProviderForbidsIt(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -405,11 +410,7 @@ func TestAnIdPInitiatedAssertionIsRefusedWhenTheProviderForbidsIt(t *testing.T) 
 	}
 }
 
-// TestAnswerReadsTheProviderFromTheFlowState holds the callback path the engine
-// runs for an identity-provider-initiated sign-in: the flow was created on the
-// spot, so it carries no method state, and the method reads the provider from the
-// flow state and validates the assertion against it. A flow that names no
-// provider at all is refused rather than validated without one.
+// TestAnswerReadsTheProviderFromTheFlowState checks that Answer reads the provider from the flow state.
 func TestAnswerReadsTheProviderFromTheFlowState(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -443,6 +444,7 @@ func TestAnswerReadsTheProviderFromTheFlowState(t *testing.T) {
 	}
 }
 
+// TestAnAssertionFromAnotherIssuerIsRefused checks that an assertion from another issuer is refused.
 func TestAnAssertionFromAnotherIssuerIsRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -456,6 +458,7 @@ func TestAnAssertionFromAnotherIssuerIsRefused(t *testing.T) {
 	}
 }
 
+// TestAResidualEncryptedAssertionIsRefused checks that a residual encrypted assertion is refused.
 func TestAResidualEncryptedAssertionIsRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -470,6 +473,7 @@ func TestAResidualEncryptedAssertionIsRefused(t *testing.T) {
 	_ = rejectOutcome(sink)
 }
 
+// TestTheValidatedResponseComesBackSignatureChecked checks that the validated response comes back signature-checked.
 func TestTheValidatedResponseComesBackSignatureChecked(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -479,8 +483,6 @@ func TestTheValidatedResponseComesBackSignatureChecked(t *testing.T) {
 		t.Fatalf("building the service provider: %v", err)
 	}
 
-	// The library decodes from the element it verified, so the returned response
-	// is the verified one and carries the facts the later checks read.
 	encoded := signResponse(t, idp, defaultOpts())
 	resp, err := b.sp.ValidateEncodedResponse(encoded)
 	if err != nil {
@@ -497,21 +499,18 @@ func TestTheValidatedResponseComesBackSignatureChecked(t *testing.T) {
 	}
 }
 
+// TestAProviderRegisterWithoutTheReplayLineIsNotAnAssertionLog checks that a provider register without the replay line cannot log an assertion.
 func TestAProviderRegisterWithoutTheReplayLineIsNotAnAssertionLog(t *testing.T) {
 	var withReplay authn.SSOProviders = newFakeProviders(providerRow(nil))
 	if _, ok := withReplay.(assertionLog); !ok {
 		t.Error("the fake register does not record the replay line")
 	}
-	// A register that carries only the SSOProviders method set is not one the
-	// method can write the replay line through.
 	var withoutReplay struct{ authn.SSOProviders }
 	if _, ok := any(withoutReplay).(assertionLog); ok {
 		t.Error("a register without RememberAssertion was taken as one that records the replay line")
 	}
 }
 
-// signSHA1Response signs the response with an RSA-SHA-1 signature method, which
-// the pre-check must turn away.
 func signSHA1Response(t *testing.T, i *idp, o responseOpts) string {
 	t.Helper()
 	ctx := i.signingContext(t)

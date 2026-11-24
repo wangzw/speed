@@ -12,23 +12,12 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// samlNamespace is where the SAML module declares the service provider's key,
-// which a provider that signs its requests needs. The key is read here, in the
-// module that owns the provider rows, so that a Put can refuse a provider whose
-// requests could not be signed; this is the cross-namespace read the
-// configuration design allows for exactly this case.
 const samlNamespace = "authn.sso.saml"
 
-// samlKeySettings is the part of the SAML module's section read here, the
-// service provider's private key under authn.sso.saml.sp-key-file.
 type samlKeySettings struct {
 	SPKeyFile string `config:"sp-key-file"`
 }
 
-// spKeyConfigured reports whether the deployment carries the SAML service
-// provider's private key. A namespace nobody declared, and a read that fails,
-// both read as absent: the strict direction, since the answer decides whether a
-// request may be signed.
 func (p *product) spKeyConfigured() bool {
 	if p.reader == nil {
 		return false
@@ -40,46 +29,25 @@ func (p *product) spKeyConfigured() bool {
 	return strings.TrimSpace(s.SPKeyFile) != ""
 }
 
-// The configuration items this module accepts, relative to its namespace.
 const (
 	allowPrivateEgressItem = "allow-private-egress"
 	dnsResolverItem        = "dns-resolver"
 	oidcCAFileItem         = "oidc-ca-file"
 )
 
-// moduleConfig is the set of input items this module accepts. The restricted
-// egress client that reaches an IdP is built by the protocol modules, but the
-// items that shape it are declared and reported here, because this module owns
-// the authn.sso namespace. The domain ownership proof resolves through the
-// resolver named here; the enterprise OIDC method trusts the extra roots named
-// here beside the system ones.
 type moduleConfig struct {
-	// AllowPrivateEgress admits connections by the restricted egress client to
-	// loopback addresses, for development against an IdP on the same machine.
-	AllowPrivateEgress bool `config:"allow-private-egress"`
-	// DNSResolver is the address (host:port) of the resolver the TXT lookup of
-	// a domain ownership proof goes through. Empty keeps the system resolver.
-	DNSResolver string `config:"dns-resolver"`
-	// OIDCCAFile is the path of a PEM file of extra root certificates the
-	// enterprise OIDC egress trusts beside the system roots. Empty trusts the
-	// system roots alone.
-	OIDCCAFile string `config:"oidc-ca-file"`
+	AllowPrivateEgress bool   `config:"allow-private-egress"`
+	DNSResolver        string `config:"dns-resolver"`
+	OIDCCAFile         string `config:"oidc-ca-file"`
 }
 
-// configDefaults is what this module is worth without a configuration file. The
-// relaxation is off and both sources keep the system's answer: a deployment
-// reaches only public addresses, resolves through the system resolver and trusts
-// the system roots.
 var configDefaults = moduleConfig{AllowPrivateEgress: false}
 
-// resolved is the configuration this module actually runs on.
 type resolved struct {
 	AllowPrivateEgress bool
 	DNSResolver        string
 }
 
-// resolve holds the configuration to the ranges the module can run on. The
-// resolver, when set, has to be an address the resolver can dial.
 func (c moduleConfig) resolve() (resolved, error) {
 	address := strings.TrimSpace(c.DNSResolver)
 	if address != "" {
@@ -90,8 +58,6 @@ func (c moduleConfig) resolve() (resolved, error) {
 	return resolved{AllowPrivateEgress: c.AllowPrivateEgress, DNSResolver: address}, nil
 }
 
-// validateResolverAddress holds the resolver to host:port, so a misspelt value
-// fails the start instead of quietly falling back to the system resolver.
 func validateResolverAddress(address string) error {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil || host == "" {
@@ -105,7 +71,6 @@ func validateResolverAddress(address string) error {
 	return nil
 }
 
-// configSchema declares this module's input items.
 func configSchema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,
@@ -133,7 +98,6 @@ func configSchema() config.Schema {
 	}
 }
 
-// readConfig decodes this module's section and validates it.
 func readConfig(reader config.Reader) (resolved, error) {
 	var cfg moduleConfig
 	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {
@@ -142,16 +106,12 @@ func readConfig(reader config.Reader) (resolved, error) {
 	return cfg.resolve()
 }
 
-// The setting keys this module declares, relative to its namespace, and the full
-// paths a consumer reads them by. The protocol modules read them at request time;
-// declaring them here is what makes them adjustable.
 const (
 	assertionMaxAgeKey  = "assertion-max-age"
 	providerCacheTTLKey = "provider-cache-ttl"
 	egressTimeoutKey    = "egress-timeout"
 )
 
-// The bounds of the setting domains.
 const (
 	minAssertionMaxAge  = time.Minute
 	maxAssertionMaxAge  = 30 * time.Minute
@@ -161,22 +121,18 @@ const (
 	maxEgressTimeout    = 60 * time.Second
 )
 
-// settingsDefaults carries the settings this module declares and their defaults,
-// which the settings module reads off it and which it never receives a value for.
 type settingsDefaults struct {
 	AssertionMaxAge  time.Duration `config:"assertion-max-age"`
 	ProviderCacheTTL time.Duration `config:"provider-cache-ttl"`
 	EgressTimeout    time.Duration `config:"egress-timeout"`
 }
 
-// settingDefaults is the declared default of each setting.
 var settingDefaults = settingsDefaults{
 	AssertionMaxAge:  5 * time.Minute,
 	ProviderCacheTTL: 60 * time.Second,
 	EgressTimeout:    10 * time.Second,
 }
 
-// The domains of the settings. Each is the one statement of its range.
 func assertionMaxAgeInDomain(d time.Duration) bool {
 	return d >= minAssertionMaxAge && d <= maxAssertionMaxAge
 }
@@ -189,9 +145,6 @@ func egressTimeoutInDomain(d time.Duration) bool {
 	return d >= minEgressTimeout && d <= maxEgressTimeout
 }
 
-// settingsSchema declares this module's runtime parameters, each with the domain
-// the code acts on. The consumers are the protocol modules; a value outside its
-// domain reads as the declared default and is reported.
 func settingsSchema() settings.Schema {
 	return settings.Schema{
 		Namespace: ConfigNamespace,

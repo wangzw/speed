@@ -6,20 +6,13 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The fragment's info section: the title this module's fragment carries and the
-// version of the fragment's shape.
 const (
 	fragmentTitle   = "authn sso"
 	fragmentVersion = "1.0.0"
 )
 
-// discoverPath is the route the domain discovery answers on, relative to the
-// module's API root. The fragment writes the same declaration, and the mounting
-// resolves it against the API root, so the path is written once.
 const discoverPath = "/auth/sso/discover"
 
-// discoverRequest is the declared input of the discovery: the email address
-// whose domain is looked up. Only the domain part is read.
 type discoverRequest struct {
 	_ struct{} `description:"The discovery request. It carries the email address and nothing else; an unknown field is refused as a bad request."`
 
@@ -31,23 +24,20 @@ type discoverRequest struct {
 type AuthnSsoProvider struct {
 	_ struct{} `description:"One SSO sign-in entry a client can offer for a domain. It carries only public identity; no endpoint, configuration or secret is exposed."`
 
-	ID       string `json:"id" required:"true" description:"The provider's opaque identifier, used to start a sign-in flow for this provider."`
-	Name     string `json:"name" required:"true" description:"The tenant-chosen display name of the provider, meant to be shown on the sign-in screen."`
+	// ID is the provider's opaque identifier.
+	ID string `json:"id" required:"true" description:"The provider's opaque identifier, used to start a sign-in flow for this provider."`
+	// Name is the tenant-chosen display name.
+	Name string `json:"name" required:"true" description:"The tenant-chosen display name of the provider, meant to be shown on the sign-in screen."`
+	// Protocol is the provider's sign-in protocol.
 	Protocol string `json:"protocol" required:"true" enum:"oidc,saml" description:"The protocol the provider's sign-in entry uses"`
 }
 
-// discoverResponse is the answer, always of the same shape: an empty providers
-// list when nothing matches. It is an alias of an anonymous struct, so the
-// fragment publishes it inline rather than as a component of its own.
 type discoverResponse = struct {
 	_ struct{} `description:"The discovery answer, always of this shape. The providers array is present whether or not anything matches."`
 
 	Providers []AuthnSsoProvider `json:"providers" required:"true" description:"The providers that have verified the domain and are enabled, in ascending id order; an empty array when none match."`
 }
 
-// discoverOperation declares the route that answers the sign-in entries of an
-// email's domain. Its handler receives the declared input and returns the
-// declared answer, so the entry point binds the request and writes the 200.
 var discoverOperation = speedhttp.NewOperation[discoverRequest, discoverResponse](
 	"authn.sso.discover",
 	http.MethodPost,
@@ -87,8 +77,6 @@ var discoverOperation = speedhttp.NewOperation[discoverRequest, discoverResponse
 	speedhttp.Public(),
 )
 
-// operations is this module's declaration of the API it serves. The fragment is
-// generated from it; the route is mounted from the same declaration.
 var operations = speedhttp.Operations{
 	discoverOperation,
 }

@@ -12,10 +12,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/step"
 )
 
-// TestPositiveLogin proves the whole flow: Begin answers a redirect with PKCE
-// and a nonce, Answer exchanges the code, verifies the token and hands back a
-// proof keyed in the provider's namespace with the mapped address, the display
-// name and the provider's tenant.
+// TestPositiveLogin checks a complete OIDC login.
 func TestPositiveLogin(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -61,8 +58,7 @@ func TestPositiveLogin(t *testing.T) {
 	}
 }
 
-// TestStateMismatchIsRefused changes the state the provider returned, so the
-// digest no longer matches the one the flow drew.
+// TestStateMismatchIsRefused checks that a redirect whose state does not match is refused.
 func TestStateMismatchIsRefused(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -73,8 +69,7 @@ func TestStateMismatchIsRefused(t *testing.T) {
 	assertRefused(t, r, private, query, outcomeOther, "idp-1")
 }
 
-// TestIssuerParameterMismatchIsRefused gives the redirect an iss parameter that
-// is not the configured issuer verbatim.
+// TestIssuerParameterMismatchIsRefused checks that a redirect iss parameter not matching the configured issuer is refused.
 func TestIssuerParameterMismatchIsRefused(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -85,8 +80,7 @@ func TestIssuerParameterMismatchIsRefused(t *testing.T) {
 	assertRefused(t, r, private, query, outcomeIssuer, "idp-1")
 }
 
-// TestTokenIssuerMismatchIsRefused signs a token whose issuer is another one, so
-// the verifier refuses it as an issuer failure.
+// TestTokenIssuerMismatchIsRefused checks that a token from another issuer is refused.
 func TestTokenIssuerMismatchIsRefused(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -97,8 +91,7 @@ func TestTokenIssuerMismatchIsRefused(t *testing.T) {
 	assertRefused(t, r, private, query, outcomeIssuer, "idp-1")
 }
 
-// TestMissingClientIDInAudienceIsRefused signs a token whose audience is not
-// this client.
+// TestMissingClientIDInAudienceIsRefused checks that a token without the client id in its audience is refused.
 func TestMissingClientIDInAudienceIsRefused(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -109,8 +102,7 @@ func TestMissingClientIDInAudienceIsRefused(t *testing.T) {
 	assertRefused(t, r, private, query, outcomeAudience, "idp-1")
 }
 
-// TestAuthorizedPartyMismatchIsRefused signs a token with more than one audience
-// and an authorized party that is not this client.
+// TestAuthorizedPartyMismatchIsRefused checks that a token whose authorized party is not this client is refused.
 func TestAuthorizedPartyMismatchIsRefused(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -154,8 +146,7 @@ func TestMissingNonceIsRefused(t *testing.T) {
 	assertRefused(t, r, private, query, outcomeOther, "idp-1")
 }
 
-// TestChangedNonceIsRefused changes the nonce the flow keeps, so the token's
-// nonce no longer matches.
+// TestChangedNonceIsRefused checks that a token with another nonce is refused.
 func TestChangedNonceIsRefused(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -188,8 +179,7 @@ func TestAlgorithmNoneIsRefused(t *testing.T) {
 	assertRefused(t, r, private, query, outcomeSignature, "idp-1")
 }
 
-// TestSymmetricAlgorithmIsRefused serves a token signed with a symmetric
-// algorithm, which the provider's configured algorithms do not admit.
+// TestSymmetricAlgorithmIsRefused checks that a symmetric token algorithm is refused.
 func TestSymmetricAlgorithmIsRefused(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -226,8 +216,7 @@ func TestMissingCodeIsRefused(t *testing.T) {
 	assertRefused(t, r, private, query, outcomeOther, "idp-1")
 }
 
-// TestRefusedVerifierIsRefused rewrites the PKCE verifier, so the token
-// endpoint refuses the code.
+// TestRefusedVerifierIsRefused checks that a refused PKCE verifier is refused.
 func TestRefusedVerifierIsRefused(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -242,9 +231,7 @@ func TestRefusedVerifierIsRefused(t *testing.T) {
 	assertRefused(t, r, tampered, query, outcomeOther, "idp-1")
 }
 
-// TestProviderErrorIsRefusedWithoutAnOutcome holds that a provider that reported
-// the request was refused (the user declined) is refused and records no
-// assertion outcome.
+// TestProviderErrorIsRefusedWithoutAnOutcome checks that a provider error is refused without recording an outcome.
 func TestProviderErrorIsRefusedWithoutAnOutcome(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -261,8 +248,7 @@ func TestProviderErrorIsRefusedWithoutAnOutcome(t *testing.T) {
 	}
 }
 
-// TestMissingProviderIsRefused holds that a start input that names no provider
-// is refused before anything is drawn.
+// TestMissingProviderIsRefused checks that a missing provider is refused.
 func TestMissingProviderIsRefused(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -275,8 +261,7 @@ func TestMissingProviderIsRefused(t *testing.T) {
 	}
 }
 
-// TestDisabledProviderIsAnOutage holds that a disabled provider row is answered
-// as an outage, not a refusal.
+// TestDisabledProviderIsAnOutage checks that a disabled provider is an outage.
 func TestDisabledProviderIsAnOutage(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -293,8 +278,7 @@ func TestDisabledProviderIsAnOutage(t *testing.T) {
 	}
 }
 
-// TestDiscoveryDownIsAnOutage holds that a provider whose discovery document
-// cannot be reached answers an outage at Begin.
+// TestDiscoveryDownIsAnOutage checks that an unreachable discovery document is an outage.
 func TestDiscoveryDownIsAnOutage(t *testing.T) {
 	m := newMockIDP(t)
 	m.discoveryStatus = 500
@@ -310,8 +294,7 @@ func TestDiscoveryDownIsAnOutage(t *testing.T) {
 	}
 }
 
-// TestTokenEndpointOutageIsAnOutage holds that a token endpoint that answers a
-// server error is an outage and not a refusal.
+// TestTokenEndpointOutageIsAnOutage checks that an unreachable token endpoint is an outage.
 func TestTokenEndpointOutageIsAnOutage(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -325,8 +308,7 @@ func TestTokenEndpointOutageIsAnOutage(t *testing.T) {
 	}
 }
 
-// TestProviderConfigIssuerNotVerbatimIsAnOutage holds that a provider whose
-// configured issuer is not the one its discovery document names cannot be used.
+// TestProviderConfigIssuerNotVerbatimIsAnOutage checks that a provider whose configured issuer is not verbatim is an outage.
 func TestProviderConfigIssuerNotVerbatimIsAnOutage(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -348,9 +330,7 @@ func TestProviderConfigIssuerNotVerbatimIsAnOutage(t *testing.T) {
 	}
 }
 
-// TestDiscoveryFailureTouchesOneProviderOnly holds that a provider whose
-// discovery document is unreachable is an outage while another provider's login
-// is unaffected.
+// TestDiscoveryFailureTouchesOneProviderOnly checks that a discovery failure affects only its provider.
 func TestDiscoveryFailureTouchesOneProviderOnly(t *testing.T) {
 	broken := newMockIDP(t)
 	broken.discoveryStatus = 500
@@ -372,9 +352,7 @@ func TestDiscoveryFailureTouchesOneProviderOnly(t *testing.T) {
 	}
 }
 
-// TestIdPAssertsMultiFactorWhenTheACRMatches holds that a provider that trusts
-// its IdP's declaration and whose token carries a trusted acr value sets the
-// assertion.
+// TestIdPAssertsMultiFactorWhenTheACRMatches checks that a matching ACR carries the IdP's multi-factor declaration.
 func TestIdPAssertsMultiFactorWhenTheACRMatches(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -402,8 +380,7 @@ func TestIdPAssertsMultiFactorWhenTheACRMatches(t *testing.T) {
 	}
 }
 
-// TestACRNotInTheTrustedSetIsNotAsserted holds that an acr outside the
-// configured set leaves the assertion unset.
+// TestACRNotInTheTrustedSetIsNotAsserted checks that an ACR outside the trusted set is not asserted.
 func TestACRNotInTheTrustedSetIsNotAsserted(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -431,8 +408,6 @@ func TestACRNotInTheTrustedSetIsNotAsserted(t *testing.T) {
 	}
 }
 
-// assertRefused drives Answer and holds that it is refused under the outcome,
-// logging an authn.sso.reject audit row for the provider.
 func assertRefused(t *testing.T, r *rig, private []byte, query url.Values, outcome, idpID string) {
 	t.Helper()
 	got := r.answer(private, query)

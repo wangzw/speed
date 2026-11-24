@@ -18,8 +18,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// putRawProvider registers an OIDC provider row with a config a case builds,
-// rather than the fixed shape putProvider writes.
 func (r *rig) putRawProvider(id, tenant string, cfg map[string]any) authn.SSOProvider {
 	r.t.Helper()
 	raw, err := json.Marshal(cfg)
@@ -34,7 +32,6 @@ func (r *rig) putRawProvider(id, tenant string, cfg map[string]any) authn.SSOPro
 	return row
 }
 
-// runPurpose drives a whole Begin and Answer round under the given purpose.
 func (r *rig) runPurpose(id string, m *mockIDP, purpose string) authn.Step {
 	r.t.Helper()
 	got, err := r.p.Begin(context.Background(), authn.Start{Purpose: purpose, Fields: map[string]string{fieldProvider: id}})
@@ -54,9 +51,7 @@ func (r *rig) runPurpose(id string, m *mockIDP, purpose string) authn.Step {
 	return ans
 }
 
-// TestThePrivateStateMustBeIntact holds that the flow's private state is checked
-// whole: a wrong version, any empty field and trailing data after the object all
-// name no drawn flow and are refused before anything is exchanged.
+// TestThePrivateStateMustBeIntact checks that private state this module did not write is refused.
 func TestThePrivateStateMustBeIntact(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -86,9 +81,7 @@ func TestThePrivateStateMustBeIntact(t *testing.T) {
 	}
 }
 
-// TestIdPAssertedNeedsTheProvidersTrust holds that a provider whose row does not
-// trust its IdP's declaration never gets IDPAsserted set, whatever the token's
-// acr is.
+// TestIdPAssertedNeedsTheProvidersTrust checks that the IdP declaration counts only with the provider's trust.
 func TestIdPAssertedNeedsTheProvidersTrust(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -109,8 +102,7 @@ func TestIdPAssertedNeedsTheProvidersTrust(t *testing.T) {
 	}
 }
 
-// TestEmailVerifiedFalseIsCarried holds that a false or absent email_verified
-// claim reads as not verified.
+// TestEmailVerifiedFalseIsCarried checks that a false email-verified claim is carried.
 func TestEmailVerifiedFalseIsCarried(t *testing.T) {
 	cases := map[string]any{
 		"false":  false,
@@ -134,8 +126,7 @@ func TestEmailVerifiedFalseIsCarried(t *testing.T) {
 	}
 }
 
-// TestBeginRefusesAnUnservedPurpose holds that Begin refuses an enrollment (and
-// an unnamed purpose) before it reads any provider.
+// TestBeginRefusesAnUnservedPurpose checks that Begin refuses a purpose the method does not serve.
 func TestBeginRefusesAnUnservedPurpose(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -170,8 +161,7 @@ func TestAnswerRefusesAnUnservedPurpose(t *testing.T) {
 	}
 }
 
-// TestServesLinkAndStepUp holds that the method answers a link and a step-up
-// flow, not only a login.
+// TestServesLinkAndStepUp checks that the method serves link and step-up.
 func TestServesLinkAndStepUp(t *testing.T) {
 	for _, purpose := range []string{authn.PurposeLink, authn.PurposeStepUp} {
 		t.Run(purpose, func(t *testing.T) {
@@ -185,8 +175,7 @@ func TestServesLinkAndStepUp(t *testing.T) {
 	}
 }
 
-// TestProtocolMismatchIsAnOutage holds that a provider of another protocol is an
-// outage on both the start and the callback path.
+// TestProtocolMismatchIsAnOutage checks that a provider of another protocol is an outage.
 func TestProtocolMismatchIsAnOutage(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -216,8 +205,7 @@ func TestProtocolMismatchIsAnOutage(t *testing.T) {
 	}
 }
 
-// TestMissingIdTokenIsAnOutage holds that a token response with no identity token
-// is an outage, not a refusal.
+// TestMissingIdTokenIsAnOutage checks that a token response without an identity token is an outage.
 func TestMissingIdTokenIsAnOutage(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -230,8 +218,7 @@ func TestMissingIdTokenIsAnOutage(t *testing.T) {
 	}
 }
 
-// TestARedirectWithoutAnIssParameterIsAccepted holds that the RFC 9207 iss
-// parameter is optional: a provider that does not send one still logs in.
+// TestARedirectWithoutAnIssParameterIsAccepted checks that a redirect without the iss parameter is accepted.
 func TestARedirectWithoutAnIssParameterIsAccepted(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -243,8 +230,7 @@ func TestARedirectWithoutAnIssParameterIsAccepted(t *testing.T) {
 	}
 }
 
-// TestAnswerChecksTheActionAndTheStep holds that a callback that is not an input
-// callback, or that arrives at a step the method did not name, is refused.
+// TestAnswerChecksTheActionAndTheStep checks that Answer refuses another action and a step it did not write.
 func TestAnswerChecksTheActionAndTheStep(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -268,9 +254,7 @@ func TestAnswerChecksTheActionAndTheStep(t *testing.T) {
 	}
 }
 
-// TestSubjectMappedToAnAbsentClaimIsRefused holds that a token whose sub is
-// present but whose configured subject claim is absent is refused, so an empty
-// subject is never bound.
+// TestSubjectMappedToAnAbsentClaimIsRefused checks that a subject mapped to an absent claim is refused.
 func TestSubjectMappedToAnAbsentClaimIsRefused(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -282,8 +266,7 @@ func TestSubjectMappedToAnAbsentClaimIsRefused(t *testing.T) {
 	}
 }
 
-// TestSecretReadFailureIsAnOutage holds that a client secret that cannot be read
-// is an outage.
+// TestSecretReadFailureIsAnOutage checks that a failed secret read is an outage.
 func TestSecretReadFailureIsAnOutage(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -299,8 +282,7 @@ func TestSecretReadFailureIsAnOutage(t *testing.T) {
 	}
 }
 
-// TestAProviderConfigThatCannotBeReadIsAnOutage holds that a stored config with
-// no issuer, no client identifier or an unknown key is an outage, not a refusal.
+// TestAProviderConfigThatCannotBeReadIsAnOutage checks that a provider configuration that cannot be read is an outage.
 func TestAProviderConfigThatCannotBeReadIsAnOutage(t *testing.T) {
 	m := newMockIDP(t)
 	cases := map[string]map[string]any{
@@ -323,8 +305,7 @@ func TestAProviderConfigThatCannotBeReadIsAnOutage(t *testing.T) {
 	}
 }
 
-// TestConfiguredScopesAreUsed holds that the provider's configured scopes reach
-// the authorization URL.
+// TestConfiguredScopesAreUsed checks that the configured scopes are used.
 func TestConfiguredScopesAreUsed(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -344,8 +325,7 @@ func TestConfiguredScopesAreUsed(t *testing.T) {
 	}
 }
 
-// TestConfiguredAlgsAreUsed holds that a token signed with an algorithm the
-// provider's configured set does not admit is refused.
+// TestConfiguredAlgsAreUsed checks that the configured signing algorithms are used.
 func TestConfiguredAlgsAreUsed(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -354,7 +334,6 @@ func TestConfiguredAlgsAreUsed(t *testing.T) {
 		"algs": []string{"RS256"},
 	})
 
-	// The mock signs with ES256, which the configured set excludes.
 	private, query := r.start("idp-1", m)
 	got := r.answer(private, query)
 	if step.KindOf(got) != step.KindRefused {
@@ -362,9 +341,7 @@ func TestConfiguredAlgsAreUsed(t *testing.T) {
 	}
 }
 
-// TestAnUnreachableKeySetIsARefusal holds the one place an outage and a refusal
-// cannot be told apart: the library's key-set fetch runs under the provider's own
-// context and its failure is flattened into a refusal.
+// TestAnUnreachableKeySetIsARefusal checks that an unreachable key set is refused.
 func TestAnUnreachableKeySetIsARefusal(t *testing.T) {
 	m := newMockIDP(t)
 	m.jwksURI = m.server.URL + "/missing-jwks"
@@ -377,8 +354,7 @@ func TestAnUnreachableKeySetIsARefusal(t *testing.T) {
 	}
 }
 
-// TestNoUserinfoRequestIsMade holds that the method takes everything it needs
-// from the identity token and never calls the userinfo endpoint.
+// TestNoUserinfoRequestIsMade checks that the method makes no userinfo request.
 func TestNoUserinfoRequestIsMade(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -392,17 +368,13 @@ func TestNoUserinfoRequestIsMade(t *testing.T) {
 	}
 }
 
-// failTransport is a RoundTripper that always fails, so a case can prove the
-// method does not fall back to the process's default transport.
 type failTransport struct{}
 
 func (failTransport) RoundTrip(*http.Request) (*http.Response, error) {
 	return nil, errors.New("the default transport must not be used")
 }
 
-// TestTheDefaultTransportIsNotUsed holds that every outbound call goes through
-// the restricted egress client: with the process's default transport replaced by
-// one that always fails, the whole login still succeeds.
+// TestTheDefaultTransportIsNotUsed checks that the default transport is not used.
 func TestTheDefaultTransportIsNotUsed(t *testing.T) {
 	saved := http.DefaultTransport
 	http.DefaultTransport = failTransport{}
@@ -417,9 +389,7 @@ func TestTheDefaultTransportIsNotUsed(t *testing.T) {
 	}
 }
 
-// TestCacheDoesNotReuseAnEntryOfALaterVersion holds that the cache entry is keyed
-// by an exact version: an entry built for a later version is not reused for an
-// earlier one.
+// TestCacheDoesNotReuseAnEntryOfALaterVersion checks that the cache does not reuse an entry of a later version.
 func TestCacheDoesNotReuseAnEntryOfALaterVersion(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -439,8 +409,7 @@ func TestCacheDoesNotReuseAnEntryOfALaterVersion(t *testing.T) {
 	}
 }
 
-// TestCacheTreatsTheExpiryInstantAsExpired holds the strict boundary: an entry
-// whose expiry instant is now is already expired.
+// TestCacheTreatsTheExpiryInstantAsExpired checks that a cache entry at its expiry instant is expired.
 func TestCacheTreatsTheExpiryInstantAsExpired(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -459,8 +428,7 @@ func TestCacheTreatsTheExpiryInstantAsExpired(t *testing.T) {
 	}
 }
 
-// TestAnUnreadableChangePayloadKeepsTheCache holds that an idp-changed event
-// whose payload cannot be read leaves the cached provider in place.
+// TestAnUnreadableChangePayloadKeepsTheCache checks that an unreadable change payload keeps the cache.
 func TestAnUnreadableChangePayloadKeepsTheCache(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -478,8 +446,7 @@ func TestAnUnreadableChangePayloadKeepsTheCache(t *testing.T) {
 	}
 }
 
-// TestBoolClaimReadsTheStringForm holds that a claim sent as the string "true"
-// reads as true and "false" reads as false.
+// TestBoolClaimReadsTheStringForm checks that a boolean claim is read from its string form.
 func TestBoolClaimReadsTheStringForm(t *testing.T) {
 	if !boolClaim("true") {
 		t.Error("boolClaim(\"true\") = false, want true")
@@ -495,9 +462,7 @@ func TestBoolClaimReadsTheStringForm(t *testing.T) {
 	}
 }
 
-// TestClassifyVerifyStringAudienceAndShortToken holds the two labels a token
-// whose audience is a bare string that is not the client, and one with too few
-// segments, are counted under.
+// TestClassifyVerifyStringAudienceAndShortToken checks that ClassifyVerify handles a string audience and a short token.
 func TestClassifyVerifyStringAudienceAndShortToken(t *testing.T) {
 	cfg := providerConfig{Issuer: "https://idp.example", ClientID: "client-1"}
 	now := time.Date(2026, time.October, 12, 12, 0, 0, 0, time.UTC)
@@ -515,7 +480,6 @@ func TestClassifyVerifyStringAudienceAndShortToken(t *testing.T) {
 	}
 }
 
-// fakeStore is a settings store a case scripts, keyed by the full path.
 type fakeStore struct {
 	settings.Store
 	values map[string]string
@@ -545,9 +509,7 @@ func (s *fakeStore) Get(_ settings.Layer, key string, target any) error {
 	return nil
 }
 
-// TestTheSettingsReaderReadsTheStore holds that a setting the store carries is
-// read rather than replaced by the declared default, and that a non-positive
-// value falls back.
+// TestTheSettingsReaderReadsTheStore checks that the settings reader reads the store.
 func TestTheSettingsReaderReadsTheStore(t *testing.T) {
 	r := newReader(&fakeStore{values: map[string]string{
 		providerCacheTTLPath: "45s",
@@ -566,8 +528,7 @@ func TestTheSettingsReaderReadsTheStore(t *testing.T) {
 	}
 }
 
-// TestTheDefaultDurationsAreLiteral holds the declared defaults against literal
-// values, so a changed constant is caught.
+// TestTheDefaultDurationsAreLiteral checks that the declared default durations are the literal values.
 func TestTheDefaultDurationsAreLiteral(t *testing.T) {
 	r := newReader(nil, nil)
 	if got := r.providerCacheTTL(); got != 60*time.Second {
@@ -578,8 +539,7 @@ func TestTheDefaultDurationsAreLiteral(t *testing.T) {
 	}
 }
 
-// TestThePublicURLMustBeAnOrigin holds that a public address that is not an
-// origin fails the start.
+// TestThePublicURLMustBeAnOrigin checks that the gateway's public URL must be an origin.
 func TestThePublicURLMustBeAnOrigin(t *testing.T) {
 	err := driveWith(t, &fakeReader{
 		gm:      gateMount{PublicURL: "not a url"},

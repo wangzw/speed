@@ -13,23 +13,7 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// TestTheMetadataRefreshRecordsEachRequest holds that the client this module
-// assembles writes one record per outbound request, through the logger the
-// call's context carries.
-//
-// The product is taken from a real registry driven to the stage where the
-// instance exists, and the call is the metadata refresh's own fetch, so the
-// assertion is on what the module's own newProduct assembles and on the path
-// the refresher takes rather than on a client a case wrapped by hand.
-//
-// The metadata URL names a scheme the restricted client refuses before it opens
-// a connection. That is deliberate: the record covers the call, whether or not
-// it reached the IdP, and this failure is what a case can drive without a
-// certificate the production client would reject.
-//
-// The query carries a value shaped like a token. It may not reach the record,
-// which is what keeps a token out of every destination the logging chain writes
-// to.
+// TestTheMetadataRefreshRecordsEachRequest checks that every metadata refresh request leaves one record.
 func TestTheMetadataRefreshRecordsEachRequest(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))

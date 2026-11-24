@@ -15,9 +15,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// providerConfig is the part of a provider row's config a SAML provider carries.
-// The register validates the shape on write; a field the module cannot read here
-// leaves the provider unusable, which is the strict direction.
 type providerConfig struct {
 	IDPEntityID      string            `json:"idp_entity_id"`
 	IDPSSOURL        string            `json:"idp_sso_url"`
@@ -30,8 +27,6 @@ type providerConfig struct {
 	MFAACRValues     []string          `json:"mfa_acr_values"`
 }
 
-// parseProviderConfig reads a provider row's config. A config that does not
-// decode names no provider.
 func parseProviderConfig(raw json.RawMessage) (providerConfig, error) {
 	var cfg providerConfig
 	if len(raw) == 0 {
@@ -43,8 +38,6 @@ func parseProviderConfig(raw json.RawMessage) (providerConfig, error) {
 	return cfg, nil
 }
 
-// built is a service provider built from one provider row, together with the
-// parsed config the assertion checks read.
 type built struct {
 	sp      *saml2.SAMLServiceProvider
 	config  providerConfig
@@ -52,9 +45,6 @@ type built struct {
 	at      time.Time
 }
 
-// spCache is the process-local cache of built service providers, keyed by the
-// provider identifier and invalidated by the provider's version, by its
-// configured lifetime, and by an authn.idp.changed event.
 type spCache struct {
 	mu sync.Mutex
 	m  map[string]built
@@ -62,8 +52,6 @@ type spCache struct {
 
 func newSPCache() *spCache { return &spCache{m: make(map[string]built)} }
 
-// get returns the built provider for a row, rebuilding it when it is not
-// cached, its version changed or its lifetime ran out.
 func (c *spCache) get(row authn.SSOProvider, ttl time.Duration, now time.Time, build func() (built, error)) (built, error) {
 	c.mu.Lock()
 	entry, ok := c.m[row.ID]
@@ -82,26 +70,18 @@ func (c *spCache) get(row authn.SSOProvider, ttl time.Duration, now time.Time, b
 	return fresh, nil
 }
 
-// drop removes a provider's cached service provider.
 func (c *spCache) drop(id string) {
 	c.mu.Lock()
 	delete(c.m, id)
 	c.mu.Unlock()
 }
 
-// flush removes every cached service provider.
 func (c *spCache) flush() {
 	c.mu.Lock()
 	c.m = make(map[string]built)
 	c.mu.Unlock()
 }
 
-// buildServiceProvider builds the library's service provider for one row: the
-// identity provider's issuer, single sign-on URL and certificates, and this
-// deployment's own ACS address, entity identifier and audience. It refuses a row
-// whose required config is missing and one that signs its requests while the
-// deployment carries no key, so that the library is never handed an empty issuer
-// or destination, against which it would skip the comparison.
 func (p *product) buildServiceProvider(row authn.SSOProvider) (built, error) {
 	cfg, err := parseProviderConfig(row.Config)
 	if err != nil {
@@ -148,16 +128,11 @@ func (p *product) buildServiceProvider(row authn.SSOProvider) (built, error) {
 	return built{sp: sp, config: cfg, version: row.Version}, nil
 }
 
-// The bounds the library is given, so that a decompression or token bomb is
-// refused before it is parsed.
 const (
 	maxDecompressedBody = 1 << 20
 	maxXMLTokens        = 50000
 )
 
-// certificateStore builds the library's certificate store from a provider's PEM
-// certificates: any one of them may verify a signature, which is how a rotation
-// lets the current and next certificates stand together.
 func certificateStore(pems []string) (*dsig.MemoryX509CertificateStore, error) {
 	roots := make([]*x509.Certificate, 0, len(pems))
 	for _, text := range pems {
@@ -174,9 +149,6 @@ func certificateStore(pems []string) (*dsig.MemoryX509CertificateStore, error) {
 	return &dsig.MemoryX509CertificateStore{Roots: roots}, nil
 }
 
-// nameIDURN maps a provider's configured NameID format to the SAML URN the
-// library sends and expects. The register refuses a format outside the set, so
-// an unknown value reads as persistent.
 func nameIDURN(format string) string {
 	switch format {
 	case "unspecified":

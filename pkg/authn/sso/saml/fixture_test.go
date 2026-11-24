@@ -24,7 +24,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
 )
 
-// The fixed provider and service provider addresses the fixture uses.
 const (
 	testProviderID = "idp-1"
 	testTenant     = "acme"
@@ -34,8 +33,6 @@ const (
 	testSSOURL     = "https://idp.example.com/sso"
 )
 
-// idp is a throwaway identity provider: an RSA key and its self-signed
-// certificate, which signs the responses the tests feed the method.
 type idp struct {
 	key     *rsa.PrivateKey
 	certDER []byte
@@ -66,8 +63,6 @@ func newIDP(t *testing.T) *idp {
 	}
 }
 
-// signingContext is the context that signs a response with this identity
-// provider's key.
 func (i *idp) signingContext(t *testing.T) *dsig.SigningContext {
 	t.Helper()
 	ctx, err := dsig.NewSigningContext(i.key, [][]byte{i.certDER})
@@ -77,8 +72,6 @@ func (i *idp) signingContext(t *testing.T) *dsig.SigningContext {
 	return ctx
 }
 
-// responseOpts describes one SAML response to build. The zero value is a valid
-// SP-initiated response; a test changes one field to make it invalid.
 type responseOpts struct {
 	issuer            string
 	assertionIssuer   string
@@ -104,7 +97,6 @@ type responseOpts struct {
 	status            string
 }
 
-// defaultOpts is the valid baseline every test starts from.
 func defaultOpts() responseOpts {
 	now := time.Now().UTC()
 	return responseOpts{
@@ -129,7 +121,6 @@ func testEntityID() string {
 
 func testACS() string { return testPublicURL + testBasePath + "/callback/" + testProviderID }
 
-// buildResponse renders the SAML response the options describe, unsigned.
 func buildResponse(o responseOpts) string {
 	var attrs strings.Builder
 	for name, value := range o.attributes {
@@ -161,8 +152,6 @@ func buildResponse(o responseOpts) string {
 	switch {
 	case o.omitAudience:
 	case o.noAudienceListing:
-		// Conditions present with the times, but no AudienceRestriction, which the
-		// library passes and the method must refuse.
 		conditions = fmt.Sprintf(`<saml:Conditions NotBefore="%s" NotOnOrAfter="%s"/>`,
 			formatTime(o.notBefore), formatTime(o.notOnOrAfter))
 	default:
@@ -205,8 +194,6 @@ func formatTime(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
 
-// signResponse signs the response element with the given context and returns the
-// base64 transport form the callback carries.
 func signResponse(t *testing.T, i *idp, o responseOpts) string {
 	t.Helper()
 	signed, err := i.signingContext(t).SignEnveloped(readDoc(t, buildResponse(o)).Root())
@@ -216,7 +203,6 @@ func signResponse(t *testing.T, i *idp, o responseOpts) string {
 	return encodeDoc(t, signed)
 }
 
-// readDoc parses XML text into an etree document.
 func readDoc(t *testing.T, text string) *etree.Document {
 	t.Helper()
 	doc := etree.NewDocument()
@@ -226,7 +212,6 @@ func readDoc(t *testing.T, text string) *etree.Document {
 	return doc
 }
 
-// encodeDoc writes an element and returns it in the base64 transport form.
 func encodeDoc(t *testing.T, el *etree.Element) string {
 	t.Helper()
 	out := etree.NewDocument()
@@ -239,8 +224,6 @@ func encodeDoc(t *testing.T, el *etree.Element) string {
 	return base64.StdEncoding.EncodeToString([]byte(text))
 }
 
-// stripSignature removes every Signature element from a signed response and
-// returns it still base64-encoded, which is an unsigned response.
 func stripSignature(t *testing.T, encoded string) string {
 	t.Helper()
 	raw, err := base64.StdEncoding.DecodeString(encoded)
@@ -254,10 +237,8 @@ func stripSignature(t *testing.T, encoded string) string {
 	return encodeDoc(t, doc.Root())
 }
 
-// base64Of returns the base64 transport form of a raw XML string.
 func base64Of(text string) string { return base64.StdEncoding.EncodeToString([]byte(text)) }
 
-// providerConfigJSON builds the provider row's config for the fixture.
 func providerConfigJSON(t *testing.T, i *idp, extra map[string]any) json.RawMessage {
 	t.Helper()
 	cfg := map[string]any{
@@ -275,7 +256,6 @@ func providerConfigJSON(t *testing.T, i *idp, extra map[string]any) json.RawMess
 	return out
 }
 
-// providerRow is a provider row for the fixture, enabled and SAML by default.
 func providerRow(cfg json.RawMessage) authn.SSOProvider {
 	return authn.SSOProvider{
 		ID:       testProviderID,
@@ -288,8 +268,6 @@ func providerRow(cfg json.RawMessage) authn.SSOProvider {
 	}
 }
 
-// fakeProviders is an enterprise provider register for the tests: one row, an
-// optional set of verified-domain providers, and a replay set.
 type fakeProviders struct {
 	row       authn.SSOProvider
 	domain    []authn.SSOProvider
@@ -353,8 +331,6 @@ func (f *fakeProviders) RememberAssertion(_ context.Context, idpID, assertionID 
 	return nil
 }
 
-// fakeAudit records the entries the method writes, so a test can read the
-// outcome a rejection was counted under.
 type fakeAudit struct {
 	entries []audit.Entry
 }
@@ -364,17 +340,11 @@ func (f *fakeAudit) Record(_ context.Context, e audit.Entry) error {
 	return nil
 }
 
-// newTestProduct assembles a product around a fake register, with a nil settings
-// store so every setting reads as its declared default, and returns the audit
-// sink its entries land in.
 func newTestProduct(t *testing.T, providers *fakeProviders) (*product, *fakeAudit) {
 	t.Helper()
 	return newTestProductAtBase(t, providers, testBasePath)
 }
 
-// newTestProductAtBase assembles a product whose mounter is configured with base
-// as its base path, so a test can hold behaviour under a base the host chose
-// rather than the default.
 func newTestProductAtBase(t *testing.T, providers *fakeProviders, base string) (*product, *fakeAudit) {
 	t.Helper()
 	m := mounttest.New(t, mounttest.WithPublicURL(testPublicURL), mounttest.WithBase(base))
@@ -391,8 +361,6 @@ func newTestProductAtBase(t *testing.T, providers *fakeProviders, base string) (
 	}, sink
 }
 
-// rejectOutcome is the outcome the last audit row carries, which is the check a
-// rejection was counted under.
 func rejectOutcome(sink *fakeAudit) string {
 	if len(sink.entries) == 0 {
 		return ""
@@ -400,8 +368,6 @@ func rejectOutcome(sink *fakeAudit) string {
 	return sink.entries[len(sink.entries)-1].Outcome
 }
 
-// consume drives the assertion checks directly, as the method's Answer does
-// after it has resolved the provider and built the service provider.
 func consume(t *testing.T, p *product, row authn.SSOProvider, encoded, relay string) authn.Step {
 	t.Helper()
 	b, err := p.buildServiceProvider(row)

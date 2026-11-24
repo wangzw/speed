@@ -11,25 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/observability"
 )
 
-// TestTheOutboundClientIsWrappedForTheTrace holds that the restricted egress
-// client the product assembles is wrapped with the trace transport, which is
-// what makes an outbound call continue the trace across the hop to the identity
-// provider: without the wrap the on-demand metadata refresh reaches the IdP with
-// no trace context and the trace breaks at this hop, which no layer reports.
-//
-// The product is taken from a real registry driven to the stage where the
-// instance exists, so the assertion is on what the module's own newProduct
-// assembles rather than on a client a case wrapped by hand: a case that built
-// its own client and wrapped it the same way would pass with the wrap removed
-// from newProduct, holding nothing about this module.
-//
-// The wrap is judged structurally rather than by driving a call because the
-// production client speaks https only, to a public address, with the system
-// roots by default: a call to a test IdP serving its own certificate cannot get
-// past the TLS handshake, and the header the call would carry never leaves the
-// process. What the wrap is the only thing that changes is the concrete type of
-// the transport the product holds, so it is compared against the one Transport
-// returns.
+// TestTheOutboundClientIsWrappedForTheTrace checks that the outbound client carries the trace of the call's context.
 func TestTheOutboundClientIsWrappedForTheTrace(t *testing.T) {
 	wrapped := reflect.TypeOf(observability.Transport(nil))
 	idp := newIDP(t)

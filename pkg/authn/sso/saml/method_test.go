@@ -15,6 +15,7 @@ func start(provider string) authn.Start {
 	return authn.Start{Purpose: authn.PurposeLogin, Fields: map[string]string{"provider": provider}}
 }
 
+// TestBeginRedirectsToTheProvider checks that Begin redirects to the provider.
 func TestBeginRedirectsToTheProvider(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -52,6 +53,7 @@ func TestBeginRedirectsToTheProvider(t *testing.T) {
 	}
 }
 
+// TestBeginRefusesAProviderThatDoesNotAnswer checks that Begin refuses a provider that does not answer.
 func TestBeginRefusesAProviderThatDoesNotAnswer(t *testing.T) {
 	idp := newIDP(t)
 	cases := []struct {
@@ -89,6 +91,7 @@ func TestBeginRefusesAProviderThatDoesNotAnswer(t *testing.T) {
 	}
 }
 
+// TestBeginRefusesAStartWithNoProvider checks that Begin refuses a start with no provider.
 func TestBeginRefusesAStartWithNoProvider(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -103,6 +106,7 @@ func TestBeginRefusesAStartWithNoProvider(t *testing.T) {
 	}
 }
 
+// TestBeginRefusesAnUnservedPurpose checks that Begin refuses an unserved purpose.
 func TestBeginRefusesAnUnservedPurpose(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -119,6 +123,7 @@ func TestBeginRefusesAnUnservedPurpose(t *testing.T) {
 	}
 }
 
+// TestBeginAnswersUnavailableWhenTheRegisterCannotBeRead checks that Begin answers unavailable when the register cannot be read.
 func TestBeginAnswersUnavailableWhenTheRegisterCannotBeRead(t *testing.T) {
 	idp := newIDP(t)
 	providers := newFakeProviders(providerRow(providerConfigJSON(t, idp, nil)))
@@ -137,6 +142,7 @@ func TestBeginAnswersUnavailableWhenTheRegisterCannotBeRead(t *testing.T) {
 	}
 }
 
+// TestSignRequestsWithoutAKeyIsRefused checks that signing requests without a key is refused.
 func TestSignRequestsWithoutAKeyIsRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, map[string]any{"sign_requests": true}))
@@ -147,6 +153,7 @@ func TestSignRequestsWithoutAKeyIsRefused(t *testing.T) {
 	}
 }
 
+// TestAnEmptyIdentityProviderIssuerIsRefused checks that an empty identity-provider issuer is refused.
 func TestAnEmptyIdentityProviderIssuerIsRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, map[string]any{"idp_entity_id": ""}))
@@ -157,6 +164,7 @@ func TestAnEmptyIdentityProviderIssuerIsRefused(t *testing.T) {
 	}
 }
 
+// TestTheServiceProviderKeyConfigurationMustBeAPair checks that the service-provider key configuration must be a pair.
 func TestTheServiceProviderKeyConfigurationMustBeAPair(t *testing.T) {
 	cases := []moduleConfig{
 		{SPKeyFile: "/tmp/key.pem"},

@@ -15,23 +15,12 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// sweepBatch is how many rows one statement of the sweep removes.
 const sweepBatch = 1000
 
-// duplicated reports whether a failure is a uniqueness violation, which GORM
-// classifies the same on both engines.
 func duplicated(err error) bool { return errors.Is(err, gorm.ErrDuplicatedKey) }
 
-// probePlaintext is the value the startup round trip writes into the encrypted
-// column and reads back. It is no deployment's secret: it exists only so that a
-// write and a read that cannot be sealed or opened fail the startup rather than
-// the first OIDC provider created.
 const probePlaintext = "speed/authn/sso/encrypted-column-probe"
 
-// idpRow is one row of authn_idps as the model path sees it. ClientSecret carries
-// the serializer, so a write seals it and a read that selects it opens it. Every
-// read this module hands out selects the other columns and leaves this nil; only
-// Secret selects it.
 type idpRow struct {
 	ID                string    `gorm:"column:id;primaryKey"`
 	TenantID          string    `gorm:"column:tenant_id"`
@@ -52,17 +41,12 @@ type idpRow struct {
 	UpdatedAt         time.Time `gorm:"column:updated_at"`
 }
 
-// TableName is the table this model maps to, which is the one the migration
-// creates.
 func (idpRow) TableName() string { return idpTable }
 
-// providerColumns is every column of authn_idps except the client secret, which
-// no read handed out selects.
 const providerColumns = "id, tenant_id, protocol, name, status, provisioning, username_strategy, " +
 	"username_claim, trust_idp_mfa, merge_existing, allow_idp_initiated, allow_sha1, config, version, " +
 	"created_at, updated_at"
 
-// domainRow is one row of authn_idp_domains.
 type domainRow struct {
 	Domain      string     `gorm:"column:domain;primaryKey"`
 	IDPID       string     `gorm:"column:idp_id;primaryKey"`
@@ -74,8 +58,6 @@ type domainRow struct {
 
 func (domainRow) TableName() string { return domainTable }
 
-// register is the statements on this module's three tables and nothing else. It
-// decides nothing; the SSOProviders methods decide.
 type register struct {
 	handle  *gorm.DB
 	dialect db.Dialect
@@ -83,7 +65,6 @@ type register struct {
 
 func (g *register) session(ctx context.Context) *gorm.DB { return g.handle.WithContext(ctx) }
 
-// toProvider maps a row to the value handed out, without the secret.
 func toProvider(r idpRow) authn.SSOProvider {
 	cfg := r.Config
 	return authn.SSOProvider{
@@ -104,7 +85,6 @@ func toProvider(r idpRow) authn.SSOProvider {
 	}
 }
 
-// readIDP reads one provider row without the secret.
 func (g *register) readIDP(ctx context.Context, id string) (idpRow, bool, error) {
 	var row idpRow
 	err := g.session(ctx).Select(providerColumns).Where("id = ?", id).Take(&row).Error
@@ -119,9 +99,6 @@ func (g *register) readIDP(ctx context.Context, id string) (idpRow, bool, error)
 	return row, true, nil
 }
 
-// readIDPWithSecret reads one provider row through the model, opening the client
-// secret. It is what an update reads before it writes, so that a nil secret
-// leaves the stored one untouched.
 func (g *register) readIDPWithSecret(ctx context.Context, id string) (idpRow, bool, error) {
 	var row idpRow
 	err := g.session(ctx).Where("id = ?", id).Limit(1).Take(&row).Error
@@ -136,9 +113,6 @@ func (g *register) readIDPWithSecret(ctx context.Context, id string) (idpRow, bo
 	return row, true, nil
 }
 
-// readSecret reads the client secret of a provider, opened by the serializer.
-// found is false for a row that is not there; a row with no secret reads as the
-// empty string.
 func (g *register) readSecret(ctx context.Context, id string) (string, bool, error) {
 	var row idpRow
 	err := g.session(ctx).Select("id, client_secret").Where("id = ?", id).Take(&row).Error
@@ -154,7 +128,6 @@ func (g *register) readSecret(ctx context.Context, id string) (string, bool, err
 	return *row.ClientSecret, true, nil
 }
 
-// listIDPs reads every provider row of a tenant, the disabled ones included.
 func (g *register) listIDPs(ctx context.Context, tenant string) ([]idpRow, error) {
 	var rows []idpRow
 	err := g.session(ctx).Select(providerColumns).
@@ -169,7 +142,6 @@ func (g *register) listIDPs(ctx context.Context, tenant string) ([]idpRow, error
 	return rows, nil
 }
 
-// discover reads the enabled providers of a verified domain.
 func (g *register) discover(ctx context.Context, domain string) ([]idpRow, error) {
 	var rows []idpRow
 	err := g.session(ctx).Table(idpTable+" AS i").
@@ -189,8 +161,6 @@ func (g *register) discover(ctx context.Context, domain string) ([]idpRow, error
 	return rows, nil
 }
 
-// insertIDP writes a new provider row through the model, so that the serializer
-// seals the secret.
 func (g *register) insertIDP(ctx context.Context, row idpRow) error {
 	if err := g.session(ctx).Create(&row).Error; err != nil {
 		return fmt.Errorf("writing an identity provider: %w", err)
@@ -198,8 +168,6 @@ func (g *register) insertIDP(ctx context.Context, row idpRow) error {
 	return nil
 }
 
-// saveIDP writes an existing provider row through the model, sealing the secret
-// and preserving the creation time. It is what an update uses.
 func (g *register) saveIDP(ctx context.Context, row idpRow) error {
 	if err := g.session(ctx).Save(&row).Error; err != nil {
 		return fmt.Errorf("updating an identity provider: %w", err)
@@ -207,7 +175,6 @@ func (g *register) saveIDP(ctx context.Context, row idpRow) error {
 	return nil
 }
 
-// deleteIDP deletes a provider row and its domain claims in one transaction.
 func (g *register) deleteIDP(ctx context.Context, id string) error {
 	return g.session(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec("DELETE FROM "+domainTable+" WHERE idp_id = ?", id).Error; err != nil {
@@ -220,8 +187,6 @@ func (g *register) deleteIDP(ctx context.Context, id string) error {
 	})
 }
 
-// domainVerifiedElsewhere reports whether the domain is verified for a provider
-// other than idpID.
 func (g *register) domainVerifiedElsewhere(ctx context.Context, domain, idpID string) (bool, error) {
 	var n int64
 	err := g.session(ctx).Table(domainTable).
@@ -232,9 +197,6 @@ func (g *register) domainVerifiedElsewhere(ctx context.Context, domain, idpID st
 	return n > 0, nil
 }
 
-// claimDomain writes or refreshes an unverified claim of a domain for a provider
-// and returns the token to publish. The verification state is left as it is, so
-// a re-claim of a verified domain does not withdraw it.
 func (g *register) claimDomain(ctx context.Context, tenant, idpID, domain, token string, now time.Time) error {
 	err := g.session(ctx).Exec("INSERT INTO "+domainTable+
 		" (domain, idp_id, tenant_id, verify_token, verified_at, created_at) VALUES (?, ?, ?, ?, NULL, ?) "+
@@ -246,7 +208,6 @@ func (g *register) claimDomain(ctx context.Context, tenant, idpID, domain, token
 	return nil
 }
 
-// claim reads one domain claim of a provider.
 func (g *register) claim(ctx context.Context, idpID, domain string) (domainRow, bool, error) {
 	var rows []domainRow
 	err := g.session(ctx).Table(domainTable).
@@ -260,9 +221,6 @@ func (g *register) claim(ctx context.Context, idpID, domain string) (domainRow, 
 	return rows[0], true, nil
 }
 
-// markVerified sets the verification time of a claim. A domain another provider
-// has verified makes the unique index refuse the write, which the caller reads as
-// ErrDomainClaimed.
 func (g *register) markVerified(ctx context.Context, idpID, domain string, now time.Time) error {
 	res := g.session(ctx).Exec("UPDATE "+domainTable+" SET verified_at = ? WHERE idp_id = ? AND domain = ?",
 		clock.UTC(now), idpID, domain)
@@ -275,8 +233,6 @@ func (g *register) markVerified(ctx context.Context, idpID, domain string, now t
 	return nil
 }
 
-// removeDomain deletes a claim, verified or not. A claim that is not there is
-// not an error.
 func (g *register) removeDomain(ctx context.Context, idpID, domain string) error {
 	if err := g.session(ctx).Exec("DELETE FROM "+domainTable+" WHERE idp_id = ? AND domain = ?",
 		idpID, domain).Error; err != nil {
@@ -285,8 +241,6 @@ func (g *register) removeDomain(ctx context.Context, idpID, domain string) error
 	return nil
 }
 
-// domains reads every claim of a provider, verified or not, in ascending
-// domain order.
 func (g *register) domains(ctx context.Context, idpID string) ([]domainRow, error) {
 	var rows []domainRow
 	err := g.session(ctx).Table(domainTable).
@@ -297,8 +251,6 @@ func (g *register) domains(ctx context.Context, idpID string) ([]domainRow, erro
 	return rows, nil
 }
 
-// domainsMany reads every claim of several providers in one statement. A
-// provider with no claim contributes no row.
 func (g *register) domainsMany(ctx context.Context, ids []string) ([]domainRow, error) {
 	if len(ids) == 0 {
 		return nil, nil
@@ -312,7 +264,6 @@ func (g *register) domainsMany(ctx context.Context, ids []string) ([]domainRow, 
 	return rows, nil
 }
 
-// verifiedDomains reads the verified claims of a provider.
 func (g *register) verifiedDomains(ctx context.Context, idpID string) ([]domainRow, error) {
 	var rows []domainRow
 	err := g.session(ctx).Table(domainTable).
@@ -323,7 +274,6 @@ func (g *register) verifiedDomains(ctx context.Context, idpID string) ([]domainR
 	return rows, nil
 }
 
-// withdrawVerification clears the verification time of a claim.
 func (g *register) withdrawVerification(ctx context.Context, idpID, domain string) error {
 	if err := g.session(ctx).Exec("UPDATE "+domainTable+" SET verified_at = NULL WHERE idp_id = ? AND domain = ?",
 		idpID, domain).Error; err != nil {
@@ -332,8 +282,6 @@ func (g *register) withdrawVerification(ctx context.Context, idpID, domain strin
 	return nil
 }
 
-// removeStaleClaims removes one batch of unverified claims created before the
-// cutoff and returns how many it removed.
 func (g *register) removeStaleClaims(ctx context.Context, cutoff time.Time) (int64, error) {
 	res := g.session(ctx).Exec("DELETE FROM "+domainTable+
 		" WHERE (domain, idp_id) IN (SELECT domain, idp_id FROM "+domainTable+
@@ -345,11 +293,6 @@ func (g *register) removeStaleClaims(ctx context.Context, cutoff time.Time) (int
 	return res.RowsAffected, nil
 }
 
-// rememberAssertion writes an assertion's identifier on the replay line. A
-// second write of the same (idp_id, assertion_id) loses to the primary key, which
-// the caller reads as authn.ErrAssertionReplay. not_on_or_after is the earlier of
-// the assertion's and its bearer confirmation's condition, and seen_at is now;
-// both are written UTC so the sweep compares two UTC values as text.
 func (g *register) rememberAssertion(ctx context.Context, idpID, assertionID string, notOnOrAfter, seenAt time.Time) error {
 	err := g.session(ctx).Exec("INSERT INTO "+assertionTable+
 		" (idp_id, assertion_id, not_on_or_after, seen_at) VALUES (?, ?, ?, ?)",
@@ -363,8 +306,6 @@ func (g *register) rememberAssertion(ctx context.Context, idpID, assertionID str
 	return nil
 }
 
-// removeExpiredAssertions removes one batch of assertion identifiers past their
-// condition and returns how many it removed.
 func (g *register) removeExpiredAssertions(ctx context.Context, cutoff time.Time) (int64, error) {
 	res := g.session(ctx).Exec("DELETE FROM "+assertionTable+
 		" WHERE (idp_id, assertion_id) IN (SELECT idp_id, assertion_id FROM "+assertionTable+
@@ -376,8 +317,6 @@ func (g *register) removeExpiredAssertions(ctx context.Context, cutoff time.Time
 	return res.RowsAffected, nil
 }
 
-// probe reports whether the three tables can be read. A table that is not there
-// is ErrNotMigrated, and any other failure is returned as it is.
 func (g *register) probe(ctx context.Context) error {
 	for _, table := range []string{idpTable, domainTable, assertionTable} {
 		err := g.session(ctx).Exec("SELECT 1 FROM " + table + " WHERE 1 = 0").Error
@@ -392,10 +331,6 @@ func (g *register) probe(ctx context.Context) error {
 	return nil
 }
 
-// roundTrip writes a probe row and reads it back through the model, in a
-// transaction that is rolled back, so that a handle whose encrypted column cannot
-// be sealed or opened is found at startup. Every failure is the same one: the
-// column could not be written and read.
 func (g *register) roundTrip(ctx context.Context) error {
 	tx := g.session(ctx).Begin()
 	if tx.Error != nil {

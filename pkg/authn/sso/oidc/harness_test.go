@@ -30,37 +30,21 @@ import (
 	"github.com/vislake/speed/pkg/observability"
 )
 
-// The client credentials every case configures a provider with.
 const (
 	testClientID     = "oidc-client"
 	testClientSecret = "oidc-secret"
 )
 
-// mockIDP is a mock OpenID Connect provider served over TLS on loopback: a
-// discovery document, an authorization endpoint that insists on PKCE, a token
-// endpoint that checks the verifier and issues a signed identity token, and a
-// key set. A case scripts the token it issues by setting the fields below before
-// it calls Answer.
 type mockIDP struct {
 	t      *testing.T
 	server *httptest.Server
 	key    *ecdsa.PrivateKey
 	kid    string
 
-	mu    sync.Mutex
-	codes map[string]authRequest
-	// discoveryCount is how many discovery documents the mock has served, so a
-	// case can tell a cache hit from a cache miss.
+	mu             sync.Mutex
+	codes          map[string]authRequest
 	discoveryCount int
 
-	// override replaces or, with a nil value, removes a claim of the identity
-	// token. dropNonce removes the nonce claim. signRaw replaces the signing
-	// entirely, which the algorithm-confusion cases use. tokenStatus, when
-	// non-zero, makes the token endpoint answer that status. omitIDToken leaves
-	// the identity token out of the token response. discoveryStatus, when
-	// non-zero, makes the discovery document unreachable. authorizeStatus, when
-	// non-zero, makes the authorization endpoint answer that status. jwksURI,
-	// when set, replaces the key set's address in the discovery document.
 	override        map[string]any
 	dropNonce       bool
 	signRaw         func(claims map[string]any) (string, error)
@@ -70,13 +54,9 @@ type mockIDP struct {
 	discoveryStatus int
 	authorizeStatus int
 	jwksURI         string
-	// userinfoCount is how many userinfo requests the mock has served, so a case
-	// can hold that the method never calls it.
-	userinfoCount int
+	userinfoCount   int
 }
 
-// authRequest is what the authorization endpoint records per code so the token
-// endpoint can check the verifier and echo the nonce.
 type authRequest struct {
 	challenge string
 	nonce     string
@@ -105,7 +85,6 @@ func newMockIDP(t *testing.T) *mockIDP {
 
 func (d *mockIDP) issuer() string { return d.server.URL }
 
-// cert returns the server's certificate, for a root pool.
 func (d *mockIDP) cert() *x509.Certificate { return d.server.Certificate() }
 
 func (d *mockIDP) discoveries() int {
@@ -135,8 +114,6 @@ func (d *mockIDP) discovery(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-// authorize insists on a PKCE challenge with the S256 method, so a client that
-// does not send one is refused.
 func (d *mockIDP) authorize(w http.ResponseWriter, r *http.Request) {
 	if d.authorizeStatus != 0 {
 		w.WriteHeader(d.authorizeStatus)
@@ -161,8 +138,6 @@ func (d *mockIDP) authorize(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, loc, http.StatusFound)
 }
 
-// userinfo counts a request to the userinfo endpoint. The method never calls
-// it, so a case asserts the count stays zero.
 func (d *mockIDP) userinfo(w http.ResponseWriter, _ *http.Request) {
 	d.mu.Lock()
 	d.userinfoCount++
@@ -211,8 +186,6 @@ func (d *mockIDP) jwks(w http.ResponseWriter, _ *http.Request) {
 	}})
 }
 
-// claims is the identity token's claim set: a valid provider identity that a
-// case then adjusts through override and dropNonce.
 func (d *mockIDP) claims(nonce string) map[string]any {
 	now := time.Now()
 	c := map[string]any{
@@ -260,8 +233,6 @@ func (d *mockIDP) sign(claims map[string]any) (string, error) {
 	return obj.CompactSerialize()
 }
 
-// browser is a client that trusts the mock's certificate and does not follow
-// redirects, so a case can read the authorization endpoint's Location header.
 func (d *mockIDP) browser() *http.Client {
 	return &http.Client{
 		Transport: d.server.Client().Transport,
@@ -271,9 +242,6 @@ func (d *mockIDP) browser() *http.Client {
 	}
 }
 
-// fakeProviders is a stand-in for the enterprise provider register: it hands out
-// the rows and secrets a case put in, and a fixed failure when one is set. Only
-// Get and Secret are used by this module.
 type fakeProviders struct {
 	mu        sync.Mutex
 	rows      map[string]authn.SSOProvider
@@ -330,7 +298,6 @@ func (f *fakeProviders) VerifyDomain(context.Context, string, string) error { re
 func (f *fakeProviders) RemoveDomain(context.Context, string, string) error { return nil }
 func (f *fakeProviders) ReverifyDomains(context.Context, string) error      { return nil }
 
-// recordingAudit records the entries a case hands it.
 type recordingAudit struct {
 	mu      sync.Mutex
 	entries []audit.Entry
@@ -349,9 +316,6 @@ func (a *recordingAudit) all() []audit.Entry {
 	return append([]audit.Entry(nil), a.entries...)
 }
 
-// rig is the method under test wired to one or more mock providers through the
-// same restricted egress client the product builds, with loopback allowed so the
-// mocks are reachable.
 type rig struct {
 	t         *testing.T
 	p         *product
@@ -360,8 +324,6 @@ type rig struct {
 	audit     *recordingAudit
 }
 
-// newRig wires a product to the given mocks. Every mock's certificate is trusted
-// and the registry hands out the rows a case puts in with putProvider.
 func newRig(t *testing.T, mocks ...*mockIDP) *rig {
 	t.Helper()
 	pool := x509.NewCertPool()
@@ -369,9 +331,6 @@ func newRig(t *testing.T, mocks ...*mockIDP) *rig {
 		pool.AddCert(m.cert())
 	}
 	client := egress.New(egress.Options{AllowLoopback: true, RootCAs: pool})
-	// The product wraps its client's transport from outside so an outbound call
-	// carries the span of the context it was made for; the rig builds the client
-	// the same way, so a case can hold the trace across the hop.
 	client.Transport = observability.Transport(client.Transport)
 	providers := newFakeProviders()
 	reader := sdkmetric.NewManualReader()
@@ -394,9 +353,6 @@ func newRig(t *testing.T, mocks ...*mockIDP) *rig {
 	return &rig{t: t, p: p, providers: providers, metrics: reader, audit: rec}
 }
 
-// putProvider registers an OIDC provider row pointing at a mock, with the given
-// claims mapping. The mapping defaults to email and display name when none is
-// given.
 func (r *rig) putProvider(id, tenant string, m *mockIDP, claims map[string]string) authn.SSOProvider {
 	r.t.Helper()
 	if claims == nil {
@@ -424,8 +380,6 @@ func (r *rig) putProvider(id, tenant string, m *mockIDP, claims map[string]strin
 	return row
 }
 
-// begin runs Begin for a login on the named provider and returns the flow's
-// private bytes and the authorization URL.
 func (r *rig) begin(id string) (private []byte, authURL string) {
 	r.t.Helper()
 	got, err := r.p.Begin(context.Background(), authn.Start{
@@ -441,8 +395,6 @@ func (r *rig) begin(id string) (private []byte, authURL string) {
 	return step.PrivateOf(got), step.RedirectOf(got)
 }
 
-// callback drives the mock authorization endpoint with the authorization URL and
-// returns the query the provider would send back.
 func (r *rig) callback(m *mockIDP, authURL string) url.Values {
 	r.t.Helper()
 	resp, err := m.browser().Get(authURL)
@@ -460,15 +412,12 @@ func (r *rig) callback(m *mockIDP, authURL string) url.Values {
 	return loc.Query()
 }
 
-// start runs a whole Begin and authorization round and returns the flow's
-// private bytes and the callback query.
 func (r *rig) start(id string, m *mockIDP) (private []byte, query url.Values) {
 	r.t.Helper()
 	private, authURL := r.begin(id)
 	return private, r.callback(m, authURL)
 }
 
-// answer drives the method's Answer at the redirect step.
 func (r *rig) answer(private []byte, query url.Values) authn.Step {
 	r.t.Helper()
 	got, err := r.p.Answer(context.Background(), authn.FlowState{
@@ -482,21 +431,17 @@ func (r *rig) answer(private []byte, query url.Values) authn.Step {
 	return got
 }
 
-// run is start followed by answer with nothing adjusted between them.
 func (r *rig) run(id string, m *mockIDP) authn.Step {
 	r.t.Helper()
 	private, query := r.start(id, m)
 	return r.answer(private, query)
 }
 
-// assertionCount is the value of the authn.sso.assertions counter for the
-// outcome and protocol given.
 func (r *rig) assertionCount(protocol, outcome string) int64 {
 	r.t.Helper()
 	return counterValue(r.t, r.metrics, assertionsName, protocolAttribute, protocol, outcomeAttribute, outcome)
 }
 
-// s256 is the PKCE S256 challenge of a verifier.
 func s256(verifier string) string {
 	sum := sha256.Sum256([]byte(verifier))
 	return base64.RawURLEncoding.EncodeToString(sum[:])

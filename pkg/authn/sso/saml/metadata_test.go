@@ -23,8 +23,6 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// generateSPKeys builds a service provider key and a current and next
-// certificate, as the deployment configuration carries them.
 func generateSPKeys(t *testing.T) resolved {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -50,6 +48,7 @@ func selfSignedDER(t *testing.T, key *rsa.PrivateKey) []byte {
 	return der
 }
 
+// TestTheMetadataRoutePublishesTheEntityAndBothCertificates checks that the metadata route publishes the entity and both certificates.
 func TestTheMetadataRoutePublishesTheEntityAndBothCertificates(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -84,6 +83,7 @@ func TestTheMetadataRoutePublishesTheEntityAndBothCertificates(t *testing.T) {
 	}
 }
 
+// TestTheMetadataRouteIsNotFoundForAProviderThatDoesNotAnswer checks that the metadata route is not found for a provider that does not answer.
 func TestTheMetadataRouteIsNotFoundForAProviderThatDoesNotAnswer(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -106,6 +106,7 @@ func TestTheMetadataRouteIsNotFoundForAProviderThatDoesNotAnswer(t *testing.T) {
 	}
 }
 
+// TestTheMetadataRouteAnswersTheRegisterFailure checks that the metadata route answers the register failure.
 func TestTheMetadataRouteAnswersTheRegisterFailure(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -126,7 +127,6 @@ func TestTheMetadataRouteAnswersTheRegisterFailure(t *testing.T) {
 	}
 }
 
-// problemType reads a problem document's type, or "" when the body is not one.
 func problemType(t *testing.T, rec *httptest.ResponseRecorder) string {
 	t.Helper()
 	var p struct {
@@ -138,9 +138,7 @@ func problemType(t *testing.T, rec *httptest.ResponseRecorder) string {
 	return p.Type
 }
 
-// TestTheMetadataRouteIsRegisteredPublicAtTheDeclaredPath holds the route's
-// access level and the translation of its declaration: the fragment writes the
-// path from the API root and the mounter joins its base to the relative form.
+// TestTheMetadataRouteIsRegisteredPublicAtTheDeclaredPath checks that the metadata route is registered public at the declared path.
 func TestTheMetadataRouteIsRegisteredPublicAtTheDeclaredPath(t *testing.T) {
 	idp := newIDP(t)
 	p, _ := newTestProduct(t, newFakeProviders(providerRow(providerConfigJSON(t, idp, nil))))
@@ -165,10 +163,7 @@ func TestTheMetadataRouteIsRegisteredPublicAtTheDeclaredPath(t *testing.T) {
 	}
 }
 
-// TestTheMetadataRouteFollowsAConfiguredBase holds the translation when the host
-// configures a base other than the default: the declaration is written against
-// the default base, so the route moves with the configured base while the entity
-// identifier and the ACS address are generated from that same base.
+// TestTheMetadataRouteFollowsAConfiguredBase checks that the metadata route follows a configured base.
 func TestTheMetadataRouteFollowsAConfiguredBase(t *testing.T) {
 	const base = "/identity"
 	idp := newIDP(t)
@@ -197,8 +192,6 @@ func TestTheMetadataRouteFollowsAConfiguredBase(t *testing.T) {
 	}
 }
 
-// roundTripFunc adapts a function to an http.RoundTripper, so a test can serve a
-// fixed metadata document.
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
@@ -213,13 +206,12 @@ func staticClient(status int, body string) *http.Client {
 	})}
 }
 
-// metadataDoc builds an identity provider's entity descriptor naming an entity
-// identifier, a single sign-on URL and one signing certificate.
 func metadataDoc(entityID, ssoURL string, certDER []byte) string {
 	return fmt.Sprintf(`<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" entityID="%s"><md:IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"><md:KeyDescriptor use="signing"><ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:X509Data><ds:X509Certificate>%s</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor><md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="%s"/></md:IDPSSODescriptor></md:EntityDescriptor>`,
 		entityID, base64.StdEncoding.EncodeToString(certDER), ssoURL)
 }
 
+// TestRefreshParsesTheMetadataAndWritesItBack checks that Refresh parses the metadata and writes it back.
 func TestRefreshParsesTheMetadataAndWritesItBack(t *testing.T) {
 	idp := newIDP(t)
 	const newEntity = "https://idp.example.com/new-entity"
@@ -249,6 +241,7 @@ func TestRefreshParsesTheMetadataAndWritesItBack(t *testing.T) {
 	}
 }
 
+// TestRefreshKeepsTheStoredConfigWhenTheMetadataCannotBeParsed checks that Refresh keeps the stored config when the metadata cannot be parsed.
 func TestRefreshKeepsTheStoredConfigWhenTheMetadataCannotBeParsed(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, map[string]any{
@@ -269,6 +262,7 @@ func TestRefreshKeepsTheStoredConfigWhenTheMetadataCannotBeParsed(t *testing.T) 
 	}
 }
 
+// TestRefreshWithoutAMetadataURLIsRefused checks that Refresh without a metadata URL is refused.
 func TestRefreshWithoutAMetadataURLIsRefused(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -281,6 +275,7 @@ func TestRefreshWithoutAMetadataURLIsRefused(t *testing.T) {
 	}
 }
 
+// TestAProviderChangeDropsTheCachedServiceProvider checks that a provider change drops the cached service provider.
 func TestAProviderChangeDropsTheCachedServiceProvider(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
@@ -301,6 +296,7 @@ func TestAProviderChangeDropsTheCachedServiceProvider(t *testing.T) {
 	}
 }
 
+// TestAProviderChangeWithAnUnreadablePayloadDropsEverything checks that a provider change with an unreadable payload drops everything.
 func TestAProviderChangeWithAnUnreadablePayloadDropsEverything(t *testing.T) {
 	idp := newIDP(t)
 	row := providerRow(providerConfigJSON(t, idp, nil))
