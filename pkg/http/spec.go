@@ -17,10 +17,6 @@ import (
 // ended up in the declaration.
 const openAPIField = "openapi"
 
-// validateSpecs checks the shape of every declared fragment and reports every
-// offending one at once. A single fragment's failure aborts the startup
-// anyway, so reporting them one run at a time would only make the host fix
-// them one run at a time.
 func validateSpecs(specs []core.Resource[Spec]) error {
 	var failures []error
 	for _, res := range specs {
@@ -31,16 +27,6 @@ func validateSpecs(specs []core.Resource[Spec]) error {
 	return errors.Join(failures...)
 }
 
-// validateSpec checks that one fragment has a usable shape. It does not check
-// the fragment against the OpenAPI grammar: that needs a parsing library, which
-// this module does not bring in. What is caught here is
-// the class that would otherwise break a reader's merge long after startup,
-// where nothing connects the crash back to the module that declared the
-// fragment.
-//
-// Nor does it check the fragment against what the module actually registered.
-// The two are separately maintained facts and are allowed to drift; a mismatch
-// produces no failure signal at all.
 func validateSpec(module string, s Spec) error {
 	if err := validateSpecRoot(module, s); err != nil {
 		return err
@@ -70,11 +56,8 @@ func validateSpec(module string, s Spec) error {
 			"top level. An OpenAPI document is an object; wrap or replace the fragment: %w",
 			ErrInvalidSpec, module, err)
 	}
-	// A literal null decodes into a nil map without an error, so it reaches
-	// here as a document with no fields rather than as a decoding failure.
-	// Reported as a missing openapi field it would send the reader looking
-	// for a field to add to a document that has no top-level object to add
-	// it to.
+	// A literal null decodes into a nil map without an error, so it reaches here as a
+	// document with no fields rather than as a decoding failure.
 	if top == nil {
 		return fmt.Errorf("%w: module %q declared a Spec whose Document is null, not a JSON object at "+
 			"the top level. An OpenAPI document is an object", ErrInvalidSpec, module)
@@ -87,8 +70,6 @@ func validateSpec(module string, s Spec) error {
 	return validateDocumentPaths(module, s, top)
 }
 
-// validateSpecRoot checks Prefix, Version and Scope, the path parts the reader
-// prepends to every path in the fragment.
 func validateSpecRoot(module string, s Spec) error {
 	if s.Prefix != "" {
 		if err := checkPrefixSegments(s.Prefix); err != nil {
@@ -110,9 +91,6 @@ func validateSpecRoot(module string, s Spec) error {
 	return nil
 }
 
-// validateDocumentPaths holds the fragment's paths to the relative form the
-// reader expects: each begins with "/" and none already carries the API root,
-// which would be prepended twice.
 func validateDocumentPaths(module string, s Spec, top map[string]json.RawMessage) error {
 	raw, ok := top["paths"]
 	if !ok {
@@ -163,8 +141,6 @@ func checkPrefixSegments(prefix string) error {
 	return nil
 }
 
-// literalSegment reports whether one path segment is a plain name: no
-// wildcard, parameter marker, query, fragment, escape or whitespace.
 func literalSegment(segment string) bool {
 	if segment == "" || segment == "." || segment == ".." {
 		return false

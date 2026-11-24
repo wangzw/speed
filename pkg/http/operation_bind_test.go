@@ -12,8 +12,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// readInput is one operation's input: parameters from three sources and a body
-// member.
 type readInput struct {
 	ID    string `path:"id"`
 	Limit int    `query:"limit"`
@@ -21,12 +19,10 @@ type readInput struct {
 	Mode  string `json:"mode"`
 }
 
-// readReply is the success body.
 type readReply struct {
 	Seen readInput `json:"seen"`
 }
 
-// serve drives one operation through a gin engine and returns the answer.
 func serve(t *testing.T, method, path string, handler gin.HandlerFunc, request *http.Request) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -37,9 +33,8 @@ func serve(t *testing.T, method, path string, handler gin.HandlerFunc, request *
 	return recorder
 }
 
-// TestTheHandlerReceivesTheDeclaredInput holds the binding half: the handler
-// gets the declared input filled from the path, query and header, and the
-// entry point writes the declared success response.
+// TestTheHandlerReceivesTheDeclaredInput holds the binding half: the handler gets the declared
+// input filled from the path, query and header.
 func TestTheHandlerReceivesTheDeclaredInput(t *testing.T) {
 	operation := NewOperation[readInput, readReply](
 		"the.module.read", http.MethodPost, "/items/:id", "", "",
@@ -76,7 +71,6 @@ func TestTheHandlerReceivesTheDeclaredInput(t *testing.T) {
 	}
 }
 
-// parameterOnlyInput carries parameters and no body.
 type parameterOnlyInput struct {
 	ID    string `path:"id"`
 	Limit int    `query:"limit"`
@@ -99,9 +93,8 @@ func TestAMalformedParameterIsAnsweredBadRequest(t *testing.T) {
 	}
 }
 
-// TestAnUndeclaredBodyMemberIsRefused holds the body half: the entry point
-// decodes only the fields the declaration carries, so a member the handler
-// could never read is a 400 rather than a silently dropped value.
+// TestAnUndeclaredBodyMemberIsRefused holds the body half: the entry point decodes only the fields
+// the declaration carries.
 func TestAnUndeclaredBodyMemberIsRefused(t *testing.T) {
 	operation := NewOperation[readInput, struct{}](
 		"the.module.write", http.MethodPost, "/items/:id", "", "",
@@ -140,7 +133,6 @@ func TestANonJSONBodyIsUnsupportedMediaType(t *testing.T) {
 	}
 }
 
-// refusal is a handler failure naming a declared status.
 type refusal struct{ status int }
 
 func (r refusal) Error() string   { return "refused" }
@@ -164,8 +156,8 @@ func TestADeclaredFailureWritesItsStatus(t *testing.T) {
 	}
 }
 
-// TestAnUndeclaredFailureIsAnsweredInternal holds the declaration's force: a
-// status the operation did not declare is never written.
+// TestAnUndeclaredFailureIsAnsweredInternal holds the declaration's force: a status the operation
+// did not declare is never written.
 func TestAnUndeclaredFailureIsAnsweredInternal(t *testing.T) {
 	operation := NewOperation[struct{}, struct{}](
 		"the.module.read", http.MethodGet, "/items", "", "", nil,
@@ -199,11 +191,8 @@ func TestAOneTwoHundredFourAnswersNoBody(t *testing.T) {
 	}
 }
 
-// TestAnEmptyOutIsAJSONBodyOnABodyCarryingStatus holds the descriptor and the
-// write side together: only a no-body status suppresses an empty Out's body,
-// so any other success status answers the JSON object {} and the descriptor
-// carries the empty struct as the success body type rather than leaving it
-// nil.
+// TestAnEmptyOutIsAJSONBodyOnABodyCarryingStatus holds the descriptor and the write side together:
+// only a no-body status suppresses an empty Out's body.
 func TestAnEmptyOutIsAJSONBodyOnABodyCarryingStatus(t *testing.T) {
 	operation := NewOperation[struct{}, struct{}](
 		"the.module.write", http.MethodPost, "/items", "", "", nil,
@@ -232,8 +221,8 @@ func TestAnEmptyOutIsAJSONBodyOnABodyCarryingStatus(t *testing.T) {
 	}
 }
 
-// TestANoBodySuccessKeepsAnEmptyOutBodyless holds the other side: a 204 writes
-// no body at all, so the descriptor carries no success body type.
+// TestANoBodySuccessKeepsAnEmptyOutBodyless holds the other side: a 204 writes no body at all, so
+// the descriptor carries no success body type.
 func TestANoBodySuccessKeepsAnEmptyOutBodyless(t *testing.T) {
 	operation := NewOperation[struct{}, struct{}](
 		"the.module.delete", http.MethodDelete, "/items", "", "", nil,
@@ -244,9 +233,7 @@ func TestANoBodySuccessKeepsAnEmptyOutBodyless(t *testing.T) {
 	}
 }
 
-// TestASimpleNoBodySuccessWithANonEmptyOutPanics holds the no-body side: a 204
-// declares no body, so a non-empty Out must be refused at construction rather
-// than published as a body the entry point never writes.
+// TestASimpleNoBodySuccessWithANonEmptyOutPanics holds the no-body side: a 204 declares no body.
 func TestASimpleNoBodySuccessWithANonEmptyOutPanics(t *testing.T) {
 	defer func() {
 		thrown := recover()
@@ -263,12 +250,10 @@ func TestASimpleNoBodySuccessWithANonEmptyOutPanics(t *testing.T) {
 	).Handle(func(context.Context, struct{}) (readReply, error) { return readReply{}, nil })
 }
 
-// jsonBody is a request body reader over a JSON string.
 func jsonBody(body string) *strings.Reader { return strings.NewReader(body) }
 
-// TestASimpleSuccessBodyOfAnotherMediaTypePanics holds the simple form's
-// contract: its entry point always writes JSON, so a success declaration of
-// another media type would publish an answer the handler never writes.
+// TestASimpleSuccessBodyOfAnotherMediaTypePanics holds the simple form's contract: its entry point
+// always writes JSON.
 func TestASimpleSuccessBodyOfAnotherMediaTypePanics(t *testing.T) {
 	defer func() {
 		thrown := recover()
@@ -289,8 +274,8 @@ func TestASimpleSuccessBodyOfAnotherMediaTypePanics(t *testing.T) {
 	).Handle(func(context.Context, struct{}) (readReply, error) { return readReply{}, nil })
 }
 
-// TestASimpleSuccessBodyWithNoMediaTypeDefaultsToJSON holds the other side:
-// an empty media type declares the JSON answer the entry point writes.
+// TestASimpleSuccessBodyWithNoMediaTypeDefaultsToJSON holds the other side: an empty media type
+// declares the JSON answer the entry point writes.
 func TestASimpleSuccessBodyWithNoMediaTypeDefaultsToJSON(t *testing.T) {
 	operation := NewOperation[struct{}, readReply](
 		"the.module.read", http.MethodGet, "/items", "", "", nil,
@@ -309,19 +294,16 @@ func TestASimpleSuccessBodyWithNoMediaTypeDefaultsToJSON(t *testing.T) {
 	}
 }
 
-// jsonTaggedOnlyInput carries a JSON body field and no parameter field.
 type jsonTaggedOnlyInput struct {
 	Name string `json:"name"`
 }
 
-// formTaggedOnlyInput carries a form body field and no parameter field.
 type formTaggedOnlyInput struct {
 	Name string `form:"name"`
 }
 
-// TestABodyTaggedInputWithoutAMediaTypePanics holds the declaration check: a
-// body-tagged field under an empty media type would be declared and never
-// read, so building the handler refuses it.
+// TestABodyTaggedInputWithoutAMediaTypePanics holds the declaration check: a body- tagged field
+// under an empty media type would be declared and never read, so building the handler refuses it.
 func TestABodyTaggedInputWithoutAMediaTypePanics(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -362,8 +344,8 @@ func TestABodyTaggedInputWithoutAMediaTypePanics(t *testing.T) {
 	}
 }
 
-// TestAParameterOnlyInputWithoutAMediaTypeBuilds holds the accepted side: an
-// input carrying only parameter tags takes no body and needs no media type.
+// TestAParameterOnlyInputWithoutAMediaTypeBuilds holds the accepted side: an input carrying only
+// parameter tags takes no body and needs no media type.
 func TestAParameterOnlyInputWithoutAMediaTypeBuilds(t *testing.T) {
 	operation := NewOperation[parameterOnlyInput, struct{}](
 		"the.module.read", http.MethodGet, "/items/:id", "", "", nil,
@@ -383,9 +365,8 @@ func TestAParameterOnlyInputWithoutAMediaTypeBuilds(t *testing.T) {
 	}
 }
 
-// TestAResponseWithoutABodyMustNotDeclareOne holds the declaration check for
-// 204 and 304: the transport would drop the declared body, so a body there is
-// a defect in the declaration.
+// TestAResponseWithoutABodyMustNotDeclareOne holds the declaration check for 204 and 304: the
+// transport would drop the declared body, so a body there is a defect in the declaration.
 func TestAResponseWithoutABodyMustNotDeclareOne(t *testing.T) {
 	declaredBody := func(status int) Response {
 		return Response{Status: status, Description: "No body", Body: &Body{MediaType: "application/json"}}
@@ -454,9 +435,8 @@ func TestAResponseWithoutABodyMustNotDeclareOne(t *testing.T) {
 	}
 }
 
-// TestTheDescriptorCarriesTheRequestDeclaration holds the generator's view of
-// the request body: the declared body itself, description and required
-// included, on both operation forms.
+// TestTheDescriptorCarriesTheRequestDeclaration holds the generator's view of the request body: the
+// declared body itself, description and required included, on both operation forms.
 func TestTheDescriptorCarriesTheRequestDeclaration(t *testing.T) {
 	request := &RequestBody{MediaType: "application/json", Description: "The item.", Required: true}
 	operation := NewOperation[readInput, readReply](
@@ -477,10 +457,8 @@ func TestTheDescriptorCarriesTheRequestDeclaration(t *testing.T) {
 	}
 }
 
-// TestABindingRefusalCarriesTheDeclaredProblemType holds that a request refused
-// before the handler runs is answered in the operation's own vocabulary: the
-// problem type declared on the response of that status, not the RFC 9457
-// default about:blank.
+// TestABindingRefusalCarriesTheDeclaredProblemType holds that a request refused before the handler
+// runs is answered in the operation's own vocabulary.
 func TestABindingRefusalCarriesTheDeclaredProblemType(t *testing.T) {
 	const (
 		badRequestType = "urn:test:bad-request"

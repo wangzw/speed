@@ -13,17 +13,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// stubGateway stands in for the authentication gateway on a guarded endpoint:
-// one exempt route passes, and every other request — matched route, no match, or
-// a method the path does not allow — is refused with one 401 carrying a fixed
-// Vary and WWW-Authenticate.
-//
-// The two behaviours the differential below reads are the gateway's own: the
-// exemption is looked up by (method, c.FullPath()), and every other request is
-// refused before the endpoint's router or a route handler is reached. A stub
-// that distinguished paths and methods beyond the exemption, or that let the
-// endpoint answer, would make the comparison say nothing about dispatch. Its
-// refusal shape mirrors pkg/authn/gate's.
 func stubGateway(c *gin.Context) {
 	if c.Request.Method == nethttp.MethodGet && c.FullPath() == "/m/public" {
 		return
@@ -40,21 +29,11 @@ const (
 	topologyWithoutFallback = "without a fallback"
 )
 
-// differentialAssembly is one assembly the differential compares: the routes the
-// guarded endpoint registered, and nothing else. The gateway stub, the endpoints
-// and their claims are the same across the comparison, so the only thing that
-// changes between two runs is which routes exist.
 type differentialAssembly struct {
 	name   string
 	routes [][2]string
 }
 
-// differentialPaths and differentialMethods are the request matrix. The paths
-// cover the claimed subtree at its root, its root with a trailing slash, a
-// registered route and a parameter beneath it, an unregistered path under the
-// claim, a deep registered and a deep unregistered path, the exempt route, a
-// path outside every claim, the sibling endpoint's subtree, and a path that
-// differs from the claim only in case.
 var (
 	differentialPaths = []string{
 		"/m", "/m/", "/m/items", "/m/items/1", "/m/zz", "/m/deep/x/y", "/m/deep/zz",
@@ -77,10 +56,6 @@ var differentialCredentials = []struct {
 	{"Bearer zz", nethttp.Header{"Authorization": {"Bearer zz"}}},
 }
 
-// replyFingerprint is one response without its Date header: the status, every
-// other header (same-name values in the order the server wrote them) and the
-// body. Date is the one header outside the comparison, because two runs started
-// at different moments legitimately differ there.
 type replyFingerprint struct {
 	status  int
 	headers string
@@ -91,7 +66,6 @@ func (f replyFingerprint) String() string {
 	return fmt.Sprintf("status %d, headers {%s}, body %q", f.status, f.headers, f.body)
 }
 
-// fingerprintOf renders what a client got back for comparison.
 func fingerprintOf(a answer) replyFingerprint {
 	names := make([]string, 0, len(a.header))
 	for name := range a.header {
@@ -108,8 +82,6 @@ func fingerprintOf(a answer) replyFingerprint {
 	return replyFingerprint{status: a.status, headers: strings.Join(lines, "\n"), body: a.body}
 }
 
-// probeAssembly starts one assembly for a topology and returns the answer to
-// every request in the matrix.
 func probeAssembly(t *testing.T, topology string, v differentialAssembly) (map[string]replyFingerprint, error) {
 	t.Helper()
 
@@ -185,23 +157,8 @@ func probeAssembly(t *testing.T, topology string, v differentialAssembly) (map[s
 	return out, nil
 }
 
-// TestAnUnauthenticatedAnswerDoesNotDependOnTheAssembledRoutes is the mechanism
-// differential for the dispatch half of the promise: on a guarded endpoint, an
-// unauthenticated request is answered by the gateway before the endpoint's
-// router would answer, so its answer must not change when routes are added to or
-// removed from that endpoint's assembly.
-//
-// Three assemblies are compared on one topology at a time: all routes, no
-// routes, and one deep route. The endpoint keeps the same claim in every run, so
-// the dispatch selects the same endpoint for the same path throughout; only the
-// endpoint's route table changes. The answer to every one of the matrix's
-// (method × path × credential) combinations must be byte-identical — status,
-// every header but Date, and the body — except the exemption GET /m/public,
-// which is the one request an empty route table genuinely cannot serve.
-//
-// The exemption is also the non-hollowness check: if removing the routes changed
-// no answer at all, the comparison would be proving nothing, so each variant has
-// to differ there.
+// TestAnUnauthenticatedAnswerDoesNotDependOnTheAssembledRoutes is the mechanism differential for
+// the dispatch half of the promise: on a guarded endpoint.
 func TestAnUnauthenticatedAnswerDoesNotDependOnTheAssembledRoutes(t *testing.T) {
 	all := differentialAssembly{
 		name: "all routes",
@@ -217,9 +174,6 @@ func TestAnUnauthenticatedAnswerDoesNotDependOnTheAssembledRoutes(t *testing.T) 
 		{name: "one deep route", routes: [][2]string{{nethttp.MethodGet, "/m/deep/x/y"}}},
 	}
 
-	// exemptRequest reports whether the combination is the one request the
-	// comparison allows to differ: the gateway passes GET /m/public whatever the
-	// caller carries, so the route table decides what it answers.
 	exemptRequest := func(key string) bool { return strings.HasPrefix(key, "GET /m/public (") }
 
 	for _, topology := range []string{topologyWithFallback, topologyWithoutFallback} {

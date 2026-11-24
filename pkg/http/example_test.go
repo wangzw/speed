@@ -23,24 +23,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// This file is the runnable half of this package's documentation: every
-// example below goes through the public surface and stands on a real assembly,
-// and what it prints is what that assembly did.
-//
-// It opens the external test package, and it brings its own stubs rather than
-// the internal suite's fixtures. That is also what fixes the naming direction
-// here: net/http keeps its own name and the parent package takes the alias,
-// which is what the package documentation gives an external file.
-//
-// The entry point it assembles is this package's own module, speedhttp.Module,
-// taken into the registry the way a host takes a module in. Importing the
-// package registers the same descriptor with the process registry, and a host
-// that builds its command tree from that registry names it by
-// speedhttp.ModuleName.
-
-// exampleDocument is the configuration every example runs on: one listening
-// socket named backend, on an address the operating system picks, with one
-// routing endpoint named public hanging on it.
 const exampleDocument = `{
   "http": {
     "listeners": {
@@ -65,23 +47,6 @@ type anExampleHost struct {
 	dir    string
 }
 
-// startExample assembles a host and runs it until the entry point has served.
-//
-// The assembly is the one a host with a config file builds: the JSON format
-// and the file source, the host identity pointing at the document above, a
-// logger writing to standard output, and the standard library entry point, all
-// taken into a command tree whose single command drives the whole lifecycle.
-//
-// registrant runs in the Init stage of a module that declares its dependency
-// on Router, so the assembly orders it after the entry point: the registration
-// gate is open by the time it is called, which is what lets an example
-// register the way a real module does. That module's Serve callback runs once
-// the entry point has bound every address, which is what "the assembly is up"
-// means here.
-//
-// extra modules are registered besides that registrant, for the examples that
-// watch the assembly rather than take part in it. A non-nil error is a startup
-// that failed; nothing is running then.
 func startExample(registrant func(*core.Registry) error, extra ...core.Module) (*anExampleHost, error) {
 	dir, err := os.MkdirTemp("", "http-example")
 	if err != nil {
@@ -92,10 +57,6 @@ func startExample(registrant func(*core.Registry) error, extra ...core.Module) (
 		return nil, err
 	}
 
-	// A command tree takes its arguments and its program name from the
-	// process, and the ones a test binary is started with are not this
-	// program's. They stand in while the tree is built, which is when it
-	// takes them.
 	args := os.Args
 	os.Args = []string{"example"}
 	defer func() { os.Args = args }()
@@ -153,7 +114,6 @@ func startExample(registrant func(*core.Registry) error, extra ...core.Module) (
 	}
 }
 
-// stop ends the run and reports what Run came back with.
 func (h *anExampleHost) stop() error {
 	h.cancel()
 	err := <-h.result
@@ -161,17 +121,12 @@ func (h *anExampleHost) stop() error {
 	return err
 }
 
-// answer is one response as an example prints it: the status, the media type and
-// the body.
 type answer struct {
 	status    int
 	mediaType string
 	body      string
 }
 
-// get sends a GET to the endpoint the example's host bound and returns the
-// response. The address is the one the endpoint's own record reported, since the
-// examples listen on port 0.
 func (h *anExampleHost) get(path string) (answer, error) {
 	response, err := http.Get("http://" + boundAddress.read() + path)
 	if err != nil {
@@ -185,8 +140,6 @@ func (h *anExampleHost) get(path string) (answer, error) {
 	return answer{status: response.StatusCode, mediaType: response.Header.Get("Content-Type"), body: string(body)}, nil
 }
 
-// boundAddress is the address the last endpoint to bind reported. The examples
-// run one after another, each with one endpoint.
 var boundAddress addressBox
 
 type addressBox struct {
@@ -206,13 +159,6 @@ func (a *addressBox) read() string {
 	return a.value
 }
 
-// exampleLoggerModule delivers the Logger capability over a logger that writes
-// every record to standard output.
-//
-// That is where an example's evidence comes from. What this module reports
-// about the assembly it made — the chain it lists per endpoint — is a record,
-// and the alternative to reading it is an example that asserts nothing about
-// the run it just did.
 func exampleLoggerModule() core.Module {
 	return core.Module{
 		Name:     "examplelogger",
@@ -223,16 +169,11 @@ func exampleLoggerModule() core.Module {
 	}
 }
 
-// exampleLogger is the Logger capability over one logger. Named ignores the
-// module name: the records this file compares carry the endpoint and the
-// chain, neither of which depends on it.
 type exampleLogger struct{ logger *slog.Logger }
 
 func (l exampleLogger) Named(string) *slog.Logger { return l.logger }
 func (l exampleLogger) Redaction() log.Redaction  { return exampleRedaction{} }
 
-// exampleRedaction takes registrations and masks nothing: nothing these
-// examples log carries a value a rule would redact.
 type exampleRedaction struct{}
 
 func (exampleRedaction) AddKeys(...string)              {}
@@ -240,12 +181,6 @@ func (exampleRedaction) AddPattern(string, log.Matcher) {}
 
 var _ log.Logger = exampleLogger{}
 
-// exampleHandler renders one record per line, level and message first and then
-// the attributes in the order they were written.
-//
-// The port of a bound address is written as <port>. The examples listen on
-// port 0, so the operating system picks the port and the record carries a
-// different one on every run; what an example can show is where it appears.
 type exampleHandler struct{}
 
 func (exampleHandler) Enabled(context.Context, slog.Level) bool { return true }
@@ -270,12 +205,7 @@ func (exampleHandler) Handle(_ context.Context, r slog.Record) error {
 func (exampleHandler) WithAttrs([]slog.Attr) slog.Handler { return exampleHandler{} }
 func (exampleHandler) WithGroup(string) slog.Handler      { return exampleHandler{} }
 
-// ExampleEndpoint_Route registers a route: what a module does in its Init
-// callback. It takes the Router capability up, looks an endpoint up by the name
-// configuration gave it, and binds a method and a path to a handler. The path is
-// written the way gin writes it, and the handler is a gin handler, so
-// everything gin offers a handler — binding a body, rendering a response — is
-// there without this package in between.
+// ExampleEndpoint_Route registers a route: what a module does in its Init callback.
 func ExampleEndpoint_Route() {
 	host, err := startExample(func(reg *core.Registry) error {
 		router, err := core.Resolve[speedhttp.Router](reg)
@@ -312,19 +242,7 @@ func ExampleEndpoint_Route() {
 }
 
 // ExampleEndpoint_Use registers two middleware layers on one endpoint.
-//
-// Provides and After are what make a constraint land: Provides says which
-// capability a layer stands for on the chain, and After places this layer
-// inside the middleware of that capability. The constraint reaches whichever
-// layer declares the capability in its own Provides, so a capability no layer
-// declares places nothing.
-//
-// A layer is a gin handler: it hands the request on with c.Next and ends the
-// chain with c.Abort.
 func ExampleEndpoint_Use() {
-	// The capabilities the two layers name. A real layer points at a
-	// capability some module delivers; what matters here is that the layer
-	// standing for one says so itself.
 	type (
 		spans   interface{ spans() }
 		tracing interface{ traces() }
@@ -339,9 +257,6 @@ func ExampleEndpoint_Use() {
 		if err != nil {
 			return err
 		}
-		// trace stands for tracing and belongs inside the span layer. Its
-		// Order asks for the front of its stage; the After constraint is
-		// what overrides that.
 		endpoint.Use(speedhttp.Middleware{
 			Name:     "trace",
 			Stage:    speedhttp.StageObserve,
@@ -350,8 +265,6 @@ func ExampleEndpoint_Use() {
 			After:    []core.Token{(*spans)(nil)},
 			Handler:  func(c *gin.Context) { c.Next() },
 		})
-		// span stands for spans itself, so trace's constraint lands on it
-		// and nowhere else.
 		endpoint.Use(speedhttp.Middleware{
 			Name:     "span",
 			Stage:    speedhttp.StageObserve,
@@ -371,14 +284,7 @@ func ExampleEndpoint_Use() {
 	// INFO an HTTP listener is listening listener=backend address=127.0.0.1:<port> configured=127.0.0.1:0 tls=false endpoints=[public]
 }
 
-// ExampleFail refuses a request from a handler. The response is the default
-// error shape, a problem details object of RFC 9457, and the chain behind the
-// handler does not run. A layer that refuses a request does the same, setting
-// the response headers the refusal needs — WWW-Authenticate for a 401,
-// Retry-After for a 429 — before it calls Fail.
-//
-// The same shape is what the endpoint answers for a path that matches no route,
-// which goes through every layer first.
+// ExampleFail refuses a request from a handler.
 func ExampleFail() {
 	host, err := startExample(func(reg *core.Registry) error {
 		router, err := core.Resolve[speedhttp.Router](reg)
@@ -424,24 +330,17 @@ func ExampleFail() {
 	// {"type":"about:blank","title":"Not Found","status":404}
 }
 
-// problemShape is an error shape of an API's own, delivered as the
-// ErrorResponder capability.
 type problemShape struct{}
 
-// RespondError writes every error response of the process in this module's one
-// shape: a JSON object with a code and a message, under the status the Problem
-// asks for.
+// RespondError writes every error response of the process in this module's one shape: a
+// JSON object with a code and a message, under the status the Problem asks for.
 func (problemShape) RespondError(w http.ResponseWriter, _ *http.Request, p speedhttp.Problem) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(p.Status)
 	_, _ = fmt.Fprintf(w, `{"code":%d,"message":%q}`, p.Status, http.StatusText(p.Status))
 }
 
-// ExampleErrorResponder replaces the shape of every error response. A module
-// that owns an API's error shape delivers the ErrorResponder capability, and
-// from then on the responses this module writes — what Fail writes, the answer
-// to a path that matches no route, the answer to a panic — take that shape. The
-// default shape is not written beside it.
+// ExampleErrorResponder replaces the shape of every error response.
 func ExampleErrorResponder() {
 	host, err := startExample(func(*core.Registry) error { return nil }, core.Module{
 		Name:     "errorshape",
@@ -473,12 +372,6 @@ func ExampleErrorResponder() {
 }
 
 // ExampleSpec declares an OpenAPI fragment as a resource.
-//
-// The fragment is a static declaration: this module stores it and checks its
-// shape at startup, and a reader takes the declarations up with
-// core.Resources, each carrying the name of the module that owns it. Prefix,
-// Version are bare segments the reader joins into the root the fragment's
-// paths are relative to; a management surface adds a third, Scope.
 func ExampleSpec() {
 	reg := core.New()
 	reg.Register(core.Module{
@@ -499,9 +392,7 @@ func ExampleSpec() {
 	// catalog public /api/v1
 }
 
-// ExampleSpec_invalidShape declares a fragment whose shape is not usable. The
-// shape is checked at startup, and the failure names the module that declared
-// it, so the fragment is fixed at its source.
+// ExampleSpec_invalidShape declares a fragment whose shape is not usable.
 func ExampleSpec_invalidShape() {
 	_, err := startExample(func(*core.Registry) error { return nil }, core.Module{
 		Name:      "catalog",

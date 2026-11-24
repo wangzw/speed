@@ -23,20 +23,8 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The tests in this file pin the settings of the gin engine each endpoint is
-// given. Each is observed through what the assembled endpoint does with a
-// request, not by reading the engine's fields: a setting that is on the engine
-// and not in effect is no setting.
-
-// TestATrailingSlashIsNotRedirected pins the redirect gin does by default and
-// this module turns off. gin answers "/x/" for a route "/x" with a 301 before
-// any global middleware runs, so a request that took the redirect would go past
-// authentication, rate limiting, audit and telemetry without a single one of
-// them having seen it. With the redirect off the request is a request for a
-// path that matches nothing, a 404 that goes through every layer, once.
-//
-// The two rows are the two directions of the redirect, and the control rows are
-// the paths that do match.
+// TestATrailingSlashIsNotRedirected pins the redirect gin does by default and this module turns
+// off.
 func TestATrailingSlashIsNotRedirected(t *testing.T) {
 	var runs int
 	logger, _ := newRecordingLogger()
@@ -74,11 +62,8 @@ func TestATrailingSlashIsNotRedirected(t *testing.T) {
 	}
 }
 
-// TestClientIPDoesNotTakeForwardingHeaders pins that the address gin reports
-// for a request is the connection's peer. gin's default trusts every peer, so a
-// client could put any address in X-Forwarded-For and have Context.ClientIP
-// report it; the rate limiter and the audit trail would then be keyed by
-// whatever the client wrote.
+// TestClientIPDoesNotTakeForwardingHeaders pins that the address gin reports for a request is the
+// connection's peer.
 func TestClientIPDoesNotTakeForwardingHeaders(t *testing.T) {
 	var reported string
 	logger, _ := newRecordingLogger()
@@ -98,13 +83,8 @@ func TestClientIPDoesNotTakeForwardingHeaders(t *testing.T) {
 	}
 }
 
-// TestTheGinContextFallsBackToTheRequestContext pins that a value put in the
-// request context is reachable from the gin context used as a context.Context.
-// The logger is put there by this module, and a handler or a layer that passes
-// its gin context to log.FromContext, as it passes any context, gets the same
-// logger it gets from the request's context. Without the fallback the gin
-// context answers every key with nil and the process default logger is what the
-// record is written with, with nothing to say so.
+// TestTheGinContextFallsBackToTheRequestContext pins that a value put in the request context is
+// reachable from the gin context used as a context.Context.
 func TestTheGinContextFallsBackToTheRequestContext(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	injected, _ := newRecordingLogger()
@@ -134,12 +114,7 @@ func TestTheGinContextFallsBackToTheRequestContext(t *testing.T) {
 	}
 }
 
-// TestALayerReadsTheMatchedRouteBeforeNext pins the position the routing result
-// is available in. The layers run inside the engine, after the route is
-// matched, so a layer that decides by the route — the authentication layer's
-// exemptions, the audit layer's match — reads Context.FullPath before it hands
-// the request on, and what it reads is the path as it was registered. A request
-// that matched nothing reads the empty string.
+// TestALayerReadsTheMatchedRouteBeforeNext pins the position the routing result is available in.
 func TestALayerReadsTheMatchedRouteBeforeNext(t *testing.T) {
 	var before string
 	logger, _ := newRecordingLogger()
@@ -174,13 +149,10 @@ func TestALayerReadsTheMatchedRouteBeforeNext(t *testing.T) {
 	}
 }
 
-// freshProcessEnv, when set, makes this test binary run the check of gin's
-// process-wide settings and exit instead of running the tests.
 const freshProcessEnv = "SPEED_HTTP_GIN_SETTINGS_CHECK"
 
-// TestMain runs the tests, or, in the child process TestGinsProcessWideSettings
-// starts, the one check that cannot be made in a process that has run other
-// tests.
+// TestMain runs the tests, or, in the child process TestGinsProcessWideSettings starts, the one
+// check that cannot be made in a process that has run other tests.
 func TestMain(m *testing.M) {
 	if os.Getenv(freshProcessEnv) != "" {
 		if err := checkGinsProcessWideSettings(); err != nil {
@@ -193,9 +165,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// checkGinsProcessWideSettings builds and assembles an endpoint in a process
-// that has done nothing else with gin, and reports what it left of gin's
-// process-wide state.
 func checkGinsProcessWideSettings() error {
 	if mode := gin.Mode(); mode != gin.DebugMode {
 		return fmt.Errorf("gin starts in %q mode, and the check needs it to start in %q to show a "+
@@ -237,21 +206,8 @@ func checkGinsProcessWideSettings() error {
 	return nil
 }
 
-// TestGinsProcessWideSettings pins what this module does to the state gin shares
-// across a whole process, in a process of its own: it puts gin in release mode,
-// because gin's debug mode prints a line to standard output for every route
-// registered, which would put this module's records outside the logging module's
-// destinations; and it leaves the rest alone, because the decoding options and
-// the validator are shared by every gin engine in the process, so one module
-// choosing a value for them would choose it for every other user of gin there.
-//
-// It runs the check in a child process because a process that has run other
-// tests has already been through this module's engine construction: the mode is
-// set, and a setting the construction changed is changed before any test can
-// take the "before" reading. The child starts with gin in debug mode, which is
-// what makes the change to release mode a change; and what gin printed while
-// the child registered its routes is read here, since a mode that was not
-// switched shows up as lines gin wrote.
+// TestGinsProcessWideSettings pins what this module does to the state gin shares across a whole
+// process, in a process of its own: it puts gin in release mode.
 func TestGinsProcessWideSettings(t *testing.T) {
 	child := exec.Command(os.Args[0])
 	child.Env = append(os.Environ(), freshProcessEnv+"=1", "GIN_MODE=debug")
@@ -264,22 +220,8 @@ func TestGinsProcessWideSettings(t *testing.T) {
 	}
 }
 
-// TestTheChainKeepsTheWritersOptionalInterfaces pins that the interfaces the
-// connection's writer carries reach a handler through everything this module
-// puts around it: the layer that limits the body and builds the request context,
-// the panic fallback, and gin's own writer. A layer that wrapped the writer and
-// dropped them would leave a handler's type assertion failing quietly — a stream
-// that arrives all at once at the end, an upgrade that cannot take the
-// connection — and gin itself panics on the first call when the writer under it
-// has lost the interface.
-//
-// Each interface is reached the two ways a handler reaches it: through gin's own
-// writer, c.Writer.Flush and c.Writer.Hijack, which assert the interface on the
-// writer they wrap, and through the response controller, which finds it by
-// unwrapping. Both are observed on a real connection. The streaming handler
-// flushes a first part and then waits for the test to confirm it arrived, which
-// only happens if the flush reached the socket; the upgrading handler takes the
-// connection over and answers on it by hand.
+// TestTheChainKeepsTheWritersOptionalInterfaces pins that the interfaces the connection's writer
+// carries reach a handler through everything this module puts around it.
 func TestTheChainKeepsTheWritersOptionalInterfaces(t *testing.T) {
 	release := make(chan struct{})
 	t.Cleanup(func() {
@@ -368,18 +310,8 @@ func TestTheChainKeepsTheWritersOptionalInterfaces(t *testing.T) {
 	}
 }
 
-// TestTheChainKeepsTheRestOfTheWritersInterfaces is the same statement for the
-// interfaces that flushing and hijacking do not reach: the deadlines a handler
-// sets through the response controller, which find the connection by unwrapping
-// the writers around it, and the notification that the client went away, which
-// gin asserts on the writer it wraps and which panics when the writer does not
-// carry it.
-//
-// A handler that lost the first would find its call answered with "not
-// supported" and its stream cut by the server's own timeout instead of the
-// deadline it asked for; one that lost the second would panic in gin on the
-// first call. The client going away is observed from the handler's side: the
-// notification arrives when the test closes its connection.
+// TestTheChainKeepsTheRestOfTheWritersInterfaces checks that the response controller's deadlines
+// survive the chain.
 func TestTheChainKeepsTheRestOfTheWritersInterfaces(t *testing.T) {
 	gone := make(chan bool, 1)
 	waiting := make(chan struct{}, 1)
@@ -431,16 +363,6 @@ func TestTheChainKeepsTheRestOfTheWritersInterfaces(t *testing.T) {
 	}
 }
 
-// pushOrNothing is a handler that reports what its writer offers for server push:
-// "none" when gin hands it no Pusher, and otherwise the answer of a push whose
-// target is not an absolute path.
-//
-// A relative target is refused by the HTTP/2 implementation with an error of its
-// own before anything else is looked at, so an answer carrying that error shows
-// the call reached the writer underneath. A layer that forwarded the interface
-// to nothing would answer http.ErrNotSupported, which is also what the client's
-// disabled push settings give for a target that passes: the relative one is what
-// tells the two apart.
 func pushOrNothing(c *gin.Context) {
 	pusher := c.Writer.Pusher()
 	if pusher == nil {
@@ -450,16 +372,8 @@ func pushOrNothing(c *gin.Context) {
 	c.String(nethttp.StatusOK, "pusher: %v", pusher.Push("relative.css", nil))
 }
 
-// TestThePusherOfAnHTTP2WriterReachesTheHandler pins that the interface an
-// HTTP/2 stream's writer carries beyond the common ones, server push, is
-// reachable from a handler, and that a call on it reaches the writer. gin hands
-// out the writer's Pusher when the writer under it is one, and a layer around the
-// writer that does not forward the interface turns it into nil: a handler that
-// asks for it is told push is not available on a connection that offers it.
-//
-// A push that is accepted is not exercised: the client of Go's HTTP/2
-// implementation switches it off, so what is pinned is that the interface and the
-// call get through the chain.
+// TestThePusherOfAnHTTP2WriterReachesTheHandler pins that the interface an HTTP/2 stream's writer
+// carries beyond the common ones, server push, is reachable from a handler.
 func TestThePusherOfAnHTTP2WriterReachesTheHandler(t *testing.T) {
 	certFile, keyFile, roots := writeSelfSignedCertificate(t, t.TempDir())
 	l := testListener("public")
@@ -494,11 +408,8 @@ func TestThePusherOfAnHTTP2WriterReachesTheHandler(t *testing.T) {
 	}
 }
 
-// TestThereIsNoPusherOnAnHTTP1Writer pins the other half of forwarding the
-// interface: a connection that cannot push gives the handler no Pusher at all.
-// gin hands a handler a nil Pusher for a writer that is not one, and handlers
-// test for it; a layer that implemented the interface whatever it wrapped would
-// turn "skip it" into "try it and be told no" on every HTTP/1.1 request.
+// TestThereIsNoPusherOnAnHTTP1Writer pins the other half of forwarding the interface: a connection
+// that cannot push gives the handler no Pusher at all.
 func TestThereIsNoPusherOnAnHTTP1Writer(t *testing.T) {
 	addr, _ := serveRoutes(t, nil, func(e Endpoint) {
 		e.Route("GET", "/", pushOrNothing)
@@ -513,21 +424,8 @@ func TestThereIsNoPusherOnAnHTTP1Writer(t *testing.T) {
 	}
 }
 
-// TestAFailedHijackOverHTTP2LeavesTheResponseUnanswered pins what a handler that
-// asks its writer for the connection gets over HTTP/2, where there is no
-// connection to take over, and what becomes of a panic after it.
-//
-// gin's writer Hijack asserts http.Hijacker on the writer it wraps, and an
-// HTTP/2 stream is not one, so the call panics rather than returning an error;
-// before it does, it records the response as having started. The panic unwinds
-// to the recovery layer, which then leaves the response as it is: nothing was
-// written, so the client reads the empty 200 net/http supplies for a response
-// that ended without a final status.
-//
-// The control panics without asking for the connection first, so its response
-// has not started and it is answered with the error response. The two outcomes
-// differ on the one point this pins: an attempt to take a connection the writer
-// cannot give starts the response for gin, whether or not it succeeds.
+// TestAFailedHijackOverHTTP2LeavesTheResponseUnanswered pins what a handler that asks its writer
+// for the connection gets over HTTP/2, where there is no connection to take over.
 func TestAFailedHijackOverHTTP2LeavesTheResponseUnanswered(t *testing.T) {
 	certFile, keyFile, roots := writeSelfSignedCertificate(t, t.TempDir())
 	l := testListener("public")
@@ -582,12 +480,7 @@ func TestAFailedHijackOverHTTP2LeavesTheResponseUnanswered(t *testing.T) {
 	}
 }
 
-// TestAHijackedConnectionIsNotWrittenToAfterAPanic pins the fallback's own use
-// of the writer. A handler that has taken the connection over — a protocol
-// upgrade — and then panics has no response left to answer: the connection is
-// its own, and a status written through the server's writer now would be a
-// write on a connection the server has let go, reported by net/http as an
-// error of its own beside the record of the panic.
+// TestAHijackedConnectionIsNotWrittenToAfterAPanic pins the fallback's own use of the writer.
 func TestAHijackedConnectionIsNotWrittenToAfterAPanic(t *testing.T) {
 	addr, records := serveRoutes(t, nil, func(e Endpoint) {
 		e.Route("GET", "/upgrade", func(c *gin.Context) {

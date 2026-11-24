@@ -10,16 +10,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// exportedSurface is the package's exported surface, written out. Every entry
-// is one declaration a dependant can see and therefore one this module has to
-// keep.
-//
-// The list is here rather than derived because deriving it would only restate
-// whatever the code happens to say. Pinned, a new exported symbol has to be
-// added here by hand, and the entry is where the reader asks whether it
-// belongs on the surface at all. A knob that changes how a request body is
-// decoded is exactly that kind of addition: body binding is gin's, and an
-// exported option for it would fail this test the moment it appeared.
 var exportedSurface = []string{
 	"const AccessOptional",
 	"const AccessPublic",
@@ -200,20 +190,16 @@ var exportedSurface = []string{
 	"var ErrUnknownListener",
 }
 
-// The registration surface is expressed in gin's types: a route takes
-// gin.HandlerFuncs, a layer is one, and the error entry point takes the gin
-// context. The names above would stay put through a change of anchor; these
-// declarations stop compiling.
+// The registration surface is expressed in gin's types: a route takes gin.HandlerFuncs,
+// a layer is one, and the error entry point takes the gin context.
 var (
 	_ func(Endpoint, string, string, ...gin.HandlerFunc) = Endpoint.Route
 	_ func(*gin.Context, Problem)                        = Fail
 	_ gin.HandlerFunc                                    = Middleware{}.Handler
 )
 
-// TestExportedSurfaceIsPinned compares the declarations the source really
-// exports with the list above, in both directions: a symbol added to the code
-// and not to the list fails, and so does one removed from the code while the
-// list still names it.
+// TestExportedSurfaceIsPinned compares the declarations the source really exports with the list
+// above, in both directions: a symbol added to the code and not to the list fails.
 func TestExportedSurfaceIsPinned(t *testing.T) {
 	_, files := parseProductionFiles(t)
 	got := collectExported(files)
@@ -235,8 +221,6 @@ func TestExportedSurfaceIsPinned(t *testing.T) {
 	}
 }
 
-// collectExported renders every exported top-level declaration, and the
-// exported members of exported types, as one entry each.
 func collectExported(files []*ast.File) []string {
 	var out []string
 	for _, file := range files {
@@ -261,8 +245,6 @@ func collectExported(files []*ast.File) []string {
 	return out
 }
 
-// receiverName renders the receiver's type name, empty when the receiver type
-// is unexported and the method is therefore not on the surface.
 func receiverName(recv *ast.FieldList) string {
 	if recv == nil || len(recv.List) == 0 {
 		return ""

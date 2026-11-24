@@ -13,8 +13,6 @@ import (
 	"time"
 )
 
-// startTestEndpoint binds a listener on a loopback port and returns it with the
-// address it really got, tearing it down whatever the test does.
 func startTestEndpoint(t *testing.T, s listenerSettings, h nethttp.Handler, logger *slog.Logger) (*listener, string) {
 	t.Helper()
 	l := &listener{}
@@ -29,8 +27,6 @@ func startTestEndpoint(t *testing.T, s listenerSettings, h nethttp.Handler, logg
 	return l, addr.String()
 }
 
-// get issues one request and reports what came back, for the tests that need a
-// request in flight rather than a response.
 func get(url string) error {
 	req, err := nethttp.NewRequestWithContext(context.Background(), nethttp.MethodGet, url, nil)
 	if err != nil {
@@ -44,10 +40,8 @@ func get(url string) error {
 	return nil
 }
 
-// TestBindFailureIsStartupFailure pins the synchronous half of Serve: an
-// address that cannot be bound comes back from the callback, so the startup
-// ends there. Bound on a goroutine instead, the process would come up with an
-// entry point nobody can reach.
+// TestBindFailureIsStartupFailure pins the synchronous half of Serve: an address that cannot be
+// bound comes back from the callback, so the startup ends there.
 func TestBindFailureIsStartupFailure(t *testing.T) {
 	taken, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -71,8 +65,8 @@ func TestBindFailureIsStartupFailure(t *testing.T) {
 	}
 }
 
-// TestBindFailureKeepsTheUnderlyingNetError pins the wrapping: %w all the way
-// down, so a caller can still reach syscall.EADDRINUSE through the sentinel.
+// TestBindFailureKeepsTheUnderlyingNetError pins the wrapping: %w all the way down, so a caller can
+// still reach syscall.EADDRINUSE through the sentinel.
 func TestBindFailureKeepsTheUnderlyingNetError(t *testing.T) {
 	taken, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -95,10 +89,7 @@ func TestBindFailureKeepsTheUnderlyingNetError(t *testing.T) {
 	}
 }
 
-// TestTLSCertFailureIsSynchronous pins where a certificate is loaded. Left to
-// the server's own ServeTLS, it would be loaded after the Serve callback has
-// returned, and a mistyped path would become a goroutine failing where nobody
-// is looking while the startup reports success.
+// TestTLSCertFailureIsSynchronous pins where a certificate is loaded.
 func TestTLSCertFailureIsSynchronous(t *testing.T) {
 	dir := t.TempDir()
 	s := testListener("public")
@@ -118,11 +109,6 @@ func TestTLSCertFailureIsSynchronous(t *testing.T) {
 }
 
 // TestCertificateFailureIsAListenFailure pins how the failure is classified.
-// The design folds a certificate that cannot be loaded into ErrListen instead of
-// giving it a sentinel, on the criterion that the host's remedy is the same one
-// a taken address calls for: change the configuration and start again. A caller
-// that acts on "this endpoint did not come up" therefore needs one class, and
-// the two paths in the text are what says which half to fix.
 func TestCertificateFailureIsAListenFailure(t *testing.T) {
 	dir := t.TempDir()
 	s := testListener("public")
@@ -139,9 +125,6 @@ func TestCertificateFailureIsAListenFailure(t *testing.T) {
 	mustContain(t, err.Error(), s.tlsKeyFile, "the key path")
 	mustContain(t, err.Error(), `"public"`, "the endpoint that did not come up")
 
-	// The other half of "no sentinel of its own": a sentinel added for this
-	// failure would make one of these match, and the class a caller switches
-	// on would have grown without anybody noticing.
 	others := []struct {
 		name     string
 		sentinel error
@@ -160,11 +143,8 @@ func TestCertificateFailureIsAListenFailure(t *testing.T) {
 	}
 }
 
-// TestStopClosesListenerSynchronously is the first of an endpoint's two steps:
-// when stop returns, the endpoint has already stopped accepting and a new
-// connection is refused, while a request that was already in flight is still
-// being served. Waiting is the second step, so that the module can close every
-// endpoint's socket before it waits for any of them.
+// TestStopClosesListenerSynchronously is the first of an endpoint's two steps: when stop returns,
+// the endpoint has already stopped accepting and a new connection is refused.
 func TestStopClosesListenerSynchronously(t *testing.T) {
 	gate := newGateHandler(t)
 	logger, _ := newRecordingLogger()
@@ -210,9 +190,7 @@ func TestStopClosesListenerSynchronously(t *testing.T) {
 	}
 }
 
-// TestCloseWaitsForDrain is the second step, and the two tests only tell the
-// steps apart together: an implementation that drains inside stop passes each
-// of the "shuts down cleanly" assertions on its own.
+// TestCloseWaitsForDrain is the second step, and the two tests only tell the steps apart together.
 func TestCloseWaitsForDrain(t *testing.T) {
 	gate := newGateHandler(t)
 	logger, _ := newRecordingLogger()
@@ -248,10 +226,8 @@ func TestCloseWaitsForDrain(t *testing.T) {
 	}
 }
 
-// TestDrainTimeoutCutsInflight pins the end of the drain budget: the failure is
-// reported, and the connections it was waiting for are really cut. Shutdown on
-// its own only stops waiting, so without the Close that follows it the caller
-// would be told the requests were cut while they carried on running.
+// TestDrainTimeoutCutsInflight pins the end of the drain budget: the failure is reported, and the
+// connections it was waiting for are really cut.
 func TestDrainTimeoutCutsInflight(t *testing.T) {
 	gate := newGateHandler(t)
 	logger, _ := newRecordingLogger()
@@ -283,9 +259,6 @@ func TestDrainTimeoutCutsInflight(t *testing.T) {
 	}
 }
 
-// failingListener is a socket whose Accept fails for good. It is the only way
-// to reach the accept loop's anomalous exit from outside: every failure this
-// module causes itself is classified as a normal shutdown.
 type failingListener struct {
 	err    error
 	closed chan struct{}
@@ -303,12 +276,8 @@ func (f *failingListener) Close() error {
 	return nil
 }
 
-// TestAcceptLoopAnomalyFlipsAccepting pins the run-time failure the design
-// accepts: the process stays up, the endpoint stops claiming it accepts
-// requests, and the event is written down. An implementation that leaves
-// Accepting true, or that says nothing, turns "visible to whoever reads it"
-// into not visible at all, which is the whole of what makes the accepted cost
-// bearable.
+// TestAcceptLoopAnomalyFlipsAccepting pins that the process stays up, the endpoint
+// stops claiming it accepts requests, and the event is written down.
 func TestAcceptLoopAnomalyFlipsAccepting(t *testing.T) {
 	logger, records := newRecordingLogger()
 	broken := &failingListener{err: errors.New("the socket is beyond repair"), closed: make(chan struct{})}
@@ -331,9 +300,8 @@ func TestAcceptLoopAnomalyFlipsAccepting(t *testing.T) {
 	mustContain(t, written, "beyond repair", "what the accept loop came back with")
 }
 
-// TestNormalStopIsNotAnAnomalousExit is the other half of the same
-// classification: a shutdown this module caused says nothing, or every clean
-// stop would report an anomaly and the report would mean nothing.
+// TestNormalStopIsNotAnAnomalousExit is the other half of the same classification: a shutdown this
+// module caused says nothing.
 func TestNormalStopIsNotAnAnomalousExit(t *testing.T) {
 	logger, records := newRecordingLogger()
 	l, _ := startTestEndpoint(t, testListener("public"), nethttp.NotFoundHandler(), logger)
@@ -355,9 +323,8 @@ func TestNormalStopIsNotAnAnomalousExit(t *testing.T) {
 	}
 }
 
-// TestStopToleratesNeverBound pins the rollback path: a startup that fails
-// part-way stops and closes every constructed instance, including the endpoints
-// that never got as far as binding.
+// TestStopToleratesNeverBound pins the rollback path: a startup that fails part-way stops and
+// closes every constructed instance, including the endpoints that never got as far as binding.
 func TestStopToleratesNeverBound(t *testing.T) {
 	var l listener
 	if err := l.stop(context.Background()); err != nil {
@@ -371,9 +338,7 @@ func TestStopToleratesNeverBound(t *testing.T) {
 	}
 }
 
-// TestStopIsIdempotent pins the repeated call. A host may stop twice, and the
-// second call must not start a second drain or report a socket that is already
-// closed as a failure.
+// TestStopIsIdempotent pins the repeated call.
 func TestStopIsIdempotent(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	l, _ := startTestEndpoint(t, testListener("public"), nethttp.NotFoundHandler(), logger)
@@ -390,8 +355,6 @@ func TestStopIsIdempotent(t *testing.T) {
 }
 
 // TestCloseWithoutStop pins the path a host driving the stages by hand takes.
-// An endpoint left listening after Close would outlive the shutdown that was
-// supposed to release it.
 func TestCloseWithoutStop(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	l, addr := startTestEndpoint(t, testListener("public"), nethttp.NotFoundHandler(), logger)
@@ -409,12 +372,7 @@ func TestCloseWithoutStop(t *testing.T) {
 	}
 }
 
-// TestDoubleCloseOfTheSocketIsNotAFailure pins the wrapper the socket is
-// behind. Stop closes the socket and starts the drain, whose Shutdown closes
-// every listener the server still tracks — this one, until the accept loop has
-// returned. The two overlap, and unwrapped the second close comes back as "use
-// of closed network connection", turning a clean shutdown into a reported
-// failure on the runs where the window is hit.
+// TestDoubleCloseOfTheSocketIsNotAFailure pins the wrapper the socket is behind.
 func TestDoubleCloseOfTheSocketIsNotAFailure(t *testing.T) {
 	inner, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -430,13 +388,8 @@ func TestDoubleCloseOfTheSocketIsNotAFailure(t *testing.T) {
 	}
 }
 
-// TestDrainsOfSeveralEndpointsRunTogether pins where the drain is started, which
-// no single-endpoint assertion above can reach. Started in close instead of in
-// stop, every one of them still holds: stop still returns while a request is in
-// flight, close still waits, the expired budget is still reported. What changes
-// is that the endpoints then drain one after another — a shutdown costs the sum
-// of the budgets rather than the longest one, and the budget of the endpoint
-// waited on last only begins long after it stopped accepting.
+// TestDrainsOfSeveralEndpointsRunTogether pins where the drain is started, which no single-endpoint
+// assertion above can reach.
 func TestDrainsOfSeveralEndpointsRunTogether(t *testing.T) {
 	const budget = 300 * time.Millisecond
 	const endpoints = 3
@@ -456,11 +409,6 @@ func TestDrainsOfSeveralEndpointsRunTogether(t *testing.T) {
 		waitFor(t, gate.entered, "a request to reach the handler")
 	}
 
-	// The start and end of each drain are recorded as they happen, by watchers
-	// per endpoint started before any stop, so the overlap assertion below
-	// reads the real interval of each drain rather than the moment the caller
-	// got round to it. A drain queued behind a package-level lock closes its
-	// began channel only once it reaches the waiting it is serialised on.
 	starts := make([]chan time.Time, endpoints)
 	ends := make([]chan time.Time, endpoints)
 	for i, l := range bound {
@@ -474,21 +422,12 @@ func TestDrainsOfSeveralEndpointsRunTogether(t *testing.T) {
 		}(l, start, end)
 	}
 
-	// Every endpoint stops before any of them is waited on, which is the
-	// order the module's Stop uses: every socket is closed before any drain
-	// is waited for.
 	for _, l := range bound {
 		if err := l.stop(context.Background()); err != nil {
 			t.Fatalf("Stop: %v", err)
 		}
 	}
 
-	// The drains have to be running already, and this holds them without a
-	// clock judgment: a drain started in close instead of in stop leaves its
-	// drained channel open until its own close is called, and no close has been
-	// called yet. A drain that is running finishes on its own budget whatever
-	// the caller does next, so waiting for all of them here separates the two
-	// designs without comparing elapsed times.
 	began, ended := make([]time.Time, 0, endpoints), make([]time.Time, 0, endpoints)
 	limit := waitDeadline()
 	for i := range bound {
@@ -508,11 +447,6 @@ func TestDrainsOfSeveralEndpointsRunTogether(t *testing.T) {
 		}
 	}
 
-	// The endpoints drained together exactly when the latest beginning is
-	// still before the earliest end: all of their intervals share that window.
-	// A shutdown that started each drain only after the previous one finished,
-	// or that queued them behind a package-level lock, has a beginning after an
-	// end, and is seen here.
 	lastBegan, earliestEnd := began[0], ended[0]
 	for _, at := range began {
 		if at.After(lastBegan) {
@@ -540,14 +474,8 @@ func TestDrainsOfSeveralEndpointsRunTogether(t *testing.T) {
 	}
 }
 
-// TestTheServersOwnRecordsGoToTheModulesLogger pins what net/http writes for
-// itself reaching the destinations this module's logger is configured with.
-//
-// Those records are net/http's own: the panic it catches when nothing on the
-// request path did, a TLS handshake that failed, a status written after the
-// header was already committed. Left to the process default they are the only
-// records in the process that miss the configured destinations, and they go to
-// a file descriptor the host never chose.
+// TestTheServersOwnRecordsGoToTheModulesLogger pins what net/http writes for itself reaching the
+// destinations this module's logger is configured with.
 func TestTheServersOwnRecordsGoToTheModulesLogger(t *testing.T) {
 	logger, records := newRecordingLogger()
 	l, _ := startTestEndpoint(t, testListener("public"), nethttp.NotFoundHandler(), logger)

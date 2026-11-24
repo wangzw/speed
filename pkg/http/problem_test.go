@@ -17,19 +17,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// equalProblem compares two problems field by field. A Problem carries a Cause
-// that is not always comparable with ==, so a test that pins the whole of one
-// compares it with this.
 func equalProblem(a, b Problem) bool {
 	return a.Type == b.Type && a.Title == b.Title && a.Status == b.Status &&
 		a.Detail == b.Detail && a.Instance == b.Instance &&
 		errors.Is(a.Cause, b.Cause) && errors.Is(b.Cause, a.Cause)
 }
 
-// recordingResponder is an ErrorResponder a test holds. It replaces the whole
-// shape: its own media type, its own body, and the status the Problem asks for.
-// It keeps what it was handed, and the headers that were already on the writer
-// when it was asked, so a test can read both.
 type recordingResponder struct {
 	mu       sync.Mutex
 	problems []Problem
@@ -52,15 +45,12 @@ func (r *recordingResponder) RespondError(w nethttp.ResponseWriter, _ *nethttp.R
 	_, _ = io.WriteString(w, customBody+strconv.Itoa(p.Status))
 }
 
-// calls is how many times the responder was asked.
 func (r *recordingResponder) calls() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return len(r.problems)
 }
 
-// problem is the n-th Problem the responder was handed, failing the test when
-// there was no such call.
 func (r *recordingResponder) problem(t *testing.T, n int) Problem {
 	t.Helper()
 	r.mu.Lock()
@@ -71,7 +61,6 @@ func (r *recordingResponder) problem(t *testing.T, n int) Problem {
 	return r.problems[n]
 }
 
-// headerSeen is the n-th call's view of the response headers.
 func (r *recordingResponder) headerSeen(t *testing.T, n int) nethttp.Header {
 	t.Helper()
 	r.mu.Lock()
@@ -82,13 +71,10 @@ func (r *recordingResponder) headerSeen(t *testing.T, n int) nethttp.Header {
 	return r.headers[n]
 }
 
-// failWith builds a route handler that refuses the request with p.
 func failWith(p Problem) gin.HandlerFunc {
 	return func(c *gin.Context) { Fail(c, p) }
 }
 
-// problemBodyOf decodes a default-shaped response body into its members, so that
-// an assertion can tell a member that is absent from one that is empty.
 func problemBodyOf(t *testing.T, recorder *httptest.ResponseRecorder) map[string]any {
 	t.Helper()
 	var members map[string]any
@@ -98,9 +84,8 @@ func problemBodyOf(t *testing.T, recorder *httptest.ResponseRecorder) map[string
 	return members
 }
 
-// TestFailWritesAProblemDetailsObject pins the default shape: the status the
-// Problem asks for, the media type RFC 9457 defines, and the members that were
-// given, under the names the standard gives them.
+// TestFailWritesAProblemDetailsObject pins the default shape: the status the Problem asks for, the
+// media type RFC 9457 defines, and the members that were given.
 func TestFailWritesAProblemDetailsObject(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
@@ -139,10 +124,8 @@ func TestFailWritesAProblemDetailsObject(t *testing.T) {
 	}
 }
 
-// TestFailDefaultsTheTypeAndTheTitle pins what an unset Type and Title become:
-// "about:blank", and the standard text of the status. The members that carry
-// nothing — Detail and Instance — are left out of the body rather than written
-// empty.
+// TestFailDefaultsTheTypeAndTheTitle pins what an unset Type and Title become: "about:blank", and
+// the standard text of the status.
 func TestFailDefaultsTheTypeAndTheTitle(t *testing.T) {
 	for _, c := range []struct {
 		status int
@@ -179,9 +162,8 @@ func TestFailDefaultsTheTypeAndTheTitle(t *testing.T) {
 	}
 }
 
-// TestFailLeavesTheCauseOutOfTheBody pins that the default response says nothing
-// of what a Cause carries. A cause is what went wrong inside, a connection
-// string or a query among it, and the default response is what a client reads.
+// TestFailLeavesTheCauseOutOfTheBody pins that the default response says nothing of what a Cause
+// carries.
 func TestFailLeavesTheCauseOutOfTheBody(t *testing.T) {
 	const secret = "dial tcp db-7.internal:5432 password=hunter2"
 	logger, _ := newRecordingLogger()
@@ -210,12 +192,7 @@ func TestFailLeavesTheCauseOutOfTheBody(t *testing.T) {
 	}
 }
 
-// TestFailWithAnIllegalStatusWrites500 pins what a status that is no final
-// status code becomes. The rows are on both sides of the legal range, 200 through
-// 599: zero is what an unset field is, and writing it as a status would panic in
-// net/http; a 1xx code written alone is an informational response that net/http
-// follows with a 200, so a problem carrying one would say 103 in its body to a
-// client that was answered 200.
+// TestFailWithAnIllegalStatusWrites500 pins what a status that is no final status code becomes.
 func TestFailWithAnIllegalStatusWrites500(t *testing.T) {
 	for _, status := range []int{0, -1, 99, 100, 103, 199, 600, 1000} {
 		t.Run(strconv.Itoa(status), func(t *testing.T) {
@@ -243,14 +220,8 @@ func TestFailWithAnIllegalStatusWrites500(t *testing.T) {
 	}
 }
 
-// TestAnIllegalStatusReachesTheClientAs500 is the same statement on a real
-// connection, where it matters: net/http answers a 1xx code written alone with
-// an informational response and then a 200, so a problem written with 103 would
-// reach the client as a 200 whose body says 103. Each row is a status that is no
-// final status code, and each gets a 500 whose body says 500.
-//
-// The two statuses at the edges of the legal range, 200 and 599, are written as
-// they are.
+// TestAnIllegalStatusReachesTheClientAs500 is the same statement on a real connection, where it
+// matters: net/http answers a 1xx code written alone with an informational response and then a 200.
 func TestAnIllegalStatusReachesTheClientAs500(t *testing.T) {
 	addr, _ := serveRoutes(t, nil, func(e Endpoint) {
 		e.Route("GET", "/status/:code", func(c *gin.Context) {
@@ -290,14 +261,8 @@ func TestAnIllegalStatusReachesTheClientAs500(t *testing.T) {
 	}
 }
 
-// TestTheTitleIsLeftOutWhenTheStatusHasNoStandardText pins what an unset Title
-// becomes for a status the standard library has no text for. The default is the
-// standard text, and where there is none the member is absent from the body
-// rather than written empty: an empty title is a title, and says nothing.
-//
-// The rows beside it keep the member where it belongs: a status with a standard
-// text still carries it, and a Title that was given is written as given, for a
-// status with a standard text and for one without.
+// TestTheTitleIsLeftOutWhenTheStatusHasNoStandardText pins what an unset Title becomes for a status
+// the standard library has no text for.
 func TestTheTitleIsLeftOutWhenTheStatusHasNoStandardText(t *testing.T) {
 	for _, c := range []struct {
 		name      string
@@ -332,10 +297,8 @@ func TestTheTitleIsLeftOutWhenTheStatusHasNoStandardText(t *testing.T) {
 	}
 }
 
-// TestFailWritesTheFinalStatusesAtTheEdgesOfTheLegalRange is the other side of
-// that check: 200 and 599 are final statuses and are written as they are, with
-// the body saying the same. A bound drawn one code too tight on either side turns
-// one of them into a 500.
+// TestFailWritesTheFinalStatusesAtTheEdgesOfTheLegalRange is the other side of that check: 200 and
+// 599 are final statuses and are written as they are, with the body saying the same.
 func TestFailWritesTheFinalStatusesAtTheEdgesOfTheLegalRange(t *testing.T) {
 	for _, status := range []int{nethttp.StatusOK, 599} {
 		t.Run(strconv.Itoa(status), func(t *testing.T) {
@@ -356,9 +319,8 @@ func TestFailWritesTheFinalStatusesAtTheEdgesOfTheLegalRange(t *testing.T) {
 	}
 }
 
-// TestFailEndsTheChain pins what Fail does to the handlers after the one that
-// called it: they do not run, and the layers around it see the chain as
-// aborted with the status that was written.
+// TestFailEndsTheChain pins what Fail does to the handlers after the one that called it: they do
+// not run, and the layers around it see the chain as aborted with the status that was written.
 func TestFailEndsTheChain(t *testing.T) {
 	tr := &trace{}
 	var aborted bool
@@ -386,11 +348,8 @@ func TestFailEndsTheChain(t *testing.T) {
 	}
 }
 
-// TestFailKeepsTheHeadersSetBeforeIt pins that a header a layer sets before it
-// refuses the request is on the response: the challenge an authentication layer
-// sends with a 401, the delay a rate limiter sends with a 429. The shape's
-// decider does not clear the writer's headers, whichever shape that is, and the
-// delivered responder is handed a writer that carries them.
+// TestFailKeepsTheHeadersSetBeforeIt pins that a header a layer sets before it refuses the request
+// is on the response: the challenge an authentication layer sends with a 401.
 func TestFailKeepsTheHeadersSetBeforeIt(t *testing.T) {
 	refuse := func(c *gin.Context) {
 		c.Header("WWW-Authenticate", `Bearer realm="things"`)
@@ -436,14 +395,8 @@ func TestFailKeepsTheHeadersSetBeforeIt(t *testing.T) {
 	}
 }
 
-// TestFailWritesNothingOnceTheResponseHasStarted pins the other half of Fail's
-// contract: a response that has begun to go out is not rewritten. The status and
-// the body already written stay, the chain is still ended, and the responder is
-// not asked, since whatever it wrote would follow the bytes already sent.
-//
-// Both ways a response begins are here: a body written, and the header
-// committed with no body. A recorder takes a second status and ignores it, so
-// the assertion that carries the difference is the body.
+// TestFailWritesNothingOnceTheResponseHasStarted pins the other half of Fail's contract: a response
+// that has begun to go out is not rewritten.
 func TestFailWritesNothingOnceTheResponseHasStarted(t *testing.T) {
 	for _, c := range []struct {
 		name       string
@@ -491,11 +444,8 @@ func TestFailWritesNothingOnceTheResponseHasStarted(t *testing.T) {
 	}
 }
 
-// TestADeliveredResponderReplacesTheWholeShape pins what delivering an
-// ErrorResponder changes: the body and the media type are the responder's, the
-// status is the one it writes from the Problem, and the Problem it is handed is
-// whole — every member that was given, and the Cause itself rather than a
-// rendering of it.
+// TestADeliveredResponderReplacesTheWholeShape pins what delivering an ErrorResponder changes: the
+// body and the media type are the responder's, the status is the one it writes from the Problem.
 func TestADeliveredResponderReplacesTheWholeShape(t *testing.T) {
 	cause := errors.New("the store said no")
 	given := Problem{
@@ -534,11 +484,8 @@ func TestADeliveredResponderReplacesTheWholeShape(t *testing.T) {
 	}
 }
 
-// TestFailOnAContextOutsideTheChainWritesTheDefaultShape pins the answer when no
-// responder can be found: the request context carries one only if this module's
-// chain put it there, and a context built by hand, as a test of a handler
-// builds one, carries none. The default shape is what is written, and nothing
-// panics for a context that was never part of a chain.
+// TestFailOnAContextOutsideTheChainWritesTheDefaultShape pins the answer when no responder can be
+// found: the request context carries one only if this module's chain put it there.
 func TestFailOnAContextOutsideTheChainWritesTheDefaultShape(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
@@ -560,13 +507,7 @@ func TestFailOnAContextOutsideTheChainWritesTheDefaultShape(t *testing.T) {
 	}
 }
 
-// TestARequestMatchingNoRouteIsAnsweredThroughEveryLayer pins the 404. The
-// request goes through every registered layer, once, before it is answered, and
-// the answer is the error response's: authentication therefore comes before the
-// 404, and a layer that observes responses sees this one.
-//
-// The layer reads the matched route's path before it hands the request on, which
-// for a request that matched nothing is the empty string.
+// TestARequestMatchingNoRouteIsAnsweredThroughEveryLayer pins the 404.
 func TestARequestMatchingNoRouteIsAnsweredThroughEveryLayer(t *testing.T) {
 	var runs int
 	var fullPath string
@@ -602,9 +543,8 @@ func TestARequestMatchingNoRouteIsAnsweredThroughEveryLayer(t *testing.T) {
 	}
 }
 
-// TestAMethodTheRouteDoesNotAllowIsAnsweredThroughEveryLayer is the same for the
-// 405: the path exists and the method is not among its methods, so the answer is
-// not a 404, it carries the methods the path does allow, and every layer ran.
+// TestAMethodTheRouteDoesNotAllowIsAnsweredThroughEveryLayer is the same for the 405: the path
+// exists and the method is not among its methods, so the answer is not a 404.
 func TestAMethodTheRouteDoesNotAllowIsAnsweredThroughEveryLayer(t *testing.T) {
 	var runs int
 	var status int
@@ -641,17 +581,8 @@ func TestAMethodTheRouteDoesNotAllowIsAnsweredThroughEveryLayer(t *testing.T) {
 	}
 }
 
-// TestALayerRefusingAMethodNotAllowedRequestDoesNotSendAllow pins what the
-// answer to a method the path does not allow keeps back until every layer has
-// let the request through. gin puts the Allow header on the response before any
-// layer runs, so a layer that refuses such a request — authentication with a
-// 401, say — would tell a caller that has not proved who it is which paths exist
-// and which methods they take. The header is held off the response while the
-// layers run and put on it by the 405's own handler.
-//
-// The layer here refuses a request with no credentials. The same request with
-// credentials goes through the layer and is answered 405 with Allow, which is
-// what shows the header was held and not dropped.
+// TestALayerRefusingAMethodNotAllowedRequestDoesNotSendAllow pins what the answer to a method the
+// path does not allow keeps back until every layer has let the request through.
 func TestALayerRefusingAMethodNotAllowedRequestDoesNotSendAllow(t *testing.T) {
 	var atEntry string
 	logger, _ := newRecordingLogger()
@@ -698,12 +629,8 @@ func TestALayerRefusingAMethodNotAllowedRequestDoesNotSendAllow(t *testing.T) {
 	}
 }
 
-// TestNotFoundAndMethodNotAllowedUseTheDeliveredResponder pins that the two
-// answers this module writes on its own are decided in the same place as the
-// ones Fail writes: with an ErrorResponder delivered, both go through it, with
-// the Problem a refusal makes — the status and the finished title, which is
-// net/http's standard text when no localizer is assembled — and the Allow
-// header of the 405 is already on the writer when the responder is asked.
+// TestNotFoundAndMethodNotAllowedUseTheDeliveredResponder pins that the two answers this module
+// writes on its own are decided in the same place as the ones Fail writes.
 func TestNotFoundAndMethodNotAllowedUseTheDeliveredResponder(t *testing.T) {
 	responder := &recordingResponder{}
 	logger, _ := newRecordingLogger()
@@ -755,8 +682,6 @@ func TestNotFoundAndMethodNotAllowedUseTheDeliveredResponder(t *testing.T) {
 	}
 }
 
-// sampleRepresentation holds the headers a handler sets to describe the content
-// it means to send, with a value of each.
 var sampleRepresentation = map[string]string{
 	"Content-Disposition": `attachment; filename="report.csv"`,
 	"ETag":                `"v1"`,
@@ -767,39 +692,14 @@ var sampleRepresentation = map[string]string{
 	"Cache-Control":       "public, max-age=3600",
 }
 
-// setSampleRepresentation sets the representation headers on the response, as
-// a handler does before it has written anything.
 func setSampleRepresentation(c *gin.Context) {
 	for name, value := range sampleRepresentation {
 		c.Header(name, value)
 	}
 }
 
-// TestTheDefaultShapeDropsTheHeadersThatDescribeAnotherBody pins what the default
-// response does with the headers the caller set before it failed. Some of them
-// describe the body the caller meant to send, and the default shape writes a
-// different one.
-//
-// Content-Length and Content-Encoding are dropped on every way into the default
-// shape: left on the response, a declared length of a thousand over a body of
-// seventy bytes leaves the client waiting for the rest and reading an
-// unexpected end of the stream, and a declared encoding makes it decode a body
-// that is not encoded.
-//
-// The headers that describe the content as a representation — a validator, a
-// range, a download name, the directives of a cache — are dropped only from the
-// answer to a panic. A panic is a handler that failed without having decided
-// anything about its response, so what it set is what it meant for a response
-// it did not send, and a 500 carrying "Cache-Control: public" would be kept by a
-// cache as the answer. A refusal through Fail is the caller deciding on the
-// response, with the headers it set for it: a layer that refuses with
-// "Cache-Control: no-store" means it.
-//
-// Every other header the caller set stays on all of them, since a refusal is
-// allowed to carry them: cookies, the challenge, the retry delay, whatever a
-// layer outside this one added. Each way into the default shape is here on a
-// real connection, since the length mismatch is only visible to a client reading
-// from a socket.
+// TestTheDefaultShapeDropsTheHeadersThatDescribeAnotherBody pins what the default response does
+// with the headers the caller set before it failed.
 func TestTheDefaultShapeDropsTheHeadersThatDescribeAnotherBody(t *testing.T) {
 	setDescribing := func(c *gin.Context) {
 		c.Header("Content-Length", "1000")
@@ -906,12 +806,8 @@ func TestTheDefaultShapeDropsTheHeadersThatDescribeAnotherBody(t *testing.T) {
 	}
 }
 
-// TestADeliveredResponderIsHandedTheHeadersAsTheCallerLeftThem is the other
-// half: dropping the headers that describe another body is the default shape's
-// doing, because the default shape is the one that knows what it writes. A
-// delivered responder writes a body of its own and is handed the writer with
-// every header the caller set, Content-Length, Content-Encoding and the
-// representation headers included; what they mean for its body is its to decide.
+// TestADeliveredResponderIsHandedTheHeadersAsTheCallerLeftThem is the other half: dropping the
+// headers that describe another body is the default shape's doing.
 func TestADeliveredResponderIsHandedTheHeadersAsTheCallerLeftThem(t *testing.T) {
 	responder := &recordingResponder{}
 	logger, _ := newRecordingLogger()

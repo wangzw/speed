@@ -13,12 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TestAnOversizedDeclaredBodyIsRefusedAsTooLarge pins the first step of the body
-// limit: a request that declares a Content-Length over the endpoint's limit is
-// refused with a 413 before any handler runs, and through Fail, so the response
-// carries the entry point's error shape rather than a bare status. The cause is
-// recorded in the gin context, which is where the observability layer reads it,
-// and a log record is written.
+// TestAnOversizedDeclaredBodyIsRefusedAsTooLarge pins the first step of the body limit.
 func TestAnOversizedDeclaredBodyIsRefusedAsTooLarge(t *testing.T) {
 	logger, records := newRecordingLogger()
 	s := testSettings("public")
@@ -27,9 +22,6 @@ func TestAnOversizedDeclaredBodyIsRefusedAsTooLarge(t *testing.T) {
 	var ran bool
 	var errsAfter []error
 	handler := mustAssemble(t, s, logger, logger, func(e Endpoint) {
-		// The watcher is in the observe stage, outside the body limit, so it
-		// runs whether or not the limit refuses the request and can read the
-		// error list the limit left on the shared context.
 		e.Use(Middleware{Name: "watcher", Stage: StageObserve, Handler: func(c *gin.Context) {
 			c.Next()
 			for _, gerr := range c.Errors {
@@ -42,8 +34,6 @@ func TestAnOversizedDeclaredBodyIsRefusedAsTooLarge(t *testing.T) {
 		})
 	})
 
-	// A body whose declared length is over the limit, which is the case that is
-	// refused outright.
 	body := strings.NewReader(strings.Repeat("x", 64))
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(nethttp.MethodPost, "/things", body))
@@ -67,11 +57,8 @@ func TestAnOversizedDeclaredBodyIsRefusedAsTooLarge(t *testing.T) {
 	}
 }
 
-// TestAnOversizedChunkedBodyIsRecordedAsAMaxBytesError pins the second step: a
-// request whose length is not declared is bounded by wrapping its body, and the
-// read that crosses the limit ends with a *http.MaxBytesError, is recorded in
-// the gin context's error list, and is written down once. A handler is not
-// required to cooperate: whatever reads the body ends with the error.
+// TestAnOversizedChunkedBodyIsRecordedAsAMaxBytesError pins the second step: a request whose length
+// is not declared is bounded by wrapping its body.
 func TestAnOversizedChunkedBodyIsRecordedAsAMaxBytesError(t *testing.T) {
 	logger, records := newRecordingLogger()
 	s := testSettings("public")
@@ -91,8 +78,6 @@ func TestAnOversizedChunkedBodyIsRecordedAsAMaxBytesError(t *testing.T) {
 		})
 	})
 
-	// A body whose length is not declared, so the layer wraps it rather than
-	// refusing it outright.
 	body := io.NopCloser(strings.NewReader(strings.Repeat("x", 64)))
 	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(nethttp.MethodPost, "/things", body))
 
@@ -112,8 +97,6 @@ func TestAnOversizedChunkedBodyIsRecordedAsAMaxBytesError(t *testing.T) {
 	}
 }
 
-// isMaxBytesError reports whether err is a *http.MaxBytesError, for the
-// assertions that the error reached a place rather than that a read produced it.
 func isMaxBytesError(err error) bool {
 	var tooLarge *nethttp.MaxBytesError
 	return errors.As(err, &tooLarge)

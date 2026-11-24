@@ -1,16 +1,5 @@
-// Command rootimport is the fixture the root package's test starts: a program
-// that imports this module's root package and nothing else from pkg/http.
-// pkg/core comes along for the registry handle the report is read through.
-//
-// It reports its own process registry as one JSON object on standard output —
-// every module name in it, the names of the modules delivering Router, and
-// whether that delivery is exclusive. The root package registers its module when
-// it is initialised, so a program that imported nothing from pkg/http but the
-// root package has the entry point in its registry; the test reads that and not
-// the absence of an error.
-//
-// The import list is the fixture. Adding anything else from this module changes
-// what the program observes, which is what makes it evidence.
+// Command rootimport is the fixture the root package's test starts: a program that
+// imports this module's root package and nothing else from pkg/http.
 package main
 
 import (
@@ -30,8 +19,8 @@ type observation struct {
 	Modules []string `json:"modules"`
 	// Routers is the names of the modules delivering Router.
 	Routers []string `json:"routers"`
-	// Exclusive is true when every one of those deliveries claims Router
-	// exclusively, and false when there is none.
+	// Exclusive is true when every one of those deliveries claims Router exclusively, and
+	// false when there is none.
 	Exclusive bool `json:"exclusive"`
 }
 

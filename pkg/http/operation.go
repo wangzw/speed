@@ -8,20 +8,17 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Operations is the resource type a module declares its API operations as. A
-// reader turns the declarations into the module's OpenAPI fragment; the
-// fragment is a build product and is never written by hand.
+// Operations is the resource type a module declares its API operations as.
 type Operations []Declared
 
-// Declared is one operation as the generator reads it: the descriptor, without
-// the handler's type parameters.
+// Declared is one operation as the generator reads it: the descriptor, without the
+// handler's type parameters.
 type Declared interface {
 	// Descriptor is the operation's declared shape.
 	Descriptor() OperationDescriptor
 }
 
-// OperationDescriptor is one operation's declared shape, as the generator
-// reads it.
+// OperationDescriptor is one operation's declared shape, as the generator reads it.
 type OperationDescriptor struct {
 	// ID is the OpenAPI operationId.
 	ID string
@@ -33,22 +30,13 @@ type OperationDescriptor struct {
 	Summary string
 	// Description explains the operation's behaviour.
 	Description string
-	// Input is the handler's input type, or nil when it takes none. Its fields
-	// carry the parameters through `path`, `query`, `header` and `cookie`
-	// tags, and the request body according to Request: `json` tags under
-	// application/json, `form` tags under
-	// application/x-www-form-urlencoded, `form` and `file` tags under
-	// multipart/form-data, and the single `raw` tag under
-	// application/octet-stream.
+	// Input is the handler's input type, or nil when it takes none.
 	Input reflect.Type
-	// Request is the declared request body, or nil when the operation takes
-	// none.
+	// Request is the declared request body, or nil when the operation takes none.
 	Request *RequestBody
 	// SuccessStatus is the status of the one 2xx response.
 	SuccessStatus int
-	// SuccessBody is the success response's body type. It is nil when the
-	// success status carries no body; an empty struct is a body too, which the
-	// entry point writes as the JSON object {}.
+	// SuccessBody is the success response's body type.
 	SuccessBody reflect.Type
 	// Simple is true for the simple form. Only its success response writes the
 	// declared headers: the handler cannot build the other answers, which are
@@ -56,49 +44,38 @@ type OperationDescriptor struct {
 	// because its handler builds each declared answer and that answer's
 	// declared headers are written on whatever status it names.
 	Simple bool
-	// Access is the level of caller identity the route admits. The generator
-	// publishes it as the operation's security requirement, and the
-	// authentication capability's mounter registers the route at this level.
+	// Access is the level of caller identity the route admits.
 	Access Access
 	// Responses is the closed set of answers, the success one included.
 	Responses []Response
 }
 
-// Operation is one operation a module serves, bound to its handler's types.
-//
-// In is the handler's input: a struct whose fields carry the operation's
-// parameters and request body, tagged the way encoding/json and the schema
-// reader read them. Out is the success response's body. The entry point binds
-// In from the request and writes Out as the declared success response, so a
-// handler has no way to read a parameter the declaration does not carry, and
-// no way to answer a body the declaration does not describe.
+// Operation is one operation a module serves, bound to its handler's types: In is
+// the handler's input and Out its success body.
 type Operation[In, Out any] struct {
-	ID          string
-	Method      string
-	Path        string
-	Summary     string
+	// ID is the operation's identifier in the generated document.
+	ID string
+	// Method is the HTTP method the route answers.
+	Method string
+	// Path is the route's path relative to the API root.
+	Path string
+	// Summary is the one-line summary published for the operation.
+	Summary string
+	// Description is the longer description published for the operation.
 	Description string
-	// Request is the declared request body, or nil when the operation takes
-	// no body. The entry point binds In's body fields according to its media
-	// type: `json` tags for application/json, `form` tags for
-	// application/x-www-form-urlencoded, `form` and `file` tags for
-	// multipart/form-data, and the single `raw` tag for
-	// application/octet-stream. An input carrying a body tag under an empty
-	// media type is a declaration defect and panics when the handler is built.
+	// Request is the declared request body, or nil when the operation takes no body.
 	Request *RequestBody
-	// Access is the level of caller identity the route admits. A route mounted
-	// through the authentication capability's mounter is registered at this
-	// level, and the fragment declares it as the operation's security
-	// requirement. The zero value admits only an identified caller.
+	// Access is the level of caller identity the route admits. Its zero value
+	// admits only an identified caller.
 	Access Access
 	// Responses is the closed set of answers. Exactly one must be 2xx, and
 	// that one's body is Out.
 	Responses []Response
 }
 
-// RequestBody is one operation's declared request body: the media type the
-// entry point binds its input's body fields by, the description the contract
-// publishes for the body, and whether a request must carry one.
+// RequestBody is one operation's declared request body: the media type the entry point
+// binds its input's body fields by, the description the contract publishes for the
+// body, and whether a request must carry one.
 type RequestBody struct {
 	// MediaType is the media type the body is read and published with.
 	MediaType string
@@ -106,15 +83,13 @@ type RequestBody struct {
 	Description string
 	// Required reports whether a request must carry a body.
 	Required bool
-	// Name publishes the body's schema as a named component of the fragment
-	// under this name, referenced by the operation. Empty publishes the schema
-	// inline. A name keeps the generated client's type stable and lets several
-	// operations share one body shape.
+	// Name publishes the body's schema as a named component of the fragment under this
+	// name, referenced by the operation.
 	Name string
 }
 
-// NewOperation builds an operation declaration. Its handler is bound later
-// with Handle; the declaration itself is a static resource the generator reads.
+// NewOperation builds an operation declaration. Its handler is bound later with Handle;
+// the declaration itself is a static resource the generator reads.
 func NewOperation[In, Out any](
 	id, method, path, summary, description string,
 	request *RequestBody,
@@ -134,11 +109,10 @@ func NewOperation[In, Out any](
 	}
 }
 
-// OperationOption sets one thing about an operation beyond its shape: the
-// access level its route admits.
+// OperationOption sets one thing about an operation beyond its shape: the access level
+// its route admits.
 type OperationOption func(*operationOptions)
 
-// resolveOptions folds the options into the values they set.
 func resolveOptions(opts []OperationOption) operationOptions {
 	var options operationOptions
 	for _, option := range opts {
@@ -160,10 +134,8 @@ func (o Operation[In, Out]) Descriptor() OperationDescriptor {
 			status,
 		))
 	}
-	// An empty Out is still a body: the entry point answers every success
-	// status but a no-body one with a JSON body, which for an empty Out is {}.
-	// The descriptor carries the empty struct's type so a reader publishes that
-	// body rather than reading the success response as body-less.
+	// An empty Out is still a body: the entry point answers every success status but a no-
+	// body one with a JSON body, which for an empty Out is {}.
 	if body == nil && status != 0 && !noBodyStatus(status) {
 		body = outType[Out]()
 	}
@@ -183,44 +155,35 @@ func (o Operation[In, Out]) Descriptor() OperationDescriptor {
 	}
 }
 
-// Handle binds a handler to the declaration and returns the entry point's
-// handler. The handler receives the declared input type and returns the
-// declared success type, so any other signature does not compile here.
+// Handle binds a handler to the declaration and returns the entry point's handler.
 func (o Operation[In, Out]) Handle(handle func(context.Context, In) (Out, error)) gin.HandlerFunc {
 	return bind(handle, o.ID, inputType[In](), o.Request, o.Responses)
 }
 
-// ReplyOperation is one operation whose handler builds its own answer from the
-// reply constructors. It declares the same shape as Operation, but the answer's
-// status, media type and headers are checked against the declaration when the
-// handler returns, rather than fixed by a type parameter.
-//
-// In is the handler's input, bound the way Operation binds it. The handler also
-// receives a read-only Meta snapshot of the request, and returns a Reply built
-// by JSONReply, EmptyReply, BytesReply, StreamReply, SSEReply or RedirectReply,
-// optionally wrapped by WithHeaders and WithCookies.
+// ReplyOperation is one operation whose handler builds its own answer from the reply
+// constructors.
 type ReplyOperation[In any] struct {
-	ID          string
-	Method      string
-	Path        string
-	Summary     string
+	// ID is the operation's identifier in the generated document.
+	ID string
+	// Method is the HTTP method the route answers.
+	Method string
+	// Path is the route's path relative to the API root.
+	Path string
+	// Summary is the one-line summary published for the operation.
+	Summary string
+	// Description is the longer description published for the operation.
 	Description string
-	// Request is the declared request body, or nil when the operation takes
-	// no body.
+	// Request is the declared request body, or nil when the operation takes no body.
 	Request *RequestBody
-	// Access is the level of caller identity the route admits. A route mounted
-	// through the authentication capability's mounter is registered at this
-	// level, and the fragment declares it as the operation's security
-	// requirement. The zero value admits only an identified caller.
+	// Access is the level of caller identity the route admits. Its zero value
+	// admits only an identified caller.
 	Access Access
-	// Responses is the closed set of answers. The handler may answer any status
-	// it declares, and each reply is checked against that status's declaration.
+	// Responses is the closed set of answers.
 	Responses []Response
 }
 
-// NewReplyOperation builds a reply operation declaration. Its handler is bound
-// later with Handle; the declaration itself is a static resource the generator
-// reads.
+// NewReplyOperation builds a reply operation declaration. Its handler is bound later
+// with Handle; the declaration itself is a static resource the generator reads.
 func NewReplyOperation[In any](
 	id, method, path, summary, description string,
 	request *RequestBody,
@@ -240,9 +203,9 @@ func NewReplyOperation[In any](
 	}
 }
 
-// Descriptor returns the operation's shape for the generator. The success body
-// is nil: a reply operation's body is whatever its handler builds, and each
-// response's own Structure describes it.
+// Descriptor returns the operation's shape for the generator. The success body is nil:
+// a reply operation's body is whatever its handler builds, and each response's own
+// Structure describes it.
 func (o ReplyOperation[In]) Descriptor() OperationDescriptor {
 	return OperationDescriptor{
 		ID:            o.ID,
@@ -260,15 +223,11 @@ func (o ReplyOperation[In]) Descriptor() OperationDescriptor {
 	}
 }
 
-// Handle binds a handler to the declaration and returns the entry point's
-// handler. The handler receives the declared input and the request's Meta, and
-// returns the reply it wants written.
+// Handle binds a handler to the declaration and returns the entry point's handler.
 func (o ReplyOperation[In]) Handle(handle func(context.Context, In, *Meta) (Reply, error)) gin.HandlerFunc {
 	return replyBind(handle, o.ID, inputType[In](), o.Request, o.Responses)
 }
 
-// inputType is In's type, or nil for an empty struct: an operation whose
-// handler takes nothing declares no input.
 func inputType[In any]() reflect.Type {
 	var zero In
 	t := reflect.TypeOf(&zero).Elem()
@@ -278,8 +237,6 @@ func inputType[In any]() reflect.Type {
 	return t
 }
 
-// bodyType is Out's type, or nil when Out is an empty struct: a 204 operation
-// answers no body.
 func bodyType[Out any]() reflect.Type {
 	t := outType[Out]()
 	if t.Kind() == reflect.Struct && t.NumField() == 0 {
@@ -288,8 +245,6 @@ func bodyType[Out any]() reflect.Type {
 	return t
 }
 
-// outType is Out's type, including the empty struct that bodyType reads as no
-// body.
 func outType[Out any]() reflect.Type {
 	var zero Out
 	return reflect.TypeOf(&zero).Elem()
@@ -310,13 +265,12 @@ func successStatus(responses []Response) int {
 	return status
 }
 
-// Body is one message body: the media type and, for a declared answer that is
-// not the handler's success type, the Go type describing its shape.
+// Body is one message body: the media type and, for a declared answer that is not the
+// handler's success type, the Go type describing its shape.
 type Body struct {
 	// MediaType is the content type the body is written with.
 	MediaType string
-	// Structure names the Go type of the body. The success response leaves it
-	// nil: its body is the operation's Out type.
+	// Structure names the Go type of the body.
 	Structure reflect.Type
 }
 
@@ -326,17 +280,13 @@ type Response struct {
 	Status int
 	// Description explains the answer to a client.
 	Description string
-	// Headers are the answer's headers. The entry point writes each Value on
-	// the success response.
+	// Headers are the answer's headers.
 	Headers []Header
-	// Body is the answer body; its Structure is nil for the success response,
-	// whose body is the operation's Out type.
+	// Body is the answer body; its Structure is nil for the success response, whose body
+	// is the operation's Out type.
 	Body *Body
-	// ProblemType is the RFC 9457 problem type the entry point writes when it
-	// answers this status itself, before the handler runs: a request-binding
-	// refusal. A failure the handler returns carries its own type through
-	// Fault; this one is the type of the answers no handler produced. Empty
-	// leaves the RFC 9457 default about:blank.
+	// ProblemType is the RFC 9457 problem type the entry point writes when it answers this
+	// status itself, before the handler runs: a request-binding refusal.
 	ProblemType string
 }
 
@@ -350,11 +300,8 @@ type Header struct {
 	Value string
 }
 
-// ProblemDocument is the shape of the RFC 9457 problem document the entry
-// point writes when a handler fails. It is the declared counterpart of
-// Problem, which is the type a handler fills in: this one carries the JSON
-// shape and the descriptions the contract publishes, the other carries the
-// values a module hands the writer.
+// ProblemDocument is the shape of the RFC 9457 problem document the entry point writes
+// when a handler fails.
 type ProblemDocument struct {
 	_ struct{} `description:"An RFC 9457 problem document. This is the entry point's default error shape, which a host-supplied ErrorResponder may replace."`
 

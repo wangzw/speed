@@ -19,9 +19,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// assembleEndpoint registers through the real surface and assembles the chain
-// the way Serve does, so what these tests exercise is the path a run takes. It
-// delivers no ErrorResponder.
 func assembleEndpoint(t *testing.T, s endpointSettings, injected, logger *slog.Logger,
 	register func(Endpoint),
 ) (nethttp.Handler, error) {
@@ -29,9 +26,6 @@ func assembleEndpoint(t *testing.T, s endpointSettings, injected, logger *slog.L
 	return assembleEndpointWith(t, s, injected, logger, nil, nil, register)
 }
 
-// assembleEndpointWith is assembleEndpoint with the ErrorResponder and the
-// Localizer under the test's control, for the tests whose subject is the shape
-// or the language of an error response.
 func assembleEndpointWith(t *testing.T, s endpointSettings, injected, logger *slog.Logger,
 	responder ErrorResponder, localizer i18n.Localizer, register func(Endpoint),
 ) (nethttp.Handler, error) {
@@ -39,9 +33,6 @@ func assembleEndpointWith(t *testing.T, s endpointSettings, injected, logger *sl
 	return assembleEndpointWithResolver(t, s, injected, logger, responder, localizer, nil, register)
 }
 
-// assembleEndpointWithResolver is assembleEndpointWith with the i18n.Resolver
-// under the test's control too, for the tests whose subject is the language a
-// refusal names on the response.
 func assembleEndpointWithResolver(t *testing.T, s endpointSettings, injected, logger *slog.Logger,
 	responder ErrorResponder, localizer i18n.Localizer, resolver i18n.Resolver, register func(Endpoint),
 ) (nethttp.Handler, error) {
@@ -53,8 +44,6 @@ func assembleEndpointWithResolver(t *testing.T, s endpointSettings, injected, lo
 	return r.endpoints[s.name].assemble(injected, logger, responder, localizer, resolver)
 }
 
-// mustAssemble is assembleEndpoint for the tests whose subject is the chain
-// rather than a failure to build one.
 func mustAssemble(t *testing.T, s endpointSettings, injected, logger *slog.Logger,
 	register func(Endpoint),
 ) nethttp.Handler {
@@ -66,7 +55,6 @@ func mustAssemble(t *testing.T, s endpointSettings, injected, logger *slog.Logge
 	return handler
 }
 
-// trace records what each layer saw, in the order the layers ran.
 type trace struct {
 	mu     sync.Mutex
 	visits []string
@@ -84,7 +72,6 @@ func (tr *trace) seen() []string {
 	return append([]string(nil), tr.visits...)
 }
 
-// noteLayer builds a layer that records that it ran and passes the request on.
 func noteLayer(tr *trace, name string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tr.note(name)
@@ -92,15 +79,11 @@ func noteLayer(tr *trace, name string) gin.HandlerFunc {
 	}
 }
 
-// noteHandler builds a route handler that records that it ran.
 func noteHandler(tr *trace, name string) gin.HandlerFunc {
 	return func(*gin.Context) { tr.note(name) }
 }
 
 // TestRouteConflictIsStartupFailure pins the conversion at the mounting point.
-// gin reports a clash by panicking, and left alone that takes the process down
-// with a stack trace during a stage whose failures are supposed to end the
-// startup in an orderly way.
 func TestRouteConflictIsStartupFailure(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
@@ -114,17 +97,8 @@ func TestRouteConflictIsStartupFailure(t *testing.T) {
 	mustContain(t, err.Error(), `endpoint "public"`, "the endpoint the clash is on")
 }
 
-// TestEveryClashGinRefusesIsARouteConflict pins the classes of clash the design
-// lists, each as a startup failure of its own: the same position given two
-// parameter names, a method and path registered twice, and a catch-all beside a
-// static segment or a parameter, in whichever order the two were registered.
-//
-// The two routes in a row are different strings wherever the clash allows it,
-// which is what makes the naming assertion discriminating: with one route
-// registered twice, naming only the one being mounted would read the same as
-// naming both. The fragment asserted is the pair standing together in this
-// module's own sentence, not merely both appearing somewhere in a message that
-// ends with gin's own words.
+// TestEveryClashGinRefusesIsARouteConflict pins each class of route clash as a
+// startup failure of its own: the same position given two parameter names.
 func TestEveryClashGinRefusesIsARouteConflict(t *testing.T) {
 	for _, c := range []struct {
 		name          string
@@ -154,11 +128,8 @@ func TestEveryClashGinRefusesIsARouteConflict(t *testing.T) {
 	}
 }
 
-// TestRoutesGinAcceptsBesideEachOtherAreServed pins the three pairings that are
-// not conflicts, by what the assembled endpoint answers for each: a static
-// segment beside a parameter, and one path under two methods, with the parameter
-// named differently under each. A check that refused any two routes on the same
-// path would turn all of these into startup failures.
+// TestRoutesGinAcceptsBesideEachOtherAreServed pins the three pairings that are not conflicts, by
+// what the assembled endpoint answers for each: a static segment beside a parameter.
 func TestRoutesGinAcceptsBesideEachOtherAreServed(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
@@ -179,9 +150,8 @@ func TestRoutesGinAcceptsBesideEachOtherAreServed(t *testing.T) {
 	}
 }
 
-// TestARouteRunsItsHandlersInOrder pins that a route's several handlers run one
-// after another, in the order they were given and after the layers, and that the
-// last one is what serves the request.
+// TestARouteRunsItsHandlersInOrder pins that a route's several handlers run one after another, in
+// the order they were given and after the layers, and that the last one is what serves the request.
 func TestARouteRunsItsHandlersInOrder(t *testing.T) {
 	tr := &trace{}
 	logger, _ := newRecordingLogger()
@@ -205,9 +175,8 @@ func TestARouteRunsItsHandlersInOrder(t *testing.T) {
 	}
 }
 
-// TestAbortInARouteHandlerStopsTheHandlersAfterIt pins what c.Abort does to a
-// route's own chain, which is what lets the first handler of a route act as a
-// guard for the rest.
+// TestAbortInARouteHandlerStopsTheHandlersAfterIt pins what c.Abort does to a route's own chain,
+// which is what lets the first handler of a route act as a guard for the rest.
 func TestAbortInARouteHandlerStopsTheHandlersAfterIt(t *testing.T) {
 	tr := &trace{}
 	logger, _ := newRecordingLogger()
@@ -228,10 +197,8 @@ func TestAbortInARouteHandlerStopsTheHandlersAfterIt(t *testing.T) {
 	}
 }
 
-// TestALayerReadsTheOutcomeAfterNext pins what the surface offers a layer that
-// wants to see how the request ended: the status, whether anything was written
-// and how many bytes, read off the context's writer once the rest of the chain
-// has run. No layer has to put a writer of its own around the response for it.
+// TestALayerReadsTheOutcomeAfterNext pins what the surface offers a layer that wants to see how the
+// request ended: the status, whether anything was written and how many bytes.
 func TestALayerReadsTheOutcomeAfterNext(t *testing.T) {
 	var status, size int
 	var written bool
@@ -252,15 +219,8 @@ func TestALayerReadsTheOutcomeAfterNext(t *testing.T) {
 	}
 }
 
-// TestConstraintThroughUseOrdersAgainstItsProvider pins that a constraint
-// declared the only way a registrant can declare one — through Use — reaches
-// the layer it points at.
-//
-// The two Orders are deliberately the wrong way round: left to Order alone the
-// chain is "tenant" then "auth", and that is exactly what an implementation
-// whose provider index stays empty produces, whatever anyone registers.
-// Provides is what the After resolves against, so the constraint wins and
-// "auth" comes out first.
+// TestConstraintThroughUseOrdersAgainstItsProvider pins that a constraint declared the only way a
+// registrant can declare one — through Use — reaches the layer it points at.
 func TestConstraintThroughUseOrdersAgainstItsProvider(t *testing.T) {
 	tr := &trace{}
 	logger, _ := newRecordingLogger()
@@ -292,10 +252,8 @@ func TestConstraintThroughUseOrdersAgainstItsProvider(t *testing.T) {
 	}
 }
 
-// TestEmptyProvidesStaysLegal pins the design's word that a layer standing for
-// nothing is a legal registration: it is ordered with the rest and it is in the
-// chain. Making Provides required — the obvious way to make every constraint
-// land — would fail here, and it is a change to the design rather than a fix.
+// TestEmptyProvidesStaysLegal pins that a layer standing for nothing is a legal
+// registration: it is ordered with the rest and it is in the chain.
 func TestEmptyProvidesStaysLegal(t *testing.T) {
 	tr := &trace{}
 	logger, _ := newRecordingLogger()
@@ -319,23 +277,7 @@ func TestEmptyProvidesStaysLegal(t *testing.T) {
 	}
 }
 
-// TestUnlandedConstraintIsReported pins the diagnostic the design requires.
-//
-// One assembly carries three shapes: "tenant" points at a capability a layer on
-// this endpoint stands for, "audit" points at one nobody stands for, and
-// "recover" stands for the capability it names and is the only layer that does.
-// The assembly carries on through all three — a capability absent from the
-// process is a legal configuration — so each of the two unplaced constraints
-// has to be visible, located, and told apart from the other, because the two
-// are answered by different edits.
-//
-// The two are written at different levels, and the level is part of what is
-// pinned. A capability nobody on the endpoint stands for is what a legal
-// assembly produces whenever a module is absent or does not guard that
-// endpoint, so it is written at Info; a warning there would be one every such
-// assembly carries for as long as it runs. A layer that is the only one
-// standing for the capability it names has a declaration that is wrong in
-// every assembly, so it is written at Warn.
+// TestUnlandedConstraintIsReported pins that a constraint no layer lands is reported.
 func TestUnlandedConstraintIsReported(t *testing.T) {
 	logger, records := newRecordingLogger()
 	_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
@@ -409,12 +351,8 @@ func TestUnlandedConstraintIsReported(t *testing.T) {
 			"the declaration is what is wrong")
 }
 
-// TestOrderingRemarksAreWrittenAtTheirOwnLevels pins that a remark reaches the
-// log with the words and the level its cause calls for: a cross-stage constraint
-// the stage order already satisfies is ordinary — the boundary places the layer
-// whatever the constraint says — and is written at Debug. Written with the words
-// of a constraint that landed on no layer, it would send the reader after an
-// absent provider that is not absent.
+// TestOrderingRemarksAreWrittenAtTheirOwnLevels pins that a remark reaches the log with the words
+// and the level its cause calls for.
 func TestOrderingRemarksAreWrittenAtTheirOwnLevels(t *testing.T) {
 	logger, records := newRecordingLogger()
 	_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
@@ -450,16 +388,8 @@ func TestOrderingRemarksAreWrittenAtTheirOwnLevels(t *testing.T) {
 	mustContain(t, satisfied, "cause="+string(causeStageSatisfied), "the cause of the remark")
 }
 
-// TestALegalAssemblyStartsWithoutAWarning pins the shape a host with an
-// unguarded endpoint produces: a capturing layer declares itself inside
-// authentication and tenant resolution on every endpoint it guards, and one of
-// those endpoints carries authentication but no tenant resolution, because the
-// host resolves no tenant there. Nothing in that assembly is wrong. The
-// constraint on the absent capability placed nothing, and that is still
-// written down, located and with its cause, beside the chain listing it
-// explains; but a warning that every such assembly carries from its first
-// start is one an operator learns to skip, and the one a wrong declaration
-// raises would then be skipped with it.
+// TestALegalAssemblyStartsWithoutAWarning pins the shape a host with an unguarded endpoint
+// produces.
 func TestALegalAssemblyStartsWithoutAWarning(t *testing.T) {
 	logger, records := newRecordingLogger()
 	_, err := assembleEndpoint(t, testSettings("admin"), nil, logger, func(e Endpoint) {
@@ -498,7 +428,6 @@ func TestALegalAssemblyStartsWithoutAWarning(t *testing.T) {
 	mustContain(t, line, "cause="+string(causeNoProvider), "why the constraint placed nothing")
 }
 
-// unlandedLines keeps the lines that report a constraint placing nothing.
 func unlandedLines(lines []string) []string {
 	var out []string
 	for _, line := range lines {
@@ -509,7 +438,6 @@ func unlandedLines(lines []string) []string {
 	return out
 }
 
-// lineFor returns the first line carrying want, or "" when none does.
 func lineFor(lines []string, want string) string {
 	for _, line := range lines {
 		if strings.Contains(line, want) {
@@ -519,13 +447,8 @@ func lineFor(lines []string, want string) string {
 	return ""
 }
 
-// TestCycleThroughUseFailsTheAssembly pins that a cycle is reachable through
-// the public surface at all, and that the ordering's verdict reaches the
-// assembly rather than being swallowed into a chain with layers missing.
-//
-// Both layers are registered with Use, as a registrant would. With the
-// provider index empty neither After binds to anything, the graph has no edges
-// and the assembly succeeds — which is the observation this replaces.
+// TestCycleThroughUseFailsTheAssembly pins that a cycle is reachable through the public surface at
+// all.
 func TestCycleThroughUseFailsTheAssembly(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
@@ -553,15 +476,12 @@ func TestCycleThroughUseFailsTheAssembly(t *testing.T) {
 	mustContain(t, err.Error(), `endpoint "public"`, "the endpoint the cycle is on")
 }
 
-// TestChainOrderIsOutermostFirst pins that the chain runs in the order the
-// ordering gives, rather than in registration order or its reverse.
+// TestChainOrderIsOutermostFirst pins that the chain runs in the order the ordering gives, rather
+// than in registration order or its reverse.
 func TestChainOrderIsOutermostFirst(t *testing.T) {
 	tr := &trace{}
 	logger, _ := newRecordingLogger()
 	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
-		// Registered innermost-first and with the Orders deciding, so an
-		// implementation running them in registration order gets the opposite of
-		// the right answer.
 		e.Use(Middleware{Name: "inner", Stage: StageObserve, Order: 100, Handler: noteLayer(tr, "inner")})
 		e.Use(Middleware{Name: "middle", Stage: StageObserve, Handler: noteLayer(tr, "middle")})
 		e.Use(Middleware{Name: "outer", Stage: StageObserve, Order: -100, Handler: noteLayer(tr, "outer")})
@@ -576,10 +496,7 @@ func TestChainOrderIsOutermostFirst(t *testing.T) {
 	}
 }
 
-// TestALayerRegisteredAfterTheRoutesStillRunsForThem pins the order the engine
-// is built in. gin combines the engine's handlers into a route's chain when the
-// route is added, so a layer handed to the engine after the routes would reach
-// none of them; the registration order here puts every Use after every Route.
+// TestALayerRegisteredAfterTheRoutesStillRunsForThem pins the order the engine is built in.
 func TestALayerRegisteredAfterTheRoutesStillRunsForThem(t *testing.T) {
 	tr := &trace{}
 	logger, _ := newRecordingLogger()
@@ -596,13 +513,8 @@ func TestALayerRegisteredAfterTheRoutesStillRunsForThem(t *testing.T) {
 	}
 }
 
-// TestBodyLimitIsAppliedFromTheIdentifyStageInwards pins where the limit is
-// imposed: inside the guard stage, so the first layer of the identify stage and
-// every layer below it read a bounded body. Put in a handler's own reading it
-// would not hold for a layer reading the body, nor for a handler that parses the
-// body itself; put in front of the guard stage, where it used to sit, it would
-// answer an oversize request before the address limit counted it and put the
-// 413 outside CORS.
+// TestBodyLimitIsAppliedFromTheIdentifyStageInwards checks that the first identify-stage layer and
+// every layer below it read a bounded body.
 func TestBodyLimitIsAppliedFromTheIdentifyStageInwards(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	s := testSettings("public")
@@ -618,8 +530,6 @@ func TestBodyLimitIsAppliedFromTheIdentifyStageInwards(t *testing.T) {
 		e.Route("POST", "/things", filler)
 	})
 
-	// The body's length is not declared, so the body limit layer wraps it rather
-	// than refusing it outright; that is the path a layer reading the body is on.
 	body := io.NopCloser(strings.NewReader(strings.Repeat("x", 64)))
 	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(nethttp.MethodPost, "/things", body))
 
@@ -634,15 +544,7 @@ func TestBodyLimitIsAppliedFromTheIdentifyStageInwards(t *testing.T) {
 	}
 }
 
-// TestGuardStageIsOutsideTheBodyLimit pins the place the body limit was moved
-// to. The design makes "CORS outside every layer that refuses" a measured
-// property, and the body limit refuses; the guard stage, whose first layer is
-// CORS, therefore has to run before it. Measured from both sides: the header a
-// guard layer sets is on the 413 the body limit writes, and it is on the 429 a
-// second guard layer writes, so neither a guard layer's refusal nor the body
-// limit's goes out without what the layer in front of it set. With the limit
-// outside the guard stage, as it was, the CORS layer never runs before the
-// refusal and a browser cannot read the 413.
+// TestGuardStageIsOutsideTheBodyLimit pins the place the body limit was moved to.
 func TestGuardStageIsOutsideTheBodyLimit(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	s := testSettings("public")
@@ -667,7 +569,6 @@ func TestGuardStageIsOutsideTheBodyLimit(t *testing.T) {
 		e.Route("GET", "/limited", filler)
 	})
 
-	// A guard layer's refusal carries what the layer in front of it set.
 	limited := serveOnce(handler, nethttp.MethodGet, "/limited")
 	if limited.Code != nethttp.StatusTooManyRequests {
 		t.Fatalf("the address limit answered %d, want %d", limited.Code, nethttp.StatusTooManyRequests)
@@ -677,8 +578,6 @@ func TestGuardStageIsOutsideTheBodyLimit(t *testing.T) {
 			"address limit")
 	}
 
-	// The body limit's refusal carries it too: the body limit is inside the guard
-	// stage, behind the CORS layer, and the guard layers run before it.
 	corsRan, limitRan = false, false
 	body := strings.NewReader(strings.Repeat("x", 64))
 	oversized := httptest.NewRecorder()
@@ -701,19 +600,8 @@ func TestGuardStageIsOutsideTheBodyLimit(t *testing.T) {
 	}
 }
 
-// TestAnOversizedBodyBindsAsAMaxBytesError pins what a handler sees when it
-// binds a body through gin: the limit the endpoint imposes comes back from
-// ShouldBindJSON as an *http.MaxBytesError, which errors.As reaches, and not as
-// a decoding error that would read as a malformed body. A caller that wants to
-// answer 413 tells the two apart this way.
-//
-// The body is valid JSON that is longer than the limit, so the only thing wrong
-// with it is its size; and a body inside the limit binds, which is what keeps
-// the first half from being a binder that fails on everything.
-//
-// Its length is left undeclared, which is what puts the binding path under test:
-// a request that declares a length over the limit is refused with a 413 by the
-// body limit layer before the handler runs, and never reaches the binder.
+// TestAnOversizedBodyBindsAsAMaxBytesError pins what a handler sees when it binds a body through
+// gin: the limit the endpoint imposes comes back from ShouldBindJSON as an *http.MaxBytesError.
 func TestAnOversizedBodyBindsAsAMaxBytesError(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	s := testSettings("public")
@@ -750,8 +638,8 @@ func TestAnOversizedBodyBindsAsAMaxBytesError(t *testing.T) {
 	}
 }
 
-// TestNoBodyLimitIsLeftUnlimited pins the switch-off: an explicit 0 means no
-// limit, so the body arrives whole.
+// TestNoBodyLimitIsLeftUnlimited pins the switch-off: an explicit 0 means no limit, so the body
+// arrives whole.
 func TestNoBodyLimitIsLeftUnlimited(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	s := testSettings("public")
@@ -772,9 +660,7 @@ func TestNoBodyLimitIsLeftUnlimited(t *testing.T) {
 	}
 }
 
-// TestLoggerInjectedOutsideEveryLayer pins the injection point. Injected by a
-// middleware instead, the layers outside it would take the process default
-// logger out of the context and write somewhere else entirely.
+// TestLoggerInjectedOutsideEveryLayer pins the injection point.
 func TestLoggerInjectedOutsideEveryLayer(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	injected, records := newRecordingLogger()
@@ -800,10 +686,8 @@ func TestLoggerInjectedOutsideEveryLayer(t *testing.T) {
 	}
 }
 
-// TestNoLoggerModuleLeavesContextUntouched pins the accepted cost of the
-// dependency being optional: with no Logger capability nothing is injected and
-// nothing fails. Turning this into a startup failure, or into a fallback that
-// injects the default logger, is a change to the design, not a fix.
+// TestNoLoggerModuleLeavesContextUntouched pins the accepted cost of the dependency being optional:
+// with no Logger capability nothing is injected and nothing fails.
 func TestNoLoggerModuleLeavesContextUntouched(t *testing.T) {
 	logger, _ := newRecordingLogger()
 
@@ -819,20 +703,8 @@ func TestNoLoggerModuleLeavesContextUntouched(t *testing.T) {
 	}
 }
 
-// TestAssembledChainIsListed pins that the chain a run really serves is written
-// down at startup, in the order it runs, with the stage each registered layer
-// declared and the capabilities each stands for. A process whose layer order can
-// only be worked out by sending a request through it is one where a mis-ordered
-// chain is found by the request that goes wrong, and a chain listing with the
-// names alone cannot say that a capability has no representative on the
-// endpoint.
-//
-// The built-in layers are in the line where they sit as well, by name: they are
-// on no registration surface and stand for no capability, and a reader comparing
-// the line with the code would otherwise find the context, the access log, the
-// panic recovery and the body limit applied by something the line does not
-// mention. The stage markers are what show that the access log sits outside the
-// observe stage and the recovery and the body limit inside it.
+// TestAssembledChainIsListed pins that the chain a run really serves is written down at startup, in
+// the order it runs.
 func TestAssembledChainIsListed(t *testing.T) {
 	logger, records := newRecordingLogger()
 	mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
@@ -858,13 +730,8 @@ func TestAssembledChainIsListed(t *testing.T) {
 	mustContain(t, written, "routes=1", "the number of routes mounted")
 }
 
-// TestAnObserveLayerSeesARecoveredPanicAsANormalReturn names the property the
-// chain's order exists for. The recovery layer sits inside the observe stage, so
-// a layer of that stage sees a panicking handler as a request that returned
-// normally with a 500, not as a panic thrown past it. That is what an
-// observability layer needs: its span ends with the status that was written and
-// everything it measures after c.Next runs, where a recovery outside it would
-// end the span with no status and skip the measurements.
+// TestAnObserveLayerSeesARecoveredPanicAsANormalReturn names the property the chain's order exists
+// for.
 func TestAnObserveLayerSeesARecoveredPanicAsANormalReturn(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	var returned bool
@@ -889,11 +756,8 @@ func TestAnObserveLayerSeesARecoveredPanicAsANormalReturn(t *testing.T) {
 	}
 }
 
-// TestATrustedProxyMakesClientIPTakeTheForwardedHeader pins the other half of the
-// proxy configuration: with a network named, a request whose peer is inside it
-// has the client address taken from the forwarded header, which is what a rate
-// limiter or an audit trail behind a proxy needs. The default trusts nobody, and
-// TestClientIPDoesNotTakeForwardingHeaders pins that side.
+// TestATrustedProxyMakesClientIPTakeTheForwardedHeader pins the other half of the proxy
+// configuration: with a network named.
 func TestATrustedProxyMakesClientIPTakeTheForwardedHeader(t *testing.T) {
 	var reported string
 	logger, _ := newRecordingLogger()
@@ -914,17 +778,7 @@ func TestATrustedProxyMakesClientIPTakeTheForwardedHeader(t *testing.T) {
 	}
 }
 
-// TestFlyClientIPIsTakenFromATrustedFlyProxy pins the deployment this
-// repository's demo runs on: the networks in front of the app and the header
-// Fly's proxy writes the client address into are declared once at the module
-// level and inherited by the endpoint. X-Forwarded-For cannot answer here —
-// Fly's proxy appends the app's own Anycast address as its rightmost entry, so
-// the request below carries one and the assertion is the header Fly writes.
-//
-// The endpoint writes neither key, so the address reported below is read only
-// because the module-level list reached both SetTrustedProxies and
-// RemoteIPHeaders. gin's default header order, which would look at the
-// X-Forwarded-For ending in the trusted hop, gives a different answer.
+// TestFlyClientIPIsTakenFromATrustedFlyProxy pins the deployment this repository's demo runs on.
 func TestFlyClientIPIsTakenFromATrustedFlyProxy(t *testing.T) {
 	got, decodeErr, runErr := readThrough(t, `{
 		"http": {
@@ -964,7 +818,6 @@ func TestFlyClientIPIsTakenFromATrustedFlyProxy(t *testing.T) {
 	}
 }
 
-// equalStrings compares two sequences element by element.
 func equalStrings(got, want []string) bool {
 	if len(got) != len(want) {
 		return false

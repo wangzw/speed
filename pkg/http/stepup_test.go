@@ -8,11 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Fail marks the answer it writes when that answer is the step-up 401, so every
-// path that writes the type is covered without knowing about the marker: the
-// mount helpers, the gateway middleware, the admission layer and a typed
-// handler's fault all end here. A refusal of a credential keeps the same status
-// and is not marked, and the type on any other status means nothing.
+// Fail marks the answer it writes when that answer is the step-up 401, so every path that writes
+// the type is covered without knowing about the marker: the mount helpers, the gateway middleware.
 func TestFailMarksTheStepUpAnswerByItsType(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -36,10 +33,8 @@ func TestFailMarksTheStepUpAnswerByItsType(t *testing.T) {
 	}
 }
 
-// MarkStepUp records the distinction a layer charging by outcome needs: a 401
-// that asks for stronger authentication is not a 401 that refused a credential,
-// and the status alone cannot tell them apart. A request nothing marked reads as
-// not a step-up.
+// MarkStepUp records the distinction a layer charging by outcome needs: a 401 that asks for
+// stronger authentication is not a 401 that refused a credential.
 func TestMarkStepUpMarksOnlyTheRequestItIsCalledOn(t *testing.T) {
 	marked, _ := gin.CreateTestContext(httptest.NewRecorder())
 	if IsStepUp(marked) {

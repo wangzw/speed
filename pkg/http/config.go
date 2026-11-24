@@ -14,30 +14,18 @@ import (
 	"github.com/vislake/speed/pkg/config"
 )
 
-// configNamespace is where this module's input items are mounted in the config
-// data. It is a constant of its own rather than the module name: input items
-// hang from the namespace a schema declares, and the module name takes no part
-// in those paths.
 const configNamespace = "http"
 
 // configPath is the complete path of the carrier struct, which is what Decode
 // is given.
 const configPath = configNamespace
 
-// listenersItem is the key of the listener set, relative to the namespace. The
-// startup failure for a host that configured none names it, so the reader is
-// told which key to write.
 const listenersItem = "listeners"
 
-// endpointsItem is the key of the endpoint set, relative to the namespace.
 const endpointsItem = "endpoints"
 
-// trustedProxiesItem is the key of the module-level proxy networks every
-// endpoint inherits when it writes none of its own.
 const trustedProxiesItem = "trusted-proxies"
 
-// remoteIPHeadersItem is the key of the module-level forwarded-address headers
-// every endpoint inherits when it writes none of its own.
 const remoteIPHeadersItem = "remote-ip-headers"
 
 // reservedEndpointName is the endpoint name configuration cannot declare. A
@@ -45,45 +33,27 @@ const remoteIPHeadersItem = "remote-ip-headers"
 // and an endpoint of that name would be indistinguishable from the wildcard.
 const reservedEndpointName = "*"
 
-// moduleConfig is the set of input items this module accepts. It is not
-// exported: the surface carries net/http's types and this package's own, and a
-// configuration struct on it would make a host's file shape part of the API.
 type moduleConfig struct {
-	// Listeners is one entry per listening socket, keyed by the listener name
-	// endpoints reference. A listener is one address, one net.Listener and one
-	// net/http.Server; the endpoints hanging on it share that socket.
+	// Listeners is one entry per listening socket, keyed by the listener name endpoints
+	// reference.
 	Listeners map[string]listenerConfig `config:"listeners"`
-	// Endpoints is one entry per routing endpoint, keyed by the endpoint name
-	// registrants use.
+	// Endpoints is one entry per routing endpoint, keyed by the endpoint name registrants
+	// use.
 	Endpoints map[string]endpointConfig `config:"endpoints"`
 
 	// TrustedProxies are the networks in front of this deployment, each an IP
-	// address or a CIDR block. An endpoint that writes no trusted-proxies of
-	// its own inherits this list; an endpoint that writes one, an explicit
-	// empty list included, overrides it. Empty trusts nobody, which is the
-	// safe default.
+	// address or a CIDR block; an endpoint that writes none inherits this list,
+	// and an explicit empty list trusts nobody.
 	TrustedProxies []string `config:"trusted-proxies"`
 	// RemoteIPHeaders name the headers a trusted proxy writes the client
-	// address into, in the order they are read. An endpoint that writes no
-	// remote-ip-headers of its own inherits this list; an endpoint that writes
-	// one, an explicit empty list included, overrides it. Empty leaves gin's
-	// default.
+	// address into, in the order they are read; an endpoint that writes none
+	// inherits this list, and an explicit empty list leaves gin's default.
 	RemoteIPHeaders []string `config:"remote-ip-headers"`
 }
 
-// listenerConfig is one listening socket as configuration gives it.
-//
-// The durations are pointers because the listener set is a container leaf: a
-// source that gives it replaces the whole map rather than merging into it, so a
-// value type could not tell "the key is absent" from "the key is 0", and 0 is
-// the legal way to switch most of the timeouts off. A duration is written as a
-// string time.ParseDuration accepts; config refuses a bare number, because 300
-// would read as five minutes and mean three hundred nanoseconds. Two of the
-// durations refuse an explicit 0 instead of switching off, and resolve says
-// which and why.
 type listenerConfig struct {
-	// Address is the address to listen on, in net.Listen's form, for
-	// example ":8080" or "127.0.0.1:8080".
+	// Address is the address to listen on, in net.Listen's form, for example ":8080" or
+	// "127.0.0.1:8080".
 	Address string `config:"address"`
 
 	// ReadHeaderTimeout bounds how long the request headers may take to
@@ -95,8 +65,7 @@ type listenerConfig struct {
 	ReadTimeout *time.Duration `config:"read-timeout"`
 	// WriteTimeout bounds the response write, 0 for no bound.
 	WriteTimeout *time.Duration `config:"write-timeout"`
-	// IdleTimeout bounds how long a kept-alive connection may sit idle, 0
-	// for no bound.
+	// IdleTimeout bounds how long a kept-alive connection may sit idle, 0 for no bound.
 	IdleTimeout *time.Duration `config:"idle-timeout"`
 	// DrainTimeout is how long the shutdown waits for this listener's
 	// in-flight requests. It is the other duration that cannot be switched
@@ -104,10 +73,7 @@ type listenerConfig struct {
 	// Close receive has its cancellation stripped.
 	DrainTimeout *time.Duration `config:"drain-timeout"`
 
-	// TLSCertFile and TLSKeyFile are where the certificate and its key are
-	// read from. Both empty serves plain HTTP; one of them alone is a
-	// startup failure. Where the certificate comes from and when it is
-	// replaced are outside this module.
+	// TLSCertFile and TLSKeyFile are where the certificate and its key are read from.
 	TLSCertFile string `config:"tls-cert-file"`
 	TLSKeyFile  string `config:"tls-key-file"`
 
@@ -119,12 +85,6 @@ type listenerConfig struct {
 	Unknown map[string]any `config:",remain"`
 }
 
-// endpointConfig is one routing endpoint as configuration gives it.
-//
-// An endpoint hangs on a listener by name and carries the settings that belong
-// to its own chain rather than to the socket: the request body limit its body
-// limit layer imposes, and the proxy networks and forwarded-address headers its
-// gin engine is built with.
 type endpointConfig struct {
 	// Listener names the listener this endpoint's socket is. The name has to
 	// match an entry under the listener set; resolve refuses one that does
@@ -132,17 +92,10 @@ type endpointConfig struct {
 	Listener string `config:"listener"`
 
 	// Prefixes are the path prefixes this endpoint claims on its listener.
-	// The dispatch selects an endpoint by these claims alone: a request falls
-	// under the longest claimed prefix, and the endpoint that claimed it
-	// answers. Omitting the key claims "/", which makes the endpoint its
-	// listener's fallback; "/" does not take part in longest matching. An
-	// explicit empty list is refused, because such an endpoint would receive
-	// no request at all.
 	Prefixes []string `config:"prefixes"`
 
-	// MaxBodyBytes is the request body limit the body limit layer of the
-	// chain imposes, 0 for no limit. It applies to every handler on the
-	// endpoint, whatever way a handler reads the body.
+	// MaxBodyBytes is the request body limit the body limit layer of the chain imposes, 0
+	// for no limit.
 	MaxBodyBytes *int64 `config:"max-body-bytes"`
 
 	// TrustedProxies are the networks in front of this endpoint, each an IP
@@ -152,11 +105,8 @@ type endpointConfig struct {
 	// safe default: with nobody trusted, a client cannot choose the address
 	// Context.ClientIP reports by writing a header.
 	TrustedProxies []string `config:"trusted-proxies"`
-	// RemoteIPHeaders name the headers a trusted proxy writes the client
-	// address into, in the order they are read. An omitted key inherits the
-	// module-level list; an explicit empty list leaves gin's default
-	// (X-Forwarded-For then X-Real-IP), which is only consulted for a request
-	// whose peer is one of TrustedProxies.
+	// RemoteIPHeaders name the headers a trusted proxy writes the client address into, in
+	// the order they are read.
 	RemoteIPHeaders []string `config:"remote-ip-headers"`
 
 	// Unknown collects the keys of the entry that name none of the fields
@@ -167,10 +117,10 @@ type endpointConfig struct {
 	Unknown map[string]any `config:",remain"`
 }
 
-// The defaults of the optional per-listener and per-endpoint items, applied
-// after decoding rather than laid into the prototype: a container leaf is
-// replaced as a whole, so the prototype's values do not survive a host writing
-// the listener or endpoint set.
+// The defaults of the optional per-listener and per-endpoint items, applied after
+// decoding rather than laid into the prototype: a container leaf is replaced as a
+// whole, so the prototype's values do not survive a host writing the listener or
+// endpoint set.
 const (
 	defaultReadHeaderTimeout = 10 * time.Second
 	defaultReadTimeout       = 30 * time.Second
@@ -186,21 +136,6 @@ const (
 // failure could never be taken.
 var configDefaults = moduleConfig{}
 
-// schema is this module's input item declaration.
-//
-// The endpoint set takes the primary config source alone. It is the product's
-// routing map, and a map has no flat form the command line could give; the
-// environment could give it as JSON, but moving a capability between endpoints
-// is a change to the assembly rather than a value that differs between runs, so
-// it belongs to the configuration file or the host defaults document.
-//
-// The listener set also takes the environment, as JSON that replaces the whole
-// value: where a process binds differs between runs of one binary.
-//
-// The two module-level proxy items take the primary config source alone. They
-// decide which networks are believed to write a forwarded address, so a
-// variable that could widen them would move the trust boundary outside the
-// configuration a deployment is reviewed by.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: configNamespace,
@@ -245,12 +180,8 @@ type listenerSettings struct {
 	tlsKeyFile  string
 }
 
-// tls reports whether this listener serves over TLS.
 func (s listenerSettings) tls() bool { return s.tlsCertFile != "" || s.tlsKeyFile != "" }
 
-// endpointSettings is one endpoint's configuration, validated and completed:
-// the body limit carries a number, and the proxy settings are as written. The
-// endpoint remembers the listener it hangs on by name.
 type endpointSettings struct {
 	name         string
 	listenerName string
@@ -270,9 +201,6 @@ type endpointSettings struct {
 // listener reference is checked here, against the listeners the same
 // configuration declared.
 func (c moduleConfig) resolve() ([]listenerSettings, []endpointSettings, error) {
-	// The module-level networks are validated once here, before any endpoint
-	// inherits them. The message names the module-level key and the offending
-	// entry, because the value is written once and is not any one endpoint's.
 	if err := validateTrustedProxies(configNamespace+"."+trustedProxiesItem, c.TrustedProxies); err != nil {
 		return nil, nil, err
 	}
@@ -307,9 +235,6 @@ func (c moduleConfig) resolve() ([]listenerSettings, []endpointSettings, error) 
 	return listeners, endpoints, nil
 }
 
-// checkClaims refuses a prefix claimed by two endpoints on one listener, the
-// root included. Endpoints arrive in name order, so the pair the message names
-// is the same one every run.
 func checkClaims(endpoints []endpointSettings) error {
 	claimed := make(map[string]map[string]string, len(endpoints))
 	for _, e := range endpoints {
@@ -320,13 +245,10 @@ func checkClaims(endpoints []endpointSettings) error {
 		}
 		for _, prefix := range e.prefixes {
 			if previous, taken := byPrefix[prefix]; taken {
-				// The example has to be a fix, so it depends on the prefix:
-				// "/" is what an endpoint that omits prefixes claims, and
-				// claiming "/api" instead moves it off the root; any other
-				// prefix is already written down, so the example moves one of
-				// the two endpoints deeper rather than repeating the value that
-				// conflicts. A valid non-root prefix accepts another segment,
-				// so the example is always a legal claim.
+				// The example has to be a fix, so it depends on the prefix: "/" is what an endpoint
+				// that omits prefixes claims, and claiming "/api" instead moves it off the root;
+				// any other prefix is already written down, so the example moves one of the two
+				// endpoints deeper rather than repeating the value that conflicts.
 				if prefix == "/" {
 					return fmt.Errorf(
 						"%w: listener %q: the endpoints %q and %q both claim the path prefix %q. "+
@@ -352,9 +274,6 @@ func checkClaims(endpoints []endpointSettings) error {
 	return nil
 }
 
-// resolve validates one listener. Every message names the listener and the key
-// to change: a startup failure that only says "missing address" leaves the host
-// to work out which of its listeners it came from.
 func (l listenerConfig) resolve(name string) (listenerSettings, error) {
 	if len(l.Unknown) > 0 {
 		unknown := slices.Sorted(maps.Keys(l.Unknown))
@@ -390,11 +309,8 @@ func (l listenerConfig) resolve(name string) (listenerSettings, error) {
 					"positive duration sets it", ErrInvalidConfig, name, d.key, *d.given)
 		}
 	}
-	// Two of the durations refuse an explicit 0 rather than reading it as
-	// "switch this bound off". The criterion is who carries the consequence
-	// of switching the item off: for the rest it falls on the endpoint that
-	// asked for it, and for these two it falls on the host's ability to go
-	// on serving and to stop at all.
+	// Two of the durations refuse an explicit 0 rather than reading it as "switch this
+	// bound off".
 	cannotBeSwitchedOff := [...]struct {
 		key    string
 		given  *time.Duration
@@ -444,15 +360,6 @@ func (l listenerConfig) resolve(name string) (listenerSettings, error) {
 	}, nil
 }
 
-// resolve validates one endpoint. Every message names the endpoint and the key
-// to change, and an endpoint naming a listener the configuration never declared
-// is refused here, naming the endpoint and the listeners that do exist, because
-// picking one of them is the fixing action.
-//
-// moduleTrustedProxies and moduleRemoteIPHeaders are the module-level defaults.
-// The endpoint's own list is taken when it is non-nil — an explicit empty list
-// included, which is how one endpoint returns to trusting no proxy — and the
-// module-level list is taken when the endpoint's is nil.
 func (e endpointConfig) resolve(name string, listeners map[string]struct{}, listenerNames []string,
 	moduleTrustedProxies, moduleRemoteIPHeaders []string,
 ) (endpointSettings, error) {
@@ -490,12 +397,9 @@ func (e endpointConfig) resolve(name string, listeners map[string]struct{}, list
 			"%w: endpoint %q gives max-body-bytes the value %d; 0 removes the limit and a "+
 				"positive number sets it", ErrInvalidConfig, name, *e.MaxBodyBytes)
 	}
-	// The trusted proxy networks are validated here rather than only being handed
-	// to gin, so a mistyped one names the endpoint and the key it was written
-	// under instead of surfacing as gin's parse error from inside the engine.
-	// The check is gin's own rule — an IP address or a CIDR — and the values
-	// themselves go to gin untouched; this module parses no request header
-	// itself.
+	// The trusted proxy networks are validated here rather than only being handed to gin,
+	// so a mistyped one names the endpoint and the key it was written under instead of
+	// surfacing as gin's parse error from inside the engine.
 	for i, network := range e.TrustedProxies {
 		if validTrustedProxy(network) {
 			continue
@@ -532,10 +436,6 @@ func (e endpointConfig) resolve(name string, listeners map[string]struct{}, list
 	}, nil
 }
 
-// validateTrustedProxies refuses every entry of a trusted-proxy list that is
-// neither an IP address nor a CIDR block, naming the complete key path of the
-// entry and the value. The rule is gin's own, through validTrustedProxy, so a
-// value refused here is exactly one SetTrustedProxies would refuse.
 func validateTrustedProxies(key string, networks []string) error {
 	for i, network := range networks {
 		if validTrustedProxy(network) {
@@ -550,13 +450,6 @@ func validateTrustedProxies(key string, networks []string) error {
 	return nil
 }
 
-// claimPrefixes validates and completes one endpoint's claim list. An omitted
-// key claims "/", which makes the endpoint its listener's fallback; an explicit
-// empty list is refused, because that endpoint would receive no request at all.
-// The rules on a single prefix keep it literal and matchable: the dispatch
-// compares the decoded request path at segment boundaries, so a trailing slash,
-// a dynamic segment or an escaped character would produce a claim nothing ever
-// falls under.
 func (e endpointConfig) claimPrefixes(name string) ([]string, error) {
 	prefixes := e.Prefixes
 	if prefixes == nil {
@@ -649,8 +542,6 @@ func prefixSummary(prefix string) string {
 	return ""
 }
 
-// declaredListeners renders the listener names for a message, saying so plainly
-// when there are none.
 func declaredListeners(names []string) string {
 	if len(names) == 0 {
 		return "none: the configuration declares no listener at all"
@@ -658,10 +549,6 @@ func declaredListeners(names []string) string {
 	return quotedList(names)
 }
 
-// validTrustedProxy reports whether a trusted-proxies entry is a form gin
-// accepts: an IP address or a CIDR block. It mirrors gin's own rule, so a value
-// refused here is exactly one SetTrustedProxies would refuse, and the message
-// the reader gets names the endpoint and the key rather than only the value.
 func validTrustedProxy(network string) bool {
 	if _, _, err := net.ParseCIDR(network); err == nil {
 		return true
@@ -695,7 +582,6 @@ func keysOf[T any]() []string {
 	return keys
 }
 
-// quotedList renders names for a message, each quoted.
 func quotedList(names []string) string {
 	quoted := make([]string, 0, len(names))
 	for _, name := range names {
@@ -704,7 +590,6 @@ func quotedList(names []string) string {
 	return strings.Join(quoted, ", ")
 }
 
-// pluralVerb is the verb agreeing with a count of keys.
 func pluralVerb(n int) string {
 	if n == 1 {
 		return "is"

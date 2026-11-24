@@ -19,21 +19,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// readThrough loads a JSON document through the real configuration path and
-// hands back what this module's own section decodes into.
-//
-// The module's own declaration is what is exercised: a stub reader would prove
-// the struct tags match the stub, while what has to hold is that config accepts
-// this declaration, treats the listener set and the endpoint set as container
-// leaves and coerces the durations by its own rule.
-//
-// Load is that path without a lifecycle behind it, and a reader is the whole of
-// what these cases want. Driving an assembly to obtain one would put the
-// failures they look at behind a startup failure instead.
-//
-// declared is the schema to register, so one test can put a deliberately
-// defective declaration through the same path. The three results are the
-// decoded section, the failure of the decode, and the failure of the load.
 func readThrough(t *testing.T, document string, declared config.Schema) (moduleConfig, error, error) {
 	t.Helper()
 
@@ -49,13 +34,8 @@ func readThrough(t *testing.T, document string, declared config.Schema) (moduleC
 		Name:      "host",
 		Resources: []any{config.HostIdentity{Prefix: "HTTPTEST", DefaultLocator: "file:" + path}},
 	})
-	// The declaration under test reaches the load as a registered module's
-	// resource, which is the only way one ever reaches it.
 	reg.Register(core.Module{Name: "reader", Resources: []any{declared}})
 
-	// No arguments, and a prefix no machine carries variables under: the
-	// document is reached through the host's default locator, so nothing
-	// outside this test steers the run.
 	reader, err := config.Load(t.Context(), reg, nil)
 	if err != nil {
 		return moduleConfig{}, nil, err
@@ -66,15 +46,7 @@ func readThrough(t *testing.T, document string, declared config.Schema) (moduleC
 	return got, decodeErr, nil
 }
 
-// TestTheSetsDeclareTheirOrigins pins the origin declaration. Each set is a map,
-// which config classifies as a container leaf. The listener set takes the
-// environment as JSON beside the primary source: where a process binds differs
-// between runs of one binary. The endpoint set stays on the primary source and
-// the host defaults document: moving a capability between endpoints is a change
-// to the assembly rather than a value that differs between runs. The two
-// module-level proxy items stay on the primary source too: they decide which
-// networks are believed to write a forwarded address, so the environment must
-// not be able to widen that trust boundary.
+// TestTheSetsDeclareTheirOrigins pins the origin declaration.
 func TestTheSetsDeclareTheirOrigins(t *testing.T) {
 	want := map[string]config.Origin{
 		listenersItem:       config.OriginPrimary | config.OriginEnv,
@@ -104,10 +76,8 @@ func TestTheSetsDeclareTheirOrigins(t *testing.T) {
 	}
 }
 
-// TestAListenerSetFromTheEnvironmentIsAccepted is the half a declaration could
-// get wrong in the other direction: the environment gives a container leaf as
-// JSON, and the value replaces the primary source's set whole rather than
-// merging into it.
+// TestAListenerSetFromTheEnvironmentIsAccepted is the half a declaration could get wrong in the
+// other direction: the environment gives a container leaf as JSON.
 func TestAListenerSetFromTheEnvironmentIsAccepted(t *testing.T) {
 	t.Setenv("HTTPTEST_HTTP__LISTENERS", `{"from-env":{"address":"127.0.0.1:0"}}`)
 
@@ -129,9 +99,8 @@ func TestAListenerSetFromTheEnvironmentIsAccepted(t *testing.T) {
 	}
 }
 
-// TestTheSetsDecodeFromThePrimarySource pins the whole path: the declaration
-// this module registers is accepted, and a document written against it arrives
-// as the listeners and endpoints it describes.
+// TestTheSetsDecodeFromThePrimarySource pins the whole path: the declaration this module registers
+// is accepted.
 func TestTheSetsDecodeFromThePrimarySource(t *testing.T) {
 	got, decodeErr, runErr := readThrough(t, `{
 		"http": {
@@ -175,11 +144,7 @@ func TestTheSetsDecodeFromThePrimarySource(t *testing.T) {
 	}
 }
 
-// TestAMisspelledKeyInAListenerIsAStartupFailure pins the keys inside one
-// listener's entry. The listener set is a container leaf, whose inner keys
-// configuration does not check, so a misspelled drain-timeout would be dropped
-// and the default would govern a listener its operator believed configured
-// otherwise — a safety setting silently not in force.
+// TestAMisspelledKeyInAListenerIsAStartupFailure pins the keys inside one listener's entry.
 func TestAMisspelledKeyInAListenerIsAStartupFailure(t *testing.T) {
 	for _, key := range []string{"drain-timout", "read_timeout", "addr"} {
 		got, decodeErr, runErr := readThrough(t,
@@ -197,8 +162,6 @@ func TestAMisspelledKeyInAListenerIsAStartupFailure(t *testing.T) {
 		mustContain(t, err.Error(), "drain-timeout", "the keys a listener takes")
 	}
 
-	// The keys a listener does take, spelled as the declaration spells them,
-	// still decode.
 	got, decodeErr, runErr := readThrough(t, `{"http":{"listeners":{"backend":{
 		"address":":8080","read-header-timeout":"1s","read-timeout":"1s","write-timeout":"1s",
 		"idle-timeout":"1s","drain-timeout":"1s"}}}}`, schema())
@@ -210,9 +173,8 @@ func TestAMisspelledKeyInAListenerIsAStartupFailure(t *testing.T) {
 	}
 }
 
-// TestAMisspelledKeyInAnEndpointIsAStartupFailure is the same check for an
-// endpoint's entry: the endpoint keys are checked here, so a misspelled body
-// limit or listener reference does not vanish into a silent default.
+// TestAMisspelledKeyInAnEndpointIsAStartupFailure is the same check for an endpoint's entry: the
+// endpoint keys are checked here.
 func TestAMisspelledKeyInAnEndpointIsAStartupFailure(t *testing.T) {
 	for _, key := range []string{"listner", "max-body-bytez", "trusted_proxies"} {
 		got, decodeErr, runErr := readThrough(t,
@@ -233,11 +195,6 @@ func TestAMisspelledKeyInAnEndpointIsAStartupFailure(t *testing.T) {
 }
 
 // TestTheWildcardIsNotAnEndpointName pins the one name an endpoint cannot carry.
-// A list of endpoint names elsewhere writes "*" for every declared endpoint, so
-// an endpoint called that could not be told from the wildcard. The entry is read
-// through the real configuration path, where "*" is an ordinary key of the
-// container leaf, and refused while the endpoints are resolved; it is refused
-// whether it stands alone or beside endpoints that are fine.
 func TestTheWildcardIsNotAnEndpointName(t *testing.T) {
 	for name, document := range map[string]string{
 		"alone": `{"http":{"listeners":{"backend":{"address":":8080"}},` +
@@ -267,10 +224,6 @@ func TestTheWildcardIsNotAnEndpointName(t *testing.T) {
 }
 
 // TestAnEndpointNamingAnUnknownListenerIsStartupFailure pins the reference check.
-// An endpoint hangs on a listener by name, and a name the configuration never
-// declared is a startup failure naming the endpoint, the listener it asked for
-// and the listeners that do exist, because picking one of them is the fixing
-// action.
 func TestAnEndpointNamingAnUnknownListenerIsStartupFailure(t *testing.T) {
 	_, _, err := moduleConfig{
 		Listeners: map[string]listenerConfig{"backend": {Address: ":8080"}},
@@ -285,17 +238,11 @@ func TestAnEndpointNamingAnUnknownListenerIsStartupFailure(t *testing.T) {
 	mustContain(t, err.Error(), "http.listeners", "the key to write a listener under")
 }
 
-// TestDurationItemRejectsBareNumber pins config's rule for a duration, which
-// this module's field types opt into: a bare 300 reads as five minutes to a
-// person and means three hundred nanoseconds to the machine, so only the string
-// form is accepted.
+// TestDurationItemRejectsBareNumber pins config's rule for a duration, which this module's field
+// types opt into.
 func TestDurationItemRejectsBareNumber(t *testing.T) {
 	_, decodeErr, runErr := readThrough(t,
 		`{"http":{"listeners":{"backend":{"address":":8080","read-timeout":300}}}}`, schema())
-	// config coerces the primary source against the declared types while it
-	// builds the reader, so the refusal lands on the run rather than on the
-	// decode. Either way it is a refusal, and asserting on the pair keeps the
-	// test about the rule rather than about where config applies it.
 	refusal := errors.Join(runErr, decodeErr)
 	if refusal == nil {
 		t.Fatal("a bare number was accepted as a duration")
@@ -304,9 +251,7 @@ func TestDurationItemRejectsBareNumber(t *testing.T) {
 	mustContain(t, refusal.Error(), "read-timeout", "the item it was given for")
 }
 
-// TestListenerDefaultsAppliedAfterDecode pins the three states of an optional
-// item. The defaults cannot live in the prototype: a container leaf is replaced
-// as a whole, so a document that declares any listener at all wipes them out.
+// TestListenerDefaultsAppliedAfterDecode pins the three states of an optional item.
 func TestListenerDefaultsAppliedAfterDecode(t *testing.T) {
 	off := time.Duration(0)
 	explicit := 5 * time.Second
@@ -338,10 +283,8 @@ func TestListenerDefaultsAppliedAfterDecode(t *testing.T) {
 	}
 }
 
-// TestTheSetsResolveInNameOrder pins the order everything downstream inherits:
-// the order listeners are bound and stopped in, the order endpoints are
-// assembled in, and the order a diagnostic lists them in. Left to map iteration,
-// each run would differ.
+// TestTheSetsResolveInNameOrder pins the order everything downstream inherits: the order listeners
+// are bound and stopped in, the order endpoints are assembled in.
 func TestTheSetsResolveInNameOrder(t *testing.T) {
 	cfg := moduleConfig{
 		Listeners: map[string]listenerConfig{
@@ -371,9 +314,7 @@ func TestTheSetsResolveInNameOrder(t *testing.T) {
 	}
 }
 
-// TestMissingAddressIsStartupFailure pins the one item with no default. A
-// message that only said "missing address" would leave the host counting
-// entries in its own file.
+// TestMissingAddressIsStartupFailure pins the one item with no default.
 func TestMissingAddressIsStartupFailure(t *testing.T) {
 	cfg := moduleConfig{Listeners: map[string]listenerConfig{"admin": {}}}
 	_, _, err := cfg.resolve()
@@ -385,9 +326,6 @@ func TestMissingAddressIsStartupFailure(t *testing.T) {
 }
 
 // TestReadHeaderTimeoutAlwaysSet pins the bound on a server this module builds.
-// A server without it is held open indefinitely by a client sending its headers
-// one byte at a time, and the listener goes on reporting that it accepts
-// requests while the connections pile up.
 func TestReadHeaderTimeoutAlwaysSet(t *testing.T) {
 	listeners, _, err := moduleConfig{Listeners: map[string]listenerConfig{
 		"public": {Address: "127.0.0.1:0"},
@@ -407,10 +345,7 @@ func TestReadHeaderTimeoutAlwaysSet(t *testing.T) {
 	}
 }
 
-// TestReadHeaderTimeoutCannotBeSwitchedOff pins one of the two bounds that have
-// no "off" state. The criterion is who carries the consequence of switching the
-// item off: this one is carried by whoever reaches the listener, not by the host
-// that wrote the 0, so the 0 is a configuration mistake and the message says why.
+// TestReadHeaderTimeoutCannotBeSwitchedOff pins one of the two bounds that have no "off" state.
 func TestReadHeaderTimeoutCannotBeSwitchedOff(t *testing.T) {
 	off := time.Duration(0)
 	_, _, err := moduleConfig{Listeners: map[string]listenerConfig{
@@ -423,17 +358,8 @@ func TestReadHeaderTimeoutCannotBeSwitchedOff(t *testing.T) {
 	mustContain(t, err.Error(), "one byte at a time", "why it cannot")
 }
 
-// TestDrainTimeoutRefusesExplicitZero pins the second of the two bounds that
-// cannot be switched off, and pins it through the real load: what makes
-// the refusal reachable at all is that config delivers an explicit "0s" as a
-// pointer to 0 rather than as an absent key, which is the difference between
-// "switch it off" and "take the default".
-//
-// Switching this one off would have Close wait forever on a request that cannot
-// finish: the context Stop and Close receive has its cancellation stripped and
-// the registry imposes no shutdown timeout of its own, so a host blocked in Run
-// has nothing left to interrupt it with. The drain timeout is the item
-// adr-http-shutdown names as the one that meets "a callback has to be bounded".
+// TestDrainTimeoutRefusesExplicitZero pins the second of the two bounds that cannot be switched
+// off, and pins it through the real load.
 func TestDrainTimeoutRefusesExplicitZero(t *testing.T) {
 	got, decodeErr, runErr := readThrough(t,
 		`{"http":{"listeners":{"backend":{"address":":8080","drain-timeout":"0s"}}}}`, schema())
@@ -463,10 +389,8 @@ func TestDrainTimeoutRefusesExplicitZero(t *testing.T) {
 	mustContain(t, err.Error(), "for ever", "why it cannot be switched off")
 }
 
-// TestDrainTimeoutAbsentTakesTheDefault and its positive-value twin below are
-// what keep the refusal aimed at the explicit 0 alone. An implementation that
-// made the item mandatory, or refused it outright, would fail these two while
-// still passing the refusal test above.
+// TestDrainTimeoutAbsentTakesTheDefault and its positive-value twin below are what keep the refusal
+// aimed at the explicit 0 alone.
 func TestDrainTimeoutAbsentTakesTheDefault(t *testing.T) {
 	listeners, _, err := moduleConfig{Listeners: map[string]listenerConfig{
 		"public": {Address: ":8080"},
@@ -480,6 +404,7 @@ func TestDrainTimeoutAbsentTakesTheDefault(t *testing.T) {
 	}
 }
 
+// TestDrainTimeoutAcceptsAPositiveValue checks that a positive drain timeout is accepted.
 func TestDrainTimeoutAcceptsAPositiveValue(t *testing.T) {
 	given := 90 * time.Second
 	listeners, _, err := moduleConfig{Listeners: map[string]listenerConfig{
@@ -493,10 +418,7 @@ func TestDrainTimeoutAcceptsAPositiveValue(t *testing.T) {
 	}
 }
 
-// TestOtherDurationsStillAcceptExplicitZero pins that the exceptions are exactly
-// two. Every other duration takes 0 as "this bound is off", and the consequence
-// of switching one off is carried by the listener that asked for it. Refusing a
-// third item fails this test item by item.
+// TestOtherDurationsStillAcceptExplicitZero pins that the exceptions are exactly two.
 func TestOtherDurationsStillAcceptExplicitZero(t *testing.T) {
 	off := time.Duration(0)
 	cases := []struct {
@@ -538,9 +460,8 @@ func TestOtherDurationsStillAcceptExplicitZero(t *testing.T) {
 	}
 }
 
-// TestNegativeDurationIsRejected pins the difference between switching a bound
-// off and mistyping it. A negative deadline is already in the past, so net/http
-// would fail every request on it.
+// TestNegativeDurationIsRejected pins the difference between switching a bound off and mistyping
+// it.
 func TestNegativeDurationIsRejected(t *testing.T) {
 	negative := -time.Second
 	_, _, err := moduleConfig{Listeners: map[string]listenerConfig{
@@ -553,9 +474,7 @@ func TestNegativeDurationIsRejected(t *testing.T) {
 	mustContain(t, err.Error(), `"public"`, "the listener it was given on")
 }
 
-// TestHalfConfiguredTLSIsRejected pins the pair. One half alone is a mistake
-// either way round: serving plain HTTP on a listener the host meant to be
-// encrypted is the failure that has to be loud.
+// TestHalfConfiguredTLSIsRejected pins the pair.
 func TestHalfConfiguredTLSIsRejected(t *testing.T) {
 	for _, given := range []listenerConfig{
 		{Address: ":8443", TLSCertFile: "/etc/cert.pem"},
@@ -569,10 +488,7 @@ func TestHalfConfiguredTLSIsRejected(t *testing.T) {
 	}
 }
 
-// TestEmptySetsResolve pins that empty sets resolve cleanly. resolve only
-// decodes and completes what is there; that a host with no listener cannot run
-// this module is judged in Prepare, which fails the startup rather than letting
-// an entry point start and serve nothing.
+// TestEmptySetsResolve pins that empty sets resolve cleanly.
 func TestEmptySetsResolve(t *testing.T) {
 	listeners, endpoints, err := moduleConfig{}.resolve()
 	if err != nil {
@@ -584,15 +500,8 @@ func TestEmptySetsResolve(t *testing.T) {
 	}
 }
 
-// TestMaxBodyBytesHasThreeStatesAndRefusesANegativeOne pins the body limit as an
-// optional item in the states the surface documents. Absent takes the default;
-// an explicit 0 removes the limit, which is the one way to ask for no limit; any
-// other positive number is taken as given. A negative number is none of those: it
-// is a typo and a startup failure, not a limit nobody can meet.
-//
-// The explicit 0 is the row that tells a limit read as "0 means the default" or
-// "0 is refused" from the right reading, and the negative row the one that tells a
-// check that accepts anything non-zero.
+// TestMaxBodyBytesHasThreeStatesAndRefusesANegativeOne pins the body limit as an optional item in
+// the states the surface documents.
 func TestMaxBodyBytesHasThreeStatesAndRefusesANegativeOne(t *testing.T) {
 	zero, given, negative := int64(0), int64(7), int64(-1)
 	cfg := moduleConfig{
@@ -630,10 +539,8 @@ func TestMaxBodyBytesHasThreeStatesAndRefusesANegativeOne(t *testing.T) {
 	mustContain(t, err.Error(), `endpoint "public"`, "the endpoint that gave it")
 }
 
-// TestTrustedProxiesAndRemoteIPHeadersDecodeAndResolve pins the two input items an
-// endpoint behind a proxy needs. They are handed to gin, which works out the
-// client address from the forwarded headers; this module reads no header itself.
-// An entry is an address or a block, matching gin's own rule.
+// TestTrustedProxiesAndRemoteIPHeadersDecodeAndResolve pins the two input items an endpoint behind
+// a proxy needs.
 func TestTrustedProxiesAndRemoteIPHeadersDecodeAndResolve(t *testing.T) {
 	got, decodeErr, runErr := readThrough(t, `{
 		"http": {
@@ -661,11 +568,8 @@ func TestTrustedProxiesAndRemoteIPHeadersDecodeAndResolve(t *testing.T) {
 	}
 }
 
-// TestNoTrustedProxyIsTheDefault pins the safe default: with neither the
-// module-level nor the endpoint-level items written, no proxy is trusted, so a
-// client cannot choose the address Context.ClientIP reports by writing a
-// forwarded header. The behaviour that follows is pinned over a request in
-// TestClientIPDoesNotTakeForwardingHeaders.
+// TestNoTrustedProxyIsTheDefault pins the safe default: with neither the module-level nor the
+// endpoint-level items written, no proxy is trusted.
 func TestNoTrustedProxyIsTheDefault(t *testing.T) {
 	_, endpoints, err := moduleConfig{
 		Listeners: map[string]listenerConfig{"backend": {Address: ":8080"}},
@@ -680,9 +584,8 @@ func TestNoTrustedProxyIsTheDefault(t *testing.T) {
 	}
 }
 
-// TestAnInvalidTrustedProxyIsStartupFailure pins the check that turns a mistyped
-// network into a message naming the endpoint and the key, rather than letting it
-// surface as gin's parse error from inside the engine.
+// TestAnInvalidTrustedProxyIsStartupFailure pins the check that turns a mistyped network into a
+// message naming the endpoint and the key.
 func TestAnInvalidTrustedProxyIsStartupFailure(t *testing.T) {
 	_, _, err := moduleConfig{
 		Listeners: map[string]listenerConfig{"backend": {Address: ":8080"}},
@@ -698,10 +601,8 @@ func TestAnInvalidTrustedProxyIsStartupFailure(t *testing.T) {
 	mustContain(t, err.Error(), "not-a-network", "the value that is not a network")
 }
 
-// TestModuleLevelProxySettingsAreInheritedByEveryEndpoint pins where a
-// deployment names the networks in front of it: once, at the module level, for
-// every endpoint to take as it stands. Both endpoints here write neither key,
-// and both resolve to the module-level values.
+// TestModuleLevelProxySettingsAreInheritedByEveryEndpoint pins where a deployment names the
+// networks in front of it: once, at the module level, for every endpoint to take as it stands.
 func TestModuleLevelProxySettingsAreInheritedByEveryEndpoint(t *testing.T) {
 	got, decodeErr, runErr := readThrough(t, `{
 		"http": {
@@ -739,10 +640,8 @@ func TestModuleLevelProxySettingsAreInheritedByEveryEndpoint(t *testing.T) {
 	}
 }
 
-// TestEndpointProxySettingsOverrideTheModuleLevelOnes pins the other half of
-// the inheritance: an endpoint that writes either key takes its own value and
-// leaves the module-level one alone, while a sibling that writes neither still
-// inherits it.
+// TestEndpointProxySettingsOverrideTheModuleLevelOnes pins the other half of the inheritance: an
+// endpoint that writes either key takes its own value and leaves the module-level one alone.
 func TestEndpointProxySettingsOverrideTheModuleLevelOnes(t *testing.T) {
 	got, decodeErr, runErr := readThrough(t, `{
 		"http": {
@@ -790,11 +689,8 @@ func TestEndpointProxySettingsOverrideTheModuleLevelOnes(t *testing.T) {
 	}
 }
 
-// TestAnExplicitEmptyEndpointTrustedProxiesOverridesTheModuleLevel pins the
-// difference between omitting the key and writing an empty list through the
-// real configuration path. An omitted key inherits the module-level networks;
-// an explicit [] names none, which is how one endpoint returns to trusting no
-// proxy at all while its siblings keep the deployment's setting.
+// TestAnExplicitEmptyEndpointTrustedProxiesOverridesTheModuleLevel pins the difference between
+// omitting the key and writing an empty list through the real configuration path.
 func TestAnExplicitEmptyEndpointTrustedProxiesOverridesTheModuleLevel(t *testing.T) {
 	got, decodeErr, runErr := readThrough(t, `{
 		"http": {
@@ -835,10 +731,8 @@ func TestAnExplicitEmptyEndpointTrustedProxiesOverridesTheModuleLevel(t *testing
 	}
 }
 
-// TestAnInvalidModuleLevelTrustedProxyIsStartupFailure pins the validation of
-// the module-level networks: a mistyped one is refused while the configuration
-// is resolved, naming the module-level key rather than surfacing as gin's parse
-// error from inside an engine.
+// TestAnInvalidModuleLevelTrustedProxyIsStartupFailure pins the validation of the module-level
+// networks: a mistyped one is refused while the configuration is resolved.
 func TestAnInvalidModuleLevelTrustedProxyIsStartupFailure(t *testing.T) {
 	got, decodeErr, runErr := readThrough(t, `{
 		"http": {
@@ -858,12 +752,8 @@ func TestAnInvalidModuleLevelTrustedProxyIsStartupFailure(t *testing.T) {
 	mustContain(t, err.Error(), "not-a-network", "the value that is not a network")
 }
 
-// TestAnUnusableClaimPrefixIsAValueError pins each rule a single claimed prefix
-// has to meet, and the shape of the failure: a value error carrying the complete
-// key path and the refused value. The rules keep a claim literal and matchable —
-// the dispatch compares it with the decoded request path at segment boundaries —
-// so an implementation that accepted "/api/" would leave a claim no request ever
-// falls under.
+// TestAnUnusableClaimPrefixIsAValueError pins each rule a single claimed prefix has to meet, and
+// the shape of the failure: a value error carrying the complete key path and the refused value.
 func TestAnUnusableClaimPrefixIsAValueError(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -909,9 +799,8 @@ func TestAnUnusableClaimPrefixIsAValueError(t *testing.T) {
 	}
 }
 
-// TestOmittedClaimPrefixesClaimTheRoot pins the default: an endpoint that does
-// not write prefixes claims "/", which makes it its listener's fallback. A
-// listener with one endpoint therefore behaves as it did before claims existed.
+// TestOmittedClaimPrefixesClaimTheRoot pins the default: an endpoint that does not write prefixes
+// claims "/", which makes it its listener's fallback.
 func TestOmittedClaimPrefixesClaimTheRoot(t *testing.T) {
 	_, endpoints, err := moduleConfig{
 		Listeners: map[string]listenerConfig{"backend": {Address: ":8080"}},
@@ -925,11 +814,8 @@ func TestOmittedClaimPrefixesClaimTheRoot(t *testing.T) {
 	}
 }
 
-// TestRootAndADeeperClaimOnOneEndpointAreLegal pins that "/" may stand beside a
-// non-root claim in one endpoint's list: the endpoint answers the paths no one
-// else claims, and the deeper one lets it take a subtree back out of an outer
-// claim. The ancestor rule is skipped for "/", which is an ancestor of
-// everything by construction.
+// TestRootAndADeeperClaimOnOneEndpointAreLegal pins that "/" may stand beside a non- root claim in
+// one endpoint's list: the endpoint answers the paths no one else claims.
 func TestRootAndADeeperClaimOnOneEndpointAreLegal(t *testing.T) {
 	_, endpoints, err := moduleConfig{
 		Listeners: map[string]listenerConfig{"backend": {Address: ":8080"}},
@@ -950,11 +836,7 @@ func TestRootAndADeeperClaimOnOneEndpointAreLegal(t *testing.T) {
 	}
 }
 
-// TestTwoEndpointsClaimingOnePrefixIsAClaimConflict pins the cross-entry check
-// and its sentinel. Both writing the same prefix and both omitting the key are
-// the same conflict: the listener selects one endpoint by the longest claim, and
-// one prefix belongs to one endpoint. The text names the listener, both
-// endpoints and the prefix, and tells the host to write prefixes.
+// TestTwoEndpointsClaimingOnePrefixIsAClaimConflict pins the cross-entry check and its sentinel.
 func TestTwoEndpointsClaimingOnePrefixIsAClaimConflict(t *testing.T) {
 	for name, cfg := range map[string]moduleConfig{
 		"the same prefix": {
@@ -985,14 +867,8 @@ func TestTwoEndpointsClaimingOnePrefixIsAClaimConflict(t *testing.T) {
 	}
 }
 
-// TestTheClaimConflictAdviceResolvesTheConflict pins that the example in the
-// failure message is itself a fix. The host that follows the advice writes the
-// suggested value on the endpoint the message names, so the rewritten
-// configuration has to resolve; an example that repeats the value the endpoint
-// already claims would send the host in a circle. The two entry points differ:
-// two endpoints that omitted prefixes are moved off the root by claiming a
-// literal prefix, while two endpoints that wrote one prefix need one of them to
-// claim a deeper one.
+// TestTheClaimConflictAdviceResolvesTheConflict pins that the example in the failure message is
+// itself a fix.
 func TestTheClaimConflictAdviceResolvesTheConflict(t *testing.T) {
 	cases := map[string]struct {
 		endpoints map[string]endpointConfig
@@ -1026,8 +902,6 @@ func TestTheClaimConflictAdviceResolvesTheConflict(t *testing.T) {
 					hasHint, tc.rootConflict, err)
 			}
 
-			// Follow the message literally: the example names the endpoint to
-			// rewrite and the prefix list to write on it.
 			endpoint, prefixes := suggestedClaim(t, err.Error())
 			fixed := make(map[string]endpointConfig, len(tc.endpoints))
 			for endpointName, e := range tc.endpoints {
@@ -1063,9 +937,7 @@ func suggestedClaim(t *testing.T, message string) (string, []string) {
 	return match[1], []string{prefix}
 }
 
-// TestTwoListenersMayClaimTheSamePrefix pins that the conflict check is per
-// listener. Two listeners are two path spaces; the same claim on each selects a
-// different endpoint, and refusing it would reject a legal configuration.
+// TestTwoListenersMayClaimTheSamePrefix pins that the conflict check is per listener.
 func TestTwoListenersMayClaimTheSamePrefix(t *testing.T) {
 	_, _, err := moduleConfig{
 		Listeners: map[string]listenerConfig{
@@ -1082,11 +954,8 @@ func TestTwoListenersMayClaimTheSamePrefix(t *testing.T) {
 	}
 }
 
-// TestAnExplicitlyEmptyClaimListIsRefusedAfterDecode pins the difference between
-// omitting the key and writing an empty list through the real configuration
-// path. Omitting claims "/"; an explicit [] claims nothing, and an endpoint that
-// claims nothing receives no request, so it is refused rather than mistaken for
-// the default.
+// TestAnExplicitlyEmptyClaimListIsRefusedAfterDecode pins the difference between omitting the key
+// and writing an empty list through the real configuration path.
 func TestAnExplicitlyEmptyClaimListIsRefusedAfterDecode(t *testing.T) {
 	got, decodeErr, runErr := readThrough(t, `{
 		"http": {

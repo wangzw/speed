@@ -19,8 +19,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// testProduct builds the product the stage callbacks are driven with, from a
-// stubbed reader.
 func testProduct(t *testing.T, cfg moduleConfig) *router {
 	t.Helper()
 	logger, _ := newRecordingLogger()
@@ -32,8 +30,6 @@ func testProduct(t *testing.T, cfg moduleConfig) *router {
 	return r
 }
 
-// oneEndpoint is a configuration with a single endpoint on a listener of its
-// own named the same, on a loopback port the operating system picks.
 func oneEndpoint(name string) moduleConfig {
 	return moduleConfig{
 		Listeners: map[string]listenerConfig{name: {Address: "127.0.0.1:0"}},
@@ -41,10 +37,8 @@ func oneEndpoint(name string) moduleConfig {
 	}
 }
 
-// TestPrepareFailsWhenNoListenerIsConfigured pins that a host which took this
-// module in but configured no listener gets a startup failure, not a stance.
-// An entry point that quietly does nothing is the failure the module-level
-// rule forbids, so the error names the key to write.
+// TestPrepareFailsWhenNoListenerIsConfigured pins that a host which took this module in but
+// configured no listener gets a startup failure, not a stance.
 func TestPrepareFailsWhenNoListenerIsConfigured(t *testing.T) {
 	_, err := prepare(&stubReader{}, nil)
 	if err == nil {
@@ -54,12 +48,8 @@ func TestPrepareFailsWhenNoListenerIsConfigured(t *testing.T) {
 	mustContain(t, err.Error(), "http.listeners", "the configuration key to write")
 }
 
-// TestPrepareRefusesAnEndpointNamedWithTheWildcard pins where the reserved name
-// is caught: in Prepare, with the rest of the configuration's checks, not in
-// Serve once the stages have run. A configuration whose only entry is named "*"
-// is the sharpest case, because an implementation that skipped the entry would
-// fall through to the no-endpoint failure instead, which is a different error
-// pointing at a different mistake.
+// TestPrepareRefusesAnEndpointNamedWithTheWildcard pins where the reserved name is caught: in
+// Prepare, with the rest of the configuration's checks, not in Serve once the stages have run.
 func TestPrepareRefusesAnEndpointNamedWithTheWildcard(t *testing.T) {
 	for name, cfg := range map[string]moduleConfig{
 		"alone": oneEndpoint("*"),
@@ -84,12 +74,7 @@ func TestPrepareRefusesAnEndpointNamedWithTheWildcard(t *testing.T) {
 	}
 }
 
-// TestPrepareValidatesSpecsBeforeTheEndpointPremise pins the order inside
-// Prepare. A fragment's shape is a static fact about the binary and is checked
-// over the available set, so a host that configured no endpoint still sees a
-// malformed fragment reported: the two are independent premises and the shape
-// check comes first. Reversed, a differently configured binary would reject a
-// fragment this one accepted.
+// TestPrepareValidatesSpecsBeforeTheEndpointPremise pins the order inside Prepare.
 func TestPrepareValidatesSpecsBeforeTheEndpointPremise(t *testing.T) {
 	specs := []core.Resource[Spec]{{Module: "billing", Value: Spec{Endpoint: "public", Document: []byte(`{}`)}}}
 	_, err := prepare(&stubReader{}, specs)
@@ -100,11 +85,7 @@ func TestPrepareValidatesSpecsBeforeTheEndpointPremise(t *testing.T) {
 	mustContain(t, err.Error(), "billing", "the module that declared the fragment")
 }
 
-// TestPrepareStatesEnabledNotAuto pins the pair that keeps this module from
-// standing down. Resolution only disables a provider that claims exclusivity
-// and states StateAuto; written as StateAuto, a second entry point would
-// silently take the registrations meant for this one, and every other test here
-// would still pass.
+// TestPrepareStatesEnabledNotAuto pins the pair that keeps this module from standing down.
 func TestPrepareStatesEnabledNotAuto(t *testing.T) {
 	stance, err := prepare(&stubReader{cfg: oneEndpoint("public")}, nil)
 	if err != nil {
@@ -116,8 +97,6 @@ func TestPrepareStatesEnabledNotAuto(t *testing.T) {
 }
 
 // TestPrepareValidatesDeclaredSpecs pins where a malformed fragment is caught.
-// Left to the reader that merges the fragments, it would surface long after
-// startup with nothing tying it back to the module that declared it.
 func TestPrepareValidatesDeclaredSpecs(t *testing.T) {
 	specs := []core.Resource[Spec]{{Module: "billing", Value: Spec{Endpoint: "public", Document: []byte(`{}`)}}}
 	_, err := prepare(&stubReader{cfg: oneEndpoint("public")}, specs)
@@ -127,9 +106,8 @@ func TestPrepareValidatesDeclaredSpecs(t *testing.T) {
 	mustContain(t, err.Error(), "billing", "the module that declared the fragment")
 }
 
-// TestPrepareAndNewReadOneSection pins that the stance and the product are
-// built from the same configuration path. Two paths would let a host's endpoint
-// set decide one and not the other.
+// TestPrepareAndNewReadOneSection pins that the stance and the product are built from the same
+// configuration path.
 func TestPrepareAndNewReadOneSection(t *testing.T) {
 	stance := &stubReader{cfg: oneEndpoint("public")}
 	if _, err := prepare(stance, nil); err != nil {
@@ -145,10 +123,7 @@ func TestPrepareAndNewReadOneSection(t *testing.T) {
 	}
 }
 
-// TestModuleProvidesRouterExclusively pins the delivery declaration. Two entry
-// points at once leave a registrant unable to tell which one it registered
-// with, and the exclusive claim is what turns that into a named conflict rather
-// than a route nobody can reach.
+// TestModuleProvidesRouterExclusively pins the delivery declaration.
 func TestModuleProvidesRouterExclusively(t *testing.T) {
 	provides := Module().Provides
 	if len(provides) != 1 {
@@ -163,14 +138,6 @@ func TestModuleProvidesRouterExclusively(t *testing.T) {
 }
 
 // TestDeclaredDependenciesAreOptional pins all four declared dependencies.
-// Without the Optional flag, a host assembling no module for any of them would
-// fail to start over a dependency this module states a default behaviour for:
-// the process default logger, the default shape of an error response, and the
-// standard text of the refusals this module writes itself.
-//
-// The absence of each is asked for here rather than assumed, because a lookup
-// that failed for a reason other than "no provider" has to terminate the
-// startup instead, and the two are told apart by the sentinel.
 func TestDeclaredDependenciesAreOptional(t *testing.T) {
 	requires := Module().Requires
 	want := []reflect.Type{
@@ -224,26 +191,8 @@ func TestDeclaredDependenciesAreOptional(t *testing.T) {
 	}
 }
 
-// TestTheReaderIsUndeclaredAndStillRequired pins the one thing this module
-// takes up without declaring. The configuration reader is the instance of the
-// config module, supplied by the host before the drive, so it exists from that
-// call on and Prepare and New find it whatever order they run in: a Requires
-// entry would put this module after the config module for a reader that neither
-// Stop nor Close reads.
-//
-// Undeclared is not optional. The endpoints are read through the reader and
-// there is nothing to serve without them, so a Prepare reaching a registry with
-// no reader to give fails and says so, whether the config module is not
-// registered at all or is registered and was supplied nothing. One that
-// swallowed the absence, or fell back to an empty endpoint set, would send such
-// a host down the "no endpoint configured" failure instead, naming a
-// configuration key rather than the reader nobody supplied — the wrong premise,
-// and a misleading one.
-//
-// Neither half shows itself in an assembly that has a reader: a Requires entry
-// for it and a Prepare that tolerated its absence both behave exactly like the
-// right descriptor there. The descriptor and a Prepare over a registry without a
-// reader are the only places either can be caught.
+// TestTheReaderIsUndeclaredAndStillRequired pins the one thing this module takes up without
+// declaring.
 func TestTheReaderIsUndeclaredAndStillRequired(t *testing.T) {
 	m := Module()
 	for i, req := range m.Requires {
@@ -276,13 +225,8 @@ func TestTheReaderIsUndeclaredAndStillRequired(t *testing.T) {
 	}
 }
 
-// TestPrepareTakesUpTheSuppliedReader pins that the reader a host supplied is
-// the one Prepare reads, in the stage that runs before any module is
-// constructed. The two registries differ in the configuration their reader
-// hands back and in nothing else: one declares an endpoint and the module
-// states its stance, the other declares none and the module fails naming the key
-// to write. A Prepare that did not read through the registry's reader would give
-// the same answer for both.
+// TestPrepareTakesUpTheSuppliedReader pins that the reader a host supplied is the one Prepare
+// reads, in the stage that runs before any module is constructed.
 func TestPrepareTakesUpTheSuppliedReader(t *testing.T) {
 	m := Module()
 
@@ -309,16 +253,8 @@ func TestPrepareTakesUpTheSuppliedReader(t *testing.T) {
 	mustContain(t, err.Error(), "http.listeners", "the configuration key to write")
 }
 
-// TestImportingThisPackageCarriesALoggingModule pins the half of the optional
-// dependency that makes it a statement of contract rather than a branch hosts
-// reach: this package imports pkg/log, which registers itself at package
-// initialisation, so every host that imports this module transitively carries a
-// logging module. The absent case documented on Module stands only in a
-// registry assembled by hand.
-//
-// Should the import go — or should pkg/log stop registering itself — the
-// documented default behaviour would start applying to real hosts, and this is
-// where that shows up.
+// TestImportingThisPackageCarriesALoggingModule pins the half of the optional dependency that makes
+// it a statement of contract rather than a branch hosts reach: this package imports pkg/log.
 func TestImportingThisPackageCarriesALoggingModule(t *testing.T) {
 	for _, m := range core.ProcessRegistry.Modules() {
 		for _, p := range m.Provides {
@@ -331,11 +267,8 @@ func TestImportingThisPackageCarriesALoggingModule(t *testing.T) {
 		"package pulls pkg/log in and that registers itself")
 }
 
-// TestTheModuleIsRegisteredWithTheProcessRegistryUnderItsName pins the
-// registration this package performs when it is initialised: a module named
-// "http", delivering Router exclusively, which is what a host takes into a
-// command of its tree by name. The name is exported as ModuleName so that the
-// host writes that and not a literal.
+// TestTheModuleIsRegisteredWithTheProcessRegistryUnderItsName pins the registration this package
+// performs when it is initialised: a module named "http", delivering Router exclusively.
 func TestTheModuleIsRegisteredWithTheProcessRegistryUnderItsName(t *testing.T) {
 	if ModuleName != "http" {
 		t.Errorf("ModuleName is %q, and the module is named %q", ModuleName, "http")
@@ -361,15 +294,8 @@ func TestTheModuleIsRegisteredWithTheProcessRegistryUnderItsName(t *testing.T) {
 	}
 }
 
-// TestGateOpensInMigrateAndSealsInStart pins the two borrowed stages, which are
-// what frames the window registrations are accepted in: that window contains
-// the whole Init stage and reaches beyond it at both ends.
-//
-// Opening in this module's own Init would refuse a module that legally
-// registers from an Init running before this one — Lookup does not filter by
-// Requires, so such a module exists. Sealing in this module's own Serve would
-// accept registrations through the whole Start stage and through every Serve
-// callback ordered ahead of this module, none of which reach a chain.
+// TestGateOpensInMigrateAndSealsInStart pins the two borrowed stages, which are what frames the
+// window registrations are accepted in.
 func TestGateOpensInMigrateAndSealsInStart(t *testing.T) {
 	m := Module()
 	product := testProduct(t, oneEndpoint("public"))
@@ -383,9 +309,6 @@ func TestGateOpensInMigrateAndSealsInStart(t *testing.T) {
 	if err := m.Migrate(ctx, nil, product); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	// This stands for a module whose own Init runs before this one's: the
-	// gate is open for the whole of the Init stage, not from this module's
-	// own Init callback onwards.
 	e.Route("GET", "/during", filler)
 
 	if err := m.Start(ctx, nil, product); err != nil {
@@ -396,9 +319,8 @@ func TestGateOpensInMigrateAndSealsInStart(t *testing.T) {
 	})
 }
 
-// TestServeBindsAndTheEndpointServes drives the stages in order and pins that
-// what comes out the other end really answers requests, with the chain and the
-// routes that were registered.
+// TestServeBindsAndTheEndpointServes drives the stages in order and pins that what comes out the
+// other end really answers requests, with the chain and the routes that were registered.
 func TestServeBindsAndTheEndpointServes(t *testing.T) {
 	m := Module()
 	product := testProduct(t, oneEndpoint("public"))
@@ -441,10 +363,7 @@ func TestServeBindsAndTheEndpointServes(t *testing.T) {
 	}
 }
 
-// TestBindFailureReleasesTheEndpointsAlreadyBound pins the rollback across
-// endpoints. All the endpoints share this module's lifecycle: one of them
-// failing to bind ends the startup, and the ports the others took have to come
-// back, or a restart fails on an address the dead process still holds.
+// TestBindFailureReleasesTheEndpointsAlreadyBound pins the rollback across endpoints.
 func TestBindFailureReleasesTheEndpointsAlreadyBound(t *testing.T) {
 	taken, takeErr := net.Listen("tcp", "127.0.0.1:0")
 	if takeErr != nil {
@@ -453,7 +372,6 @@ func TestBindFailureReleasesTheEndpointsAlreadyBound(t *testing.T) {
 	defer taken.Close()
 
 	m := Module()
-	// The listeners are bound in name order, so "a" comes up and "b" fails.
 	product := testProduct(t, moduleConfig{
 		Listeners: map[string]listenerConfig{
 			"a": {Address: "127.0.0.1:0"},
@@ -498,9 +416,8 @@ func TestBindFailureReleasesTheEndpointsAlreadyBound(t *testing.T) {
 	reopened.Close()
 }
 
-// TestStopAndCloseToleranceOnAnInstanceThatNeverServed pins the rollback
-// obligation from the other side: a startup that fails before Serve still runs
-// both callbacks over this module's product.
+// TestStopAndCloseToleranceOnAnInstanceThatNeverServed pins the rollback obligation from the other
+// side: a startup that fails before Serve still runs both callbacks over this module's product.
 func TestStopAndCloseToleranceOnAnInstanceThatNeverServed(t *testing.T) {
 	m := Module()
 	product := testProduct(t, oneEndpoint("public"))
@@ -514,10 +431,8 @@ func TestStopAndCloseToleranceOnAnInstanceThatNeverServed(t *testing.T) {
 	}
 }
 
-// TestStageCallbacksTolerateAForeignInstance pins the same obligation for the
-// instance itself: rollback runs the callbacks on modules whose New never
-// returned a product, and the instance a host supplied for this module is any
-// type that delivers Router, which is not this module's product either.
+// TestStageCallbacksTolerateAForeignInstance pins the same obligation for the instance itself:
+// rollback runs the callbacks on modules whose New never returned a product.
 func TestStageCallbacksTolerateAForeignInstance(t *testing.T) {
 	m := Module()
 	ctx := context.Background()
@@ -536,17 +451,8 @@ func TestStageCallbacksTolerateAForeignInstance(t *testing.T) {
 	}
 }
 
-// TestAnErrorResponderDeliveredByAModuleDecidesTheShape pins the optional
-// dependency over a whole assembly, on a real connection: with a module
-// delivering ErrorResponder in the registry, what a handler refuses with, the
-// answer to a path that matches no route and the answer to a panic are all
-// written in that module's shape, and none of them in the default one.
-//
-// The three are three different places this module writes a response from — the
-// error entry point, the engine's no-route answer and the fallback outside the
-// engine — and an implementation that handed the responder to two of them and
-// forgot the third is the failure this is for. The same routes without a
-// responder are in the next test.
+// TestAnErrorResponderDeliveredByAModuleDecidesTheShape pins the optional dependency over a whole
+// assembly, on a real connection: with a module delivering ErrorResponder in the registry.
 func TestAnErrorResponderDeliveredByAModuleDecidesTheShape(t *testing.T) {
 	responder := &recordingResponder{}
 	addr, _ := serveRoutes(t, responder, func(e Endpoint) {
@@ -583,10 +489,8 @@ func TestAnErrorResponderDeliveredByAModuleDecidesTheShape(t *testing.T) {
 	}
 }
 
-// TestWithoutAnErrorResponderTheDefaultShapeIsWritten is the same three
-// failures in an assembly where no module delivers the capability, which is the
-// ordinary case: each is a problem details object, and the startup did not fail
-// for the missing dependency.
+// TestWithoutAnErrorResponderTheDefaultShapeIsWritten is the same three failures in an assembly
+// where no module delivers the capability, which is the ordinary case.
 func TestWithoutAnErrorResponderTheDefaultShapeIsWritten(t *testing.T) {
 	addr, _ := serveRoutes(t, nil, func(e Endpoint) {
 		e.Route("GET", "/refuse", failWith(Problem{Status: nethttp.StatusConflict}))
@@ -605,10 +509,8 @@ func TestWithoutAnErrorResponderTheDefaultShapeIsWritten(t *testing.T) {
 	}
 }
 
-// TestTwoErrorRespondersFailTheStartup pins what delivering the capability from
-// two modules does: the lookup is ambiguous, which this module reports as a
-// startup failure rather than picking one. Which module's shape the API's errors
-// take is not a choice this module can make for the host.
+// TestTwoErrorRespondersFailTheStartup pins what delivering the capability from two modules does:
+// the lookup is ambiguous, which this module reports as a startup failure rather than picking one.
 func TestTwoErrorRespondersFailTheStartup(t *testing.T) {
 	deliver := func(name string) core.Module {
 		return (&stageProbe{
@@ -629,12 +531,8 @@ func TestTwoErrorRespondersFailTheStartup(t *testing.T) {
 	mustContain(t, runErr.Error(), "probe.shape-two", "the other deliverer")
 }
 
-// TestTwoLoggersFailTheStartup is the same statement for the Logger capability:
-// the dependency is optional, and the only lookup result this module reads as
-// "no logger" is that nobody delivers it. Two deliverers are a failure of the
-// lookup itself, and an implementation that took any failed lookup for an absent
-// logger would start with the request path's records going to the process
-// default, without a signal that the assembly is ambiguous.
+// TestTwoLoggersFailTheStartup is the same statement for the Logger capability: the dependency is
+// optional, and the only lookup result this module reads as "no logger" is that nobody delivers it.
 func TestTwoLoggersFailTheStartup(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	deliver := func(name string) core.Module {
@@ -656,11 +554,8 @@ func TestTwoLoggersFailTheStartup(t *testing.T) {
 	mustContain(t, runErr.Error(), "probe.log-two", "the other deliverer")
 }
 
-// TestTheLoggerInjectedIntoRequestsIsNamedAfterTheModule pins the name this module
-// asks the delivered Logger for. The logger it injects into every request context
-// is the one the logging module names after its caller, and the records of the
-// request path carry that name; asking for another is a request path whose
-// records say they came from a module that is not this one.
+// TestTheLoggerInjectedIntoRequestsIsNamedAfterTheModule pins the name this module asks the
+// delivered Logger for.
 func TestTheLoggerInjectedIntoRequestsIsNamedAfterTheModule(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	delivering := &namingLogger{stubLogger: stubLogger{logger: logger}}

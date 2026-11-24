@@ -11,34 +11,12 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// buildDispatch builds the handler one listener serves every accepted
-// connection from.
-//
-// The dispatch selects one endpoint per request and hands the request to that
-// endpoint's assembled engine, which matches it, runs the endpoint's chain and
-// answers 200, its own 404 or its own 405. Selection reads configuration only:
-// the prefixes each endpoint claimed under http.endpoints.<name>.prefixes. The
-// endpoint whose claim the path falls under answers it, the longest such prefix
-// winning when the claims nest. A path under no non-root claim goes to the
-// listener's fallback endpoint, the one that claimed "/", or, with none, to a
-// 404.
-//
-// The registered routes take no part in selection. They are checked against it
-// once, here: a route whose literal leading path would select another endpoint,
-// or no endpoint at all, could be mounted but never reached, and that is
-// reported as ErrUnclaimedRoute rather than left silent. The check allows
-// partial shadowing — an endpoint claiming /api may register /api/:id beside
-// another endpoint claiming /api/internal — because the literal leading path
-// /api still selects the first endpoint, and /api/internal is the meaning of the
-// nested claim.
 func buildDispatch(name string, endpoints []*endpoint, localizer i18n.Localizer) (nethttp.Handler, error) {
 	var entries []prefixEntry
 	var fallback *endpoint
 	for _, e := range endpoints {
 		for _, prefix := range e.settings.prefixes {
 			if prefix == "/" {
-				// "/" means "the paths no other endpoint claims", so it is the
-				// listener's fallback rather than an entry in longest matching.
 				fallback = e
 				continue
 			}
@@ -53,22 +31,6 @@ func buildDispatch(name string, endpoints []*endpoint, localizer i18n.Localizer)
 	return d.handler(localizer), nil
 }
 
-// verifyRoutes refuses every route whose literal leading path selects an
-// endpoint other than the one that registered it.
-//
-// The literal leading path is the part before the first segment that begins
-// with ":" or "*": a fully literal route contributes its whole path, while a
-// root route and one whose first segment is dynamic contribute "". An empty
-// leading path falls under no non-root claim, so it selects the fallback. The
-// route is registered where it is answered only when that selection is the
-// registering endpoint.
-//
-// Every failing route of one endpoint is reported together, with the endpoint
-// and its claims, the endpoint and prefix that would answer it, and a suggested
-// claim. Naming the routes one at a time would send the reader back to the
-// startup once per route; naming none of the answerers would leave out the
-// endpoint whose claim has to change. The text names no registrant: the
-// registration surface does not know who called it.
 func (d *dispatch) verifyRoutes(listener string, endpoints []*endpoint) error {
 	var failures []string
 	for _, e := range endpoints {
@@ -121,25 +83,16 @@ func (d *dispatch) verifyRoutes(listener string, endpoints []*endpoint) error {
 		strings.Join(failures, ". "))
 }
 
-// prefixEntry binds one claimed prefix to the endpoint that claimed it.
 type prefixEntry struct {
 	prefix   string
 	endpoint *endpoint
 }
 
-// dispatch is a listener's request selector: the endpoints' non-root claims,
-// longest first, and the fallback for a path none of them covers.
 type dispatch struct {
 	entries  []prefixEntry
 	fallback *endpoint
 }
 
-// handler renders the dispatch as the net/http handler a listener serves. The
-// dispatch engine carries no route of its own: every request reaches its NoRoute
-// branch, which selects the endpoint and hands the request to that endpoint's
-// engine. So the 404 of a listener with no fallback is the dispatch's own, and
-// every other answer — a matched route, an endpoint's 404, its 405 — is written
-// by the selected endpoint's engine after its chain has run.
 func (d *dispatch) handler(localizer i18n.Localizer) nethttp.Handler {
 	engine := gin.New()
 	engine.RedirectTrailingSlash = false
@@ -210,11 +163,6 @@ func literalLeadingPath(path string) string {
 	return "/" + strings.Join(segments[:cut], "/")
 }
 
-// coveringClaim returns the segment-aligned common prefix of the literal
-// leading paths, or "" when they share none. It is the claim a startup failure
-// over an unclaimed route suggests: it covers every route reported with it, and
-// it keeps the depth the routes themselves have, which is the capability
-// namespace rather than a top-level segment when the API lives under one.
 func coveringClaim(leadings []string) string {
 	if len(leadings) == 0 {
 		return ""
@@ -238,9 +186,6 @@ func coveringClaim(leadings []string) string {
 	return "/" + strings.Join(common, "/")
 }
 
-// claimedByOther reports whether another endpoint on the listener already
-// claims the prefix, in which case it is not a claim the failing endpoint could
-// adopt.
 func claimedByOther(prefix string, self *endpoint, endpoints []*endpoint) bool {
 	for _, other := range endpoints {
 		if other == self {
@@ -255,13 +200,10 @@ func claimedByOther(prefix string, self *endpoint, endpoints []*endpoint) bool {
 	return false
 }
 
-// claimList renders an endpoint's claims for a message, for example ["/api",
-// "/other"].
 func claimList(prefixes []string) string {
 	return "[" + quotedList(prefixes) + "]"
 }
 
-// pathSegments splits a route or request path into its non-empty segments.
 func pathSegments(path string) []string {
 	trimmed := strings.Trim(path, "/")
 	if trimmed == "" {

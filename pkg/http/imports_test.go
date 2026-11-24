@@ -11,28 +11,13 @@ import (
 // registryReport is what testdata/rootimport reports about the process it runs
 // in.
 type registryReport struct {
-	Modules []string `json:"modules"`
-	Routers []string `json:"routers"`
-	// Exclusive says whether the module delivering Router claims it
-	// exclusively.
-	Exclusive bool `json:"exclusive"`
+	Modules   []string `json:"modules"`
+	Routers   []string `json:"routers"`
+	Exclusive bool     `json:"exclusive"`
 }
 
-// TestAProgramImportingOnlyTheRootPackageHasTheModuleRegistered starts a program
-// whose only import from this module is the root package, and reads the process
-// registry that program holds.
-//
-// This package registers its module when it is initialised, so a host that
-// imports it can take the module into a command of its tree by the name
-// ModuleName, and no registration step of its own comes between the import and
-// the name. Registered is not enabled: importing the package opens no port, and
-// a module only takes part in a run when a command names it.
-//
-// The test binary's registry could not answer this by itself: it holds
-// whatever the test files of this package import beside the package, and a
-// reading of it cannot tell this package's own registration from one a test
-// file caused. The program puts the observation back on the host the statement
-// is about.
+// TestAProgramImportingOnlyTheRootPackageHasTheModuleRegistered starts a program whose only import
+// from this module is the root package, and reads the process registry that program holds.
 func TestAProgramImportingOnlyTheRootPackageHasTheModuleRegistered(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	run := exec.Command("go", "run", "./testdata/rootimport")

@@ -11,11 +11,7 @@ import (
 	"time"
 )
 
-// TestTheBoundAddressIsReported pins the record a host reads the real address
-// from. An endpoint configured on port 0 is given one by the operating
-// system, and without this record nothing outside the process can learn which:
-// a harness would have to pick a free port beforehand and race every other
-// process for it.
+// TestTheBoundAddressIsReported pins the record a host reads the real address from.
 func TestTheBoundAddressIsReported(t *testing.T) {
 	logger, records := newRecordingLogger()
 	_, addr := startTestEndpoint(t, testListener("public"), nethttp.NotFoundHandler(), logger)
@@ -40,10 +36,6 @@ func TestTheBoundAddressIsReported(t *testing.T) {
 	}
 }
 
-// hijackingHandler takes the connection over from the server, the way a
-// WebSocket upgrade does, and holds it until the test lets go. net/http stops
-// tracking a connection once it has been hijacked, so its Shutdown neither
-// waits for this handler nor cuts its connection.
 type hijackingHandler struct {
 	entered  chan struct{}
 	release  chan struct{}
@@ -95,11 +87,8 @@ func openHijackedConnection(t *testing.T, addr string) {
 	}
 }
 
-// TestTheDrainWaitsForAHijackedConnectionsHandler pins that a request whose
-// handler took its connection over is still in flight for the drain. Shutdown
-// forgets such a connection the moment it is hijacked, so a drain that only
-// asked Shutdown would end with the handler still running, and the modules
-// released after it would be released under that handler.
+// TestTheDrainWaitsForAHijackedConnectionsHandler pins that a request whose handler took its
+// connection over is still in flight for the drain.
 func TestTheDrainWaitsForAHijackedConnectionsHandler(t *testing.T) {
 	h := newHijackingHandler(t)
 	logger, _ := newRecordingLogger()
@@ -135,10 +124,8 @@ func TestTheDrainWaitsForAHijackedConnectionsHandler(t *testing.T) {
 	}
 }
 
-// TestAHijackedHandlerPastTheDrainTimeoutIsReported pins the other end: a
-// handler of a hijacked connection that outlives the budget is a drain that
-// ran out of time, reported as one, rather than a drain that came back clean
-// while the handler goes on running.
+// TestAHijackedHandlerPastTheDrainTimeoutIsReported pins the other end: a handler of a hijacked
+// connection that outlives the budget is a drain that ran out of time, reported as one.
 func TestAHijackedHandlerPastTheDrainTimeoutIsReported(t *testing.T) {
 	h := newHijackingHandler(t)
 	logger, _ := newRecordingLogger()
@@ -160,13 +147,8 @@ func TestAHijackedHandlerPastTheDrainTimeoutIsReported(t *testing.T) {
 	mustContain(t, err.Error(), `"public"`, "the endpoint that did not drain")
 }
 
-// streamingHandler stands for a long-lived response — a server-sent event
-// stream, a long poll — that ends when the endpoint begins to drain.
 type streamingHandler struct {
-	entered chan struct{}
-	// early receives whether Draining's channel was already closed when the
-	// handler began; signalled whether it closed before the handler's own
-	// deadline.
+	entered   chan struct{}
 	early     chan bool
 	signalled chan bool
 }
@@ -198,12 +180,7 @@ func (h *streamingHandler) ServeHTTP(w nethttp.ResponseWriter, r *nethttp.Reques
 	}
 }
 
-// TestALongLivedHandlerLearnsTheDrainHasBegun pins the signal a stream needs to
-// end on its own. The drain does not cancel a request's context — an ordinary
-// request has to be able to finish against a whole system — so without a
-// signal of its own a stream runs until the drain-timeout cuts it, and every
-// orderly shutdown of an endpoint with a client attached is reported as a
-// drain that ran out of time.
+// TestALongLivedHandlerLearnsTheDrainHasBegun pins the signal a stream needs to end on its own.
 func TestALongLivedHandlerLearnsTheDrainHasBegun(t *testing.T) {
 	h := newStreamingHandler()
 	logger, _ := newRecordingLogger()
@@ -230,19 +207,16 @@ func TestALongLivedHandlerLearnsTheDrainHasBegun(t *testing.T) {
 	}
 }
 
-// TestDrainingOutsideAnEndpointNeverCloses pins the answer for a context no
-// endpoint of this module created: a nil channel, which never becomes ready,
-// rather than one already closed that would end every stream at once.
+// TestDrainingOutsideAnEndpointNeverCloses pins the answer for a context no endpoint of this module
+// created: a nil channel, which never becomes ready.
 func TestDrainingOutsideAnEndpointNeverCloses(t *testing.T) {
 	if ch := Draining(context.Background()); ch != nil {
 		t.Fatalf("Draining on a context no endpoint created returned %v, want nil", ch)
 	}
 }
 
-// TestTheDrainLeavesRequestContextsAlone pins why the signal is a channel of
-// its own: the drain lets in-flight requests finish, so it does not cancel
-// their contexts, and a handler that watches only its request context is not
-// told anything.
+// TestTheDrainLeavesRequestContextsAlone pins why the signal is a channel of its own: the drain
+// lets in-flight requests finish, so it does not cancel their contexts.
 func TestTheDrainLeavesRequestContextsAlone(t *testing.T) {
 	cancelled := make(chan bool, 1)
 	entered := make(chan struct{}, 1)

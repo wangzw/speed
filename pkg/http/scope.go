@@ -2,21 +2,14 @@ package http
 
 import "strings"
 
-// Scope is the authorization level a Spec publishes its paths under. A Spec
-// with no scope serves the ordinary surface — the caller's own resources and
-// the unauthenticated sign-in routes — directly under the API root. The two
-// declared scopes put a segment on the root: tenant administration under
-// tenants, platform administration under system.
-//
-// The scope segment is what a reader uses to tell a management operation from
-// an ordinary one without consulting the module that declared it; it is not
-// the access level (that remains the route's gateway registration).
+// Scope is the management level a Spec publishes its paths under, not the access
+// level. Its empty value is an ordinary interface, whose paths hang directly
+// under the API root.
 type Scope string
 
 const (
-	// ScopeTenants is tenant administration: operations decided in the
-	// tenant's own policy domain, performed by a holder of the tenant's
-	// management permissions. Every path under it names the tenant first.
+	// ScopeTenants is tenant administration: operations decided in the tenant's own policy
+	// domain, performed by a holder of the tenant's management permissions.
 	ScopeTenants Scope = "tenants"
 	// ScopeSystem is platform administration: operations decided in the
 	// platform domain, performed by platform staff. A tenant may still appear
@@ -33,19 +26,10 @@ func (s Scope) Valid() bool {
 	return false
 }
 
-// tenantPathPrefix is the leading segment every path of a tenants-scope
-// fragment carries: the tenant is part of the address, not a query value, so
-// the level and the tenant the operation acts on are both on the request line.
-// A route on the tenant resource itself names the tenant and no further segment,
-// so the bare tenant segment is accepted as well.
 const tenantPathPrefix = "/{tenant}/"
 
-// tenantPathRoot is the tenant segment alone: the resource-level route under the
-// tenants scope, such as the organization deletion.
 const tenantPathRoot = "/{tenant}"
 
-// scopeRoot is the segment a scope contributes to the API root. The ordinary
-// surface has no value here.
 func (s Scope) scopeRoot() string { return string(s) }
 
 // joinsPath reports whether path is addressed the way the scope requires.

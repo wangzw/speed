@@ -8,9 +8,8 @@ import (
 	"testing"
 )
 
-// TestFailuresMergesCommonAndSpecific holds the merge rule: an operation's
-// response replaces the common one with the same status, and a status only one
-// side declares is added.
+// TestFailuresMergesCommonAndSpecific holds the merge rule: an operation's response replaces the
+// common one with the same status, and a status only one side declares is added.
 func TestFailuresMergesCommonAndSpecific(t *testing.T) {
 	common := []Response{
 		ProblemResponse(http.StatusUnauthorized, "No credential"),
@@ -39,8 +38,8 @@ func TestFailuresMergesCommonAndSpecific(t *testing.T) {
 	}
 }
 
-// TestAReturnedFaultWritesItsProblem holds the handler-returned path: the
-// fault's status and problem fields reach the answer.
+// TestAReturnedFaultWritesItsProblem holds the handler-returned path: the fault's status and
+// problem fields reach the answer.
 func TestAReturnedFaultWritesItsProblem(t *testing.T) {
 	operation := NewOperation[struct{}, struct{}](
 		"the.module.read", http.MethodGet, "/items", "", "", nil,
@@ -67,9 +66,8 @@ func TestAReturnedFaultWritesItsProblem(t *testing.T) {
 	}
 }
 
-// TestADeclaredFaultPanicIsAnswered holds the panic path: a handler that
-// panics with a fault the operation declared is answered with that fault, by
-// the recovery layer, without being treated as a defect.
+// TestADeclaredFaultPanicIsAnswered holds the panic path: a handler that panics with a fault the
+// operation declared is answered with that fault, by the recovery layer.
 func TestADeclaredFaultPanicIsAnswered(t *testing.T) {
 	operation := NewOperation[struct{}, struct{}](
 		"the.module.read", http.MethodGet, "/items", "", "", nil,
@@ -96,8 +94,8 @@ func TestADeclaredFaultPanicIsAnswered(t *testing.T) {
 	}
 }
 
-// TestAnUndeclaredFaultPanicIsAServerError holds the declaration's force on the
-// panic path: a status the operation did not declare is never written.
+// TestAnUndeclaredFaultPanicIsAServerError holds the declaration's force on the panic path: a
+// status the operation did not declare is never written.
 func TestAnUndeclaredFaultPanicIsAServerError(t *testing.T) {
 	operation := NewOperation[struct{}, struct{}](
 		"the.module.read", http.MethodGet, "/items", "", "", nil,
@@ -116,9 +114,8 @@ func TestAnUndeclaredFaultPanicIsAServerError(t *testing.T) {
 	}
 }
 
-// TestAFaultPanicWithoutADeclarationIsAServerError holds the same force for a
-// route that carries no operation declaration: the recovery layer has no set to
-// consult, so a fault panic is a defect like any other.
+// TestAFaultPanicWithoutADeclarationIsAServerError holds the same force for a route that carries no
+// operation declaration: the recovery layer has no set to consult.
 func TestAFaultPanicWithoutADeclarationIsAServerError(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	assembled := assembleFallback(t, nil, logger, func(e Endpoint) {
@@ -130,10 +127,8 @@ func TestAFaultPanicWithoutADeclarationIsAServerError(t *testing.T) {
 	}
 }
 
-// TestACustomResponderWritesTheReturnedFault holds the entry point's custom
-// error handling: the hosted responder receives the fault as a problem and its
-// own body is what the client gets, so a host can replace the error shape while
-// keeping the typed handler boundary.
+// TestACustomResponderWritesTheReturnedFault holds the entry point's custom error handling: the
+// hosted responder receives the fault as a problem and its own body is what the client gets.
 func TestACustomResponderWritesTheReturnedFault(t *testing.T) {
 	operation := NewOperation[struct{}, struct{}](
 		"the.module.read", http.MethodGet, "/items", "", "", nil,
@@ -163,7 +158,6 @@ func TestACustomResponderWritesTheReturnedFault(t *testing.T) {
 	}
 }
 
-// throttleResponses declares a 204 and a 429 that carries Retry-After.
 func throttleResponses(withHeader bool) []Response {
 	throttled := Response{Status: http.StatusTooManyRequests, Description: "Too many requests"}
 	if withHeader {
@@ -172,8 +166,8 @@ func throttleResponses(withHeader bool) []Response {
 	return []Response{{Status: http.StatusNoContent, Description: "No content"}, throttled}
 }
 
-// TestAReturnedFaultWritesItsDeclaredHeaders holds the fault's dynamic headers:
-// a header the matched response declares is written with the fault's value.
+// TestAReturnedFaultWritesItsDeclaredHeaders holds the fault's dynamic headers: a header the
+// matched response declares is written with the fault's value.
 func TestAReturnedFaultWritesItsDeclaredHeaders(t *testing.T) {
 	operation := NewOperation[struct{}, struct{}](
 		"the.module.read", http.MethodGet, "/items", "", "", nil,
@@ -196,9 +190,8 @@ func TestAReturnedFaultWritesItsDeclaredHeaders(t *testing.T) {
 	}
 }
 
-// TestAnUndeclaredFaultHeaderIsAnsweredInternal holds the declaration's force
-// on the fault's headers: a header the matched response does not declare is a
-// handler defect, and the answer is a 500.
+// TestAnUndeclaredFaultHeaderIsAnsweredInternal checks that a fault header the matched response
+// does not declare is answered 500.
 func TestAnUndeclaredFaultHeaderIsAnsweredInternal(t *testing.T) {
 	operation := NewOperation[struct{}, struct{}](
 		"the.module.read", http.MethodGet, "/items", "", "", nil,
@@ -221,8 +214,8 @@ func TestAnUndeclaredFaultHeaderIsAnsweredInternal(t *testing.T) {
 	}
 }
 
-// TestADeclaredFaultPanicWritesItsHeaders holds the recovery path: a panicked
-// fault's declared headers are written with the recovered answer.
+// TestADeclaredFaultPanicWritesItsHeaders holds the recovery path: a panicked fault's declared
+// headers are written with the recovered answer.
 func TestADeclaredFaultPanicWritesItsHeaders(t *testing.T) {
 	operation := NewOperation[struct{}, struct{}](
 		"the.module.read", http.MethodGet, "/items", "", "", nil,
@@ -248,8 +241,8 @@ func TestADeclaredFaultPanicWritesItsHeaders(t *testing.T) {
 	}
 }
 
-// TestAnUndeclaredFaultPanicHeaderIsAServerError holds the recovery path's
-// other side: a panicked fault asking for an undeclared header is a defect.
+// TestAnUndeclaredFaultPanicHeaderIsAServerError holds the recovery path's other side: a panicked
+// fault asking for an undeclared header is a defect.
 func TestAnUndeclaredFaultPanicHeaderIsAServerError(t *testing.T) {
 	operation := NewOperation[struct{}, struct{}](
 		"the.module.read", http.MethodGet, "/items", "", "", nil,
