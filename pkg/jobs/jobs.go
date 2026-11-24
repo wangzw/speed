@@ -1,8 +1,6 @@
 // Package jobs declares the job-execution capability for a distributed
 // deployment: work handed in as a durable job record and run by whichever
-// replica claims it. It registers no module and imports nothing of this
-// repository; pkg/jobs/db delivers the queue and registration face, and
-// pkg/jobs/scheduler enqueues periodic jobs.
+// replica claims it.
 package jobs
 
 import (
@@ -137,20 +135,17 @@ type Handler interface {
 // methods may be called from more than one goroutine at once, and every method
 // returns ErrNotRunning outside the queue's running stages.
 type Queue interface {
-	// Enqueue writes one job and returns its identifier. It refuses an invalid
-	// task with ErrInvalidTask and a type with no registered handler with
-	// ErrNoHandler, writing nothing in either case. The tenant comes from ctx. A
-	// non-empty IdempotencyKey returns the existing job's identifier rather than
-	// writing a second row.
+	// Enqueue writes one job and returns its identifier. It returns ErrInvalidTask
+	// or ErrNoHandler and writes nothing; the tenant comes from ctx, and a
+	// non-empty IdempotencyKey returns the existing job's identifier.
 	Enqueue(ctx context.Context, t Task, opts ...EnqueueOption) (JobID, error)
 	// Get returns one job visible to the tenant of ctx. An unknown identifier,
 	// another tenant's identifier and an identifier no longer visible are all
 	// reported as ErrJobNotFound.
 	Get(ctx context.Context, id JobID) (*Job, error)
-	// Cancel asks for a job to be cancelled, by the job's current status. An
-	// unclaimed job moves straight to cancelled; a claimed one only has a
-	// cancellation requested; a terminal job is an idempotent no-op. A job the
-	// tenant cannot see is ErrJobNotFound.
+	// Cancel asks for a job to be cancelled, by the job's current status: an
+	// unclaimed job moves straight to cancelled, a claimed one records the request,
+	// a terminal one is an idempotent no-op. An invisible job is ErrJobNotFound.
 	Cancel(ctx context.Context, id JobID) error
 }
 

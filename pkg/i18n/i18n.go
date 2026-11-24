@@ -1,7 +1,6 @@
-// Package i18n carries the user-facing text the server renders: the
-// interfaces, value types and resource type a module uses to declare a catalog
-// and render a message. It registers no module and depends on the standard
-// library alone.
+// Package i18n carries the user-facing text the server renders: the interfaces,
+// value types and resource type a module uses to declare a catalog and render a
+// message.
 package i18n
 
 import (
@@ -17,10 +16,9 @@ type Locale string
 const (
 	// ConfigNamespace is the config namespace this capability's items hang from.
 	ConfigNamespace = "i18n"
-	// DefaultLocaleItem is the config item carrying the default locale: the
-	// locale a request that names none resolves to, and the fallback for a key a
-	// catalog misses. Its value is a BCP 47 language tag, and it is "en-US" when
-	// unset.
+	// DefaultLocaleItem is the config item carrying the default locale: the locale
+	// a request that names none resolves to, and the fallback for a key a catalog
+	// misses. Its value is a BCP 47 tag, "en-US" when unset.
 	DefaultLocaleItem = "default-locale"
 )
 
@@ -29,9 +27,8 @@ const (
 type Key string
 
 // Args carries the values a parameterised message interpolates. A name with no
-// value is left in the text as written. A value is typed: a string is written
-// verbatim, a number is formatted for the message's language, and a time is
-// formatted by the layout of the message's own time segment.
+// value stays as written; a value is typed, a string verbatim, a number
+// formatted for the message's language, a time by the message's own layout.
 type Args map[string]Value
 
 // ValueKind is which type a Value carries.
@@ -67,9 +64,8 @@ const (
 )
 
 // MarkedTime is the marker a TimeRenderMarked render writes in place of a time
-// segment: the opening delimiter, "time:", the parameter name, and the closing
-// delimiter. It carries no instant, layout or zone, so a client resolves it in
-// the viewer's display zone at read time.
+// segment: the opening delimiter, "time:", the parameter name and the closing
+// delimiter. It carries no instant, layout or zone; the client resolves it.
 func MarkedTime(name string) string {
 	return timeMarkerOpen + "time:" + name + timeMarkerClose
 }
@@ -154,11 +150,9 @@ type Resolver interface {
 	// LocaleFor is the locale for a named account, read from its stored
 	// preferences when the context carries none, and Default otherwise.
 	LocaleFor(ctx context.Context, account string) Locale
-	// TimeZoneFor is the time zone for a named account: the context's zone when
-	// it carries one, otherwise the account's stored preference. It reports
-	// whether a zone was found and, when a profile could not be read, the
-	// failure; an unset zone and an unreadable one lead to different behaviour at
-	// the caller.
+	// TimeZoneFor is the time zone for a named account: the context's zone when it
+	// carries one, otherwise the account's stored preference. An unset zone and an
+	// unreadable profile differ at the caller; the error reports the latter.
 	TimeZoneFor(ctx context.Context, account string) (string, bool, error)
 }
 

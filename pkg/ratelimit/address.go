@@ -35,13 +35,8 @@ func addressBurstInDomain(size int) bool { return size > 0 }
 func addressPenaltyInDomain(points int) bool { return points >= 0 }
 
 const (
-	// addressIdle is how long an unseen bucket stays in memory before a sweep may
-	// drop it.
 	addressIdle = 10 * time.Minute
-
-	// addressCap is the most buckets the shield holds at once; past it a sweep
-	// drops entries whatever their age.
-	addressCap = 1 << 16
+	addressCap  = 1 << 16
 )
 
 type shieldLimits struct {

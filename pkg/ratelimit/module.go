@@ -76,8 +76,6 @@ func configOf(reg *core.Registry) (Config, error) {
 	return cfg, nil
 }
 
-// productOf narrows an instance to this module's product, leaving a
-// host-supplied instance alone.
 func productOf(instance any) (*limiter, bool) {
 	l, ok := instance.(*limiter)
 	return l, ok

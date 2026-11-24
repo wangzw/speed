@@ -116,9 +116,6 @@ func selectionFrom(reg *core.Registry, carrierName string) (string, error) {
 		ErrInvalidConfig, selected, carried, SelectionNone)
 }
 
-// stanceFor turns the selection item and this carrier's configuration into the
-// stance the module states in Prepare. A carrier the selection names must be
-// runnable; the fallback carrier states StateAuto.
 func (s Spec[C]) stanceFor(reg *core.Registry) (core.Enablement, error) {
 	selected, err := selectionFrom(reg, s.CarrierName)
 	if err != nil {

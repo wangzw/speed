@@ -16,7 +16,6 @@ const ModuleName = "ratelimit"
 // ConfigNamespace is where this module's input items and settings are mounted.
 const ConfigNamespace = ModuleName
 
-// typePrefix starts the Problem.Type of every refusal this module writes.
 const typePrefix = "urn:speed:ratelimit:"
 
 const (

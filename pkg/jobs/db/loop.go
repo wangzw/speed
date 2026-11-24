@@ -16,11 +16,8 @@ import (
 const (
 	statementTimeout = 30 * time.Second
 	publishTimeout   = 30 * time.Second
-	// cutoff is how long the stop stage waits for the executors once the
-	// executions under way have been cancelled.
-	cutoff = 5 * time.Second
-	// errorLimit bounds the failure text a row keeps, in bytes.
-	errorLimit = 2000
+	cutoff           = 5 * time.Second
+	errorLimit       = 2000
 )
 
 type worker struct {
