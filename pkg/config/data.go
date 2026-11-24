@@ -7,26 +7,16 @@ import (
 	"strings"
 )
 
-// primarySource names the primary config source in the errors a host-owned
-// document raises.
 const primarySource = "the primary config source"
 
-// validatePrimary refuses a key the primary config source is not allowed to
-// give. It judges against the whole manifest, since one source is shared by
-// every command, and refuses two spellings of one path in the same source.
 func validatePrimary(m *manifest, content map[string]any) error {
 	return validateDocument(m, content, primarySource)
 }
 
-// validateDocument refuses a key a host-owned document is not allowed to give.
-// label names the document in the errors.
 func validateDocument(m *manifest, content map[string]any, label string) error {
 	return validateDocumentSection(m, nil, content, make(map[string][]string), label)
 }
 
-// validateDocumentSection checks one section. written is the keys that lead to
-// it as the document wrote them, and given records the keys that reached each
-// declared path.
 func validateDocumentSection(m *manifest, written []string, section map[string]any, given map[string][]string, label string) error {
 	prefix := strings.Join(written, ".")
 	for _, key := range slices.Sorted(maps.Keys(section)) {
@@ -84,7 +74,6 @@ func validateDocumentSection(m *manifest, written []string, section map[string]a
 	return nil
 }
 
-// originNames renders an origin set for an error message.
 func originNames(o Origin) string {
 	var names []string
 	if o.has(OriginPrimary) {

@@ -11,8 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// fakeSource stands in for a transport subpackage, recording whether it was
-// asked for anything.
 type fakeSource struct {
 	scheme string
 	data   []byte
@@ -37,7 +35,6 @@ func (f fakeSource) Fetch(_ context.Context, locator *url.URL) ([]byte, string, 
 	return f.data, f.format, nil
 }
 
-// fakeFormat stands in for a format subpackage.
 type fakeFormat struct {
 	name    string
 	content map[string]any
@@ -57,7 +54,6 @@ func providing(name string, resources ...any) core.Module {
 	return core.Module{Name: name, Resources: resources}
 }
 
-// locatorSetup collects a registry carrying a file transport and a yaml format.
 func locatorSetup(t *testing.T, host HostIdentity, source fakeSource, format fakeFormat) (*manifest, *transports) {
 	t.Helper()
 	reg := core.New()
@@ -83,8 +79,7 @@ func defaultFormat() fakeFormat {
 	return fakeFormat{name: "yaml", content: map[string]any{}}
 }
 
-// TestLocatorPrecedence pins the three-step order: the host's default, then
-// the environment, then the command line, each overriding the one before it.
+// TestLocatorPrecedence checks that locator precedence.
 func TestLocatorPrecedence(t *testing.T) {
 	m, _ := locatorSetup(t, HostIdentity{Prefix: "MYAPP", DefaultLocator: "file:///default.yaml"},
 		defaultSource(), defaultFormat())
@@ -105,9 +100,7 @@ func TestLocatorPrecedence(t *testing.T) {
 	}
 }
 
-// TestAbsentLocatorIsLegal pins that a run with no primary config source is a
-// legal configuration rather than a failure: assembly is driven by the
-// configuration, not by the config source.
+// TestAbsentLocatorIsLegal checks that absent locator is legal.
 func TestAbsentLocatorIsLegal(t *testing.T) {
 	m, _ := locatorSetup(t, HostIdentity{Prefix: "MYAPP"}, defaultSource(), defaultFormat())
 	if got := locate(m, nil, "", false); got != "" {
@@ -115,9 +108,7 @@ func TestAbsentLocatorIsLegal(t *testing.T) {
 	}
 }
 
-// TestNoPrefixDisablesEnvLocator pins that with no prefix the environment leg
-// does not apply: <PREFIX>_CONFIG is a derived name and there is nothing to
-// derive it from.
+// TestNoPrefixDisablesEnvLocator checks that no prefix disables env locator.
 func TestNoPrefixDisablesEnvLocator(t *testing.T) {
 	m, _ := locatorSetup(t, HostIdentity{DefaultLocator: "file:///default.yaml"},
 		defaultSource(), defaultFormat())
@@ -137,7 +128,7 @@ func readLocator(t *testing.T, tr *transports, locator string) error {
 	return err
 }
 
-// TestMalformedLocator checks that a malformed locator is refused.
+// TestMalformedLocator checks that malformed locator.
 func TestMalformedLocator(t *testing.T) {
 	_, tr := locatorSetup(t, HostIdentity{}, defaultSource(), defaultFormat())
 	if err := readLocator(t, tr, "://nope"); !errors.Is(err, ErrMalformedLocator) {
@@ -152,9 +143,7 @@ func TestMalformedLocator(t *testing.T) {
 	}
 }
 
-// TestSourceRejectedShapeMapsToMalformedLocator pins that a transport refusing
-// the shape of a locator keeps that classification: the host has the same
-// thing to do either way, which is to fix the locator it gave.
+// TestSourceRejectedShapeMapsToMalformedLocator checks that source rejected shape maps to malformed locator.
 func TestSourceRejectedShapeMapsToMalformedLocator(t *testing.T) {
 	_, tr := locatorSetup(t, HostIdentity{}, defaultSource(), defaultFormat())
 	err := readLocator(t, tr, "file://host/path")
@@ -167,8 +156,7 @@ func TestSourceRejectedShapeMapsToMalformedLocator(t *testing.T) {
 	}
 }
 
-// TestUnknownSchemeNamesMissingImport checks that an unknown scheme names
-// the transport to import.
+// TestUnknownSchemeNamesMissingImport checks that unknown scheme names missing import.
 func TestUnknownSchemeNamesMissingImport(t *testing.T) {
 	_, tr := locatorSetup(t, HostIdentity{}, defaultSource(), defaultFormat())
 	err := readLocator(t, tr, "etcd://10.0.0.1:2379/app/config")
@@ -185,9 +173,7 @@ func TestUnknownSchemeNamesMissingImport(t *testing.T) {
 	}
 }
 
-// TestUnknownSchemeDerivesPathFromRequestedScheme pins that the path in the
-// hint follows the scheme that was asked for, and that the scheme keeps a
-// place of its own in the sentence beside the path it implies.
+// TestUnknownSchemeDerivesPathFromRequestedScheme checks that unknown scheme derives path from requested scheme.
 func TestUnknownSchemeDerivesPathFromRequestedScheme(t *testing.T) {
 	_, tr := locatorSetup(t, HostIdentity{}, defaultSource(), defaultFormat())
 	err := readLocator(t, tr, "consul://c/app")
@@ -200,8 +186,6 @@ func TestUnknownSchemeDerivesPathFromRequestedScheme(t *testing.T) {
 		t.Fatalf("the rejection reads %q, which drops the scheme itself: the name and the path "+
 			"it implies are both owed to the reader", err)
 	}
-	// url.Parse lowercases the scheme, so the path follows the key the lookup
-	// failed on rather than the spelling the locator used.
 	err = readLocator(t, tr, "ETCD://h/p")
 	if !strings.Contains(err.Error(), "source/etcd") {
 		t.Fatalf("the rejection for an upper-cased scheme reads %q, want the lowercased path "+
@@ -213,8 +197,7 @@ func TestUnknownSchemeDerivesPathFromRequestedScheme(t *testing.T) {
 	}
 }
 
-// TestUndeterminedFormat checks that a file with an unrecognised extension
-// leaves the format undetermined.
+// TestUndeterminedFormat checks that undetermined format.
 func TestUndeterminedFormat(t *testing.T) {
 	source := defaultSource()
 	source.format = ""
@@ -224,8 +207,7 @@ func TestUndeterminedFormat(t *testing.T) {
 	}
 }
 
-// TestUnknownFormatNamesMissingImport checks that an unknown format names
-// the parser to import.
+// TestUnknownFormatNamesMissingImport checks that unknown format names missing import.
 func TestUnknownFormatNamesMissingImport(t *testing.T) {
 	source := defaultSource()
 	source.format = "toml"
@@ -244,9 +226,7 @@ func TestUnknownFormatNamesMissingImport(t *testing.T) {
 	}
 }
 
-// TestUnknownFormatDerivesPathFromReportedName pins that the path follows the
-// name the transport reported, and that the name is quoted: it is the
-// operator's own string on the remote leg, not a token this module chose.
+// TestUnknownFormatDerivesPathFromReportedName checks that unknown format derives path from reported name.
 func TestUnknownFormatDerivesPathFromReportedName(t *testing.T) {
 	source := defaultSource()
 	source.format = "hcl"
@@ -266,9 +246,7 @@ func TestUnknownFormatDerivesPathFromReportedName(t *testing.T) {
 	}
 }
 
-// TestMissingTransportHintsNameTheConvention pins that both messages say the
-// path they offer comes from a convention, rather than reading as a lookup of
-// where the implementation actually is.
+// TestMissingTransportHintsNameTheConvention checks that missing transport hints name the convention.
 func TestMissingTransportHintsNameTheConvention(t *testing.T) {
 	for _, err := range missingTransportHints(t) {
 		if !strings.Contains(err.Error(), "by convention") {
@@ -278,9 +256,7 @@ func TestMissingTransportHintsNameTheConvention(t *testing.T) {
 	}
 }
 
-// TestMissingTransportHintsAreNotGuarantees pins the other half of the same
-// disclaimer: an implementation may live somewhere else entirely, and this
-// module has no way to enumerate the ones that exist.
+// TestMissingTransportHintsAreNotGuarantees checks that missing transport hints are not guarantees.
 func TestMissingTransportHintsAreNotGuarantees(t *testing.T) {
 	for _, err := range missingTransportHints(t) {
 		if !strings.Contains(err.Error(), "free to live elsewhere") {
@@ -294,8 +270,6 @@ func TestMissingTransportHintsAreNotGuarantees(t *testing.T) {
 	}
 }
 
-// missingTransportHints returns the two rejections that offer a subpackage
-// path: the missing transport and the missing parser.
 func missingTransportHints(t *testing.T) []error {
 	t.Helper()
 	_, tr := locatorSetup(t, HostIdentity{}, defaultSource(), defaultFormat())
@@ -306,8 +280,7 @@ func missingTransportHints(t *testing.T) []error {
 	return []error{schemeErr, readLocator(t, tr, "file:///app.toml")}
 }
 
-// TestFetchFailureMapsToSourceUnavailable checks that a transport failure
-// becomes ErrSourceUnavailable.
+// TestFetchFailureMapsToSourceUnavailable checks that fetch failure maps to source unavailable.
 func TestFetchFailureMapsToSourceUnavailable(t *testing.T) {
 	source := defaultSource()
 	source.err = errors.New("no such file or directory")
@@ -321,8 +294,7 @@ func TestFetchFailureMapsToSourceUnavailable(t *testing.T) {
 	}
 }
 
-// TestUnmarshalFailureMapsToMalformedConfig checks that a parse failure
-// becomes ErrMalformedConfig.
+// TestUnmarshalFailureMapsToMalformedConfig checks that unmarshal failure maps to malformed config.
 func TestUnmarshalFailureMapsToMalformedConfig(t *testing.T) {
 	format := defaultFormat()
 	format.err = errors.New("line 3: mapping values are not allowed here")
@@ -336,8 +308,7 @@ func TestUnmarshalFailureMapsToMalformedConfig(t *testing.T) {
 	}
 }
 
-// TestFetchAndUnmarshalProduceTheContent checks that a successful read
-// produces the parsed content.
+// TestFetchAndUnmarshalProduceTheContent checks that fetch and unmarshal produce the content.
 func TestFetchAndUnmarshalProduceTheContent(t *testing.T) {
 	format := defaultFormat()
 	format.content = map[string]any{"cache": map[string]any{"addr": "redis:6379"}}
@@ -352,10 +323,7 @@ func TestFetchAndUnmarshalProduceTheContent(t *testing.T) {
 	}
 }
 
-// TestDuplicateSchemeRejected pins that two transports answering for the same
-// scheme are a conflict found while the declarations are collected, not a
-// surprise at the moment the primary source is read: selection is an exact
-// match, so there is nothing to choose between them.
+// TestDuplicateSchemeRejected checks that duplicate scheme rejected.
 func TestDuplicateSchemeRejected(t *testing.T) {
 	reg := core.New()
 	reg.Register(providing("source.file", fakeSource{scheme: "file"}))
@@ -371,8 +339,7 @@ func TestDuplicateSchemeRejected(t *testing.T) {
 	}
 }
 
-// TestDuplicateFormatNameRejected checks that two formats declaring one name
-// are refused.
+// TestDuplicateFormatNameRejected checks that duplicate format name rejected.
 func TestDuplicateFormatNameRejected(t *testing.T) {
 	reg := core.New()
 	reg.Register(providing("format.yaml", fakeFormat{name: "yaml"}))
@@ -388,9 +355,7 @@ func TestDuplicateFormatNameRejected(t *testing.T) {
 	}
 }
 
-// TestTransportsAndFormatsAreSeparateNamespaces pins that a transport and a
-// parser answering for the same name are not a conflict: a scheme and a format
-// name are different questions.
+// TestTransportsAndFormatsAreSeparateNamespaces checks that transports and formats are separate namespaces.
 func TestTransportsAndFormatsAreSeparateNamespaces(t *testing.T) {
 	reg := core.New()
 	reg.Register(providing("source", fakeSource{scheme: "yaml"}))
@@ -400,9 +365,7 @@ func TestTransportsAndFormatsAreSeparateNamespaces(t *testing.T) {
 	}
 }
 
-// TestSchemeMatchIgnoresCase pins that a transport answering for an
-// upper-cased scheme is reachable: url.Parse lowercases the scheme of every
-// locator, so a name registered in any other spelling could never be selected.
+// TestSchemeMatchIgnoresCase checks that scheme match ignores case.
 func TestSchemeMatchIgnoresCase(t *testing.T) {
 	calls := 0
 	source := fakeSource{scheme: "ETCD", data: []byte("irrelevant"), format: "yaml", calls: &calls}
@@ -425,9 +388,7 @@ func TestSchemeMatchIgnoresCase(t *testing.T) {
 	}
 }
 
-// TestDuplicateSchemeIgnoringCaseRejected pins the other half of the same
-// rule: two spellings of one scheme are two declarations of the same name, and
-// a duplicate leaves nothing to choose between.
+// TestDuplicateSchemeIgnoringCaseRejected checks that duplicate scheme ignoring case rejected.
 func TestDuplicateSchemeIgnoringCaseRejected(t *testing.T) {
 	reg := core.New()
 	reg.Register(providing("source.upper", fakeSource{scheme: "ETCD"}))
@@ -444,9 +405,7 @@ func TestDuplicateSchemeIgnoringCaseRejected(t *testing.T) {
 	}
 }
 
-// TestFormatMatchIgnoresRegisteredNameCase pins that a parser registered under
-// an upper-cased name answers for the name a transport reports: case is not
-// what tells two formats apart.
+// TestFormatMatchIgnoresRegisteredNameCase checks that format match ignores registered name case.
 func TestFormatMatchIgnoresRegisteredNameCase(t *testing.T) {
 	format := fakeFormat{name: "YAML", content: map[string]any{"cache": map[string]any{"addr": "redis:6379"}}}
 	_, tr := locatorSetup(t, HostIdentity{}, defaultSource(), format)
@@ -460,9 +419,7 @@ func TestFormatMatchIgnoresRegisteredNameCase(t *testing.T) {
 	}
 }
 
-// TestFormatMatchIgnoresReportedNameCase covers the lookup side of the same
-// rule: the format name reaches a remote transport from the operator's own
-// query parameter, so ?format=YAML selects the parser registered as yaml.
+// TestFormatMatchIgnoresReportedNameCase checks that format match ignores reported name case.
 func TestFormatMatchIgnoresReportedNameCase(t *testing.T) {
 	source := defaultSource()
 	source.format = "YAML"
@@ -479,8 +436,7 @@ func TestFormatMatchIgnoresReportedNameCase(t *testing.T) {
 	}
 }
 
-// TestDuplicateFormatNameIgnoringCaseRejected checks that format names
-// differing only in case conflict.
+// TestDuplicateFormatNameIgnoringCaseRejected checks that duplicate format name ignoring case rejected.
 func TestDuplicateFormatNameIgnoringCaseRejected(t *testing.T) {
 	reg := core.New()
 	reg.Register(providing("format.upper", fakeFormat{name: "YAML"}))
@@ -497,9 +453,7 @@ func TestDuplicateFormatNameIgnoringCaseRejected(t *testing.T) {
 	}
 }
 
-// TestUnknownFormatPathFollowsTheKeyLookedUp pins for the format leg what
-// TestUnknownSchemeDerivesPathFromRequestedScheme pins for the scheme: the
-// message names the key the lookup actually went by.
+// TestUnknownFormatPathFollowsTheKeyLookedUp checks that unknown format path follows the key looked up.
 func TestUnknownFormatPathFollowsTheKeyLookedUp(t *testing.T) {
 	source := defaultSource()
 	source.format = "TOML"

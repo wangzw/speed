@@ -1,14 +1,4 @@
-// Package file delivers the file:// transport: it reads the primary config
-// source off the local filesystem and names its format by the file extension.
-// An absolute path is written file:///etc/app.yaml, a path relative to the
-// process working directory file:app.yaml.
-//
-// Importing the package is all a host does with it, because the transport
-// travels as a resource of a module registered in init:
-//
-//	import _ "github.com/vislake/speed/pkg/config/source/file"
-//
-// The package carries no third-party dependency.
+// Package file delivers the file:// transport: it reads the primary config source off the local filesystem and names the format by the file's extension.
 package file
 
 import (
@@ -38,19 +28,14 @@ var _ config.Source = source{}
 
 type source struct{}
 
-// Scheme reports the URI scheme this transport answers for.
 func (source) Scheme() string { return "file" }
 
-// formatsByExtension maps a file extension to the format name. Content is never
-// sniffed.
 var formatsByExtension = map[string]string{
 	".json": "json",
 	".yaml": "yaml",
 	".yml":  "yaml",
 }
 
-// Fetch reads the file the locator points at and reports the format name its
-// extension stands for. The format is settled before the file is opened.
 func (source) Fetch(_ context.Context, locator *url.URL) (data []byte, format string, err error) {
 	name, err := localPath(locator)
 	if err != nil {
@@ -68,9 +53,6 @@ func (source) Fetch(_ context.Context, locator *url.URL) (data []byte, format st
 	return data, format, nil
 }
 
-// localPath gives the filesystem path a locator designates, refusing the shapes
-// this transport does not serve. Two shapes name a file: file:///etc/app.yaml
-// (whose host is empty or localhost) and file:config.yaml (the opaque part).
 func localPath(locator *url.URL) (string, error) {
 	if locator.Opaque != "" {
 		name, err := url.PathUnescape(locator.Opaque)
@@ -94,14 +76,10 @@ func localPath(locator *url.URL) (string, error) {
 	return locator.Path, nil
 }
 
-// isLocalHost reports whether the host component stands for this machine. RFC
-// 8089 makes localhost mean the same as an empty host.
 func isLocalHost(host string) bool {
 	return host == "" || strings.EqualFold(host, "localhost")
 }
 
-// formatOf names the format a file's extension stands for. An unrecognised
-// extension is a failure rather than a guess.
 func formatOf(name string) (string, error) {
 	ext := strings.ToLower(path.Ext(name))
 	if format, known := formatsByExtension[ext]; known {

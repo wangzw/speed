@@ -10,7 +10,6 @@ import (
 	"time"
 )
 
-// decodeTo converts a value into T and fails the test when it cannot.
 func decodeTo[T any](t *testing.T, raw any) T {
 	t.Helper()
 	out := reflect.New(reflect.TypeFor[T]()).Elem()
@@ -20,7 +19,6 @@ func decodeTo[T any](t *testing.T, raw any) T {
 	return out.Interface().(T)
 }
 
-// decodeRejects converts a value that is expected to be refused.
 func decodeRejects[T any](t *testing.T, raw any) error {
 	t.Helper()
 	out := reflect.New(reflect.TypeFor[T]()).Elem()
@@ -35,8 +33,7 @@ func decodeRejects[T any](t *testing.T, raw any) error {
 	return err
 }
 
-// TestDurationFromString checks that a duration is read from its string
-// form.
+// TestDurationFromString checks that duration from string.
 func TestDurationFromString(t *testing.T) {
 	if got := decodeTo[time.Duration](t, "5m"); got != 5*time.Minute {
 		t.Fatalf("\"5m\" converted to %v, want 5m0s", got)
@@ -46,17 +43,14 @@ func TestDurationFromString(t *testing.T) {
 	}
 }
 
-// TestDurationPassesThroughFromTheDefaultLayer pins the one numeric source a
-// duration does take: the carrier struct's own field, which already is one.
+// TestDurationPassesThroughFromTheDefaultLayer checks that duration passes through from the default layer.
 func TestDurationPassesThroughFromTheDefaultLayer(t *testing.T) {
 	if got := decodeTo[time.Duration](t, 5*time.Minute); got != 5*time.Minute {
 		t.Fatalf("a declared duration converted to %v, want 5m0s", got)
 	}
 }
 
-// TestBareNumberDurationRejected pins the one rule this mechanism has to
-// give itself: a Duration is an int64 count of nanoseconds, so a bare 300
-// would read as five minutes and mean three hundred nanoseconds.
+// TestBareNumberDurationRejected checks that bare number duration rejected.
 func TestBareNumberDurationRejected(t *testing.T) {
 	for name, raw := range map[string]any{
 		"a JSON number the primary source gives": float64(300),
@@ -69,17 +63,14 @@ func TestBareNumberDurationRejected(t *testing.T) {
 	}
 }
 
-// TestIntFromJSONNumber checks that a JSON integer lands in an int field.
+// TestIntFromJSONNumber checks that int from JSON number.
 func TestIntFromJSONNumber(t *testing.T) {
 	if got := decodeTo[int](t, float64(10)); got != 10 {
 		t.Fatalf("the JSON number 10 converted to %d, want 10", got)
 	}
 }
 
-// TestFractionalNumberIntoAnIntegerFieldRejected is the guard on the library's
-// quietest behaviour: it writes a float into an integer field by truncating
-// it, so 10.5 would silently become 10 and the config file would say one thing
-// while the run did another.
+// TestFractionalNumberIntoAnIntegerFieldRejected checks that fractional number into an integer field rejected.
 func TestFractionalNumberIntoAnIntegerFieldRejected(t *testing.T) {
 	err := decodeRejects[int](t, float64(10.5))
 	if !strings.Contains(err.Error(), "10.5") {
@@ -87,8 +78,7 @@ func TestFractionalNumberIntoAnIntegerFieldRejected(t *testing.T) {
 	}
 }
 
-// TestTextUnmarshalerSupported checks that a type implementing
-// TextUnmarshaler reads itself from text.
+// TestTextUnmarshalerSupported checks that text unmarshaler supported.
 func TestTextUnmarshalerSupported(t *testing.T) {
 	want := time.Date(2026, 9, 13, 10, 30, 0, 0, time.UTC)
 	if got := decodeTo[time.Time](t, "2026-09-13T10:30:00Z"); !got.Equal(want) {
@@ -97,16 +87,14 @@ func TestTextUnmarshalerSupported(t *testing.T) {
 	if got := decodeTo[net.IP](t, "10.0.0.1"); !got.Equal(net.ParseIP("10.0.0.1")) {
 		t.Fatalf("the address converted to %v, want 10.0.0.1", got)
 	}
-	// A type that decodes itself from text takes a string and nothing else.
 	decodeRejects[time.Time](t, float64(17))
-	// Its own rejection reaches the caller rather than being swallowed.
 	err := decodeRejects[time.Time](t, "not a timestamp")
 	if !strings.Contains(err.Error(), "not a timestamp") {
 		t.Fatalf("the rejection reads %q, which does not name the value that was given", err)
 	}
 }
 
-// TestScalarConversions checks the scalar conversions a text layer gives.
+// TestScalarConversions checks that scalar conversions.
 func TestScalarConversions(t *testing.T) {
 	if got := decodeTo[bool](t, "true"); !got {
 		t.Fatal("the string \"true\" converted to false")
@@ -129,16 +117,12 @@ func TestScalarConversions(t *testing.T) {
 	if got := decodeTo[string](t, "plain"); got != "plain" {
 		t.Fatalf("the string converted to %q", got)
 	}
-	// A number is not silently rendered into a string field: 1 and "1" stay
-	// apart, which is the same reason a numeric key is refused. It is also why
-	// the library's weakly typed mode is not the way the text layers are read.
 	decodeRejects[string](t, float64(1))
 	decodeRejects[bool](t, "yes please")
 	decodeRejects[uint8](t, -1)
 }
 
-// TestIntegerOverflowRejected checks that a number too wide for its field is
-// refused.
+// TestIntegerOverflowRejected checks that integer overflow rejected.
 func TestIntegerOverflowRejected(t *testing.T) {
 	err := decodeRejects[int8](t, float64(300))
 	if !strings.Contains(err.Error(), "int8") {
@@ -148,15 +132,12 @@ func TestIntegerOverflowRejected(t *testing.T) {
 	decodeRejects[uint32](t, float64(1e20))
 }
 
-// TestStringListCommaSeparatedReplaces checks that comma-separated text
-// becomes a list.
+// TestStringListCommaSeparatedReplaces checks that string list comma separated replaces.
 func TestStringListCommaSeparatedReplaces(t *testing.T) {
 	want := []string{"a", "b", "c"}
 	if got := decodeTo[[]string](t, "a,b,c"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("the list converted to %#v, want %#v", got, want)
 	}
-	// The layer replaces rather than appends: a second value does not carry
-	// the first one along.
 	if got := decodeTo[[]string](t, "only"); !reflect.DeepEqual(got, []string{"only"}) {
 		t.Fatalf("a second value produced %#v, want one element", got)
 	}
@@ -165,9 +146,7 @@ func TestStringListCommaSeparatedReplaces(t *testing.T) {
 	}
 }
 
-// TestCommaInsideElementIsNotEscapable pins the accepted cost of the flat
-// form: the separator carries no escape, so an element holding a comma has
-// to come from the primary config source.
+// TestCommaInsideElementIsNotEscapable checks that comma inside element is not escapable.
 func TestCommaInsideElementIsNotEscapable(t *testing.T) {
 	for _, written := range []string{`a\,b`, `"a,b"`} {
 		got := decodeTo[[]string](t, written)
@@ -178,9 +157,7 @@ func TestCommaInsideElementIsNotEscapable(t *testing.T) {
 	}
 }
 
-// TestEmbeddedFieldInsideContainerElement pins that the keys of a container
-// element address an embedded field directly, the way the manifest expansion
-// and Decode address it.
+// TestEmbeddedFieldInsideContainerElement checks that embedded field inside container element.
 func TestEmbeddedFieldInsideContainerElement(t *testing.T) {
 	type element struct {
 		EmbeddedOptions
@@ -193,9 +170,7 @@ func TestEmbeddedFieldInsideContainerElement(t *testing.T) {
 	}
 }
 
-// TestContainersFromPrimaryConverted covers the shapes only the primary source
-// can give: a map with a concrete value type, and a list of structs whose keys
-// are derived by the same rule as a path segment.
+// TestContainersFromPrimaryConverted checks that containers from primary converted.
 func TestContainersFromPrimaryConverted(t *testing.T) {
 	got := decodeTo[map[string]int](t, map[string]any{"a": float64(1), "b": float64(2)})
 	if want := map[string]int{"a": 1, "b": 2}; !reflect.DeepEqual(got, want) {
@@ -216,8 +191,7 @@ func TestContainersFromPrimaryConverted(t *testing.T) {
 	}
 }
 
-// TestContainerKeyFromAJSONTag pins the leg of the field-name rule the
-// decoding library has no setting for.
+// TestContainerKeyFromAJSONTag checks that container key from ajson tag.
 func TestContainerKeyFromAJSONTag(t *testing.T) {
 	type endpoint struct {
 		PoolSize int `json:"pool_size"`
@@ -228,9 +202,7 @@ func TestContainerKeyFromAJSONTag(t *testing.T) {
 	}
 }
 
-// TestConvertedContainersDoNotAliasTheSource pins that a converted map is a
-// fresh one: two holders of the same value must not be able to write into each
-// other.
+// TestConvertedContainersDoNotAliasTheSource checks that converted containers do not alias the source.
 func TestConvertedContainersDoNotAliasTheSource(t *testing.T) {
 	source := map[string]string{"a": "1"}
 	got := decodeTo[map[string]string](t, source)
@@ -240,8 +212,7 @@ func TestConvertedContainersDoNotAliasTheSource(t *testing.T) {
 	}
 }
 
-// TestTypeMismatchNamesPathAndType checks that a type mismatch names the
-// path and the target type.
+// TestTypeMismatchNamesPathAndType checks that type mismatch names path and type.
 func TestTypeMismatchNamesPathAndType(t *testing.T) {
 	out := reflect.New(reflect.TypeFor[time.Duration]()).Elem()
 	err := decodeInto("cache.ttl", "abc", out)
@@ -255,8 +226,7 @@ func TestTypeMismatchNamesPathAndType(t *testing.T) {
 	}
 }
 
-// TestPointerFieldsAreAllocated pins that a source giving a value for a
-// pointer field is asking for one to exist.
+// TestPointerFieldsAreAllocated checks that pointer fields are allocated.
 func TestPointerFieldsAreAllocated(t *testing.T) {
 	got := decodeTo[*int](t, float64(5))
 	if got == nil || *got != 5 {
@@ -268,23 +238,19 @@ func TestPointerFieldsAreAllocated(t *testing.T) {
 	}
 }
 
-// TestFloatOverflowRejected pins the numeric leg of the range check.
+// TestFloatOverflowRejected checks that float overflow rejected.
 func TestFloatOverflowRejected(t *testing.T) {
 	err := decodeRejects[float32](t, 1e300)
 	if !strings.Contains(err.Error(), "float32") {
 		t.Fatalf("the rejection reads %q, which does not name the target type", err)
 	}
-	// The same value written as text is refused as well: what a config file
-	// may say and what the command line may say do not differ.
 	decodeRejects[float32](t, "1e300")
-	// A value the field holds still passes.
 	if got := decodeTo[float32](t, 1.5); got != 1.5 {
 		t.Fatalf("1.5 converted to %v, want 1.5", got)
 	}
 }
 
-// TestTheLargestFloat32GoesInAsItIsWritten checks that the shortest float32
-// text for math.MaxFloat32 still lands in a float32 field.
+// TestTheLargestFloat32GoesInAsItIsWritten checks that the largest float 32 goes in as it is written.
 func TestTheLargestFloat32GoesInAsItIsWritten(t *testing.T) {
 	for _, c := range []struct {
 		raw  any
@@ -303,7 +269,7 @@ func TestTheLargestFloat32GoesInAsItIsWritten(t *testing.T) {
 		}
 	}
 
-	halfway := 0x1p128 - 0x1p103 // between math.MaxFloat32 and the next power of two
+	halfway := 0x1p128 - 0x1p103
 	for _, raw := range []any{
 		3.40282356e38, "3.40282356e+38",
 		math.Nextafter(halfway, 0), halfway,
@@ -314,8 +280,7 @@ func TestTheLargestFloat32GoesInAsItIsWritten(t *testing.T) {
 	}
 }
 
-// TestAFloat32DefaultAtItsLargestTypesBack pins the same line where the help
-// output meets it.
+// TestAFloat32DefaultAtItsLargestTypesBack checks that a float 32 default at its largest types back.
 func TestAFloat32DefaultAtItsLargestTypesBack(t *testing.T) {
 	defaults := struct {
 		Ceiling float32
@@ -350,8 +315,7 @@ func TestAFloat32DefaultAtItsLargestTypesBack(t *testing.T) {
 	}
 }
 
-// TestANumberIntoAFloatFieldIsNeverRounded pins that a float field takes
-// only a number it reads back as the one the source gave.
+// TestANumberIntoAFloatFieldIsNeverRounded checks that a number into a float field is never rounded.
 func TestANumberIntoAFloatFieldIsNeverRounded(t *testing.T) {
 	for _, raw := range []any{int64(16_777_217), float64(16_777_217), "16777217", 1e-50, "1e-50"} {
 		decodeRejects[float32](t, raw)
@@ -380,9 +344,7 @@ func TestANumberIntoAFloatFieldIsNeverRounded(t *testing.T) {
 	}
 }
 
-// TestAWholeFloatIsHeldToTheIntegerRangeExactly pins the edges of the 64-bit
-// range for a whole number that arrives as a float, which is how a source
-// writing one with an exponent delivers it.
+// TestAWholeFloatIsHeldToTheIntegerRangeExactly checks that a whole float is held to the integer range exactly.
 func TestAWholeFloatIsHeldToTheIntegerRangeExactly(t *testing.T) {
 	decodeRejects[int64](t, float64(1<<63))
 	decodeRejects[int64](t, math.Inf(1))
@@ -400,25 +362,20 @@ func TestAWholeFloatIsHeldToTheIntegerRangeExactly(t *testing.T) {
 	decodeRejects[uint64](t, float64(-1))
 }
 
-// TestUnsignedAboveTheSignedRangeAccepted pins the upper end of an unsigned
-// field.
+// TestUnsignedAboveTheSignedRangeAccepted checks that unsigned above the signed range accepted.
 func TestUnsignedAboveTheSignedRangeAccepted(t *testing.T) {
 	if got := decodeTo[uint64](t, uint64(math.MaxUint64)); got != math.MaxUint64 {
 		t.Fatalf("the largest uint64 converted to %d, want %d", got, uint64(math.MaxUint64))
 	}
-	// The text form of the same value agrees with it.
 	if got := decodeTo[uint64](t, "18446744073709551615"); got != math.MaxUint64 {
 		t.Fatalf("the largest uint64 written as text converted to %d, want %d",
 			got, uint64(math.MaxUint64))
 	}
-	// A narrower field still refuses it, and so does a signed one.
 	decodeRejects[uint32](t, uint64(math.MaxUint64))
 	decodeRejects[int64](t, uint64(math.MaxUint64))
 }
 
-// TestTwoKeysForOneContainerFieldRejected pins that renaming a key to the
-// one the decoder looks the field up by does not overwrite a value already
-// there.
+// TestTwoKeysForOneContainerFieldRejected checks that two keys for one container field rejected.
 func TestTwoKeysForOneContainerFieldRejected(t *testing.T) {
 	type element struct {
 		MaxConns int `json:"maxConns"`
@@ -431,7 +388,6 @@ func TestTwoKeysForOneContainerFieldRejected(t *testing.T) {
 			t.Fatalf("the rejection reads %q, which does not name %q", err, want)
 		}
 	}
-	// The key the field-name rule gives it is still taken on its own.
 	got := decodeTo[[]element](t, []any{map[string]any{"maxConns": float64(1)}})
 	if want := []element{{MaxConns: 1}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("the list of structs converted to %#v, want %#v", got, want)

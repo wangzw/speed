@@ -84,8 +84,6 @@ func (c *Command) Include(names ...string) {
 // command that wants the declarations alone uses IncludeAllDeclarations.
 func (c *Command) IncludeAll() { c.includeAll = true }
 
-// declarationInclusion is one declaration-level inclusion as written, with the
-// adjustments the host made on the value it returned.
 type declarationInclusion struct {
 	names        []string
 	all          bool
@@ -93,8 +91,6 @@ type declarationInclusion struct {
 	allResources bool
 }
 
-// collectedModule is one module a command reaches for its declarations alone,
-// with the adjustments the inclusions that named it asked for.
 type collectedModule struct {
 	name         string
 	withFlags    bool
@@ -168,8 +164,6 @@ func (c *Command) Do(depth core.Stage, action Action) {
 	c.action = action
 }
 
-// path renders the command as it is written on the command line, root word
-// first.
 func (c *Command) path() string {
 	words := []string{c.use}
 	for at := c.parent; at != nil; at = at.parent {

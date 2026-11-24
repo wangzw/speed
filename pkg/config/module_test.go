@@ -11,10 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// TestModuleRegistersItselfWithTheProcessRegistry pins that importing the
-// package is all a host does: the registration happens in init, so the host
-// writes neither the descriptor nor a Register call, and the tree it starts over
-// core.ProcessRegistry finds the module the reader is supplied to.
+// TestModuleRegistersItselfWithTheProcessRegistry checks that module registers itself with the process registry.
 func TestModuleRegistersItselfWithTheProcessRegistry(t *testing.T) {
 	registered, ok := core.ProcessRegistry.Lookup(ModuleName)
 	if !ok {
@@ -26,9 +23,6 @@ func TestModuleRegistersItselfWithTheProcessRegistry(t *testing.T) {
 		t.Errorf("the registered module declares %+v, want the delivery of Reader", registered.Provides)
 	}
 
-	// What a host does with the process registry. NewApp panics over one that
-	// lacks the module, and a panic would end the whole test binary where a
-	// failure of this case is what is meant.
 	defer func() {
 		if raised := recover(); raised != nil {
 			t.Errorf("starting a tree over the process registry panicked: %v", raised)
@@ -37,7 +31,7 @@ func TestModuleRegistersItselfWithTheProcessRegistry(t *testing.T) {
 	NewApp(core.ProcessRegistry)
 }
 
-// TestModuleDeclaresOnlyTheDeliveryOfTheReader pins the descriptor.
+// TestModuleDeclaresOnlyTheDeliveryOfTheReader checks that module declares only the delivery of the reader.
 func TestModuleDeclaresOnlyTheDeliveryOfTheReader(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName {
@@ -84,8 +78,6 @@ func TestModuleDeclaresOnlyTheDeliveryOfTheReader(t *testing.T) {
 	}
 }
 
-// requiringTheReader registers the config module and one module that requires
-// the reader.
 func requiringTheReader() *core.Registry {
 	reg := core.New()
 	reg.Register(Module())
@@ -96,8 +88,7 @@ func requiringTheReader() *core.Registry {
 	return reg
 }
 
-// TestAModuleRequiringTheReaderBringsTheConfigModuleIntoItsClosure pins what
-// leaving Exclusive off the declaration buys.
+// TestAModuleRequiringTheReaderBringsTheConfigModuleIntoItsClosure checks that a module requiring the reader brings the config module into its closure.
 func TestAModuleRequiringTheReaderBringsTheConfigModuleIntoItsClosure(t *testing.T) {
 	got, err := requiringTheReader().Closure([]string{"consumer"})
 	if err != nil {
@@ -108,8 +99,7 @@ func TestAModuleRequiringTheReaderBringsTheConfigModuleIntoItsClosure(t *testing
 	}
 }
 
-// TestAReaderNobodySuppliedFailsAsTheConfigModuleHavingNoInstance pins what
-// a host that never supplied the reader is told.
+// TestAReaderNobodySuppliedFailsAsTheConfigModuleHavingNoInstance checks that a reader nobody supplied fails as the config module having no instance.
 func TestAReaderNobodySuppliedFailsAsTheConfigModuleHavingNoInstance(t *testing.T) {
 	reg := requiringTheReader()
 	participants, err := reg.Closure([]string{"consumer"})

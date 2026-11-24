@@ -7,23 +7,13 @@ import (
 	"strings"
 )
 
-// reader hands each module the values it declared. It holds the load of one
-// run and nothing else.
 type reader struct {
-	l *loader
-	// judged holds the modules this run takes in at run level, the ones whose
-	// required items are judged.
+	l      *loader
 	judged map[string]bool
 }
 
 var _ Reader = (*reader)(nil)
 
-// Decode writes the values under path into target.
-//
-// A path the caller never declared is not an error. A required item no source
-// gave a value for is ErrMissingRequired, raised only for the modules this run
-// takes in at run level. An illegal target panics: it is a programming error at
-// the call site, and the process was going to terminate anyway.
 func (r *reader) Decode(path string, target any) error {
 	v := reflect.ValueOf(target)
 	if v.Kind() != reflect.Pointer || v.IsNil() {
@@ -40,10 +30,6 @@ func (r *reader) Decode(path string, target any) error {
 	return r.decodeStruct(v, path, []reflect.Type{v.Type()})
 }
 
-// decodeStruct walks one struct down to its leaves, deriving the same paths the
-// declaration did. Embedded fields are inlined here exactly as the expansion
-// inlines them; a change made to only one of the two walks declares one key and
-// reads another.
 func (r *reader) decodeStruct(v reflect.Value, prefix string, chain []reflect.Type) error {
 	t := v.Type()
 	for i := range t.NumField() {
@@ -95,8 +81,6 @@ func (r *reader) decodeStruct(v reflect.Value, prefix string, chain []reflect.Ty
 	return nil
 }
 
-// descend walks into a nested struct, refusing a type already on the way in. A
-// back edge in a caller-written carrier is a programming error.
 func (r *reader) descend(v reflect.Value, key string, chain []reflect.Type, f reflect.StructField) error {
 	st := v.Type()
 	if slices.Contains(chain, st) {
@@ -108,13 +92,6 @@ func (r *reader) descend(v reflect.Value, key string, chain []reflect.Type, f re
 	return r.decodeStruct(v, key, append(chain, st))
 }
 
-// leaf writes one value into the target field and enforces the required rule on
-// it. A required item is satisfied by any of the primary source, the
-// environment, the command line and the host defaults document, but not by the
-// prototype's field value.
-//
-// Every leaf is read on its own: the layering tool would otherwise return a
-// section whole and knock the layer's other leaves back to zero.
 func (r *reader) leaf(path string, fv reflect.Value) error {
 	item, declared := r.l.m.byPath[path]
 	if declared && item.item.Required && r.judged[item.module] &&
@@ -128,9 +105,7 @@ func (r *reader) leaf(path string, fv reflect.Value) error {
 	if declared && !r.l.given(item) && meansUnset(reflect.ValueOf(item.def)) {
 		return nil
 	}
-	// A container leaf is read back from what the source wrote rather than from
-	// the layering tool, whose keys have been folded to lower case. The
-	// environment is above the documents and replaces the whole container.
+	// A container leaf comes from the source's unfolded tree, and the environment's JSON replaces the whole container first.
 	if declared && item.kind == kindContainer {
 		if text, set := r.l.envValue(item); set {
 			if !fv.CanSet() {
@@ -156,9 +131,6 @@ func (r *reader) leaf(path string, fv reflect.Value) error {
 	return convert(item, path, raw, fv)
 }
 
-// raw is the value one leaf takes, from the topmost layer that gives it. The
-// environment is read from the snapshot taken when loading began, not from the
-// process at every lookup.
 func (l *loader) raw(item *manifestItem, path string) any {
 	if item != nil {
 		given := l.bound[item.path]
@@ -169,8 +141,7 @@ func (l *loader) raw(item *manifestItem, path string) any {
 	return l.v.Get(path)
 }
 
-// convert writes a source value into the field of one leaf, keeping a sensitive
-// item's value out of the failure.
+// convert writes one leaf's value, keeping a sensitive item's value out of the failure.
 func convert(item *manifestItem, path string, raw any, fv reflect.Value) error {
 	err := decodeInto(path, raw, fv)
 	if err == nil || item == nil || !item.item.Sensitive {
@@ -180,9 +151,6 @@ func convert(item *manifestItem, path string, raw any, fv reflect.Value) error {
 		"is not repeated here, since the item is sensitive", ErrTypeMismatch, path, typeName(fv.Type()))
 }
 
-// primaryValue walks the untouched primary source to one path. A source may
-// write a path flat, nested, or a mixture: the whole remaining path is tried as
-// a key before the first segment is descended into.
 func primaryValue(tree map[string]any, path string) (any, bool) {
 	if tree == nil {
 		return nil, false

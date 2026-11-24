@@ -12,8 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// expandOne expands a single module's declaration and indexes the result by
-// path, which is how the assertions below address the items.
 func expandOne(t *testing.T, s Schema, prefix string) map[string]*manifestItem {
 	t.Helper()
 	items, err := expandSchema("mod", s, prefix)
@@ -27,7 +25,6 @@ func expandOne(t *testing.T, s Schema, prefix string) map[string]*manifestItem {
 	return byPath
 }
 
-// expandFails expands a declaration that is expected to be rejected.
 func expandFails(t *testing.T, s Schema, prefix string) error {
 	t.Helper()
 	items, err := expandSchema("mod", s, prefix)
@@ -46,8 +43,7 @@ func pathsOf(byPath map[string]*manifestItem) []string {
 	return slices.Sorted(maps.Keys(byPath))
 }
 
-// TestFieldPathTagPrecedence checks that a field takes its name from the
-// config tag before the json tag.
+// TestFieldPathTagPrecedence checks that field path tag precedence.
 func TestFieldPathTagPrecedence(t *testing.T) {
 	type carrier struct {
 		Tagged   string `config:"alpha" json:"beta"`
@@ -61,7 +57,7 @@ func TestFieldPathTagPrecedence(t *testing.T) {
 	}
 }
 
-// TestCamelToKebab checks the lower-kebab form of Go field names.
+// TestCamelToKebab checks that camel to kebab.
 func TestCamelToKebab(t *testing.T) {
 	cases := map[string]string{
 		"PoolSize":  "pool-size",
@@ -77,8 +73,7 @@ func TestCamelToKebab(t *testing.T) {
 	}
 }
 
-// TestKeySegmentCharsetRejects checks that a key segment outside the allowed
-// characters is refused.
+// TestKeySegmentCharsetRejects checks that key segment charset rejects.
 func TestKeySegmentCharsetRejects(t *testing.T) {
 	type underscore struct {
 		Field string `config:"pool_size"`
@@ -115,8 +110,7 @@ func TestKeySegmentCharsetRejects(t *testing.T) {
 	}
 }
 
-// TestSkipsUndecodableFields checks that fields no source can give are
-// skipped.
+// TestSkipsUndecodableFields checks that skips undecodable fields.
 func TestSkipsUndecodableFields(t *testing.T) {
 	type inner struct {
 		Addr string
@@ -142,8 +136,7 @@ func TestSkipsUndecodableFields(t *testing.T) {
 	}
 }
 
-// TestNonNilStructPointerExpands checks that a non-nil struct pointer
-// expands into items.
+// TestNonNilStructPointerExpands checks that non nil struct pointer expands.
 func TestNonNilStructPointerExpands(t *testing.T) {
 	type tls struct {
 		ServerName string
@@ -169,8 +162,7 @@ type ringB struct {
 	A *ringA
 }
 
-// TestTypeCycleNamesFieldAndType checks that a cyclic type names the field
-// and the type.
+// TestTypeCycleNamesFieldAndType checks that type cycle names field and type.
 func TestTypeCycleNamesFieldAndType(t *testing.T) {
 	a := &ringA{}
 	b := &ringB{A: a}
@@ -183,8 +175,7 @@ func TestTypeCycleNamesFieldAndType(t *testing.T) {
 	}
 }
 
-// TestSameTypeOnSiblingBranchesIsNotCycle checks that the same type on two
-// sibling branches is not a cycle.
+// TestSameTypeOnSiblingBranchesIsNotCycle checks that same type on sibling branches is not cycle.
 func TestSameTypeOnSiblingBranchesIsNotCycle(t *testing.T) {
 	type node struct {
 		Name string
@@ -200,8 +191,7 @@ func TestSameTypeOnSiblingBranchesIsNotCycle(t *testing.T) {
 	}
 }
 
-// TestDeepNestingHasNoDepthLimit checks that deep nesting expands without a
-// depth limit.
+// TestDeepNestingHasNoDepthLimit checks that deep nesting has no depth limit.
 func TestDeepNestingHasNoDepthLimit(t *testing.T) {
 	const depth = 20
 	nested := reflect.StructOf([]reflect.StructField{{Name: "Leaf", Type: reflect.TypeFor[string]()}})
@@ -215,8 +205,7 @@ func TestDeepNestingHasNoDepthLimit(t *testing.T) {
 	}
 }
 
-// TestEnvNameDerivation checks how a path derives an environment variable
-// name.
+// TestEnvNameDerivation checks that env name derivation.
 func TestEnvNameDerivation(t *testing.T) {
 	type redis struct {
 		MaxConns int
@@ -234,8 +223,7 @@ func TestEnvNameDerivation(t *testing.T) {
 	}
 }
 
-// TestPinnedEnvNameWins checks that a pinned environment variable name wins
-// over the derived one.
+// TestPinnedEnvNameWins checks that pinned env name wins.
 func TestPinnedEnvNameWins(t *testing.T) {
 	type carrier struct {
 		Colour string
@@ -249,8 +237,7 @@ func TestPinnedEnvNameWins(t *testing.T) {
 	}
 }
 
-// TestNoPrefixDisablesDerivedEnvNamesOnly checks that no host prefix
-// disables derived names but keeps pinned ones.
+// TestNoPrefixDisablesDerivedEnvNamesOnly checks that no prefix disables derived env names only.
 func TestNoPrefixDisablesDerivedEnvNamesOnly(t *testing.T) {
 	type carrier struct {
 		Colour   string
@@ -268,8 +255,7 @@ func TestNoPrefixDisablesDerivedEnvNamesOnly(t *testing.T) {
 	}
 }
 
-// TestEmptyNamespaceLandsAtTopLevel checks that an empty namespace puts
-// items at the top level.
+// TestEmptyNamespaceLandsAtTopLevel checks that empty namespace lands at top level.
 func TestEmptyNamespaceLandsAtTopLevel(t *testing.T) {
 	type carrier struct {
 		LogLevel string
@@ -284,7 +270,7 @@ func TestEmptyNamespaceLandsAtTopLevel(t *testing.T) {
 	}
 }
 
-// TestContainerFieldsAreLeaves checks that a container field is a leaf.
+// TestContainerFieldsAreLeaves checks that container fields are leaves.
 func TestContainerFieldsAreLeaves(t *testing.T) {
 	type endpoint struct {
 		Addr string
@@ -313,8 +299,7 @@ func TestContainerFieldsAreLeaves(t *testing.T) {
 	}
 }
 
-// TestFlagOriginRequiresFlagName checks that an item taking the command line
-// must declare a flag name.
+// TestFlagOriginRequiresFlagName checks that flag origin requires flag name.
 func TestFlagOriginRequiresFlagName(t *testing.T) {
 	type carrier struct {
 		Addr string
@@ -328,8 +313,7 @@ func TestFlagOriginRequiresFlagName(t *testing.T) {
 	}
 }
 
-// TestSensitiveRequiresDescription checks that a sensitive item must carry a
-// description.
+// TestSensitiveRequiresDescription checks that sensitive requires description.
 func TestSensitiveRequiresDescription(t *testing.T) {
 	type carrier struct {
 		Password string
@@ -343,8 +327,7 @@ func TestSensitiveRequiresDescription(t *testing.T) {
 	}
 }
 
-// TestOrphanItemKeyRejected checks that an Items key reaching no field is
-// refused.
+// TestOrphanItemKeyRejected checks that orphan item key rejected.
 func TestOrphanItemKeyRejected(t *testing.T) {
 	type redis struct {
 		Addr string
@@ -360,8 +343,7 @@ func TestOrphanItemKeyRejected(t *testing.T) {
 	}
 }
 
-// TestMountValueMustCarryAStruct checks that a mount must carry a struct or
-// a pointer to one.
+// TestMountValueMustCarryAStruct checks that mount value must carry a struct.
 func TestMountValueMustCarryAStruct(t *testing.T) {
 	var absent *struct{ Addr string }
 	cases := map[string]any{
@@ -376,8 +358,7 @@ func TestMountValueMustCarryAStruct(t *testing.T) {
 	}
 }
 
-// TestTagDashSkipsField pins the reading of a "-" tag: the field stays out of
-// the manifest, as it does everywhere else a tag of that shape is read.
+// TestTagDashSkipsField checks that tag dash skips field.
 func TestTagDashSkipsField(t *testing.T) {
 	type carrier struct {
 		Kept     string
@@ -390,9 +371,7 @@ func TestTagDashSkipsField(t *testing.T) {
 	}
 }
 
-// TestTextUnmarshalerStructIsALeaf pins a struct type that takes its value from
-// a string of its own as an item rather than as a level of the path: expanding
-// it would reach nothing but unexported fields and the item would disappear.
+// TestTextUnmarshalerStructIsALeaf checks that text unmarshaler struct is a leaf.
 func TestTextUnmarshalerStructIsALeaf(t *testing.T) {
 	type carrier struct {
 		Deadline time.Time
@@ -407,10 +386,7 @@ func TestTextUnmarshalerStructIsALeaf(t *testing.T) {
 	}
 }
 
-// TestEmbeddedStructInlinesWithoutASegment pins the embedding semantics the
-// path rules borrow along with the json tag convention: the fields of an
-// embedded struct join the enclosing path, and the embedded type names
-// nothing.
+// TestEmbeddedStructInlinesWithoutASegment checks that embedded struct inlines without a segment.
 func TestEmbeddedStructInlinesWithoutASegment(t *testing.T) {
 	byPath := expandOne(t, Schema{Mounts: mount(&embedder{})}, "")
 	want := []string{"addr", "name"}
@@ -419,9 +395,7 @@ func TestEmbeddedStructInlinesWithoutASegment(t *testing.T) {
 	}
 }
 
-// TestTaggedEmbeddedFieldContributesItsTagName pins the other half of the
-// rule: a name written by hand was written to be used, so an embedded field
-// carrying an explicit tag names a segment as any other field does.
+// TestTaggedEmbeddedFieldContributesItsTagName checks that tagged embedded field contributes its tag name.
 func TestTaggedEmbeddedFieldContributesItsTagName(t *testing.T) {
 	byPath := expandOne(t, Schema{Mounts: mount(&taggedEmbedder{})}, "")
 	want := []string{"base.addr", "name"}
@@ -430,8 +404,7 @@ func TestTaggedEmbeddedFieldContributesItsTagName(t *testing.T) {
 	}
 }
 
-// TestEmbeddedPointerInlinesWhenNonNil pins that a non-nil embedded struct
-// pointer is inlined like an embedded value, defaults and all.
+// TestEmbeddedPointerInlinesWhenNonNil checks that embedded pointer inlines when non nil.
 func TestEmbeddedPointerInlinesWhenNonNil(t *testing.T) {
 	byPath := expandOne(t, Schema{Mounts: mount(&pointerEmbedder{EmbeddedOptions: &EmbeddedOptions{Addr: ":9000"}})}, "")
 	want := []string{"addr", "name"}
@@ -443,9 +416,7 @@ func TestEmbeddedPointerInlinesWhenNonNil(t *testing.T) {
 	}
 }
 
-// TestEmbeddedNilPointerIsSkipped pins the nil half: there are no defaults to
-// read out of it, which is the same reason a named nil struct pointer is
-// skipped.
+// TestEmbeddedNilPointerIsSkipped checks that embedded nil pointer is skipped.
 func TestEmbeddedNilPointerIsSkipped(t *testing.T) {
 	byPath := expandOne(t, Schema{Mounts: mount(&pointerEmbedder{})}, "")
 	want := []string{"name"}
@@ -480,9 +451,7 @@ type pointerEmbedder struct {
 	Name string
 }
 
-// TestUndeclaredContainerTakesThePrimarySourceAlone pins the origins a
-// container leaf resolves to when its module declared none: the primary
-// config source alone.
+// TestUndeclaredContainerTakesThePrimarySourceAlone checks that undeclared container takes the primary source alone.
 func TestUndeclaredContainerTakesThePrimarySourceAlone(t *testing.T) {
 	type carrier struct {
 		Labels map[string]string
@@ -497,8 +466,7 @@ func TestUndeclaredContainerTakesThePrimarySourceAlone(t *testing.T) {
 	}
 }
 
-// TestContainerDeclaringEnvOriginIsAccepted pins that the environment is an
-// origin a container may name.
+// TestContainerDeclaringEnvOriginIsAccepted checks that container declaring env origin is accepted.
 func TestContainerDeclaringEnvOriginIsAccepted(t *testing.T) {
 	type carrier struct {
 		Labels map[string]string
@@ -512,8 +480,7 @@ func TestContainerDeclaringEnvOriginIsAccepted(t *testing.T) {
 	}
 }
 
-// TestContainerDeclaringFlagOriginRejected is the command-line half of the
-// same defect, on the other container shape.
+// TestContainerDeclaringFlagOriginRejected checks that container declaring flag origin rejected.
 func TestContainerDeclaringFlagOriginRejected(t *testing.T) {
 	type endpoint struct {
 		Addr string
@@ -530,9 +497,7 @@ func TestContainerDeclaringFlagOriginRejected(t *testing.T) {
 	}
 }
 
-// TestStringListMayDeclareEnvAndFlag guards the narrowing from going too far:
-// a list of strings has the conventional comma-separated form and keeps both
-// flat layers.
+// TestStringListMayDeclareEnvAndFlag checks that string list may declare env and flag.
 func TestStringListMayDeclareEnvAndFlag(t *testing.T) {
 	type carrier struct {
 		Hosts []string
@@ -546,8 +511,7 @@ func TestStringListMayDeclareEnvAndFlag(t *testing.T) {
 	}
 }
 
-// TestMultiCharShortNameIsASchemaDefect pins the declaration half of the
-// short name rule.
+// TestMultiCharShortNameIsASchemaDefect checks that multi char short name is a schema defect.
 func TestMultiCharShortNameIsASchemaDefect(t *testing.T) {
 	type carrier struct {
 		Addr string
@@ -561,9 +525,7 @@ func TestMultiCharShortNameIsASchemaDefect(t *testing.T) {
 	}
 }
 
-// TestACommandLineNameNoArgumentCanReachIsASchemaDefect pins the names the
-// command-line syntax can never match, each decided by the declaration
-// alone.
+// TestACommandLineNameNoArgumentCanReachIsASchemaDefect checks that a command line name no argument can reach is a schema defect.
 func TestACommandLineNameNoArgumentCanReachIsASchemaDefect(t *testing.T) {
 	type carrier struct {
 		Addr string
@@ -583,9 +545,7 @@ func TestACommandLineNameNoArgumentCanReachIsASchemaDefect(t *testing.T) {
 	}
 }
 
-// TestLoadRefusesAShortNameTheLibraryWouldPanicOn pins where that refusal
-// reaches a host: as ErrInvalidSchema from the loading call, not as a panic out
-// of the command-line library while the arguments are registered.
+// TestLoadRefusesAShortNameTheLibraryWouldPanicOn checks that load refuses a short name the library would panic on.
 func TestLoadRefusesAShortNameTheLibraryWouldPanicOn(t *testing.T) {
 	type carrier struct {
 		Addr string
@@ -610,9 +570,7 @@ func TestLoadRefusesAShortNameTheLibraryWouldPanicOn(t *testing.T) {
 	}
 }
 
-// TestNilScalarPointerIsALeaf pins a nil pointer to a non-struct as an item: a
-// source that gives it a value has somewhere to put it, unlike a nil struct
-// pointer whose whole subtree would arrive without defaults.
+// TestNilScalarPointerIsALeaf checks that nil scalar pointer is a leaf.
 func TestNilScalarPointerIsALeaf(t *testing.T) {
 	type carrier struct {
 		Retries *int

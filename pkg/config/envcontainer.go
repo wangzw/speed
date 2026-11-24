@@ -10,12 +10,6 @@ import (
 	"strings"
 )
 
-// envContainer writes the JSON text an environment variable gave into a
-// container leaf's field, replacing the whole value.
-//
-// The decoding is strict: a member name no field answers for is an error, and a
-// name is matched exactly. A failure names the variable and the item and, for a
-// sensitive item, does not repeat the value.
 func envContainer(item *manifestItem, text string, fv reflect.Value) error {
 	if t := nonStringMapKey(fv.Type(), make(map[reflect.Type]bool)); t != nil {
 		return envContainerFailure(item, fv,
@@ -37,9 +31,6 @@ func envContainer(item *manifestItem, text string, fv reflect.Value) error {
 	return nil
 }
 
-// nonStringMapKey returns the first map type reached from t whose keys are not
-// strings, or nil when every map is string-keyed. seen keeps a cyclic element
-// type from being walked without end.
 func nonStringMapKey(t reflect.Type, seen map[reflect.Type]bool) reflect.Type {
 	if seen[t] {
 		return nil
@@ -73,8 +64,6 @@ func nonStringMapKey(t reflect.Type, seen map[reflect.Type]bool) reflect.Type {
 	return nil
 }
 
-// emptyEnvContainer gives the value an empty variable means for a container. A
-// list or a map has one; a struct has none and is refused.
 func emptyEnvContainer(item *manifestItem, fv reflect.Value) error {
 	switch fv.Kind() {
 	case reflect.Map:
@@ -92,8 +81,6 @@ func emptyEnvContainer(item *manifestItem, fv reflect.Value) error {
 		ErrTypeMismatch, item.envName, item.path, typeName(fv.Type()))
 }
 
-// envContainerFailure wraps a failed decode, naming the variable and the item.
-// A sensitive item's failure states the type alone.
 func envContainerFailure(item *manifestItem, fv reflect.Value, err error) error {
 	if item.item.Sensitive {
 		return fmt.Errorf("%w: environment variable %s gives the value of %q, and it does not "+
@@ -104,9 +91,6 @@ func envContainerFailure(item *manifestItem, fv reflect.Value, err error) error 
 		item.envName, item.path, err)
 }
 
-// parseEnvJSON reads a container variable's value token by token. A repeated
-// key is refused, numbers keep their width, and a null or whitespace-only value
-// is refused.
 func parseEnvJSON(text string) (any, error) {
 	dec := json.NewDecoder(strings.NewReader(text))
 	dec.UseNumber()
@@ -124,7 +108,6 @@ func parseEnvJSON(text string) (any, error) {
 	return value, nil
 }
 
-// parseJSONValue reads the value that starts at the decoder's next token.
 func parseJSONValue(dec *json.Decoder) (any, error) {
 	token, err := dec.Token()
 	if err != nil {
@@ -147,8 +130,6 @@ func parseJSONValue(dec *json.Decoder) (any, error) {
 	return token, nil
 }
 
-// parseJSONObject reads the members of an object whose opening brace has been
-// read.
 func parseJSONObject(dec *json.Decoder) (any, error) {
 	object := make(map[string]any)
 	for dec.More() {
@@ -177,8 +158,6 @@ func parseJSONObject(dec *json.Decoder) (any, error) {
 	return object, nil
 }
 
-// parseJSONArray reads the elements of an array whose opening bracket has been
-// read.
 func parseJSONArray(dec *json.Decoder) (any, error) {
 	array := make([]any, 0)
 	for dec.More() {
@@ -194,7 +173,6 @@ func parseJSONArray(dec *json.Decoder) (any, error) {
 	return array, nil
 }
 
-// onlyWhitespace reports whether the decoder has reached the end of the data.
 func onlyWhitespace(dec *json.Decoder) error {
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		if err != nil {
@@ -205,8 +183,6 @@ func onlyWhitespace(dec *json.Decoder) error {
 	return nil
 }
 
-// jsonNumber gives a JSON number the Go value that holds what it was written
-// with: an int when the literal fits one, otherwise a wider or floating type.
 func jsonNumber(n json.Number) (any, error) {
 	text := n.String()
 	if !strings.ContainsAny(text, ".eE") {

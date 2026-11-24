@@ -11,39 +11,27 @@ import (
 	"unicode/utf8"
 )
 
-// leafKind is how a leaf takes a value.
 type leafKind uint8
 
 const (
-	// kindScalar is a single assignable value.
 	kindScalar leafKind = iota
-	// kindStringList is a list of strings given comma separated and replaced as
-	// a whole.
 	kindStringList
-	// kindContainer is a map or a list of structs, given as a whole.
 	kindContainer
 )
 
-// manifestItem is one input item: a leaf of a mounted struct together with the
-// metadata its module declared for it.
 type manifestItem struct {
-	module  string
-	path    string
-	key     string
-	item    Item
-	origins Origin
-	envName string
-	typ     reflect.Type
-	kind    leafKind
-	def     any
-	// documented is whether the host defaults document gave this item its
-	// default.
+	module     string
+	path       string
+	key        string
+	item       Item
+	origins    Origin
+	envName    string
+	typ        reflect.Type
+	kind       leafKind
+	def        any
 	documented bool
 }
 
-// expandSchema turns one module's declaration into its input items. prefix is
-// the host's environment variable prefix; with no prefix, derived names do not
-// apply while pinned ones still do.
 func expandSchema(module string, s Schema, prefix string) ([]*manifestItem, error) {
 	if d := pathDefect(s.Namespace); d != "" {
 		return nil, fmt.Errorf("%w: module %q declares namespace %q: %s",
@@ -61,13 +49,12 @@ func expandSchema(module string, s Schema, prefix string) ([]*manifestItem, erro
 	return e.items, nil
 }
 
-// expander carries the state of one module's expansion.
 type expander struct {
 	module string
 	schema Schema
 	prefix string
 	items  []*manifestItem
-	keys   map[string]bool // relative keys the expansion produced
+	keys   map[string]bool
 }
 
 func (e *expander) mount(index int, m Mount) error {
@@ -86,10 +73,6 @@ func (e *expander) mount(index int, m Mount) error {
 	return e.walk(v, m.Path, []reflect.Type{v.Type()})
 }
 
-// walk expands one struct. rel is the path reached so far; chain holds the
-// struct types on the way in, which turns a self-referencing declaration into an
-// error instead of a hang. An embedded field is inlined at rel, the embedding
-// semantics of encoding/json.
 func (e *expander) walk(v reflect.Value, rel string, chain []reflect.Type) error {
 	t := v.Type()
 	for i := range t.NumField() {
@@ -104,7 +87,7 @@ func (e *expander) walk(v reflect.Value, rel string, chain []reflect.Type) error
 		fv := v.Field(i)
 		inner, inline, hollow := inlineEmbedded(f, fv, tagged)
 		if hollow {
-			continue // an embedded nil struct pointer has no defaults to read
+			continue
 		}
 		if inline {
 			if err := e.descend(inner, rel, chain, f); err != nil {
@@ -119,11 +102,11 @@ func (e *expander) walk(v reflect.Value, rel string, chain []reflect.Type) error
 		key := joinPath(rel, name)
 		switch f.Type.Kind() {
 		case reflect.Func, reflect.Chan, reflect.Interface:
-			continue // no source can give these
+			continue
 		case reflect.Pointer:
 			if f.Type.Elem().Kind() == reflect.Struct && !decodesFromText(f.Type) {
 				if fv.IsNil() {
-					continue // no defaults to read out of it
+					continue
 				}
 				if err := e.descend(fv.Elem(), key, chain, f); err != nil {
 					return err
@@ -145,8 +128,6 @@ func (e *expander) walk(v reflect.Value, rel string, chain []reflect.Type) error
 	return nil
 }
 
-// descend expands a nested struct, refusing a type already on the way in. The
-// same type on two sibling branches is not a cycle.
 func (e *expander) descend(v reflect.Value, key string, chain []reflect.Type, f reflect.StructField) error {
 	st := v.Type()
 	if slices.Contains(chain, st) {
@@ -158,14 +139,12 @@ func (e *expander) descend(v reflect.Value, key string, chain []reflect.Type, f 
 	return e.walk(v, key, append(chain, st))
 }
 
-// leaf records one input item and checks the metadata the module gave it.
 func (e *expander) leaf(key string, fv reflect.Value, ft reflect.Type) error {
 	e.keys[key] = true
 	item := e.schema.Items[key]
 	kind := classify(ft)
 	origins := resolveOrigins(item.Origins, kind)
-	// The declared set, not the resolved one, decides this. A container has no
-	// command-line form; the environment does take one as JSON.
+	// The declared origin set decides this, not the resolved one: an item that declared nothing resolves to a set it never asked for, and the environment is excluded because a container takes its JSON.
 	if kind == kindContainer && item.Origins&OriginFlag != 0 {
 		return fmt.Errorf("%w: module %q gives %q the command line as an origin, and it is %s. "+
 			"A map or a list of structs has no form for the command line to give, so the "+
@@ -232,7 +211,6 @@ func (e *expander) leaf(key string, fv reflect.Value, ft reflect.Type) error {
 	return nil
 }
 
-// checkItemKeys refuses an Items key that reached no leaf.
 func (e *expander) checkItemKeys() error {
 	for _, key := range slices.Sorted(maps.Keys(e.schema.Items)) {
 		if !e.keys[key] {
@@ -245,8 +223,6 @@ func (e *expander) checkItemKeys() error {
 	return nil
 }
 
-// shortNameDefect reports why a short name is one no command line can reach, or
-// "" when it is not.
 func shortNameDefect(short string) string {
 	switch {
 	case short == "":
@@ -261,8 +237,6 @@ func shortNameDefect(short string) string {
 	return ""
 }
 
-// longNameDefect reports why a long name is one no command line can reach, or
-// "" when it is not. The name is written without the leading dashes.
 func longNameDefect(name string) string {
 	switch {
 	case strings.HasPrefix(name, "-"):
@@ -275,9 +249,6 @@ func longNameDefect(name string) string {
 	return ""
 }
 
-// fieldName derives the path segment of a field: the config tag first, the json
-// tag next, the field name in lower kebab case otherwise. A tag of "-" keeps the
-// field out. tagged reports that the name came from a tag.
 func fieldName(f reflect.StructField) (name string, tagged, skip bool) {
 	for _, key := range [...]string{"config", "json"} {
 		tag, ok := f.Tag.Lookup(key)
@@ -295,9 +266,6 @@ func fieldName(f reflect.StructField) (name string, tagged, skip bool) {
 	return camelToKebab(f.Name), false, false
 }
 
-// inlineEmbedded reports how an anonymous field takes part in a walk. An
-// embedded struct without an explicit tag is inlined; an explicit tag names a
-// segment. hollow marks an embedded nil struct pointer, which is skipped.
 func inlineEmbedded(f reflect.StructField, fv reflect.Value, tagged bool) (inner reflect.Value, inline, hollow bool) {
 	if !f.Anonymous || tagged || decodesFromText(f.Type) {
 		return reflect.Value{}, false, false
@@ -314,8 +282,6 @@ func inlineEmbedded(f reflect.StructField, fv reflect.Value, tagged bool) (inner
 	return reflect.Value{}, false, false
 }
 
-// pathLabel renders a path for an error message, naming the root when the path
-// is empty, which is where the fields of an inlined embedded struct sit.
 func pathLabel(key string) string {
 	if key == "" {
 		return "the mount root"
@@ -323,8 +289,6 @@ func pathLabel(key string) string {
 	return fmt.Sprintf("%q", key)
 }
 
-// resolveOrigins settles the origins of one leaf. A container leaf defaults to
-// the primary source alone.
 func resolveOrigins(declared Origin, kind leafKind) Origin {
 	if declared == 0 && kind == kindContainer {
 		return OriginPrimary
@@ -332,8 +296,6 @@ func resolveOrigins(declared Origin, kind leafKind) Origin {
 	return declared.resolved()
 }
 
-// camelToKebab turns a Go field name into a config key: PoolSize becomes
-// pool-size, HTTPPort becomes http-port.
 func camelToKebab(name string) string {
 	runes := []rune(name)
 	var b strings.Builder
@@ -352,13 +314,6 @@ func camelToKebab(name string) string {
 	return b.String()
 }
 
-// deriveEnvName maps a path to an environment variable name: the prefix, an
-// underscore, then the segments joined by double underscores with hyphens
-// turned into single underscores, upper cased throughout.
-//
-//	cache.redis.max-conns  ->  MYAPP_CACHE__REDIS__MAX_CONNS
-//
-// This is the only place a variable name is built.
 func deriveEnvName(prefix, path string) string {
 	segments := strings.Split(path, ".")
 	for i, segment := range segments {
@@ -367,8 +322,6 @@ func deriveEnvName(prefix, path string) string {
 	return strings.ToUpper(prefix + "_" + strings.Join(segments, "__"))
 }
 
-// pathDefect reports why a dotted path is not a legal one, or "" when it is.
-// An empty path is legal: it means the namespace root.
 func pathDefect(path string) string {
 	if path == "" {
 		return ""
@@ -381,9 +334,6 @@ func pathDefect(path string) string {
 	return ""
 }
 
-// segmentDefect reports why one path segment is not a legal config key segment,
-// or "" when it is. Segments hold lowercase letters, digits and hyphens, which
-// keeps the environment variable mapping reversible.
 func segmentDefect(segment string) string {
 	if segment == "" {
 		return "it has an empty segment, and every segment names something"
@@ -399,8 +349,6 @@ func segmentDefect(segment string) string {
 	return ""
 }
 
-// envNameDefect reports why an environment variable name, or a prefix, is not
-// one a POSIX shell can export, or "" when it is.
 func envNameDefect(name string) string {
 	for i, r := range name {
 		switch {
@@ -431,7 +379,6 @@ func classify(t reflect.Type) leafKind {
 	return kindScalar
 }
 
-// booleanLeaf reports whether a leaf takes its value the way a boolean does.
 func booleanLeaf(t reflect.Type) bool {
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
@@ -441,8 +388,6 @@ func booleanLeaf(t reflect.Type) bool {
 
 var textUnmarshalerType = reflect.TypeFor[encoding.TextUnmarshaler]()
 
-// decodesFromText reports whether a struct type takes its value from a string of
-// its own, and is therefore a leaf rather than a level of the path.
 func decodesFromText(t reflect.Type) bool {
 	if t.Implements(textUnmarshalerType) {
 		return true
@@ -450,9 +395,7 @@ func decodesFromText(t reflect.Type) bool {
 	return t.Kind() != reflect.Pointer && reflect.PointerTo(t).Implements(textUnmarshalerType)
 }
 
-// defaultValue reads a field's current value out of the prototype. Maps and
-// slices are copied, so nothing reached through the manifest writes back into a
-// shared prototype.
+// defaultValue copies maps and slices, so nothing reaches the prototype a module declared.
 func defaultValue(v reflect.Value) any {
 	switch v.Kind() {
 	case reflect.Map:

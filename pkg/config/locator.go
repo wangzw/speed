@@ -10,15 +10,11 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// transports are the Source and Format implementations this binary carries,
-// indexed by the name each one answers for.
 type transports struct {
 	sources map[string]Source
 	formats map[string]Format
 }
 
-// collectTransports gathers the transports and formats, refusing two that answer
-// for the same name. Names are compared in lower case.
 func collectTransports(reg *core.Registry) (*transports, error) {
 	t := &transports{sources: map[string]Source{}, formats: map[string]Format{}}
 	declaredBy := map[string]string{}
@@ -46,9 +42,6 @@ func collectTransports(reg *core.Registry) (*transports, error) {
 	return t, nil
 }
 
-// locate gives the config locator of this run: the host's default, then
-// <PREFIX>_CONFIG, then --config, each overriding the one before it. All three
-// silent is a legal configuration with no primary config source.
 func locate(m *manifest, environ map[string]string, flagLocator string, flagGiven bool) string {
 	locator := m.host.DefaultLocator
 	if m.host.Prefix != "" {
@@ -62,10 +55,6 @@ func locate(m *manifest, environ map[string]string, flagLocator string, flagGive
 	return locator
 }
 
-// ReadPrimary reads the primary config source and puts it above the defaults. An
-// empty locator means there is no primary source. The content is checked before
-// it is merged in, since the layering tool folds keys in place. A second call
-// panics.
 func (l *loader) ReadPrimary(ctx context.Context, locator string) error {
 	if l.readPrimary {
 		panic("config: the primary config source was read twice. A run has one primary source, " +
@@ -88,8 +77,7 @@ func (l *loader) ReadPrimary(ctx context.Context, locator string) error {
 	return l.v.MergeConfigMap(content)
 }
 
-// clonedTree copies a parsed source so the layering tool's in-place folding
-// leaves the copy alone.
+// Clone a parsed source: the layering tool folds its keys in place, and only the maps and lists on the way down are rebuilt.
 func clonedTree(v any) any {
 	switch t := v.(type) {
 	case map[string]any:
@@ -109,8 +97,6 @@ func clonedTree(v any) any {
 	}
 }
 
-// read fetches the primary config source and parses it. The transport answers
-// where the bytes come from and the format how they are read.
 func (t *transports) read(ctx context.Context, locator string) (map[string]any, error) {
 	parsed, err := url.Parse(locator)
 	if err != nil {
@@ -161,8 +147,6 @@ func (t *transports) read(ctx context.Context, locator string) (map[string]any, 
 	return content, nil
 }
 
-// fetchError classifies what a transport reported, keeping the sentinel it
-// already carried.
 func fetchError(locator string, err error) error {
 	for _, sentinel := range []error{ErrMalformedLocator, ErrUndeterminedFormat, ErrSourceUnavailable} {
 		if errors.Is(err, sentinel) {

@@ -84,9 +84,7 @@ func (a *App) Execute(ctx context.Context) error {
 		return l.ClassifyParseError(err, p.collectedAt(cmd))
 	})
 
-	// Every command's arguments are registered before any of them is located: a
-	// layer still unregistered at that moment has the subcommand name after its
-	// boolean swallowed as that argument's value.
+	// Register every command's arguments before locating any: an unregistered boolean layer swallows the subcommand name as its value.
 	for _, node := range p.allNodes() {
 		if err := l.BindLayer(node.cmd.PersistentFlags(), node.added(), node.participants); err != nil {
 			return a.reportEarly(err)
@@ -96,8 +94,6 @@ func (a *App) Execute(ctx context.Context) error {
 	return root.ExecuteContext(ctx)
 }
 
-// reportEarly writes a failure that happened before the command-line library
-// took over, and hands it back.
 func (a *App) reportEarly(err error) error {
 	//nolint:errcheck // a.stderr is where a failure is reported; a failed
 	// write of the report has nowhere left to be reported to, and the error
@@ -106,8 +102,6 @@ func (a *App) reportEarly(err error) error {
 	return err
 }
 
-// run is what a command does once the library has parsed the whole of its path:
-// load this command's configuration, supply it to the config module, drive.
 func (a *App) run(ctx context.Context, l *loader, p *plan, node *planNode) error {
 	locator := locate(l.Manifest(), l.env, p.locator.Value.String(), p.locator.Changed)
 	if err := l.ReadPrimary(ctx, locator); err != nil {
@@ -116,8 +110,6 @@ func (a *App) run(ctx context.Context, l *loader, p *plan, node *planNode) error
 	l.ReportUnclaimed()
 	l.ReportSensitive()
 
-	// The module is named, so the owner of the reader does not depend on what
-	// else the registry holds.
 	a.reg.Supply(l.ReaderFor(node.participants), ModuleName)
 
 	return a.reg.Drive(ctx, core.Drive{
@@ -128,10 +120,7 @@ func (a *App) run(ctx context.Context, l *loader, p *plan, node *planNode) error
 	})
 }
 
-// withArgs and withStreams put a run's inputs in place of the process's own.
-// The environment has no such pair: every layer reads one snapshot taken when
-// Execute begins, and a case that steers a variable writes it with t.Setenv
-// before Execute.
+// The environment is read once, when Execute begins; a second way in would let one layer and another read different environments.
 func (a *App) withArgs(args ...string) *App {
 	if args == nil {
 		args = []string{}
@@ -146,8 +135,6 @@ func (a *App) withStreams(stdout, stderr io.Writer) *App {
 	return a
 }
 
-// programName is what the root command is called: the name the program was
-// invoked under.
 func programName() string {
 	if len(os.Args) == 0 || os.Args[0] == "" {
 		return "app"
@@ -155,7 +142,6 @@ func programName() string {
 	return filepath.Base(os.Args[0])
 }
 
-// processArgs is the command line without the program name.
 func processArgs() []string {
 	if len(os.Args) < 2 {
 		return []string{}

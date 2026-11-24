@@ -13,9 +13,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// fakeDefaults is a host defaults document as a module delivers one. The data
-// is what a real parser would read; the fake format below answers with the
-// content it was built with, so a case states the parsed document directly.
 type fakeDefaults struct {
 	format string
 	data   []byte
@@ -24,14 +21,10 @@ type fakeDefaults struct {
 func (f fakeDefaults) Format() string { return f.format }
 func (f fakeDefaults) Data() []byte   { return f.data }
 
-// withDefaults packs a document as the module a host would register.
 func withDefaults(format string, data string) core.Module {
 	return providing("host.defaults", fakeDefaults{format: format, data: []byte(data)})
 }
 
-// loadDefaults builds a loader over one cache declaration, one parser and the
-// extra modules. The cache prototype is data_test.go's, so a documented default
-// is told apart from the field value it replaces.
 func loadDefaults(t *testing.T, format fakeFormat, items map[string]Item, extra ...core.Module) (*loader, error) {
 	t.Helper()
 	prototype := cacheOptions{
@@ -53,17 +46,10 @@ func loadDefaults(t *testing.T, format fakeFormat, items map[string]Item, extra 
 	return newLoader(reg, io.Discard)
 }
 
-// yamlParser is the parser every case registers unless it is the parser the
-// case is about.
 func yamlParser(content map[string]any) fakeFormat {
 	return fakeFormat{name: "yaml", content: content}
 }
 
-// givePrimaryWhole puts a parsed primary source into a loader exactly as
-// ReadPrimary does: the un-folded tree is kept for container leaves, the
-// folded one feeds the layering tool. givePrimary in data_test.go stops short
-// of the first half because no case there reads a container through it after a
-// document has supplied one.
 func givePrimaryWhole(t *testing.T, l *loader, content map[string]any) {
 	t.Helper()
 	if err := validatePrimary(l.m, content); err != nil {
@@ -76,9 +62,7 @@ func givePrimaryWhole(t *testing.T, l *loader, content map[string]any) {
 	}
 }
 
-// TestDefaultsDocumentSetsScalarDefaults pins that a value in the document
-// replaces the prototype's field value as the item's default, and that both
-// spellings of a path reach it: one key holding the dots, and nested keys.
+// TestDefaultsDocumentSetsScalarDefaults checks that defaults document sets scalar defaults.
 func TestDefaultsDocumentSetsScalarDefaults(t *testing.T) {
 	l, err := loadDefaults(t, yamlParser(map[string]any{
 		"cache.addr": "defaults:1",
@@ -100,9 +84,7 @@ func TestDefaultsDocumentSetsScalarDefaults(t *testing.T) {
 	}
 }
 
-// TestDocumentDefaultLosesToHigherLayers pins the document's place in the
-// stack: it replaces the prototype's field value and is itself replaced by the
-// primary source and by the environment.
+// TestDocumentDefaultLosesToHigherLayers checks that document default loses to higher layers.
 func TestDocumentDefaultLosesToHigherLayers(t *testing.T) {
 	document := map[string]any{"cache": map[string]any{"addr": "defaults:1"}}
 	cases := []struct {
@@ -134,9 +116,7 @@ func TestDocumentDefaultLosesToHigherLayers(t *testing.T) {
 	}
 }
 
-// TestDocumentContainerAppliesWhole pins that a container leaf named by the
-// document replaces the prototype's whole value rather than merging under
-// it, and that its inner keys arrive as the document wrote them.
+// TestDocumentContainerAppliesWhole checks that document container applies whole.
 func TestDocumentContainerAppliesWhole(t *testing.T) {
 	l, err := loadDefaults(t, yamlParser(map[string]any{
 		"cache": map[string]any{"labels": map[string]any{"Zone": "cold"}},
@@ -152,9 +132,7 @@ func TestDocumentContainerAppliesWhole(t *testing.T) {
 	}
 }
 
-// TestPrimarySourceReplacesDocumentContainerWhole pins the other half: the
-// primary source still replaces the whole container, the document's entries
-// included.
+// TestPrimarySourceReplacesDocumentContainerWhole checks that primary source replaces document container whole.
 func TestPrimarySourceReplacesDocumentContainerWhole(t *testing.T) {
 	l, err := loadDefaults(t, yamlParser(map[string]any{
 		"cache": map[string]any{"labels": map[string]any{"zone": "cold"}},
@@ -172,9 +150,7 @@ func TestPrimarySourceReplacesDocumentContainerWhole(t *testing.T) {
 	}
 }
 
-// TestUnknownDefaultsKeyStopsTheStartup pins that the document is judged
-// like the primary source: a key no module declares is a startup failure,
-// not a value that quietly vanishes.
+// TestUnknownDefaultsKeyStopsTheStartup checks that unknown defaults key stops the startup.
 func TestUnknownDefaultsKeyStopsTheStartup(t *testing.T) {
 	_, err := loadDefaults(t, yamlParser(map[string]any{
 		"cache": map[string]any{"unknown-setting": "x"},
@@ -190,9 +166,7 @@ func TestUnknownDefaultsKeyStopsTheStartup(t *testing.T) {
 	}
 }
 
-// TestDefaultsKeyNotAcceptedFromPrimaryStopsTheStartup pins the second kind
-// of key the document may not give: the manifest has it, and the item does
-// not take the primary source.
+// TestDefaultsKeyNotAcceptedFromPrimaryStopsTheStartup checks that defaults key not accepted from primary stops the startup.
 func TestDefaultsKeyNotAcceptedFromPrimaryStopsTheStartup(t *testing.T) {
 	items := map[string]Item{"addr": {Origins: OriginFlag, FlagName: "cache-addr"}}
 	_, err := loadDefaults(t, yamlParser(map[string]any{
@@ -210,9 +184,7 @@ func TestDefaultsKeyNotAcceptedFromPrimaryStopsTheStartup(t *testing.T) {
 	}
 }
 
-// TestDefaultsDocumentSatisfiesRequired pins that the document counts as
-// somebody having given a value: it is the host declaring one on purpose,
-// the same act as writing the key in the configuration file.
+// TestDefaultsDocumentSatisfiesRequired checks that defaults document satisfies required.
 func TestDefaultsDocumentSatisfiesRequired(t *testing.T) {
 	cases := map[string]map[string]any{
 		"flat":   {"cache.addr": "defaults:1"},
@@ -237,9 +209,7 @@ func TestDefaultsDocumentSatisfiesRequired(t *testing.T) {
 	}
 }
 
-// TestDocumentSilentOnRequiredItemKeepsPrototypeOut pins the half that stays
-// true: a document in the run does not make the prototype's field value
-// count.
+// TestDocumentSilentOnRequiredItemKeepsPrototypeOut checks that document silent on required item keeps prototype out.
 func TestDocumentSilentOnRequiredItemKeepsPrototypeOut(t *testing.T) {
 	items := map[string]Item{"addr": {Required: true}}
 	l, err := loadDefaults(t, yamlParser(map[string]any{
@@ -270,9 +240,7 @@ func TestDocumentSilentOnRequiredItemKeepsPrototypeOut(t *testing.T) {
 	}
 }
 
-// TestDocumentNullDoesNotSatisfyRequired pins that a key written as nothing is
-// not a value the document gave: every layer reads a nil as unset, so the item
-// is still missing and the prototype's field value is still the default.
+// TestDocumentNullDoesNotSatisfyRequired checks that document null does not satisfy required.
 func TestDocumentNullDoesNotSatisfyRequired(t *testing.T) {
 	cases := map[string]map[string]any{
 		"flat":   {"cache.addr": nil},
@@ -298,10 +266,7 @@ func TestDocumentNullDoesNotSatisfyRequired(t *testing.T) {
 	}
 }
 
-// TestDocumentSuppliesRequiredStringList pins the case a skeleton leans on:
-// an endpoint list is a leaf the environment and the command line could also
-// give, and a required one the document supplies is satisfied through the
-// same judged read as any other required item.
+// TestDocumentSuppliesRequiredStringList checks that document supplies required string list.
 func TestDocumentSuppliesRequiredStringList(t *testing.T) {
 	type endpointsOptions struct{ Endpoints []string }
 	prototype := endpointsOptions{Endpoints: []string{"proto-a", "proto-b"}}
@@ -328,10 +293,7 @@ func TestDocumentSuppliesRequiredStringList(t *testing.T) {
 	}
 }
 
-// TestDocumentSuppliesRequiredContainerLeaf pins the case the string list
-// does not reach: a map or a list of structs is a container leaf, read back
-// from the source trees rather than through the layering tool, and the
-// required rule governs that branch too.
+// TestDocumentSuppliesRequiredContainerLeaf checks that document supplies required container leaf.
 func TestDocumentSuppliesRequiredContainerLeaf(t *testing.T) {
 	l, err := loadDefaults(t, yamlParser(map[string]any{
 		"cache": map[string]any{
@@ -358,9 +320,7 @@ func TestDocumentSuppliesRequiredContainerLeaf(t *testing.T) {
 	}
 }
 
-// TestDocumentSuppliesRequiredPointerLeaf pins the other shape the required
-// rule governs: a scalar pointer whose prototype value is nil, the one shape
-// meansUnset reads as "nobody gave one".
+// TestDocumentSuppliesRequiredPointerLeaf checks that document supplies required pointer leaf.
 func TestDocumentSuppliesRequiredPointerLeaf(t *testing.T) {
 	type retriesOptions struct{ Retries *int }
 	prototype := retriesOptions{}
@@ -384,10 +344,7 @@ func TestDocumentSuppliesRequiredPointerLeaf(t *testing.T) {
 	}
 }
 
-// TestDocumentSatisfiedRequiredValueLosesToHigherLayers pins that being
-// satisfied and holding the final value are two different questions: the
-// document satisfies the item, and the primary source and the environment
-// still replace the value it gave.
+// TestDocumentSatisfiedRequiredValueLosesToHigherLayers checks that document satisfied required value loses to higher layers.
 func TestDocumentSatisfiedRequiredValueLosesToHigherLayers(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -425,10 +382,7 @@ func TestDocumentSatisfiedRequiredValueLosesToHigherLayers(t *testing.T) {
 	}
 }
 
-// TestDocumentDefaultGoesThroughTheTypeRules pins that the document's values
-// take the same conversion path as every other source's: they keep the types
-// the parser resolved, and the constraints on top of the conversion apply to
-// them.
+// TestDocumentDefaultGoesThroughTheTypeRules checks that document default goes through the type rules.
 func TestDocumentDefaultGoesThroughTheTypeRules(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -465,9 +419,7 @@ func TestDocumentDefaultGoesThroughTheTypeRules(t *testing.T) {
 	}
 }
 
-// TestTwoDefaultsDocumentsConflict pins that a run carries one document: two
-// declarations leave no ground to choose between them, and the error names
-// both parties.
+// TestTwoDefaultsDocumentsConflict checks that two defaults documents conflict.
 func TestTwoDefaultsDocumentsConflict(t *testing.T) {
 	_, err := loadDefaults(t, yamlParser(map[string]any{}), nil,
 		providing("host.defaults.a", fakeDefaults{format: "yaml"}),
@@ -483,9 +435,7 @@ func TestTwoDefaultsDocumentsConflict(t *testing.T) {
 	}
 }
 
-// TestHelpRendersDocumentDefault pins that the help output's rendered default
-// is the document's value: the argument's default is read off the item, and
-// the item's default is what the document replaced.
+// TestHelpRendersDocumentDefault checks that help renders document default.
 func TestHelpRendersDocumentDefault(t *testing.T) {
 	items := map[string]Item{"addr": {Origins: OriginPrimary | OriginEnv | OriginFlag, FlagName: "cache-addr"}}
 	l, err := loadDefaults(t, yamlParser(map[string]any{
@@ -510,9 +460,7 @@ func TestHelpRendersDocumentDefault(t *testing.T) {
 	}
 }
 
-// TestHelpRendersDocumentListDefault pins the list half of the same rule: a
-// []string item whose value the document supplies renders the document's
-// entries.
+// TestHelpRendersDocumentListDefault checks that help renders document list default.
 func TestHelpRendersDocumentListDefault(t *testing.T) {
 	type hostsOptions struct{ Hosts []string }
 	prototype := hostsOptions{Hosts: []string{"proto-a", "proto-b"}}
@@ -549,9 +497,7 @@ func TestHelpRendersDocumentListDefault(t *testing.T) {
 	}
 }
 
-// TestDocumentDefaultStaysOutOfHelpWhenSensitive pins the one place the
-// document's value must not reach: a sensitive item hands the command line no
-// default, however the default was arrived at.
+// TestDocumentDefaultStaysOutOfHelpWhenSensitive checks that document default stays out of help when sensitive.
 func TestDocumentDefaultStaysOutOfHelpWhenSensitive(t *testing.T) {
 	items := map[string]Item{
 		"ttl": {Origins: OriginPrimary | OriginFlag, FlagName: "cache-ttl", Sensitive: true, Description: "cache TTL"},
@@ -580,9 +526,7 @@ func TestDocumentDefaultStaysOutOfHelpWhenSensitive(t *testing.T) {
 	}
 }
 
-// TestDefaultsFormatMustBeRegistered pins the format selection: the name is
-// folded to lower case and matched exactly, and a name no imported Format
-// answers for fails the startup rather than falling back to anything.
+// TestDefaultsFormatMustBeRegistered checks that defaults format must be registered.
 func TestDefaultsFormatMustBeRegistered(t *testing.T) {
 	cases := map[string]string{
 		"unknown": "toml",
@@ -600,8 +544,6 @@ func TestDefaultsFormatMustBeRegistered(t *testing.T) {
 		})
 	}
 
-	// The other half of the matching rule: case does not tell two names apart,
-	// so the registered yaml parser answers for "YAML".
 	if _, err := loadDefaults(t, yamlParser(map[string]any{
 		"cache": map[string]any{"addr": "defaults:1"},
 	}), nil, withDefaults("YAML", "ignored")); err != nil {
@@ -609,9 +551,7 @@ func TestDefaultsFormatMustBeRegistered(t *testing.T) {
 	}
 }
 
-// TestMalformedDefaultsDocumentStopsTheStartup pins that a document the parser
-// refuses is a startup failure classified like the primary source's, not an
-// empty layer.
+// TestMalformedDefaultsDocumentStopsTheStartup checks that malformed defaults document stops the startup.
 func TestMalformedDefaultsDocumentStopsTheStartup(t *testing.T) {
 	parser := fakeFormat{name: "yaml", err: errors.New("duplicate key")}
 	_, err := loadDefaults(t, parser, nil, withDefaults("yaml", "ignored"))

@@ -34,7 +34,6 @@ func Load(ctx context.Context, reg *core.Registry, args []string) (Reader, error
 	if err := l.BindLayer(fs, participants, participants); err != nil {
 		return nil, err
 	}
-	// Every module runs here, so none is collected from alone.
 	if err := fs.Parse(args); err != nil {
 		return nil, l.ClassifyParseError(err, nil)
 	}

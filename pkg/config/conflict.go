@@ -7,10 +7,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// The names a declaration may not take. --config is this module's own, and
-// --help and -h come from the command-line library, which puts them on every
-// command; a declaration taking any of them would silently hijack the config
-// locator or the help output.
 const (
 	locatorFlag      = "config"
 	helpFlag         = "help"
@@ -18,8 +14,6 @@ const (
 	locatorEnvSuffix = "_CONFIG"
 )
 
-// manifest is the complete set of input items of a run, collected from every
-// registered module.
 type manifest struct {
 	items    []*manifestItem
 	byPath   map[string]*manifestItem
@@ -27,16 +21,11 @@ type manifest struct {
 	byShort  map[string]*manifestItem
 	byEnv    map[string]*manifestItem
 	interior map[string]*manifestItem
-	// sections maps every namespace a module declares, and its ancestors, to
-	// the module that declared it.
 	sections map[string]string
 	host     HostIdentity
 	hasHost  bool
 }
 
-// newManifest collects the declarations of every registered module and merges
-// them into one manifest, failing on the first conflict. The domain is every
-// registered module, including the ones this run will not enable.
 func newManifest(reg *core.Registry) (*manifest, error) {
 	m := &manifest{
 		byPath:   make(map[string]*manifestItem),
@@ -66,8 +55,6 @@ func newManifest(reg *core.Registry) (*manifest, error) {
 	return m, nil
 }
 
-// collectHost takes the host identity, of which there may be at most one: two
-// prefixes or two default locators give no ground to choose between them.
 func (m *manifest) collectHost(reg *core.Registry) error {
 	declared := core.Resources[HostIdentity](reg)
 	if len(declared) > 1 {
@@ -87,9 +74,6 @@ func (m *manifest) collectHost(reg *core.Registry) error {
 	return nil
 }
 
-// declareSections records a module's namespace, and its ancestors, as sections
-// of the config data. A section and an input item may not share a path; two
-// modules sharing a namespace is not a conflict.
 func (m *manifest) declareSections(module, namespace string) error {
 	if namespace == "" {
 		return nil
@@ -105,10 +89,6 @@ func (m *manifest) declareSections(module, namespace string) error {
 	return nil
 }
 
-// add puts one input item into the manifest, refusing it when it collides with
-// an item already there. The item already there is always the one from the
-// earlier module in name order, so the two parties of a conflict are named in
-// the same order however the modules were registered.
 func (m *manifest) add(item *manifestItem) error {
 	if err := m.checkPath(item); err != nil {
 		return err
@@ -138,10 +118,6 @@ func (m *manifest) add(item *manifestItem) error {
 	return nil
 }
 
-// checkPath refuses two paths that intersect. Intersecting covers more than
-// being equal: one path being a prefix of the other makes the same path a leaf
-// for one module and an interior node for the other, and no primary source can
-// express both at once.
 func (m *manifest) checkPath(item *manifestItem) error {
 	if other, taken := m.byPath[item.path]; taken {
 		return fmt.Errorf("%w: modules %q and %q both declare the input item %q. Paths carry no "+
@@ -170,9 +146,6 @@ func pathIntersects(first *manifestItem, firstPath string, second *manifestItem,
 		ErrConfigConflict, first.module, firstPath, second.module, secondPath)
 }
 
-// sectionLeafConflict refuses a path one module declares as a section and
-// another as an input item. The two parties are named in module-name order so
-// that the message reads the same however the modules were registered.
 func sectionLeafConflict(sectionModule, sectionPath, itemModule, itemPath string) error {
 	first, second := sectionModule, itemModule
 	if second < first {
@@ -184,9 +157,6 @@ func sectionLeafConflict(sectionModule, sectionPath, itemModule, itemPath string
 		ErrConfigConflict, first, second, sectionPath)
 }
 
-// checkFlagNames refuses a command-line name that is taken, or reserved. The
-// command line is one flat namespace, so two items conflict there however far
-// apart their paths are.
 func (m *manifest) checkFlagNames(item *manifestItem) error {
 	switch item.item.FlagName {
 	case "":
@@ -222,7 +192,6 @@ func (m *manifest) checkFlagNames(item *manifestItem) error {
 	return nil
 }
 
-// checkEnvName refuses an environment variable name that is taken, or reserved.
 func (m *manifest) checkEnvName(item *manifestItem) error {
 	if item.envName == "" {
 		return nil
@@ -241,13 +210,10 @@ func (m *manifest) checkEnvName(item *manifestItem) error {
 	return nil
 }
 
-// locatorEnvName is the environment variable the config locator is read from.
 func locatorEnvName(prefix string) string {
 	return strings.ToUpper(prefix + locatorEnvSuffix)
 }
 
-// ancestors lists the proper prefixes of a path at its segment boundaries,
-// shortest first.
 func ancestors(path string) []string {
 	var out []string
 	for i, r := range path {

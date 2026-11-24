@@ -9,9 +9,7 @@ import (
 	"testing"
 )
 
-// TestConfigRootCarriesOnlyTheParsingTools is the executable form of the
-// boundary in this module's AGENTS.md: the root package carries the parsing
-// tools and nothing else third-party.
+// TestConfigRootCarriesOnlyTheParsingTools checks that config root carries only the parsing tools.
 func TestConfigRootCarriesOnlyTheParsingTools(t *testing.T) {
 	allowed := []string{
 		"github.com/go-viper/mapstructure/v2",
@@ -22,8 +20,6 @@ func TestConfigRootCarriesOnlyTheParsingTools(t *testing.T) {
 	}
 
 	imports := packageImports(t, ".")
-	// The positive control. A listing produced by a load that did not happen
-	// would pass every judgement below without one of them having been made.
 	if !slices.Contains(imports, "github.com/vislake/speed/pkg/core") {
 		t.Fatalf("the root package's import list does not hold pkg/core, so what is checked below is "+
 			"not this package's import face: %v", imports)
@@ -38,9 +34,6 @@ func TestConfigRootCarriesOnlyTheParsingTools(t *testing.T) {
 	}
 }
 
-// packageImports lists the packages a non-test build of target imports. The
-// imports its test files make are separate fields of the same listing, and an
-// import a case makes is not what a host pays for.
 func packageImports(t *testing.T, target string) []string {
 	t.Helper()
 	cmd := exec.Command("go", "list", "-json", target)
@@ -62,8 +55,6 @@ func packageImports(t *testing.T, target string) []string {
 	return listed.Imports
 }
 
-// stdlibPackage reports whether a package path names a package of the standard
-// library, whose first path element never carries a dot.
 func stdlibPackage(pkg string) bool {
 	first, _, _ := strings.Cut(pkg, "/")
 	return !strings.Contains(first, ".")

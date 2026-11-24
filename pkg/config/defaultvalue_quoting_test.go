@@ -13,24 +13,6 @@ import (
 	"testing"
 )
 
-// shellWords hands one rendered default to a real shell and returns the words
-// the program would receive in argv. The rendered text is pasted into a
-// command of its own, the shell does the splitting and the expansions, and
-// printf writes the arguments it ended up with back, NUL-separated.
-//
-// A non-interactive shell is all this covers: word splitting, quote removal,
-// parameter, command and arithmetic expansion, and pathname expansion. History
-// expansion and job specs live in the interactive layer, and no driver without
-// a terminal can rule on them.
-//
-// The working directory holds a file the corpus patterns match, because an
-// unmatched pattern is left standing: without that file a rendered * would
-// come back as itself and a missing pair of quotes would pass unnoticed.
-//
-// One limit is written down here and worked around by the callers: printf
-// writes the same single NUL for no arguments at all as for one empty
-// argument, so "the word disappeared" reads as one empty word. The empty
-// default is therefore pinned on the rendered text rather than through here.
 func shellWords(t *testing.T, rendered string) []string {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -55,9 +37,6 @@ func shellWords(t *testing.T, rendered string) []string {
 	return strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00")
 }
 
-// shellWord is the common case: a default is one value, so it has to reach the
-// program as one word. The count is compared before the text, or a value the
-// shell split in two would be reported as a mismatched first word.
 func shellWord(t *testing.T, rendered string) string {
 	t.Helper()
 	words := shellWords(t, rendered)
@@ -68,10 +47,6 @@ func shellWord(t *testing.T, rendered string) string {
 	return words[0]
 }
 
-// labelLoader collects a single item whose leaf carries its own text form.
-// The census below rides this shape rather than a plain string because it is
-// the shape the rule is about: what the column prints is whatever the type
-// wrote, and the decision to quote it can only be read off that text.
 func labelLoader(t *testing.T, value string) *loader {
 	t.Helper()
 	type labelOnly struct{ Label helpLabel }
@@ -83,17 +58,12 @@ func labelLoader(t *testing.T, value string) *loader {
 	}))
 }
 
-// labelDefault renders the default of that single item.
 func labelDefault(t *testing.T, value string) string {
 	t.Helper()
 	l := labelLoader(t, value)
 	return formatDefault(corpusItem(t, l, "label"))
 }
 
-// typedBack writes one rendered default onto a command line and reads back the
-// value that arrives in the item's own type. It is the second half of the
-// criterion: the shell decides what word the program receives, and this
-// decides what that word converts to.
 func typedBack(t *testing.T, name, typed string) (any, *manifestItem) {
 	t.Helper()
 	l := defaultsCorpusLoader(t)
@@ -108,9 +78,7 @@ func typedBack(t *testing.T, name, typed string) (any, *manifestItem) {
 	return out.Interface(), item
 }
 
-// TestHelpQuotesATextFormCarryingASpace pins the case the whole rule exists
-// for: a type that carries its own text form, is neither a string nor a list
-// of strings, and whose form holds a space.
+// TestHelpQuotesATextFormCarryingASpace checks that help quotes a text form carrying a space.
 func TestHelpQuotesATextFormCarryingASpace(t *testing.T) {
 	rendered := corpusDefault(t, "label")
 	if rendered != `'west wing'` {
@@ -121,10 +89,7 @@ func TestHelpQuotesATextFormCarryingASpace(t *testing.T) {
 	}
 }
 
-// TestHelpDefaultsRoundTripThroughARealShell pins the rule the default
-// column rests on, over every shape the corpus carries: the reader copies
-// the value out of the help output into a command line and gets that same
-// default back.
+// TestHelpDefaultsRoundTripThroughARealShell checks that help defaults round trip through a real shell.
 func TestHelpDefaultsRoundTripThroughARealShell(t *testing.T) {
 	for _, item := range defaultsCorpusLoader(t).m.items {
 		name := item.item.FlagName
@@ -142,9 +107,7 @@ func TestHelpDefaultsRoundTripThroughARealShell(t *testing.T) {
 	}
 }
 
-// TestHelpQuotedDefaultSurvivesEveryASCIIByte is the criterion put one byte
-// at a time: every byte a default can carry is rendered, and what the shell
-// hands the program is that same text.
+// TestHelpQuotedDefaultSurvivesEveryASCIIByte checks that help quoted default survives every ascii byte.
 func TestHelpQuotedDefaultSurvivesEveryASCIIByte(t *testing.T) {
 	for b := 0; b < 0x80; b++ {
 		value := "a" + string(rune(b)) + "b"
@@ -165,8 +128,7 @@ func TestHelpQuotedDefaultSurvivesEveryASCIIByte(t *testing.T) {
 	}
 }
 
-// TestHelpEscapesADefaultCarryingAControlCharacter pins the two properties
-// the escaped form is chosen for.
+// TestHelpEscapesADefaultCarryingAControlCharacter checks that help escapes a default carrying a control character.
 func TestHelpEscapesADefaultCarryingAControlCharacter(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -189,8 +151,7 @@ func TestHelpEscapesADefaultCarryingAControlCharacter(t *testing.T) {
 	}
 }
 
-// TestHelpQuotesEmbeddedSingleQuotes pins the one escape the quoted form
-// has.
+// TestHelpQuotesEmbeddedSingleQuotes checks that help quotes embedded single quotes.
 func TestHelpQuotesEmbeddedSingleQuotes(t *testing.T) {
 	rendered := corpusDefault(t, "quoted")
 	if rendered != `'it'\''s'` {
@@ -202,7 +163,7 @@ func TestHelpQuotesEmbeddedSingleQuotes(t *testing.T) {
 	}
 }
 
-// TestHelpLeavesAPlainDefaultUnquoted pins the other half of the rule.
+// TestHelpLeavesAPlainDefaultUnquoted checks that help leaves a plain default unquoted.
 func TestHelpLeavesAPlainDefaultUnquoted(t *testing.T) {
 	for name, want := range map[string]string{
 		"text":   "Hello",
@@ -221,9 +182,7 @@ func TestHelpLeavesAPlainDefaultUnquoted(t *testing.T) {
 	}
 }
 
-// TestHelpQuotesAnEmptyDefault pins the one value quoted for being
-// unreadable rather than unsafe: an empty column leaves the reader unable to
-// tell an empty default from one that failed to print.
+// TestHelpQuotesAnEmptyDefault checks that help quotes an empty default.
 func TestHelpQuotesAnEmptyDefault(t *testing.T) {
 	if got := labelDefault(t, ""); got != `''` {
 		t.Errorf("an empty default renders as %q, and an empty value is shown as ''", got)
@@ -243,10 +202,7 @@ func TestHelpQuotesAnEmptyDefault(t *testing.T) {
 	}
 }
 
-// TestHelpQuotesAListDefaultItsTextNeedsQuotingFor pins that the flat form
-// of a list is held to the criterion the whole column rests on: the reader
-// copies the value off the help line onto a command line and the program
-// receives that same text.
+// TestHelpQuotesAListDefaultItsTextNeedsQuotingFor checks that help quotes a list default its text needs quoting for.
 func TestHelpQuotesAListDefaultItsTextNeedsQuotingFor(t *testing.T) {
 	defaults := struct{ Hosts []string }{Hosts: []string{"a b", "c'd"}}
 	l := loadOver(t, declaring("greeter", Schema{
@@ -283,8 +239,7 @@ func TestHelpQuotesAListDefaultItsTextNeedsQuotingFor(t *testing.T) {
 	}
 }
 
-// TestHelpLeavesALeadingDashDefaultBare pins that a negative number is not
-// quoted for opening with a dash.
+// TestHelpLeavesALeadingDashDefaultBare checks that help leaves a leading dash default bare.
 func TestHelpLeavesALeadingDashDefaultBare(t *testing.T) {
 	rendered := corpusDefault(t, "offset")
 	if rendered != "-42" {
@@ -296,9 +251,6 @@ func TestHelpLeavesALeadingDashDefaultBare(t *testing.T) {
 	}
 }
 
-// notTypedBack names the arguments the round trip leaves out, with the reason
-// each one is left out. A skip is written down rather than silently passed
-// over, so the set of shapes that cannot be typed back stays visible.
 var notTypedBack = map[string]string{
 	"share": "the type reads itself from text and writes none, so the column " +
 		"carries Go's own form rather than a value the parser takes back",

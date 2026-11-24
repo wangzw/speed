@@ -10,9 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// parser builds the format the way the configuration module gets it, out of
-// the module's resources, so the tests exercise what a host actually ends up
-// with rather than a value this package hands itself.
 func parser(t *testing.T) config.Format {
 	t.Helper()
 	reg := core.New()
@@ -24,16 +21,14 @@ func parser(t *testing.T) config.Format {
 	return found[0].Value
 }
 
-// TestName checks the format name the parser reports.
+// TestName checks that name.
 func TestName(t *testing.T) {
 	if got := parser(t).Name(); got != "yaml" {
 		t.Errorf("Name() = %q, want %q", got, "yaml")
 	}
 }
 
-// TestNestedMapping pins the tree the conversion layer is written against,
-// including the types YAML resolves scalars to: 5m has to stay a string for a
-// duration field to parse it, and a count arrives as an integer.
+// TestNestedMapping checks that nested mapping.
 func TestNestedMapping(t *testing.T) {
 	got, err := parser(t).Unmarshal([]byte("cache:\n  redis:\n    pool-size: 4\n    ttl: 5m\n    tls: true\n"))
 	if err != nil {
@@ -53,9 +48,7 @@ func TestNestedMapping(t *testing.T) {
 	}
 }
 
-// TestSequenceOfMappings covers the shape a list of structs is written in: the
-// elements reach the conversion layer as string-keyed maps like any other
-// mapping.
+// TestSequenceOfMappings checks that sequence of mappings.
 func TestSequenceOfMappings(t *testing.T) {
 	got, err := parser(t).Unmarshal([]byte("endpoints:\n  - addr: a:1\n  - addr: b:2\n"))
 	if err != nil {
@@ -70,9 +63,7 @@ func TestSequenceOfMappings(t *testing.T) {
 	}
 }
 
-// TestTopLevelNonStringKeyRejected covers the key YAML permits and this
-// mechanism does not: a number turned into its text would make 1 and "1" the
-// same key for good.
+// TestTopLevelNonStringKeyRejected checks that top level non string key rejected.
 func TestTopLevelNonStringKeyRejected(t *testing.T) {
 	_, err := parser(t).Unmarshal([]byte("1: a\n"))
 	if err == nil {
@@ -83,17 +74,14 @@ func TestTopLevelNonStringKeyRejected(t *testing.T) {
 	}
 }
 
-// TestNestedNonStringKeyRejected proves the rule reaches the whole tree, which
-// is where it matters: a nested map[any]any would otherwise reach the
-// conversion layer as a type it has no rule for.
+// TestNestedNonStringKeyRejected checks that nested non string key rejected.
 func TestNestedNonStringKeyRejected(t *testing.T) {
 	if _, err := parser(t).Unmarshal([]byte("a:\n  1: x\n")); err == nil {
 		t.Fatal("Unmarshal() succeeded on a nested numeric key, want an error")
 	}
 }
 
-// TestQuotedNumericKeyAccepted is the other half of the rule: quoting says the
-// key is a string, and YAML resolves it to one.
+// TestQuotedNumericKeyAccepted checks that quoted numeric key accepted.
 func TestQuotedNumericKeyAccepted(t *testing.T) {
 	got, err := parser(t).Unmarshal([]byte("\"1\": x\n"))
 	if err != nil {
@@ -104,8 +92,7 @@ func TestQuotedNumericKeyAccepted(t *testing.T) {
 	}
 }
 
-// TestAliasResolved covers anchors and aliases, which the walk has to follow
-// itself: an alias node carries no value of its own.
+// TestAliasResolved checks that alias resolved.
 func TestAliasResolved(t *testing.T) {
 	got, err := parser(t).Unmarshal([]byte("base: &b\n  addr: a:1\nprimary: *b\n"))
 	if err != nil {
@@ -120,23 +107,21 @@ func TestAliasResolved(t *testing.T) {
 	}
 }
 
-// TestNonStringKeyInsideAliasRejected keeps the key rule from being escaped by
-// writing the mapping once and referring to it.
+// TestNonStringKeyInsideAliasRejected checks that non string key inside alias rejected.
 func TestNonStringKeyInsideAliasRejected(t *testing.T) {
 	if _, err := parser(t).Unmarshal([]byte("base: &b\n  1: x\nprimary: *b\n")); err == nil {
 		t.Fatal("Unmarshal() succeeded on a numeric key reached through an alias, want an error")
 	}
 }
 
-// TestUndefinedAliasRejected covers an alias with no anchor behind it.
+// TestUndefinedAliasRejected checks that undefined alias rejected.
 func TestUndefinedAliasRejected(t *testing.T) {
 	if _, err := parser(t).Unmarshal([]byte("primary: *missing\n")); err == nil {
 		t.Fatal("Unmarshal() succeeded on an undefined alias, want an error")
 	}
 }
 
-// TestSelfReferentialAliasRejected covers an anchor holding an alias to
-// itself.
+// TestSelfReferentialAliasRejected checks that self referential alias rejected.
 func TestSelfReferentialAliasRejected(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
@@ -148,9 +133,7 @@ func TestSelfReferentialAliasRejected(t *testing.T) {
 	}
 }
 
-// TestMergeKeyRejected pins the consequence of the key rule the design fixes:
-// << carries the merge tag rather than the string tag, so it is refused like
-// any other key that is not a string.
+// TestMergeKeyRejected checks that merge key rejected.
 func TestMergeKeyRejected(t *testing.T) {
 	_, err := parser(t).Unmarshal([]byte("base: &b\n  addr: a:1\nprimary:\n  <<: *b\n  port: 2\n"))
 	if err == nil {
@@ -161,8 +144,7 @@ func TestMergeKeyRejected(t *testing.T) {
 	}
 }
 
-// TestMultipleDocumentsRejected covers a stream carrying more than one
-// document.
+// TestMultipleDocumentsRejected checks that multiple documents rejected.
 func TestMultipleDocumentsRejected(t *testing.T) {
 	_, err := parser(t).Unmarshal([]byte("a: 1\n---\nb: 2\n"))
 	if err == nil {
@@ -173,7 +155,7 @@ func TestMultipleDocumentsRejected(t *testing.T) {
 	}
 }
 
-// TestDuplicateKeyRejected covers a mapping that gives one key twice.
+// TestDuplicateKeyRejected checks that duplicate key rejected.
 func TestDuplicateKeyRejected(t *testing.T) {
 	for name, data := range map[string]string{
 		"section":   "app:\n  level: info\n  port: 1\napp:\n  level: debug\n",
@@ -194,8 +176,7 @@ func TestDuplicateKeyRejected(t *testing.T) {
 	}
 }
 
-// TestEmptyDocumentIsEmptyMapping fixes the reading that a source carrying
-// nothing is a legal run rather than a failure.
+// TestEmptyDocumentIsEmptyMapping checks that empty document is empty mapping.
 func TestEmptyDocumentIsEmptyMapping(t *testing.T) {
 	for name, data := range map[string]string{
 		"nothing":      "",
@@ -214,9 +195,7 @@ func TestEmptyDocumentIsEmptyMapping(t *testing.T) {
 	}
 }
 
-// TestNonMappingTopLevelRejected covers the documents that parse as YAML and
-// still cannot be a configuration: the top level carries the keys, so anything
-// but a mapping has nowhere to put them.
+// TestNonMappingTopLevelRejected checks that non mapping top level rejected.
 func TestNonMappingTopLevelRejected(t *testing.T) {
 	for name, data := range map[string]string{
 		"sequence": "- 1\n- 2\n",
@@ -234,17 +213,14 @@ func TestNonMappingTopLevelRejected(t *testing.T) {
 	}
 }
 
-// TestMalformedDocumentRejected checks that a malformed document is refused.
+// TestMalformedDocumentRejected checks that malformed document rejected.
 func TestMalformedDocumentRejected(t *testing.T) {
 	if _, err := parser(t).Unmarshal([]byte("a: [1, 2\n")); err == nil {
 		t.Fatal("Unmarshal() succeeded on malformed YAML, want an error")
 	}
 }
 
-// TestModuleNameIsTheRegisteredName pins the constant a host writes on its
-// command tree to name this module, as in IncludeDeclarations: it is the name
-// the module registers under, so a rename changes both and every host that
-// wrote the constant follows.
+// TestModuleNameIsTheRegisteredName checks that module name is the registered name.
 func TestModuleNameIsTheRegisteredName(t *testing.T) {
 	if got := yaml.Module().Name; got != yaml.ModuleName {
 		t.Errorf("the module registers as %q and exports %q as its name", got, yaml.ModuleName)
@@ -254,9 +230,7 @@ func TestModuleNameIsTheRegisteredName(t *testing.T) {
 	}
 }
 
-// TestRegistersAsFormatResource proves the blank-import contract: importing
-// the package puts the parser in the process registry, where the
-// configuration module finds it by resource type alone.
+// TestRegistersAsFormatResource checks that registers as format resource.
 func TestRegistersAsFormatResource(t *testing.T) {
 	var found []core.Resource[config.Format]
 	for _, res := range core.Resources[config.Format](core.ProcessRegistry) {

@@ -21,11 +21,8 @@ type Defaults interface {
 	Data() []byte
 }
 
-// defaultsDocument names the defaults resource in the errors it raises.
 const defaultsDocument = "the host defaults document"
 
-// collectDefaults gives the one defaults document a run may carry, if any. At
-// most one may be declared.
 func collectDefaults(reg *core.Registry) (Defaults, string, bool, error) {
 	declared := core.Resources[Defaults](reg)
 	switch len(declared) {
@@ -40,9 +37,6 @@ func collectDefaults(reg *core.Registry) (Defaults, string, bool, error) {
 	}
 }
 
-// applyDefaults parses the host defaults document and folds its values into the
-// manifest's defaults. The keys are validated against the whole manifest; the
-// values are converted in Decode.
 func (l *loader) applyDefaults(d Defaults, module string) error {
 	name := strings.ToLower(d.Format())
 	if name == "" {

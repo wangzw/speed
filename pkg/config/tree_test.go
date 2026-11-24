@@ -10,30 +10,18 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// treeSink is the capability one fixture module delivers and another
-// requires. No case names the provider where it wants the requirer: what a
-// participating set does with the dependency between them is the point.
 type treeSink interface{ drain() }
 
-// treeProduct is what a fixture module constructs. It answers for treeSink so
-// that a drive reaching construction resolves the dependency the same way a
-// real one would.
 type treeProduct struct{ name string }
 
 func (treeProduct) drain() {}
 
-// treeAddr is the carrier struct every fixture module mounts, so that each of
-// them contributes one input item with a command-line name of its own.
 type treeAddr struct{ Addr string }
 
-// treeRun records what a drive did. A command's depth and its participating
-// set leave no other trace: the set decides who is asked for a stance, and
-// the depth decides how far those stances are carried.
 type treeRun struct{ steps []string }
 
 func (r *treeRun) note(step string) { r.steps = append(r.steps, step) }
 
-// at lists the modules that reached one stage, in name order.
 func (r *treeRun) at(stage string) []string {
 	names := []string{}
 	for _, step := range r.steps {
@@ -45,9 +33,6 @@ func (r *treeRun) at(stage string) []string {
 	return names
 }
 
-// treeModule builds one fixture module over a shape carrying whatever it
-// delivers or requires: it declares an input item under a namespace of its
-// own and records every stage it is driven through.
 func treeModule(run *treeRun, name string, shape core.Module) core.Module {
 	defaults := &treeAddr{Addr: name + ":default"}
 	m := shape
@@ -70,14 +55,6 @@ func treeModule(run *treeRun, name string, shape core.Module) core.Module {
 	return m
 }
 
-// treeRegistry is the fixture the command-tree cases run over: the config
-// module the reader is supplied to, a host identity, a transport and a format
-// standing in for the primary source, a module delivering the fixture
-// capability, one requiring it, and one unrelated to both.
-//
-// The config module and the next three carry nothing a command constructs. They
-// are what "every available module" has to reach past the ones a host would
-// think to list.
 func treeRegistry(t *testing.T, run *treeRun, content map[string]any) *core.Registry {
 	t.Helper()
 	reg := core.New()
@@ -95,12 +72,6 @@ func treeRegistry(t *testing.T, run *treeRun, content map[string]any) *core.Regi
 	return reg
 }
 
-// treeApp starts a tree over a registry with the process's own arguments and
-// streams put aside: a case gives the arguments and reads back what the run
-// wrote. The environment stays the process's own, which is where every layer
-// reads it; a case that steers a variable writes it with t.Setenv. The root is
-// renamed so that the paths a diagnostic renders do not carry the test
-// binary's name.
 func treeApp(reg *core.Registry, args ...string) (*App, *strings.Builder, *strings.Builder) {
 	stdout, stderr := &strings.Builder{}, &strings.Builder{}
 	a := NewApp(reg).withArgs(args...).withStreams(stdout, stderr)
@@ -108,10 +79,6 @@ func treeApp(reg *core.Registry, args ...string) (*App, *strings.Builder, *strin
 	return a, stdout, stderr
 }
 
-// selected names the node a set of arguments picks, which is how a case
-// reads back what one command was assembled with. A run makes the same choice
-// through the command-line library, which is the search this borrows. A path
-// the arguments do not reach ends at the root.
 func (p *plan) selected(args []string) *planNode {
 	found, _, _ := p.root.cmd.Find(args)
 	if node, ok := p.byCommand[found]; ok {
@@ -120,8 +87,6 @@ func (p *plan) selected(args []string) *planNode {
 	return p.root
 }
 
-// planOf assembles the tree the way Execute does, up to the point where the
-// command line is read.
 func planOf(t *testing.T, a *App) *plan {
 	t.Helper()
 	l, err := newLoader(a.reg, a.stderr)
@@ -135,8 +100,6 @@ func planOf(t *testing.T, a *App) *plan {
 	return p
 }
 
-// compileFails assembles a tree that is expected to be refused and returns the
-// failure.
 func compileFails(t *testing.T, a *App) error {
 	t.Helper()
 	l, err := newLoader(a.reg, a.stderr)
@@ -150,9 +113,7 @@ func compileFails(t *testing.T, a *App) error {
 	return err
 }
 
-// TestParticipantsAccumulateDownThePath pins that what a level takes in holds
-// for every command under it: the root's modules are the program's, and a
-// deeper level adds to them rather than replacing them.
+// TestParticipantsAccumulateDownThePath checks that participants accumulate down the path.
 func TestParticipantsAccumulateDownThePath(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil))
 	a.Root().Include("cache")
@@ -169,8 +130,7 @@ func TestParticipantsAccumulateDownThePath(t *testing.T) {
 	}
 }
 
-// TestParticipantsExpandTheDependencyClosure pins that taking a module in
-// takes in the providers of what it requires.
+// TestParticipantsExpandTheDependencyClosure checks that participants expand the dependency closure.
 func TestParticipantsExpandTheDependencyClosure(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil))
 	greet := a.Root().Sub("greet")
@@ -183,9 +143,7 @@ func TestParticipantsExpandTheDependencyClosure(t *testing.T) {
 	}
 }
 
-// TestIncludeAllTakesInEveryAvailableModule pins that "every module" means
-// the registry's whole roster, the config module and the modules carrying
-// resources alone among them.
+// TestIncludeAllTakesInEveryAvailableModule checks that include all takes in every available module.
 func TestIncludeAllTakesInEveryAvailableModule(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil))
 	all := a.Root().Sub("all")
@@ -199,8 +157,7 @@ func TestIncludeAllTakesInEveryAvailableModule(t *testing.T) {
 	}
 }
 
-// TestModuleTakenInByTwoLevelsAppearsOnce pins that the drive is handed a
-// deduplicated list.
+// TestModuleTakenInByTwoLevelsAppearsOnce checks that module taken in by two levels appears once.
 func TestModuleTakenInByTwoLevelsAppearsOnce(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil))
 	a.Root().Include("cache")
@@ -213,10 +170,7 @@ func TestModuleTakenInByTwoLevelsAppearsOnce(t *testing.T) {
 	}
 }
 
-// TestCommandTakingNothingInHasAnEmptyParticipatingSet pins that a command
-// assembling nothing is handed an empty list rather than none: an absent list
-// is how a caller asks for every module, and a command that takes nothing in
-// means the opposite of that.
+// TestCommandTakingNothingInHasAnEmptyParticipatingSet checks that command taking nothing in has an empty participating set.
 func TestCommandTakingNothingInHasAnEmptyParticipatingSet(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil))
 	version := a.Root().Sub("version")
@@ -231,9 +185,7 @@ func TestCommandTakingNothingInHasAnEmptyParticipatingSet(t *testing.T) {
 	}
 }
 
-// TestIncludeOfAnUnregisteredModuleNamesTheCommand pins the diagnostic for a
-// host that wrote a module name without importing the package that registers
-// it.
+// TestIncludeOfAnUnregisteredModuleNamesTheCommand checks that include of an unregistered module names the command.
 func TestIncludeOfAnUnregisteredModuleNamesTheCommand(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil))
 	serve := a.Root().Sub("serve")
@@ -252,8 +204,7 @@ func TestIncludeOfAnUnregisteredModuleNamesTheCommand(t *testing.T) {
 	}
 }
 
-// TestLeafWithoutDoIsRefused pins that a command a run can select states
-// what it does.
+// TestLeafWithoutDoIsRefused checks that leaf without do is refused.
 func TestLeafWithoutDoIsRefused(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil))
 	a.Root().Sub("serve").Include("cache")
@@ -264,9 +215,7 @@ func TestLeafWithoutDoIsRefused(t *testing.T) {
 	}
 }
 
-// TestCommandWithSubcommandsNeedsNoDo pins the other side of that rule: a
-// command that exists to group others is complete without one, and a run that
-// stops at it is answered with the list of what can follow it.
+// TestCommandWithSubcommandsNeedsNoDo checks that command with subcommands needs no do.
 func TestCommandWithSubcommandsNeedsNoDo(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil))
 	cluster := a.Root().Sub("cluster")
@@ -277,10 +226,7 @@ func TestCommandWithSubcommandsNeedsNoDo(t *testing.T) {
 	}
 }
 
-// TestAllNodesWalksEveryCommandShallowestFirst pins what the arguments are
-// registered over: every command of the tree, not the selected one's path,
-// since the search for the selected command reads a command line whose
-// arguments have to be registered already.
+// TestAllNodesWalksEveryCommandShallowestFirst checks that all nodes walks every command shallowest first.
 func TestAllNodesWalksEveryCommandShallowestFirst(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil))
 	a.Root().Sub("cluster").Sub("add").Do(core.StagePrepare, nil)
@@ -297,8 +243,7 @@ func TestAllNodesWalksEveryCommandShallowestFirst(t *testing.T) {
 	}
 }
 
-// TestALevelRegistersWhatTheLevelsAboveItDoNot pins where an argument sits:
-// on the shallowest command of a path that takes its module in.
+// TestALevelRegistersWhatTheLevelsAboveItDoNot checks that a level registers what the levels above it do not.
 func TestALevelRegistersWhatTheLevelsAboveItDoNot(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil))
 	a.Root().Include("cache")
@@ -322,8 +267,7 @@ func TestALevelRegistersWhatTheLevelsAboveItDoNot(t *testing.T) {
 	}
 }
 
-// TestTheLocatorVariableIsReadFromTheProcessEnvironment pins which
-// environment a run's locator comes from.
+// TestTheLocatorVariableIsReadFromTheProcessEnvironment checks that the locator variable is read from the process environment.
 func TestTheLocatorVariableIsReadFromTheProcessEnvironment(t *testing.T) {
 	t.Setenv("MYAPP_CONFIG", "file:///app.yaml")
 	content := map[string]any{"cache": map[string]any{"addr": "from-file:1"}}
@@ -342,8 +286,7 @@ func TestTheLocatorVariableIsReadFromTheProcessEnvironment(t *testing.T) {
 	}
 }
 
-// TestTheReservedArgumentCarriesItsOwnPlaceholder pins that the one argument
-// this module reserves reads like the ones the modules declare.
+// TestTheReservedArgumentCarriesItsOwnPlaceholder checks that the reserved argument carries its own placeholder.
 func TestTheReservedArgumentCarriesItsOwnPlaceholder(t *testing.T) {
 	a, stdout, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "--help")
 	a.Root().Sub("serve").Do(core.StagePrepare, nil)

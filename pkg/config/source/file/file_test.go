@@ -15,9 +15,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// transport builds the source the way the configuration module gets it, out
-// of the module's resources, so the tests exercise what a host actually ends
-// up with rather than a value this package hands itself.
 func transport(t *testing.T) config.Source {
 	t.Helper()
 	reg := core.New()
@@ -29,7 +26,6 @@ func transport(t *testing.T) config.Source {
 	return found[0].Value
 }
 
-// fetch runs a locator through the transport.
 func fetch(t *testing.T, locator string) ([]byte, string, error) {
 	t.Helper()
 	parsed, err := url.Parse(locator)
@@ -39,8 +35,6 @@ func fetch(t *testing.T, locator string) ([]byte, string, error) {
 	return transport(t).Fetch(context.Background(), parsed)
 }
 
-// write puts a file with the given base name in a temporary directory and
-// gives back the locator that points at it.
 func write(t *testing.T, name, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), name)
@@ -50,15 +44,14 @@ func write(t *testing.T, name, content string) string {
 	return "file://" + path
 }
 
-// TestScheme checks the scheme the transport answers for.
+// TestScheme checks that scheme.
 func TestScheme(t *testing.T) {
 	if got := transport(t).Scheme(); got != "file" {
 		t.Errorf("Scheme() = %q, want %q", got, "file")
 	}
 }
 
-// TestFormatByExtension pins the mapping the design fixes: the extension is
-// the only evidence of the format, and .yaml and .yml name the same one.
+// TestFormatByExtension checks that format by extension.
 func TestFormatByExtension(t *testing.T) {
 	cases := map[string]string{
 		"app.json": "json",
@@ -83,8 +76,7 @@ func TestFormatByExtension(t *testing.T) {
 	}
 }
 
-// TestUnknownExtension covers the two shapes that leave the format
-// undetermined.
+// TestUnknownExtension checks that unknown extension.
 func TestUnknownExtension(t *testing.T) {
 	for _, name := range []string{"app.conf", "app"} {
 		t.Run(name, func(t *testing.T) {
@@ -99,11 +91,8 @@ func TestUnknownExtension(t *testing.T) {
 	}
 }
 
-// TestRemoteHostRejected covers a shape this transport does not serve.
+// TestRemoteHostRejected checks that remote host rejected.
 func TestRemoteHostRejected(t *testing.T) {
-	// file://./app.yaml is the shape that would slip through if accepting
-	// localhost were read as accepting a host at all: "." is a host here, and
-	// the path it leaves behind is not the one the writer meant.
 	for _, locator := range []string{"file://host/path/app.yaml", "file://./app.yaml"} {
 		_, _, err := fetch(t, locator)
 		if !errors.Is(err, config.ErrMalformedLocator) {
@@ -115,8 +104,7 @@ func TestRemoteHostRejected(t *testing.T) {
 	}
 }
 
-// TestLocalhostHostAccepted covers the host RFC 8089 makes equal to an empty
-// one: it names this machine, which is the machine this transport reads.
+// TestLocalhostHostAccepted checks that localhost host accepted.
 func TestLocalhostHostAccepted(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "app.yaml")
 	if err := os.WriteFile(path, []byte("addr: :8080\n"), 0o600); err != nil {
@@ -131,8 +119,7 @@ func TestLocalhostHostAccepted(t *testing.T) {
 	}
 }
 
-// TestOpaqueLocatorIsARelativePath covers file:app.yaml, the one shape a URI
-// has for a path relative to the process working directory.
+// TestOpaqueLocatorIsARelativePath checks that opaque locator is a relative path.
 func TestOpaqueLocatorIsARelativePath(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "app.yaml"), []byte("addr: :8080\n"), 0o600); err != nil {
@@ -148,10 +135,7 @@ func TestOpaqueLocatorIsARelativePath(t *testing.T) {
 	}
 }
 
-// TestOpaqueLocatorDecodesPercentEscapes pins the two shapes to one reading of
-// the same name: url.Parse decodes Path and leaves Opaque as written, so the
-// transport has to undo the escapes itself or a space would reach the
-// filesystem as three characters.
+// TestOpaqueLocatorDecodesPercentEscapes checks that opaque locator decodes percent escapes.
 func TestOpaqueLocatorDecodesPercentEscapes(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "my app.yaml"), []byte("addr: :8080\n"), 0o600); err != nil {
@@ -163,9 +147,7 @@ func TestOpaqueLocatorDecodesPercentEscapes(t *testing.T) {
 	}
 }
 
-// TestOpaqueLocatorKeepsExtensionRules pins that the relative shape changes
-// where the path comes from and nothing else: the extension still names the
-// format, and an unrecognised one is still undetermined.
+// TestOpaqueLocatorKeepsExtensionRules checks that opaque locator keeps extension rules.
 func TestOpaqueLocatorKeepsExtensionRules(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "app.conf"), []byte("addr: :8080\n"), 0o600); err != nil {
@@ -178,7 +160,7 @@ func TestOpaqueLocatorKeepsExtensionRules(t *testing.T) {
 	}
 }
 
-// TestMissingFile also pins that the read error stays on the chain.
+// TestMissingFile checks that missing file.
 func TestMissingFile(t *testing.T) {
 	_, _, err := fetch(t, "file://"+filepath.Join(t.TempDir(), "absent.yaml"))
 	if !errors.Is(err, config.ErrSourceUnavailable) {
@@ -189,7 +171,7 @@ func TestMissingFile(t *testing.T) {
 	}
 }
 
-// TestUnreadableFile checks that an unreadable file is ErrSourceUnavailable.
+// TestUnreadableFile checks that unreadable file.
 func TestUnreadableFile(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("running as root, which reads a file whatever its mode says")
@@ -213,10 +195,7 @@ func TestUnreadableFile(t *testing.T) {
 	}
 }
 
-// TestModuleNameIsTheRegisteredName pins the constant a host writes on its
-// command tree to name this module, as in IncludeDeclarations: it is the name
-// the module registers under, so a rename changes both and every host that
-// wrote the constant follows.
+// TestModuleNameIsTheRegisteredName checks that module name is the registered name.
 func TestModuleNameIsTheRegisteredName(t *testing.T) {
 	if got := file.Module().Name; got != file.ModuleName {
 		t.Errorf("the module registers as %q and exports %q as its name", got, file.ModuleName)
@@ -226,9 +205,7 @@ func TestModuleNameIsTheRegisteredName(t *testing.T) {
 	}
 }
 
-// TestRegistersAsSourceResource proves the blank-import contract: importing
-// the package puts the transport in the process registry, where the
-// configuration module finds it by resource type alone.
+// TestRegistersAsSourceResource checks that registers as source resource.
 func TestRegistersAsSourceResource(t *testing.T) {
 	var found []core.Resource[config.Source]
 	for _, res := range core.Resources[config.Source](core.ProcessRegistry) {

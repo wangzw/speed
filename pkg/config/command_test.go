@@ -10,9 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// panicsWith runs fn and returns what it panicked with. A declaration that is
-// wrong in itself is caught where it is written, so these cases read the
-// message rather than an error value.
 func panicsWith(t *testing.T, what string, fn func()) string {
 	t.Helper()
 	panicked := false
@@ -32,12 +29,9 @@ func panicsWith(t *testing.T, what string, fn func()) string {
 	return message
 }
 
-// declaredTree is a root written by hand rather than by NewApp, so that the
-// command paths a diagnostic renders do not carry the test binary's name.
 func declaredTree() *Command { return &Command{use: "app"} }
 
-// TestSubBuildsThePathTheCommandLineReads checks that Sub builds the command
-// path the command line selects.
+// TestSubBuildsThePathTheCommandLineReads checks that sub builds the path the command line reads.
 func TestSubBuildsThePathTheCommandLineReads(t *testing.T) {
 	root := declaredTree()
 	deep := root.Sub("cluster").Sub("member").Sub("add")
@@ -49,9 +43,7 @@ func TestSubBuildsThePathTheCommandLineReads(t *testing.T) {
 	}
 }
 
-// TestSubRejectsANameThatSelectsNothing pins the names that leave a command no
-// run can reach: one that is empty, one carrying a space, one beginning with a
-// dash, and one a sibling already answers to.
+// TestSubRejectsANameThatSelectsNothing checks that sub rejects a name that selects nothing.
 func TestSubRejectsANameThatSelectsNothing(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
 		root := declaredTree()
@@ -68,12 +60,6 @@ func TestSubRejectsANameThatSelectsNothing(t *testing.T) {
 		}
 	})
 	t.Run("begins with a dash", func(t *testing.T) {
-		// The library reads a word beginning with a dash as an argument
-		// and never searches the commands for it, so the command this
-		// would declare has no command line that reaches it. Left to
-		// stand it is worse than unreachable: a leaf must also declare
-		// Do, so the host writes an action that is never run and hears
-		// nothing about it.
 		root := declaredTree()
 		message := panicsWith(t, `Sub("-x")`, func() { root.Sub("-x") })
 		if !strings.Contains(message, "-x") {
@@ -90,9 +76,7 @@ func TestSubRejectsANameThatSelectsNothing(t *testing.T) {
 	})
 }
 
-// TestIncludeTakesAModuleInOnce pins that naming a module twice is not naming
-// two of them: the drive is handed one list, and a repeated name in it would
-// be a module asked for a stance twice.
+// TestIncludeTakesAModuleInOnce checks that include takes a module in once.
 func TestIncludeTakesAModuleInOnce(t *testing.T) {
 	root := declaredTree()
 	root.Include("cache", "cache")
@@ -102,8 +86,7 @@ func TestIncludeTakesAModuleInOnce(t *testing.T) {
 	}
 }
 
-// TestIncludeRejectsAnEmptyName checks that Include rejects an empty module
-// name.
+// TestIncludeRejectsAnEmptyName checks that include rejects an empty name.
 func TestIncludeRejectsAnEmptyName(t *testing.T) {
 	root := declaredTree()
 	message := panicsWith(t, `Include("")`, func() { root.Include("") })
@@ -112,8 +95,7 @@ func TestIncludeRejectsAnEmptyName(t *testing.T) {
 	}
 }
 
-// TestDoTwiceIsAProgrammingError pins the one depth and one action a command
-// has.
+// TestDoTwiceIsAProgrammingError checks that do twice is a programming error.
 func TestDoTwiceIsAProgrammingError(t *testing.T) {
 	serve := declaredTree().Sub("serve")
 	serve.Do(core.StageServe, nil)
@@ -125,8 +107,7 @@ func TestDoTwiceIsAProgrammingError(t *testing.T) {
 	}
 }
 
-// TestDoRejectsADepthThatIsNotAStage pins the check this one call can make on
-// its own: the type admits any small number, and the stages are six of them.
+// TestDoRejectsADepthThatIsNotAStage checks that do rejects a depth that is not a stage.
 func TestDoRejectsADepthThatIsNotAStage(t *testing.T) {
 	serve := declaredTree().Sub("serve")
 	message := panicsWith(t, "Do past the deepest stage", func() {
@@ -137,8 +118,7 @@ func TestDoRejectsADepthThatIsNotAStage(t *testing.T) {
 	}
 }
 
-// TestDoAtTheZeroDepthIsADeclaration pins that the shallowest stage is a
-// legal answer rather than a missing one.
+// TestDoAtTheZeroDepthIsADeclaration checks that do at the zero depth is a declaration.
 func TestDoAtTheZeroDepthIsADeclaration(t *testing.T) {
 	serve := declaredTree().Sub("serve")
 	if serve.hasDo {

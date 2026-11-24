@@ -15,16 +15,10 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// helpLevel prints a word for the number it stores, which is a form no source
-// takes back. It is here so the default column can be pinned to the number.
 type helpLevel int
 
 func (l helpLevel) String() string { return "debug" }
 
-// helpLabel carries its own text form, and that form holds a space while the
-// type is neither a string nor a list of strings. It is the shape the quoting
-// rule has to reach: a rule reading the field's Go kind leaves this one bare,
-// and the reader who copies the line back hands the program two arguments.
 type helpLabel struct{ name string }
 
 func (l helpLabel) MarshalText() ([]byte, error) { return []byte(l.name), nil }
@@ -34,9 +28,6 @@ func (l *helpLabel) UnmarshalText(text []byte) error {
 	return nil
 }
 
-// helpPercent reads itself from text but writes none: it holds 50 and takes
-// "50%" back. It is the shape a leaf has when its stored value and its own
-// input form are not the same text.
 type helpPercent int
 
 func (p *helpPercent) UnmarshalText(text []byte) error {
@@ -54,16 +45,6 @@ func (p *helpPercent) UnmarshalText(text []byte) error {
 
 func (p helpPercent) String() string { return strconv.Itoa(int(p)) + "%" }
 
-// defaultsCorpus carries one field of every shape the default column has to
-// render, so one corpus covers them all: the plain scalars, a named integer
-// that prints a word of its own, a duration, three types that carry their own
-// text form, one that reads text without writing any, both states of a scalar
-// pointer, a sensitive unset one, and a list in both of its states.
-//
-// The texts are chosen for the quoting rule as much as for the types: a value
-// needing no quotes, one carrying a space behind a text form, one carrying the
-// characters a shell acts on, one carrying a quote of its own, one carrying a
-// character with no typeable form at all, and one opening with a dash.
 type defaultsCorpus struct {
 	Text    string
 	Spaced  string
@@ -87,8 +68,6 @@ type defaultsCorpus struct {
 	NoHosts []string
 }
 
-// defaultsCorpusLoader collects the corpus into a loader. A fresh one is built
-// per case, so a command line given to one does not reach another.
 func defaultsCorpusLoader(t *testing.T) *loader {
 	t.Helper()
 	held := 7
@@ -132,7 +111,6 @@ func defaultsCorpusLoader(t *testing.T) *loader {
 	}))
 }
 
-// corpusItem picks one item of the corpus out by its command-line name.
 func corpusItem(t *testing.T, l *loader, name string) *manifestItem {
 	t.Helper()
 	item, declared := l.m.byFlag[name]
@@ -142,18 +120,12 @@ func corpusItem(t *testing.T, l *loader, name string) *manifestItem {
 	return item
 }
 
-// corpusDefault renders the default of one item of the corpus.
 func corpusDefault(t *testing.T, name string) string {
 	t.Helper()
 	l := defaultsCorpusLoader(t)
 	return formatDefault(corpusItem(t, l, name))
 }
 
-// helpFlags registers the arguments of one module and returns the flag set
-// holding them, which is what the command-line library renders the help
-// output out of. Registration happens once per loader - a deeper level passes
-// over what a shallower one already registered - so one call per loader
-// answers both what the library was handed and what it prints.
 func helpFlags(t *testing.T, l *loader, module string) *pflag.FlagSet {
 	t.Helper()
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
@@ -163,9 +135,6 @@ func helpFlags(t *testing.T, l *loader, module string) *pflag.FlagSet {
 	return fs
 }
 
-// sameDefault compares what the command line produced with the declared
-// default. Lists are compared element by element: a nil list and an empty one
-// render the same flat text, so what comes back can only match one of them.
 func sameDefault(got, want any) bool {
 	gv, wv := reflect.ValueOf(got), reflect.ValueOf(want)
 	if gv.Kind() == reflect.Slice && wv.Kind() == reflect.Slice {
@@ -182,16 +151,14 @@ func sameDefault(got, want any) bool {
 	return reflect.DeepEqual(got, want)
 }
 
-// TestHelpPointerDefaultShowsThePointee pins that a scalar pointer renders
-// what it points at.
+// TestHelpPointerDefaultShowsThePointee checks that help pointer default shows the pointee.
 func TestHelpPointerDefaultShowsThePointee(t *testing.T) {
 	if got := corpusDefault(t, "held"); got != "7" {
 		t.Fatalf("the pointer default renders as %q, and its value is 7", got)
 	}
 }
 
-// TestHelpTextDefaultUsesTheTypesOwnTextForm pins that a leaf which reads
-// itself from a string renders in that same string form.
+// TestHelpTextDefaultUsesTheTypesOwnTextForm checks that help text default uses the types own text form.
 func TestHelpTextDefaultUsesTheTypesOwnTextForm(t *testing.T) {
 	if got := corpusDefault(t, "moment"); got != "2026-09-13T10:00:00Z" {
 		t.Fatalf("the time default renders as %q, and its own text form is RFC 3339", got)
@@ -201,33 +168,28 @@ func TestHelpTextDefaultUsesTheTypesOwnTextForm(t *testing.T) {
 	}
 }
 
-// TestHelpNumericDefaultIgnoresAStringerForm pins that a number renders as a
-// number.
+// TestHelpNumericDefaultIgnoresAStringerForm checks that help numeric default ignores a stringer form.
 func TestHelpNumericDefaultIgnoresAStringerForm(t *testing.T) {
 	if got := corpusDefault(t, "level"); got != "3" {
 		t.Fatalf("the named integer renders as %q, and its value is 3", got)
 	}
 }
 
-// TestHelpFloatDefaultKeepsItsPrecision pins that a 32-bit float renders at
-// its own width.
+// TestHelpFloatDefaultKeepsItsPrecision checks that help float default keeps its precision.
 func TestHelpFloatDefaultKeepsItsPrecision(t *testing.T) {
 	if got := corpusDefault(t, "ratio"); got != "0.1" {
 		t.Fatalf("the float default renders as %q, and its value is 0.1", got)
 	}
 }
 
-// TestHelpDurationDefaultIsWrittenAsDuration pins the duration form, which is
-// also the only form the parser takes: a bare nanosecond count is refused on
-// the way in and would advertise a value that cannot be given.
+// TestHelpDurationDefaultIsWrittenAsDuration checks that help duration default is written as duration.
 func TestHelpDurationDefaultIsWrittenAsDuration(t *testing.T) {
 	if got := corpusDefault(t, "ttl"); got != "5m0s" {
 		t.Fatalf("the duration default renders as %q, and it is five minutes", got)
 	}
 }
 
-// TestHelpStringListDefaultIsCommaSeparated pins the flat form of a list,
-// which is the one the command line and the environment give.
+// TestHelpStringListDefaultIsCommaSeparated checks that help string list default is comma separated.
 func TestHelpStringListDefaultIsCommaSeparated(t *testing.T) {
 	l := defaultsCorpusLoader(t)
 	if got := flagDefaultString(corpusItem(t, l, "hosts")); got != "a,b" {
@@ -235,8 +197,7 @@ func TestHelpStringListDefaultIsCommaSeparated(t *testing.T) {
 	}
 }
 
-// TestHelpPrintsNoDefaultForAListNobodyGaveAValue pins what a list whose
-// field was left alone hands over.
+// TestHelpPrintsNoDefaultForAListNobodyGaveAValue checks that help prints no default for a list nobody gave a value.
 func TestHelpPrintsNoDefaultForAListNobodyGaveAValue(t *testing.T) {
 	var defaults struct{ Hosts []string }
 	l := loadOver(t, declaring("greeter", Schema{
@@ -253,8 +214,7 @@ func TestHelpPrintsNoDefaultForAListNobodyGaveAValue(t *testing.T) {
 	}
 }
 
-// TestHelpQuotesAStringDefaultOnlyWhenItsTextNeedsIt pins that a string is
-// not quoted for being a string.
+// TestHelpQuotesAStringDefaultOnlyWhenItsTextNeedsIt checks that help quotes a string default only when its text needs it.
 func TestHelpQuotesAStringDefaultOnlyWhenItsTextNeedsIt(t *testing.T) {
 	for name, want := range map[string]string{
 		"text":   "Hello",
@@ -267,17 +227,14 @@ func TestHelpQuotesAStringDefaultOnlyWhenItsTextNeedsIt(t *testing.T) {
 	}
 }
 
-// TestHelpKeepsTheResidualFormForATextTypeWithoutAnOutputForm pins what a
-// leaf gets when it reads itself from text but writes none: Go's own printed
-// form.
+// TestHelpKeepsTheResidualFormForATextTypeWithoutAnOutputForm checks that help keeps the residual form for a text type without an output form.
 func TestHelpKeepsTheResidualFormForATextTypeWithoutAnOutputForm(t *testing.T) {
 	if got := corpusDefault(t, "share"); got != "50%" {
 		t.Fatalf("the text-reading type renders as %q, and its printed form is 50%%", got)
 	}
 }
 
-// TestHelpPrintsNoDefaultForAnUnsetLeaf pins what the command-line library
-// is handed for a leaf whose value stands for being unset.
+// TestHelpPrintsNoDefaultForAnUnsetLeaf checks that help prints no default for an unset leaf.
 func TestHelpPrintsNoDefaultForAnUnsetLeaf(t *testing.T) {
 	l := defaultsCorpusLoader(t)
 	if got := flagDefaultString(corpusItem(t, l, "missing")); got != "" {
@@ -285,8 +242,7 @@ func TestHelpPrintsNoDefaultForAnUnsetLeaf(t *testing.T) {
 	}
 }
 
-// TestHelpPrintsNoDefaultForAnUnsetSensitiveLeaf pins that the two rules do
-// not cancel each other out: an item that is both still hands over nothing.
+// TestHelpPrintsNoDefaultForAnUnsetSensitiveLeaf checks that help prints no default for an unset sensitive leaf.
 func TestHelpPrintsNoDefaultForAnUnsetSensitiveLeaf(t *testing.T) {
 	l := defaultsCorpusLoader(t)
 	if got := flagDefaultString(corpusItem(t, l, "secret")); got != "" {
@@ -294,10 +250,7 @@ func TestHelpPrintsNoDefaultForAnUnsetSensitiveLeaf(t *testing.T) {
 	}
 }
 
-// TestHelpOmitsSensitiveDefault pins the one thing this module decides about a
-// sensitive item: the command-line library prints what it receives, so the
-// real default is never handed to it and reaches the run through the default
-// layer alone.
+// TestHelpOmitsSensitiveDefault checks that help omits sensitive default.
 func TestHelpOmitsSensitiveDefault(t *testing.T) {
 	defaults := struct{ Token string }{Token: "s3cr3t"}
 	l := loadOver(t, declaring("greeter", Schema{
@@ -319,8 +272,7 @@ func TestHelpOmitsSensitiveDefault(t *testing.T) {
 	}
 }
 
-// TestHelpGivesEitherBooleanNoPlaceholder pins that the placeholder looks
-// through the pointer exactly as the argument form does.
+// TestHelpGivesEitherBooleanNoPlaceholder checks that help gives either boolean no placeholder.
 func TestHelpGivesEitherBooleanNoPlaceholder(t *testing.T) {
 	var defaults struct {
 		Verbose bool
@@ -342,8 +294,7 @@ func TestHelpGivesEitherBooleanNoPlaceholder(t *testing.T) {
 	}
 }
 
-// TestPlaceholderCollidingWithAValueTypeNameRejected pins the one
-// placeholder a declaration may not choose.
+// TestPlaceholderCollidingWithAValueTypeNameRejected checks that placeholder colliding with a value type name rejected.
 func TestPlaceholderCollidingWithAValueTypeNameRejected(t *testing.T) {
 	defaults := struct{ Count string }{}
 	reg := core.New()
@@ -364,8 +315,7 @@ func TestPlaceholderCollidingWithAValueTypeNameRejected(t *testing.T) {
 	}
 }
 
-// TestHelpOmitsTheDefaultOfARequiredItem pins that an item nobody may omit
-// hands over no default.
+// TestHelpOmitsTheDefaultOfARequiredItem checks that help omits the default of a required item.
 func TestHelpOmitsTheDefaultOfARequiredItem(t *testing.T) {
 	defaults := struct{ Addr string }{}
 	l := loadOver(t, declaring("greeter", Schema{
@@ -388,8 +338,7 @@ func TestHelpOmitsTheDefaultOfARequiredItem(t *testing.T) {
 	}
 }
 
-// TestHelpRendersTheDocumentDefaultOfARequiredItem pins that the help output
-// tells the two kinds of required item apart.
+// TestHelpRendersTheDocumentDefaultOfARequiredItem checks that help renders the document default of a required item.
 func TestHelpRendersTheDocumentDefaultOfARequiredItem(t *testing.T) {
 	defaults := struct{ Addr string }{}
 	l := loadOver(t,
@@ -420,8 +369,7 @@ func TestHelpRendersTheDocumentDefaultOfARequiredItem(t *testing.T) {
 	}
 }
 
-// TestHelpMarksARequiredItem pins that the help output tells an argument
-// nobody may omit from an optional one.
+// TestHelpMarksARequiredItem checks that help marks a required item.
 func TestHelpMarksARequiredItem(t *testing.T) {
 	defaults := struct {
 		Addr string
@@ -454,9 +402,7 @@ func TestHelpMarksARequiredItem(t *testing.T) {
 	}
 }
 
-// TestHelpDoesNotMarkACollectedModulesArgumentAsRequired pins that the mark
-// follows the module a run asks for its configuration rather than the item
-// that declares itself required.
+// TestHelpDoesNotMarkACollectedModulesArgumentAsRequired checks that help does not mark a collected modules argument as required.
 func TestHelpDoesNotMarkACollectedModulesArgumentAsRequired(t *testing.T) {
 	defaults := struct{ Addr string }{}
 	l := loadOver(t, declaring("greeter", Schema{
@@ -471,8 +417,6 @@ func TestHelpDoesNotMarkACollectedModulesArgumentAsRequired(t *testing.T) {
 	}))
 
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
-	// Named among the modules taking part and not among the ones running:
-	// it contributes the argument and nothing here runs it.
 	if err := l.BindLayer(fs, []string{"greeter"}, nil); err != nil {
 		t.Fatalf("registering the arguments failed: %v", err)
 	}
@@ -486,8 +430,7 @@ func TestHelpDoesNotMarkACollectedModulesArgumentAsRequired(t *testing.T) {
 	}
 }
 
-// TestHelpMarksARequiredItemWithoutADescription pins that the mark stands on
-// its own when the item declares no description.
+// TestHelpMarksARequiredItemWithoutADescription checks that help marks a required item without a description.
 func TestHelpMarksARequiredItemWithoutADescription(t *testing.T) {
 	defaults := struct{ Addr string }{}
 	l := loadOver(t, declaring("greeter", Schema{
@@ -502,8 +445,7 @@ func TestHelpMarksARequiredItemWithoutADescription(t *testing.T) {
 	}
 }
 
-// TestHelpOmitsADefaultThatIsTheZeroValue pins that a zero default is left
-// out, which is the test the library applies to its own types.
+// TestHelpOmitsADefaultThatIsTheZeroValue checks that help omits a default that is the zero value.
 func TestHelpOmitsADefaultThatIsTheZeroValue(t *testing.T) {
 	defaults := struct {
 		Addr    string
