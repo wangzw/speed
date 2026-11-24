@@ -1,30 +1,3 @@
-/**
- * The organization admin area's route facts and entry derivation.
- *
- * The organization surface is the tenant-scoped management area: its
- * declarations arrive from @speed/admin-ui relative to a host-chosen root
- * and mount under ORGANIZATION_ADMIN_PREFIX (/organization/admin). The host
- * narrows them with the feature-presence predicate, then derives both
- * entries -- the account menu's organization group and the home card -- from
- * the same answer, so the two never disagree.
- *
- * Admission is fail-closed at every step. The surface is offered only when
- * the session is authenticated and not impersonating, the current tenant is
- * a business tenant other than `system`, the narrowed declarations are
- * non-empty, and the tenant-domain permission set *for that tenant* holds
- * at least one of their codes. The permission set is read through
- * useTenantPermissionSet, which returns null until the tagged read answers
- * for the current tenant: a pending read, a failed one, and a set read for
- * the tenant the viewer just left all fail closed rather than pairing the
- * new tenant with the previous tenant's permissions.
- *
- * A failure is told apart from both a wait and a denial. A read in flight is
- * `pending`; a read that failed is `failed` and gets a retryable page, so a
- * possible manager is not sent home; only a settled answer -- not a member,
- * the system or a personal tenant, impersonating, or a known permission set
- * without the code -- is `denied`.
- */
-
 import { useAuthState, useFeatureState, featurePresence } from '@speed/auth-core'
 import type { AppShellNavItem } from '@speed/layout-kit'
 import { presentDeclarations, useNavItems } from '@speed/route-kit'
@@ -41,65 +14,27 @@ import {
 } from './platform-permissions.js'
 import { useSelfTenantState } from './tenant-self.js'
 
-/**
- * The role names the demo host seeds into every business tenant and keeps
- * under its own control: the seed writes `tenant-admin`
- * (starters/demo/server/seed.go) and converges its grants, so the organization
- * role page must render that row read-only even where the server's builtin
- * mark is absent. The host hands the list to `OrganizationAdminProvider`; the
- * page locks exactly these names, the way the platform console locks a
- * builtin role.
- */
 export const organizationAdminProtectedRoles: readonly string[] = ['tenant-admin']
 
-/**
- * The organization declarations mapped onto their prefixed URLs. The organization
- * root itself has no page: every declaration lives one segment below it.
- */
 export const organizationAdminShellRoutes: AdminRouteTable =
   organizationAdminRoutes.map((route) => ({
     ...route,
     path: `${ORGANIZATION_ADMIN_PREFIX}${route.path}`,
   }))
 
-/** The entry both the account menu's organization group and the home card
- * render. */
 export interface OrganizationAdminEntry {
-  /** The current tenant the surface acts on; every request names it. */
   readonly tenantName: string
-  /** The first declaration the caller may open. */
   readonly target: string
-  /** The narrowed declarations, prefixed. */
   readonly routes: readonly AdminRoute[]
-  /** The route-kit navigation entries for the declarations the caller may
-   * open, ready to sit in the account menu's organization group. */
   readonly children: readonly AppShellNavItem[]
 }
 
-/**
- * The admission outcome: `pending` while a fact the decision needs is still
- * in flight (the tenant, its kind, the feature document, the tenant
- * permission read), `failed` when one of those reads failed (the answer is
- * unknown, not a denial), `denied` when a settled fact rules the surface
- * out, and `allowed` only when every condition holds.
- *
- * A failure is not a conclusion about the caller: a refused caller-tenants or
- * permission read says nothing about membership or permissions, so it must
- * not take a viewer who may manage the tenant to the tenant home. The
- * `failed` state is the retryable surface the host renders instead.
- */
 export type OrganizationAdminAdmission =
   | { readonly status: 'pending' }
   | { readonly status: 'failed' }
   | { readonly status: 'denied' }
   | ({ readonly status: 'allowed' } & OrganizationAdminEntry)
 
-/**
- * Whether the page at the current URL may open. The `permission` a
- * declaration carries is matched against the scoped tenant set; a code the
- * caller does not hold denies the page, and the host sends the viewer to
- * the first page it may open.
- */
 export function useOrganizationAdminPermission(
   permission: string | undefined,
 ): 'allowed' | 'denied' | 'pending' {
@@ -113,14 +48,6 @@ export function useOrganizationAdminPermission(
   return permissions.includes(permission) ? 'allowed' : 'denied'
 }
 
-/**
- * The organization surface's admission and entry for the current render.
- *
- * Hooks are called unconditionally; the returned status carries the
- * decision. Callers render the entry (account menu's organization group, home
- * card) only on `allowed`, wait on `pending`, show a retryable failure on
- * `failed`, and send the viewer home on `denied`.
- */
 export function useOrganizationAdminAdmission(): OrganizationAdminAdmission {
   const snapshot = useAuthState()
   const tenantName = useCurrentTenant()
@@ -136,33 +63,20 @@ export function useOrganizationAdminAdmission(): OrganizationAdminAdmission {
     return { status: 'denied' }
   }
   if (presence.state !== 'ready') {
-    // A failed feature document is a failed read, not an absent capability:
-    // the surface cannot decide, and only a retry can.
     return presence.state === 'failed'
       ? { status: 'failed' }
       : { status: 'pending' }
   }
   if (tenantName === null) {
-    // No tenant is settled. A failed caller-tenants read is why: the read
-    // that supplies the settlement never answered, so this is a retryable
-    // failure, not a wait. A settled list may still be about to settle the
-    // tenant in the same commit, which is the pending case.
     return self.failed ? { status: 'failed' } : { status: 'pending' }
   }
   if (tenantName === 'system') {
     return { status: 'denied' }
   }
-  // The kind is the host's answer for this tenant: the caller tenant read
-  // carries it, and an operation's answer can record it before the list
-  // does. A tenant the host knows nothing about is not shown as a business
-  // tenant; a list that has not settled yet is still pending.
   const row = self.tenants.find((tenant) => tenant.name === tenantName)
   const kind = row?.kind ?? getRecordedTenantKind(tenantName)
+  // An unknown kind after a failed read is a fault, not "not a member": settle failed so the surface retries.
   if (kind === null) {
-    // An unknown kind after a failed caller-tenants read is a fault, not a
-    // "not a member": the read never answered, so the admission retries
-    // rather than sending a possible manager to the tenant home. A settled
-    // list that does not carry the tenant is the membership denial.
     if (self.failed) {
       return { status: 'failed' }
     }
@@ -175,18 +89,10 @@ export function useOrganizationAdminAdmission(): OrganizationAdminAdmission {
   if (narrowed.length === 0) {
     return { status: 'denied' }
   }
-  // The tagged read pairs a set with the tenant it was read for. A read
-  // issued for another tenant is not an answer for this one: the switch
-  // clears and re-reads, so that window stays pending rather than admitting
-  // the new tenant with the old tenant's set. A failure tagged with another
-  // tenant is likewise not this tenant's failure -- the re-read is in flight.
   if (read.tenantName !== tenantName) {
     return { status: 'pending' }
   }
   if (read.failed) {
-    // The permission read failed for this tenant: the set is unknown, not
-    // empty. A retryable failure replaces the bare-denied redirect that
-    // would send a viewer who may hold the permission to the tenant home.
     return { status: 'failed' }
   }
   if (read.perms === null) {
@@ -216,10 +122,6 @@ export function useOrganizationAdminAdmission(): OrganizationAdminAdmission {
       route.icon === undefined ? [] : [[route.path, route.icon] as const],
     ),
   )
-  // The children come from route-kit's own navigation derivation -- the
-  // same entries, hrefs, selection and click handler the rest of the shell
-  // uses -- restricted to the declarations the caller may open. The group is
-  // therefore an entry over real links, never a hand-built list.
   const children = navItems
     .filter((item) => openablePaths.has(item.id))
     .map(

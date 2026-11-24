@@ -1,47 +1,3 @@
-/**
- * The route-level a11y sweep's scripted backends.
- *
- * Every page the sweep renders reads its data through the generated
- * @speed/api-sdk operations, which call the host's request function bound into
- * the runtime seam (bindRequestFn) -- the one seam both shells share. A sweep
- * that rendered with no bound function would meet the seam's fail-fast error
- * on every page and scan three identical error shells, so each combination is
- * rendered under a scripted function that answers the reads the routes fire:
- *
- *   - 'data'   -- the reads answer a small canned dataset, so each page renders
- *                 its populated state (the tables, the rows, the record and
- *                 account sections), not an empty shell.
- *   - 'empty'  -- the reads answer their empty envelopes, so each page renders
- *                 its own empty state.
- *   - 'error'  -- every read rejects, so each page renders its error state.
- *
- * The three are the empty / error / data states the sweep must reach; a page
- * that only ever scanned one of them would let a violation that lives in
- * another slip through. The canned rows are typed against the generated
- * response interfaces (@speed/api-sdk), so a drifting shape fails typecheck
- * rather than rendering a broken page the sweep would scan as a false sample.
- *
- * The endpoint set is the reads the routes fire on mount: the admin pages'
- * administration reads (the roster, the audit query, the accounts list, the
- * permissions catalog, the settings and SMS surfaces) and the tenant area's
- * (the profile, sessions and factors the account page mounts, the object list,
- * the notification centre) and the invitation landing's public token read. The
- * impersonations page also fires a caller-session
- * read on mount -- GET /api/v1/auth/impersonation, the operator's own impersonation
- * status -- which is scripted here too, in data mode as a grant in force and in
- * empty mode as the bare 404 the page reads as "not impersonating". The
- * tenant-scoped pages the organization surface mounts under the current tenant
- * (invitations and members, SSO providers), the tenant roles and permissions
- * page (roles, the governed permission catalog, a role's grants and the
- * tenant's bindings) and the tenant settings page (the declared set on the
- * tenant layer) answer populated data mode with rows of the scan tenant, so
- * the sweep scans their real table state; the platform surface's
- * selector-driven pages (the impersonations list and the tenant-addressed
- * invitations and SSO pages at their own routes) still wait on a selector the
- * sweep does not drive and render their selector-plus-empty state, which is a
- * real state too.
- */
-
 import type { RequestFn } from '@speed/api-client'
 import type {
   AuditAdminRecord,
@@ -91,24 +47,12 @@ import type {
   TenantSelfTenantsList200,
 } from '@speed/api-sdk'
 
-/** The three states a route is swept in. */
 export type BackendMode = 'data' | 'empty' | 'error'
 
-/**
- * A scripted refusal: the endpoint answers a bare 404 rather than a body. Some
- * reads' real "empty" state IS a refusal, not an empty envelope -- the
- * impersonation status read (GET /api/v1/auth/impersonation) answers 404 when the
- * caller has no impersonation in force, which the page reads as "not
- * impersonating". Scripted as a resolved body it would instead surface a
- * query error, so the endpoint's empty slot names this sentinel and the
- * scripted request function rejects with a 404-shaped error the page handles.
- */
 const NOT_FOUND = Symbol('scripted-not-found')
 
-/** An RFC 3339 instant, reused across the canned rows. */
 const INSTANT = '2026-01-01T00:00:00Z'
 
-// --- The canned rows (data mode), typed against the generated shapes. -------
 
 const TENANT: TenantAdminTenant = {
   name: 'acme',
@@ -122,9 +66,6 @@ const TENANT: TenantAdminTenant = {
   created_at: INSTANT,
 }
 
-/** The scan tenant's organization profile, the same values its roster row
- * carries. The profile route is a single object, so both modes answer it:
- * the page has no empty state to reach. */
 const TENANT_PROFILE: TenantProfileView = {
   name: TENANT.name,
   kind: TENANT.kind,
@@ -152,12 +93,6 @@ const ACCOUNT: AuthnAdminAccount = {
   created_at: INSTANT,
 }
 
-/**
- * One member of the scan tenant, carrying the account display name the
- * member read answers: the organization invitations page renders the name
- * column and both identity cells from it, so data mode scans a populated
- * member table rather than an empty shell.
- */
 const MEMBER: AuthnAdminMember = {
   account: ACCOUNT.id,
   tenant: TENANT.name,
@@ -170,11 +105,6 @@ const MEMBER: AuthnAdminMember = {
   joined_at: '2026-10-15T12:00:00Z',
 }
 
-/**
- * One pending invitation of the scan tenant. It carries the inviter's display
- * name and username on the row itself, the pair the organization page renders;
- * no member or platform account read resolves the inviter.
- */
 const INVITATION_ROW: AuthnInviteInvitation = {
   id: 'invite-1',
   tenant: TENANT.name,
@@ -192,12 +122,6 @@ const INVITATION_ROW: AuthnInviteInvitation = {
   invited_by_username: 'test-user',
 }
 
-/**
- * The other three stored states the invitation table renders, so the sweep
- * reaches all four states: pending takes the informational tone, accepted
- * the success tone, and expired and revoked the neutral tone. Each terminal
- * row carries the instant its state reads.
- */
 const EXPIRED_INVITATION_ROW: AuthnInviteInvitation = {
   ...INVITATION_ROW,
   id: 'invite-expired',
@@ -224,7 +148,6 @@ const REVOKED_INVITATION_ROW: AuthnInviteInvitation = {
   revoked_at: '2026-06-01T12:00:00Z',
 }
 
-/** Every stored invitation state, for the scan tenant's data mode. */
 const INVITATION_ROWS: readonly AuthnInviteInvitation[] = [
   INVITATION_ROW,
   EXPIRED_INVITATION_ROW,
@@ -232,7 +155,6 @@ const INVITATION_ROWS: readonly AuthnInviteInvitation[] = [
   REVOKED_INVITATION_ROW,
 ]
 
-/** One SSO provider of the scan tenant, with no claimed domain. */
 const SSO_PROVIDER: AuthnAdminProvider = {
   id: 'provider-1',
   tenant: TENANT.name,
@@ -276,13 +198,6 @@ const SETTING: SettingsAdminSetting = {
   value: 'value',
 }
 
-/**
- * One row of each tenant-scoped administration read the organization roles and
- * settings pages issue: a role, a governed permission, a grant held by that
- * role, a binding of that role to the scan account, and a tenant-layer
- * setting. They carry the scan tenant, so data mode renders the pages'
- * populated state rather than an empty shell.
- */
 const TENANT_ROLE: AuthzTenantAdminRoleView = {
   builtin: false,
   can_manage: true,
@@ -318,9 +233,6 @@ const TENANT_BINDING: AuthzTenantAdminBindingView = {
   tenant: TENANT.name,
 }
 
-/** The two sign-in policies the organization security page manages, as the
- * tenant read reports them. The scan tenant is writable and neither policy
- * is platform-enforced, so both switches render. */
 const TENANT_SETTINGS: SettingsTenantAdminSettings = {
   settings: [
     {
@@ -403,7 +315,6 @@ const NOTIFICATION_TYPE: NotificationType = {
   recipient_visible_params: [],
 }
 
-/** One ownership transfer request addressed to the caller. */
 const MY_TRANSFER: MyTransferView = {
   id: 'transfer-1',
   tenant: TENANT.name,
@@ -430,14 +341,7 @@ const PROFILE: AuthnProfileProfile = {
   verification: { state: 'pending', email: 'user@example.com', since: null },
 }
 
-// --- The data-mode bodies, keyed by the endpoint they answer. ---------------
 
-/**
- * The caller's own impersonation grant, in force: the body the status read
- * (GET /api/v1/auth/impersonation) answers when one is active. The page renders it as
- * the "current impersonation" surface (target, tenant, end instant, end
- * action) and hides the start form while it holds.
- */
 const IMPERSONATION_GRANT: AuthnImpersonationGrantEnvelope = {
   grant: {
     id: 'grant-1',
@@ -448,13 +352,6 @@ const IMPERSONATION_GRANT: AuthnImpersonationGrantEnvelope = {
   },
 }
 
-/**
- * The invitation a landing token points to, pending and unaccepted: the body
- * the accept screen's read (GET /api/v1/auth/invitations/:token) answers in
- * data mode. The link carries the organization's display name, the inviter's
- * display name, the invited address masked on the server and the deadline;
- * the full address, the issuer's identifier and the token never reach it.
- */
 const INVITATION: AuthnInviteView = {
   state: 'pending',
   invitation: {
@@ -465,11 +362,6 @@ const INVITATION: AuthnInviteView = {
   },
 }
 
-/**
- * One impersonation record, in force: `ended_at` is null while the record
- * is still active, so the record row renders its state column as in force
- * and offers the terminate action.
- */
 const IMPERSONATION_RECORD: AuthnAdminImpersonation = {
   id: 'imp-1',
   actor: 'account-1',
@@ -482,12 +374,7 @@ const IMPERSONATION_RECORD: AuthnAdminImpersonation = {
 }
 
 interface RouteAnswer {
-  /** The body the endpoint answers in data mode. */
   readonly data: unknown
-  /**
-   * The body the endpoint answers in empty mode -- or NOT_FOUND when the
-   * endpoint's real empty state is a bare 404 rather than an empty envelope.
-   */
   readonly empty: unknown
 }
 
@@ -495,17 +382,6 @@ function answer(data: unknown, empty: unknown): RouteAnswer {
   return { data, empty }
 }
 
-/**
- * The path-only endpoint answers (no path parameter).
- *
- * Every key is a full request path exactly as a generated operation issues it,
- * `/api/v1` prefix included. The prefix is part of the generated URL (see
- * `web/packages/api-sdk/src/index.ts`), so an entry written without it never
- * matches and the read falls through to `undefined` -- which react-query logs
- * as "Query data cannot be undefined" while the page renders an empty state
- * the sweep would scan as if it were real. The table is exported so
- * ./backends.test.ts can pin the prefix invariant on every entry.
- */
 export const EXACT: Readonly<Record<string, RouteAnswer>> = {
   '/api/v1/auth/me/tenants': answer(
     {
@@ -517,10 +393,6 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
         },
       ],
     } satisfies TenantSelfTenantsList200,
-    // The caller's membership list is not page data: the same tenant is
-    // answered in the empty state so a tenant-scoped route settles a current
-    // tenant and renders its own empty state, instead of falling back to the
-    // tenant home (which the sweep would scan as a clean page).
     {
       tenants: [
         {
@@ -542,9 +414,6 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
         'tenant.profile.read',
       ],
     } satisfies AuthzSelfPermissions200,
-    // The caller's own permission sets are not page data: the same grant is
-    // answered in the empty state so the organization pages render their empty
-    // state rather than the home fallback an empty permission set implies.
     {
       platform: [],
       tenant: [
@@ -591,9 +460,6 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
     { templates: [SMS_TEMPLATE], next_cursor: '' } satisfies SmsAdminTemplatesList200,
     { templates: [], next_cursor: '' } satisfies SmsAdminTemplatesList200,
   ),
-  // The verification page's automatic code send. The scripted request
-  // function keys on the URL alone, so the write is answered here too; no
-  // read shares the path.
   '/api/v1/auth/identifiers': answer(
     { state: 'pending', expires_in: 600, resend_after: 60 },
     { state: 'pending', expires_in: 600, resend_after: 60 },
@@ -602,12 +468,8 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
     ...PROFILE,
     identifiers: [],
     links: [],
-    // The empty state has no self-registration contact: `none` renders no
-    // verification section and no banner.
     verification: { state: 'none', email: '', since: null },
   } satisfies AuthnProfileProfile),
-  // The account-level ownership transfer requests page: data mode lists one
-  // pending request, empty mode lists none.
   '/api/v1/auth/me/owner-transfer-requests': answer(
     { requests: [MY_TRANSFER] },
     { requests: [] },
@@ -637,9 +499,6 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
     } satisfies AuthnMfaFactorList,
     { factors: [] } satisfies AuthnMfaFactorList,
   ),
-  // The anonymous reset page's resume read. A visitor with no reset cookie is
-  // answered a bare 404 flow-invalid, which the surface reads as "start
-  // fresh"; this is that empty state, not a body.
   '/api/v1/auth/password-reset/current': answer(NOT_FOUND, NOT_FOUND),
   '/api/v1/notifications/messages': answer(
     { messages: [NOTIFICATION_MESSAGE], total: 1 } satisfies NotificationInboxListMessages200,
@@ -659,16 +518,6 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
   ),
 }
 
-/**
- * Pattern answers, for endpoints whose path carries a segment.
- *
- * Like EXACT, every pattern anchors on the generated operation's full path,
- * `/api/v1` prefix included (see `web/packages/api-sdk/src/index.ts`); a
- * pattern written without the prefix never matches and the read falls through
- * to `undefined`. Every pattern is end-anchored, so a shorter path cannot
- * shadow a longer one that extends it; ./backends.test.ts also pins that no
- * entry answers another entry's sample URL.
- */
 export const PATTERNS: readonly (readonly [RegExp, RouteAnswer])[] = [
   [
     /^\/api\/v1\/system\/tenants\/[^/]+$/,
@@ -700,8 +549,6 @@ export const PATTERNS: readonly (readonly [RegExp, RouteAnswer])[] = [
   ],
   [
     /^\/api\/v1\/auth\/me\/owner-transfer-requests\/[^/]+$/,
-    // Data mode renders the pending request and its two actions; the empty
-    // mode's request is finished, so the detail renders its terminal state.
     answer(
       { request: MY_TRANSFER },
       { request: { ...MY_TRANSFER, status: 'expired' } },
@@ -709,20 +556,14 @@ export const PATTERNS: readonly (readonly [RegExp, RouteAnswer])[] = [
   ],
   [
     /^\/api\/v1\/tenants\/[^/]+\/owner\/requests\/pending$/,
-    // The owner card has no pending request in either sweep state, so it
-    // renders its controls without the pending panel.
     answer({ request: null }, { request: null }),
   ],
   [
     /^\/api\/v1\/auth\/invitations\/[^/]+$/,
-    // An unknown token is the screen's "no such invitation" state: a bare
-    // 404, like the impersonation status read's empty slot.
     answer(INVITATION, NOT_FOUND),
   ],
   [
     /^\/api\/v1\/auth\/invitations\/[^/]+\/eligibility$/,
-    // The landing page asks, for the signed-in scan session, whether the
-    // invited address is proved; the scan renders the landing either way.
     answer(
       { state: 'pending', email_proved: true },
       { state: 'pending', email_proved: true },
@@ -751,10 +592,6 @@ export const PATTERNS: readonly (readonly [RegExp, RouteAnswer])[] = [
       providers: [],
     } satisfies AuthnAdminProviderList),
   ],
-  // The organization roles page's four tenant-scoped reads: the roles, the
-  // governed permission catalog, the selected role's grants and the tenant's
-  // bindings. The grants read stays disabled until a role is chosen, so its
-  // answer is reached only by the table's own invariant.
   [
     /^\/api\/v1\/tenants\/[^/]+\/roles$/,
     answer({ roles: [TENANT_ROLE] } satisfies AuthzTenantadminRolesList200, {
@@ -788,7 +625,6 @@ export const PATTERNS: readonly (readonly [RegExp, RouteAnswer])[] = [
       { bindings: [] } satisfies AuthzTenantadminBindingsOf200,
     ),
   ],
-  // The organization security page reads the two tenant-facing policies.
   [
     /^\/api\/v1\/tenants\/[^/]+\/settings$/,
     answer(TENANT_SETTINGS, EMPTY_TENANT_SETTINGS),
@@ -813,11 +649,6 @@ export const PATTERNS: readonly (readonly [RegExp, RouteAnswer])[] = [
   ],
 ]
 
-/**
- * The body one endpoint answers in the given mode, or undefined if unscripted,
- * or NOT_FOUND when the endpoint names a bare-404 empty state. Exported so
- * ./backends.test.ts can assert every table entry resolves.
- */
 export function resolveBody(mode: 'data' | 'empty', url: string): unknown {
   const exact = EXACT[url]
   if (exact !== undefined) {
@@ -831,19 +662,6 @@ export function resolveBody(mode: 'data' | 'empty', url: string): unknown {
   return undefined
 }
 
-/**
- * The scripted request function for one mode. It is bound into the api-sdk
- * runtime seam (bindRequestFn) before a route renders, so every generated read
- * the page fires is answered from the table above. An endpoint whose answer is
- * NOT_FOUND rejects with a 404-shaped error, the refusal the page reads as
- * "no such resource".
- *
- * `onUnscripted` names a read the tables do not cover. The sweep passes one so
- * an unanswerable read fails the route instead of resolving `undefined` --
- * react-query would otherwise log "Query data cannot be undefined" and the
- * page would render, and be scanned in, a state its real backend never
- * produces. Error mode rejects every read before lookup and reports nothing.
- */
 export function createBackend(
   mode: BackendMode,
   onUnscripted?: (url: string) => void,

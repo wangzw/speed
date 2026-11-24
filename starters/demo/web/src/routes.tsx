@@ -1,28 +1,3 @@
-/**
- * The app's route table: the one place it names which pages it is made of.
- *
- * Two contributors share route-kit's declarative registration surface:
- *
- *  - The business slot. The skeleton carries no business domain, so it ships
- *    one placeholder declaration at the root; a product replaces it with its
- *    own pages, each a path / view / optional label / optional navigation
- *    icon / optional permission declaration.
- *
- *  - The admin area. @speed/admin-ui declares the platform administration
- *    surfaces -- the dashboard at the admin root, the tenant roster and one
- *    tenant's detail, the audit query and one record's detail, settings and
- *    the rest -- and the app mounts them under ADMIN_PREFIX so the two
- *    shells' pages live in disjoint path spaces. The dashboard sits at the
- *    prefix itself, so the admin root renders the dashboard rather than
- *    redirecting to a page below it.
- *
- * One table, two shells: the app chooses the shell by which area the current
- * URL selects (src/app.tsx), while RouteView renders the matched declaration
- * for either. The admin-ui declarations are structurally route-kit's
- * RouteDeclaration -- the two packages share the shape without an import edge
- * between them -- so they drop straight into the table.
- */
-
 import { useEffect } from 'react'
 import type { ReactElement } from 'react'
 import type { FeatureName } from '@speed/api-sdk/features'
@@ -59,9 +34,6 @@ import {
   TRANSFER_REQUEST_PATH,
 } from './paths.js'
 
-// The path constants live in src/paths.ts, shared with the chrome that
-// links into them; re-exported here so the route table stays the single
-// import site for the app's paths.
 export {
   ACCOUNT_CALLBACK_PATH,
   ACCOUNT_PATH,
@@ -72,47 +44,19 @@ export {
   TRANSFER_REQUESTS_PATH,
   TRANSFER_REQUEST_PATH,
 } from './paths.js'
-// The admin area's prefixed declarations and the prefix test live in
-// src/admin-routes.ts, shared with the start page (which must not import
-// this module back). Re-exported here so the table stays the single route
-// import site.
 export {
   ADMIN_LANDING_PATH,
   adminShellRoutes,
   isAdminPath,
 } from './admin-routes.js'
 
-/**
- * The invitation landing's declaration path. The app renders its page outside
- * both shells, so the shell switch identifies the declaration by this path
- * rather than pre-empting every path that merely looks like one.
- */
 const INVITATION_ROUTE_PATH = `${INVITATION_PREFIX}/:token`
 
-/**
- * The declaration shape this host writes: route-kit's own plus a `requires`
- * narrowed to the generated `FeatureName`, and the navigation `icon`. The
- * `satisfies` on each table below makes a misspelled feature name a compile
- * error, not a test-time finding. The icon rides the declaration rather than
- * a parallel path-to-icon table, so an entry's destination and its mark are
- * declared once; the frame looks it up by the id `useNavItems` reports
- * (navIconFor below).
- */
 type HostRouteDeclaration = RouteDeclaration & {
   readonly requires?: readonly FeatureName[]
-  /** The mark the navigation shows for this entry; unlabelled declarations
-   * carry none because they contribute no navigation entry. */
   readonly icon?: ReactElement
 }
 
-/**
- * The account settings' group address: it holds no page of its own, so it
- * replaces the history entry with a pane page. The visitor's other query
- * rides along -- an older `/account?verify=1` or `?change=email` link still
- * lands on the profile page that reads it -- and an older `?section=` pick
- * names the page it meant. Renders nothing on the way, like the app's other
- * redirects.
- */
 function AccountLandingRedirect(): null {
   const redirect = useRedirect()
   const { search } = useLocationPath()
@@ -129,9 +73,6 @@ function AccountLandingRedirect(): null {
   return null
 }
 
-/** The business slot: the skeleton's placeholder page, its account page,
- * and the notification center (@speed/notification-ui's declaration, whose
- * view renders the header bell's destination). */
 export const businessRoutes: readonly HostRouteDeclaration[] = [
   {
     path: TENANT_HOME_PATH,
@@ -139,19 +80,12 @@ export const businessRoutes: readonly HostRouteDeclaration[] = [
     label: <DemoNavLabel labelKey="nav.home" />,
     icon: <HomeNavIcon />,
   },
-  // The account settings: the navigation's expandable entry, whose second
-  // level is the pane pages below (the frame builds those links,
-  // src/app.tsx). The group's own path carries no page: it lands on the
-  // first pane with the visitor's query intact, so every older link into
-  // `/account?verify=1` and friends still arrives where it meant to.
   {
     path: ACCOUNT_PATH,
     view: () => <AccountLandingRedirect />,
     label: <DemoNavLabel labelKey="nav.account" />,
     icon: <AccountNavIcon />,
   },
-  // The panes: one page each, unlabelled because the navigation nests them
-  // under the entry above rather than listing them at the top level.
   {
     path: ACCOUNT_SECTION_PATHS.profile,
     view: () => <AccountSettingsPage section="profile" />,
@@ -168,21 +102,11 @@ export const businessRoutes: readonly HostRouteDeclaration[] = [
     path: ACCOUNT_SECTION_PATHS.preferences,
     view: () => <AccountSettingsPage section="preferences" />,
   },
-  // The self-service organization creation: a tenant-area destination
-  // reached from the account menu's organization row and the home card.
-  // It is unlabelled (it adds no navigation entry) and gated on the
-  // org.create feature, so a deployment that does not serve it renders the
-  // same 404 an unregistered path does.
   {
     path: ORGANIZATIONS_NEW_PATH,
     view: () => <OrganizationCreateRoute />,
     requires: ['org.create'],
   },
-  // The ownership transfer requests: the account-level surface a target
-  // opens to confirm or decline a request, and the deep link a notification
-  // carries. Unlabelled -- the account menu offers the entry -- and written
-  // without a tenant prefix, because the request is addressed to the person,
-  // not to an organization.
   {
     path: TRANSFER_REQUESTS_PATH,
     view: () => <TransferRequestsPage />,
@@ -193,30 +117,17 @@ export const businessRoutes: readonly HostRouteDeclaration[] = [
       <TransferRequestsPage request={context.params.request ?? ''} />
     ),
   },
-  // The notification surface: the same declarative seam as the admin's
-  // pages -- notification-ui exports a structurally route-kit declaration,
-  // so it drops straight into the table, with the host's icon added beside
-  // the package's own path and label. The view is the host's composition so
-  // opening a message follows its link (the package itself never navigates).
   ...notificationRoutes.map((route) => ({
     ...route,
     view: () => <NotificationsPage />,
     icon: <NotificationsNavIcon />,
   })),
-  // Unlabelled: the binding callback is a completion point, not a
-  // destination in the navigation.
   {
     path: ACCOUNT_CALLBACK_PATH,
     view: () => <AccountBindingCallbackPage />,
   },
 ] satisfies readonly HostRouteDeclaration[]
 
-/**
- * The icon of each labelled business declaration, keyed by the declaration
- * path -- the id `useNavItems` reports. The tenant frame composes its
- * entries from those items and looks the mark up here, so a new page needs no
- * second table entry.
- */
 const NAV_ICONS: ReadonlyMap<string, ReactElement> = new Map(
   businessRoutes.flatMap((route) =>
     route.icon === undefined
@@ -225,17 +136,10 @@ const NAV_ICONS: ReadonlyMap<string, ReactElement> = new Map(
   ),
 )
 
-/** The icon the labelled declaration at `path` declares, if any. */
 export function navIconFor(path: string): ReactElement | undefined {
   return NAV_ICONS.get(path)
 }
 
-/**
- * The auth callback route: where a redirect or enterprise provider's round
- * trip lands. Unlabelled (it adds no navigation entry); the app renders its
- * page outside the tenant shell (src/app.tsx). It is inert until a
- * deployment enables a redirect or enterprise method.
- */
 export const authCallbackRoutes: RouteTable = [
   {
     path: AUTH_CALLBACK_PATH,
@@ -243,19 +147,6 @@ export const authCallbackRoutes: RouteTable = [
   },
 ] satisfies readonly HostRouteDeclaration[]
 
-/**
- * The invite-acceptance route: the public landing an invitation link points
- * at, `/invitations/<token>`. It is unlabelled (it adds no navigation entry)
- * and the app renders its page outside both shells (src/app.tsx), because an
- * invitee arrives before any session exists.
- *
- * The declaration carries no feature gate. The feature document is readable
- * only to an authenticated caller, so a gated declaration would withhold the
- * landing from exactly the anonymous visitor the link is for; a deployment
- * that does not mount the invitation module answers the public read with a
- * 404, which the landing renders as its invalid-link state. The route is
- * inert until an administrator issues an invitation.
- */
 export const invitationRoutes: RouteTable = [
   {
     path: INVITATION_ROUTE_PATH,
@@ -265,15 +156,6 @@ export const invitationRoutes: RouteTable = [
   },
 ] satisfies readonly HostRouteDeclaration[]
 
-/**
- * The anonymous password reset route: the public landing the sign-in
- * surface's "forgot password" entry points at, `/password-reset`. It is
- * unlabelled (it adds no navigation entry) and the app renders its page
- * outside both shells (src/app.tsx), because the viewer arrives without a
- * session. It is inert until the deployment publishes a reset channel; a
- * deployment without one still serves the page, whose surface states that no
- * channel is offered.
- */
 export const passwordResetRoutes: RouteTable = [
   {
     path: PASSWORD_RESET_PATH,
@@ -281,9 +163,6 @@ export const passwordResetRoutes: RouteTable = [
   },
 ] satisfies readonly HostRouteDeclaration[]
 
-/** The product's pages: the business slot, the callback, invitation and
- * password reset routes, the mounted admin area (the dashboard at the
- * prefix itself) and the organization admin area under its own prefix. */
 export const routes: RouteTable = [
   ...businessRoutes,
   ...authCallbackRoutes,

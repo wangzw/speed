@@ -1,16 +1,3 @@
-/**
- * The platform roster read (src/app.tsx): a caller whose platform permission
- * set holds tenant.read reads the roster for the names of tenants outside its
- * own memberships. A tenant is identified by its name, which is both the
- * switcher's key and the value the request surface announces as X-Tenant. The
- * roster
- * decides no tenant: the current tenant is settled from the caller's own tenant
- * list.
- *
- * No caller without tenant.read spends the request at all: an ordinary member
- * is covered by the app suites' zero-request assertions.
- */
-
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -38,7 +25,6 @@ afterEach(() => {
 })
 
 describe('who spends the platform roster read', () => {
-  /** Binds the self and roster reads, recording every path. */
   function bindReads(requested: string[]): void {
     const request: RequestFn = async <T>(path: string): Promise<T> => {
       requested.push(path)
@@ -115,7 +101,6 @@ describe('the announced tenant, once the roster is read', () => {
       ),
     })
 
-    // The caller list settles the tenant; the roster does not rename it.
     await waitFor(() => {
       expect(getCurrentTenant()).toBe('acme')
     })
@@ -124,13 +109,6 @@ describe('the announced tenant, once the roster is read', () => {
   })
 
   it('settles the caller list first row whose kind is not personal, whatever the roster holds', async () => {
-    // The roster can name tenants the caller has nothing to do with. The
-    // settle never consults it: a row the read answers as personal is skipped,
-    // and the list's first business row wins even when the roster names another
-    // tenant first. Another account's personal space is a business row to the
-    // read (the host's resolver compares the caller's own derived name
-    // exactly), so the settle may choose it; a prefix test would skip it and
-    // choose later.
     const request: RequestFn = async <T>(path: string): Promise<T> => {
       if (path === '/api/v1/auth/me/tenants') {
         return {
@@ -165,10 +143,6 @@ describe('the announced tenant, once the roster is read', () => {
 
 describe('a failed roster read', () => {
   it('explains the fault beside the switcher, leaves the tenant, and retries', async () => {
-    // The roster is a staff name source: a failed read decides no tenant and
-    // infers no membership, so the switcher keeps the tenant the caller's own
-    // list settled and shows what could not be named with a retry. The notice
-    // sits under the organization row and needs no expansion to be read.
     setCurrentTenant(null)
     setTenantNames(new Map())
     clearSelfTenants()
@@ -201,8 +175,6 @@ describe('a failed roster read', () => {
       ),
     })
 
-    // The current tenant settled from the caller's own list and does not
-    // change because the roster could not be read.
     await waitFor(() => expect(getCurrentTenant()).toBe('acme'))
 
     const user = userEvent.setup()
@@ -215,8 +187,6 @@ describe('a failed roster read', () => {
       screen.getByRole('button', { name: demoEnUS.tenantRoster.retry }),
     )
 
-    // The retry issues the read again; its answer clears the notice. The
-    // settled tenant keeps its request-surface name.
     await waitFor(() =>
       expect(screen.queryByText(demoEnUS.tenantRoster.failed)).toBeNull(),
     )
@@ -226,9 +196,6 @@ describe('a failed roster read', () => {
   })
 
   it('reports the fault under a lone organization, whose row never expands', async () => {
-    // One membership means no expansion: the row is context, not a control.
-    // The failed read still has to be reported, so the notice renders under
-    // the row itself.
     setCurrentTenant(null)
     setTenantNames(new Map())
     clearSelfTenants()

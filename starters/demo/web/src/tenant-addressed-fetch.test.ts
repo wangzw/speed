@@ -1,12 +1,3 @@
-/**
- * A tenant-addressed request names its tenant in the path, and the platform
- * admin's tenant selector is a request argument rather than the host's current
- * tenant. These cases hold the transport to announcing that path identifier,
- * so a console page switched to `globex` while the current tenant is `acme`
- * does not send the pair `X-Tenant: acme` + `/api/v1/tenants/globex/...` that
- * the server's path-tenant guard answers with a bare 404.
- */
-
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   tenantAddressedFetch,
@@ -28,7 +19,6 @@ describe('tenantFromRequestURL', () => {
       ),
     ).toBe('t_acme')
     expect(tenantFromRequestURL('/api/v1/tenants/acme')).toBe('acme')
-    // A deployment that serves the API under a base path still matches.
     expect(
       tenantFromRequestURL('https://host/app/api/v1/tenants/t_acme/members'),
     ).toBe('t_acme')
@@ -69,8 +59,6 @@ describe('tenantAddressedFetch', () => {
     }
     await tenantAddressedFetch('/api/v1/notifications/messages', init)
 
-    // The untouched request reaches fetch with the very options the client
-    // built, including the current tenant's value.
     const called = fetchStub.mock.calls[0] as unknown as [string, RequestInit]
     expect(called[1]).toBe(init)
     expect(new Headers(called[1].headers).get('x-tenant')).toBe('acme')

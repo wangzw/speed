@@ -1,25 +1,3 @@
-/**
- * The account pages' action face in Chromium.
- *
- * The account sections share one action style: a text-bearing control that
- * does something to the page's data -- add, change, enable, disable -- renders
- * as an outlined small button. A single control that falls back to the
- * platform's text button reads as a different class of action beside its
- * neighbours. This case walks the two pages that carry such controls and
- * fails when one of them leaves the shared face.
- *
- * Scope is the page's main landmark, never the shell chrome. Four kinds of
- * control are out of scope because they are not this kind of action:
- *
- *  - an icon-only control (the overflow "Actions for ..." buttons) has no
- *    readable text to compare;
- *  - a menu item is a menu, not a button face;
- *  - a form's own actions (the submit and the cancel/resend beside it) are
- *    the form's, and are excluded by living inside its `<form>`;
- *  - an empty/error placeholder's retry is centred in the placeholder, not a
- *    row action.
- */
-
 import { screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
@@ -34,10 +12,8 @@ import {
   staffSession,
 } from './route-table.js'
 
-/** The account pages whose bodies carry row and group actions. */
 const ACCOUNT_PAGES = ['/account/profile', '/account/security'] as const
 
-/** True when the control sits inside a centred placeholder block. */
 function insideCentredPlaceholder(
   control: Element,
   scope: Element,
@@ -60,7 +36,6 @@ function insideCentredPlaceholder(
   return false
 }
 
-/** True when a control is one of the page's text-bearing row actions. */
 function isPageAction(control: Element, scope: Element): boolean {
   if ((control.textContent ?? '').trim() === '') {
     return false

@@ -1,17 +1,3 @@
-/**
- * The host's own tenant list: the caller tenant read's answer as the switcher's
- * list and the announcement's name source.
- *
- * Two layers are held here. The module store is the one place the list lives:
- * a successful read replaces it, carrying each row's host-answered `kind`, a
- * failed one keeps the rows already on hand and marks the list unsettled so a
- * failure is never read as an empty answer, and an identity change or a
- * sign-out clears it. The switcher renders every row of that list, labels a row
- * whose `kind` is `personal` with the personal-organization copy, and leaves the
- * current row unselectable. Another account's personal tenant comes back as
- * `business`, so it renders its request-surface name.
- */
-
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import MenuList from '@mui/material/MenuList'
@@ -51,8 +37,6 @@ import {
 
 const SELF_PATH = '/api/v1/auth/me/tenants'
 
-/** Binds a request function that answers the caller tenant read with the
- * given body (or throws), failing loudly on every other path. */
 function bindSelf(read: () => unknown): void {
   bindRequestFn((async (path: string) => {
     if (path === SELF_PATH) {
@@ -85,8 +69,6 @@ describe('the caller tenant list store', () => {
 
     await loadSelfTenants()
 
-    // The read's kind is carried through unchanged; the switcher and the
-    // default settlement branch on it.
     expect(getSelfTenantState()).toEqual({
       tenants: [
         { name: 'acme-inc', displayName: '', kind: 'business' },
@@ -114,8 +96,6 @@ describe('the caller tenant list store', () => {
     }))
     await loadSelfTenants()
 
-    // A profile that names a display name carries it; an empty one is the
-    // same fact as no name, so the accessor falls back to the request-surface name.
     expect(selfTenantDisplayName('acme-inc')).toBe('Acme Incorporated')
     expect(selfTenantDisplayName('my-space')).toBe('my-space')
     expect(selfTenantDisplayName('unknown')).toBeNull()
@@ -132,9 +112,6 @@ describe('the caller tenant list store', () => {
     })
     await loadSelfTenants()
 
-    // The failure is not an empty answer: the rows already on hand stay, and
-    // the unsettled flag keeps a failed read from settling a current tenant or
-    // standing in for "no memberships".
     expect(getSelfTenantState()).toEqual({
       tenants: [{ name: 'acme-inc', displayName: '', kind: 'business' }],
       settled: false,
@@ -152,9 +129,6 @@ describe('the caller tenant list store', () => {
     )
 
     const pending = loadSelfTenants()
-    // Until the read answers the list is neither settled nor failed: the
-    // identity-change gap waits for an outcome, and a read in flight is not
-    // one.
     expect(getSelfTenantState()).toEqual({
       tenants: [],
       settled: false,
@@ -194,9 +168,6 @@ describe('the caller tenant list store', () => {
       failed: false,
     })
 
-    // The older read fails after the newer one answered. Its failure belongs
-    // to a superseded attempt, so it must not turn the settled list into a
-    // failure the retry control would show again.
     rejectOlder(new Error('the older read failed'))
     await olderRead
     expect(getSelfTenantState()).toEqual({
@@ -224,18 +195,10 @@ describe('the caller tenant list store', () => {
     await loadSelfTenants()
     setCurrentTenant('globex-renamed')
 
-    // The caller tenant list's row is addressed by its name; that is the value
-    // the request surface announces.
     expect(getCurrentTenantName()).toBe('globex-renamed')
   })
 })
 
-/** The rows the host offers: the caller's own space, another account's
- * personal tenant, and a business tenant. The read answers `kind` per row, and
- * the host's resolver marks only the caller's own space personal; another
- * account's personal tenant comes back as business and renders its request-surface name. The
- * caller's own row carries an identifier no derivation would produce, so a
- * label driven by the identifier rather than by `kind` fails here. */
 const OFFERED: readonly DemoTenant[] = [
   { id: 'my-space', name: 'my-space', kind: 'personal' },
   {
@@ -246,7 +209,6 @@ const OFFERED: readonly DemoTenant[] = [
   { id: 'acme', name: 'acme', kind: 'business' },
 ]
 
-/** Renders the account menu's organization group under the production stack. */
 function renderTenantMenu(props: {
   readonly tenants: readonly DemoTenant[]
   readonly tenantName: string | null
@@ -294,15 +256,10 @@ describe('the tenant switcher over the self list', () => {
       tenantName: 'acme',
     })
 
-    // The menu states the current organization in its first row and expands
-    // to the others; both halves together are the full list.
     await userEvent
       .setup()
       .click(await screen.findByRole('menuitem', { name: 'acme' }))
 
-    // Every tenant the account holds a membership in is offered. The row the
-    // read answers as personal carries the personal-organization copy; another
-    // account's personal tenant came back as business, so it keeps its request-surface name.
     expect(
       await screen.findByRole('menuitem', {
         name: demoEnUS.organization.personal,
@@ -311,8 +268,6 @@ describe('the tenant switcher over the self list', () => {
     expect(
       screen.getByRole('menuitem', { name: 'other-space' }),
     ).toBeInTheDocument()
-    // The current organization is context, not one more destination: the
-    // expansion does not repeat it.
     expect(screen.getAllByRole('menuitem', { name: 'acme' })).toHaveLength(1)
   })
 
@@ -324,19 +279,12 @@ describe('the tenant switcher over the self list', () => {
 
     const user = userEvent.setup()
     const current = await screen.findByRole('menuitem', { name: 'acme' })
-    // The current row is the expander, not a destination: clicking it reveals
-    // the others, and no second row offers the current tenant to switch to.
     await user.click(current)
     expect(current).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getAllByRole('menuitem', { name: 'acme' })).toHaveLength(1)
   })
 
   it('adds a current tenant the list does not hold, named from the roster cache', async () => {
-    // A platform staff member works in a tenant they are not a member of (a
-    // route named it and the roster read cached its name): the caller tenant
-    // list does not hold the row, so only the roster's name cache can name
-    // it. Without the added row the bar could neither show nor leave that
-    // tenant.
     setTenantNames(new Map([['globex-renamed', 'Globex Renamed']]))
     setCurrentTenant('globex-renamed')
     bindRequestFn((async (path: string) => {

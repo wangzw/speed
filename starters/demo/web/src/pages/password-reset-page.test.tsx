@@ -1,15 +1,3 @@
-/**
- * The anonymous reset page (/password-reset): the host half of
- * auth-ui's PasswordResetScreen.
- *
- * The suite pins the two things the page owns: it publishes the deployment's
- * reset channels from the discovery document the sign-in surface reads, and it
- * binds the screen's operations to the app's generated API surface. The screen
- * itself (channel choice, code and new-password fields, refusals) is auth-ui's
- * own suite; here the page is driven with a session whose discovery answer the
- * case controls and a scripted request function over the api-sdk runtime seam.
- */
-
 import { beforeEach, describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import type { RequestFn } from '@speed/api-client'
@@ -32,7 +20,6 @@ const authEn = authUiResources['en-US'] as unknown as {
   }
 }
 
-/** A session whose discovery document names the reset channels given. */
 function resetSession(methods: readonly ('email' | 'sms')[]): AuthSession {
   const passwordReset = { enabled: methods.length > 0, methods: [...methods] }
   return Object.assign(createTestSession(), {
@@ -50,7 +37,6 @@ function resetSession(methods: readonly ('email' | 'sms')[]): AuthSession {
   })
 }
 
-/** A 404-shaped refusal, what the resume read answers with no binding. */
 function notFound(url: string): never {
   throw Object.assign(new Error(`scripted backend: ${url} not found`), {
     status: 404,
@@ -69,7 +55,6 @@ describe('the password reset page', () => {
     expect(
       await screen.findByRole('heading', { name: authEn.passwordReset.title }),
     ).toBeInTheDocument()
-    // Two published channels render the choice; email is first and selected.
     expect(
       await screen.findByRole('button', {
         name: authEn.passwordReset.channel.email,
@@ -96,8 +81,6 @@ describe('the password reset page', () => {
   })
 
   it('resumes a proved record onto the new-password fields alone', async () => {
-    // A reload after the code was verified: the bound record reads verified,
-    // so the surface asks only for the new password and its confirmation.
     bindRequestFn(((url: string) => {
       if (url === '/api/v1/auth/password-reset/current') {
         return Promise.resolve({ state: 'verified', expires_in: 600 })
@@ -106,8 +89,6 @@ describe('the password reset page', () => {
     }) as RequestFn)
     renderDemoApp({ session: resetSession(['email']) })
 
-    // A password input carries no textbox role, so the field is addressed by
-    // its label.
     expect(
       await screen.findByLabelText(authEn.passwordReset.newPasswordLabel),
     ).toBeInTheDocument()

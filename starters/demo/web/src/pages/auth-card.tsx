@@ -1,14 +1,3 @@
-/**
- * The auth surface's card chrome: the brand, the page heading and its
- * subtitle inside the centered card.
- *
- * The sign-in page and the callback route's account-opening step both
- * render inside it, so a first social login sees the same card as the
- * sign-in page -- brand and page heading included -- rather than a bare
- * page of its own. The card supplies only the chrome; what sits inside it
- * is the caller's content.
- */
-
 import type { ReactElement, ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
@@ -21,10 +10,7 @@ export function AuthCard({
   subtitle,
   children,
 }: {
-  /** The page heading: what the surface is asking for. */
   readonly title: string
-  /** The sentence under the heading, when the card's content is not itself
-   * the subtitle. */
   readonly subtitle?: string
   readonly children: ReactNode
 }): ReactElement {

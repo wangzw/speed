@@ -1,10 +1,3 @@
-/**
- * The registration-verification predicate the host keys its notice on.
- *
- * `contactVerificationPending` answers the verification question from
- * GET /api/v1/auth/me's `verification.state`; only `pending` answers true.
- */
-
 import { describe, expect, it } from 'vitest'
 import {
   contactVerificationPending,

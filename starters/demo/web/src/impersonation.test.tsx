@@ -1,19 +1,3 @@
-/**
- * The impersonation shell in the demo host: the identity-change action, the
- * banner in the tenant frame, the admin's permission-set criterion during an
- * impersonation, the status read's bare-404 rule, the expiry timer, and the read
- * cutover a start write opens (its in-flight reads cancelled, new ones held
- * until the identity change settles, and the session's identity-transition
- * guard opened once and released exactly once).
- *
- * The suites drive the real views over a scripted session and request
- * function: the session's restore() commits whatever identity the script
- * says the server now names, and the request function answers the generated
- * endpoints the views reach. The session is the test-utils one (a snapshot
- * the suite can set), extended with a restore() that flips it -- the
- * identity change the host's action performs.
- */
-
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { onlineManager } from '@tanstack/react-query'
@@ -51,18 +35,11 @@ import {
 } from './test-utils/session.js'
 import { restoreRealTimers } from './test-utils/timers.js'
 
-/** The account menu trigger's accessible name: the visible initials, then the
- * display name, exactly as the shell composes it (WCAG 2.5.3). */
 function accountTriggerName(displayName: string): string {
   return `${avatarInitials(displayName)} ${displayName}`
 }
 
 
-/**
- * The expected copy, resolved from the packages' shipped resources through a
- * production instance rather than read from a file path: the release the app
- * ships is what the suite asserts, and the text is never a literal here.
- */
 const textI18n = createSpeedI18n({
   supportedLanguages: ['zh-CN', 'en-US'],
   defaultLanguage: 'en-US',
@@ -81,13 +58,6 @@ const tAuth = textI18n.getFixedT('en-US', AUTH_UI_NAMESPACE)
 const tAdmin = textI18n.getFixedT('en-US', ADMIN_UI_NAMESPACE)
 const tLayout = textI18n.getFixedT('en-US', LAYOUT_KIT_NAMESPACE)
 
-/**
- * The impersonation banner's standing live region. The app mounts more than
- * one standing status region: the invitation-acceptance confirmation, and the
- * tenant-switch confirmation each account-menu placement carries. The
- * impersonation announcement is the only status region that is atomic, so
- * select that rather than assuming a sole unnamed region.
- */
 function announcementRegion(): HTMLElement {
   const regions = screen
     .getAllByRole('status')
@@ -121,7 +91,6 @@ function grantFixture(endsAt: string): GrantFixture {
   }
 }
 
-/** The operator's own identity: platform staff, not impersonating. */
 function operatorSnapshot(): AuthSnapshot {
   const base = authenticatedSnapshot({
     system: ['tenant.read', 'authn.impersonation.read'],
@@ -137,11 +106,6 @@ function operatorSnapshot(): AuthSnapshot {
   }
 }
 
-/**
- * The impersonated identity. Its effective account is the target, which holds
- * no platform permission: that empty platform set is what keeps the admin
- * out, exactly as the permission criterion keeps an ordinary member out.
- */
 function targetSnapshot(): AuthSnapshot {
   const base = authenticatedSnapshot({ system: [] })
   return {
@@ -155,7 +119,6 @@ function targetSnapshot(): AuthSnapshot {
   }
 }
 
-/** A session whose restore() commits the identity the script names. */
 function scriptedSession(
   initial: AuthSnapshot,
   next: () => AuthSnapshot | null,
@@ -173,12 +136,6 @@ function scriptedSession(
   }
 }
 
-/**
- * A session that counts the identity transitions the host opens and
- * releases. The start hold opens one before the write goes out; every path
- * that does not land must close it exactly once, and a landed write closes
- * it through the identity change's own release.
- */
 function transitionTrackingSession(initial: AuthSnapshot): {
   readonly session: ReturnType<typeof createTestSession>
   readonly opens: () => number
@@ -207,16 +164,6 @@ function transitionTrackingSession(initial: AuthSnapshot): {
   }
 }
 
-/**
- * A session whose restore() answers a task later, like the server round
- * trip a real restore is, and whose permission attachment notifies like the
- * real session does. Both matter to the end sequence: the identity change
- * first attaches the reset permission set (a commit -- the real session
- * notifies on it) and evicts the status read, so the grant disappears while
- * the snapshot still says impersonating and the frame sets the current
- * tenant unknown; only then does the restore answer and commit the new
- * identity. Collapsing either step hides that intermediate state.
- */
 function roundTripSession(
   initial: AuthSnapshot,
   next: () => AuthSnapshot | null,
@@ -247,11 +194,6 @@ function roundTripSession(
   }
 }
 
-/**
- * A session whose restore() answers only when the suite releases it: the
- * window between a settled end and the re-read that flips the snapshot,
- * which the server widens whenever a replica's validity cache lags.
- */
 function gatedSession(
   initial: AuthSnapshot,
   next: () => AuthSnapshot | null,
@@ -289,12 +231,6 @@ function gatedSession(
   }
 }
 
-/**
- * A session that records each restore() answer's outcome when it settles --
- * resolved or rejected -- rather than when it is called. The identity change
- * stays pending until that answer is decided, so a case that judges what the
- * answer leaves behind has to wait for this outcome, not for the call.
- */
 function restoreOutcomeSession(
   session: ReturnType<typeof createTestSession>,
   outcomes: ('settled' | 'rejected')[],
@@ -318,36 +254,22 @@ function restoreOutcomeSession(
 
 interface Backend {
   readonly fn: RequestFn
-  /** Every GET issued through the request function (a plain effect read is
-   * counted like a query's). */
   readonly reads: () => number
   readonly rosterReads: () => number
-  /** The caller tenant read (GET /api/v1/auth/me/tenants): the read the
-   * current tenant settles from after an impersonation ends. */
   readonly selfReads: () => number
   readonly statusReads: () => number
   readonly statusReadsWithGrant: () => number
   readonly recordReads: () => number
-  /** Whether the record read's abort signal fired: the read the start
-   * write's hold cancelled. */
   readonly recordsAborted: () => boolean
   readonly postReads: () => number
   readonly unreadReads: () => number
-  /** The current tenant's id at the moment each unread-count read left the
-   * browser. */
   readonly unreadTenantIds: () => readonly (string | null)[]
-  /** The name each unread-count read would have announced as X-Tenant at the
-   * moment it left the browser (the value the assembly's tenantProvider
-   * reads): null when no source names the current tenant. */
   readonly unreadNames: () => readonly (string | null)[]
   readonly messagesReads: () => number
   readonly deletes: () => number
-  /** A read of a tenant-scoped data surface (the notification centre): what
-   * must not run under a tenant the frame has not settled on. */
   readonly tenantReads: () => number
 }
 
-/** A promise-bounded gate: the suite decides when the gated read answers. */
 function deferred(): { readonly promise: Promise<void>; readonly resolve: () => void } {
   let resolve!: () => void
   const promise = new Promise<void>((settle) => {
@@ -356,48 +278,23 @@ function deferred(): { readonly promise: Promise<void>; readonly resolve: () => 
   return { promise, resolve }
 }
 
-/** The generated endpoints the views reach, scripted per test. */
 function makeBackend(options: {
   readonly grant?: GrantFixture
   readonly endStatus?: 'ok' | '404' | 'error'
-  /** Holds the roster read open until the suite resolves it. */
   readonly rosterGate?: Promise<void>
-  /** Holds the caller tenant read open once the end write has been issued,
-   * until the suite resolves it: the read the current tenant settles from
-   * after an impersonation ends. Reads before the end answer normally. */
   readonly selfGateAfterEnd?: Promise<void>
-  /** Keeps the status read answering the grant after the DELETE settles: a
-   * replica whose check-ttl cache has not expired yet. */
   readonly statusLags?: boolean
-  /** Answers the status read with the bare 404 once the recorded expiry has
-   * passed: the server's own Active judgement, which the session read may
-   * still lag behind for one check-ttl. */
   readonly status404AfterExpiry?: boolean
-  /** Holds the status read open, once the start write has been issued, until
-   * the suite resolves it: the window in which the remounted tenant frame
-   * has no grant yet. Reads before the start answer normally (the admin
-   * page's own status surface needs its settled "not impersonating"). */
   readonly statusGateAfterStart?: Promise<void>
-  /** The tenant id the start write grants; defaults to the fixture's. */
   readonly startTenant?: string
-  /** The tenants the caller tenant read answers; defaults to none. */
   readonly selfTenants?: readonly {
     readonly name: string
     readonly displayName?: string
     readonly kind?: 'business' | 'personal'
   }[]
-  /** Refuses the status read once it has been issued more than this many
-   * times. A self-driving 404 loop is a microtask storm that would otherwise
-   * hang the test until its timeout; this turns it into an answer the test
-   * can assert against (the storm is the failure, not the elapsed time). */
   readonly statusReadLimit?: number
-  /** Holds the start write open until the suite resolves it: the slow round
-   * trip the rotation window is about. */
   readonly postGate?: Promise<void>
-  /** Holds the record read open until the suite resolves it, so a read is
-   * in flight when the start write is issued. */
   readonly recordsGate?: Promise<void>
-  /** Refuses the start write: no identity change follows it. */
   readonly startRefused?: boolean
 } = {}): Backend {
   let grant = options.grant
@@ -427,9 +324,6 @@ function makeBackend(options: {
       tenantReads += 1
     }
     if (path === '/api/v1/auth/me/tenants') {
-      // The caller tenant list. It answers no memberships by default, which is
-      // what the settlement needs for this backend's operator; a case that
-      // needs a named tenant supplies the list.
       selfReads += 1
       const answered = { tenants: options.selfTenants ?? [] } as T
       if (options.selfGateAfterEnd !== undefined && deletes > 0) {
@@ -497,7 +391,6 @@ function makeBackend(options: {
       if (method === 'DELETE') {
         deletes += 1
         if (options.endStatus === 'error') {
-          // The write was refused: the impersonation stays in force.
           return Promise.reject({
             status: 503,
             code: 'authn.unavailable',
@@ -529,9 +422,6 @@ function makeBackend(options: {
       }
       return Promise.resolve({ impersonations: [] } as T)
     }
-    // The tenant header's bell reads the unread count; the inbox page the
-    // message list. Answer both so a mounted tenant frame has no query
-    // whose function returned undefined.
     if (path === '/api/v1/notifications/messages/unread-count') {
       unreadReads += 1
       unreadTenantIds.push(getCurrentTenant())
@@ -548,10 +438,6 @@ function makeBackend(options: {
     if (path === '/api/v1/notifications/preferences') {
       return Promise.resolve({ preferences: [] } as T)
     }
-    // Nothing in a mounted tenant frame may fall through to an undefined
-    // query answer: react-query logs "Query data cannot be undefined" and the
-    // view renders a result it never received. An unanswered path is a hole
-    // in the scripted backend, not an empty answer.
     return Promise.reject(
       new Error(`the suite does not answer ${method} ${path}`),
     )
@@ -575,8 +461,6 @@ function makeBackend(options: {
   }
 }
 
-/** A client whose event-stream opener records every connection and the
- * current tenant at the moment it opens. */
 function streamClient(): {
   readonly client: SpeedClient
   readonly opened: { closed: number }[]
@@ -601,15 +485,12 @@ function streamClient(): {
   return { client, opened, tenants }
 }
 
-/** The banner's named region, or null while none is in force. */
 function banner(): HTMLElement | null {
   return screen.queryByRole('region', {
     name: tAuth('impersonation.regionLabel'),
   })
 }
 
-/** Opens the header placement of the account menu, where the organization
- * switcher now lives. */
 async function openAccountMenu(
   user: ReturnType<typeof userEvent.setup>,
 ): Promise<HTMLElement> {
@@ -617,7 +498,6 @@ async function openAccountMenu(
   return screen.findByRole('menu')
 }
 
-/** Closes the open account menu and waits for its surface to leave the tree. */
 async function closeAccountMenu(
   user: ReturnType<typeof userEvent.setup>,
 ): Promise<void> {
@@ -625,13 +505,6 @@ async function closeAccountMenu(
   await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
 }
 
-/**
- * The account menu's organization entry, or null while the host withholds the
- * organization list. The entry is named by the current organization's display
- * name; with no current tenant settled it carries the menu's generic
- * organizations label instead. An impersonation in force, and the
- * identity-change gap after one ends, withdraw the entry entirely.
- */
 function organizationEntry(
   menu: HTMLElement,
   currentName: string,
@@ -643,11 +516,8 @@ function organizationEntry(
   )
 }
 
-/** The tenant the suite acts in, with the name the host has recorded for it;
- * the host holds no default roster, so a current tenant must be nameable. */
 const TENANT_ID = 'acme'
 
-/** The account the start form's picker finds and the operator impersonates. */
 const PICKER_ACCOUNT = {
   id: 'acc-1',
   kind: 'user',
@@ -670,7 +540,6 @@ const PICKER_ACCOUNT = {
   created_at: '2026-10-15T12:00:00Z',
 } as const
 
-/** Chooses the start form's target through the shared account picker. */
 async function pickStartAccount(
   user: ReturnType<typeof userEvent.setup>,
 ): Promise<void> {
@@ -690,8 +559,6 @@ beforeEach(() => {
   window.history.replaceState({}, '', '/')
   setCurrentTenant(TENANT_ID)
   setTenantNames(new Map([[TENANT_ID, TENANT_ID]]))
-  // The caller tenant list is module state: a case starts with no rows and
-  // loads its own through the scripted backend.
   clearSelfTenants()
 })
 
@@ -718,13 +585,10 @@ describe('the impersonation shell', () => {
 
     renderDemoApp({ session })
 
-    // The admin page is reachable and the start form waits for its fields.
     await screen.findByText(tAdmin('impersonations.current.none'))
     await pickStartAccount(user)
     await user.click(screen.getByRole('button', { name: tAdmin('impersonations.start.submit') }))
 
-    // The start settled; the host's action re-read the session and moved the
-    // operator to the tenant home.
     expect(
       await screen.findByRole('heading', {
         level: 1,
@@ -733,8 +597,6 @@ describe('the impersonation shell', () => {
     ).toBeInTheDocument()
     expect(window.location.pathname).toBe('/')
 
-    // The banner names the impersonated account, and its tenant comes from
-    // the status read issued under the new identity.
     const notice = await screen.findByRole('region', {
       name: tAuth('impersonation.regionLabel'),
     })
@@ -750,10 +612,6 @@ describe('the impersonation shell', () => {
       expect(backend.statusReadsWithGrant()).toBeGreaterThan(0),
     )
 
-    // The impersonated account holds no platform permission, so the admin
-    // is offered on the effective account's set, not on the impersonation
-    // flag: the account menu's entry is absent for the same reason the
-    // ordinary member's is.
     const menu = await openAccountMenu(user)
     expect(
       within(menu).queryByRole('menuitem', { name: demoEnUS.nav.admin }),
@@ -795,8 +653,6 @@ describe('the impersonation shell', () => {
       session: scriptedSession(targetSnapshot(), () => targetSnapshot()),
     })
 
-    // The status read settles the impersonated identity first, so the
-    // absence below is the mounted shell's, not a pending render's.
     await screen.findByRole('region', {
       name: tAuth('impersonation.regionLabel'),
     })
@@ -804,10 +660,6 @@ describe('the impersonation shell', () => {
       expect(backend.statusReadsWithGrant()).toBeGreaterThan(0),
     )
 
-    // The switcher is not in the tree at all -- the account menu opens
-    // without an organization entry or group -- and the rest of the top bar
-    // renders without it. The language switch is not there either: the bar's
-    // menus are the two account surfaces alone.
     const menu = await openAccountMenu(user)
     expect(organizationEntry(menu, 'acme')).toBeNull()
     await closeAccountMenu(user)
@@ -821,7 +673,6 @@ describe('the impersonation shell', () => {
         screen.getByTestId('account-entry-trigger'),
       ]),
     )
-    // Both placements carry the impersonated identity's accessible name.
     expect(screen.getByTestId('user-menu-trigger')).toHaveAccessibleName(
       accountTriggerName('Target One'),
     )
@@ -854,9 +705,6 @@ describe('the impersonation shell', () => {
       within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
     )
 
-    // The identity change settled and the roster read ran under the
-    // operator again; the switcher is back over the tenant the operator's own
-    // list settles.
     await waitFor(() => expect(banner()).toBeNull())
     await waitFor(() =>
       expect(backend.rosterReads()).toBeGreaterThan(rosterBefore),
@@ -870,8 +718,6 @@ describe('the impersonation shell', () => {
 
   it('keeps the switcher out of the bar while the caller tenant read settles after an impersonation ends', async () => {
     window.history.replaceState({}, '', '/')
-    // The caller tenant read is held open: the suite decides when the settled
-    // tenant (and the switcher over it) may appear.
     const self = deferred()
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
@@ -898,12 +744,6 @@ describe('the impersonation shell', () => {
       within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
     )
 
-    // The identity change has settled and the caller tenant read is in
-    // flight. The current tenant still holds the ended grant's value, so the
-    // list has no matching row to switch to: that is a transition, not the
-    // switcher's no-current-tenant state, and the switcher stays out of the
-    // bar rather than stating the host has no tenant while it is only
-    // reading.
     await waitFor(() => expect(banner()).toBeNull())
     await waitFor(() => expect(backend.selfReads()).toBe(2))
     const gapMenu = await openAccountMenu(user)
@@ -912,7 +752,6 @@ describe('the impersonation shell', () => {
       within(gapMenu).queryByText(demoEnUS.userMenu.organizations),
     ).toBeNull()
 
-    // The read lands, and the switcher returns over the tenant it settles.
     await act(async () => {
       self.resolve()
     })
@@ -924,12 +763,6 @@ describe('the impersonation shell', () => {
 
   it('keeps the switcher out of the bar until the caller tenant read settles after an impersonation ends', async () => {
     window.history.replaceState({}, '', '/')
-    // The roster read is released first, while the caller tenant read is
-    // still held open. The roster settling must not close the
-    // identity-change gap on its own: the current tenant settles from the
-    // caller tenant list, and a switcher mounted before that read answers
-    // would show its no-current-tenant text against a host that is only
-    // still reading (design-starters' impersonation section).
     const roster = deferred()
     const self = deferred()
     const backend = makeBackend({
@@ -950,8 +783,6 @@ describe('the impersonation shell', () => {
     await waitFor(() =>
       expect(backend.statusReadsWithGrant()).toBeGreaterThan(0),
     )
-    // The impersonation's own read settled: the impersonated account's
-    // membership list is the name source the reload would otherwise lack.
     await waitFor(() => expect(backend.selfReads()).toBe(1))
 
     await user.click(
@@ -960,13 +791,8 @@ describe('the impersonation shell', () => {
 
     await waitFor(() => expect(banner()).toBeNull())
     await waitFor(() => expect(backend.rosterReads()).toBe(1))
-    // The ended identity re-read the caller's own list; that read is held
-    // open by the suite.
     await waitFor(() => expect(backend.selfReads()).toBe(2))
 
-    // The roster read lands first. The caller tenant read is still in
-    // flight, so the gap stays open: no organization entry and, above all,
-    // no generic organizations row.
     const menu = await openAccountMenu(user)
     await act(async () => {
       roster.resolve()
@@ -976,8 +802,6 @@ describe('the impersonation shell', () => {
       within(menu).queryByText(demoEnUS.userMenu.organizations),
     ).toBeNull()
 
-    // The caller tenant read lands, and the switcher returns over the tenant
-    // it settles from that list.
     await act(async () => {
       self.resolve()
     })
@@ -989,10 +813,6 @@ describe('the impersonation shell', () => {
 
   it('keeps the no-current-tenant state for a viewer whose caller tenant list settles empty', async () => {
     window.history.replaceState({}, '', '/')
-    // A member with no memberships: the tenant is unknown for a reason that is
-    // not an identity change. The switcher mounts and states that state -- only
-    // the impersonation-end transition withholds it -- and no roster read is
-    // spent, because the member holds no tenant.read.
     setCurrentTenant(null)
     const backend = makeBackend()
     bindRequestFn(backend.fn)
@@ -1002,8 +822,6 @@ describe('the impersonation shell', () => {
 
     await waitFor(() => expect(backend.selfReads()).toBeGreaterThan(0))
     expect(backend.rosterReads()).toBe(0)
-    // With no current organization settled the entry still mounts, carrying
-    // the menu's generic organizations label rather than a name.
     const menu = await openAccountMenu(user)
     expect(
       organizationEntry(menu, demoEnUS.userMenu.organizations),
@@ -1020,9 +838,6 @@ describe('the impersonation shell', () => {
 
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
 
-    // The caller list settles the current tenant and the organization entry
-    // names it inside the account menu; no status read is issued, no banner
-    // appears, and the member spends no platform roster read.
     await waitFor(() => expect(backend.selfReads()).toBeGreaterThan(0))
     const menu = await openAccountMenu(user)
     await waitFor(() =>
@@ -1049,10 +864,6 @@ describe('the impersonation shell', () => {
     const notice = await screen.findByRole('region', {
       name: tAuth('impersonation.regionLabel'),
     })
-    // The subscription registered under the impersonated account once the
-    // status read settled the tenant. The bench renders the production
-    // stack, StrictMode included, so the mount effect runs twice: the first
-    // connection is closed by the cleanup and the live one is the last.
     await waitFor(() => expect(opened.length).toBeGreaterThan(0))
     const openedBefore = opened.length
     const liveBefore = opened[openedBefore - 1]
@@ -1062,15 +873,11 @@ describe('the impersonation shell', () => {
       within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
     )
 
-    // The banner disappears; the confirmation stays in the live region the
-    // component keeps mounted.
     await waitFor(() => expect(banner()).toBeNull())
     expect(
       await screen.findByText(tAuth('impersonation.ended')),
     ).toBeInTheDocument()
 
-    // The operator's own identity is back: both account triggers name the
-    // operator again, and the identity-keyed roster read re-ran.
     await waitFor(() =>
       expect(screen.getByTestId('user-menu-trigger')).toHaveAccessibleName(
         accountTriggerName('Staff One'),
@@ -1081,11 +888,8 @@ describe('the impersonation shell', () => {
     )
     await waitFor(() => expect(backend.rosterReads()).toBeGreaterThan(rosterBefore))
 
-    // The page did not move.
     expect(window.location.pathname).toBe('/')
 
-    // The stream was rebuilt for the operator's account: the connection that
-    // was live before the end closed, and a new registration opened.
     await waitFor(() => expect(opened.length).toBeGreaterThan(openedBefore))
     expect(liveBefore?.closed).toBe(1)
   })
@@ -1095,8 +899,6 @@ describe('the impersonation shell', () => {
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
     })
-    // The second interval's status read names a grant again: the server holds
-    // one in force, unlike the interval the end closed.
     const second = grantFixture(new Date(Date.now() + 3_600_000).toISOString())
     let phase: 'first' | 'second' = 'first'
     const request: RequestFn = <T,>(
@@ -1135,8 +937,6 @@ describe('the impersonation shell', () => {
       ),
     )
 
-    // A later impersonation in the same mount renders its banner: the
-    // withheld state belongs to the finished interval.
     act(() => {
       session.set(targetSnapshot())
     })
@@ -1146,8 +946,6 @@ describe('the impersonation shell', () => {
     expect(again).toHaveTextContent(
       tAuth('impersonation.actingAs', { subject: 'Target One' }),
     )
-    // The finished interval's confirmation does not cover the new
-    // interval's announcement in the permanent live region.
     await waitFor(() =>
       expect(announcementRegion()).toHaveTextContent(
         tAuth('impersonation.actingAs', { subject: 'Target One' }),
@@ -1202,15 +1000,11 @@ describe('the impersonation shell', () => {
     )
     await waitFor(() => expect(deletes).toBe(1))
 
-    // Another cause -- an expiry, a bare 404 elsewhere, another tab -- settles
-    // the snapshot while the end write is still in flight.
     act(() => {
       session.set(operatorSnapshot())
     })
     await waitFor(() => expect(banner()).toBeNull())
 
-    // The write settles after the flip: the release edge has already run, so
-    // the banner must not be withheld again for the rest of this mount.
     await act(async () => {
       gate.resolve()
       await Promise.resolve()
@@ -1234,8 +1028,6 @@ describe('the impersonation shell', () => {
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
     })
-    // Once the admin page mounts, its status read is held open: the cached
-    // answer is all the page has to render while it waits.
     const statusGate = deferred()
     let holdStatus = false
     const request: RequestFn = <T,>(
@@ -1285,8 +1077,6 @@ describe('the impersonation shell', () => {
     expect(
       await screen.findByText(tAdmin('impersonations.current.title')),
     ).toBeInTheDocument()
-    // The finished grant is not rendered as current while the read is out:
-    // the interval's cache entry was evicted when its read was disabled.
     expect(
       screen.getByText(tAdmin('impersonations.current.loading')),
     ).toBeInTheDocument()
@@ -1317,27 +1107,17 @@ describe('the impersonation shell', () => {
     expect(notice).toHaveTextContent(
       tAuth('impersonation.actingAs', { subject: 'Target One' }),
     )
-    // The tenant comes from the grant, not from the roster: a roster read
-    // is a platform management read and is refused to an impersonated
-    // identity, so the frame must not issue one or fall back to the
-    // placeholder.
     expect(
       await within(notice).findByText(
         tAuth('impersonation.tenant', { tenant: 'acme' }),
       ),
     ).toBeInTheDocument()
     expect(backend.rosterReads()).toBe(0)
-    // The snapshot's `impersonating` enabled the status read.
     expect(backend.statusReads()).toBeGreaterThan(0)
   })
 
   it('keeps the grant tenant named on a full page load while impersonating', async () => {
     window.history.replaceState({}, '', '/')
-    // A full document load re-mints the host's module state: neither the
-    // current tenant nor the roster's name cache survives. Only the
-    // impersonated account's own membership list can name the grant's tenant,
-    // and a tenant-scoped read that announces no name is refused by the
-    // admission layer.
     setCurrentTenant(null)
     setTenantNames(new Map())
     const backend = makeBackend({
@@ -1350,19 +1130,12 @@ describe('the impersonation shell', () => {
       session: scriptedSession(targetSnapshot(), () => targetSnapshot()),
     })
 
-    // The banner settles the impersonated identity and the grant's tenant.
     await screen.findByRole('region', {
       name: tAuth('impersonation.regionLabel'),
     })
 
-    // The caller tenant read ran under the impersonated account: it is the
-    // name source the reload has left.
     await waitFor(() => expect(backend.selfReads()).toBeGreaterThan(0))
 
-    // The header's unread count is a tenant-scoped read. Every one of them
-    // ran under the grant's tenant and announced the name the membership
-    // list named; the identifier alone is not a name, and a request that
-    // announces none is the 404 the refusal state renders from.
     await waitFor(() => expect(backend.unreadReads()).toBeGreaterThan(0))
     expect(backend.unreadTenantIds().every((id) => id === 'acme')).toBe(true)
     expect(backend.unreadNames().every((name) => name === 'acme')).toBe(true)
@@ -1379,7 +1152,6 @@ describe('the impersonation shell', () => {
       level: 1,
       name: demoEnUS.home.heading,
     })
-    // Let the mount effects settle (the roster read is the visible one).
     await waitFor(() => expect(backend.rosterReads()).toBeGreaterThan(0))
 
     expect(banner()).toBeNull()
@@ -1388,16 +1160,12 @@ describe('the impersonation shell', () => {
 
   it('runs the ended path when the status read answers a bare 404', async () => {
     window.history.replaceState({}, '', '/')
-    // No grant: the status read answers the bare 404 while the snapshot
-    // still says impersonating.
     const backend = makeBackend()
     bindRequestFn(backend.fn)
     const session = scriptedSession(targetSnapshot(), () => operatorSnapshot())
 
     renderDemoApp({ session })
 
-    // The host re-read the session, and the operator's own state returned:
-    // the banner is gone and the account trigger names the operator again.
     await waitFor(() => expect(banner()).toBeNull())
     await waitFor(() =>
       expect(screen.getByTestId('user-menu-trigger')).toHaveAccessibleName(
@@ -1414,8 +1182,6 @@ describe('the impersonation shell', () => {
       const endsAt = new Date(Date.now() + 30_000).toISOString()
       const backend = makeBackend({ grant: grantFixture(endsAt) })
       bindRequestFn(backend.fn)
-      // The first re-read after expiry still answers impersonating (the
-      // server's check-ttl cache); the next one has settled back.
       const { client, opened } = streamClient()
       let restores = 0
       const session = scriptedSession(targetSnapshot(), () => {
@@ -1429,32 +1195,21 @@ describe('the impersonation shell', () => {
           name: tAuth('impersonation.regionLabel'),
         }),
       ).toBeInTheDocument()
-      // Let the status read's state update and the timer effect settle
-      // before the clock moves.
       await act(async () => {
         await Promise.resolve()
       })
-      // At the recorded expiry the host runs the identity change; the
-      // session still answers impersonating, so the bounded re-reads keep
-      // the banner (and its end control) in place.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(31_000)
       })
       expect(restores).toBe(1)
       expect(banner()).not.toBeNull()
 
-      // A later bounded re-read reports the operator, and the full identity
-      // change follows -- including its own restore(), so the count reaches
-      // three: the expiry change, the bounded retry, and the settled change.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(6_000)
       })
       await waitFor(() => expect(banner()).toBeNull())
       expect(restores).toBe(3)
 
-      // The settled change re-registers the live subscription under the
-      // operator: the two earlier registrations (mount and expiry change)
-      // were taken while the server still answered the impersonated account.
       expect(opened.length).toBeGreaterThanOrEqual(3)
       expect(opened[0]?.closed).toBe(1)
       expect(opened[1]?.closed).toBe(1)
@@ -1482,14 +1237,11 @@ describe('the impersonation shell', () => {
       within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
     )
 
-    // Fulfilled, not failed: the confirmation renders, the banner closes
-    // through the same identity change, and no failure text appears.
     expect(
       await screen.findByText(tAuth('impersonation.ended')),
     ).toBeInTheDocument()
     await waitFor(() => expect(banner()).toBeNull())
     expect(backend.deletes()).toBe(1)
-    // The identity re-read settled back on the operator.
     await waitFor(() =>
       expect(screen.getByTestId('user-menu-trigger')).toHaveAccessibleName(
         accountTriggerName('Staff One'),
@@ -1499,8 +1251,6 @@ describe('the impersonation shell', () => {
 
   it('withholds the banner as soon as the end settles, before the session re-read', async () => {
     window.history.replaceState({}, '', '/')
-    // The replica's validity cache still answers the grant after the DELETE:
-    // the window the host must cover without waiting for the snapshot.
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
       statusLags: true,
@@ -1518,9 +1268,6 @@ describe('the impersonation shell', () => {
       within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
     )
 
-    // The DELETE settled and the re-read is held open. The banner is gone,
-    // the confirmation is in the live region that stays mounted, and the
-    // end control went with the banner.
     await waitFor(() => expect(gated.pendingRestores()).toBe(1))
     await waitFor(() => expect(banner()).toBeNull())
     expect(
@@ -1530,8 +1277,6 @@ describe('the impersonation shell', () => {
       screen.queryByRole('button', { name: tAuth('impersonation.end') }),
     ).toBeNull()
 
-    // The re-read settles the operator: the null is released and the banner
-    // stays absent, now because the snapshot says none is in force.
     await gated.releaseRestore()
     await waitFor(() => expect(gated.pendingRestores()).toBe(0))
     expect(banner()).toBeNull()
@@ -1550,8 +1295,6 @@ describe('the impersonation shell', () => {
         statusLags: true,
       })
       bindRequestFn(backend.fn)
-      // Every re-read keeps naming the impersonated identity: the bound is
-      // spent while the snapshot still says true.
       const session = scriptedSession(targetSnapshot(), () => targetSnapshot())
       const user = userEvent.setup({
         advanceTimers: vi.advanceTimersByTimeAsync,
@@ -1572,23 +1315,17 @@ describe('the impersonation shell', () => {
       expect(banner()).toBeNull()
       expect(backend.deletes()).toBe(1)
 
-      // The bounded re-reads keep answering impersonating; short of the
-      // bound the null stands.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(55_000)
       })
       expect(banner()).toBeNull()
 
-      // The bound is spent: the null is released and the banner returns,
-      // snapshot-driven.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(10_000)
       })
       const restored = banner()
       expect(restored).not.toBeNull()
 
-      // The end control works again: a bare 404 is a settled end, so the
-      // next identity change runs and converges from there.
       await user.click(
         within(restored!).getByRole('button', {
           name: tAuth('impersonation.end'),
@@ -1613,8 +1350,6 @@ describe('the impersonation shell', () => {
         statusLags: true,
       })
       bindRequestFn(backend.fn)
-      // The identity change's own re-read still answers impersonating; the
-      // first bounded retry has settled back to the operator.
       let restores = 0
       const session = scriptedSession(targetSnapshot(), () => {
         restores += 1
@@ -1638,8 +1373,6 @@ describe('the impersonation shell', () => {
       })
       expect(banner()).toBeNull()
 
-      // The first bounded retry settles the operator; the banner never
-      // reappears, and the loop stops rather than polling to its bound.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(6_000)
         await Promise.resolve()
@@ -1661,8 +1394,6 @@ describe('the impersonation shell', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       window.history.replaceState({}, '', '/admin/impersonations?tenant=acme')
-      // The write's round trip is slow, and the record read stays open: one
-      // read is in flight at the moment the start is issued.
       const post = deferred()
       const records = deferred()
       const backend = makeBackend({
@@ -1690,31 +1421,20 @@ describe('the impersonation shell', () => {
 
       const renderResult = renderDemoApp({ session: gated.session })
 
-      // The start form waits on a settled "not impersonating" answer, and the
-      // record read is in flight.
       await screen.findByText(tAdmin('impersonations.current.none'))
       await waitFor(() => expect(backend.recordReads()).toBe(1))
       await pickStartAccount(user)
 
-      // The write is issued: the record read in flight is cancelled at that
-      // moment, and the client's queries are paused.
       await user.click(screen.getByRole('button', { name: tAdmin('impersonations.start.submit') }))
       await waitFor(() => expect(backend.postReads()).toBe(1))
       await waitFor(() => expect(backend.recordsAborted()).toBe(true))
       expect(onlineManager.isOnline()).toBe(false)
 
-      // From the write's issue onward, no read leaves the browser: the
-      // settled write's invalidations stay parked behind the pause while the
-      // identity change's re-read is held open.
       const readsWhileHeld = backend.reads()
       await act(async () => {
         post.resolve()
       })
       await waitFor(() => expect(gated.pendingRestores()).toBe(1))
-      // The settled write invalidated the status read and the client parked
-      // it: the query carries a fetch it cannot issue. That parked read --
-      // not the silence of an arbitrary few milliseconds -- is what the
-      // counters are judged against.
       await waitFor(() =>
         expect(
           renderResult.queryClient.getQueryState(
@@ -1722,16 +1442,11 @@ describe('the impersonation shell', () => {
           )?.fetchStatus,
         ).toBe('paused'),
       )
-      // Judge the hold past React Query's retry delay: a read retried at one
-      // second would fall outside a fixed 20 ms window, and this window has
-      // to cover what the hold claims to rule out.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(2_000)
       })
       expect(backend.reads()).toBe(readsWhileHeld)
 
-      // The re-read settles the impersonated identity and the hold is released
-      // with it: the tenant home's reads run under the new session.
       await gated.releaseRestore()
       await waitFor(() => expect(window.location.pathname).toBe('/'))
       expect(onlineManager.isOnline()).toBe(true)
@@ -1755,10 +1470,6 @@ describe('the impersonation shell', () => {
     await user.click(screen.getByRole('button', { name: tAdmin('impersonations.start.submit') }))
     await waitFor(() => expect(backend.postReads()).toBe(1))
 
-    // The write changed no identity, so the session's identity-transition
-    // guard is closed exactly once (the returned release, not a second
-    // path) and the pause is released at once: the page's reads run again
-    // (its refresh control re-reads the status).
     await waitFor(() => expect(onlineManager.isOnline()).toBe(true))
     expect(transitions.opens()).toBe(1)
     expect(transitions.releases()).toBe(1)
@@ -1787,9 +1498,6 @@ describe('the impersonation shell', () => {
       within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
     )
 
-    // The DELETE settled and the identity change's re-read is held open. An
-    // end does not rotate the session cookie, so nothing pauses the client's
-    // reads.
     await waitFor(() => expect(gated.pendingRestores()).toBe(1))
     expect(onlineManager.isOnline()).toBe(true)
 
@@ -1822,10 +1530,6 @@ describe('the impersonation shell', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       window.history.replaceState({}, '', '/')
-      // The status read always answers the bare 404 while the session read
-      // keeps answering impersonating: the lagging replica the design
-      // covers. The status query must not be evicted by the change, or its
-      // own re-read would answer a new 404 and re-enter the change.
       const backend = makeBackend({ statusReadLimit: 40 })
       bindRequestFn(backend.fn)
       let restores = 0
@@ -1840,18 +1544,14 @@ describe('the impersonation shell', () => {
       })
 
       expect(backend.statusReads()).toBe(1)
-      // The one ended path ran; its own bounded re-read continues on the
-      // fixed interval.
       expect(restores).toBe(1)
       expect(banner()).not.toBeNull()
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(60_000)
       })
-      // One identity change plus the retries the check-ttl bound allows.
       expect(restores).toBeGreaterThan(1)
       expect(restores).toBeLessThanOrEqual(13)
-      // The query was never evicted, so no automatic read re-entered it.
       expect(backend.statusReads()).toBe(1)
 
       const settled = restores
@@ -1860,7 +1560,6 @@ describe('the impersonation shell', () => {
       })
       expect(restores).toBe(settled)
       expect(backend.statusReads()).toBe(1)
-      // The bound is spent; the banner and its end control stay.
       const notice = banner()
       expect(notice).not.toBeNull()
       expect(
@@ -1880,8 +1579,6 @@ describe('the impersonation shell', () => {
       const endsAt = new Date(Date.now() + 30_000).toISOString()
       const backend = makeBackend({ grant: grantFixture(endsAt) })
       bindRequestFn(backend.fn)
-      // Every re-read keeps answering impersonating: the bound, not the
-      // server, has to stop the loop.
       let restores = 0
       const session = scriptedSession(targetSnapshot(), () => {
         restores += 1
@@ -1892,8 +1589,6 @@ describe('the impersonation shell', () => {
       await screen.findByRole('region', {
         name: tAuth('impersonation.regionLabel'),
       })
-      // Let the status read settle so the recorded expiry is in place
-      // before the clock moves.
       await waitFor(() =>
         expect(backend.statusReadsWithGrant()).toBeGreaterThan(0),
       )
@@ -1905,8 +1600,6 @@ describe('the impersonation shell', () => {
       })
       expect(restores).toBe(1)
 
-      // Past the whole check-ttl upper bound from the recorded expiry: one
-      // change plus the 5-second retries, never more.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(70_000)
       })
@@ -1937,9 +1630,6 @@ describe('the impersonation shell', () => {
       const endsAt = new Date(Date.now() + 30_000).toISOString()
       const backend = makeBackend({
         grant: grantFixture(endsAt),
-        // The server's own Active judgement answers the bare 404 once the
-        // recorded expiry passed, while the session read keeps answering
-        // impersonating for one check-ttl.
         status404AfterExpiry: true,
         statusReadLimit: 40,
       })
@@ -1954,8 +1644,6 @@ describe('the impersonation shell', () => {
       await screen.findByRole('region', {
         name: tAuth('impersonation.regionLabel'),
       })
-      // Let the status read settle so the recorded expiry is in place
-      // before the clock moves.
       await waitFor(() =>
         expect(backend.statusReadsWithGrant()).toBeGreaterThan(0),
       )
@@ -1965,14 +1653,9 @@ describe('the impersonation shell', () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(31_000)
       })
-      // The expiry change ran; the status query was not evicted, so it has
-      // not been re-read yet.
       expect(restores).toBe(1)
       expect(backend.statusReads()).toBe(1)
 
-      // The tab becoming visible again re-reads the status read under the
-      // new judgement: the bare 404 is handled once, and the bounded re-read
-      // starts.
       await act(async () => {
         window.dispatchEvent(new Event('visibilitychange'))
         await Promise.resolve()
@@ -1981,8 +1664,6 @@ describe('the impersonation shell', () => {
         await vi.advanceTimersByTimeAsync(70_000)
       })
 
-      // Two identity changes (expiry, then the 404) plus the retries their
-      // two bounds allow -- not the request storm a self-driving loop makes.
       expect(restores).toBeGreaterThanOrEqual(2)
       expect(restores).toBeLessThanOrEqual(30)
       expect(backend.statusReads()).toBeLessThanOrEqual(3)
@@ -2002,8 +1683,6 @@ describe('the impersonation shell', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       window.history.replaceState({}, '', '/')
-      // The recorded expiry is already past and its check-ttl bound with it,
-      // so the one expiry change runs and the timer stops.
       const endsAt = new Date(Date.now() - 70_000).toISOString()
       const backend = makeBackend({ grant: grantFixture(endsAt) })
       bindRequestFn(backend.fn)
@@ -2042,8 +1721,6 @@ describe('the impersonation shell', () => {
         await vi.advanceTimersByTimeAsync(0)
       })
 
-      // The identity change's identity is stable, so the timer effect did
-      // not re-run on the navigation.
       expect(restores).toBe(1)
       expect(backend.statusReads()).toBe(statusReads)
     } finally {
@@ -2055,9 +1732,6 @@ describe('the impersonation shell', () => {
     window.history.replaceState({}, '', '/admin/tenants')
     const backend = makeBackend()
     bindRequestFn(backend.fn)
-    // The effective account holds a platform permission. A real target never
-    // does, but the identity fact decides before the set is consulted: the
-    // impersonation alone closes the admin.
     const impersonated = {
       ...authenticatedSnapshot({ system: ['tenant.read'] }),
       impersonating: true,
@@ -2066,8 +1740,6 @@ describe('the impersonation shell', () => {
       session: scriptedSession(impersonated, () => impersonated),
     })
 
-    // The impersonation redirects before the permission set is read, so the
-    // non-empty set neither keeps the admin nor shows it in passing.
     await waitFor(() => expect(window.location.pathname).toBe('/'))
     expect(
       screen.queryByRole('navigation', { name: tAdmin('shell.navLabel') }),
@@ -2087,21 +1759,11 @@ describe('the impersonation shell', () => {
       session: scriptedSession(impersonated, () => impersonated),
     })
 
-    // The same permission criterion that turns an ordinary member away: the
-    // set is known and empty, so the admin path space is left behind. The
-    // redirect does not mention the impersonation; the tenant frame's banner
-    // is the visitor's explanation.
     await waitFor(() => expect(window.location.pathname).toBe('/'))
   })
 
   it('settles the admin tenant from the caller list when the roster is refused', async () => {
-    // A full document load of an admin path while impersonating: the roster
-    // is a platform management read and is refused, so the admin area must
-    // name the tenant from the caller tenant list (narrowed to the grant) to
-    // let the effective account's platform set be read at all. With the set
-    // read as empty, the area redirects; without the read it waits forever.
     window.history.replaceState({}, '', '/admin/tenants')
-    // A full load starts with no current tenant and no name cache.
     setCurrentTenant(null)
     setTenantNames(new Map())
     const request: RequestFn = <T,>(
@@ -2159,20 +1821,11 @@ describe('the impersonation shell', () => {
 
   it('resets the platform set to unknown immediately before re-reading it after an impersonation ends', async () => {
     window.history.replaceState({}, '', '/')
-    // The frame starts an impersonation with no settled tenant (the module
-    // cell may still hold the operator's from before). The permission read
-    // follows the cell, so the case starts from the state the frame settles.
     setCurrentTenant(null)
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
-      // The operator's own membership is the platform's organization: the
-      // admin entry is offered only there, so the end must settle it for the
-      // entry to be the observable this case reads.
       selfTenants: [{ name: 'system', kind: 'business' }],
     })
-    // The read fails while the session impersonates and answers for the
-    // operator: the test needs the two outcomes, not a reason the
-    // impersonated read would fail.
     let impersonating = true
     const request: RequestFn = <T,>(
       path: string,
@@ -2193,9 +1846,6 @@ describe('the impersonation shell', () => {
       return answer
     }
     bindRequestFn(request)
-    // The impersonated snapshot starts with a known empty platform set; the
-    // permission read issued for the grant's tenant is refused, and a failed
-    // read leaves the set unknown -- it is not attached as an empty one.
     const target: AuthSnapshot = {
       ...targetSnapshot(),
       permissionSets: { tenant: null, system: [] },
@@ -2227,11 +1877,6 @@ describe('the impersonation shell', () => {
     const notice = await screen.findByRole('region', {
       name: tAuth('impersonation.regionLabel'),
     })
-    // One read before the end: the one issued once the impersonation status
-    // read settles the grant's tenant. It resets the set before issuing its
-    // read; the undecided-tenant window before that settles issues no request
-    // (the guarded route answers 404 to a request naming no tenant), and the
-    // refused read leaves the set unknown instead of attaching an empty one.
     await waitFor(() => expect(attached).toEqual([null]))
     const menu = await openAccountMenu(user)
     expect(
@@ -2249,11 +1894,6 @@ describe('the impersonation shell', () => {
       ]),
     )
 
-    // The set went unknown immediately before the re-read that answered it;
-    // without that reset a stale set could outlive the identity it was read
-    // under. The refused impersonated read never attaches, the identity
-    // change resets again, and the operator's own read is the one that
-    // answers.
     expect(attached).toEqual([null, null, null, ['tenant.read']])
     const settledMenu = await openAccountMenu(user)
     expect(
@@ -2307,9 +1947,6 @@ describe('the impersonation shell', () => {
     await pickStartAccount(user)
     await user.click(screen.getByRole('button', { name: tAdmin('impersonations.start.submit') }))
 
-    // The write settled and the identity change is waiting on the session
-    // re-read. The admin must keep rendering: its permission set was not
-    // cleared ahead of the re-read.
     await waitFor(() => expect(gated.pendingRestores()).toBe(1))
     expect(window.location.pathname).toBe('/admin/impersonations')
     expect(
@@ -2342,9 +1979,6 @@ describe('the impersonation shell', () => {
     }
     bindRequestFn(request)
     const base = createTestSession(operatorSnapshot())
-    // The re-read is refused: createTestSession's restore() rejects. The
-    // outcome is recorded when the answer is decided, which is what settles
-    // the identity change.
     const restoreOutcomes: ('settled' | 'rejected')[] = []
     const session = {
       ...restoreOutcomeSession(base, restoreOutcomes),
@@ -2375,10 +2009,6 @@ describe('the impersonation shell', () => {
     await user.click(screen.getByRole('button', { name: tAdmin('impersonations.start.submit') }))
     await waitFor(() => expect(backend.postReads()).toBe(1))
 
-    // The re-read was refused, and the identity did not change; the admin
-    // keeps the set it had rather than waiting on an unknown one forever.
-    // The refusal has to be decided first: until then the identity change is
-    // still pending, and a pending change leaves the set untouched too.
     await waitFor(() => expect(restoreOutcomes).toEqual(['rejected']))
     expect(window.location.pathname).toBe('/admin/impersonations')
     expect(
@@ -2394,8 +2024,6 @@ describe('the impersonation shell', () => {
 
   it('keeps the settled permission set when an end changes no identity', async () => {
     window.history.replaceState({}, '', '/admin/impersonations?tenant=acme')
-    // Another tab started the impersonation: the server's status read has a
-    // grant while this tab's session still names the operator.
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
     })
@@ -2412,10 +2040,6 @@ describe('the impersonation shell', () => {
       return backend.fn<T>(path, options)
     }
     bindRequestFn(request)
-    // restore() retains the sets the host attached: the re-read names the
-    // same operator and leaves the permission table as it found it. Its
-    // outcome is recorded when the answer is decided, which is what settles
-    // the identity change.
     const base = scriptedSession(operatorSnapshot(), () => ({
       ...operatorSnapshot(),
       permissionSets: base.getSnapshot().permissionSets,
@@ -2445,18 +2069,12 @@ describe('the impersonation shell', () => {
       ),
     })
 
-    // The admin's own status surface settles the grant; the end control
-    // belongs to it.
     const end = await screen.findByRole('button', {
       name: tAdmin('impersonations.current.end'),
     })
     await user.click(end)
     await waitFor(() => expect(backend.deletes()).toBe(1))
 
-    // The identity did not move, so the set's read did not re-run; the set
-    // must still be the known one, not a value cleared by the change. The
-    // re-read's own outcome is what settles the change: until it answers,
-    // the change is pending and the set is untouched for that reason too.
     await waitFor(() => expect(restoreOutcomes).toEqual(['settled']))
     expect(window.location.pathname).toBe('/admin/impersonations')
     expect(
@@ -2474,8 +2092,6 @@ describe('the impersonation shell', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       window.history.replaceState({}, '', '/admin/impersonations?tenant=acme')
-      // The operator's tenant is what the module-level cell holds while the
-      // admin has the frame unmounted.
       setCurrentTenant('acme')
       setTenantNames(
         new Map([
@@ -2516,11 +2132,6 @@ describe('the impersonation shell', () => {
       const openedBefore = opened.length
       await user.click(screen.getByRole('button', { name: tAdmin('impersonations.start.submit') }))
 
-      // The frame remounted while the status read is still held: the grant's
-      // tenant is not known, so no tenant-scoped read and no stream may run
-      // under the operator's leftover tenant. The status read being in flight
-      // is the state that carries the claim: the frame has settled on an
-      // unknown tenant because that read has not answered yet.
       await waitFor(() => expect(window.location.pathname).toBe('/'))
       await waitFor(() =>
         expect(
@@ -2530,8 +2141,6 @@ describe('the impersonation shell', () => {
         ).toBe('fetching'),
       )
       expect(getCurrentTenant()).toBeNull()
-      // Hold the claim past React Query's retry delay: a tenant read retried
-      // at one second would fall outside a fixed 20 ms window.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(2_000)
       })
@@ -2539,8 +2148,6 @@ describe('the impersonation shell', () => {
       expect(backend.tenantReads()).toBe(tenantBefore)
       expect(opened.length).toBe(openedBefore)
 
-      // The status read settles the grant's tenant; reads and the stream now
-      // run under it.
       await act(async () => {
         status.resolve()
       })
@@ -2606,8 +2213,6 @@ describe('the impersonation shell', () => {
     await pickStartAccount(user)
     await user.click(screen.getByRole('button', { name: tAdmin('impersonations.start.submit') }))
 
-    // A start announces itself through the re-read: the banner appears with
-    // the impersonated identity and no end confirmation precedes it.
     expect(
       await screen.findByRole('region', {
         name: tAuth('impersonation.regionLabel'),
@@ -2636,8 +2241,6 @@ describe('the impersonation shell', () => {
       }),
     )
 
-    // The visible notice is gone; the start announcement stays in the
-    // permanent live region.
     expect(banner()).toBeNull()
     expect(
       document.querySelector(
@@ -2648,17 +2251,12 @@ describe('the impersonation shell', () => {
       tAuth('impersonation.actingAs', { subject: 'Target One' }),
     )
 
-    // The header chip is now collapsed, and it took the focus the close
-    // control could no longer hold.
     const chip = screen.getByRole('button', {
       name: tAuth('impersonation.impersonating'),
     })
     expect(chip).toHaveAttribute('aria-expanded', 'false')
     expect(chip).toHaveFocus()
 
-    // The account menu still carries the way out while the banner is
-    // hidden, and it is the same write attempt. Both placements render, so
-    // address the sidebar entry by its test id rather than the shared name.
     await user.click(screen.getByTestId('account-entry-trigger'))
     await user.click(
       screen.getByRole('menuitem', { name: tAuth('impersonation.end') }),
@@ -2670,11 +2268,6 @@ describe('the impersonation shell', () => {
         name: tAuth('impersonation.impersonating'),
       }),
     ).toBeNull()
-    // Ending the impersonation remounts the tenant menu, whose switcher
-    // mounts its own (empty) role="status" region from the start, so the
-    // shell's permanent live region is no longer the only status region.
-    // Locate the ended confirmation through its text and assert the region
-    // that carries it.
     const endedText = await screen.findByText(tAuth('impersonation.ended'))
     expect(endedText.closest('[role="status"]')).toHaveTextContent(
       tAuth('impersonation.ended'),
@@ -2709,9 +2302,6 @@ describe('the impersonation shell', () => {
       screen.getByRole('menuitem', { name: tAuth('impersonation.end') }),
     )
 
-    // The failure text belongs to the banner, which was hidden: the host
-    // resets the dismissal so the error is visible, and the chip is
-    // expanded again.
     const again = await screen.findByRole('region', {
       name: tAuth('impersonation.regionLabel'),
     })
@@ -2780,16 +2370,12 @@ describe('the impersonation shell', () => {
     )
     expect(banner()).toBeNull()
 
-    // A tenant-area route change keeps the same frame and the same
-    // dismissal: the notice does not pop back open on navigation.
     await user.click(screen.getByTestId('account-entry-trigger'))
     await user.click(
       screen.getByRole('menuitem', {
         name: demoEnUS.account.sections.profile,
       }),
     )
-    // The account menu opens the group address, which lands on the first
-    // pane.
     await waitFor(() =>
       expect(window.location.pathname).toBe('/account/profile'),
     )
@@ -2822,8 +2408,6 @@ describe('the impersonation shell', () => {
     )
     expect(banner()).toBeNull()
 
-    // The same grant now names another impersonated account: an identity
-    // change, which is a reset edge.
     const next = targetSnapshot()
     act(() => {
       session.set({
@@ -2862,28 +2446,21 @@ describe('the impersonation shell', () => {
     const notice = await screen.findByRole('region', {
       name: tAuth('impersonation.regionLabel'),
     })
-    // The AppBar is the shell's banner landmark; the page may carry a
-    // header of its own inside main, so take the first one.
     const header = screen.getAllByRole('banner')[0]
     if (header === undefined) {
       throw new Error('expected the shell banner landmark')
     }
-    // Below the header in document order, inside the same fixed head.
     expect(
       header.compareDocumentPosition(notice) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
     expect(notice.parentElement?.parentElement).toBe(header.parentElement)
 
-    // The skip link is the shell's first focusable element.
     await user.tab()
     expect(
       screen.getByRole('link', { name: tLayout('appShell.skipToContent') }),
     ).toHaveFocus()
 
-    // Then the header's remaining controls -- the chip, then the header's
-    // avatar menu -- then the banner's own controls: the sidebar's account
-    // entry lives in the navigation column and does not sit between them.
     const chip = screen.getByRole('button', {
       name: tAuth('impersonation.impersonating'),
     })
@@ -2903,15 +2480,7 @@ describe('the impersonation shell', () => {
   })
 })
 
-/**
- * The admin under an impersonation: the impersonation is the identity fact
- * that closes it, decided before any permission set is consulted. Whatever
- * the masked account's permission read answers -- refused, an empty document,
- * or even a non-empty one -- the admin entry is hidden and every admin
- * path lands on the tenant home, with no retryable failure view.
- */
 describe('the admin under an impersonation', () => {
-  /** A session whose permission attach lands in the snapshot the gates read. */
   function attachable(base: ReturnType<typeof createTestSession>): AuthSession {
     return {
       ...base,
@@ -2925,8 +2494,6 @@ describe('the admin under an impersonation', () => {
     }
   }
 
-  /** A backend that answers the impersonation surface and the permission
-   * read the way the case asks. */
   function bindWithPermissions(
     answer: () => Promise<unknown>,
     grant: string = new Date(Date.now() + 3_600_000).toISOString(),
@@ -2956,9 +2523,6 @@ describe('the admin under an impersonation', () => {
     async (_label, answer) => {
       window.history.replaceState({}, '', '/admin/tenants')
       bindWithPermissions(answer)
-      // The target's platform set is unknown at entry: the read under test is
-      // the only thing that could turn it into a decision, so the redirect can
-      // only come from the identity fact.
       const session = attachable(
         createTestSession({
           ...targetSnapshot(),
@@ -2972,9 +2536,6 @@ describe('the admin under an impersonation', () => {
         ),
       })
 
-      // The identity fact redirects before the read is consulted: the viewer
-      // lands on the tenant home, without the admin chrome and without the
-      // retryable failure its refused read would otherwise show.
       await waitFor(() => expect(window.location.pathname).toBe('/'))
       expect(screen.queryByText(demoEnUS.admin.accessFailed)).toBeNull()
       expect(
@@ -2989,8 +2550,6 @@ describe('the admin under an impersonation', () => {
   )
 
   it('hides the entry and keeps an in-app admin move home even for a non-empty read', async () => {
-    // The entry's hiding is the identity fact too: a target read that
-    // answered a platform set must not offer the way in.
     window.history.replaceState({}, '', '/')
     bindWithPermissions(() =>
       Promise.resolve({ platform: ['tenant.read'], tenant: [] }),
@@ -3025,11 +2584,6 @@ describe('the admin under an impersonation', () => {
   })
 
   it('hides the entry under an impersonation even in the system organization', async () => {
-    // The tenant condition the entry also carries is satisfied here: the
-    // authorization names the platform organization, so the shell settles it
-    // as the current one and the permission read holds a served page's code.
-    // The absence is therefore the impersonation's alone, which the case
-    // after this one distinguishes by ending it on the same tenant.
     window.history.replaceState({}, '', '/')
     const backend = makeBackend({
       grant: {
@@ -3066,8 +2620,6 @@ describe('the admin under an impersonation', () => {
     window.history.replaceState({}, '', '/admin/tenants')
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
-      // The operator's own organization is the platform's: the menu offers
-      // the admin entry only there.
       selfTenants: [{ name: 'system', kind: 'business' }],
     })
     bindRequestFn(backend.fn)

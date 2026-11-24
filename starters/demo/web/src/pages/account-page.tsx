@@ -1,72 +1,3 @@
-/**
- * The account page and the social-binding callback beside it.
- *
- * @speed/account-ui ships the account family as sections, not a routed
- * screen: the page, its heading and the surrounding chrome are the host's.
- * Each pane is a page of its own (src/routes.tsx, src/paths.ts) and composes
- * a ui-kit PageLayout naming it; the pane's blocks follow as one card each,
- * separated by the frame's stack, with no gate to open first.
- *
- * The contact-verification landings reach the profile page with a flag:
- * `verify=1` and `change=email` open the verification surface there, which
- * is why the banner's links and the post-registration redirect keep
- * working unchanged.
- *
- * - profile: the account's username and display name (edited in place and
- *   saved when the field loses focus), the email addresses and the phone
- *   number, one card each.
- * - security: the password, the sign-in ways, two-step verification when
- *   `authn.mfa` is served, and the social bindings, one card each.
- * - sessions: SessionsSection, already a device list with revoke actions.
- * - preferences: the theme preset and color-mode selects, and the language
- *   and time zone selects.
- *
- * The page reads the caller's profile once through the generated
- * `useAuthnProfileGet` for the profile pane's facts and the verification
- * landing. The sections keep their own reads and async states (loading,
- * empty, error) from the account-ui namespace, so nothing here repeats a
- * spinner or an error block.
- *
- * The account page is also where the user's appearance is chosen: the
- * appearance and color-mode sections sit in the preferences pane, wired to the
- * theme provider's preset and preference and to the device's stored choices,
- * so a pick applies immediately and survives a reload (src/chrome.tsx holds
- * the storage helpers). The preset names are this bundle's copy; the package
- * renders the options the host hands it. The color-mode section writes the
- * account first, and only a confirmed write is applied to the provider and
- * mirrored to the device.
- *
- * The phone write (account-ui's PhoneSection) is mounted only when the
- * deployment serves the `authn.phone` feature: its two routes are registered
- * only when the deployment delivers an SMS code provider (an assembly that
- * names authn.sms), and this skeleton's baseline carries no SMS family -- the
- * family needs a carrier's credentials, so it is a product's to add (see
- * AGENTS.md and the server's baseline criterion). A section whose submit would
- * be answered 404 is a write the page cannot keep, so a deployment without the
- * feature offers none; a product that adds the SMS family gets the block here
- * beside the other writes.
- *
- * The two-step block is offered only when `authn.mfa` is served, and the
- * identifier section learns from `authn.identifiers.email` whether its add
- * face may offer an email (a deployment without it records usernames only).
- *
- * The social-bindings section takes the assembled session (it starts the
- * `link` flow the callback completes) and the callback route the flow
- * lands back on. The skeleton configures no OAuth provider, so the
- * deployment's discovery document carries no redirect method and the
- * add area stays empty; a product that configures one gets its channels
- * from that same document. The callback route is mounted beside the page
- * (src/routes.tsx) for that product.
- *
- * The callback page renders account-ui's BindingCallbackHandler: the flow
- * model completes the provider hand-off server-side and the handler reads
- * the `link` flow back here, then returns the viewer to the account page.
- * The client carries only the access token from step-up-gated writes; the
- * site's own signal handling stays inside account-ui. Its absent slot is the
- * app's 404: a deployment that configures no redirect method has no binding
- * round trip at all.
- */
-
 import type { MouseEventHandler, ReactElement, ReactNode, Ref } from 'react'
 import {
   useCallback,
@@ -155,13 +86,6 @@ import { DEMO_NAMESPACE } from '../resources.js'
 
 
 
-/**
- * The left inset a block's content takes to start on its title's rail: the
- * fixed icon column plus the grid gap the title sits after. The column stays
- * 2rem; the gap and therefore the inset follow the theme's spacing base, so a
- * preset with a different spacing unit keeps the heading and the items on one
- * vertical line.
- */
 function titleRailInset(theme: Theme): string {
   return `calc(2rem + ${theme.spacing(2)})`
 }
@@ -169,25 +93,18 @@ function titleRailInset(theme: Theme): string {
 interface SecurityRowProps {
   readonly icon: ReactNode
   readonly title: string
-  /** The state, shown beside the title. */
   readonly badge?: ReactNode
   readonly description: string
   readonly actionLabel: string
-  /** A link action: the row leads to the pane that manages it. */
   readonly actionHref?: string
   readonly actionOnClick?: MouseEventHandler<HTMLElement>
   readonly expanded?: boolean
   readonly onToggle?: () => void
   readonly children?: ReactNode
-  /**
-   * Where the body's left edge sits: the row's title column, or its icon
-   * column when the body is itself a list of iconed rows.
-   */
   readonly alignBody?: 'title' | 'icon'
   readonly testId: string
 }
 
-/** One row of the security list: icon, title and state, one action. */
 function SecurityRow({
   icon,
   title,
@@ -372,28 +289,15 @@ function LinkIcon(): ReactElement {
 }
 
 interface AccountSectionProps {
-  /** The block's label, already translated. */
   readonly title: string
-  /** The block's leading icon, like the security blocks'. */
   readonly icon?: ReactNode
-  /** One sentence under the title, like the security blocks' descriptions. */
   readonly description?: string
-  /** The action at the header's right, beside the title block. */
   readonly action?: ReactNode
-  /** The section element, for a focus landing when its content goes away. */
   readonly sectionRef?: Ref<HTMLElement>
-  /** Makes the section a programmatic focus target; -1 keeps it out of Tab order. */
   readonly sectionTabIndex?: number
-  /** The section's own surface. */
   readonly children: ReactNode
 }
 
-/**
- * One block of a pane: a card carrying its own title (with the block's
- * icon) and, beneath it, the block's fields. The card is the block's
- * surface -- a pane is a stack of these, not one sheet subdivided by
- * headings.
- */
 function AccountSection({
   title,
   icon,
@@ -413,9 +317,6 @@ function AccountSection({
       aria-labelledby={titleId}
       sx={{ p: 3 }}
     >
-      {/* The icon column is fixed at 2rem with the same gap the security
-          blocks use, so the block title lands on the same rail as its
-          items. */}
       <Box
         sx={{
           display: 'grid',
@@ -452,9 +353,6 @@ function AccountSection({
         </Box>
         {action === undefined ? null : <Box>{action}</Box>}
       </Box>
-      {/* The block's content shares the title's rail: the icon column and the
-          gap before the title are skipped, so every item starts where the
-          block's own name starts. */}
       <Box sx={{ mt: 2, pl: icon === undefined ? 0 : titleRailInset }}>
         {children}
       </Box>
@@ -464,13 +362,10 @@ function AccountSection({
 
 interface AccountItemProps {
   readonly title: string
-  /** The item's detail or control, under the title. */
   readonly children?: ReactNode
-  /** The action at the title's right. */
   readonly action?: ReactNode
 }
 
-/** One item of a block: a title, its action, and the detail beneath it. */
 function AccountItem({
   title,
   children,
@@ -493,16 +388,12 @@ function AccountItem({
   )
 }
 
-/** A phone-removal attempt's row and the confirmation or step-up dialog that
- * carried it, recorded when the attempt starts. */
 interface PhoneRemoveAttempt {
   readonly id: string
   readonly row: HTMLElement | null
   readonly dialog: HTMLElement | null
 }
 
-/** The dialog the attempt starts in: the confirmation or step-up surface the
- * activated control sits in, read at the moment the attempt starts. */
 function dialogHoldingFocus(): HTMLElement | null {
   const active = document.activeElement
   if (!(active instanceof HTMLElement)) {
@@ -512,15 +403,6 @@ function dialogHoldingFocus(): HTMLElement | null {
   return dialog instanceof HTMLElement ? dialog : null
 }
 
-/**
- * Whether a removal took the operator's focus. A write that removes its own
- * row hands focus to a landing, but only when the removal is what took it:
- * focus on the document body, on a detached node, inside the removed row, or
- * inside the confirmation or step-up dialog this attempt recorded all end on
- * the body once that surface closes. A connected control elsewhere -- another
- * dialog included -- is a place the operator chose, and the removal leaves it
- * alone.
- */
 function focusFellWithRemoval(
   removedRow: HTMLElement | null,
   dialog: HTMLElement | null,
@@ -538,14 +420,9 @@ function focusFellWithRemoval(
   return dialog !== null && dialog.contains(active)
 }
 
-/**
- * Hands the removal's focus loss to `section`. A confirmation or step-up
- * dialog that carried the write can still be closing when the row leaves; its
- * focus trap pulls a focus placed outside back inside, and the page ends on
- * the body once the dialog unmounts. The landing therefore waits for this
- * attempt's own dialog to leave the document, then hands the focus over only
- * if the removal -- or that dialog -- is what took it.
- */
+// A confirmation or step-up dialog can still be closing when the row leaves;
+// its focus trap pulls a focus placed outside back in, so wait for this
+// attempt's dialog to leave the document before handing focus to the section.
 function landInPhoneSection(
   section: HTMLElement | null,
   attempt: PhoneRemoveAttempt,
@@ -575,7 +452,6 @@ function landInPhoneSection(
   }
 }
 
-/** The account-management page: one pane per route. */
 export function AccountSettingsPage({
   section,
 }: {
@@ -584,27 +460,12 @@ export function AccountSettingsPage({
   const { session } = useAppServices()
   const { t } = useTranslation(DEMO_NAMESPACE)
   const { t: tAccount, i18n: i18nAccount } = useTranslation(ACCOUNT_UI_NAMESPACE)
-  // The account-ui bundle owns the identifiers' own vocabulary: the kind
-  // names the sign-in summary lists and the badge a proved address carries.
   const { path: pathname, search } = useLocationPath()
   const landing = new URLSearchParams(search)
-  // The banner and the post-registration landing reach this page with an
-  // intent: `verify=1` asks for the one automatic code, `change=email` opens
-  // the change-address form instead. An ordinary visit carries neither, so the
-  // section waits for the visitor to ask.
   const changeOpen = landing.get('change') === 'email'
   const verifyLanding = landing.get('verify') === '1' && !changeOpen
   const navigate = useNavigate()
-  // A password registration made from an invitation link lands here to prove
-  // the address, and the landing it started from has to survive that detour.
-  // Once the profile reads verified, the visitor goes back to the link to
-  // accept the invitation. The remembered landing is cleared first, so a later
-  // verification does not repeat the move.
   const profile = useAuthnProfileGet()
-  // The social card is a statement about the assembly, so the card itself
-  // appears only when the deployment serves a social sign-in method -- or
-  // when the account holds bound identities, which stay visible even if the
-  // discovery read fails.
   const socialMethods = useSocialMethodsAvailable(session)
   const showSocialCard =
     (profile.data?.links?.length ?? 0) > 0 ||
@@ -617,15 +478,9 @@ export function AccountSettingsPage({
     forgetInvitationLanding()
     navigate(returnTo)
   }, [navigate, profile.data, returnTo])
-  // Only the host reads the feature document; each section is mounted (or
-  // told what it may offer) from the names this deployment serves.
   const phoneServed = useFeature('authn.phone')
   const mfaServed = useFeature('authn.mfa')
   const emailIdentifierServed = useFeature('authn.identifiers.email')
-  // The theme preset the provider is applying, and its setter. The choices
-  // are the shipped shelf with this bundle's names; a pick applies at once
-  // (the provider re-renders the theme) and is written to the device so the
-  // next boot starts on it (src/chrome.tsx's initialThemePreset).
   const { preset, setPreset } = useAppThemePreset()
   const presetChoices = themePresets.map((option) => ({
     id: option.id,
@@ -635,30 +490,15 @@ export function AccountSettingsPage({
     setPreset(id)
     persistThemePreset(id)
   }
-  // The color-mode preference the provider is applying, and its setter. The
-  // account section writes the server first; its `onApplied` then lands the
-  // confirmed preference here and on the device, so the next boot reads it
-  // back (src/chrome.tsx's initialColorModePreference).
   const { preference, setPreference } = useAppThemeMode()
   const applyColorMode = (value: AppThemeModePreference): void => {
     setPreference(value)
     persistColorModePreference(value)
   }
-  // The security pane reports each row's state from the same answers the
-  // sections read: the profile for the password.
   const [openSecurityRow, setOpenSecurityRow] = useState<string | null>(null)
   const [addEmailSignal, setAddEmailSignal] = useState(0)
   const [phoneFormOpen, setPhoneFormOpen] = useState(false)
-  // The phone block's one result slot: an add confirmation and a removal
-  // refusal both settle here, and the block renders whichever settled last
-  // through a WriteFeedbackRegion. The page-level provider sees this scope,
-  // so a later success elsewhere clears it.
   const phoneFeedback = useWriteFeedback()
-  // A failure code resolves through the account-ui error vocabulary, the
-  // same mapping the section family uses: the code's own leaf when the
-  // bundle lists it, the bundle's unknown line otherwise -- never a raw key.
-  // The resolver is stable across renders so the region is not re-settled
-  // by an identity change alone.
   const resolvePhoneFailure = useCallback(
     (code: string): string => {
       const key = `errors.${code}`
@@ -669,25 +509,15 @@ export function AccountSettingsPage({
     [i18nAccount, tAccount],
   )
   const [phoneRemoveOpen, setPhoneRemoveOpen] = useState(false)
-  // The result belongs to the profile pane's phone block. The pane's route
-  // change reuses this page instance, so leaving the block (or the pane)
-  // settles the slot instead of carrying its result to the next visit.
   useEffect(() => {
     if (section !== 'profile') {
       phoneFeedback.reset()
     }
   }, [section, phoneFeedback.reset])
-  // The sessions block's title-row slot: the list's bulk action is rendered
-  // here instead of on a row of its own under the block heading.
   const [sessionsHeaderAction, setSessionsHeaderAction] =
     useState<HTMLElement | null>(null)
   const queryClient = useQueryClient()
   const removeIdentifier = useAuthnLoginRemoveIdentifier()
-  // The phone block that holds the number's row, the control whose write can
-  // remove that row, and the confirmation dialog that carries it: a
-  // successful removal unmounts the control, so focus lands in the block. The
-  // row and the dialog captured when the attempt starts are what tell a focus
-  // the removal took from one the operator moved away.
   const phoneSection = useRef<HTMLElement | null>(null)
   const phoneRemoveButton = useRef<HTMLButtonElement | null>(null)
   const phoneConfirmDialog = useRef<HTMLDivElement | null>(null)
@@ -709,11 +539,6 @@ export function AccountSettingsPage({
   const usernames = identifiers.filter(
     (identifier) => identifier.kind === 'username',
   )
-  // The pane's breadcrumb starts at the account's display name -- the same
-  // name the shell's account entry shows -- with the username as the
-  // fallback for an account that never set one. These are the user's own
-  // pages, so the first step says whose; it is not a link, because there is
-  // no account home page above the panes.
   const snapshot = useAuthState()
   const displayName =
     snapshot.state === 'authenticated'
@@ -732,21 +557,13 @@ export function AccountSettingsPage({
   const boundPhone = identifiers.find(
     (identifier) => identifier.kind === 'phone',
   )
-  // Deleting the number is a protected write: a stale session is answered
-  // with the step-up, and the won challenge replays this one delete.
   const phoneGate = useStepUpGate<{ readonly id: string }>(({ id }) => {
-    // The won challenge's replay starts inside the step-up dialog, before it
-    // closes; that dialog is this attempt's own surface, not a place the
-    // operator moved to.
     void removePhone(id, dialogHoldingFocus())
   })
   async function removePhone(
     id: string,
     dialog: HTMLElement | null,
   ): Promise<void> {
-    // A new attempt owns the result position, so the previous attempt's
-    // failure or the previous add's confirmation does not stand beside this
-    // one while it runs.
     phoneFeedback.reset()
     phoneRemoveFocus.current = {
       id,
@@ -760,23 +577,14 @@ export function AccountSettingsPage({
         queryKey: getAuthnProfileGetQueryKey(),
       })
     } catch (error) {
-      // The row survives a refusal, so there is no landing to hand over; the
-      // step-up replay starts a new attempt and records its own.
       phoneRemoveFocus.current = null
       if (phoneGate.intercept(error, { id })) {
         return
       }
       setPhoneRemoveOpen(false)
-      // The refusal settles in the block's one result region; the scope
-      // classifies the error into its code and the region resolves it.
       phoneFeedback.fail(error)
     }
   }
-  // The section hands the bound number in E.164 once the verification lands
-  // and its profile refresh has settled, so the number reaches this page
-  // before the confirmation does. The form's visibility belongs to this page,
-  // so the add closes here and the confirmation settles the block's feedback
-  // scope instead of the section's own region, which unmounts with the form.
   const handlePhoneAdded = (phone: string): void => {
     phoneFeedback.succeed(
       tAccount('phone.added', {
@@ -786,10 +594,6 @@ export function AccountSettingsPage({
     )
     setPhoneFormOpen(false)
   }
-  // A successful removal leaves the read without its number, so the row's
-  // delete control unmounts: focus goes to the block that held the table, in
-  // the commit that removes the row rather than leaving it on the document
-  // body. Focus is handed over only when the removal is what took it.
   useLayoutEffect(() => {
     const target = phoneRemoveFocus.current
     if (target === null) {
@@ -810,13 +614,7 @@ export function AccountSettingsPage({
       title={t(`account.sections.${section}`)}
       breadcrumbs={breadcrumbs}
     >
-      {/* A step-up or enroll round trip started here lands back here with a
-          refusal's problem code in the fragment: this page is the surface
-          that reads it (the redirect's `return_to`) and words it. */}
       <CallbackLandingNotice namespace={ACCOUNT_UI_NAMESPACE} />
-      {/* Each block is its own card; a plain surface keeps the account-ui
-          sections mounted inside them from stacking a second card and a
-          second heading under the block's own. */}
       <SectionSurfaceProvider value="plain">
         <Stack spacing={3} sx={{ '& .MuiOutlinedInput-root': { borderRadius: (theme) => theme.spacing(1) } }}>
             {section === 'profile' ? (
@@ -826,8 +624,6 @@ export function AccountSettingsPage({
                   icon={<UserIcon />}
                   description={t('account.blockDescriptions.identity')}
                 >
-                {/* The identity rows are form fields, so they take the same
-                    reading width as the forms in the pane's other cards. */}
                 <Stack spacing={2}>
                     <AccountItem title={t('account.rows.label.username')}>
                       <TextField
@@ -847,14 +643,6 @@ export function AccountSettingsPage({
                     </AccountItem>
                     <AccountItem title={t('account.rows.label.displayName')}>
                       <Box sx={{ maxWidth: FORM_MAX_WIDTH }}>
-                        {/* The shell's account entry reads the display name
-                            from the session snapshot, not from the profile
-                            query, so a saved name reaches it only when the
-                            host mirrors it here. The section reports the name
-                            the server stored; the seam updates the snapshot
-                            locally and notifies every principal consumer
-                            (the account entry, the header menu, the
-                            impersonation banner). */}
                         <ProfileSection
                           inline
                           onDisplayNameSaved={(savedName) =>
@@ -870,11 +658,6 @@ export function AccountSettingsPage({
                   icon={<MailIcon />}
                   description={t('account.blockDescriptions.email')}
                   action={
-                    // The add face only exists when the deployment serves
-                    // the email identifier and the account is not waiting on
-                    // a proof; the same two facts the section uses to decide
-                    // its add kinds, read here so the button is absent when
-                    // pressing it could never open anything.
                     emailIdentifierServed &&
                     profile.data?.verification?.state !== 'pending' ? (
                       <Button
@@ -923,17 +706,11 @@ export function AccountSettingsPage({
                     sectionRef={phoneSection}
                     sectionTabIndex={-1}
                     action={
-                      // Add lives in the block header only while there is no
-                      // number to act on; once a number is bound, its remove
-                      // action rides the number's own row below, like the
-                      // email card's per-row actions.
                       boundPhone?.id == null ? (
                         <Button
                           variant="outlined"
                           size="small"
                           onClick={() => {
-                            // A new attempt must not stand beside the previous
-                            // result.
                             phoneFeedback.reset()
                             setPhoneFormOpen(true)
                           }}
@@ -971,9 +748,6 @@ export function AccountSettingsPage({
                       >
                         <TableBody>
                           <TableRow>
-                            {/* The same address-column width the contact
-                                table in the email card uses, so the two
-                                tables' badge columns land on one rail. */}
                             <TableCell sx={{ width: '11rem' }}>
                               {boundPhone.value}
                             </TableCell>
@@ -1081,10 +855,6 @@ export function AccountSettingsPage({
                   icon={<DeviceIcon />}
                   description={t('account.blockDescriptions.devices')}
                   action={
-                    // The empty box is the block title row's action slot.
-                    // The section portals its bulk action into it, so the
-                    // control sits beside the block title instead of on a
-                    // row of its own under the heading.
                     <Box
                       ref={setSessionsHeaderAction}
                       data-testid="sessions-block-action"
@@ -1144,8 +914,6 @@ export function AccountSettingsPage({
         onCancel={() => setPhoneRemoveOpen(false)}
         onConfirm={() => {
           if (boundPhone?.id != null) {
-            // The confirmation is this attempt's own surface: a focus still
-            // inside it while the row leaves fell with the removal.
             void removePhone(boundPhone.id, phoneConfirmDialog.current)
           }
         }}
@@ -1162,28 +930,6 @@ export function AccountSettingsPage({
   )
 }
 
-/**
- * The social-binding callback route: account-ui's handler reads the
- * `link` flow back and, on completion, returns the viewer to the page the
- * binding started from. With no provider configured no flow reaches here
- * today; the route exists so a product that configures one has the
- * completion point wired. The page carries its own PageHeader (the one h1
- * for the route), because account-ui's handler renders none and the route
- * still needs a page-level heading. A deployment with no redirect method
- * has no binding round trip: the handler renders the app's 404 instead of
- * a flow-not-found banner.
- *
- * The source page rides inside the flow's `return_to` as the callback
- * route's `return` query. account-ui's reader accepts only a site-internal
- * relative path; a missing or unusable value falls back to the security
- * pane, where the binding surface lives -- never the profile pane, which is
- * merely the group address's first landing.
- *
- * A refused round trip lands here with its problem code in the URL
- * fragment, the same shape a refused login lands with; there is no flow
- * left to read, so the page hands the code to the handler and gives it the
- * way back to the starting page.
- */
 export function AccountBindingCallbackPage(): ReactElement {
   const { session } = useAppServices()
   const navigate = useNavigate()

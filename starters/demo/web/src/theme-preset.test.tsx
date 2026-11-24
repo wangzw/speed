@@ -1,16 +1,3 @@
-/**
- * The theme-preset half of the boot choice: src/chrome.tsx's device storage
- * helpers and the resolution main.tsx hands the assembly as the theme's
- * defaultPreset.
- *
- * The choice is a manual one, like the colour mode, so it must land on the
- * device and win over the deployment's default on the next boot. An
- * unusable stored value is ignored rather than propagated, so a value left
- * behind by an older build cannot pin the app to a preset the shelf no
- * longer carries; an unusable deployment value falls back to the default
- * preset for the same reason.
- */
-
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   THEME_PRESET_STORAGE_KEY,
@@ -19,9 +6,6 @@ import {
   readStoredThemePreset,
 } from './chrome.js'
 
-/** A browser-storage stand-in: the jsdom environment's own localStorage is
- * unavailable (the Node runtime's experimental global shadows it), so the
- * suite installs one it can seed. */
 function installStorageDouble(): Map<string, string> {
   const entries = new Map<string, string>()
   vi.stubGlobal('localStorage', {
@@ -67,9 +51,6 @@ describe('the theme preset choice', () => {
 
   it('ignores a stored value that names no shipped preset', () => {
     const entries = installStorageDouble()
-    // A value an older build, a hand-edited storage or another host left
-    // behind: it must not win, and it must not stop the deployment default
-    // from applying either.
     entries.set(THEME_PRESET_STORAGE_KEY, 'sepia')
     expect(readStoredThemePreset()).toBeNull()
     expect(initialThemePreset('modern')).toBe('modern')

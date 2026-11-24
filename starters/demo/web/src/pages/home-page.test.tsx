@@ -1,17 +1,3 @@
-/**
- * The app's starting page (route '/'): the skeleton's front door.
- *
- * It shows the platform's assembled capabilities as a card grid rather than
- * developer copy. Each card is an anchor carrying its target path and, on a
- * plain click, routing there without a reload. A card that declares a platform
- * permission -- the admin card, held to the same code the account menu's
- * admin entry uses -- is offered only while the current organization is the
- * platform's own and the principal holds the code, and stays hidden while the
- * permission set is unknown. The member-facing cards (account,
- * notifications) declare no permission and are offered to every signed-in
- * viewer.
- */
-
 import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -32,17 +18,11 @@ import {
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
-  // The admin card is offered only from the platform's own `system`
-  // organization, so the suite settles the current organization there; each
-  // case then isolates the fact it varies (permission or impersonation).
   setCurrentTenant('system')
   setTenantNames(new Map([['system', 'system']]))
   clearSelfTenants()
 })
 
-/** The card link for a capability, located by the heading it carries (the
- * shell's navigation entries share the capability names, so the heading is
- * what tells a card apart from a nav entry). */
 function cardFor(title: string): HTMLElement {
   const heading = screen.getByRole('heading', { level: 2, name: title })
   const anchor = heading.closest('a')
@@ -52,7 +32,6 @@ function cardFor(title: string): HTMLElement {
   return anchor
 }
 
-/** Whether the card for a capability is offered at all. */
 function hasCard(title: string): boolean {
   return screen.queryByRole('heading', { level: 2, name: title }) !== null
 }
@@ -65,14 +44,11 @@ describe('the start page', () => {
       ),
     })
 
-    // The page heading is the title and the intro sits under it.
     expect(
       screen.getByRole('heading', { level: 1, name: demoEnUS.home.heading }),
     ).toBeInTheDocument()
     expect(screen.getByText(demoEnUS.home.intro)).toBeInTheDocument()
 
-    // One card per capability, each an anchor carrying the route it opens --
-    // the admin card included, since the administrator holds its code.
     expect(cardFor(demoEnUS.home.cards.account.title)).toHaveAttribute(
       'href',
       ACCOUNT_PATH,
@@ -92,12 +68,7 @@ describe('the start page', () => {
       session: createTestSession(authenticatedSnapshot({ system: [] })),
     })
 
-    // The member's platform set is known and holds nothing, so the admin
-    // card -- and the information its title and description carry -- is not
-    // rendered.
     expect(hasCard(demoEnUS.home.cards.admin.title)).toBe(false)
-    // The member-facing cards declare no permission and are unaffected: each
-    // is still offered, with its target path.
     expect(cardFor(demoEnUS.home.cards.account.title)).toHaveAttribute(
       'href',
       ACCOUNT_PATH,
@@ -109,9 +80,6 @@ describe('the start page', () => {
   })
 
   it('hides the admin card from an impersonating identity whose effective set is empty', () => {
-    // The effective account is the impersonated one, and a real target holds no
-    // platform permission, so the admin card is absent -- through the
-    // permission criterion itself, not through the impersonation flag.
     renderDemoApp({
       session: createTestSession({
         ...authenticatedSnapshot({ system: [] }),
@@ -131,10 +99,6 @@ describe('the start page', () => {
   })
 
   it('hides the admin card from an impersonating identity even when its set holds a platform permission', () => {
-    // The impersonation is the identity fact that closes the admin, decided
-    // before the permission set is consulted: a target that held a platform
-    // permission still gets no way in, and the header entry follows the same
-    // derivation.
     renderDemoApp({
       session: createTestSession({
         ...authenticatedSnapshot({ system: ['tenant.read'] }),
@@ -146,10 +110,6 @@ describe('the start page', () => {
   })
 
   it('keeps the admin card hidden while the platform permission set is unknown', () => {
-    // An authenticated session whose platform set is still unknown (null): the
-    // state before the host has read the caller's platform permissions. The
-    // gate fails closed, so the card is absent -- a member never sees it for
-    // the moment before the set lands.
     renderDemoApp({
       session: createTestSession(authenticatedSnapshot()),
     })
@@ -159,9 +119,6 @@ describe('the start page', () => {
   })
 
   it('reveals the admin card once the platform permission set lands', async () => {
-    // The attach-then-appear transition the host drives through
-    // setPermissionSet: the set flips from unknown (null) to a known one
-    // holding the card's code, and the card appears where it was hidden.
     const session = createTestSession(authenticatedSnapshot())
     renderDemoApp({ session })
 
@@ -187,8 +144,6 @@ describe('the start page', () => {
     })
 
     const card = cardFor(demoEnUS.home.cards.account.title)
-    // The tile is a bordered inset inside the surface that wraps the
-    // grid, so the grid is the nearest ancestor that lays out as a grid.
     let grid: HTMLElement | null = card.parentElement
     while (grid !== null && getComputedStyle(grid).display !== 'grid') {
       grid = grid.parentElement
@@ -196,15 +151,6 @@ describe('the start page', () => {
     expect(grid).not.toBeNull()
     expect(grid).toHaveStyle({ display: 'grid' })
 
-    // The grid's containment context is an ancestor of it -- the card
-    // surface around the grid adds a content layer but declares no
-    // container of its own, and the grid cannot own the rule (a container
-    // query resolves against an ancestor, never the element that owns it).
-    // Without the declaration the grid's `@container` rule matches nothing
-    // and the grid never collapses in a narrow panel -- the failure the
-    // layout design records. jsdom evaluates no container queries, so the
-    // proof is the generated CSS text, the same assertion FormLayout's
-    // suite makes.
     const css = emittedStyleText()
     const containerRule = (name: string): RegExp =>
       new RegExp(`\\.${name}\\s*\\{[^}]*container-type:\\s*inline-size`)
@@ -225,10 +171,6 @@ describe('the start page', () => {
         `\\.${containerClass}\\s*\\{[^}]*container-type:\\s*inline-size`,
       ),
     )
-    // Both track declarations were wired in: one column at the
-    // container's narrow end, two equal tracks from its `sm` (600px) up.
-    // The second sits inside an `@container` block, not an `@media` one
-    // -- keyed on the viewport it would be blind to a narrow panel.
     expect(css).toMatch(/grid-template-columns:1fr/)
     expect(css).toMatch(
       /@container \(min-width:600px\)\{[^}]*grid-template-columns:repeat\(2,\s*1fr\)/,
@@ -243,9 +185,6 @@ describe('the start page', () => {
       session: createTestSession(authenticatedSnapshot()),
     })
 
-    // The landing faces a signed-in user, not the skeleton's author, so it
-    // never points at the source tree. The note that once did is a developer
-    // note, and it lives in README.md / AGENTS.md now.
     expect(container.textContent ?? '').not.toMatch(/src\/pages|src\/routes\.tsx/)
   })
 
@@ -255,9 +194,6 @@ describe('the start page', () => {
 
     await user.click(cardFor(demoEnUS.home.cards.account.title))
 
-    // The account page renders in place: the card routed the viewer to it.
-    // The account settings is one route per pane, and `/account` redirects to
-    // the profile pane, whose heading names that pane.
     expect(
       await screen.findByRole('heading', {
         level: 1,
@@ -269,11 +205,6 @@ describe('the start page', () => {
   it('leaves a modified click on a card to the browser', () => {
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
 
-    // Ctrl/⌘-click means "open in a new tab": the anchor keeps the browser's
-    // own action instead of being intercepted into an in-app navigation. The
-    // document-level probe reads the event after the card's own handler has
-    // run (React's root listener is closer to the target) and cancels the
-    // default action so jsdom does not attempt a navigation it cannot make.
     const anchor = cardFor(demoEnUS.home.cards.account.title)
     let prevented: boolean | undefined
     const probe = (event: MouseEvent): void => {

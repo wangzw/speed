@@ -1,25 +1,7 @@
-/**
- * Hand-authored icons for the tenant area's navigation entries.
- *
- * The same drawing convention as admin-ui's navigation icons: 24px-grid
- * strokes in currentColor, no icon-font or MUI icons dependency, every
- * icon decorative (the entry's label is its accessible name). The tenant
- * navigation needs them because the collapsed sidebar rail shows an
- * entry's icon instead of its clipped label; without one, a collapsed
- * tenant navigation would show cut-off text ("Acco…") where the admin
- * shows icons.
- *
- * Each icon is attached to its route declaration (src/routes.tsx), which is
- * where the frame looks a navigation entry's mark up from; nothing here
- * knows a path.
- */
-
 interface IconProps {
-  /** Box length in px; stroke geometry is sized for the 24 grid. */
   readonly size?: number
 }
 
-/** The home page: a house. */
 export function HomeNavIcon({ size = 24 }: IconProps) {
   return (
     <svg
@@ -41,7 +23,6 @@ export function HomeNavIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** The notification centre: a bell. */
 export function NotificationsNavIcon({ size = 24 }: IconProps) {
   return (
     <svg
@@ -62,7 +43,6 @@ export function NotificationsNavIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** The ownership transfer requests: two arrows exchanging. */
 export function TransferRequestsNavIcon({ size = 24 }: IconProps) {
   return (
     <svg
@@ -85,7 +65,6 @@ export function TransferRequestsNavIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** The account settings: a person silhouette. */
 export function AccountNavIcon({ size = 24 }: IconProps) {
   return (
     <svg
@@ -106,7 +85,6 @@ export function AccountNavIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** The admin entry: four panels, the administration surfaces' own mark. */
 export function AdminNavIcon({ size = 24 }: IconProps) {
   return (
     <svg
@@ -129,7 +107,6 @@ export function AdminNavIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** The account page's personal-details pane: a person with its name lines. */
 export function ProfileNavIcon({ size = 24 }: IconProps) {
   return (
     <svg
@@ -151,7 +128,6 @@ export function ProfileNavIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** The account page's password-and-security pane: a shield. */
 export function SecurityNavIcon({ size = 24 }: IconProps) {
   return (
     <svg
@@ -172,7 +148,6 @@ export function SecurityNavIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** The account page's sessions pane: a monitor. */
 export function SessionsNavIcon({ size = 24 }: IconProps) {
   return (
     <svg
@@ -193,7 +168,6 @@ export function SessionsNavIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** The account page's preferences pane: a palette. */
 export function PreferencesNavIcon({ size = 24 }: IconProps) {
   return (
     <svg

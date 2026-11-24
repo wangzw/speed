@@ -1,21 +1,3 @@
-/**
- * The auth callback route: its landmark structure and where a completed
- * provider round trip lands.
- *
- * The route renders outside the tenant shell, so the page itself is the
- * document's main landmark -- except when the host's absent view shows: that
- * view is the tenant frame's 404, and the frame renders the main landmark
- * itself. Wrapping it in the page's own main would put two `main` landmarks on
- * one document, a defect a screen reader's landmark list surfaces as a
- * duplicate. The sweep's axe gate runs landmark-no-duplicate-main, but this
- * case pins the structure directly so a regression is named at the route that
- * carries it rather than only in a scan report.
- *
- * The success callback lands the viewer home, unless the provider detour
- * started from an invitation landing: that landing is remembered in the tab
- * before the provider takes over, returned to once, and then cleared.
- */
-
 import { screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { authUiResources } from '@speed/auth-ui'
@@ -39,13 +21,8 @@ import {
   createTestSession,
 } from '../test-utils/session.js'
 
-/** The tenant the callback route renders over, with the name the host has
- * recorded for it; the host holds no default roster, so a current tenant must
- * be nameable. */
 const TENANT_ID = 'acme'
 
-/** The auth-ui copy the account-opening step renders, read from the bundle
- * the screen renders. */
 const authEn = authUiResources['en-US'] as unknown as {
   readonly signInFlow: {
     readonly signupAccountInstruction: string
@@ -57,8 +34,6 @@ const authEn = authUiResources['en-US'] as unknown as {
   }
 }
 
-/** An anonymous session whose flow read parks at the social
- * account-opening step. */
 function signupSession() {
   return Object.assign(createTestSession(), {
     readFlow: () =>
@@ -86,12 +61,6 @@ function signupSession() {
   })
 }
 
-/**
- * An authenticated session whose deployment offers a redirect method. The
- * callback handler's authenticated re-entry consults the discovery document
- * before it fires the host's success callback: a deployment with no method
- * that could have returned here settles on the host's absent view instead.
- */
 function providerSession() {
   return Object.assign(createTestSession(authenticatedSnapshot()), {
     listMethods: () =>
@@ -121,9 +90,6 @@ beforeEach(() => {
 describe('the auth callback route', () => {
   it("renders exactly one main landmark when the host's absent view shows", async () => {
     bindRequestFn(createBackend('data'))
-    // An authenticated session answers the discovery read with the skeleton's
-    // password-only document -- no redirect or enterprise method -- so the
-    // handler settles on the host's absent view: the tenant frame's 404.
     const { container } = renderDemoApp({
       session: createTestSession(authenticatedSnapshot()),
     })
@@ -131,19 +97,10 @@ describe('the auth callback route', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Page not found' }),
     ).toBeInTheDocument()
-    // The heading is the tenant frame's own content: it is a descendant of the
-    // main landmark AppShell renders around its children, so both arrive in
-    // the commit that resolves this heading. Nothing after that commit adds or
-    // removes a main -- the frame's profile read feeds only the banner region
-    // -- so counting here judges the route's structure, and a page root that
-    // opened a second main would already be counted.
     expect(container.querySelectorAll('main')).toHaveLength(1)
   })
 
   it('renders the account-opening step in the sign-in card', async () => {
-    // The first social login's account-opening step is not a page of its
-    // own: it renders inside the sign-in surface's card, brand and page
-    // heading included, with the step supplying only the card's content.
     bindRequestFn(createBackend('data'))
     renderDemoApp({ session: signupSession() })
 
@@ -153,8 +110,6 @@ describe('the auth callback route', () => {
         name: demoEnUS.signIn.heading,
       }),
     ).toBeInTheDocument()
-    // The face adds no step title of its own; the card's heading is the
-    // page's, and the step supplies the narrative and the fields.
     expect(
       screen.queryByRole('heading', { level: 2 }),
     ).toBeNull()
@@ -166,9 +121,6 @@ describe('the auth callback route', () => {
   })
 
   it('returns a viewer who left an invitation link to that landing', async () => {
-    // The provider's round trip replaced the document that carried the token,
-    // so the landing has to come from the tab's own record. It is consumed
-    // once: a later re-entry to this route must not repeat the move.
     const landing = '/invitations/tok-invite'
     rememberInvitationLanding(landing)
     bindRequestFn(createBackend('data'))
@@ -182,8 +134,6 @@ describe('the auth callback route', () => {
     bindRequestFn(createBackend('data'))
     renderDemoApp({ session: providerSession() })
 
-    // The tenant shell's business slot is the destination the callback has
-    // always named when no invitation landing was left behind.
     await waitFor(() => expect(window.location.pathname).toBe('/'))
   })
 })

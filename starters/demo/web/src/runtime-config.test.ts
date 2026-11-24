@@ -1,21 +1,3 @@
-/**
- * loadRuntimeConfig: the deployment facts read before the first render --
- * the API origin, the shell layout and the default theme preset -- and every
- * way each falls back. The file is fetched at the deployment root, resolved
- * against the document base rather than the current URL, so the read never
- * needs an origin to resolve one and a deep link cannot shift it under its own
- * path; a missing file, a network failure, a non-2xx answer and an unreadable
- * body each yield an empty configuration. The fields are read independently:
- * one malformed value leaves the others intact, and an unknown value for a
- * field is dropped.
- *
- * The deployment carries the file itself: the committed asset under public/
- * (RUNTIME_CONFIG_FILE) is one the build copies into the served output, so the
- * read answers 200 rather than 404. Its own suite pins that the same-origin
- * shape and the copy happen -- driving the real loader over the asset's body,
- * and resolving the vite config to the directory the server serves.
- */
-
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -29,7 +11,6 @@ type FetchResult = {
   json: () => Promise<unknown>
 }
 
-/** Installs a fetch whose answer each test scripts, and returns the mock. */
 function stubFetch(answer: FetchResult | (() => Promise<FetchResult>)) {
   const impl =
     typeof answer === 'function' ? answer : async (): Promise<FetchResult> => answer
@@ -40,7 +21,6 @@ function stubFetch(answer: FetchResult | (() => Promise<FetchResult>)) {
   return mock
 }
 
-/** The path the requested URL resolves to against the current document. */
 function requestedPath(mock: ReturnType<typeof stubFetch>): string {
   return new URL(String(mock.mock.calls[0]?.[0]), document.baseURI).pathname
 }
@@ -85,9 +65,6 @@ describe('loadRuntimeConfig', () => {
   })
 
   it('keeps a valid field when another field is malformed', async () => {
-    // The fields are independent reads. A broken origin must not drop the
-    // layout, and a broken layout must not drop the preset: before this, one
-    // unusable value made the whole body an empty configuration.
     stubFetch({
       ok: true,
       json: async () => ({
@@ -124,8 +101,6 @@ describe('loadRuntimeConfig', () => {
     await expect(loadRuntimeConfig()).resolves.toEqual({})
     vi.unstubAllGlobals()
 
-    // An id no shipped preset carries is a configuration typo: ignored here,
-    // so the assembly falls back to its documented default preset.
     stubFetch({ ok: true, json: async () => ({ themePreset: 'sepia' }) })
     await expect(loadRuntimeConfig()).resolves.toEqual({})
     vi.unstubAllGlobals()
@@ -148,9 +123,6 @@ describe('loadRuntimeConfig', () => {
   })
 
   it('reads the file at the root even under a deep-link path', async () => {
-    // A deep link such as /admin/tenants must not shift the read under
-    // its own directory: a bare relative fetch would resolve to
-    // /admin/runtime-config.json here and miss the file.
     window.history.replaceState({}, '', '/admin/tenants')
     const fetchMock = stubFetch({ ok: true, json: async () => ({}) })
 
@@ -193,11 +165,6 @@ describe('the committed runtime-config asset', () => {
   const appDir = join(dirname(fileURLToPath(import.meta.url)), '..')
 
   it('names no origin, so the deployment keeps the same-origin fallback', async () => {
-    // The asset is what the deployment serves at the root; the build copies it
-    // out of public/ (see the next test). Driving the real loader over its own
-    // body proves the served config names no origin, so the app reaches its own
-    // origin exactly as it does with the file absent. What it does name is the
-    // shell shape the demo ships.
     const body = JSON.parse(
       readFileSync(join(appDir, 'public', RUNTIME_CONFIG_FILE), 'utf8'),
     ) as unknown
@@ -208,14 +175,7 @@ describe('the committed runtime-config asset', () => {
   })
 
   it('sits in the directory the build copies into the served output', async () => {
-    // vite copies publicDir into build.outDir, and the demo program embeds and
-    // serves that directory (starters/demo/server) at the deployment root. Tying
-    // the asset's directory to the copied-from dir and the copied-to dir -- both
-    // from the resolved config, not restated here -- is what makes the deployed
-    // read land on the file rather than 404.
     const config = await resolveConfig({ root: appDir }, 'build')
-    // publicDir resolves absolute; build.outDir stays as written, relative to
-    // the root, so the served directory is the two joined.
     expect(config.publicDir).toBe(join(appDir, 'public'))
     expect(join(config.root, config.build.outDir)).toBe(
       join(appDir, '..', 'server', 'dist'),

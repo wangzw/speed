@@ -1,14 +1,3 @@
-/**
- * The two session lists the assembled program shows mark the viewer's own
- * session with one chip color: the account page's device list (account-ui)
- * and the admin's session page (admin-ui). Neither package can see the
- * other, so the comparison lives here, in the assembly that mounts both.
- *
- * The account page's list is rendered directly; the admin's page is
- * driven through its account picker, because it issues the session read
- * only once an account is chosen.
- */
-
 import type { ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -83,7 +72,6 @@ const CHIP_COLOR_CLASSES = [
   chipClasses.colorDefault,
 ]
 
-/** The MUI color class on the chip that shows `label`. */
 function chipColorClass(label: string): string {
   const text = screen.getByText(label)
   const chip = text.closest<HTMLElement>(`.${chipClasses.root}`)
@@ -169,8 +157,6 @@ describe('the current-session chip', () => {
     await waitFor(() => expect(picker).toHaveValue('Ada'))
 
     await screen.findByText(adminEnUS.sessions.current)
-    // One assertion over both renders: the admin's chip carries the same
-    // color class as the account page's.
     expect(chipColorClass(adminEnUS.sessions.current)).toBe(accountColor)
   })
 })

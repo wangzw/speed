@@ -1,20 +1,3 @@
-/**
- * The feature-gating chain, end to end.
- *
- * The unit suites prove their own pieces: route-kit narrows a table against a
- * synthetic predicate, auth-core holds the feature state, the admin shell
- * publishes the host's answer. This suite joins them, because the behaviour
- * the design promises is the join: the server's document (read by the
- * generated `featureBoardList` through an auth-core session) decides which
- * pages, navigation entries, header controls and home cards exist.
- *
- * Every case drives the host with a session whose feature state is narrowed,
- * pending or failed; the assertions are the user-visible surfaces, so an
- * implementation that ignores the document (always visible), ignores the
- * pages (always hidden), or reads a failed document as an empty one (everything
- * absent) fails here even though the unit suites stay green.
- */
-
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -52,10 +35,6 @@ import {
   readyFeatures,
 } from './test-utils/session.js'
 
-/**
- * The expected copy, resolved from the packages' shipped resources through a
- * production instance rather than read from a file path.
- */
 const textI18n = createSpeedI18n({
   supportedLanguages: ['zh-CN', 'en-US'],
   defaultLanguage: 'en-US',
@@ -75,8 +54,6 @@ const tNotifications = textI18n.getFixedT(
   NOTIFICATION_UI_NAMESPACE,
 )
 
-/** The tenant the suite acts in, with the name the host has recorded for it;
- * the host holds no default roster, so a current tenant must be nameable. */
 const TENANT_ID = 'acme'
 
 beforeEach(() => {
@@ -85,7 +62,6 @@ beforeEach(() => {
   setTenantNames(new Map([[TENANT_ID, TENANT_ID]]))
 })
 
-/** An authenticated session over exactly this feature document. */
 function sessionWith(
   features: FeatureState,
   options: { readonly system?: readonly string[] | null } = {},
@@ -93,14 +69,8 @@ function sessionWith(
   return createTestSession(authenticatedSnapshot({ ...options, features }))
 }
 
-/** The standalone notification control's accessible name. The header no
- * longer carries one -- the unread count rides the account avatar and the
- * inbox is an entry of the account menu -- so the assertions below use it to
- * prove the old control is gone. */
 const BELL_NAME = new RegExp(`^${tNotifications('bell.label')}`)
 
-/** A client whose event-stream opener records each open and each close, so a
- * suite can assert the stream gating and how many subscriptions survive. */
 function countingClient(opened: string[], closed: string[]): SpeedClient {
   const request = (async () => {
     throw new Error('the gating suite client must not be called')
@@ -117,12 +87,10 @@ function countingClient(opened: string[], closed: string[]): SpeedClient {
   })
 }
 
-/** The home card for a capability, located by its heading. */
 function cardHeading(title: string): HTMLElement | null {
   return screen.queryByRole('heading', { level: 2, name: title })
 }
 
-/** A card's anchor, located through its heading. */
 function cardLink(title: string): HTMLElement {
   const heading = screen.getByRole('heading', { level: 2, name: title })
   const anchor = heading.closest('a')
@@ -134,12 +102,6 @@ function cardLink(title: string): HTMLElement {
 
 describe('a served document narrows the tenant area', () => {
   it('keeps the surfaces it names and hides the ones it omits', async () => {
-    // The document serves the notification centre alone. Its card and the
-    // account menu's Messages entry survive; the centre is a menu entry, so
-    // the navigation column does not list it, and the header carries no
-    // standalone notification control. The admin card -- a platform surface a
-    // member does not hold -- disappears, and the object page the skeleton no
-    // longer ships contributes neither a card nor a navigation entry.
     const user = userEvent.setup()
     renderDemoApp({ session: sessionWith(readyFeatures('notification.inbox')) })
 
@@ -157,8 +119,6 @@ describe('a served document narrows the tenant area', () => {
         name: tNotifications('inbox.title'),
       }),
     ).not.toBeInTheDocument()
-    // The absences are read before the menu opens: the open menu makes the
-    // rest of the page aria-hidden, so a role query could not reach it.
     expect(
       screen.queryByRole('button', { name: BELL_NAME }),
     ).not.toBeInTheDocument()
@@ -177,8 +137,6 @@ describe('a served document narrows the tenant area', () => {
     window.history.replaceState({}, '', '/notifications')
     renderDemoApp({ session: sessionWith(readyFeatures('org.personal')) })
 
-    // The notification page is not a page in this deployment: the same
-    // fallback an unregistered path renders.
     expect(
       await screen.findByRole('heading', {
         level: 1,
@@ -199,8 +157,6 @@ describe('a served document narrows the tenant area', () => {
       session: sessionWith(readyFeatures('notification.inbox')),
     })
 
-    // The positive half: the page exists when its feature does, so the
-    // absent cases above cannot pass by hiding everything always.
     expect(
       await screen.findByRole('heading', {
         level: 1,
@@ -216,10 +172,6 @@ describe('a served document narrows the tenant area', () => {
   })
 
   it('drives the gate from the server document read by the real session', async () => {
-    // The whole chain in one case: a scripted server answer for GET /api/v1/features
-    // goes through the generated featureBoardList into a real auth-core
-    // session (signed in through the generated flow operations), and the host
-    // hides the surfaces the document leaves out.
     const harness = makeHarness({
       [LOGIN_START]: () => completeFlow(),
       [LOGIN_ANSWER]: () => authenticatedCompletion(),
@@ -243,13 +195,9 @@ describe('a served document narrows the tenant area', () => {
         name: demoEnUS.home.cards.notifications.title,
       }),
     ).toBeInTheDocument()
-    // The absences are read before the menu opens: the open menu makes the
-    // rest of the page aria-hidden, so a role query could not reach it.
     expect(
       screen.queryByRole('button', { name: BELL_NAME }),
     ).not.toBeInTheDocument()
-    // The document leaves the admin surfaces out: a member gets no admin
-    // card, and the removed object page has no link to it.
     expect(
       cardHeading(demoEnUS.home.cards.admin.title),
     ).not.toBeInTheDocument()
@@ -269,9 +217,6 @@ describe('a failed or pending document is not an empty one', () => {
       session: sessionWith({ state: 'failed', error: new Error('unavailable') }),
     })
 
-    // "Failed" is neither every feature absent nor every feature present: the
-    // page cannot be decided, so it offers a retry rather than reading as a
-    // dead link.
     expect(await screen.findByText(demoEnUS.route.failed)).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: demoEnUS.route.retry }),
@@ -289,8 +234,6 @@ describe('a failed or pending document is not an empty one', () => {
       session: sessionWith({ state: 'failed', error: new Error('unavailable') }),
     })
 
-    // The ungated account card stays; the feature-gated cards and the bell do
-    // not claim either answer.
     expect(
       await screen.findByRole('heading', {
         level: 2,
@@ -329,9 +272,6 @@ describe('the admin area follows the path, not the feature document', () => {
       ),
     })
 
-    // The admin's own failed view, with no tenant frame around it: the
-    // region is a fact of the URL prefix, so a deep link never falls into the
-    // tenant shell (whose navigation and bell are absent here).
     expect(await screen.findByText(demoEnUS.route.failed)).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: demoEnUS.route.retry }),
@@ -355,9 +295,6 @@ describe('the admin area follows the path, not the feature document', () => {
   })
 
   it('falls back to the tenant area when no admin page is served', async () => {
-    // A ready document that serves none of the admin pages' features: the
-    // admin declarations narrow to nothing, so the URL is the tenant area's
-    // and the gated declaration renders the same 404 an unregistered path does.
     window.history.replaceState({}, '', '/admin/settings')
     renderDemoApp({
       session: sessionWith(readyFeatures('notification.inbox'), {
@@ -376,8 +313,6 @@ describe('the admin area follows the path, not the feature document', () => {
         name: tAdmin('shell.navLabel'),
       }),
     ).not.toBeInTheDocument()
-    // The tenant frame did render: the area decision fell back, it did not
-    // sign the viewer out or leave a blank page.
     expect(
       screen.getByRole('navigation', { name: tLayout('appShell.navLabel') }),
     ).toBeInTheDocument()
@@ -385,23 +320,12 @@ describe('the admin area follows the path, not the feature document', () => {
 })
 
 describe('an admin page whose feature is absent is not reachable', () => {
-  // The SMS page is gated on sms.admin (admin-ui's smsAdminRoutes). The
-  // baseline binary imports that module for the API contract but names it on
-  // no command, so the deployment's own document omits it while serving every
-  // other admin page. These two cases pin the consequence: the page is not
-  // reachable at all, rather than reachable and merely empty.
 
   it('renders the not-found fallback at /admin/sms and never mounts the page', async () => {
     window.history.replaceState({}, '', '/admin/sms')
-    // The admin area is up (settings.admin is served), but sms.admin is not:
-    // the route guard withholds the declaration, so the URL renders the same
-    // fallback an unregistered path gets.
     renderDemoApp({
       session: sessionWith(
         readyFeatures('tenant.admin', 'settings.admin'),
-        // The dashboard declaration owns the admin prefix, so it is the
-        // entry selected at /admin/sms; holding its code lets the page
-        // guard settle and the route fallback show.
         { system: ['tenant.read'] },
       ),
     })
@@ -412,9 +336,6 @@ describe('an admin page whose feature is absent is not reachable', () => {
         name: demoEnUS.notFound.heading,
       }),
     ).toBeInTheDocument()
-    // The page's view never ran: neither its title nor its register form is
-    // in the document. An excerpt of the page showing here would mean the
-    // absent-feature route was reachable.
     expect(
       screen.queryByRole('heading', { level: 1, name: tAdmin('sms.title') }),
     ).not.toBeInTheDocument()
@@ -424,8 +345,6 @@ describe('an admin page whose feature is absent is not reachable', () => {
   })
 
   it('renders the SMS page at /admin/sms when the document serves sms.admin', async () => {
-    // The positive half: the absent case above cannot pass by hiding the page
-    // always.
     window.history.replaceState({}, '', '/admin/sms')
     renderDemoApp({
       session: sessionWith(
@@ -445,11 +364,6 @@ describe('an admin page whose feature is absent is not reachable', () => {
 
 describe('the admin entry and home card follow the served declarations', () => {
   it('targets the first served admin page whose permission the principal holds', async () => {
-    // The caller acts in the platform's own `system` organization, where the
-    // admin entry and card are offered. tenant.admin is not served, so the
-    // dashboard and roster are out; the settings page remains and its code is
-    // held, so both the menu entry and the home card point at it instead of
-    // the admin root (which would 404).
     setCurrentTenant('system')
     setTenantNames(new Map([['system', 'system']]))
     const user = userEvent.setup()
@@ -459,8 +373,6 @@ describe('the admin entry and home card follow the served declarations', () => {
       }),
     })
 
-    // The card is read first: the open menu makes the rest of the page
-    // aria-hidden, so a role query cannot reach it from under the modal.
     expect(cardLink(demoEnUS.home.cards.admin.title)).toHaveAttribute(
       'href',
       '/admin/settings',
@@ -472,8 +384,6 @@ describe('the admin entry and home card follow the served declarations', () => {
   })
 
   it('hides both when the document serves no admin page', async () => {
-    // The tenant condition is satisfied on purpose: the only fact that
-    // removes both surfaces is the document serving no admin page.
     setCurrentTenant('system')
     setTenantNames(new Map([['system', 'system']]))
     const user = userEvent.setup()
@@ -489,8 +399,6 @@ describe('the admin entry and home card follow the served declarations', () => {
         name: demoEnUS.home.cards.account.title,
       }),
     ).toBeInTheDocument()
-    // The card is read before the menu opens: the open menu hides the rest of
-    // the page from role queries, which would make its absence meaningless.
     expect(cardHeading(demoEnUS.home.cards.admin.title)).not.toBeInTheDocument()
     await user.click(screen.getByTestId('user-menu-trigger'))
     const menu = await screen.findByRole('menu')
@@ -502,9 +410,6 @@ describe('the admin entry and home card follow the served declarations', () => {
 
 describe('the live notification stream', () => {
   it('opens only while the deployment serves notification.stream', async () => {
-    // The stream is tenant-scoped, so it also waits for a settled tenant
-    // context: this case serves the roster and answers it, the way a
-    // deployment with notification.stream always can.
     bindRequestFn((async (path: string) => {
       if (path === '/api/v1/auth/me/tenants') {
         return { tenants: [{ id: 'acme', name: 'acme' }] }
@@ -526,15 +431,10 @@ describe('the live notification stream', () => {
       ),
       api: countingClient(served, closed),
     })
-    // The served feature opens a connection. The suite renders the production
-    // stack, StrictMode included, so the mount effect runs twice: the first
-    // connection is closed by the cleanup and exactly one live subscription
-    // remains. A cleanup that stopped closing would leave two open.
     await waitFor(() => expect(served).toHaveLength(2))
     expect(closed).toHaveLength(1)
     expect(served.length - closed.length).toBe(1)
     unmount()
-    // Unmounting closes the surviving subscription too.
     expect(served.length - closed.length).toBe(0)
 
     const absent: string[] = []
@@ -543,16 +443,12 @@ describe('the live notification stream', () => {
       api: countingClient(absent, []),
     })
     await screen.findByText(demoEnUS.home.heading)
-    // The provider would otherwise open a connection the server must refuse
-    // with a bare 404.
     expect(absent).toHaveLength(0)
   })
 })
 
 describe('the account page mounts only the sections its document serves', () => {
   it('hides the phone and multifactor sections when their features are absent', async () => {
-    // Each section lives in its own pane, so the absence is asserted with
-    // that pane open: an unrendered pane would prove nothing.
     window.history.replaceState({}, '', '/account?section=security')
     const security = renderDemoApp({ session: sessionWith(readyFeatures()) })
 
@@ -562,8 +458,6 @@ describe('the account page mounts only the sections its document serves', () => 
         name: demoEnUS.account.sections.security,
       }),
     ).toBeInTheDocument()
-    // No two-step block exists when the document serves no such feature, so
-    // there is no title to find.
     expect(
       screen.queryByRole('heading', {
         level: 2,
@@ -572,7 +466,6 @@ describe('the account page mounts only the sections its document serves', () => 
     ).toBeNull()
     security.unmount()
 
-    // The phone block lives on the profile pane.
     window.history.replaceState({}, '', '/account/profile')
     renderDemoApp({ session: sessionWith(readyFeatures()) })
 
@@ -591,8 +484,6 @@ describe('the account page mounts only the sections its document serves', () => 
   })
 
   it('mounts them when the document serves their features', async () => {
-    // The blocks are on their panes from the start: no surface has to be
-    // opened before it is read.
     window.history.replaceState({}, '', '/account?section=security')
     const security = renderDemoApp({
       session: sessionWith(readyFeatures('authn.mfa', 'authn.phone')),
@@ -606,7 +497,6 @@ describe('the account page mounts only the sections its document serves', () => 
     ).toBeInTheDocument()
     security.unmount()
 
-    // The phone block lives on the profile pane.
     window.history.replaceState({}, '', '/account/profile')
     renderDemoApp({
       session: sessionWith(readyFeatures('authn.mfa', 'authn.phone')),
@@ -640,9 +530,6 @@ describe('the invitation landing is ungated', () => {
   }
 
   it('renders the landing to an anonymous viewer whatever the feature document says', async () => {
-    // The feature document is readable only to an authenticated caller, so a
-    // declaration gated on authn.invitations would withhold the landing from
-    // exactly the anonymous visitor the link is for.
     bindRequestFn((async (path: string) => {
       if (path === '/api/v1/auth/invitations/token-1') {
         return pendingView
@@ -658,7 +545,6 @@ describe('the invitation landing is ungated', () => {
         name: authEn.acceptInvitation.title,
       }),
     ).toBeInTheDocument()
-    // The landing renders outside both shells.
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
   })
 
@@ -667,8 +553,6 @@ describe('the invitation landing is ungated', () => {
       if (path === '/api/v1/auth/invitations/token-1') {
         return pendingView
       }
-      // The app reads the caller's profile on every authenticated mount; the
-      // real route answers 200 with this body, never an empty one.
       if (path === '/api/v1/auth/me') {
         return principal()
       }
@@ -687,10 +571,6 @@ describe('the invitation landing is ungated', () => {
   })
 
   it('renders the invalid-link state when the invitation module is not mounted', async () => {
-    // A deployment without the invitation module answers the public read with
-    // a bare 404. The declaration is ungated, so the anonymous visitor still
-    // lands on the invitation page, which renders its invalid-link state
-    // instead of falling through to the generic sign-in surface.
     bindRequestFn((async (path: string) => {
       if (path === '/api/v1/auth/invitations/token-1') {
         throw { status: 404, code: 'client.http.404' }
@@ -706,7 +586,6 @@ describe('the invitation landing is ungated', () => {
     expect(
       screen.getByText(authEn.acceptInvitation.missing.hint),
     ).toBeInTheDocument()
-    // The landing, not the generic sign-in surface.
     expect(
       screen.queryByRole('heading', { name: demoEnUS.signIn.heading }),
     ).not.toBeInTheDocument()
