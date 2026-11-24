@@ -16,8 +16,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/step"
 )
 
-// The sentinel values every path is driven with, so that an assertion that none
-// of them reaches a cause has something to find.
 const (
 	testAccount  = authn.AccountID("acct_0001")
 	phoneNumber  = "+8613800138000"
@@ -27,8 +25,6 @@ const (
 	unknownPhone = "+8613700137000"
 )
 
-// fakeSMSCodes is an authn.SMSCodes whose Send and Verify a case sets and whose
-// calls it reads back.
 type fakeSMSCodes struct {
 	authn.SMSCodes // the methods this module does not use
 
@@ -55,8 +51,6 @@ func (f *fakeSMSCodes) Verify(_ context.Context, challenge, code string) error {
 	return f.verifyErr
 }
 
-// fakeThrottle is an authn.Throttle that remembers what it was asked and answers
-// with what a case set.
 type fakeThrottle struct {
 	authn.Throttle
 
@@ -87,8 +81,6 @@ func (f *fakeThrottle) Succeed(_ context.Context, scope authn.ThrottleScope, key
 	return nil
 }
 
-// fakeAccounts is an authn.Accounts that answers a lookup, a read and an
-// identifier list from what a case set.
 type fakeAccounts struct {
 	authn.Accounts
 
@@ -97,10 +89,6 @@ type fakeAccounts struct {
 	getErr    error
 	accounts  map[authn.AccountID]authn.Account
 
-	// identifiers is what the account's own identifiers are. A case that does
-	// not set it gets the ordinary fixture: the looked-up account holds the
-	// number it was found by as a sign-in way, which is the shape every earlier
-	// case models.
 	identifiers    map[authn.AccountID][]authn.Identifier
 	identifiersErr error
 
@@ -133,7 +121,6 @@ func (f *fakeAccounts) Identifiers(_ context.Context, id authn.AccountID) ([]aut
 	return nil, nil
 }
 
-// rig is one method with its three fakes and the settings store.
 type rig struct {
 	m  *method
 	sm *fakeSMSCodes
@@ -142,9 +129,6 @@ type rig struct {
 	st *fakeSettings
 }
 
-// newRig builds a method whose Send mints sentinelChallenge and whose Verify
-// accepts any code, over a throttle at rest and an account store with nothing in
-// it, with registration closed.
 func newRig() *rig {
 	sm := &fakeSMSCodes{sendChallenge: challengeID}
 	th := &fakeThrottle{}
@@ -153,7 +137,6 @@ func newRig() *rig {
 	return &rig{m: &method{codes: sm, throttle: th, accounts: ac, store: st}, sm: sm, th: th, ac: ac, st: st}
 }
 
-// registerActive makes the store answer phoneNumber with an enabled account.
 func (r *rig) registerActive() {
 	r.ac.lookupID = testAccount
 	r.ac.accounts = map[authn.AccountID]authn.Account{
@@ -161,7 +144,6 @@ func (r *rig) registerActive() {
 	}
 }
 
-// registerDisabled makes the store answer phoneNumber with a disabled account.
 func (r *rig) registerDisabled() {
 	r.ac.lookupID = testAccount
 	r.ac.accounts = map[authn.AccountID]authn.Account{
@@ -169,7 +151,6 @@ func (r *rig) registerDisabled() {
 	}
 }
 
-// unregistered makes the store hold no account for the number.
 func (r *rig) unregistered() {
 	r.ac.lookupErr = authn.ErrAccountNotFound
 }
@@ -189,7 +170,6 @@ func flowAt(name string, private []byte) authn.FlowState {
 func phoneFields(v string) map[string]string { return map[string]string{fieldPhone: v} }
 func codeFields(v string) map[string]string  { return map[string]string{fieldCode: v} }
 
-// describe renders the parts of an answer an outside reader could see.
 func describe(s authn.Step) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "kind=%s name=%q private=%q fields=%+v retry=%s proof=%+v", step.KindOf(s), step.NameOf(s),
@@ -200,9 +180,7 @@ func describe(s authn.Step) string {
 	return b.String()
 }
 
-// TestThePhoneThenCodeFlowSendsOnceAndProvesThePhone walks the two steps: the
-// method asks for the phone, sends a code when it arrives, and proves the phone
-// when the code checks.
+// TestThePhoneThenCodeFlowSendsOnceAndProvesThePhone walks the phone and code steps through one send and one proof.
 func TestThePhoneThenCodeFlowSendsOnceAndProvesThePhone(t *testing.T) {
 	r := newRig()
 	r.registerActive()
@@ -256,11 +234,7 @@ func TestThePhoneThenCodeFlowSendsOnceAndProvesThePhone(t *testing.T) {
 	}
 }
 
-// TestAnUnknownPrefixIsRefusedNotSent checks that a number the deployment does
-// not allow is refused with the unsupported-region sentinel, which the engine
-// answers as a 400. The method reaches Send for the number exactly as it does
-// for one it may send to, so the refusal comes from Send and not from a check of
-// the prefix here.
+// TestAnUnknownPrefixIsRefusedNotSent checks that a disallowed prefix is refused with unsupported-region and nothing is sent.
 func TestAnUnknownPrefixIsRefusedNotSent(t *testing.T) {
 	r := newRig()
 	r.registerActive()
@@ -281,11 +255,7 @@ func TestAnUnknownPrefixIsRefusedNotSent(t *testing.T) {
 	}
 }
 
-// TestARegisteredAndAnUnknownNumberAreAnsweredTheSame checks the enumeration
-// guard: a number registered to an enabled account and a number nobody holds,
-// with registration closed, get one shape of answer, and the only difference is
-// what the SMS module was told to do with the message. Both count a send, so the
-// per-flow budget advances along one path.
+// TestARegisteredAndAnUnknownNumberAreAnsweredTheSame checks that a registered and an unknown number get one answer shape with registration closed.
 func TestARegisteredAndAnUnknownNumberAreAnsweredTheSame(t *testing.T) {
 	registered := newRig()
 	registered.registerActive()
@@ -308,9 +278,6 @@ func TestARegisteredAndAnUnknownNumberAreAnsweredTheSame(t *testing.T) {
 		t.Fatalf("answers report %d and %d sends, want one each: a suppressed send counts as one",
 			step.SendsOf(known), step.SendsOf(held))
 	}
-	// The discriminator: a wrong implementation that answered differently would
-	// also tell the SMS module to send in only one of the two cases. The two
-	// answers look the same while the delivery differs, which is the whole point.
 	if !registered.sm.sends[0].Deliver {
 		t.Errorf("a registered, enabled number was not delivered")
 	}
@@ -319,9 +286,7 @@ func TestARegisteredAndAnUnknownNumberAreAnsweredTheSame(t *testing.T) {
 	}
 }
 
-// TestThePerFlowLimitStopsTheSend checks the caller's side of the per-flow send
-// budget: at zero the method sends nothing and throttles, and at one it sends
-// once and reports it.
+// TestThePerFlowLimitStopsTheSend checks that at zero nothing is sent and the step throttles, and at one it sends once.
 func TestThePerFlowLimitStopsTheSend(t *testing.T) {
 	r := newRig()
 	r.registerActive()
@@ -345,10 +310,7 @@ func TestThePerFlowLimitStopsTheSend(t *testing.T) {
 	}
 }
 
-// TestAWrongCodeAndAnUnknownNumberReadTheSame checks the second half of the
-// enumeration guard: a code that does not check and a challenge for a number
-// nobody holds are refused with one cause, so neither tells the client which
-// happened.
+// TestAWrongCodeAndAnUnknownNumberReadTheSame checks that both are refused with one cause.
 func TestAWrongCodeAndAnUnknownNumberReadTheSame(t *testing.T) {
 	r := newRig()
 	r.sm.verifyErr = authn.ErrInvalidCredentials
@@ -358,9 +320,6 @@ func TestAWrongCodeAndAnUnknownNumberReadTheSame(t *testing.T) {
 	if step.KindOf(wrong) != step.KindRefused || !errors.Is(step.CauseOf(wrong), authn.ErrInvalidCredentials) {
 		t.Fatalf("a wrong code = %s, want a refusal carrying ErrInvalidCredentials", describe(wrong))
 	}
-	// A suppressed challenge is checked and refused along the same path: a code
-	// that does not check is refused before the account is read, so nothing here
-	// can tell the two apart.
 	suppressed, _ := r.m.Answer(t.Context(), flowAt(stepCode, writeState(unknownPhone, challengeID)), submit(codeFields(badCodeForTest())))
 	if describe(wrong) != describe(suppressed) {
 		t.Fatalf("a wrong code and a suppressed challenge read %q and %q, want one answer",
@@ -371,11 +330,7 @@ func TestAWrongCodeAndAnUnknownNumberReadTheSame(t *testing.T) {
 	}
 }
 
-// TestAPhoneTheAccountDidNotChooseDoesNotCompleteALogin holds that a number an
-// account holds completes a login only when its holder chose it as a sign-in
-// way: the correct code is refused exactly as a wrong one and no proof reaches
-// the engine. The same number still proves a step-up, which asks an account that
-// already signed in to prove the number it holds.
+// TestAPhoneTheAccountDidNotChooseDoesNotCompleteALogin holds that a held but unchosen number's correct code is refused like a wrong one.
 func TestAPhoneTheAccountDidNotChooseDoesNotCompleteALogin(t *testing.T) {
 	r := newRig()
 	r.registerActive()
@@ -445,9 +400,7 @@ func TestTheMethodServesLoginAndStepUpOnly(t *testing.T) {
 	}
 }
 
-// TestAMalformedPhoneIsRefused checks that a value that is not an E.164 number is
-// refused as an invalid identifier, which the engine answers as a 400, and that
-// nothing is sent.
+// TestAMalformedPhoneIsRefused checks that a non-E.164 value answers invalid-identifier, nothing sent.
 func TestAMalformedPhoneIsRefused(t *testing.T) {
 	r := newRig()
 	for _, bad := range []string{"123", "+0123456789", "8613800138000", "+1 3800138000"} {
@@ -475,9 +428,7 @@ func TestADisabledAccountIsNotDelivered(t *testing.T) {
 	}
 }
 
-// TestRegistrationOpenDeliversEveryNumber checks that while registration is open
-// a number nobody holds is sent a real code, because a first login may create an
-// account for it.
+// TestRegistrationOpenDeliversEveryNumber checks that an unknown number gets a real code while registration is open.
 func TestRegistrationOpenDeliversEveryNumber(t *testing.T) {
 	r := newRig()
 	r.unregistered()
@@ -491,9 +442,7 @@ func TestRegistrationOpenDeliversEveryNumber(t *testing.T) {
 	}
 }
 
-// TestAnUnavailableCapabilityIsNotARefusal checks the failure direction: a Send
-// or a read that cannot be had is answered as the capability being unable to say
-// (503), never as a refused credential (401).
+// TestAnUnavailableCapabilityIsNotARefusal checks that a failed Send or read answers 503, never 401.
 func TestAnUnavailableCapabilityIsNotARefusal(t *testing.T) {
 	ctx := t.Context()
 
@@ -529,9 +478,7 @@ func TestASendThrottleCarriesItsWait(t *testing.T) {
 	}
 }
 
-// TestAnAnswerTheMethodCannotWalkIsRefused checks that a callback, an unknown
-// step and a code step with no challenge state are refused, so a flow record
-// this method did not write cannot be walked into a proof.
+// TestAnAnswerTheMethodCannotWalkIsRefused checks that a callback, an unknown step and a missing challenge are refused.
 func TestAnAnswerTheMethodCannotWalkIsRefused(t *testing.T) {
 	r := newRig()
 	ctx := t.Context()
@@ -553,10 +500,7 @@ func TestAnAnswerTheMethodCannotWalkIsRefused(t *testing.T) {
 	}
 }
 
-// TestACodeStepWithNoCodeAsksAgain checks that an empty submission at the code
-// step is a prompt and not a guess: no comparison and no failure counted, and
-// the state the first prompt carried is handed on, so the client can still
-// answer the same challenge.
+// TestACodeStepWithNoCodeAsksAgain checks that an empty submission prompts again, counting no failure and keeping the challenge state.
 func TestACodeStepWithNoCodeAsksAgain(t *testing.T) {
 	r := newRig()
 	got, _ := r.m.Answer(t.Context(), flowAt(stepCode, writeState(phoneNumber, challengeID)), submit(codeFields("")))
@@ -606,9 +550,7 @@ func TestNoSecretReachesACause(t *testing.T) {
 	}
 }
 
-// TestTheMethodServesStepUpAsWellAsLogin checks the positive half of the purpose
-// gate: a step-up is a first factor a code can prove, so it drives the flow
-// exactly as a login does and reaches the same proof.
+// TestTheMethodServesStepUpAsWellAsLogin checks that a step-up drives the flow exactly as a login does.
 func TestTheMethodServesStepUpAsWellAsLogin(t *testing.T) {
 	r := newRig()
 	r.registerActive()
@@ -648,10 +590,7 @@ func TestTheMethodServesStepUpAsWellAsLogin(t *testing.T) {
 	}
 }
 
-// TestAStepUpSendsOnlyToTheAccountsProvedPhone holds the step-up's sending
-// target: the code goes only to a number the flow's account proved, and a number
-// it did not prove, whether named at the start or in an answer, is refused as a
-// credential that did not hold, with no send.
+// TestAStepUpSendsOnlyToTheAccountsProvedPhone holds that an unproved number is refused as a credential failure with no send.
 func TestAStepUpSendsOnlyToTheAccountsProvedPhone(t *testing.T) {
 	r := newRig()
 	r.registerActive()
@@ -686,7 +625,6 @@ func TestAStepUpSendsOnlyToTheAccountsProvedPhone(t *testing.T) {
 		t.Fatalf("the account's own number reached Send %+v, want one send to %s", r.sm.sends, phoneNumber)
 	}
 
-	// A number asked for in an answer is held to the same target.
 	flow := flowAt(stepPhone, nil)
 	flow.Purpose = authn.PurposeStepUp
 	flow.Account = testAccount
@@ -706,9 +644,7 @@ func TestAStepUpSendsOnlyToTheAccountsProvedPhone(t *testing.T) {
 	}
 }
 
-// TestAStepUpAcceptsAnyPhoneTheAccountProved checks that the target is every
-// proved phone of the account, not one the method picks: an account holding two
-// proved numbers can re-prove with either.
+// TestAStepUpAcceptsAnyPhoneTheAccountProved checks that an account with two proved numbers may use either.
 func TestAStepUpAcceptsAnyPhoneTheAccountProved(t *testing.T) {
 	r := newRig()
 	r.registerActive()
@@ -734,10 +670,7 @@ func TestAStepUpAcceptsAnyPhoneTheAccountProved(t *testing.T) {
 	}
 }
 
-// TestAStepUpRefusesANumberTheAccountHasNotProved checks that an identifier row
-// without a proof is not a target: ownership is the proof, not the row. A row
-// whose ownership an administrator or an import asserted, and one that carries no
-// verification time at all, both read as unproved.
+// TestAStepUpRefusesANumberTheAccountHasNotProved checks that an unproved identifier row is not a target.
 func TestAStepUpRefusesANumberTheAccountHasNotProved(t *testing.T) {
 	verified := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for name, identifier := range map[string]authn.Identifier{
@@ -767,10 +700,7 @@ func TestAStepUpRefusesANumberTheAccountHasNotProved(t *testing.T) {
 	}
 }
 
-// TestAStepUpWithAnUnreadableAccountAnswersUnavailable checks that a failure to
-// read the account's identifiers is the capability being unable to say: no send
-// and a 503, never a refusal that could be read as a credential that did not
-// hold.
+// TestAStepUpWithAnUnreadableAccountAnswersUnavailable checks that an unreadable account answers 503 with no send.
 func TestAStepUpWithAnUnreadableAccountAnswersUnavailable(t *testing.T) {
 	r := newRig()
 	r.registerActive()
@@ -787,10 +717,7 @@ func TestAStepUpWithAnUnreadableAccountAnswersUnavailable(t *testing.T) {
 	}
 }
 
-// TestThePromptsPublishTheStepsAndFieldsTheyName pins the contract the prompts
-// carry to the client: the step name and the field asked for, with its kind,
-// requiredness and secrecy. The names are literals so that a renamed step or
-// field constant is caught here, where the wire sees it.
+// TestThePromptsPublishTheStepsAndFieldsTheyName pins the step name and field kind, requiredness and secrecy.
 func TestThePromptsPublishTheStepsAndFieldsTheyName(t *testing.T) {
 	r := newRig()
 
@@ -814,9 +741,7 @@ func TestThePromptsPublishTheStepsAndFieldsTheyName(t *testing.T) {
 	}
 }
 
-// TestThePhoneShapeIsE164 checks the bounds and the anchors of the number's
-// shape: seven to fifteen digits after the country code, nothing before or after
-// the number.
+// TestThePhoneShapeIsE164 checks the seven-to-fifteen digit body and its anchors.
 func TestThePhoneShapeIsE164(t *testing.T) {
 	r := newRig()
 	r.registerActive()
@@ -852,11 +777,7 @@ func TestThePhoneShapeIsE164(t *testing.T) {
 	}
 }
 
-// TestTheBackOffIsKeyedByTheNumbersHashUnderThePhoneScope pins the key and the
-// scope the method counts against: the SHA-256 of the E.164 number in
-// hexadecimal, under ScopePhone — the same key the account self-service phone
-// routes use. The digest is a literal so that a changed shape, a salt added to
-// the input, or a scope swapped between the three calls is caught here.
+// TestTheBackOffIsKeyedByTheNumbersHashUnderThePhoneScope pins the scope and the hexadecimal SHA-256 key.
 func TestTheBackOffIsKeyedByTheNumbersHashUnderThePhoneScope(t *testing.T) {
 	const phoneHash = "ec61f3c620a98bdead8c1f1f0ae747abd1b62a0c2dba4fd4bc22cf0d1d8653e5"
 	want := string(authn.ScopePhone) + ":" + phoneHash
@@ -891,10 +812,7 @@ func TestTheBackOffIsKeyedByTheNumbersHashUnderThePhoneScope(t *testing.T) {
 	})
 }
 
-// TestAWrappedInvalidCredentialsIsStillARefusal checks that a Verify which wraps
-// the sentinel reads as a refusal: the method matches the sentinel through
-// errors.Is, so a module that adds context to the error still counts a failure
-// and answers a 401.
+// TestAWrappedInvalidCredentialsIsStillARefusal checks that the sentinel is matched through errors.Is and still answers 401.
 func TestAWrappedInvalidCredentialsIsStillARefusal(t *testing.T) {
 	r := newRig()
 	r.sm.verifyErr = fmt.Errorf("checking the code: %w", authn.ErrInvalidCredentials)
@@ -907,10 +825,7 @@ func TestAWrappedInvalidCredentialsIsStillARefusal(t *testing.T) {
 	}
 }
 
-// TestABrokenComparisonIsUnavailableNotARefusal checks the failure direction at
-// the comparison: a Verify that returns anything but the credential sentinel is
-// the capability being unable to say (503), never a refused credential (401),
-// and it counts no failure.
+// TestABrokenComparisonIsUnavailableNotARefusal checks that any other Verify error answers 503 and counts no failure.
 func TestABrokenComparisonIsUnavailableNotARefusal(t *testing.T) {
 	r := newRig()
 	r.sm.verifyErr = errors.New("the challenge store is down")
@@ -923,9 +838,7 @@ func TestABrokenComparisonIsUnavailableNotARefusal(t *testing.T) {
 	}
 }
 
-// TestASendThrottledAsABareSentinelHasNoRetry checks that a Send which returns
-// the bare ErrThrottled, rather than a ThrottledError carrying a wait, is still
-// answered as a throttle, with no retry named.
+// TestASendThrottledAsABareSentinelHasNoRetry checks that a bare ErrThrottled is answered as a throttle with no retry.
 func TestASendThrottledAsABareSentinelHasNoRetry(t *testing.T) {
 	r := newRig()
 	r.registerActive()
@@ -936,10 +849,7 @@ func TestASendThrottledAsABareSentinelHasNoRetry(t *testing.T) {
 	}
 }
 
-// TestAReadFailureOfTheAccountIsNotASuppressedSend checks the failure direction
-// of the read that decides delivery: an account that vanished follows the
-// registration switch, while a store that cannot be read is the capability being
-// unable to say, never a suppressed send.
+// TestAReadFailureOfTheAccountIsNotASuppressedSend checks that an unreadable store answers 503, never a suppressed send.
 func TestAReadFailureOfTheAccountIsNotASuppressedSend(t *testing.T) {
 	t.Run("a vanished account follows the registration switch", func(t *testing.T) {
 		for _, open := range []bool{true, false} {
@@ -976,9 +886,7 @@ func TestAReadFailureOfTheAccountIsNotASuppressedSend(t *testing.T) {
 	})
 }
 
-// TestACancelledCallShortCircuitsBeforeItActs checks that a call already ended
-// is answered as the capability being unable to say before the method sends,
-// reads the back-off or compares a code.
+// TestACancelledCallShortCircuitsBeforeItActs checks that an ended call answers 503 before sending, reading or comparing.
 func TestACancelledCallShortCircuitsBeforeItActs(t *testing.T) {
 	t.Run("before a code is sent", func(t *testing.T) {
 		r := newRig()
@@ -1026,9 +934,7 @@ func TestACancelledCallShortCircuitsBeforeItActs(t *testing.T) {
 	})
 }
 
-// TestAnAnswerCarryingAnUnknownStateFieldIsRefused checks that the state the
-// answer step reads rejects a private blob with a field this method did not
-// write, so a record it did not write cannot be walked into a proof.
+// TestAnAnswerCarryingAnUnknownStateFieldIsRefused checks that an unknown field in the private blob is refused.
 func TestAnAnswerCarryingAnUnknownStateFieldIsRefused(t *testing.T) {
 	r := newRig()
 	private := []byte(`{"v":1,"phone":"+8613800138000","challenge":"chal-S3nt1nel-0001","extra":"x"}`)
@@ -1041,11 +947,7 @@ func TestAnAnswerCarryingAnUnknownStateFieldIsRefused(t *testing.T) {
 	}
 }
 
-// TestAReadFailureOfTheRegistrationSwitchIsLoggedAndReadAsClosed holds the
-// observability the design promises for a relaxation switch: a read that fails
-// is reported at Error, once for as long as the same fault stands, and the
-// switch reads as closed. An assembly without a settings store is a legal one
-// and is not a fault.
+// TestAReadFailureOfTheRegistrationSwitchIsLoggedAndReadAsClosed holds that a failed read is logged once at Error and the switch reads closed.
 func TestAReadFailureOfTheRegistrationSwitchIsLoggedAndReadAsClosed(t *testing.T) {
 	t.Run("a failing read is logged once", func(t *testing.T) {
 		r := newRig()
@@ -1120,7 +1022,6 @@ func TestAReadFailureOfTheRegistrationSwitchIsLoggedAndReadAsClosed(t *testing.T
 	})
 }
 
-// logBuffer collects the records a method writes.
 type logBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -1142,9 +1043,7 @@ func (l *logBuffer) String() string {
 
 func badCodeForTest() string { return "000000" }
 
-// TestThePhoneStepForwardsTheProofToTheCodeEngine holds the method's side of
-// the gate: the proof the engine put in Start or FlowState reaches the code
-// engine unchanged, on both the start and the answer that sends.
+// TestThePhoneStepForwardsTheProofToTheCodeEngine holds that Start's and FlowState's proof reach the code engine unchanged.
 func TestThePhoneStepForwardsTheProofToTheCodeEngine(t *testing.T) {
 	r := newRig()
 	r.registerActive()
@@ -1168,9 +1067,7 @@ func TestThePhoneStepForwardsTheProofToTheCodeEngine(t *testing.T) {
 	}
 }
 
-// TestThePhoneStepRefusesWhenTheCodeEngineRefusesTheProof holds the method's
-// answer to the gate's two refusals: a refused step, so the engine answers the
-// 403 or 400 rather than a failed login.
+// TestThePhoneStepRefusesWhenTheCodeEngineRefusesTheProof holds that the gate's refusal becomes a refused step, not a failed login.
 func TestThePhoneStepRefusesWhenTheCodeEngineRefusesTheProof(t *testing.T) {
 	for _, tc := range []struct {
 		name string

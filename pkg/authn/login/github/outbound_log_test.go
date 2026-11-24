@@ -15,24 +15,7 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// TestTheOutboundClientRecordsEachRequest holds that the client this module
-// assembles writes one record per outbound request, through the logger the
-// request's context carries.
-//
-// The product is taken from a real registry driven to the stage where the
-// instance exists, so the assertion is on what the module's own New assembles: a
-// case that wrapped a client by hand would pass with the wrap removed from New
-// and hold nothing about this module.
-//
-// The request names a scheme the restricted client refuses before it opens a
-// connection. That is deliberate: the record covers the call the method made,
-// whether or not it reached the provider, and this failure is what a case can
-// drive without a certificate the production client would reject.
-//
-// The query carries a value shaped like an authorization code and one shaped
-// like a state, and the read's header carries a value shaped like a token.
-// None may reach the record, which is what keeps a code, a token or a state out
-// of every destination the logging chain writes to.
+// TestTheOutboundClientRecordsEachRequest holds one record per outbound request through the context's logger.
 func TestTheOutboundClientRecordsEachRequest(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))

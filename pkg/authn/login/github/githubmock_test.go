@@ -15,8 +15,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/egress"
 )
 
-// The fixed values a case drives the method with. They stand for a deployment's
-// configuration.
 const (
 	testClientID     = "the-client-id"
 	testClientSecret = "the-client-secret"
@@ -24,10 +22,6 @@ const (
 	testToken        = "github-access-token"
 )
 
-// githubMock stands in for GitHub's token endpoint and API endpoints. It runs
-// over TLS on the loopback interface, so the method is driven through the
-// restricted client of internal/egress pointed at a development address, and it
-// records what it was asked so a case reads the shape of a request back.
 type githubMock struct {
 	server *httptest.Server
 	pool   *x509.CertPool
@@ -52,8 +46,6 @@ type githubMock struct {
 	emailsCalls int
 }
 
-// newGitHubMock starts the server with the answers a plain successful flow
-// needs: an access token, an account and no addresses.
 func newGitHubMock(t *testing.T) *githubMock {
 	t.Helper()
 	m := &githubMock{
@@ -69,7 +61,6 @@ func newGitHubMock(t *testing.T) *githubMock {
 	return m
 }
 
-// route dispatches one request to the endpoint it names.
 func (m *githubMock) route(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/login/oauth/access_token":
@@ -83,9 +74,6 @@ func (m *githubMock) route(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// token answers the exchange. It records the verifier and the code the method
-// sent and returns the configured outcome: an error, a non-200, or an access
-// token.
 func (m *githubMock) token(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	m.mu.Lock()
@@ -139,7 +127,6 @@ func (m *githubMock) readUser(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-// readEmails answers GET /user/emails.
 func (m *githubMock) readEmails(w http.ResponseWriter, r *http.Request) {
 	m.mu.Lock()
 	m.emailsCalls++
@@ -156,57 +143,46 @@ func (m *githubMock) readEmails(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-// setToken configures the exchange's outcome: a non-zero status, an OAuth error
-// code, or both. An empty error with a zero status is the success path.
 func (m *githubMock) setToken(status int, errCode string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.tokenStatus, m.tokenError = status, errCode
 }
 
-// setUser configures the account and the address GET /user carries.
 func (m *githubMock) setUser(u githubUser, email string, status int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.user, m.userEmail, m.userStatus = u, email, status
 }
 
-// setUserRaw configures the raw body GET /user answers with, so a case can drive
-// a 200 whose body does not decode.
 func (m *githubMock) setUserRaw(body string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.userRaw = body
 }
 
-// setEmails configures GET /user/emails.
 func (m *githubMock) setEmails(emails []githubEmail, status int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.emails, m.emailsStatus = emails, status
 }
 
-// seen returns the recorded requests under one read.
 func (m *githubMock) seen() (tokenCalls, userCalls, emailsCalls int, verifier, authHeader string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.tokenCalls, m.userCalls, m.emailsCalls, m.verifier, m.authHeader
 }
 
-// seenHeaders returns the request headers the account read carried.
 func (m *githubMock) seenHeaders() (version, accept, agent string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.versionHead, m.acceptHead, m.agentHead
 }
 
-// quote renders a string as a JSON string, for the bodies a case configures.
 func quote(s string) string {
 	return `"` + s + `"`
 }
 
-// resolvedFor is the configuration the method runs on in a case: the mock's
-// addresses stand in for GitHub's.
 func resolvedFor(m *githubMock) resolved {
 	return resolved{
 		clientID:     testClientID,
@@ -220,14 +196,10 @@ func resolvedFor(m *githubMock) resolved {
 	}
 }
 
-// methodFor builds the method over the mock through the restricted client,
-// which admits the loopback address as a development one.
 func methodFor(m *githubMock) *method {
 	return newMethod(resolvedFor(m), egress.New(egress.Options{AllowLoopback: true, RootCAs: m.pool}))
 }
 
-// methodWithoutLoopback builds the method over the mock through the production
-// client, which refuses the loopback address.
 func methodWithoutLoopback(m *githubMock) *method {
 	return newMethod(resolvedFor(m), egress.New(egress.Options{RootCAs: m.pool}))
 }

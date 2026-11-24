@@ -16,16 +16,11 @@ import (
 	smssend "github.com/vislake/speed/pkg/sms"
 )
 
-// The stand-ins a driven registry is built from: one module that delivers the
-// three capabilities this method uses, each exclusively as its own module does,
-// and one that delivers the settings store.
 const (
 	smsModule      = "stand-in.sms"
 	settingsModule = "stand-in.settings"
 )
 
-// standInSMS declares the three capabilities the way the SMS module and the
-// account module do.
 func standInSMS() core.Module {
 	return core.Module{
 		Name: smsModule,
@@ -37,7 +32,6 @@ func standInSMS() core.Module {
 	}
 }
 
-// standInSettings declares the settings store the way the settings module does.
 func standInSettings() core.Module {
 	return core.Module{
 		Name:     settingsModule,
@@ -45,8 +39,6 @@ func standInSettings() core.Module {
 	}
 }
 
-// provider is one instance that is all three capabilities, as one delivery of
-// each is what a real assembly has.
 type provider struct {
 	*fakeSMSCodes
 	*fakeThrottle
@@ -61,8 +53,6 @@ func newProvider() *provider {
 	}
 }
 
-// fakeSettings is a settings store whose account registration switch a case
-// chooses. Any other key is undeclared.
 type fakeSettings struct {
 	settings.Store
 	signup string
@@ -82,8 +72,6 @@ func (f *fakeSettings) Get(_ settings.Layer, key string, target any) error {
 	return nil
 }
 
-// buildRegistry registers this module beside the stand-ins and supplies the
-// provider and store under their modules.
 func buildRegistry(store settings.Store) (*core.Registry, *provider) {
 	p := newProvider()
 	reg := core.New()
@@ -95,6 +83,7 @@ func buildRegistry(store settings.Store) (*core.Registry, *provider) {
 	return reg, p
 }
 
+// TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt checks that the method is non-exclusive and requires SMS, back-off and account.
 func TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt(t *testing.T) {
 	m := Module()
 	if m.Name != "authn.login.sms" || ModuleName != "authn.login.sms" {
@@ -126,6 +115,8 @@ func TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt(t *testing.T) {
 	}
 }
 
+// TestPrepareStatesEnabledAndNothingElse checks that Prepare reports the module
+// enabled and nothing else.
 func TestPrepareStatesEnabledAndNothingElse(t *testing.T) {
 	got, err := Module().Prepare(t.Context(), core.New())
 	if err != nil {
@@ -136,9 +127,7 @@ func TestPrepareStatesEnabledAndNothingElse(t *testing.T) {
 	}
 }
 
-// TestPrepareStandsDownWhenNeitherCarrierNorTemplateIsConfigured holds the
-// all-empty case: with no carrier selected and no template configured, SMS was
-// not configured for this run and the method is not offered.
+// TestPrepareStandsDownWhenNeitherCarrierNorTemplateIsConfigured holds that the method is not offered in that run.
 func TestPrepareStandsDownWhenNeitherCarrierNorTemplateIsConfigured(t *testing.T) {
 	reader := configtest.Reader(t, "{}", Module())
 	reg := core.New()
@@ -154,17 +143,11 @@ func TestPrepareStandsDownWhenNeitherCarrierNorTemplateIsConfigured(t *testing.T
 	}
 }
 
-// selectionModule declares the carrier selection item, which in a real binary
-// the log carrier declares. A case that writes sms.carrier needs it in the
-// manifest or the written value would have no declared path.
 func selectionModule() core.Module {
 	return core.Module{Name: "test.selection", Resources: []any{smssend.SelectionSchema()}}
 }
 
-// TestPrepareStandsDownWhenTheCarrierSelectionIsNone holds the dependent's side
-// of sms.carrier=none: the log fallback is not enabled either, so a method that
-// can send only through the SMS capability stands itself down with the
-// selection's reason instead of waiting for a provider that will never come.
+// TestPrepareStandsDownWhenTheCarrierSelectionIsNone holds that the method stands down with the selection's reason.
 func TestPrepareStandsDownWhenTheCarrierSelectionIsNone(t *testing.T) {
 	reader := configtest.Reader(t, `{"sms":{"carrier":"none"}}`, Module(), selectionModule())
 	reg := core.New()
@@ -180,6 +163,7 @@ func TestPrepareStandsDownWhenTheCarrierSelectionIsNone(t *testing.T) {
 	}
 }
 
+// TestARealRegistryDeliversTheSMSMethodOnTheOtherModulesCapabilities checks that a real registry delivers the method and it prompts for a code.
 func TestARealRegistryDeliversTheSMSMethodOnTheOtherModulesCapabilities(t *testing.T) {
 	reg, p := buildRegistry(&fakeSettings{signup: "x"})
 	var methods []authn.LoginMethod
@@ -197,8 +181,6 @@ func TestARealRegistryDeliversTheSMSMethodOnTheOtherModulesCapabilities(t *testi
 	if len(methods) != 1 || methods[0].Name() != "sms" {
 		t.Fatalf("delivered %v, want one login method named sms", methods)
 	}
-	// The instance is wired to the capabilities the registry resolved, not to
-	// nothing and not to a copy: a registered number goes through the fakes.
 	p.lookupID = testAccount
 	p.accounts = map[authn.AccountID]authn.Account{testAccount: {ID: testAccount, Status: authn.StatusActive}}
 	got, _ := methods[0].Begin(t.Context(), loginStart(phoneFields(phoneNumber)))
@@ -210,9 +192,7 @@ func TestARealRegistryDeliversTheSMSMethodOnTheOtherModulesCapabilities(t *testi
 	}
 }
 
-// TestTheRegistrationSwitchIsReadFromTheSettingsStore checks that an unknown
-// number is delivered only while the account module's registration switch reads
-// open, and that any other value, or an unreadable one, reads as closed.
+// TestTheRegistrationSwitchIsReadFromTheSettingsStore checks that delivery follows the switch, any other or unreadable value reading closed.
 func TestTheRegistrationSwitchIsReadFromTheSettingsStore(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -251,9 +231,7 @@ func TestTheRegistrationSwitchIsReadFromTheSettingsStore(t *testing.T) {
 	}
 }
 
-// TestAnAbsentSettingsStoreClosesTheRegistration checks that a registry with no
-// settings store still builds the method, and that an unknown number is then
-// suppressed.
+// TestAnAbsentSettingsStoreClosesTheRegistration checks that the method still builds and an unknown number is suppressed.
 func TestAnAbsentSettingsStoreClosesTheRegistration(t *testing.T) {
 	p := newProvider()
 	reg := core.New()
@@ -279,6 +257,7 @@ func TestAnAbsentSettingsStoreClosesTheRegistration(t *testing.T) {
 	}
 }
 
+// TestACommandWithoutTheSMSOrAccountModulesFailsBeforeAnythingIsBuilt checks the missing-provider failure before the action runs.
 func TestACommandWithoutTheSMSOrAccountModulesFailsBeforeAnythingIsBuilt(t *testing.T) {
 	reg := core.New()
 	reg.Register(Module())
@@ -295,6 +274,8 @@ func TestACommandWithoutTheSMSOrAccountModulesFailsBeforeAnythingIsBuilt(t *test
 	}
 }
 
+// TestImportingThePackageRegistersTheModuleWithTheProcess checks that importing
+// the package registers the module with the process registry.
 func TestImportingThePackageRegistersTheModuleWithTheProcess(t *testing.T) {
 	got, ok := core.ProcessRegistry.Lookup(ModuleName)
 	if !ok {

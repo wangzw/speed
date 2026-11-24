@@ -15,29 +15,13 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The header a flow token travels in when it does not travel in the flow
-// cookie. The cookie is built by cookiename.Cookie: __Host-authn-flow, whose
-// prefix requires Secure, a path of "/" and no Domain, or authn-flow on an http
-// public URL, where it carries the same attributes but Secure, which
-// cookiename.Secure leaves off there. It is SameSite=Lax: it rides the
-// same-site requests of a flow and a provider's cross-site top-level GET back,
-// and a provider's cross-site form post, which does not carry it, is bounced to
-// the resume route as a same-origin post that does.
 const flowHeader = "Authn-Flow"
 
-// routes binds the product to the endpoint its routes were mounted on, whose
-// name is the realm of every 401 a handler writes.
 type routes struct {
 	*product
 	endpoint string
 }
 
-// mountRoutes registers this module's routes and the account self-service
-// routes. Each route is registered from the operation that declares it, so the
-// handler's input and answer types, the fragment and the route are one source.
-// The callback is registered through Callback, so its cross-site POST skips the
-// cross-origin check while every other route keeps it; the resume route the
-// callback's bounce page posts to is an ordinary public route and keeps it.
 func (p *product) mountRoutes() {
 	r := &routes{product: p, endpoint: p.mounter.Endpoint()}
 	m := p.mounter
@@ -76,10 +60,7 @@ func (p *product) mountRoutes() {
 	}
 }
 
-// bindingPrecheck refuses an answer whose flow binding is missing or wrong
-// before the entry point reads the body, which is the order the design gives the
-// answer route: the content type, then the binding, then the body's own fields.
-// The body is read only after the binding holds.
+// bindingPrecheck refuses before the entry point reads the body, the order this route fixes.
 func (r *routes) bindingPrecheck(c *gin.Context) bool {
 	call := r.call(c.Request.Context(), nil)
 	if _, _, _, _, ok := r.requireBinding(call, true); !ok {
@@ -89,11 +70,7 @@ func (r *routes) bindingPrecheck(c *gin.Context) bool {
 	return true
 }
 
-// identityPrecheck refuses a request with no identity before the entry point
-// reads the body. It is the check the start handler makes first, moved ahead of
-// the body so that the request is not read for a caller the route will refuse
-// anyway. An impersonating identity passes: the flow is started on the effective
-// account and runs on the operator's session.
+// identityPrecheck refuses before the body is read; an impersonating identity passes.
 func (r *routes) identityPrecheck(c *gin.Context) bool {
 	id, ok := authn.FromContext(c.Request.Context())
 	if !ok || id.Account() == "" {
@@ -103,9 +80,6 @@ func (r *routes) identityPrecheck(c *gin.Context) bool {
 	return true
 }
 
-// setFlowCookie adds the flow cookie, the carrier of the binding secret for a
-// cookie-bound flow. A maxAge of -1 clears it; a set and a clear carry the same
-// attributes.
 func (r *routes) setFlowCookie(c *call, token string, maxAge int) {
 	c.setCookie(cookiename.Cookie(r.publicURL, cookiename.Spec{
 		Stem:     cookiename.Flow,
@@ -115,12 +89,6 @@ func (r *routes) setFlowCookie(c *call, token string, maxAge int) {
 	}))
 }
 
-// readBindingToken reads the flow token from the request. A cookie-bound route
-// reads the cookie; an answer route reads the cookie first and the header next,
-// so that a header-bound client can carry it without a cookie. A callback reads
-// only the cookie, because a user agent navigation cannot set a header.
-// fromHeader reports that the token arrived in the Authn-Flow header, which is
-// what makes a reply echo it in its body.
 func (r *routes) readBindingToken(c *call, allowHeader bool) (token string, fromHeader, ok bool) {
 	if v := c.cookieValue(r.flowCookie); v != "" {
 		return v, false, true
@@ -133,10 +101,6 @@ func (r *routes) readBindingToken(c *call, allowHeader bool) (token string, from
 	return "", false, false
 }
 
-// requireBinding loads the flow the request is bound to. It answers the request
-// and returns false when the binding is missing or does not match, which is the
-// 401 flow-invalid that covers a missing cookie, a wrong header and a binding
-// that names another flow.
 func (r *routes) requireBinding(c *call, allowHeader bool) (token string, echo string, rec record, raw []byte, ok bool) {
 	found, fromHeader, present := r.readBindingToken(c, allowHeader)
 	if !present {
@@ -154,13 +118,6 @@ func (r *routes) requireBinding(c *call, allowHeader bool) (token string, echo s
 	return found, echo, loaded, rawBytes, true
 }
 
-// localeOf reads the language a request names and passes it through as it
-// stands. It reads first the language the i18n layer settled into the request
-// context — the supported locale the request's header asked for, negotiated by
-// quality — and falls back to reading the header directly for a run with no i18n
-// layer, taking the first tag as written. Either way the value is a BCP 47 tag
-// the SMS module resolves against the languages its carrier declares: the empty
-// string names none and resolves to the run's default.
 func localeOf(c *call) string {
 	if locale, ok := i18n.FromContext(c.ctx); ok {
 		return string(locale)
@@ -176,9 +133,6 @@ func localeOf(c *call) string {
 	return ""
 }
 
-// fail maps an error from the engine or a dependency to the answer the design
-// gives it. Every case names a code; the default is the 503 that never says
-// which dependency failed.
 func (r *routes) fail(c *call, err error) {
 	var throttled *authn.ThrottledError
 	switch {
@@ -203,9 +157,6 @@ func (r *routes) fail(c *call, err error) {
 		}
 		c.unauthorized(mount.CodeLinkRequired)
 	case errors.Is(err, authn.ErrContactTaken):
-		// The address a signup declared was taken before its account write: the
-		// caller is in the link-required position the earlier read would have put
-		// them in.
 		c.unauthorized(mount.CodeLinkRequired)
 	case errors.Is(err, authn.ErrBindingConflict), errors.Is(err, authn.ErrAccountExists),
 		errors.Is(err, authn.ErrLastFactor),
@@ -246,10 +197,7 @@ func (r *routes) fail(c *call, err error) {
 	}
 }
 
-// refusedStep answers a first-factor method's refusal. A refusal is a credential
-// that did not hold, which is login-failed, except for the two causes the design
-// answers as a 400: a phone prefix the deployment does not allow, and an
-// identifier that cannot name an account. The cause goes to no body.
+// refusedStep answers a refusal as login-failed, except the two causes that answer 400: an unsupported phone prefix and an identifier that cannot name an account.
 func (r *routes) refusedStep(c *call, cause error) {
 	switch {
 	case errors.Is(cause, authn.ErrUnsupportedRegion):
@@ -257,15 +205,10 @@ func (r *routes) refusedStep(c *call, cause error) {
 	case errors.Is(cause, authn.ErrInvalidIdentifier):
 		c.fail(mount.CodeBadRequest)
 	case errors.Is(cause, authn.ErrHumanVerificationRequired):
-		// The code engine refused the proof before spending any budget. It is
-		// not a credential that did not hold, so it keeps the gate's own answer.
 		c.forbidden(mount.CodeHumanVerificationRequired)
 	case errors.Is(cause, authn.ErrHumanProofTooLong):
-		// The proof is over the field's bound, which is the bad request the
-		// field's limit always was.
 		c.fail(mount.CodeBadRequest)
 	case errors.Is(cause, authn.ErrInvalidArgument):
-		// A method's own argument error reaches the engine as a bad request.
 		c.fail(mount.CodeBadRequest)
 	default:
 		c.unauthorized(mount.CodeLoginFailed)

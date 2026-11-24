@@ -38,7 +38,6 @@ func (l *callLog) all() []string {
 	return append([]string(nil), l.calls...)
 }
 
-// names are the calls without their arguments: the part up to the first space.
 func (l *callLog) names() []string {
 	var out []string
 	for _, c := range l.all() {
@@ -64,11 +63,9 @@ func (l *callLog) reset() {
 	l.calls = nil
 }
 
-// The fakes below embed the interface they stand for, so a method nobody
-// overrode is a nil call that panics: a handler that reached for something a test
-// did not expect ends in the 500 of the entry point's recovery, which no test
-// asserts as an answer.
-
+// A fake embeds its interface, so a method it does not override is a nil call
+// that panics and surfaces as the entry point's 500; a test that reaches one has
+// found a route the fake does not cover.
 type fakeAccounts struct {
 	authn.Accounts
 	log         *callLog
@@ -115,8 +112,6 @@ func (f *fakeAccounts) Lookup(_ context.Context, _ authn.IdentifierKind, value s
 	return "", authn.ErrAccountNotFound
 }
 
-// fakeSignup answers the reservation read of the email branch. A value with an
-// entry is an unproved contact another account reserved.
 type fakeSignup struct {
 	authn.SignupVerification
 	log        *callLog
@@ -142,7 +137,6 @@ type addCall struct {
 	via     authn.Verification
 }
 
-// flagsCall is one SetIdentifierFlags call the fake recorded.
 type flagsCall struct {
 	account authn.AccountID
 	id      string
@@ -234,8 +228,6 @@ type fakeSessions struct {
 func (f *fakeSessions) Rotate(_ context.Context, id authn.SessionID) (authn.Issued, error) {
 	f.log.add("sessions.Rotate %s", id)
 	f.rotated = append(f.rotated, id)
-	// The token is handed back even when the error is set, so that a case can
-	// exercise a rotation that both failed and returned a value.
 	return f.issued, f.rotateErr
 }
 
@@ -302,15 +294,12 @@ type verifyCall struct {
 }
 
 type fakeSMS struct {
-	log       *callLog
-	sent      []authn.SendCode
-	verified  []verifyCall
-	sendErr   error
-	verifyErr error
-	next      int
-	// outstanding is the challenges a send issued that no pass has consumed yet.
-	// The real engine marks the row consumed on a pass, so a second Verify of the
-	// same challenge is a wrong code.
+	log         *callLog
+	sent        []authn.SendCode
+	verified    []verifyCall
+	sendErr     error
+	verifyErr   error
+	next        int
 	outstanding map[string]bool
 	onSend      func() // runs inside Send, for a test that lets time pass there
 }
@@ -351,10 +340,6 @@ type sendEmailCall struct {
 	ttl              time.Duration
 }
 
-// fakeEmail stands in for the email code channel. It records the messages it was
-// handed and fails on demand. certain says whether the failure it answers
-// certifies that no message left the process, which is the classification the
-// bundled channel publishes and a custom sender does not.
 type fakeEmail struct {
 	log     *callLog
 	sent    []sendEmailCall
@@ -386,11 +371,7 @@ type fakeKV struct {
 	getErr  error
 	setErr  error
 	delErr  error
-	// incrErr fails the atomic increment alone, so a case can make the budgets
-	// unreadable while the resend claim and the pending record still work.
 	incrErr error
-	// casErr fails the compare-and-swap alone, so a case can make a refund
-	// fail while the reads around it still work.
 	casErr  error
 	sets    int
 	deletes int
@@ -407,8 +388,6 @@ func newFakeKV(log *callLog) *fakeKV {
 	}
 }
 
-// alive reports whether key holds a live value, dropping an entry whose expiry
-// has passed. The caller holds the lock.
 func (f *fakeKV) alive(key string) bool {
 	if _, ok := f.values[key]; !ok {
 		return false
@@ -426,8 +405,6 @@ func (f *fakeKV) alive(key string) bool {
 	return false
 }
 
-// store writes value under key with ttl and records when it lapses. The caller
-// holds the lock.
 func (f *fakeKV) store(key string, value []byte, ttl time.Duration) {
 	f.values[key] = append([]byte(nil), value...)
 	f.ttls[key] = ttl
@@ -509,8 +486,6 @@ func (f *fakeKV) IncrByFloatWithTTL(_ context.Context, key string, delta float64
 		}
 		current = v
 	} else {
-		// A missing key starts from zero and takes ttl as its expiry; an existing
-		// key keeps the expiry it already has, so ttl is ignored here.
 		f.store(key, []byte("0"), ttl)
 	}
 	current += delta
@@ -597,8 +572,6 @@ func (f *fakeAudit) entries() []audit.Entry {
 	return append([]audit.Entry(nil), f.rows...)
 }
 
-// fakeSettings serves the durations and whole numbers a test set and an error
-// for the keys it listed as unreadable.
 type fakeSettings struct {
 	settings.Store
 	values  map[string]time.Duration

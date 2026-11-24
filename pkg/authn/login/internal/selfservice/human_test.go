@@ -11,13 +11,8 @@ import (
 	"github.com/vislake/speed/pkg/authn/login/internal/selfservice"
 )
 
-// fakeHuman is a human-verification gate a case scripts. It records what each
-// request presented so a case can see that the gate was asked, and with which
-// address.
 type fakeHuman struct {
-	required bool
-	// byScope, when set, answers Required per scope instead of the single
-	// required flag, so a case can gate one surface and leave the other off.
+	required       bool
 	byScope        map[authn.HumanScope]bool
 	provider       string
 	siteKey        string
@@ -54,8 +49,6 @@ func (h *fakeHuman) Verify(_ context.Context, p authn.HumanProof, scope authn.Hu
 	return nil
 }
 
-// askedScopes is every scope the gate was asked about, through Required and
-// Verify alike.
 func (h *fakeHuman) askedScopes() []authn.HumanScope {
 	scopes := make([]authn.HumanScope, 0, len(h.requiredScopes)+len(h.verifyScopes))
 	scopes = append(scopes, h.requiredScopes...)
@@ -63,7 +56,6 @@ func (h *fakeHuman) askedScopes() []authn.HumanScope {
 	return scopes
 }
 
-// assertOnlyScope holds that every question the gate was asked named want.
 func assertOnlyScope(t *testing.T, human *fakeHuman, want authn.HumanScope) {
 	t.Helper()
 	scopes := human.askedScopes()
@@ -77,12 +69,10 @@ func assertOnlyScope(t *testing.T, human *fakeHuman, want authn.HumanScope) {
 	}
 }
 
-// requiredHuman is a gate that requires a proof and accepts proof-1.
 func requiredHuman() *fakeHuman {
 	return &fakeHuman{required: true, provider: "pow", accept: map[string]bool{"proof-1": true}}
 }
 
-// withHuman builds a harness whose account self-service routes run behind h.
 func withHuman(t *testing.T, h *fakeHuman, cfgs ...func(*config)) *harness {
 	t.Helper()
 	cfg := func(c *config) {
@@ -91,10 +81,7 @@ func withHuman(t *testing.T, h *fakeHuman, cfgs ...func(*config)) *harness {
 	return newHarness(t, append([]func(*config){cfg}, cfgs...)...)
 }
 
-// TestStartPhoneForwardsTheProofToTheCodeEngine holds the phone send's side of
-// the gate: the route passes the request's proof to the code engine and does not
-// check it itself. The proof is single-use, so a route-side check would consume
-// it before the engine's own check.
+// TestStartPhoneForwardsTheProofToTheCodeEngine holds that the route passes the proof on and does not check it.
 func TestStartPhoneForwardsTheProofToTheCodeEngine(t *testing.T) {
 	h := newHarness(t)
 
@@ -110,9 +97,7 @@ func TestStartPhoneForwardsTheProofToTheCodeEngine(t *testing.T) {
 	}
 }
 
-// TestAStartPhoneRefusalByTheCodeEngineIsAForbidden holds the answer the route
-// gives when the code engine refuses the proof: the gate's own 403, no pending
-// record, and nothing sent. The engine is the only place the proof is checked.
+// TestAStartPhoneRefusalByTheCodeEngineIsAForbidden holds the gate's 403 with no record and nothing sent.
 func TestAStartPhoneRefusalByTheCodeEngineIsAForbidden(t *testing.T) {
 	h := newHarness(t)
 	h.sms.sendErr = fmt.Errorf("%w: the proof is missing or not valid", authn.ErrHumanVerificationRequired)
@@ -129,12 +114,7 @@ func TestAStartPhoneRefusalByTheCodeEngineIsAForbidden(t *testing.T) {
 	}
 }
 
-// TestAddEmailWithoutAProofIsRefusedAndSendsNothing holds the email branch: the
-// code goes out over the email channel, not the SMS code engine, so the route
-// itself must hold it to the human-verification gate. The gate runs before the
-// address's occupancy is read and before the resend window is claimed or a code
-// is drawn. A refused proof therefore spends no window, so the same request
-// succeeds once a proof is presented.
+// TestAddEmailWithoutAProofIsRefusedAndSendsNothing holds that the email branch holds its own proof to the gate.
 func TestAddEmailWithoutAProofIsRefusedAndSendsNothing(t *testing.T) {
 	human := requiredHuman()
 	h := withHuman(t, human, func(c *config) { c.email = true })
@@ -171,11 +151,7 @@ func TestAddEmailWithoutAProofIsRefusedAndSendsNothing(t *testing.T) {
 	}
 }
 
-// TestAddEmailChecksTheProofBeforeTheOccupancy holds the order: a request that
-// does not pass the gate answers the human-verification refusal even when the
-// address belongs to another account, so a signed-in account cannot probe which
-// addresses are in use without a proof. The occupancy read is not reached, and a
-// caller that does present a proof still learns email-taken.
+// TestAddEmailChecksTheProofBeforeTheOccupancy holds that a failed gate answers the human-verification refusal before address occupancy is read.
 func TestAddEmailChecksTheProofBeforeTheOccupancy(t *testing.T) {
 	human := requiredHuman()
 	h := withHuman(t, human, func(c *config) { c.email = true })
@@ -204,10 +180,8 @@ func TestAddEmailChecksTheProofBeforeTheOccupancy(t *testing.T) {
 	}
 }
 
-// TestAnEmailAddWithAValidProofAsksTheGateOnce holds the accepted path on its
-// own: exactly one code is sent and the gate is asked exactly once. The email
-// code goes out over the email channel, so the proof never reaches the SMS
-// sender: a second check there would consume a single-use proof again.
+// TestAnEmailAddWithAValidProofAsksTheGateOnce holds the accepted path on
+// its own: exactly one code is sent and the gate is asked exactly once.
 func TestAnEmailAddWithAValidProofAsksTheGateOnce(t *testing.T) {
 	human := requiredHuman()
 	h := withHuman(t, human, func(c *config) { c.email = true })
@@ -233,9 +207,7 @@ func TestAnEmailAddWithAValidProofAsksTheGateOnce(t *testing.T) {
 	}
 }
 
-// TestTheUsernameBranchNeedsNoProof holds that the gate follows the send: adding
-// a username sends nothing, so it asks for no proof even when the deployment
-// requires one.
+// TestTheUsernameBranchNeedsNoProof holds that adding a username sends nothing and asks for no proof.
 func TestTheUsernameBranchNeedsNoProof(t *testing.T) {
 	human := requiredHuman()
 	h := withHuman(t, human)
@@ -269,9 +241,7 @@ func TestAnEmailAddWithAnOffGateProceeds(t *testing.T) {
 }
 
 // TestAnEmailAddWithNoGateOnAHandBuiltServiceProceeds holds the defence a
-// hand-constructed service relies on. The login engine requires the gate, so a
-// service built by the engine always carries one; this case builds the service
-// by hand with none, which no assembly produces.
+// hand-constructed service relies on.
 func TestAnEmailAddWithNoGateOnAHandBuiltServiceProceeds(t *testing.T) {
 	h := newHarness(t, func(c *config) { c.email = true })
 	rec := h.post("/identifiers", `{"kind":"email","value":"ada@example.org"}`)
@@ -283,9 +253,7 @@ func TestAnEmailAddWithNoGateOnAHandBuiltServiceProceeds(t *testing.T) {
 	}
 }
 
-// TestAnEmailAddHumanFailureMapsToItsAnswer holds the seam's failures on the
-// email branch: an unavailable provider is a 503 and a proof the provider refuses
-// as too long is a 400, and neither sends anything.
+// TestAnEmailAddHumanFailureMapsToItsAnswer holds that an unavailable provider is 503 and an over-long proof 400, neither sending.
 func TestAnEmailAddHumanFailureMapsToItsAnswer(t *testing.T) {
 	cases := []struct {
 		name string
@@ -317,11 +285,8 @@ func TestAnEmailAddHumanFailureMapsToItsAnswer(t *testing.T) {
 	}
 }
 
-// TestAnEmailAddAsksTheOtherScopeAndOnlyTheOtherScope holds the surface adding
-// an email is gated on. The code goes to an email address, not a phone number,
-// so it is held to the other surface: a deployment that gates only the other
-// surface refuses a proofless add, and one that gates only the phone surface
-// lets it through without ever asking the gate about that phone surface.
+// TestAnEmailAddAsksTheOtherScopeAndOnlyTheOtherScope holds the surface
+// adding an email is gated on.
 func TestAnEmailAddAsksTheOtherScopeAndOnlyTheOtherScope(t *testing.T) {
 	t.Run("the other surface gates the email add", func(t *testing.T) {
 		human := &fakeHuman{
@@ -363,10 +328,7 @@ func TestAnEmailAddAsksTheOtherScopeAndOnlyTheOtherScope(t *testing.T) {
 	})
 }
 
-// TestThePhoneAddLeavesTheProofToTheSender holds that the phone route does not
-// ask the gate itself: the proof travels to SMSCodes.Send, where the phone
-// surface's check consumes it. Asking the gate here as well would consume a
-// single-use proof twice.
+// TestThePhoneAddLeavesTheProofToTheSender holds that the phone route does not ask the gate itself.
 func TestThePhoneAddLeavesTheProofToTheSender(t *testing.T) {
 	human := &fakeHuman{required: true, provider: "captcha", accept: map[string]bool{"proof-1": true}}
 	h := withHuman(t, human)

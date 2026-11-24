@@ -12,21 +12,16 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The state names a registration answers with.
 const (
 	stateRegistered     = "registered"
 	verificationPending = "pending"
 )
 
-// The prefixes of the two budget counters a registration carries, one bucket per
-// source address per minute and one for the whole deployment per hour. The kv has
-// no namespace of its own, so each key carries the authn: prefix.
 const (
 	signupSourcePrefix = "authn:signup:ip:"
 	signupGlobalPrefix = "authn:signup:global:"
 )
 
-// The bucket widths and key layouts of the two budgets.
 const (
 	signupSourceBucket = time.Minute
 	signupGlobalBucket = time.Hour
@@ -34,19 +29,6 @@ const (
 	signupHourLayout   = "2006010215"
 )
 
-// register opens an account for anonymous self-registration. It is a public
-// route: the mounter applies the cross-origin check before the handler, and the
-// handler reads no cookie and keeps no flow record, so there is no binding and no
-// sequence number. The account module's Signups.Register does the whole write in
-// one transaction — the enabled account, the username identifier written through
-// self, the password credential and the email contact awaiting verification —
-// and sends no email and makes no session.
-//
-// The order is the design's: the registration switch is read here only as a
-// pre-check, so that a closed deployment refuses before any count or derivation;
-// the two budgets then bound the route; and only then is Signups.Register called,
-// which reads the same switch again as the authority and holds the username
-// back-off before it checks uniqueness.
 func (r *routes) register(ctx context.Context, in registerInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	if !r.passwordSignupEnabled() {
@@ -86,11 +68,7 @@ func (r *routes) register(ctx context.Context, in registerInput, meta *speedhttp
 	return c.result()
 }
 
-// signupSourceAllow applies the per-source registration budget. Zero turns it
-// off. A counter that cannot be written is skipped with a Warn, which is the
-// direction the source-address pre-throttle of a login takes: the layer is only a
-// coarse pre-throttle before the authoritative failure back-off in the database,
-// and the relaxation's upper bound is the free attempts of that back-off.
+// signupSourceAllow skips a counter it cannot write with a Warn: it is a coarse pre-throttle, and the authoritative back-off is in the database.
 func (r *routes) signupSourceAllow(c *call) bool {
 	limit := r.settings.signupIPLimit()
 	if limit <= 0 {
@@ -112,10 +90,7 @@ func (r *routes) signupSourceAllow(c *call) bool {
 	return true
 }
 
-// signupGlobalAllow applies the deployment-wide hourly registration budget. A
-// counter that cannot be written is a refusal, not a pass: the budget is the only
-// bound on a deployment whose registration is open, and the failure document's
-// direction for a dependency that cannot answer is 503.
+// signupGlobalAllow refuses when its counter cannot be written: it is the only bound on an open registration.
 func (r *routes) signupGlobalAllow(c *call) bool {
 	limit := r.settings.signupGlobalHourly()
 	now := r.clock.Now()
@@ -135,9 +110,6 @@ func (r *routes) signupGlobalAllow(c *call) bool {
 	return true
 }
 
-// untilNextBucket is how long the bucket a count fell into has left: the delay a
-// 429 of a budget states, never below one second so that a client does not retry
-// in the same bucket.
 func untilNextBucket(now time.Time, bucket time.Duration) time.Duration {
 	next := now.Truncate(bucket).Add(bucket)
 	wait := next.Sub(now)
@@ -147,12 +119,6 @@ func untilNextBucket(now time.Time, bucket time.Duration) time.Duration {
 	return wait
 }
 
-// failRegister maps a registration's failure to the answer the design gives it.
-// The register route's two 409s are username-taken for a login name and
-// email-taken for an address another account reserved or holds, not the conflict
-// the other routes answer with; the signup-username back-off and the two budgets
-// are the one 429; and a database that cannot answer, or a derivation capacity
-// that is full, are the 503s.
 func (r *routes) failRegister(c *call, err error) {
 	if outcome, named := signupAuditOutcome(err); named {
 		r.auditSignup(c, "", outcome)

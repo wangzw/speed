@@ -10,9 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// impersonatedAuthenticated puts an impersonating identity on the request and
-// the operator's session status behind it: the session belongs to the actor and
-// names the record, while the identity's account is the target.
 func (r *rig) impersonatedAuthenticated(actor, target authn.AccountID, session authn.SessionID) {
 	r.t.Helper()
 	now := time.Now()
@@ -40,10 +37,7 @@ func (r *rig) impersonatedAuthenticated(actor, target authn.AccountID, session a
 	}
 }
 
-// TestAnImpersonatingIdentityStartsAnAuthenticatedFlow holds that the route on
-// an already authenticated identity is open to an impersonating identity: the
-// session it was started on belongs to the operator and names the record, and
-// the flow is recorded for the effective account.
+// TestAnImpersonatingIdentityStartsAnAuthenticatedFlow holds that the flow runs on the operator's session and is recorded for the effective account.
 func TestAnImpersonatingIdentityStartsAnAuthenticatedFlow(t *testing.T) {
 	r := newRig(t, &fakeMethod{name: "password"})
 	r.impersonatedAuthenticated("acct-admin", "acct-target", "sid-op")
@@ -58,9 +52,7 @@ func TestAnImpersonatingIdentityStartsAnAuthenticatedFlow(t *testing.T) {
 	}
 }
 
-// TestAnImpersonatedStepUpAsksTheTargetsRequirementOfTheOperatorsFactors holds
-// the split: the effective account's policy decides that a second factor is
-// needed, and the factors offered are the operator's own.
+// TestAnImpersonatedStepUpAsksTheTargetsRequirementOfTheOperatorsFactors holds that the target's policy decides the requirement and the operator's factors are offered.
 func TestAnImpersonatedStepUpAsksTheTargetsRequirementOfTheOperatorsFactors(t *testing.T) {
 	r := newRig(t, &fakeMethod{name: "password"})
 	r.impersonatedAuthenticated("acct-admin", "acct-target", "sid-op")
@@ -79,10 +71,7 @@ func TestAnImpersonatedStepUpAsksTheTargetsRequirementOfTheOperatorsFactors(t *t
 	}
 }
 
-// TestAnImpersonatedStepUpFromTheFirstFactorProvesTheOperatorsAccount holds
-// that a step-up begun at the first factor proves the operator: the method is
-// handed the operator's account, and the proof resolves to it while the flow's
-// effective account stays the target.
+// TestAnImpersonatedStepUpFromTheFirstFactorProvesTheOperatorsAccount holds that the method proves the operator while the flow's effective account stays the target.
 func TestAnImpersonatedStepUpFromTheFirstFactorProvesTheOperatorsAccount(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	r := newRig(t, m)
@@ -125,10 +114,7 @@ func TestAnImpersonatedStepUpFromTheFirstFactorProvesTheOperatorsAccount(t *test
 	}
 }
 
-// TestAnImpersonatedEnrollmentActsOnTheEffectiveAccount holds that the flow's
-// terminal action lands on the impersonated account while the operator's own
-// session is the one kept: the enrollment revokes the target's sessions and
-// nothing of the operator's.
+// TestAnImpersonatedEnrollmentActsOnTheEffectiveAccount holds that the action lands on the target while the operator's own session is kept.
 func TestAnImpersonatedEnrollmentActsOnTheEffectiveAccount(t *testing.T) {
 	r := newRig(t, &fakeMethod{name: "password"})
 	r.impersonatedAuthenticated("acct-admin", "acct-target", "sid-op")
@@ -152,12 +138,8 @@ func TestAnImpersonatedEnrollmentActsOnTheEffectiveAccount(t *testing.T) {
 	}
 }
 
-// TestAnImpersonatedEnrollmentCannotCompleteAfterTheRecordLapses holds the
-// completion review against the record itself. A record that lapses without End
-// leaves its marker on the session row, so every cause that ends a record in
-// the background must still stop an enrollment begun during the impersonation
-// from landing its terminal action on the target. An explicit End clears the
-// marker, and the review refuses it on that ground.
+// TestAnImpersonatedEnrollmentCannotCompleteAfterTheRecordLapses holds
+// the completion review against the record itself.
 func TestAnImpersonatedEnrollmentCannotCompleteAfterTheRecordLapses(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -209,16 +191,10 @@ func TestAnImpersonatedEnrollmentCannotCompleteAfterTheRecordLapses(t *testing.T
 	}
 }
 
-// TestAnOwnFlowCompletesOnASessionWithAStaleImpersonationMarker holds the
-// non-impersonating branch of the completion review: the flow belongs to the
-// account's own session, and a marker a lapsed record left behind is not a
-// reason to refuse it. The session's account is the whole test, so an operator
-// whose impersonation lapsed can still link, step up and enroll with their own
-// session.
+// TestAnOwnFlowCompletesOnASessionWithAStaleImpersonationMarker holds that a lapsed record's leftover marker does not refuse the account's own flow.
 func TestAnOwnFlowCompletesOnASessionWithAStaleImpersonationMarker(t *testing.T) {
 	r := newRig(t, &fakeMethod{name: "password"})
 	r.loginAsAuthenticated("acct1", "sid")
-	// A record that lapsed without End leaves its marker on the session row.
 	r.sessions.status.ImpersonationID = "grant-stale"
 
 	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
@@ -241,20 +217,11 @@ func TestAnOwnFlowCompletesOnASessionWithAStaleImpersonationMarker(t *testing.T)
 	}
 }
 
-// TestAnImpersonatedEnrollmentAuditNamesTheOperator holds the identity the
-// registration's terminal audit row is written under. The row is written by the
-// multi-factor module on the step that completes a registration, which a client
-// submits on the Open answer route: that route carries no request identity, so
-// the row can only name the operator if the step is called with an identity
-// derived from the flow's record — the effective account, the operator as the
-// actor, the grant's tenant and the session. Those are the facts the journal
-// turns into the actor column and the on_behalf_of, impersonation_scope and
-// session detail keys.
+// TestAnImpersonatedEnrollmentAuditNamesTheOperator holds the identity
+// the registration's terminal audit row is written under.
 func TestAnImpersonatedEnrollmentAuditNamesTheOperator(t *testing.T) {
 	r := newRig(t, &fakeMethod{name: "password"})
 	r.impersonatedAuthenticated("acct-admin", "acct-target", "sid-op")
-	// The first step prompts; the step that completes the registration is the
-	// answer submitted on the Open route, where the request carries no identity.
 	r.mfa.enroll = func(authn.FactorKind, authn.StepInput) authn.Step {
 		if len(r.mfa.enrolls) == 1 {
 			return authn.StepPrompt("code", nil, authn.Field{Name: "code", Kind: authn.FieldCode, Required: true})
@@ -284,11 +251,7 @@ func TestAnImpersonatedEnrollmentAuditNamesTheOperator(t *testing.T) {
 	requireOperatorIdentity(t, r.mfa.enrollIDs[1])
 }
 
-// TestAnOwnEnrollmentKeepsItsAuditShape holds the other side: a registration the
-// account's own holder starts is not impersonating anyone, so the completing
-// step keeps the anonymous context of the Open answer route and the row keeps
-// its shape — no actor invented, and no on_behalf_of, impersonation_scope or
-// session detail.
+// TestAnOwnEnrollmentKeepsItsAuditShape holds that the account's own registration keeps the anonymous context and adds no impersonation detail.
 func TestAnOwnEnrollmentKeepsItsAuditShape(t *testing.T) {
 	r := newRig(t, &fakeMethod{name: "password"})
 	r.loginAsAuthenticated("acct1", "sid")
@@ -321,10 +284,8 @@ func TestAnOwnEnrollmentKeepsItsAuditShape(t *testing.T) {
 	}
 }
 
-// TestAnImpersonatedLinkAuditNamesTheOperator holds the two terminal rows of a
-// link completed while impersonating. The row's object is the impersonated
-// account, its actor is the operator, and the detail carries the journal's three
-// impersonation keys with the target, the grant's tenant and the session.
+// TestAnImpersonatedLinkAuditNamesTheOperator holds the two terminal rows
+// of a link completed while impersonating.
 func TestAnImpersonatedLinkAuditNamesTheOperator(t *testing.T) {
 	m := &redirectMethod{}
 	m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
@@ -380,9 +341,6 @@ func TestAnImpersonatedLinkAuditNamesTheOperator(t *testing.T) {
 	requireImpersonationDetail(t, row.Detail)
 }
 
-// requireOperatorIdentity holds an identity to the operator's facts under an
-// impersonation: the actor key is the operator, the account is the effective
-// account, and the grant's tenant and the session are set.
 func requireOperatorIdentity(t *testing.T, id authn.Identity) {
 	t.Helper()
 	scope, scoped := id.Scope()
@@ -394,8 +352,6 @@ func requireOperatorIdentity(t *testing.T, id authn.Identity) {
 	}
 }
 
-// requireImpersonationDetail holds a completed row's detail to the journal's
-// three impersonation keys and the values the impersonated flow fixes.
 func requireImpersonationDetail(t *testing.T, detail map[string]string) {
 	t.Helper()
 	want := map[string]string{
@@ -410,13 +366,8 @@ func requireImpersonationDetail(t *testing.T, detail map[string]string) {
 	}
 }
 
-// TestAnImpersonatedEnrollmentStepCannotEnableAFactorAfterTheRecordLapses holds
-// the enrollment step itself to the impersonation record. The multi-factor
-// module makes the pending row active on the step that completes a
-// registration, which runs before the flow's completion review; a record that
-// lapsed in the background between the start and that step must therefore stop
-// the step from running, or the factor lands on the account the flow was
-// started for after the authority to act there is gone.
+// TestAnImpersonatedEnrollmentStepCannotEnableAFactorAfterTheRecordLapses
+// holds the enrollment step itself to the impersonation record.
 func TestAnImpersonatedEnrollmentStepCannotEnableAFactorAfterTheRecordLapses(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -439,8 +390,6 @@ func TestAnImpersonatedEnrollmentStepCannotEnableAFactorAfterTheRecordLapses(t *
 		t.Run(c.name, func(t *testing.T) {
 			r := newRig(t, &fakeMethod{name: "password"})
 			r.impersonatedAuthenticated("acct-admin", "acct-target", "sid-op")
-			// The first step asks for the factor's confirmation; the step that
-			// makes the row active is the answer submitted after the record lapses.
 			enabled := false
 			r.mfa.enroll = func(authn.FactorKind, authn.StepInput) authn.Step {
 				if len(r.mfa.enrolls) == 1 {
@@ -475,10 +424,7 @@ func TestAnImpersonatedEnrollmentStepCannotEnableAFactorAfterTheRecordLapses(t *
 	}
 }
 
-// TestAnImpersonatedFlowIsRefusedWithoutTheImpersonationCapability holds the
-// absent-dependency direction: an assembly with no impersonation capability
-// cannot confirm the record, so the completion of an impersonating flow is
-// refused rather than carried through on the session's marker alone.
+// TestAnImpersonatedFlowIsRefusedWithoutTheImpersonationCapability holds that the completion is refused when the record cannot be confirmed.
 func TestAnImpersonatedFlowIsRefusedWithoutTheImpersonationCapability(t *testing.T) {
 	r := newRig(t, &fakeMethod{name: "password"})
 	r.impersonatedAuthenticated("acct-admin", "acct-target", "sid-op")
@@ -503,9 +449,7 @@ func TestAnImpersonatedFlowIsRefusedWithoutTheImpersonationCapability(t *testing
 	}
 }
 
-// TestAnImpersonatedFlowIsRefusedWhenTheRecordCannotBeRead holds the failure
-// direction: a record store that cannot answer is a 503, and the completion's
-// terminal action does not run.
+// TestAnImpersonatedFlowIsRefusedWhenTheRecordCannotBeRead holds that an unreadable record answers 503 and the terminal action does not run.
 func TestAnImpersonatedFlowIsRefusedWhenTheRecordCannotBeRead(t *testing.T) {
 	r := newRig(t, &fakeMethod{name: "password"})
 	r.impersonatedAuthenticated("acct-admin", "acct-target", "sid-op")
@@ -530,12 +474,7 @@ func TestAnImpersonatedFlowIsRefusedWhenTheRecordCannotBeRead(t *testing.T) {
 	}
 }
 
-// TestAnImpersonatedFlowIsRefusedWhenTheRecordBindsAnotherPair holds the
-// record's own identity against the flow: the completion re-reads the record and
-// refuses when its actor or target is no longer the pair the flow was started
-// under, even though the record is still active. The flipped account is seeded
-// live, so the refusal comes from the comparison and not from the record
-// reading as lapsed.
+// TestAnImpersonatedFlowIsRefusedWhenTheRecordBindsAnotherPair holds that a record whose actor or target changed refuses the completion.
 func TestAnImpersonatedFlowIsRefusedWhenTheRecordBindsAnotherPair(t *testing.T) {
 	cases := []struct {
 		name string
@@ -577,10 +516,7 @@ func TestAnImpersonatedFlowIsRefusedWhenTheRecordBindsAnotherPair(t *testing.T) 
 	}
 }
 
-// TestAnImpersonatedFlowCannotCompleteUnderADifferentRecord holds the completion
-// re-check against the effective account: a session that no longer names the
-// record the flow was started under, whether because the impersonation ended or
-// another one began, cannot carry the flow onto the account it was started for.
+// TestAnImpersonatedFlowCannotCompleteUnderADifferentRecord holds that a session no longer naming the flow's record cannot carry it.
 func TestAnImpersonatedFlowCannotCompleteUnderADifferentRecord(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

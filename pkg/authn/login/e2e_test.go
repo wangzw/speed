@@ -45,13 +45,10 @@ import (
 // system picked for an endpoint configured on port 0.
 const listening = "an HTTP listener is listening"
 
-// requestBound bounds each request a case sends.
 func requestBound() time.Duration {
 	return coretest.Scale(5 * time.Second)
 }
 
-// capture is a log handler that keeps what it is handed, so that a case can read
-// back where the entry point bound itself.
 type capture struct {
 	mu      sync.Mutex
 	records []slog.Record
@@ -91,7 +88,6 @@ func (c *capture) addressOf(endpoint string) string {
 	return ""
 }
 
-// logging delivers the logging capability over the capture.
 type logging struct{ logger *slog.Logger }
 
 func (l logging) Named(string) *slog.Logger { return l.logger }
@@ -102,8 +98,6 @@ type noRules struct{}
 func (noRules) AddKeys(...string)              {}
 func (noRules) AddPattern(string, log.Matcher) {}
 
-// harness is one running assembly: the bound address, a cookie-jarred client and
-// the capabilities a case reaches to set its scene up.
 type harness struct {
 	t           *testing.T
 	ctx         context.Context
@@ -116,7 +110,6 @@ type harness struct {
 	store       settings.Store
 }
 
-// reply is what a client got back.
 type reply struct {
 	status int
 	header http.Header
@@ -132,37 +125,26 @@ func (r reply) json(t *testing.T) map[string]any {
 	return out
 }
 
-// assemble drives the real stack to Serve and runs use against it.
 func assemble(t *testing.T, use func(h *harness)) {
 	t.Helper()
 	assembleWith(t, nil, use)
 }
 
-// assembleWith is assemble with extra modules in the assembly, for a case that
-// needs a login method or a capability the default stack does not carry.
 func assembleWith(t *testing.T, extra []core.Module, use func(h *harness)) {
 	t.Helper()
 	assembleWithSections(t, extra, nil, use)
 }
 
-// authnSection is the authn section of the default document, with the gateway's
-// public URL a case chooses.
 func authnSection(publicURL string) map[string]any {
 	return map[string]any{
 		"gate": map[string]any{"mount": map[string]any{
 			"endpoints":  map[string]any{"default": "public"},
 			"public-url": publicURL,
 		}},
-		// The gate is a required dependency of the login engine, and these cases
-		// present no proof: both surfaces run the off mechanism.
 		"humanverify": map[string]any{"mode": "off", "phone-mode": "off"},
 	}
 }
 
-// assembleWithSections is assembleWith with extra top-level configuration
-// sections, for a case whose extra module reads a section the default document
-// does not carry. A section named here replaces the document's own, so a case
-// writes the whole of what its module reads.
 func assembleWithSections(t *testing.T, extra []core.Module, sections map[string]any, use func(h *harness)) {
 	t.Helper()
 
@@ -256,8 +238,6 @@ func assembleWithSections(t *testing.T, extra []core.Module, sections map[string
 	}
 }
 
-// loadConfig loads the configuration the way a host does, with every module's
-// declaration in the registry that reads it.
 func loadConfig(t *testing.T, body string, modules ...core.Module) config.Reader {
 	t.Helper()
 	locator := filepath.Join(t.TempDir(), "config.json")
@@ -281,7 +261,6 @@ func loadConfig(t *testing.T, body string, modules ...core.Module) config.Reader
 	return reader
 }
 
-// createAccount makes an enabled account with a password.
 func (h *harness) createAccount(username, pw string) authn.AccountID {
 	h.t.Helper()
 	acct, err := h.admin.Create(h.ctx, authn.CreateAccount{
@@ -293,7 +272,6 @@ func (h *harness) createAccount(username, pw string) authn.AccountID {
 	return acct.ID
 }
 
-// do issues one request, defaulting the origin headers a browser would send.
 func (h *harness) do(method, path string, body any, edits ...func(*http.Request)) reply {
 	h.t.Helper()
 	var reader io.Reader
@@ -301,8 +279,6 @@ func (h *harness) do(method, path string, body any, edits ...func(*http.Request)
 	switch b := body.(type) {
 	case nil:
 	case string:
-		// A string is sent as it stands, for a case that hands a body too large
-		// or too malformed to build through a value.
 		reader = strings.NewReader(b)
 		contentType = "application/json"
 	default:
@@ -347,7 +323,6 @@ func (h *harness) post(path string, body any, edits ...func(*http.Request)) repl
 	return h.do(http.MethodPost, path, body, edits...)
 }
 
-// firstCookie returns the "name=value" pair of a Set-Cookie header.
 func firstCookie(t *testing.T, header string) string {
 	t.Helper()
 	if header == "" {
@@ -372,8 +347,6 @@ func (h *harness) selfStatus() bool {
 	return false
 }
 
-// loginFlow runs a password login from the first factor to a delivered session
-// and returns the reply of the completion.
 func (h *harness) loginFlow(username, pw string) reply {
 	h.t.Helper()
 	start := h.post("/api/v1/auth/flows", map[string]any{
@@ -388,12 +361,7 @@ func (h *harness) loginFlow(username, pw string) reply {
 	return done
 }
 
-// TestPasswordLoginTwoStepsDeliversASessionCookie holds the whole login: a
-// password flow begun and completed over the real routes makes a session, the
-// cookie authenticates a guarded route, the session route reports it, and a
-// logout refuses the same cookie afterwards. The guarded route the cookie
-// authenticates is this module's own POST /api/v1/auth/flows/authenticated, which the
-// gateway refuses without a credential before any handler runs.
+// TestPasswordLoginTwoStepsDeliversASessionCookie holds the whole login: the cookie authenticates a guarded route and is refused after logout.
 func TestPasswordLoginTwoStepsDeliversASessionCookie(t *testing.T) {
 	assemble(t, func(h *harness) {
 		h.createAccount("alice", "alice-password")
@@ -429,8 +397,6 @@ func TestPasswordLoginTwoStepsDeliversASessionCookie(t *testing.T) {
 		if got := out.header.Get("Set-Cookie"); !strings.Contains(got, "Max-Age=0") {
 			t.Errorf("logout did not clear the cookie: %q", got)
 		}
-		// The same cookie presented again is refused: the session was revoked,
-		// not merely forgotten by the client.
 		after := h.get("/api/v1/auth/session", func(r *http.Request) {
 			r.Header.Set("Cookie", sessionCookie)
 			r.Header.Set("Sec-Fetch-Site", "same-origin")
@@ -441,14 +407,8 @@ func TestPasswordLoginTwoStepsDeliversASessionCookie(t *testing.T) {
 	})
 }
 
-// TestEveryCookieOfALoginIsNamedForThePublicURL holds what the real stack writes
-// on the public URL it is configured with. On an http address, which starts only
-// on a loopback host, the flow cookie and the session cookie carry no prefix and
-// no Secure, authn-flow and authn-sid, and on https they are __Host-authn-flow
-// and __Host-authn-sid with Secure. Every Set-Cookie of the start and of the
-// completion is one of the two and keeps HttpOnly, Path=/, no Domain and its
-// SameSite on both. Go's cookie jar sends both back, so the login completes and
-// the session is reported.
+// TestEveryCookieOfALoginIsNamedForThePublicURL holds what the real stack
+// writes on the public URL it is configured with.
 func TestEveryCookieOfALoginIsNamedForThePublicURL(t *testing.T) {
 	for _, c := range []struct {
 		name, publicURL, flow, session string
@@ -499,10 +459,6 @@ func TestEveryCookieOfALoginIsNamedForThePublicURL(t *testing.T) {
 	}
 }
 
-// holdsCookie checks that header sets the cookie name once, with HttpOnly,
-// Path=/, no Domain and Secure as secure says: the attributes the __Host- prefix
-// requires, and the same but Secure for the unprefixed name of an http
-// deployment.
 func holdsCookie(t *testing.T, header http.Header, name string, secure bool) {
 	t.Helper()
 	var found []*http.Cookie
@@ -520,9 +476,7 @@ func holdsCookie(t *testing.T, header http.Header, name string, secure bool) {
 	}
 }
 
-// TestASecondLoginMakesASecondSessionForTheSameAccount holds that every login
-// makes a new session and the account is one: two flows from two clients produce
-// two session identifiers naming the same account.
+// TestASecondLoginMakesASecondSessionForTheSameAccount holds that two clients produce two session identifiers naming one account.
 func TestASecondLoginMakesASecondSessionForTheSameAccount(t *testing.T) {
 	assemble(t, func(h *harness) {
 		acct := h.createAccount("bob", "bob-password")
@@ -546,11 +500,9 @@ func TestASecondLoginMakesASecondSessionForTheSameAccount(t *testing.T) {
 func TestLoginRevokesTheSessionTheRequestCameWith(t *testing.T) {
 	assemble(t, func(h *harness) {
 		h.createAccount("carol", "carol-password")
-		// First login, keeping the cookie in the jar.
 		if first := h.loginFlow("carol", "carol-password"); first.status != http.StatusOK {
 			t.Fatalf("first login answered %d: %s", first.status, first.body)
 		}
-		// Second login while the first cookie is still presented.
 		second := h.loginFlow("carol", "carol-password")
 		if second.status != http.StatusOK {
 			t.Fatalf("second login answered %d: %s", second.status, second.body)
@@ -561,10 +513,7 @@ func TestLoginRevokesTheSessionTheRequestCameWith(t *testing.T) {
 	})
 }
 
-// TestEnumerationAnswersAreIndistinguishable holds that an unknown identifier, a
-// wrong password, a disabled account and an account with no password all answer
-// the same 401 with the same body and the same challenge, so that no branch
-// tells an attacker whether an account exists.
+// TestEnumerationAnswersAreIndistinguishable holds that an unknown identifier, a wrong password, a disabled account and a passwordless account answer one 401.
 func TestEnumerationAnswersAreIndistinguishable(t *testing.T) {
 	assemble(t, func(h *harness) {
 		h.createAccount("erin", "erin-password")
@@ -602,9 +551,7 @@ func TestEnumerationAnswersAreIndistinguishable(t *testing.T) {
 	})
 }
 
-// TestTokenDeliveryIsRefusedWithoutATokenCapability holds the optional
-// dependency's absence: with no token module the assembly delivers cookies alone,
-// and a flow that asks for a token is refused.
+// TestTokenDeliveryIsRefusedWithoutATokenCapability holds that an assembly without the token module refuses a token flow.
 func TestTokenDeliveryIsRefusedWithoutATokenCapability(t *testing.T) {
 	assemble(t, func(h *harness) {
 		h.createAccount("heidi", "heidi-password")
@@ -638,11 +585,7 @@ func TestAbandonedFlowRefusesANextAnswer(t *testing.T) {
 	})
 }
 
-// TestAnOversizedBodyIsRefused holds the capability's 64 KiB body limit. The
-// body is a valid start request padded with white space past the limit, so the
-// refusal cannot come from a field's own bound: without the limit the request
-// would begin a flow. The problem type is the capability's code, because the
-// design groups a body over the limit with one that does not parse.
+// TestAnOversizedBodyIsRefused holds the capability's 64 KiB body limit.
 func TestAnOversizedBodyIsRefused(t *testing.T) {
 	assemble(t, func(h *harness) {
 		padded := `{"method":"password"}` + strings.Repeat(" ", 70_000)
@@ -656,11 +599,8 @@ func TestAnOversizedBodyIsRefused(t *testing.T) {
 	})
 }
 
-// TestABindingRefusalCarriesTheCapabilityCode holds the problem type of the
-// answers no handler produces. A body the entry point refuses before a handler
-// runs is answered in the capability's vocabulary, not with the RFC 9457
-// default: a malformed body and an unknown member are bad-request, and another
-// media type is unsupported-media-type.
+// TestABindingRefusalCarriesTheCapabilityCode holds the problem type of
+// the answers no handler produces.
 func TestABindingRefusalCarriesTheCapabilityCode(t *testing.T) {
 	for _, c := range []struct {
 		name        string
@@ -695,11 +635,7 @@ func TestABindingRefusalCarriesTheCapabilityCode(t *testing.T) {
 	}
 }
 
-// TestTheAnswerChecksTheBindingBeforeTheBody holds the order the design gives
-// the answer route: the content type, then the flow binding, then the body. A
-// request with no binding and a malformed body is refused the flow-invalid 401
-// with the capability's challenge, not a 400 about the body it was never
-// allowed to send.
+// TestTheAnswerChecksTheBindingBeforeTheBody holds the order of content type, flow binding and body.
 func TestTheAnswerChecksTheBindingBeforeTheBody(t *testing.T) {
 	assemble(t, func(h *harness) {
 		rec := h.do(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":`)
@@ -715,9 +651,7 @@ func TestTheAnswerChecksTheBindingBeforeTheBody(t *testing.T) {
 	})
 }
 
-// TestTheAnswerCarriesTheCapabilityCodeForAMalformedBody holds the other half of
-// the answer route's order: once the binding holds, a body that does not parse
-// is answered bad-request with the capability's code, not the RFC 9457 default.
+// TestTheAnswerCarriesTheCapabilityCodeForAMalformedBody holds that a body that does not parse gets the capability's bad-request code.
 func TestTheAnswerCarriesTheCapabilityCodeForAMalformedBody(t *testing.T) {
 	assemble(t, func(h *harness) {
 		h.createAccount("lena", "lena-password")
@@ -734,11 +668,7 @@ func TestTheAnswerCarriesTheCapabilityCodeForAMalformedBody(t *testing.T) {
 	})
 }
 
-// TestStartAuthenticatedAcceptsTheDeliveryMember holds that the authenticated
-// start takes the start body the login route takes: `delivery` is accepted and
-// ignored, because the delivery of an authenticated flow follows the kind of
-// the request's session. A client that reuses the login start body is not
-// refused an unknown member.
+// TestStartAuthenticatedAcceptsTheDeliveryMember holds that the authenticated start accepts and ignores delivery, which follows the session's kind.
 func TestStartAuthenticatedAcceptsTheDeliveryMember(t *testing.T) {
 	assemble(t, func(h *harness) {
 		h.createAccount("karen", "karen-password")
@@ -754,12 +684,7 @@ func TestStartAuthenticatedAcceptsTheDeliveryMember(t *testing.T) {
 	})
 }
 
-// TestTheLinkGateReadsTheAccountsRealEmailState holds the gate against the real
-// account store: an account an administrator created with an email address is
-// refused 403 contact-required until the holder proves that address, and an
-// account with no email address at all is not gated. A stub method that serves
-// the link purpose stands in for an external provider, so the gate is reached
-// without leaving the process.
+// TestTheLinkGateReadsTheAccountsRealEmailState holds that an unproved account is refused contact-required and a no-email account is not gated.
 func TestTheLinkGateReadsTheAccountsRealEmailState(t *testing.T) {
 	linkStart := func(h *harness) reply {
 		return h.post("/api/v1/auth/flows/authenticated", map[string]any{
@@ -782,8 +707,6 @@ func TestTheLinkGateReadsTheAccountsRealEmailState(t *testing.T) {
 			t.Fatalf("the link start of an unproved account answered %d %s, want 403 contact-required", got.status, got.body)
 		}
 
-		// The holder proves the address through the account surface, and the
-		// same request is then allowed.
 		if err = h.admin.AddIdentifier(h.ctx, unproved.ID, authn.IdentifierEmail, "erin@example.com",
 			authn.Verification{Via: authn.VerifiedViaEmailCode}); err != nil {
 			t.Fatalf("proving the address: %v", err)
@@ -803,11 +726,8 @@ func TestTheLinkGateReadsTheAccountsRealEmailState(t *testing.T) {
 	})
 }
 
-// linkStubName is the name the stub link method reports.
 const linkStubName = "test-link"
 
-// linkStub is a login method that serves the link purpose and nothing else, so
-// that a case can reach the link gate without an external provider.
 type linkStub struct{}
 
 func (linkStub) Name() string { return linkStubName }
@@ -824,8 +744,6 @@ func (linkStub) Answer(context.Context, authn.FlowState, authn.StepInput) (authn
 	return authn.StepRefused(errors.New("authn.login.test: the stub link method answers no step")), nil
 }
 
-// linkStubModule delivers the stub link method without claiming it, as a real
-// method does.
 func linkStubModule() core.Module {
 	return core.Module{
 		Name:     "test.authn.login.link",
@@ -837,9 +755,7 @@ func linkStubModule() core.Module {
 	}
 }
 
-// TestTheFirstFactorNeedsNoCookieAndAStaleOneDoesNotBlock holds that POST flows
-// reads no cookie: a stale session cookie left in the jar does not stand in the
-// way of beginning a login.
+// TestTheFirstFactorNeedsNoCookieAndAStaleOneDoesNotBlock holds that POST flows reads no cookie, so a stale session cookie does not block a login.
 func TestTheFirstFactorNeedsNoCookieAndAStaleOneDoesNotBlock(t *testing.T) {
 	assemble(t, func(h *harness) {
 		h.createAccount("dave", "dave-password")

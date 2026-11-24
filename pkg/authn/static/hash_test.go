@@ -11,9 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/password"
 )
 
-// TestHashWritesTheArgon2idEntryTheDesignStates holds the default writer: an
-// Argon2id entry at the least OWASP combination, which the reader reads back at
-// those parameters and which verifies the password it was made from.
+// TestHashWritesTheArgon2idEntryTheDesignStates holds the default Argon2id entry at the least OWASP combination and its verification.
 func TestHashWritesTheArgon2idEntryTheDesignStates(t *testing.T) {
 	encoded, err := Hash("correct horse")
 	if err != nil {
@@ -45,12 +43,7 @@ func TestHashWritesTheArgon2idEntryTheDesignStates(t *testing.T) {
 	}
 }
 
-// TestHashPBKDF2WritesTheCountItWasAskedFor holds what the PBKDF2 writer is for:
-// a test or a host that chooses the cost gets an entry at that cost, which
-// verifies the password it was made from and no other. Reading the count back and
-// verifying are both needed: a writer that ignored the count would read back at
-// another, and one that stated it and derived at another would read back right
-// and never verify.
+// TestHashPBKDF2WritesTheCountItWasAskedFor holds the chosen cost and that only the right password verifies.
 func TestHashPBKDF2WritesTheCountItWasAskedFor(t *testing.T) {
 	for _, iterations := range []int{1, 3, 1_000} {
 		encoded, err := HashPBKDF2("correct horse", iterations)
@@ -81,11 +74,8 @@ func TestHashPBKDF2WritesTheCountItWasAskedFor(t *testing.T) {
 	}
 }
 
-// TestACountNoEntryCanCarryIsRefusedRatherThanWritten holds the writer to what
-// the reader accepts. The standard library's derivation takes a count below one
-// as one and does not complain, so without the refusal the writer would hand back
-// an entry that every startup reading the table then turns away. The count above
-// the reader's bound is refused for the same reason.
+// TestACountNoEntryCanCarryIsRefusedRatherThanWritten holds the writer to
+// what the reader accepts.
 func TestACountNoEntryCanCarryIsRefusedRatherThanWritten(t *testing.T) {
 	for _, iterations := range []int{0, -1, math.MinInt, password.MaxPBKDF2Iterations + 1} {
 		encoded, err := HashPBKDF2("correct horse", iterations)
@@ -98,9 +88,7 @@ func TestACountNoEntryCanCarryIsRefusedRatherThanWritten(t *testing.T) {
 	}
 }
 
-// TestParseHashReadsEveryFormAndRefusesWhatIsNotOne holds the exported check: it
-// reads the two PHC forms and the old one, and refuses what is not an entry with
-// an error wrapping ErrMalformedHash that echoes none of it.
+// TestParseHashReadsEveryFormAndRefusesWhatIsNotOne holds the three forms and an ErrMalformedHash that echoes nothing.
 func TestParseHashReadsEveryFormAndRefusesWhatIsNotOne(t *testing.T) {
 	phc, err := HashPBKDF2("x", 2)
 	if err != nil {
@@ -138,9 +126,7 @@ func TestParseHashReadsEveryFormAndRefusesWhatIsNotOne(t *testing.T) {
 	}
 }
 
-// TestTheSentinelIsTheOneTheReaderReturns holds that ErrMalformedHash and the
-// password package's are one error, so that a caller testing either finds the
-// failure the other raised.
+// TestTheSentinelIsTheOneTheReaderReturns holds that ErrMalformedHash is one shared error.
 func TestTheSentinelIsTheOneTheReaderReturns(t *testing.T) {
 	if !errors.Is(ErrMalformedHash, password.ErrMalformedHash) ||
 		!errors.Is(fmt.Errorf("wrapped: %w", password.ErrMalformedHash), ErrMalformedHash) {

@@ -16,8 +16,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/step"
 )
 
-// beginRedirect runs Begin for a login and reads the redirect address, the
-// method state and the query back.
 func beginRedirect(t *testing.T, m *method) (private []byte, query url.Values) {
 	t.Helper()
 	s, err := m.Begin(t.Context(), authn.Start{Purpose: authn.PurposeLogin})
@@ -37,14 +35,10 @@ func beginRedirect(t *testing.T, m *method) (private []byte, query url.Values) {
 	return step.PrivateOf(s), u.Query()
 }
 
-// callback is a step input carrying the code and the state a provider sends
-// back.
 func callback(code, state string) authn.StepInput {
 	return authn.StepInput{Action: authn.InputCallback, Query: url.Values{"code": {code}, "state": {state}}}
 }
 
-// answer drives Answer for a login callback over the method state a Begin
-// produced.
 func answer(t *testing.T, m *method, private []byte, in authn.StepInput) authn.Step {
 	t.Helper()
 	s, err := m.Answer(t.Context(), authn.FlowState{Purpose: authn.PurposeLogin, Step: stepRedirect, Private: private}, in)
@@ -54,9 +48,7 @@ func answer(t *testing.T, m *method, private []byte, in authn.StepInput) authn.S
 	return s
 }
 
-// TestBeginRedirectsWithStateAndS256PKCE holds the shape of the authorization
-// address: the configured application, the callback address built from the
-// public base, both scopes, a state, and an S256 challenge.
+// TestBeginRedirectsWithStateAndS256PKCE holds the authorization address: application, callback, both scopes, state and S256 challenge.
 func TestBeginRedirectsWithStateAndS256PKCE(t *testing.T) {
 	m := methodFor(newGitHubMock(t))
 	_, q := beginRedirect(t, m)
@@ -87,12 +79,7 @@ func TestBeginRedirectsWithStateAndS256PKCE(t *testing.T) {
 	}
 }
 
-// TestAnswerProvesTheNumericIdentityAndAVerifiedAddress drives a whole flow
-// against the mock and holds the proof: the numeric account number as the
-// subject, the address that is primary and verified, the profile name, and the
-// oauth method. It also holds that the verifier the exchange carried derives the
-// challenge the authorization address carried, and that the read carried the
-// access token as a bearer credential.
+// TestAnswerProvesTheNumericIdentityAndAVerifiedAddress holds the numeric subject, the primary verified address, the profile name and the oauth method.
 func TestAnswerProvesTheNumericIdentityAndAVerifiedAddress(t *testing.T) {
 	mock := newGitHubMock(t)
 	mock.setUser(githubUser{ID: 4242, Login: "ada", Name: "Ada Lovelace"}, "public@example.com", 0)
@@ -139,9 +126,7 @@ func TestAnswerProvesTheNumericIdentityAndAVerifiedAddress(t *testing.T) {
 	}
 }
 
-// TestAMissingOrMismatchedStateIsRefused holds that a callback whose state does
-// not hash to the recorded digest ends as a refusal and never reaches the token
-// endpoint.
+// TestAMissingOrMismatchedStateIsRefused holds that a state not matching the recorded digest is refused before the token endpoint.
 func TestAMissingOrMismatchedStateIsRefused(t *testing.T) {
 	for name, state := range map[string]string{"missing": "", "mismatched": "not-the-state"} {
 		t.Run(name, func(t *testing.T) {
@@ -161,9 +146,7 @@ func TestAMissingOrMismatchedStateIsRefused(t *testing.T) {
 	}
 }
 
-// TestACallbackCarryingTheProvidersErrorIsRefused holds that a callback that
-// carries the provider's own error ends as a refusal before any other parameter
-// is read, so no request is made.
+// TestACallbackCarryingTheProvidersErrorIsRefused holds that the provider's error is refused before any other parameter is read.
 func TestACallbackCarryingTheProvidersErrorIsRefused(t *testing.T) {
 	mock := newGitHubMock(t)
 	m := methodFor(mock)
@@ -183,9 +166,7 @@ func TestACallbackCarryingTheProvidersErrorIsRefused(t *testing.T) {
 	}
 }
 
-// TestAnExchangeTheProviderRefusesIsRefused holds that an exchange the provider
-// answers with an OAuth error — what a mismatched PKCE verifier or a spent code
-// produces — is a refusal and not an outage, and that no read follows it.
+// TestAnExchangeTheProviderRefusesIsRefused holds that an OAuth error on exchange is a refusal, not an outage, and no read follows.
 func TestAnExchangeTheProviderRefusesIsRefused(t *testing.T) {
 	mock := newGitHubMock(t)
 	mock.setToken(400, "invalid_grant")
@@ -202,10 +183,7 @@ func TestAnExchangeTheProviderRefusesIsRefused(t *testing.T) {
 	}
 }
 
-// TestAnAddressNeedsBothMarkers holds the email rule: only an entry that is both
-// primary and verified produces an address, and an account with none is proven
-// with an empty address and the marker false rather than being refused. The
-// address /user carries is present in every case and is never the one used.
+// TestAnAddressNeedsBothMarkers holds that only a primary and verified entry gives an address, and none leaves it empty rather than refusing.
 func TestAnAddressNeedsBothMarkers(t *testing.T) {
 	cases := []struct {
 		name         string
@@ -284,9 +262,7 @@ func TestAnAccountWithNoNumberIsRefused(t *testing.T) {
 	}
 }
 
-// TestTheOutboundClientRefusesANonPublicAddress holds that the reads go through
-// the restricted client: with the production client the loopback mock is not
-// reachable, which is the provider being unable to answer and not a refusal.
+// TestTheOutboundClientRefusesANonPublicAddress holds that the restricted client cannot reach loopback, which reads as an outage.
 func TestTheOutboundClientRefusesANonPublicAddress(t *testing.T) {
 	mock := newGitHubMock(t)
 	m := methodWithoutLoopback(mock)
@@ -299,9 +275,7 @@ func TestTheOutboundClientRefusesANonPublicAddress(t *testing.T) {
 	}
 }
 
-// TestTheMethodServesLoginLinkAndStepUpOnly holds the purposes: an external
-// identity proves a login, a link and a step-up on an account with no factor,
-// and an enrollment is not something it proves.
+// TestTheMethodServesLoginLinkAndStepUpOnly holds that it serves login, link and step-up and not enrollment.
 func TestTheMethodServesLoginLinkAndStepUpOnly(t *testing.T) {
 	m := methodFor(newGitHubMock(t))
 	for _, purpose := range []string{authn.PurposeLogin, authn.PurposeLink, authn.PurposeStepUp} {
@@ -317,9 +291,7 @@ func TestTheMethodServesLoginLinkAndStepUpOnly(t *testing.T) {
 	}
 }
 
-// TestAnswerRefusesASubmitAndAnUnknownStep holds that a callback route the
-// method did not write into cannot be walked to a proof: a submitted answer and
-// a step the method never named are refused.
+// TestAnswerRefusesASubmitAndAnUnknownStep holds that a submitted answer and an unnamed step are refused.
 func TestAnswerRefusesASubmitAndAnUnknownStep(t *testing.T) {
 	m := methodFor(newGitHubMock(t))
 	submit, err := m.Answer(t.Context(), authn.FlowState{Purpose: authn.PurposeLogin, Step: stepRedirect},
@@ -404,9 +376,7 @@ func TestReadStateRejectsWhatItDidNotWrite(t *testing.T) {
 	}
 }
 
-// TestAnswerRefusesAnEmptyCode holds that a callback carrying an empty code is
-// refused locally, without an exchange: the token endpoint must never be reached
-// with no code.
+// TestAnswerRefusesAnEmptyCode holds that an empty code is refused locally and never reaches the token endpoint.
 func TestAnswerRefusesAnEmptyCode(t *testing.T) {
 	mock := newGitHubMock(t)
 	m := methodFor(mock)
@@ -421,9 +391,7 @@ func TestAnswerRefusesAnEmptyCode(t *testing.T) {
 	}
 }
 
-// TestAnswerRefusesEachGuardWithAValidRecord pins the four pre-guards of Answer
-// separately: each negative vector carries a valid Begin record and an otherwise
-// provable callback, so only the guard itself can refuse it.
+// TestAnswerRefusesEachGuardWithAValidRecord pins each of the four pre-guards with a valid record and an otherwise provable callback.
 func TestAnswerRefusesEachGuardWithAValidRecord(t *testing.T) {
 	newRec := func(t *testing.T) (*method, *githubMock, []byte, string) {
 		mock := newGitHubMock(t)
@@ -532,9 +500,7 @@ func TestFirstReadsTheFormOfAPostBinding(t *testing.T) {
 	}
 }
 
-// TestAnEmptyPrimaryVerifiedAddressIsSkipped holds that an entry that is primary
-// and verified but carries no address is skipped, so it cannot shadow a later
-// entry that does.
+// TestAnEmptyPrimaryVerifiedAddressIsSkipped holds that an empty address does not shadow a later entry that has one.
 func TestAnEmptyPrimaryVerifiedAddressIsSkipped(t *testing.T) {
 	mock := newGitHubMock(t)
 	mock.setUser(githubUser{ID: 1, Login: "ada"}, "", 0)
@@ -590,9 +556,7 @@ func TestACancelledContextIsUnavailable(t *testing.T) {
 	}
 }
 
-// TestAReadableButUndecodableAccountIsAnOutage holds that a read the provider
-// answers 200 to whose body does not decode is the provider being unable to
-// answer (an outage), not a refusal.
+// TestAReadableButUndecodableAccountIsAnOutage holds that a 200 body that does not decode is an outage, not a refusal.
 func TestAReadableButUndecodableAccountIsAnOutage(t *testing.T) {
 	mock := newGitHubMock(t)
 	mock.setUser(githubUser{ID: 1, Login: "ada"}, "", 0)

@@ -11,24 +11,14 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The directions a setting is moved in that relax a check. A longer-lived flow, a
-// login method taken off the disabled list, a delivery mode added, the
-// source-address pre-throttle turned off: each lets a request through that the
-// declared default would have refused, or widens what a login may ask for.
 const (
 	dirIncrease     = "increase"
 	dirAddMember    = "add-member"
 	dirRemoveMember = "remove-member"
 	dirToZero       = "to-zero"
-	// dirRelax is the direction of an explicit relaxation switch: the switch moved
-	// from its strict value to the value that lets a request through. The events
-	// contract names this class relax whatever the switch's value type is.
-	dirRelax = "relax"
+	dirRelax        = "relax"
 )
 
-// relaxing is, for each setting of this module whose move relaxes a check, the
-// direction it relaxes in. A setting absent from the table relaxes nothing and
-// is not watched.
 var relaxing = map[string]string{
 	flowTTLPath:                dirIncrease,
 	disabledMethodsPath:        dirRemoveMember,
@@ -38,19 +28,11 @@ var relaxing = map[string]string{
 	passwordResetTicketTTLPath: dirIncrease,
 }
 
-// relaxedAction is the name of the audit record of a setting moved to a more
-// permissive value, and relaxedOutcome its outcome. The record names the key and
-// the direction and never the value.
 const (
 	relaxedAction  = "authn.settings.relaxed"
 	relaxedOutcome = "relaxed"
 )
 
-// subscribe registers the settings-change subscriber, and only when both the
-// event bus and the settings store are present: a bus with no store publishes a
-// change this module holds no setting to judge, and a store with no bus carries
-// no change to this module. It runs in Init, where the bus accepts
-// subscriptions.
 func (p *product) subscribe() {
 	if p.bus == nil || p.store == nil {
 		return
@@ -58,12 +40,6 @@ func (p *product) subscribe() {
 	p.bus.Subscribe(settings.ChangedEventType, ModuleName, p.onSettingsChanged)
 }
 
-// onSettingsChanged is the subscriber of the settings module's change event. A
-// change to one of this module's settings in the direction that relaxes a check
-// is a Warn and a best-effort audit record, and nothing else: the settings store
-// has no access control of its own and cannot be made to refuse, so what this
-// module guarantees is that the change is visible after the fact. The handler is
-// idempotent and never fails an event.
 func (p *product) onSettingsChanged(ctx context.Context, evt event.Event) error {
 	var change settings.Change
 	if err := event.DecodePayload(evt.Payload, &change); err != nil {
@@ -93,14 +69,10 @@ func (p *product) onSettingsChanged(ctx context.Context, evt event.Event) error 
 	return nil
 }
 
-// relaxes reports whether the change moved the key in its relaxing direction. A
-// layer that held no row reads as the declared default, which is the strict
-// direction of every watched setting.
+// relaxes treats a layer that held no row as the declared default, the strict direction of every watched setting.
 func relaxes(direction, key, oldText string, oldEmpty bool, newText string, newEmpty bool) bool {
 	switch direction {
 	case dirRelax:
-		// An absent layer reads as the declared default, which is the strict value
-		// of every switch watched this way.
 		before := oldText
 		if oldEmpty {
 			before = passwordResetClosed
@@ -130,10 +102,7 @@ func relaxes(direction, key, oldText string, oldEmpty bool, newText string, newE
 	return after < before
 }
 
-// listValue reads the text of a list setting as its members, or the declared
-// default when the layer held no row. The disabled-methods switch has the
-// password method filtered out of both sides, since it is not a member the
-// deployment can turn off and a raw value that named it is not a relaxation.
+// listValue filters the password method out of both sides: it is not a member a deployment can turn off.
 func listValue(key, text string, empty bool) []string {
 	if empty {
 		list, _ := parseList(declaredList(key))
@@ -146,8 +115,6 @@ func listValue(key, text string, empty bool) []string {
 	return withoutPasswordMember(key, list)
 }
 
-// withoutPasswordMember drops the password method from a disabled-methods list
-// and leaves every other setting's list alone.
 func withoutPasswordMember(key string, list []string) []string {
 	if key != disabledMethodsPath {
 		return list
@@ -156,8 +123,6 @@ func withoutPasswordMember(key string, list []string) []string {
 	return kept
 }
 
-// declaredList is the declared default of one of the watched list settings, as
-// the comparison reads it.
 func declaredList(key string) string {
 	switch key {
 	case disabledMethodsPath:
@@ -168,7 +133,6 @@ func declaredList(key string) string {
 	return ""
 }
 
-// addsMember reports whether the new list admits a member the old one did not.
 func addsMember(before, after []string) bool {
 	held := make(map[string]bool, len(before))
 	for _, member := range before {
@@ -182,7 +146,6 @@ func addsMember(before, after []string) bool {
 	return false
 }
 
-// removesMember reports whether the old list held a member the new one does not.
 func removesMember(before, after []string) bool {
 	held := make(map[string]bool, len(after))
 	for _, member := range after {
@@ -196,9 +159,6 @@ func removesMember(before, after []string) bool {
 	return false
 }
 
-// numberValue reads the text of a numeric setting as a number to compare, in the
-// unit of the setting: a count as itself and a duration in nanoseconds. A layer
-// that held no row reads as the declared default.
 func numberValue(key, text string, empty bool) (int64, bool) {
 	if empty {
 		return declaredNumber(key)
@@ -210,8 +170,6 @@ func numberValue(key, text string, empty bool) (int64, bool) {
 	return n, err == nil
 }
 
-// declaredNumber is the declared default of one of the watched numeric settings,
-// as the comparison reads it.
 func declaredNumber(key string) (int64, bool) {
 	switch key {
 	case flowTTLPath:

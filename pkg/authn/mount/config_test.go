@@ -9,12 +9,9 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 )
 
-// gateBody is the configuration body that writes items under authn.gate.
 func gateBody(items string) string { return `{"authn":{"gate":{` + items + `}}}` }
 
-// TestTheKeysAreReadFromTheGatewaysSectionWithItsDefaults holds what the module
-// reads and what it reads when nothing is written: each scope's base path
-// defaults to the path taxonomy's, and the other keys are empty.
+// TestTheKeysAreReadFromTheGatewaysSectionWithItsDefaults holds each scope's base default and the empty remaining keys.
 func TestTheKeysAreReadFromTheGatewaysSectionWithItsDefaults(t *testing.T) {
 	want := defaultBases()
 	got, err := readSettings(newReader(t, `{}`))
@@ -38,9 +35,7 @@ func TestTheKeysAreReadFromTheGatewaysSectionWithItsDefaults(t *testing.T) {
 	}
 }
 
-// TestAConfigurationTheModuleCannotMountOnFailsTheStartWithTheKeyNamed holds each
-// refusal the module makes, through the whole start: the sentinel, the key in the
-// text, and no route registered.
+// TestAConfigurationTheModuleCannotMountOnFailsTheStartWithTheKeyNamed holds the sentinel, the named key and no registration.
 func TestAConfigurationTheModuleCannotMountOnFailsTheStartWithTheKeyNamed(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -91,9 +86,7 @@ func TestAConfigurationTheModuleCannotMountOnFailsTheStartWithTheKeyNamed(t *tes
 	}
 }
 
-// TestAConfigurationTheModuleMountsOnIsAccepted is the control for the refusals:
-// each value written the allowed way starts, so a refusal above is the value's
-// and not the surrounding configuration's.
+// TestAConfigurationTheModuleMountsOnIsAccepted controls the refusals by starting with each value written the allowed way.
 func TestAConfigurationTheModuleMountsOnIsAccepted(t *testing.T) {
 	for _, c := range []struct{ name, items string }{
 		{"an https public URL", `"mount":{"public-url":"https://app.example.com"}`},
@@ -120,9 +113,7 @@ func TestAConfigurationTheModuleMountsOnIsAccepted(t *testing.T) {
 	}
 }
 
-// TestARefusalNeverCopiesAValueThatMayCarryASecret holds that the text of a
-// refusal does not repeat user information, a query or a fragment written into a
-// URL where none belongs, and names a trusted origin by its position.
+// TestARefusalNeverCopiesAValueThatMayCarryASecret holds that a refusal text repeats no user information and names origins by position.
 func TestARefusalNeverCopiesAValueThatMayCarryASecret(t *testing.T) {
 	const secret = "hunter2"
 	for _, c := range []struct{ name, items string }{

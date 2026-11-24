@@ -14,14 +14,11 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The two carriers a start may ask the flow token to travel in.
 const (
 	bindingCookie = "cookie"
 	bindingHeader = "header"
 )
 
-// startFlow begins a login flow. It reads no cookie, so a stale session cookie
-// in the browser does not stand in the way of logging in.
 func (r *routes) startFlow(ctx context.Context, in startInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	if !r.admitSends(c) {
@@ -104,9 +101,6 @@ func (r *routes) startFlow(ctx context.Context, in startInput, meta *speedhttp.M
 	return c.result()
 }
 
-// startAuthenticated begins a link, a step-up or an enrollment on the identity
-// the gateway authenticated. An impersonating identity is not refused: the flow
-// is bound to the effective account and runs on the operator's own session.
 func (r *routes) startAuthenticated(ctx context.Context, in startAuthenticatedInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	id, ok := authn.FromContext(c.ctx)
@@ -120,10 +114,6 @@ func (r *routes) startAuthenticated(ctx context.Context, in startAuthenticatedIn
 		c.fail(mount.CodeBadRequest)
 		return c.result()
 	}
-	// A link binds an external identity, an identity surface the platform gates
-	// on a proved email address. The gate is checked before any record is
-	// written, so a refused start leaves nothing behind; a state that cannot be
-	// read is a 503 and never a pass. Step-up and enroll are not gated.
 	if in.Purpose == authn.PurposeLink {
 		signup, err := r.verification.SignupStateOf(c.ctx, id.Account())
 		if err != nil {
@@ -257,25 +247,6 @@ func (r *routes) startAuthenticated(ctx context.Context, in startAuthenticatedIn
 	return c.result()
 }
 
-// stepUpStart decides where a step-up flow starts and which method a first
-// step runs. It asks the policy with the session's methods as the proof and the
-// effective account as the requirement: the effective account's factors decide
-// whether a second factor is needed, while the factors that may be offered are
-// the ones the session's own account (the operator, under an impersonation)
-// holds. A factor registered before the session authenticated keeps the flow at
-// the second factor. When every factor was registered during the session, the
-// flow starts at a first factor and offers those factors as the second step:
-// proving the first factor again is what lets them strengthen the session. That
-// first factor is the method the request names when the deployment takes it in;
-// a request that names none, or names one the deployment does not take in,
-// starts at the password instead. An account with no password to prove again,
-// and no usable method to start with, is refused as insufficient, the same
-// answer as an account with factors none of which may strengthen this session.
-// A request that names the password an account cannot prove is the bad request
-// a method this deployment does not take in gets. A start may name one factor to
-// exclude from the offered list; when that leaves no factor at all, the deleting
-// caller's last factor, a password proved again completes the flow on its own.
-// An account without a password still gets the insufficient answer.
 func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, requirement authn.AccountID, requested, excluded string) (start, method string, offered []factorView, insufficient bool, err error) {
 	firstProof := authn.Proof{Methods: status.Methods}
 	outcome, factors, err := r.mfa.Require(ctx, status.Account, requirement, firstProof)
@@ -283,9 +254,6 @@ func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, re
 		return "", "", nil, false, err
 	}
 	if outcome == authn.MFAFactor {
-		// The caller may exclude one factor -- the one it is about to delete.
-		// Excluding it never widens what may strengthen the session: it only
-		// removes an entry from the offered list.
 		candidates := factors
 		if excluded != "" {
 			candidates = make([]authn.FactorRecord, 0, len(factors))
@@ -297,9 +265,6 @@ func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, re
 		}
 		usable := make([]authn.FactorRecord, 0, len(candidates))
 		for _, f := range candidates {
-			// A factor activated at or after the session's authentication time
-			// was registered during that login and may not strengthen it until
-			// the account proves its password again.
 			if f.ActivatedAt.Before(status.AuthTime) {
 				usable = append(usable, f)
 			}
@@ -307,17 +272,9 @@ func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, re
 		if len(usable) > 0 {
 			return stateSecond, "", factorViews(usable), false, nil
 		}
-		// No factor may strengthen the session yet. A non-empty list with no
-		// factor activated before the session authenticated is the case a
-		// password proved again unlocks.
 		if len(factors) == 0 {
 			return "", "", nil, true, nil
 		}
-		// Every factor the account held was excluded: the caller is deleting
-		// the last one it could prove. A password proved again is the only
-		// door left, so the deletion can still complete; it is also the only
-		// way out when the reader lost the factor's device. An account with no
-		// password is sent to re-login instead.
 		if len(candidates) == 0 {
 			hasPassword, perr := r.accountHasPassword(ctx, status.Account)
 			if perr != nil {
@@ -331,11 +288,6 @@ func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, re
 			}
 			return stateFirst, methodPassword, nil, false, nil
 		}
-		// No factor may strengthen the session yet. A first factor the request
-		// names, and the deployment takes in, is what the person proves again;
-		// proving it lets the factors registered during this session strengthen
-		// the session. Only a request that names none, or names one this
-		// deployment does not take in, falls back to the password.
 		if requested != "" {
 			if _, ok := r.method(requested); ok {
 				if cerr := r.checkStartMethod(ctx, status.Account, requested); cerr != nil {
@@ -359,11 +311,6 @@ func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, re
 	if _, ok := r.method(requested); !ok {
 		return "", "", nil, false, fmt.Errorf("%w: the step-up names a method not taken in", authn.ErrInvalidArgument)
 	}
-	// An account with no factor proves again the first-factor channel its
-	// session was established with, and nothing else (REQ-security-016). Any
-	// other assembled method is refused before a record is written or a step
-	// begins, so a password session cannot start an SMS code and an SMS session
-	// cannot start a password.
 	if !r.stepUpChannel(status, requested) {
 		return "", "", nil, false, fmt.Errorf("%w: the step-up names a method the session was not established with", authn.ErrInvalidArgument)
 	}
@@ -373,12 +320,6 @@ func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, re
 	return stateFirst, requested, nil, false, nil
 }
 
-// stepUpChannel reports whether name is the first-factor channel the session was
-// established with, which is the only first factor an account with no factors
-// may prove again (REQ-security-016). A password proves the password method and
-// an SMS code the SMS method; a redirect method proves an external identity,
-// which a session records as one of the OAuth, OIDC or SAML methods. A method
-// this rule cannot place is never the session's channel.
 func (r *routes) stepUpChannel(status authn.SessionStatus, name string) bool {
 	switch name {
 	case methodPassword:
@@ -399,13 +340,6 @@ func (r *routes) stepUpChannel(status authn.SessionStatus, name string) bool {
 	})
 }
 
-// checkStartMethod holds a first factor a step-up names to what the account can
-// prove. The password is only serviceable when the account holds one to prove
-// again; a request that names it otherwise is the same bad request as one that
-// names a method the deployment does not take in, refused before any record is
-// written rather than as a failed proof later. The account checked is the one
-// the step proves: the session's own account, which the operator is even under
-// an impersonation.
 func (r *routes) checkStartMethod(ctx context.Context, account authn.AccountID, requested string) error {
 	if requested != methodPassword {
 		return nil
@@ -420,8 +354,6 @@ func (r *routes) checkStartMethod(ctx context.Context, account authn.AccountID, 
 	return nil
 }
 
-// accountHasPassword reports whether the account can prove a password again:
-// it is an enabled user account holding a password credential.
 func (r *routes) accountHasPassword(ctx context.Context, account authn.AccountID) (bool, error) {
 	acct, err := r.accounts.Get(ctx, account)
 	switch {
@@ -433,11 +365,6 @@ func (r *routes) accountHasPassword(ctx context.Context, account authn.AccountID
 	return acct.Kind == authn.KindUser && acct.Status == authn.StatusActive && acct.PasswordSet, nil
 }
 
-// startRequirement checks the start requirement a purpose asks for. A link and
-// an enrollment ask for the account's security requirement; a step-up asks for
-// nothing beyond the identity the gateway stamped. It also reports whether that
-// requirement was the fresh local multi-factor a factor-holding account asks
-// for, which the flow records so its completion is held to the same one.
 func (r *routes) startRequirement(c *call, id authn.Identity, purpose string) (requireMulti, ok bool) {
 	if purpose != authn.PurposeLink && purpose != authn.PurposeEnroll {
 		return false, true
@@ -455,27 +382,13 @@ func (r *routes) startRequirement(c *call, id authn.Identity, purpose string) (r
 	return requireMulti, true
 }
 
-// applyEnroll drives a registration step through the multi-factor module. kind is
-// the factor kind a first step names and is empty on a later one; fields are the
-// request's own input, forwarded to the factor, whose step decides what it needs.
 func (r *routes) applyEnroll(c *call, token, echo string, rec record, raw []byte, kind string, fields map[string]string) {
-	// The multi-factor module makes the pending row active on the step that
-	// completes a registration, and that step runs before the flow's completion
-	// review. An impersonating flow therefore re-checks its record here, at the
-	// entry to the step that can enable the factor: a record that lapsed in the
-	// background -- by expiry, a disabled initiator or target, or a removed
-	// membership -- does not land a factor on the account the flow was started
-	// for.
+	// An impersonating flow re-checks its record at the entry to the step that can enable the factor, which runs before the completion review.
 	if rec.Impersonation != "" && !r.recordHolds(c, rec) {
 		return
 	}
 	f := r.flowState(rec, token)
 	in := authn.StepInput{Action: authn.InputSubmit, Fields: fields, Client: c.clientInfo()}
-	// The registration's terminal audit row is written by the multi-factor
-	// module from the context the step runs under. The answer route is public
-	// and carries no identity, so an impersonating flow derives one from its
-	// record here; a flow the account's own holder started keeps the anonymous
-	// context its row has always had.
 	ctx := c.ctx
 	if rec.Impersonation != "" {
 		ctx = r.flowAuditContext(c.ctx, rec)
@@ -513,19 +426,10 @@ func (r *routes) applyEnroll(c *call, token, echo string, rec record, raw []byte
 		recalled := step.RecordOf(got)
 		rec.MFA.Enrolled = recalled.ID
 		if rec.MFA.EnrollMulti {
-			// A tenant's requirement caused this registration, so the login does
-			// not complete here: the account proves its password again, and only
-			// then is the factor just made active used as the second factor. A
-			// factor registered during the session may strengthen it only after
-			// the password is proved again.
 			rec.State = stateReprove
 			rec.Method = methodPassword
 			rec.MethodStep = ""
 			rec.MethodState = nil
-			// The same call a step-up uses to prove a first factor again: it
-			// begins the password method and, when it prompts, swaps the record
-			// and answers the step. The record goes from enroll straight to
-			// reprove in that one swap.
 			r.applyFirstBegin(c, token, echo, rec, raw, nil, "")
 			return
 		}
@@ -537,17 +441,10 @@ func (r *routes) applyEnroll(c *call, token, echo string, rec record, raw []byte
 		}
 		writeComplete(c, rec)
 	case step.KindRefused:
-		// A registration step refused for a malformed input is a bad request,
-		// not a credential that did not hold: a label outside its domain never
-		// reached a factor to check.
 		if errors.Is(step.CauseOf(got), authn.ErrInvalidArgument) {
 			c.fail(mount.CodeBadRequest)
 			return
 		}
-		// The SMS factor refuses an account with no verified phone: the factor
-		// binds a number the account already proved, so the enrollment has a
-		// precondition the client can meet. That is not a credential that did not
-		// hold, and it keeps its own 403 rather than the failed login.
 		if errors.Is(step.CauseOf(got), authn.ErrPhoneRequired) {
 			c.forbidden(mount.CodePhoneRequired)
 			return
@@ -567,10 +464,6 @@ func (r *routes) applyEnroll(c *call, token, echo string, rec record, raw []byte
 	}
 }
 
-// checkFields holds one request's input to its bounds: at most maxInputFields
-// fields, each at most maxBytes long. A start request's input is bounded by
-// maxStartFieldBytes; a client's answer by maxAnswerFieldBytes, which is larger
-// because an answer may carry a WebAuthn credential.
 func checkFields(fields map[string]string, maxBytes int) error {
 	if len(fields) > maxInputFields {
 		return fmt.Errorf("%w: the input holds more than %d fields", authn.ErrInvalidArgument, maxInputFields)
@@ -583,14 +476,6 @@ func checkFields(fields map[string]string, maxBytes int) error {
 	return nil
 }
 
-// admitSends is the read-only half of the source-address pre-throttle, checked
-// at a request's entry before any method runs: a bucket already at its limit
-// refuses the request with 429, so the call that would cross the limit sends
-// nothing. It charges nothing itself; chargeSends adds what a call reports. A
-// layer that is off (limit 0), an empty bucket and a counter that cannot be read
-// all admit. A counter that cannot be read skips the layer and writes a Warn,
-// because the layer is only a coarse source-address load shield and the
-// authority is the failure back-off in the database.
 func (r *routes) admitSends(c *call) bool {
 	limit := r.settings.ipLimit()
 	if limit <= 0 {
@@ -607,8 +492,6 @@ func (r *routes) admitSends(c *call) bool {
 	}
 	count, err := strconv.ParseFloat(string(value), 64)
 	if err != nil {
-		// A value this layer did not write as a count: skip the layer rather
-		// than guess at it, and say so.
 		r.logger.Warn(ModuleName+": the source-address pre-throttle read a count it could not parse, so it is skipped",
 			"cause", err.Error())
 		return true
@@ -620,12 +503,6 @@ func (r *routes) admitSends(c *call) bool {
 	return true
 }
 
-// chargeSends charges the n verification messages one call sent against the
-// request address's per-minute bucket and reports false, with the reply already
-// set to throttled, when the count passes the limit. A call is charged for what
-// it reports, so a call that sent nothing spends nothing and one that reports
-// two sends spends two. A layer that is off (limit 0) charges nothing. A counter
-// that cannot be written skips the layer and writes a Warn, as admitSends does.
 func (r *routes) chargeSends(c *call, n int) bool {
 	limit := r.settings.ipLimit()
 	if limit <= 0 {
@@ -644,12 +521,10 @@ func (r *routes) chargeSends(c *call, n int) bool {
 	return true
 }
 
-// sourceBucketKey is one source address's one-minute message bucket.
 func (r *routes) sourceBucketKey(c *call) string {
 	return "authn:ip:" + c.clientIP + ":" + r.clock.Now().Format("200601021504")
 }
 
-// isSessionGone reports whether a session error means the session is not usable.
 func isSessionGone(err error) bool {
 	return errors.Is(err, authn.ErrSessionNotFound) || errors.Is(err, authn.ErrSessionRevoked)
 }

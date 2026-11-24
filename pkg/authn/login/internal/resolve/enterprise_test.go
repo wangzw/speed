@@ -22,12 +22,8 @@ func wantNamedLinkRequired(t *testing.T, err error, want string) {
 	}
 }
 
-// A5: an enterprise identity with no binding.
-
+// TestEnterpriseDomainMustBeVerifiedForTheProvidersTenant checks that an unverified domain is refused and nothing written.
 func TestEnterpriseDomainMustBeVerifiedForTheProvidersTenant(t *testing.T) {
-	// Someone who administers a provider can make it declare any address. The
-	// address's domain has to be one the provider's own tenant verified, and the
-	// accounts that hold the address are not looked at before that.
 	for _, tc := range []struct {
 		name  string
 		email string
@@ -65,6 +61,8 @@ func TestEnterpriseDomainMustBeVerifiedForTheProvidersTenant(t *testing.T) {
 	}
 }
 
+// TestEnterpriseWithoutAnAddressIsNotProvisioned checks that an enterprise
+// login carrying no address is refused as not provisioned and writes nothing.
 func TestEnterpriseWithoutAnAddressIsNotProvisioned(t *testing.T) {
 	e := newEnv(t, withProvider(authn.ProvisioningJIT, false))
 	_, err := e.resolve(enterprise("u1", ""))
@@ -76,6 +74,7 @@ func TestEnterpriseWithoutAnAddressIsNotProvisioned(t *testing.T) {
 	}
 }
 
+// TestEnterpriseDomainIsRefusedByDefaultWhenTheRegisterFails checks that a failed domain read refuses the login.
 func TestEnterpriseDomainIsRefusedByDefaultWhenTheRegisterFails(t *testing.T) {
 	boom := errors.New("register down")
 	e := newEnv(t, withProvider(authn.ProvisioningJIT, false))
@@ -86,10 +85,7 @@ func TestEnterpriseDomainIsRefusedByDefaultWhenTheRegisterFails(t *testing.T) {
 	}
 }
 
-// A preprovisioned provider matches an account an administrator prepared for the
-// address: an administrator's own assertion and a provider's proof count, while
-// an import's unproven record and an invitation do not, because an invitation
-// proves no address.
+// TestEnterprisePreprovisionedMatchesAnAdministratorsAccount holds that an administrator's assertion and a provider's proof count, while an import and an invitation do not.
 func TestEnterprisePreprovisionedMatchesAnAdministratorsAccount(t *testing.T) {
 	for _, via := range []string{authn.VerifiedViaAdmin, "idp:google"} {
 		t.Run(via, func(t *testing.T) {
@@ -109,6 +105,7 @@ func TestEnterprisePreprovisionedMatchesAnAdministratorsAccount(t *testing.T) {
 	}
 }
 
+// TestEnterprisePreprovisionedRefusals checks the no-account, unproved-channel, invitation and disabled-account refusals.
 func TestEnterprisePreprovisionedRefusals(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -143,6 +140,7 @@ func TestEnterprisePreprovisionedRefusals(t *testing.T) {
 	}
 }
 
+// TestEnterpriseJITCreatesTheAccountAndItsMembership checks the user, binding and active membership, with no address written.
 func TestEnterpriseJITCreatesTheAccountAndItsMembership(t *testing.T) {
 	e := newEnv(t, withProvider(authn.ProvisioningJIT, false))
 	res, err := e.resolve(enterprise("u1", "ann@acme.com"))
@@ -170,6 +168,8 @@ func TestEnterpriseJITCreatesTheAccountAndItsMembership(t *testing.T) {
 	}
 }
 
+// TestEnterpriseJITIgnoresTheSignupSwitch checks that a just-in-time first login
+// opens an account even when the signup switch is closed.
 func TestEnterpriseJITIgnoresTheSignupSwitch(t *testing.T) {
 	e := newEnv(t, withProvider(authn.ProvisioningJIT, false), withSignup(SignupClosed))
 	if res, err := e.resolve(enterprise("u1", "ann@acme.com")); err != nil || res.Outcome != OutcomeCreated {
@@ -177,6 +177,7 @@ func TestEnterpriseJITIgnoresTheSignupSwitch(t *testing.T) {
 	}
 }
 
+// TestEnterpriseJITAddressTakenIsLinkRequired checks that a held address answers link-required whatever the merge setting.
 func TestEnterpriseJITAddressTakenIsLinkRequired(t *testing.T) {
 	// No login merges into the account an address belongs to, whatever the
 	// provider's merge_existing says: the login must bind explicitly.
@@ -199,9 +200,8 @@ func TestEnterpriseJITAddressTakenIsLinkRequired(t *testing.T) {
 	}
 }
 
+// TestEnterpriseAddressTakenEvenByAnUnprovedRecordIsLinkRequired checks that an unproved record also makes the login link-required.
 func TestEnterpriseAddressTakenEvenByAnUnprovedRecordIsLinkRequired(t *testing.T) {
-	// The address is a clue to an account whenever an account holds it; the
-	// channel that proved it does not turn the collision away.
 	e := newEnv(t, withProvider(authn.ProvisioningJIT, false))
 	e.s.seed(t, seed{id: "a1", status: authn.StatusActive, email: "ann@acme.com", emailVia: authn.VerifiedViaAdmin})
 	if _, err := e.resolve(enterprise("u1", "ann@acme.com")); !errors.Is(err, authn.ErrLinkRequired) {
@@ -212,6 +212,7 @@ func TestEnterpriseAddressTakenEvenByAnUnprovedRecordIsLinkRequired(t *testing.T
 	}
 }
 
+// TestEnterpriseIdentityIsHeldToItsProvider checks that a proof under another provider, tenant or namespace is an invalid argument.
 func TestEnterpriseIdentityIsHeldToItsProvider(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -234,6 +235,8 @@ func TestEnterpriseIdentityIsHeldToItsProvider(t *testing.T) {
 	}
 }
 
+// TestEnterpriseSAMLNamespaceIsItsProvidersToo checks that a SAML-keyed proof is
+// held to its provider the same way an OIDC one is.
 func TestEnterpriseSAMLNamespaceIsItsProvidersToo(t *testing.T) {
 	e := newEnv(t, withProvider(authn.ProvisioningJIT, false))
 	p := enterprise("u1", "ann@acme.com")
@@ -243,6 +246,7 @@ func TestEnterpriseSAMLNamespaceIsItsProvidersToo(t *testing.T) {
 	}
 }
 
+// TestEnterpriseWithoutARegisterIsAnUnavailableDependency checks that a login without a provider register reads as unavailable.
 func TestEnterpriseWithoutARegisterIsAnUnavailableDependency(t *testing.T) {
 	e := newEnv(t, withProvider(authn.ProvisioningJIT, false), withoutSSO())
 	_, err := e.resolve(enterprise("u1", "ann@acme.com"))
@@ -251,6 +255,8 @@ func TestEnterpriseWithoutARegisterIsAnUnavailableDependency(t *testing.T) {
 	}
 }
 
+// TestEnterpriseProviderRowThatCannotBeReadFailsTheLogin checks that an
+// enterprise login whose provider row cannot be found fails.
 func TestEnterpriseProviderRowThatCannotBeReadFailsTheLogin(t *testing.T) {
 	e := newEnv(t)
 	if _, err := e.resolve(enterprise("u1", "ann@acme.com")); err == nil {
@@ -258,6 +264,7 @@ func TestEnterpriseProviderRowThatCannotBeReadFailsTheLogin(t *testing.T) {
 	}
 }
 
+// TestEnterpriseUnknownProvisioningIsRefused checks that an unknown provisioning mode is an invalid argument and writes nothing.
 func TestEnterpriseUnknownProvisioningIsRefused(t *testing.T) {
 	e := newEnv(t, withProvider("surprise", true))
 	_, err := e.resolve(enterprise("u1", "ann@acme.com"))

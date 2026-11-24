@@ -24,21 +24,10 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The cases built on this file hold what only the real entry point and the real
-// gateway can decide: that a route this middleware guards is reached the way the
-// requirement says, and that the full header a client reads off a refusal is the
-// one the design names. The entry point, the gateway and the logging capability
-// are the real modules, on a real loopback port, with this package between the
-// gateway and the handler.
-
-// listeningMsg is the record the entry point writes once an endpoint's address is
-// bound.
 const listeningMsg = "an HTTP listener is listening"
 
-// waitBound bounds every request these cases send.
 const waitBound = 5 * time.Second
 
-// fakeVerifier is a credential-verifying backend that answers from a function.
 type fakeVerifier struct {
 	name    string
 	accepts authn.Accepts
@@ -51,14 +40,11 @@ func (f *fakeVerifier) Verify(_ context.Context, c authn.Credential) authn.Verdi
 	return f.verify(c)
 }
 
-// The credentials the backend below understands.
 const (
 	singleToken = "single"
 	multiToken  = "multi"
 )
 
-// stepUpBackend takes Bearer credentials: singleToken is a single-factor
-// identity, multiToken is a multi-factor one, and anything else does not hold.
 func stepUpBackend() *fakeVerifier {
 	return &fakeVerifier{
 		name:    "tokens",
@@ -80,7 +66,6 @@ func stepUpBackend() *fakeVerifier {
 	}
 }
 
-// backendModule registers a backend the way a backend subpackage does.
 func backendModule(v authn.Verifier) core.Module {
 	return core.Module{
 		Name:     "authn." + v.Name(),
@@ -92,9 +77,6 @@ func backendModule(v authn.Verifier) core.Module {
 	}
 }
 
-// who answers with the account the gateway made the caller out to be, so that a
-// case reads from the body that the request reached the handler past the
-// middleware.
 func who(c *gin.Context) {
 	id, ok := authn.FromContext(c.Request.Context())
 	if !ok {
@@ -104,8 +86,6 @@ func who(c *gin.Context) {
 	c.String(nethttp.StatusOK, string(id.Account()))
 }
 
-// protect is a module that registers one route on the entry point's own endpoint
-// with Require in front of it, the way a host's own module does.
 func protect(req authn.Requirement) core.Module {
 	return core.Module{
 		Name: "stand-in.protected",
@@ -125,7 +105,6 @@ func protect(req authn.Requirement) core.Module {
 	}
 }
 
-// recorder is a slog handler that keeps every record written to it.
 type recorder struct {
 	mu      sync.Mutex
 	records []slog.Record
@@ -149,7 +128,6 @@ func (h *recorder) recordsOf() []slog.Record {
 	return slices.Clone(h.records)
 }
 
-// attrText renders a record's attribute as the string it holds.
 func attrText(r slog.Record, key string) string {
 	var text string
 	r.Attrs(func(a slog.Attr) bool {
@@ -162,7 +140,6 @@ func attrText(r slog.Record, key string) string {
 	return text
 }
 
-// recordingLogging delivers the logging capability over a logger the case holds.
 type recordingLogging struct{ logger *slog.Logger }
 
 func (l recordingLogging) Named(string) *slog.Logger { return l.logger }
@@ -175,7 +152,6 @@ func (noRules) AddPattern(string, log.Matcher) {}
 
 var _ log.Logger = recordingLogging{}
 
-// loggingModule is the module that delivers the logging capability over logs.
 func loggingModule(logs *recorder) core.Module {
 	return core.Module{
 		Name:     "stand-in.logging",
@@ -186,14 +162,12 @@ func loggingModule(logs *recorder) core.Module {
 	}
 }
 
-// reply is what a client got back.
 type reply struct {
 	status int
 	header nethttp.Header
 	body   string
 }
 
-// send issues one request against the bound address.
 func send(t *testing.T, client *nethttp.Client, addr, method, path string, edits ...func(*nethttp.Request)) reply {
 	t.Helper()
 	req, err := nethttp.NewRequestWithContext(t.Context(), method, "http://"+addr+path, nil)
@@ -215,13 +189,10 @@ func send(t *testing.T, client *nethttp.Client, addr, method, path string, edits
 	return reply{status: resp.StatusCode, header: resp.Header, body: string(body)}
 }
 
-// bearer is an edit that puts a Bearer credential on a request.
 func bearer(token string) func(*nethttp.Request) {
 	return func(r *nethttp.Request) { r.Header.Set("Authorization", "Bearer "+token) }
 }
 
-// boundAddress reads the endpoint's bound address out of the records the entry
-// point wrote when it bound it.
 func boundAddress(logs *recorder, endpoint string) (string, error) {
 	for _, r := range logs.recordsOf() {
 		if r.Message == listeningMsg && attrText(r, "listener") == endpoint {
@@ -231,9 +202,6 @@ func boundAddress(logs *recorder, endpoint string) (string, error) {
 	return "", fmt.Errorf("the entry point wrote no record of binding endpoint %q", endpoint)
 }
 
-// runLive drives the real entry point, the real gateway, a stand-in verifying
-// backend and one route this middleware guards, to Serve, and hands the case the
-// running address. The assembly is stopped and closed when the case returns.
 func runLive(t *testing.T, req authn.Requirement, use func(client *nethttp.Client, addr string)) {
 	t.Helper()
 
@@ -267,9 +235,7 @@ func runLive(t *testing.T, req authn.Requirement, use func(client *nethttp.Clien
 				return err
 			}
 			client := &nethttp.Client{
-				Timeout: waitBound,
-				// A connection of its own per request, so that what the server
-				// does to one is seen by that request alone.
+				Timeout:   waitBound,
 				Transport: &nethttp.Transport{DisableKeepAlives: true},
 			}
 			use(client, addr)
@@ -281,12 +247,7 @@ func runLive(t *testing.T, req authn.Requirement, use func(client *nethttp.Clien
 	}
 }
 
-// TestAStepUpRouteOnTheRealGatewayAdmitsOnlyAStrongEnoughIdentity holds the
-// middleware on the assembly it is meant for: a route a host guarded with a
-// multi-factor requirement answers a single-factor credential with the step-up
-// 401 and its full challenge, lets a multi-factor credential through, and a
-// request with no credential at all is refused by the gateway before the
-// middleware, with a different challenge — so the two 401s are told apart.
+// TestAStepUpRouteOnTheRealGatewayAdmitsOnlyAStrongEnoughIdentity holds the guarded route's 401, an admitted multi-factor credential and the gateway's different 401.
 func TestAStepUpRouteOnTheRealGatewayAdmitsOnlyAStrongEnoughIdentity(t *testing.T) {
 	runLive(t, authn.Requirement{Assurance: authn.AssuranceMulti}, func(client *nethttp.Client, addr string) {
 		wantChallenge := `Bearer error="insufficient_user_authentication", error_description="` + stepUpDescription + `", acr_values="2"`
@@ -317,8 +278,6 @@ func TestAStepUpRouteOnTheRealGatewayAdmitsOnlyAStrongEnoughIdentity(t *testing.
 	})
 }
 
-// problemTypeOf reads the type member of a problem details body, and is empty for
-// a body that is not one.
 func problemTypeOf(t *testing.T, body string) string {
 	t.Helper()
 	var m map[string]any

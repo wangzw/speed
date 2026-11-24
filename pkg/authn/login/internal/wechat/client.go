@@ -1,34 +1,6 @@
-// Package wechat is the thin client the two WeChat login entries share. It
-// trades an authorization code for the identity it names and builds the address
-// the user agent is sent to for authorization; it is written here rather than
-// taken from a library, for the reasons the WeChat ADR records, and it binds no
-// WeChat SDK.
-//
-// # The secret never leaves this package
-//
-// WeChat's token exchange carries the application secret in the query string, so
-// the URL of the request is itself a credential. The one invariant of this
-// package is that a URL carrying the secret never leaves it: every error it
-// returns drops the request URL before it is handed back, and the *url.Error
-// net/http returns — whose text carries the whole URL — is unwrapped rather than
-// passed on.
-//
-// The client the default path builds wraps its transport in the trace and
-// logging transports. The logging transport records the method, host, path,
-// status, outcome and duration of each exchange and never the query, where the
-// secret and the code travel; a transport failure is recorded through the cause
-// underneath net/http's *url.Error, so the URL is dropped there too. A new
-// outbound path has to hold the same invariant, and the tests assert it for
-// every error each one can produce.
-//
-// # The outbound client
-//
-// The client sends through the restricted egress client by default, so a
-// destination that is not a public https address is refused before a secret is
-// put on the wire. A host does not configure this; a test names its own server
-// and client through [Options]. A client a test injects is used as it stands
-// and is not wrapped: the record is a property of the client this package
-// builds.
+// Package wechat is the thin client the two WeChat login entries share. Its one
+// invariant is that a URL carrying the application secret never leaves the
+// package.
 package wechat
 
 import (
@@ -107,6 +79,7 @@ var (
 // credentials with errors.Is, and the errcode reaches the log. The text carries
 // no part of the request.
 type RefusalError struct {
+	// Code is the provider's non-zero errcode.
 	Code  int
 	class error
 }
@@ -137,7 +110,8 @@ type Options struct {
 	// RootCAs and AllowLoopback shape the restricted client built when HTTP is
 	// nil, for a deployment that terminates its own certificate or a
 	// development run against a local stub.
-	RootCAs       *x509.CertPool
+	RootCAs *x509.CertPool
+	// AllowLoopback lets the restricted client reach a loopback address.
 	AllowLoopback bool
 }
 
@@ -238,8 +212,6 @@ func (c *Client) Exchange(ctx context.Context, code string) (Identity, error) {
 	return readToken(body)
 }
 
-// readToken reads a token response. A non-zero errcode is a refusal; a body that
-// is not a token response, or one that names no open id, is an outage.
 func readToken(body []byte) (Identity, error) {
 	var r tokenResponse
 	if err := json.Unmarshal(body, &r); err != nil {
@@ -254,8 +226,6 @@ func readToken(body []byte) (Identity, error) {
 	return Identity{OpenID: r.OpenID, UnionID: r.UnionID}, nil
 }
 
-// tokenResponse is the part of the provider's answer this client reads. Fields
-// it does not know are ignored: the provider may add to its answer.
 type tokenResponse struct {
 	AccessToken string `json:"access_token"`
 	ExpiresIn   int    `json:"expires_in"`
@@ -266,7 +236,6 @@ type tokenResponse struct {
 	ErrMsg      string `json:"errmsg"`
 }
 
-// classify names the kind of refusal a non-zero errcode is.
 func classify(code int) error {
 	switch code {
 	case errCodeInvalidCode, errCodeCodeUsed:

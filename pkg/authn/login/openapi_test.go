@@ -11,15 +11,7 @@ import (
 	kvmemory "github.com/vislake/speed/pkg/kv/memory"
 )
 
-// TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters holds the one thing
-// the OpenAPI fragment and the registrations have to agree on: the fragment is
-// the only source a generated client is built from, and the design leaves the
-// two free to drift with no failure signal at run time. The check drives the
-// module's own Init, through the real route-mounting module, and compares what
-// it registered there with what it declared.
-//
-// The key-value store is the real in-process one, because Init builds the flow
-// store over it.
+// TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters holds that the declared operations and the registered routes agree.
 func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 	stubs, config := routefixture.Assembly(t, Module())
 	stubs = append(stubs, kvmemory.Module())
@@ -45,11 +37,7 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 	})
 }
 
-// TestTheSignedInStartDeclaresTheContactRequiredRefusal holds the 403 of the
-// route that starts a flow on an identity already signed in: a `purpose=link`
-// flow is refused when the caller's self-registration has not verified an email
-// address, so the declared operation a generated client is built from names that
-// cause beside the refusal it shares with the other flow routes.
+// TestTheSignedInStartDeclaresTheContactRequiredRefusal holds that the signed-in start declares the contact-required 403 beside its shared refusal.
 func TestTheSignedInStartDeclaresTheContactRequiredRefusal(t *testing.T) {
 	var doc struct {
 		Paths map[string]map[string]struct {

@@ -7,8 +7,6 @@ import (
 	"encoding/json"
 )
 
-// stateVersion is the version of the state kept between the step that answered
-// the authorization URL and the step that handles the redirect back.
 const stateVersion = 1
 
 // methodState is the method's private state for one flow, kept by the engine as
@@ -24,15 +22,11 @@ type methodState struct {
 	Nonce    string `json:"nonce"`
 }
 
-// writeState writes the state the redirect step reads.
 func writeState(stateDigest, verifier, nonce string) []byte {
-	// A struct of an int and three strings always encodes.
 	b, _ := json.Marshal(methodState{Version: stateVersion, State: stateDigest, Verifier: verifier, Nonce: nonce})
 	return b
 }
 
-// readState reads the state writeState wrote. Anything else, empty state
-// included, names no drawn state, verifier or nonce.
 func readState(private []byte) (methodState, bool) {
 	var s methodState
 	dec := json.NewDecoder(bytes.NewReader(private))
@@ -44,7 +38,6 @@ func readState(private []byte) (methodState, bool) {
 	return s, true
 }
 
-// digest is the SHA-256 of a value, in hexadecimal.
 func digest(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])

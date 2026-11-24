@@ -15,56 +15,28 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// callbackGet handles the redirect a provider sends the user agent back with as
-// a browser navigation.
 func (r *routes) callbackGet(ctx context.Context, in callbackInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	reply, err := r.callback(c, in.Provider)
 	return r.landCallbackFailure(c, reply, err)
 }
 
-// callbackPost handles a provider's callback delivered as a cross-site form
-// post, which is how SAML's assertion consumer service is reached. The route is
-// outside the cross-origin check, and a cross-site post does not carry the Lax
-// flow cookie, so the route never handles the post itself: it answers the
-// bounce page, which posts the same form to the provider's resume route as a
-// same-origin navigation that carries the cookie.
 func (r *routes) callbackPost(ctx context.Context, in callbackInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	reply, err := r.bounce(c, in.Provider)
 	return r.landCallbackFailure(c, reply, err)
 }
 
-// callbackResume handles the form post the bounce page sends. It is an ordinary
-// route that keeps the cross-origin check, so a post that reaches it comes from
-// a page of this origin, and it runs the callback: the flow cookie binds the
-// post to the flow it started when that flow waits at the first factor for this
-// provider, and a post with no flow cookie, or with one whose flow cannot take
-// this callback, is an identity-provider-initiated sign-in.
 func (r *routes) callbackResume(ctx context.Context, in callbackInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	reply, err := r.callback(c, in.Provider)
 	return r.landCallbackFailure(c, reply, err)
 }
 
-// landingFragment is the URL fragment a failed navigation callback carries its
-// problem code in. A fragment never reaches the server, so the code stays out of
-// access logs and out of the Referer a page would otherwise send.
 const landingFragment = "authn_error"
 
-// landingEmailKey is the second key of that fragment, present only when a
-// link-required refusal named the masked address whose account collided.
 const landingEmailKey = "authn_email"
 
-// landCallbackFailure answers a failed callback that is a top-level navigation
-// by landing the user agent back in the product with the problem code in the URL
-// fragment, rather than answering a problem document a browser can only render
-// as JSON. The landing is the return target the flow recorded when the flow
-// serves a purpose other than login — the page that started it — and the
-// configured authn.login.callback-error-return-to otherwise. Anything this
-// cannot land keeps the problem document: a request that is not a navigation, a
-// landing page that cannot be read, and a landing page that does not pass the
-// return target rule.
 func (r *routes) landCallbackFailure(c *call, reply speedhttp.Reply, err error) (speedhttp.Reply, error) {
 	if err == nil || !c.navigation() {
 		return reply, err
@@ -76,8 +48,6 @@ func (r *routes) landCallbackFailure(c *call, reply speedhttp.Reply, err error) 
 	if checkReturnTo(landing, r.trustedOrigins) != nil {
 		return reply, err
 	}
-	// A landing page may carry a fragment of its own; the code replaces it,
-	// because a second "#" would sit inside the first fragment's text.
 	if i := strings.IndexByte(landing, '#'); i >= 0 {
 		landing = landing[:i]
 	}
@@ -86,12 +56,6 @@ func (r *routes) landCallbackFailure(c *call, reply speedhttp.Reply, err error) 
 	return c.result()
 }
 
-// maskEmail masks an address for a surface that names a collision: the first
-// rune of the local part, three asterisks, then the domain as written, so
-// ann@home.org becomes a***@home.org. An address that is not a single @ with a
-// local part and a domain on both sides masks to nothing rather than to a
-// misleading shape. The first rune is decoded, not sliced by byte, so a
-// multi-byte character is kept whole.
 func maskEmail(address string) string {
 	local, domain, ok := strings.Cut(address, "@")
 	if !ok || local == "" || domain == "" || strings.Contains(domain, "@") {
@@ -101,9 +65,6 @@ func maskEmail(address string) string {
 	return string(first) + "***@" + domain
 }
 
-// landingTarget is the fragment a failed navigation callback redirects with: the
-// problem code as authn_error, and, only when the refusal named a masked
-// address, that address as authn_email in the same query string.
 func landingTarget(landing, email string, err error) string {
 	target := landing + "#" + landingFragment + "=" + url.QueryEscape(problemCode(err))
 	if email != "" {
@@ -112,9 +73,6 @@ func landingTarget(landing, email string, err error) string {
 	return target
 }
 
-// problemCode is the machine-readable code a fault carries, or the unavailable
-// code for a fault that names none: a defect the engine cannot pin on the client
-// is answered to the user as a temporary outage.
 func problemCode(err error) string {
 	var fault speedhttp.Fault
 	if errors.As(err, &fault) {
@@ -125,10 +83,6 @@ func problemCode(err error) string {
 	return mount.CodeUnavailable
 }
 
-// callback handles the redirect an external party sends the user agent back
-// with. The engine moves the flow to processing before the method is asked, so
-// that a replayed authorization code or assertion loses the compare-and-swap and
-// is answered an invalid flow.
 func (r *routes) callback(c *call, provider string) (speedhttp.Reply, error) {
 	token, _, present := r.readBindingToken(c, false)
 	if !present {
@@ -139,42 +93,23 @@ func (r *routes) callback(c *call, provider string) (speedhttp.Reply, error) {
 	posted := c.req.Method == http.MethodPost
 	switch {
 	case posted && errors.Is(err, authn.ErrFlowInvalid):
-		// The cookie names no flow this request can use: the record is gone,
-		// cannot be read, or is bound to another token. It binds nothing, so the
-		// post is answered as one without the cookie.
 		r.callbackIDPInitiated(c, provider)
 		return c.result()
 	case err != nil:
 		r.fail(c, err)
 		return c.result()
 	}
-	// A posted callback whose flow has left the first factor, or waits for
-	// another provider, cannot take this post either. It is answered as a post
-	// without a binding, which only a provider that allows an IdP-initiated
-	// sign-in takes; every other provider refuses it as flow-invalid. The flow
-	// the cookie names is left as it stands. A GET keeps the answers below, so a
-	// refused link or step-up still lands on its own page.
 	if posted && (rec.State != stateFirst || rec.Provider != provider) {
 		r.callbackIDPInitiated(c, provider)
 		return c.result()
 	}
-	// A link, a step-up and an enrollment are started from a page of the product,
-	// so a failure of one of them lands the user agent back on that page rather
-	// than on the sign-in surface a failed login lands on.
 	if rec.Purpose != authn.PurposeLogin {
 		c.failureLanding = r.returnTarget(rec)
 	}
-	// A callback only needs the flow to exist and to be at the first factor: a
-	// link, a step-up and an enrollment started on POST flows/authenticated with
-	// a redirect method land their provider's callback on this very route.
 	if rec.State != stateFirst {
 		c.unauthorized(mount.CodeFlowInvalid)
 		return c.result()
 	}
-	// The path's provider must be the one the flow recorded before the method is
-	// asked: a social method records its own name, an enterprise provider records
-	// the identifier the start input named. A callback aimed at another provider
-	// is refused and never reaches a method.
 	if rec.Provider != provider {
 		c.unauthorized(mount.CodeFlowInvalid)
 		return c.result()
@@ -191,19 +126,12 @@ func (r *routes) callback(c *call, provider string) (speedhttp.Reply, error) {
 	return c.result()
 }
 
-// beginProcessing swaps a first-state flow to processing. A false result means
-// another callback already claimed it, or the record moved, and the request is
-// answered an invalid flow.
 func (r *routes) beginProcessing(c *call, token string, rec record, raw []byte) bool {
 	proc := rec
 	proc.State = stateProcessing
 	return r.swap(c, token, raw, proc)
 }
 
-// answerCallback runs the method's answer to a callback and moves the record out
-// of processing. A refusal, an outage or an unresolved account leaves the flow a
-// tombstone: the authorization code or assertion is spent and the user starts
-// again.
 func (r *routes) answerCallback(c *call, token string, rec record, m authn.LoginMethod) {
 	proc := rec
 	proc.State = stateProcessing
@@ -214,8 +142,6 @@ func (r *routes) answerCallback(c *call, token string, rec record, m authn.Login
 	}
 	form, ok := formValues(c)
 	if !ok {
-		// The posted body is over the callback's limit. It is refused before any
-		// method reads it, and the flow is left a tombstone.
 		failed := proc
 		failed.State = stateFailed
 		if !r.swap(c, token, procBytes, failed) {
@@ -241,9 +167,6 @@ func (r *routes) answerCallback(c *call, token string, rec record, m authn.Login
 	r.migrateCallback(c, token, procBytes, proc, got)
 }
 
-// migrateCallback turns a callback's answer into the next record state. The old
-// bytes are those of the processing record, so the second compare-and-swap
-// matches what the first one wrote.
 func (r *routes) migrateCallback(c *call, token string, old []byte, rec record, got authn.Step) {
 	if !r.recordSends(c, token, old, &rec, got) {
 		return
@@ -305,17 +228,6 @@ func (r *routes) migrateCallback(c *call, token string, old []byte, rec record, 
 	}
 }
 
-// callbackIDPInitiated answers a posted callback that carries no binding, either
-// no flow cookie or one whose flow cannot take this callback, and comes from an
-// enterprise provider that allows an identity-provider-initiated sign-in. It is
-// reached through the resume route, whose post the bounce page sends, and a GET
-// callback never reaches it. The engine creates a login flow on the spot, moves
-// it to processing and answers it like any other callback. Only an answer that
-// did not fail writes the new flow cookie, which lets a second factor or a
-// username step continue through flows/current; a refused post leaves the
-// browser's cookie, and the flow that cookie names, as they were. Without a
-// binding this path cannot defend against a login CSRF, which is why the
-// provider row leaves it off by default.
 func (r *routes) callbackIDPInitiated(c *call, provider string) {
 	if c.req.Method != http.MethodPost || r.sso == nil {
 		c.unauthorized(mount.CodeFlowInvalid)
@@ -365,10 +277,6 @@ func (r *routes) callbackIDPInitiated(c *call, provider string) {
 	}
 }
 
-// defaultReturnTarget is the target a callback lands the user agent on when the
-// flow recorded no return_to: the configured authn.login.default-return-to,
-// held to the same rule a recorded return target is, or "/" when it does not
-// pass that rule.
 func (r *routes) defaultReturnTarget() string {
 	ret := r.settings.defaultReturnTo()
 	if verr := checkReturnTo(ret, r.trustedOrigins); verr != nil {
@@ -377,15 +285,8 @@ func (r *routes) defaultReturnTarget() string {
 	return ret
 }
 
-// maxCallbackFormBytes is the bound on a callback's posted body, before the form
-// is parsed. The design gives SAML's ACS a 512 KiB body limit; the bound is
-// applied here, so an oversized POST is refused rather than read.
 const maxCallbackFormBytes = 512 << 10
 
-// formValues reads a posted form without consuming a JSON body, for SAML's POST
-// binding. The body is bounded before it is parsed; the second result is false
-// when the body is over the limit or does not parse, which the caller answers as
-// a refusal rather than handing a method a form it cannot trust.
 func formValues(c *call) (map[string][]string, bool) {
 	if c.req.Method != http.MethodPost {
 		return nil, true

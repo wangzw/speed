@@ -6,11 +6,7 @@ import (
 	"testing"
 )
 
-// TestLocaleOfPassesTheRequestLanguageThrough holds the engine's mapping of the
-// request's language: the locale the i18n layer settled into the context, or,
-// with no i18n layer, the first Accept-Language tag as written. It is not held to
-// a set — the SMS module resolves it against the languages its carrier declares —
-// so a tag of any language passes through, and an empty request names none.
+// TestLocaleOfPassesTheRequestLanguageThrough holds that localeOf takes the settled context locale, or the first Accept-Language tag as written.
 func TestLocaleOfPassesTheRequestLanguageThrough(t *testing.T) {
 	cases := []struct {
 		header string
@@ -19,8 +15,6 @@ func TestLocaleOfPassesTheRequestLanguageThrough(t *testing.T) {
 		{"", ""},
 		{"en-US,en;q=0.9", "en-US"},
 		{"en", "en"},
-		// A tag the old closed set did not hold is neither mapped nor dropped: it
-		// is passed through for the SMS module to resolve.
 		{"zh-Hans-CN", "zh-Hans-CN"},
 		{"ja-JP", "ja-JP"},
 		{"fr-FR", "fr-FR"},
@@ -40,9 +34,7 @@ func TestLocaleOfPassesTheRequestLanguageThrough(t *testing.T) {
 	}
 }
 
-// TestTheLanguageReachesTheFlowRecord holds the wiring: the language the engine
-// reads off the start request is the one the flow record keeps, which is what a
-// later SMS send reads and resolves.
+// TestTheLanguageReachesTheFlowRecord holds that the language read at start is the one the flow record keeps for a later SMS send.
 func TestTheLanguageReachesTheFlowRecord(t *testing.T) {
 	m := &redirectMethod{}
 	r := newRigMethod(t, m)

@@ -22,8 +22,6 @@ func TestExistingBindingLogsInAndTouchesOnlyDisplayFields(t *testing.T) {
 	if got := e.s.bindingsOf(id); len(got) != 1 || got[0].Email != "ann@new.example" {
 		t.Errorf("binding = %+v, want its display email refreshed", got)
 	}
-	// The address the provider declares now is not the account's address: the
-	// account's identifiers are exactly what they were.
 	ids := e.s.identifiersOf(id)
 	if len(ids) != 1 || ids[0].Value != "ann@home.org" {
 		t.Errorf("identifiers = %+v, want the original email alone", ids)
@@ -36,6 +34,8 @@ func TestExistingBindingLogsInAndTouchesOnlyDisplayFields(t *testing.T) {
 	}
 }
 
+// TestExistingBindingWithTheSameDisplayFieldsWritesNothing checks that a login
+// through an existing binding whose display fields already match writes nothing.
 func TestExistingBindingWithTheSameDisplayFieldsWritesNothing(t *testing.T) {
 	e := newEnv(t)
 	e.s.seed(t, seed{id: "a1", status: authn.StatusActive, bindings: [][2]string{{"google", "g1"}}})
@@ -47,6 +47,7 @@ func TestExistingBindingWithTheSameDisplayFieldsWritesNothing(t *testing.T) {
 	}
 }
 
+// TestExistingBindingKeepsTheStoredAddressWhenTheProviderDeclaresNone checks that the binding's stored address is kept.
 func TestExistingBindingKeepsTheStoredAddressWhenTheProviderDeclaresNone(t *testing.T) {
 	e := newEnv(t)
 	id := e.s.seed(t, seed{id: "a1", status: authn.StatusActive, bindings: [][2]string{{"github", "gh1"}}})
@@ -64,9 +65,9 @@ func TestExistingBindingKeepsTheStoredAddressWhenTheProviderDeclaresNone(t *test
 	}
 }
 
+// TestExistingBindingKeepsAnEnterpriseLoginOffTheMembership checks that an
+// enterprise login through an existing binding leaves the membership as it is.
 func TestExistingBindingKeepsAnEnterpriseLoginOffTheMembership(t *testing.T) {
-	// A suspended member who logs in again through the tenant's provider is not
-	// restored, and no membership is read or written on the way.
 	e := newEnv(t, withProvider(authn.ProvisioningJIT, true))
 	id := e.s.seed(t, seed{id: "a1", status: authn.StatusActive, bindings: [][2]string{{"oidc:" + idpAcme, "u1"}}, suspended: []string{tenantAcme}})
 	res, err := e.resolve(enterprise("u1", "ann@acme.com"))
@@ -81,6 +82,7 @@ func TestExistingBindingKeepsAnEnterpriseLoginOffTheMembership(t *testing.T) {
 	}
 }
 
+// TestDisabledAccountByBindingIsUnavailableForAnExternalLogin checks that a disabled bound account answers unavailable, not wrong password.
 func TestDisabledAccountByBindingIsUnavailableForAnExternalLogin(t *testing.T) {
 	e := newEnv(t)
 	e.s.seed(t, seed{id: "a1", status: authn.StatusDisabled, bindings: [][2]string{{"google", "g1"}}})
@@ -90,6 +92,7 @@ func TestDisabledAccountByBindingIsUnavailableForAnExternalLogin(t *testing.T) {
 	}
 }
 
+// TestDisabledAccountReadsAsAWrongPasswordForAPasswordOrPhoneLogin checks that a disabled or missing account reads as a wrong password.
 func TestDisabledAccountReadsAsAWrongPasswordForAPasswordOrPhoneLogin(t *testing.T) {
 	e := newEnv(t)
 	e.s.seed(t, seed{id: "a1", status: authn.StatusDisabled, phone: "+8613800000001"})
@@ -107,6 +110,8 @@ func TestDisabledAccountReadsAsAWrongPasswordForAPasswordOrPhoneLogin(t *testing
 	}
 }
 
+// TestEnabledAccountProofsResolveToTheAccount checks that an account proof and a
+// phone proof of an enabled account resolve to that account as bound.
 func TestEnabledAccountProofsResolveToTheAccount(t *testing.T) {
 	e := newEnv(t)
 	e.s.seed(t, seed{id: "a1", status: authn.StatusActive, phone: "+8613800000001"})
@@ -121,6 +126,8 @@ func TestEnabledAccountProofsResolveToTheAccount(t *testing.T) {
 	}
 }
 
+// TestAServiceAccountDoesNotLogInInteractively checks that a service account
+// cannot log in through a binding.
 func TestAServiceAccountDoesNotLogInInteractively(t *testing.T) {
 	e := newEnv(t)
 	e.s.seed(t, seed{id: "svc", status: authn.StatusActive, kind: authn.KindService, bindings: [][2]string{{"google", "g1"}}})
@@ -129,6 +136,7 @@ func TestAServiceAccountDoesNotLogInInteractively(t *testing.T) {
 	}
 }
 
+// TestADisplayRefreshFailureDoesNotFailTheLogin checks that a failed display refresh keeps the login and reports the failure.
 func TestADisplayRefreshFailureDoesNotFailTheLogin(t *testing.T) {
 	e := newEnv(t)
 	id := e.s.seed(t, seed{id: "a1", status: authn.StatusActive, bindings: [][2]string{{"google", "g1"}}})
@@ -143,6 +151,8 @@ func TestADisplayRefreshFailureDoesNotFailTheLogin(t *testing.T) {
 	}
 }
 
+// TestADanglingBindingIsAnAccountThatIsNotThere checks that a binding naming an
+// account that is gone reads as ErrAccountNotFound with no account.
 func TestADanglingBindingIsAnAccountThatIsNotThere(t *testing.T) {
 	e := newEnv(t)
 	e.s.mu.Lock()

@@ -10,7 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// emailBudgets are the setting keys the email branch counts against.
 const (
 	budgetAddressHourly = "authn.login.email-per-address-hourly"
 	budgetAddressDaily  = "authn.login.email-per-address-daily"
@@ -21,9 +20,6 @@ const (
 	budgetGlobalHourly  = "authn.login.email-global-hourly"
 )
 
-// budgetHarness is an email harness whose budget settings a case scripts. Every
-// value not named reads as its declared default, because the fake has no entry
-// for it.
 func budgetHarness(t *testing.T, numbers map[string]int) *harness {
 	t.Helper()
 	h := emailHarness(t)
@@ -31,15 +27,10 @@ func budgetHarness(t *testing.T, numbers map[string]int) *harness {
 	return h
 }
 
-// reauthenticate refreshes the identity's first-factor time against the harness
-// clock, so a case that moves the clock across a bucket boundary still meets the
-// five-minute freshness every change of credentials asks for. The options are
-// applied before the time, so a case can name another account or session.
 func (h *harness) reauthenticate(opts ...authntest.Option) {
 	h.as(append(opts, authntest.WithAuthTime(h.clockNow.Add(-time.Minute)))...)
 }
 
-// hasKey reports whether the store holds a key with the prefix.
 func hasKey(h *harness, prefix string) bool {
 	for _, key := range h.kv.keys() {
 		if strings.HasPrefix(key, prefix) {
@@ -49,10 +40,7 @@ func hasKey(h *harness, prefix string) bool {
 	return false
 }
 
-// TestAnAddressAnotherAccountHoldsIsRejected holds the refusal: an address
-// another account carries as a verified identifier is answered 409 email-taken,
-// gets no message, spends no resend window or budget, and keeps no pending
-// record.
+// TestAnAddressAnotherAccountHoldsIsRejected holds that a held address answers 409 with no message, window, budget or record.
 func TestAnAddressAnotherAccountHoldsIsRejected(t *testing.T) {
 	h := emailHarness(t)
 	h.accounts.lookup["ada@example.com"] = "someone-else"
@@ -75,9 +63,8 @@ func TestAnAddressAnotherAccountHoldsIsRejected(t *testing.T) {
 	}
 }
 
-// TestAnAddressReservedByAnotherAccountIsRejected holds the other source of a
-// taken address: an unproved reservation a self-registration wrote. The asking
-// account is told email-taken before a code is drawn.
+// TestAnAddressReservedByAnotherAccountIsRejected holds the other source
+// of a taken address: an unproved reservation a self-registration wrote.
 func TestAnAddressReservedByAnotherAccountIsRejected(t *testing.T) {
 	h := emailHarness(t)
 	h.signup.pending["reserved@example.com"] = "someone-else"
@@ -94,9 +81,7 @@ func TestAnAddressReservedByAnotherAccountIsRejected(t *testing.T) {
 	}
 }
 
-// TestATakenAddressIsAnsweredBeforeTheStoreIsRead holds the order: the taken
-// check runs before the resend claim, so a taken address is 409 even when the
-// store cannot answer, while a free address still meets the outage as a 503.
+// TestATakenAddressIsAnsweredBeforeTheStoreIsRead holds that a taken address is 409 even during an outage, while a free one is 503.
 func TestATakenAddressIsAnsweredBeforeTheStoreIsRead(t *testing.T) {
 	storeDown := errors.New("the store is unavailable")
 	taken := emailHarness(t)
@@ -119,9 +104,7 @@ func TestATakenAddressIsAnsweredBeforeTheStoreIsRead(t *testing.T) {
 	}
 }
 
-// TestAVerifyAfterATakenAddHasNoRecord holds that a taken address receives no
-// code, so a verify has no record and answers the same login-failed a wrong code
-// gets.
+// TestAVerifyAfterATakenAddHasNoRecord holds that a taken address gets no code and its verify answers login-failed.
 func TestAVerifyAfterATakenAddHasNoRecord(t *testing.T) {
 	h := emailHarness(t)
 	h.accounts.lookup["taken@example.com"] = "someone-else"
@@ -162,9 +145,7 @@ func TestAnAddressLookupThatFailsIsAnOutage(t *testing.T) {
 	}
 }
 
-// TestTheAddressHourlyBudgetStopsASendInTheHour holds the per-address hourly
-// bound on its own: with every other budget out of the way, the address admits
-// its limit and the next ask in the same hour is a 429 carrying Retry-After.
+// TestTheAddressHourlyBudgetStopsASendInTheHour holds that the next ask in the same hour is a 429 with Retry-After.
 func TestTheAddressHourlyBudgetStopsASendInTheHour(t *testing.T) {
 	h := budgetHarness(t, map[string]int{
 		budgetAddressHourly: 2, budgetAddressDaily: 200, budgetAccountHourly: 60, budgetGlobalHourly: 1000,
@@ -211,9 +192,7 @@ func TestTheAddressDailyBudgetStopsASendInTheDay(t *testing.T) {
 	}
 }
 
-// TestTheAccountBudgetStopsAnotherAddress holds the account bound: one account
-// may ask for a limited number of codes an hour whatever addresses it names, so
-// a second address is refused once the account has spent its allowance.
+// TestTheAccountBudgetStopsAnotherAddress holds that one account's hourly allowance covers every address it names.
 func TestTheAccountBudgetStopsAnotherAddress(t *testing.T) {
 	h := budgetHarness(t, map[string]int{
 		budgetAddressHourly: 60, budgetAddressDaily: 200, budgetAccountHourly: 1, budgetGlobalHourly: 1000,
@@ -234,9 +213,7 @@ func TestTheAccountBudgetStopsAnotherAddress(t *testing.T) {
 	}
 }
 
-// TestTheGlobalBudgetStopsAnotherAccount holds the deployment-wide bound: it is
-// shared across accounts and addresses, so a second account naming a fresh
-// address is refused once the deployment has spent its hourly total.
+// TestTheGlobalBudgetStopsAnotherAccount holds that the deployment-wide hourly total spans accounts and addresses.
 func TestTheGlobalBudgetStopsAnotherAccount(t *testing.T) {
 	h := budgetHarness(t, map[string]int{
 		budgetAddressHourly: 60, budgetAddressDaily: 200, budgetAccountHourly: 60, budgetGlobalHourly: 1,
@@ -257,10 +234,7 @@ func TestTheGlobalBudgetStopsAnotherAccount(t *testing.T) {
 	}
 }
 
-// TestABudgetThatCannotBeCountedIsAnOutage holds the failure direction: the
-// budgets are the only bound on messages to an address, so an increment that
-// fails answers 503 and sends nothing, and the resend claim it took is given
-// back.
+// TestABudgetThatCannotBeCountedIsAnOutage holds that a failed increment answers 503, sends nothing and gives back the resend claim.
 func TestABudgetThatCannotBeCountedIsAnOutage(t *testing.T) {
 	h := emailHarness(t)
 	h.kv.incrErr = errors.New("the counter store is unavailable")
@@ -280,9 +254,7 @@ func TestABudgetThatCannotBeCountedIsAnOutage(t *testing.T) {
 	}
 }
 
-// TestATakenAddressSpendsNoBudget holds that the taken check happens before any
-// counter is touched: an address another account holds is not charged to the
-// address, the account or the deployment.
+// TestATakenAddressSpendsNoBudget holds that the taken check precedes every counter.
 func TestATakenAddressSpendsNoBudget(t *testing.T) {
 	h := emailHarness(t)
 	h.accounts.lookup["ada@example.com"] = "someone-else"
@@ -299,10 +271,7 @@ func TestATakenAddressSpendsNoBudget(t *testing.T) {
 	}
 }
 
-// TestEachBudgetStartsFromZeroInANewWindow holds the bucket boundary of each
-// budget: a count past its limit is refused inside the window, and the
-// first send of the next window is admitted because the key is a new one and the
-// count starts at zero.
+// TestEachBudgetStartsFromZeroInANewWindow holds that the first send of the next window is admitted by a fresh key.
 func TestEachBudgetStartsFromZeroInANewWindow(t *testing.T) {
 	t.Run("per-address hourly", func(t *testing.T) {
 		h := budgetHarness(t, map[string]int{
@@ -377,9 +346,7 @@ func TestEachBudgetStartsFromZeroInANewWindow(t *testing.T) {
 	})
 }
 
-// TestTheDailyBudgetStatesTheWaitToTheNextDay holds the 24-hour bucket's landing
-// point: the 429 of the daily budget states the seconds left before midnight,
-// not the hour the hourly budget would state.
+// TestTheDailyBudgetStatesTheWaitToTheNextDay holds that the daily 429 states the seconds left before midnight.
 func TestTheDailyBudgetStatesTheWaitToTheNextDay(t *testing.T) {
 	h := budgetHarness(t, map[string]int{
 		budgetAddressHourly: 60, budgetAddressDaily: 1, budgetAccountHourly: 60, budgetGlobalHourly: 1000,
@@ -392,7 +359,6 @@ func TestTheDailyBudgetStatesTheWaitToTheNextDay(t *testing.T) {
 	if w.Code != http.StatusTooManyRequests {
 		t.Fatalf("the second send answered %d %s, want the day's 429", w.Code, w.Body)
 	}
-	// The clock reads 12:02 UTC, so the day's window has 11h58m left.
 	if got, want := w.Header().Get("Retry-After"), "43080"; got != want {
 		t.Errorf("Retry-After is %q, want %q: the wait to the next day", got, want)
 	}

@@ -1,25 +1,4 @@
-// Package selfservice is the account self-service routes of the login module:
-// the change of the account's password, the addition or replacement of its
-// phone, the removal of one of its identifiers and the unlinking of an external
-// identity. The account's own profile reads and writes are the profile module's
-// routes, not these.
-//
-// Every route runs on the identity the gateway authenticated. A route that
-// changes what proves the account — the password, the addition of a login name,
-// choosing an identifier as a way in, removing one, unbinding an external
-// identity — asks for a fresh authentication first (a local multi-factor one when
-// the effective account has an active factor, a first factor otherwise). Adding
-// a contact address does not: registering an email or phone number and proving it
-// is a separate act from making it a way to sign in, so the email branch, its
-// verify, and the two phone routes need only an identity and a session. Every
-// route goes through the Mounter's cross-origin check, and is open to an
-// impersonating identity: the change is the effective account's own, so the
-// requirement is taken from the impersonated account's factors while the proof is
-// the operator's own.
-//
-// The package depends on the root package's interfaces, on the route
-// components in internal/mount and on kv.KV. It knows nothing of the login
-// engine, which builds a Service in its Init and calls Mount.
+// Package selfservice is the account self-service routes of the login module: password, phone, identifier and external-link changes on the caller's own account.
 package selfservice
 
 import (
@@ -40,17 +19,25 @@ import (
 
 // Deps is what a Service is built from.
 type Deps struct {
-	// Accounts, Admin, Passwords, Sessions and MFA are required.
-	Accounts  authn.Accounts
-	Admin     authn.AccountAdmin
+	// Accounts reads and writes the account store. Required.
+	Accounts authn.Accounts
+	// Admin writes the account facts a self-service change touches. Required.
+	Admin authn.AccountAdmin
+	// Passwords sets the new password under the account store's policy. Required.
 	Passwords authn.Passwords
-	Sessions  authn.Sessions
-	MFA       authn.MFA
+	// Sessions rotates and revokes the account's sessions. Required.
+	Sessions authn.Sessions
+	// MFA lists the account's factors, for the freshness check. Required.
+	MFA authn.MFA
 
 	// SMSCodes switches the two phone routes on: without it they are not
 	// registered. With it, KV and Throttle are required as well.
 	SMSCodes authn.SMSCodes
-	KV       kv.KV
+	// KV holds the pending phone and email verification records; required with
+	// SMSCodes and EmailSender.
+	KV kv.KV
+	// Throttle counts the SMS code attempts against a phone number; required
+	// with SMSCodes.
 	Throttle authn.Throttle
 
 	// EmailSender is the channel a self-service email verification code goes out
@@ -82,7 +69,8 @@ type Deps struct {
 	Settings settings.Store
 	// Bus and Audit are optional: without them the event and the audit row are
 	// not written.
-	Bus   event.Bus
+	Bus event.Bus
+	// Audit writes the change's audit row; optional.
 	Audit audit.Audit
 	// ThrottleEngaged is called after the event of a back-off that a failed phone
 	// code started, so that the module that owns the engagement counter can
@@ -93,16 +81,14 @@ type Deps struct {
 	Clock clock.Source
 }
 
-// Service holds what the routes need. Its Mount registers them.
+// Service holds what the routes need; its Mount registers them.
 type Service struct {
 	deps      Deps
 	durations *durations
 	budgets   *counts
 }
 
-// New checks that the dependencies the routes cannot do without are there and
-// returns the service. A missing one is a defect of the assembly, and the error
-// names it.
+// New checks that the dependencies the routes cannot do without are there and returns the service. A missing one is an assembly defect.
 func New(d Deps) (*Service, error) {
 	var missing []string
 	need := func(name string, absent bool) {
@@ -129,17 +115,11 @@ func New(d Deps) (*Service, error) {
 	return &Service{deps: d, durations: newDurations(d.Settings), budgets: newCounts(d.Settings)}, nil
 }
 
-// routes is the Service bound to the endpoint its routes were mounted on, whose
-// name is the realm of the 401 a handler writes.
 type routes struct {
 	*Service
 	endpoint string
 }
 
-// The conditional features the account self-service routes publish. A name is
-// posted by the engine under its own module name; this package owns the
-// judgement that decides whether the surface the name describes is present, so
-// the name constants live beside it.
 const (
 	// FeaturePhone is the phone self-service surface: POST /phone and
 	// POST /phone/verify, present exactly when SMSCodes is.
@@ -150,20 +130,7 @@ const (
 	FeatureEmail = "authn.identifiers.email"
 )
 
-// Mount registers the routes. rel turns a declared route into the relative path
-// the mounter joins to its base; the login engine passes its own resolver, so
-// the fragment's paths and the mounting read one declaration. The two phone
-// routes are registered only when the service has SMSCodes; post, when it is not
-// nil, is called in that same judgement with the feature name the surface
-// publishes. The email branch is switched on by EmailSender, and its feature is
-// posted in the judgement that reads that dependency. The engine passes its
-// report function here and calls Mount from its Init, where the feature board
-// accepts a post.
-//
-// Every route is guarded: the gateway authenticates it, and a request without a
-// credential never reaches a handler. Every route is registered impersonable:
-// the change is the effective account's own, so an impersonating identity makes
-// it as the account's holder would.
+// Mount registers the routes. rel turns a declared route into the relative path the mounter joins to its base.
 func (s *Service) Mount(m mount.Mounter, rel func(string) string, post func(name string)) {
 	r := &routes{Service: s, endpoint: m.Endpoint()}
 	mount.Declared(m, passwordOperation, rel(pathPassword),
@@ -189,11 +156,6 @@ func (s *Service) Mount(m mount.Mounter, rel func(string) string, post func(name
 	mount.Declared(m, unlinkOperation, rel(pathLink), withWriter(unlinkOperation.Handle(r.unlink)), mount.Impersonable())
 }
 
-// guardedBody applies the capability's body rules before the entry point binds
-// a write route's body: the media type, then the identity, session and
-// freshness checks the handler makes first, then the 64 KiB cap. The caller the
-// check decided is carried to the handler, so the checks run once. An
-// impersonating identity passes: the route acts for the effective account.
 func (r *routes) guardedBody(action string, next gin.HandlerFunc) gin.HandlerFunc {
 	return mount.GuardBody(func(c *gin.Context) bool {
 		call := r.call(c.Request.Context(), nil)
@@ -207,12 +169,6 @@ func (r *routes) guardedBody(action string, next gin.HandlerFunc) gin.HandlerFun
 	}, next)
 }
 
-// guardedIdentity applies the body rules of a route that does not ask for
-// freshness before it binds the body: the media type, the identity and session
-// checks, then the 64 KiB cap. It is used for the routes that add or prove a
-// contact address, which ask for none at all, and for the routes whose freshness
-// depends on what the body changes, which ask for it themselves once they know.
-// The caller it decides is carried to the handler, so the checks run once.
 func (r *routes) guardedIdentity(next gin.HandlerFunc) gin.HandlerFunc {
 	return mount.GuardBody(func(c *gin.Context) bool {
 		call := r.call(c.Request.Context(), nil)
@@ -227,8 +183,6 @@ func (r *routes) guardedIdentity(next gin.HandlerFunc) gin.HandlerFunc {
 	}, next)
 }
 
-// postFeature reports a feature name when the engine handed Mount a reporting
-// function. A nil function is a caller that publishes no feature document.
 func postFeature(post func(name string), name string) {
 	if post != nil {
 		post(name)

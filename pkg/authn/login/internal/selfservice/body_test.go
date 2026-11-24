@@ -9,9 +9,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// TestABodyOverTheCapabilityLimitIsRefusedBeforeTheHandler holds the 64 KiB cap
-// on a write route: a valid body padded past the limit is a 400 bad-request and
-// the write is never asked for.
+// TestABodyOverTheCapabilityLimitIsRefusedBeforeTheHandler holds that a body padded past 64 KiB answers 400 and the write is never asked.
 func TestABodyOverTheCapabilityLimitIsRefusedBeforeTheHandler(t *testing.T) {
 	h := newHarness(t)
 	padded := `{"kind":"username","value":"newname"}` + strings.Repeat(" ", 70_000)
@@ -24,12 +22,7 @@ func TestABodyOverTheCapabilityLimitIsRefusedBeforeTheHandler(t *testing.T) {
 	}
 }
 
-// TestTheFreshnessCheckComesBeforeTheBody holds the order a body precheck
-// restores: an identity that does not meet the freshness the effective account
-// calls for is refused 401 before the body is read, so a malformed body is not
-// answered as the request's own fault. An impersonating identity is in this
-// order like any other: it is held to the requirement, not refused for acting
-// for the account.
+// TestTheFreshnessCheckComesBeforeTheBody holds that an unmet freshness is a 401 before the body is read.
 func TestTheFreshnessCheckComesBeforeTheBody(t *testing.T) {
 	h := newHarness(t, func(c *config) { c.impersonable = true })
 	h.impersonating()

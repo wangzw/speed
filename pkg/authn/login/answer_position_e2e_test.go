@@ -11,9 +11,6 @@ import (
 	smslog "github.com/vislake/speed/pkg/sms/log"
 )
 
-// standInCodes is an authn.SMSCodes stand-in that accepts one code and refuses
-// every other, so an SMS first factor reaches both its refusal and its proof
-// without a carrier.
 type standInCodes struct{ accepted string }
 
 func (c standInCodes) Send(context.Context, authn.SendCode) (string, error) {
@@ -27,8 +24,6 @@ func (c standInCodes) Verify(_ context.Context, _, code string) error {
 	return authn.ErrInvalidCredentials
 }
 
-// standInCodesModule delivers the stand-in codes for a case that assembles the
-// real SMS login method.
 func standInCodesModule() core.Module {
 	return core.Module{
 		Name:     "stand-in.sms-codes",
@@ -37,8 +32,6 @@ func standInCodesModule() core.Module {
 	}
 }
 
-// createPhoneAccount makes an enabled account whose number is a sign-in way, as
-// an SMS first login leaves it.
 func (h *harness) createPhoneAccount(username, phone string) {
 	h.t.Helper()
 	if _, err := h.admin.Create(h.ctx, authn.CreateAccount{
@@ -52,14 +45,10 @@ func (h *harness) createPhoneAccount(username, phone string) {
 	}
 }
 
-// flowHeader is the header a client without cookies carries the flow token in.
 func withFlowHeader(token string) func(*http.Request) {
 	return func(r *http.Request) { r.Header.Set("Authn-Flow", token) }
 }
 
-// assertRefusedWithoutASequence holds the refusal shape the invariant rests on:
-// the 401 names login-failed and carries no sequence number, so a client has
-// nothing but the number it already holds.
 func assertRefusedWithoutASequence(t *testing.T, r reply) {
 	t.Helper()
 	if r.status != http.StatusUnauthorized {
@@ -74,19 +63,7 @@ func assertRefusedWithoutASequence(t *testing.T, r reply) {
 	}
 }
 
-// TestARefusalKeepsTheAnswerPositionAcrossPaths holds the one invariant every
-// client answers by after a refusal: the flow's sequence number does not move,
-// so the corrected value is submitted with the number the client already holds.
-// A password first factor over the Authn-Flow header — a client with no cookie
-// and no page — and an SMS first factor over the flow cookie both answer the
-// same number after their refusal, and the 401 itself never supplies another.
-//
-// The assembly names the log carrier and selects it, because the SMS login
-// method enables itself only when the run has configured a carrier or a
-// template set; what the method sends through is the stand-in here, so the
-// carrier is present for the enablement judgement and the send seam stays a
-// stub, which is what lets the case reach a refusal and a proof without a
-// vendor.
+// TestARefusalKeepsTheAnswerPositionAcrossPaths holds that a refusal never moves the sequence number, so the client retries with the value it holds.
 func TestARefusalKeepsTheAnswerPositionAcrossPaths(t *testing.T) {
 	const number = "+8613800000011"
 	assembleWithSections(t,

@@ -12,11 +12,8 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// moduleName starts every log line of this package.
 const moduleName = "authn.login"
 
-// The audit actions this package writes, the best-effort ones of the action
-// table, and the outcomes they carry.
 const (
 	actionPasswordChange = "authn.password.change"
 	actionBindingUnlink  = "authn.binding.unlink"
@@ -25,45 +22,22 @@ const (
 	outcomeDenied  = "denied"
 )
 
-// caller is the account a request that changes how it is proven acts for, and
-// the session it came with.
 type caller struct {
 	account authn.AccountID
 	session authn.SessionID
 }
 
-// callerKey carries the caller a body precheck already decided to the handler,
-// so the identity, session and freshness checks run once per request.
 type callerKey struct{}
 
-// withCaller returns ctx carrying the caller a precheck decided.
 func withCaller(ctx context.Context, who caller) context.Context {
 	return context.WithValue(ctx, callerKey{}, who)
 }
 
-// callerFrom returns the caller a precheck decided, or false when there is none.
 func callerFrom(ctx context.Context) (caller, bool) {
 	who, ok := ctx.Value(callerKey{}).(caller)
 	return who, ok
 }
 
-// authorize is what a route that changes how the account signs in does before it
-// reads the request body or calls anything. It answers the request and returns
-// false when the identity may not go on:
-//
-//   - an identity with no login session has nothing to revoke the others
-//     against and is refused with the plain 401;
-//   - an identity that does not meet the freshness the account's factors call
-//     for is refused with the step-up 401. A requirement that cannot be decided
-//     because the factors cannot be read is a 503.
-//
-// An impersonating identity is not refused: the change is the effective
-// account's own, so the caller it returns names the impersonated account and
-// the operator's session. The requirement is taken from the effective account's
-// factors, while the proof it is held to is the operator's own.
-//
-// action names the audit action of a refusal for a step-up, empty for a route
-// whose refusals leave no row.
 func (r *routes) authorize(c *call, action string) (caller, bool) {
 	if who, carried := callerFrom(c.ctx); carried {
 		return who, true
@@ -78,10 +52,6 @@ func (r *routes) authorize(c *call, action string) (caller, bool) {
 	return caller{account: id.Account(), session: id.Session()}, true
 }
 
-// identity is the caller the guard already decided, or the one identify decides
-// now. It is the identity and session check without freshness, for a route that
-// does not change how the account signs in, or whose freshness depends on what
-// its body changes and so is asked for by the handler once it knows.
 func (r *routes) identity(c *call) (caller, bool) {
 	if who, carried := callerFrom(c.ctx); carried {
 		return who, true
@@ -93,10 +63,6 @@ func (r *routes) identity(c *call) (caller, bool) {
 	return caller{account: id.Account(), session: id.Session()}, true
 }
 
-// freshIdentity holds the identity of a request whose guard carried its caller
-// without asking for freshness to the requirement its change calls for. It is
-// the freshness half of authorize, for a handler that decided from its body that
-// the change is one the design protects.
 func (r *routes) freshIdentity(c *call, action string) bool {
 	id, ok := authn.FromContext(c.ctx)
 	if !ok {
@@ -106,21 +72,6 @@ func (r *routes) freshIdentity(c *call, action string) bool {
 	return r.fresh(c, id, action)
 }
 
-// contactProofNeedsFreshness reports whether proving one contact address would
-// change what proves or recovers the account, which is the half of a contact
-// write the design holds to a fresh authentication. Registering and proving an
-// address asks for none by itself; these consequences do:
-//
-//   - an email that would become the account's default contact -- where
-//     notifications and a password reset go -- because the account has none;
-//   - an email that would become the account's only address and so its
-//     automatic login way (REQ-account-068);
-//   - a phone number, while the account holds an active SMS factor, because
-//     the number is that factor's target.
-//
-// Proving an address the account already proved changes neither, and a phone
-// number the factor already targets changes nothing either, so both answer
-// false. A read that fails is answered as the route's own failure.
 func (r *routes) contactProofNeedsFreshness(ctx context.Context, account authn.AccountID,
 	kind authn.IdentifierKind, value string,
 ) (bool, error) {
@@ -146,8 +97,6 @@ func (r *routes) contactProofNeedsFreshness(ctx context.Context, account authn.A
 				hasDefault = true
 			}
 		}
-		// A missing default contact or a missing other address is what makes
-		// this proof select the address on the account's behalf.
 		return !hasDefault || !hasOther, nil
 	case authn.IdentifierPhone:
 		factors, err := r.deps.MFA.Factors(ctx, account)
@@ -175,11 +124,6 @@ func (r *routes) contactProofNeedsFreshness(ctx context.Context, account authn.A
 	}
 }
 
-// identify is the identity and session check of every route: a request without a
-// credential, without an account or without a login session is refused with the
-// plain 401 before anything else happens. A route whose freshness depends on what
-// its body changes runs this before it binds the body and asks for freshness
-// itself once it knows.
 func (r *routes) identify(c *call) (authn.Identity, bool) {
 	id, ok := authn.FromContext(c.ctx)
 	if !ok || id.Account() == "" {
@@ -193,9 +137,6 @@ func (r *routes) identify(c *call) (authn.Identity, bool) {
 	return id, true
 }
 
-// fresh checks the freshness the account's factors call for and answers the
-// step-up 401 when the identity does not meet it. A requirement that cannot be
-// decided because the factors cannot be read is a 503.
 func (r *routes) fresh(c *call, id authn.Identity, action string) bool {
 	req, err := r.requirement(c.ctx, id.Account())
 	if err != nil {
@@ -212,12 +153,6 @@ func (r *routes) fresh(c *call, id authn.Identity, action string) bool {
 	return true
 }
 
-// requirement is the freshness a change of the account's credentials asks for.
-// An account with an active factor is held to a fresh local multi-factor
-// authentication, so that a stolen single-factor session, or an assurance only
-// an IdP declared, cannot change what proves the account. An account with no
-// active factor is held to a fresh first factor. A factor still pending or
-// disabled is not a factor the account has.
 func (r *routes) requirement(ctx context.Context, account authn.AccountID) (authn.Requirement, error) {
 	factors, err := r.deps.MFA.Factors(ctx, account)
 	if err != nil {
@@ -231,13 +166,6 @@ func (r *routes) requirement(ctx context.Context, account authn.AccountID) (auth
 	return authn.FreshFirstFactor(), nil
 }
 
-// settle is how a change that alters what proves the account ends: the current
-// session gets a new token, every other session of the account is revoked, and
-// a new token is written to the response last. Both calls are made whatever the
-// first one answered, because revoking the others is the half that protects the
-// account; the cookie is written whenever the token was rotated, because the old
-// one no longer holds. It answers the request and returns false when either
-// call failed, the change itself being in force.
 func (r *routes) settle(c *call, who caller, reason string) bool {
 	ctx := c.ctx
 	issued, rotateErr := r.deps.Sessions.Rotate(ctx, who.session)
@@ -252,8 +180,6 @@ func (r *routes) settle(c *call, who caller, reason string) bool {
 	return true
 }
 
-// publish hands an event to the bus when there is one. A failure to publish is
-// a Warn and never fails the request: an event is a hint.
 func (r *routes) publish(ctx context.Context, eventType string, payload any) {
 	if r.deps.Bus == nil {
 		return
@@ -264,8 +190,6 @@ func (r *routes) publish(ctx context.Context, eventType string, payload any) {
 	}
 }
 
-// record writes the best-effort audit row of a self-service change. A failure
-// to write is an Error and never fails the request.
 func (r *routes) record(ctx context.Context, action, outcome string, account authn.AccountID, detail map[string]string) {
 	if r.deps.Audit == nil {
 		return
@@ -281,8 +205,6 @@ func (r *routes) record(ctx context.Context, action, outcome string, account aut
 	}
 }
 
-// engaged tells the bus, and the module that counts engagements, that a failed
-// attempt started a back-off.
 func (r *routes) engaged(ctx context.Context, scope authn.ThrottleScope) {
 	r.publish(ctx, authn.EventThrottleEngaged, authn.ThrottleEngaged{Scope: string(scope)})
 	if r.deps.ThrottleEngaged != nil {
@@ -294,7 +216,6 @@ func logError(ctx context.Context, msg string, err error) {
 	log.FromContext(ctx).Error(moduleName+": "+msg, slog.String("cause", err.Error()))
 }
 
-// seconds is d in whole seconds, rounded up.
 func seconds(d time.Duration) int64 {
 	return int64((d + time.Second - 1) / time.Second)
 }

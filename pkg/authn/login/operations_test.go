@@ -7,10 +7,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 )
 
-// TestOnlyTheRoutesThatCanRefuseForCapacityDeclareRetryAfter holds each 503
-// declaration to the one producer of a retry delay: the password derivation
-// refused for capacity. A route that never derives one must not promise a
-// header that can never appear on its answer.
+// TestOnlyTheRoutesThatCanRefuseForCapacityDeclareRetryAfter holds each 503 declaration to the capacity refusal that carries a retry delay.
 func TestOnlyTheRoutesThatCanRefuseForCapacityDeclareRetryAfter(t *testing.T) {
 	canRefuseForCapacity := map[string]bool{
 		"authn.login.start":              true,
@@ -39,9 +36,7 @@ func TestOnlyTheRoutesThatCanRefuseForCapacityDeclareRetryAfter(t *testing.T) {
 	}
 }
 
-// TestTheIdentifierRemovalDeclaresTheLoginNameConflict holds that the route
-// declares the 409 login-identifier-required its account-module call answers
-// when the removal would leave a password account with no login name.
+// TestTheIdentifierRemovalDeclaresTheLoginNameConflict holds that the route declares the 409 login-identifier-required it can answer.
 func TestTheIdentifierRemovalDeclaresTheLoginNameConflict(t *testing.T) {
 	found := false
 	for _, operation := range operations {
@@ -65,9 +60,7 @@ func TestTheIdentifierRemovalDeclaresTheLoginNameConflict(t *testing.T) {
 	}
 }
 
-// TestTheIdentifierRemovalDeclaresTheImmutableUsername holds that the route
-// declares the 409 username-immutable its account-module call answers when the
-// identifier named is a username, which cannot be removed.
+// TestTheIdentifierRemovalDeclaresTheImmutableUsername holds that the route declares the 409 username-immutable it can answer.
 func TestTheIdentifierRemovalDeclaresTheImmutableUsername(t *testing.T) {
 	found := false
 	for _, operation := range operations {
@@ -91,9 +84,7 @@ func TestTheIdentifierRemovalDeclaresTheImmutableUsername(t *testing.T) {
 	}
 }
 
-// TestEveryBodyRouteDeclaresTheBodyLimit holds the 413 every route with a
-// declared body answers with when a request announces more than the endpoint
-// reads. The capability's own 64 KiB limit is answered 400 before this one.
+// TestEveryBodyRouteDeclaresTheBodyLimit holds that every route with a declared body answers the 413.
 func TestEveryBodyRouteDeclaresTheBodyLimit(t *testing.T) {
 	for _, operation := range operations {
 		descriptor := operation.Descriptor()

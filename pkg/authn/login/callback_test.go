@@ -18,8 +18,6 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// fakeSSO is an enterprise provider register a case scripts. Only Get is
-// reached on the paths these cases drive.
 type fakeSSO struct {
 	authn.SSOProviders
 	row authn.SSOProvider
@@ -28,11 +26,6 @@ type fakeSSO struct {
 
 func (s *fakeSSO) Get(context.Context, string) (authn.SSOProvider, error) { return s.row, s.err }
 
-// redirectMethod is a method whose Begin sends the user to a provider and whose
-// Answer a case scripts. calls counts the answers atomically, and answer, when
-// set, runs inside Answer for a case that needs to hold it. name defaults to
-// "password"; a case that stands in for an enterprise SSO protocol method names
-// the method "oidc" or "saml", whose callback path carries a provider id.
 type redirectMethod struct {
 	authn.LoginMethod
 	name   string
@@ -64,8 +57,6 @@ func (m *redirectMethod) Answer(_ context.Context, f authn.FlowState, in authn.S
 	return authn.StepProven(authn.Proof{Account: "acct1", Methods: []authn.Method{authn.MethodPassword}}), nil
 }
 
-// startRedirect begins a login flow whose first factor returns a redirect and
-// returns the flow cookie. The start request names the rig's one method.
 func startRedirect(t *testing.T, r *rig, extra string) string {
 	t.Helper()
 	body := `{"method":"` + r.p.methodNames[0] + `"` + extra + `}`
@@ -76,10 +67,7 @@ func startRedirect(t *testing.T, r *rig, extra string) string {
 	return flowCookie(t, rec)
 }
 
-// TestACallbackCompletesACookieLoginOnce holds that the callback's terminal
-// action runs at most once: the callback makes a session and swaps the record to
-// the done tombstone, so a POST complete against the same flow is refused and
-// makes no second session.
+// TestACallbackCompletesACookieLoginOnce holds that the callback makes a session and tombstones the flow, so a later complete is refused.
 func TestACallbackCompletesACookieLoginOnce(t *testing.T) {
 	m := &redirectMethod{}
 	r := newRigMethod(t, m)
@@ -104,9 +92,7 @@ func TestACallbackCompletesACookieLoginOnce(t *testing.T) {
 	}
 }
 
-// TestAConcurrentSecondCallbackIsRefused holds the replay guard: the flow is
-// moved to processing before the method is asked, so a second callback that read
-// the same record loses the swap and the authorization code is exchanged once.
+// TestAConcurrentSecondCallbackIsRefused holds that a second callback on the same record loses the processing swap, so the code is exchanged once.
 func TestAConcurrentSecondCallbackIsRefused(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -139,12 +125,7 @@ func TestAConcurrentSecondCallbackIsRefused(t *testing.T) {
 	}
 }
 
-// TestANonLoginCallbackLandsOnTheReturnTarget holds that a callback of a
-// purpose other than login is a top-level navigation like any other: it answers
-// 303 to the flow's stored return target with an empty body and makes no
-// session, leaving the flow in the cookie at ready. The host's callback page
-// reads the flow with GET flows/current and then completes it, which binds the
-// identity.
+// TestANonLoginCallbackLandsOnTheReturnTarget holds that a non-login callback answers 303 with no body and no session, leaving the flow at ready.
 func TestANonLoginCallbackLandsOnTheReturnTarget(t *testing.T) {
 	m := &redirectMethod{}
 	m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
@@ -192,8 +173,6 @@ func TestANonLoginCallbackLandsOnTheReturnTarget(t *testing.T) {
 		t.Errorf("the flow's next kind is %v, want complete", k)
 	}
 
-	// The flow left the first factor with the callback, so a second callback on
-	// the same cookie is no longer accepted.
 	again := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie)
 	if again.Code != http.StatusUnauthorized {
 		t.Fatalf("a second callback answered %d, want 401: %s", again.Code, again.Body.String())
@@ -211,10 +190,7 @@ func TestANonLoginCallbackLandsOnTheReturnTarget(t *testing.T) {
 	}
 }
 
-// TestANoFactorStepUpThroughARedirectMethodLandsOnTheReturnTarget holds that a
-// step-up of an account with no enrolled factor, started through a redirect
-// method, is landed the same way: the callback answers 303 and leaves the ready
-// flow for the client to complete.
+// TestANoFactorStepUpThroughARedirectMethodLandsOnTheReturnTarget holds that such a step-up lands 303 and leaves the ready flow for the client.
 func TestANoFactorStepUpThroughARedirectMethodLandsOnTheReturnTarget(t *testing.T) {
 	m := &redirectMethod{}
 	r := newRigMethod(t, m)
@@ -255,9 +231,7 @@ func TestANoFactorStepUpThroughARedirectMethodLandsOnTheReturnTarget(t *testing.
 	}
 }
 
-// TestACallbackWithNoReturnToLandsOnTheDefault holds the fallback: a non-login
-// flow that recorded no return_to lands on the deployment's configured
-// authn.login.default-return-to, the same target the IdP-initiated start uses.
+// TestACallbackWithNoReturnToLandsOnTheDefault holds that a flow with no return_to lands on the configured default-return-to.
 func TestACallbackWithNoReturnToLandsOnTheDefault(t *testing.T) {
 	m := &redirectMethod{}
 	m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
@@ -285,10 +259,7 @@ func TestACallbackWithNoReturnToLandsOnTheDefault(t *testing.T) {
 	}
 }
 
-// TestACallbackWithAnUnacceptableDefaultLandsOnRoot holds the other half of the
-// fallback: the configured default is held to the same rule as a recorded
-// return_to, so a default whose origin the deployment does not trust lands on
-// "/" rather than on an off-site address.
+// TestACallbackWithAnUnacceptableDefaultLandsOnRoot holds that an untrusted configured default lands on "/".
 func TestACallbackWithAnUnacceptableDefaultLandsOnRoot(t *testing.T) {
 	m := &redirectMethod{}
 	m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
@@ -318,11 +289,7 @@ func TestACallbackWithAnUnacceptableDefaultLandsOnRoot(t *testing.T) {
 	}
 }
 
-// TestACookieLoginCallbackWithNoReturnToLandsOnTheDefault holds that the
-// fallback is not limited to a non-login purpose: a login started without
-// return_to lands on the configured default too, both when the callback
-// completes it and when it still needs a second factor. The start schema makes
-// return_to optional, so both endings are reachable.
+// TestACookieLoginCallbackWithNoReturnToLandsOnTheDefault holds that a login without return_to also lands on the configured default.
 func TestACookieLoginCallbackWithNoReturnToLandsOnTheDefault(t *testing.T) {
 	m := &redirectMethod{}
 	r := newRigMethod(t, m)
@@ -354,12 +321,7 @@ func TestACookieLoginCallbackWithNoReturnToLandsOnTheDefault(t *testing.T) {
 	})
 }
 
-// TestATokenLoginNavigationCallbackLandsOnTheReturnTarget holds that a
-// token-delivery login whose callback is a top-level browser navigation is
-// landed the way every other navigation landing is: 303 to the flow's return
-// target with no body and no session, and the flow left at ready so the client
-// can still take the token with a later complete. A browser that followed the
-// provider's redirect is never shown the completion JSON.
+// TestATokenLoginNavigationCallbackLandsOnTheReturnTarget holds that a token login's navigation callback lands 303 with no session, leaving the ready flow for a later complete.
 func TestATokenLoginNavigationCallbackLandsOnTheReturnTarget(t *testing.T) {
 	m := &redirectMethod{}
 	r := newRigMethod(t, m)
@@ -402,10 +364,7 @@ func TestATokenLoginNavigationCallbackLandsOnTheReturnTarget(t *testing.T) {
 	}
 }
 
-// TestATokenLoginAPICallbackKeepsTheCompletionBody holds the other half: a
-// callback that declares no navigation, as a token client's API call does, keeps
-// answering 200 with the completion body and makes no session until the client
-// answers complete.
+// TestATokenLoginAPICallbackKeepsTheCompletionBody holds that a non-navigation token callback answers 200 with the completion body and makes no session.
 func TestATokenLoginAPICallbackKeepsTheCompletionBody(t *testing.T) {
 	m := &redirectMethod{}
 	r := newRigMethod(t, m)
@@ -429,13 +388,7 @@ func TestATokenLoginAPICallbackKeepsTheCompletionBody(t *testing.T) {
 	}
 }
 
-// TestACompletedLinkWritesItsAuditRow holds the best-effort audit row of a
-// completed link. The capability's action table lists authn.binding.link, the
-// object is the account the identity was bound to, and the detail names the
-// provider class — the shape the unlink path records its own row in.
-//
-// The flow's routes are public, so no identity is on the request: the row's
-// actor can only come from a context the engine derives for this one record.
+// TestACompletedLinkWritesItsAuditRow holds the best-effort audit row of a completed link.
 func TestACompletedLinkWritesItsAuditRow(t *testing.T) {
 	m := &redirectMethod{}
 	m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
@@ -464,9 +417,6 @@ func TestACompletedLinkWritesItsAuditRow(t *testing.T) {
 		t.Fatalf("the completing answer answered %d, want 200: %s", done.Code, done.Body.String())
 	}
 
-	// The action, the object and the outcome are asserted as the literals the
-	// capability's closed tables state, so the case does not move with a
-	// production constant.
 	var linkRows []audit.Entry
 	for _, row := range sink.rows() {
 		if row.Action == "authn.binding.link" {
@@ -484,9 +434,7 @@ func TestACompletedLinkWritesItsAuditRow(t *testing.T) {
 	}
 }
 
-// TestACallbackNeedingASecondFactorRedirects holds that a callback whose login
-// still needs a second factor answers 303 to the flow's return_to, not a JSON
-// step body, and leaves the flow in the cookie.
+// TestACallbackNeedingASecondFactorRedirects holds that such a callback answers 303 to return_to and leaves the flow in the cookie.
 func TestACallbackNeedingASecondFactorRedirects(t *testing.T) {
 	m := &redirectMethod{}
 	r := newRigMethod(t, m)
@@ -503,7 +451,6 @@ func TestACallbackNeedingASecondFactorRedirects(t *testing.T) {
 	if loc := cb.Header().Get("Location"); loc != "https://app.example.org/after" {
 		t.Errorf("the redirect went to %q, want the flow's return_to", loc)
 	}
-	// The flow is still in the cookie: GET flows/current reports the second state.
 	current := r.send(http.MethodGet, "/api/v1/auth/flows/current", "", "Cookie", cookie)
 	if current.Code != http.StatusOK {
 		t.Fatalf("GET flows/current after the callback answered %d: %s", current.Code, current.Body.String())
@@ -513,9 +460,7 @@ func TestACallbackNeedingASecondFactorRedirects(t *testing.T) {
 	}
 }
 
-// TestCallbackIDPInitiatedIsGated holds the guards of an IdP-initiated sign-in:
-// only a resumed POST from an enabled provider that allows it is accepted, and
-// the default return target falls back to "/" when it is not trusted.
+// TestCallbackIDPInitiatedIsGated holds that only a resumed POST from an enabled, allowing provider is accepted, and an untrusted default falls back to "/".
 func TestCallbackIDPInitiatedIsGated(t *testing.T) {
 	body := func() *rig {
 		m := &redirectMethod{}
@@ -578,10 +523,7 @@ func TestCallbackIDPInitiatedIsGated(t *testing.T) {
 	})
 }
 
-// TestACallbackMustNameTheFlowsProvider holds the callback's provider check: the
-// engine compares the path's :provider with the provider the flow recorded — the
-// method's own name for a social method, the start input's identifier for an
-// enterprise provider — and asks no method when they differ.
+// TestACallbackMustNameTheFlowsProvider holds that a path provider differing from the recorded one is refused before any method runs.
 func TestACallbackMustNameTheFlowsProvider(t *testing.T) {
 	newSocial := func() (*rig, *redirectMethod) {
 		m := &redirectMethod{}
@@ -604,8 +546,6 @@ func TestACallbackMustNameTheFlowsProvider(t *testing.T) {
 		}
 	})
 
-	// A social method's own recorded name is fixed to the method, so a start
-	// input cannot aim its callback elsewhere.
 	t.Run("a social start input cannot change the recorded provider", func(t *testing.T) {
 		r, m := newSocial()
 		r.allow("acct1")
@@ -624,7 +564,6 @@ func TestACallbackMustNameTheFlowsProvider(t *testing.T) {
 	t.Run("an enterprise callback of another provider is refused", func(t *testing.T) {
 		r, m := newEnterprise()
 		r.allow("acct1")
-		// The flow records the input's provider identifier, not the method name.
 		cookie := startRedirect(t, r, `,"input":{"provider":"ent"}`)
 		if rec := r.send(http.MethodGet, "/api/v1/auth/callback/other", "", "Cookie", cookie); rec.Code != http.StatusUnauthorized {
 			t.Errorf("an enterprise callback of another provider answered %d, want 401: %s", rec.Code, rec.Body.String())
@@ -634,8 +573,6 @@ func TestACallbackMustNameTheFlowsProvider(t *testing.T) {
 		}
 	})
 
-	// The compare is verbatim: a provider of the same length but different
-	// content, and one differing only in case, are both refused.
 	t.Run("a same-length different provider is refused", func(t *testing.T) {
 		r, m := newEnterprise()
 		r.allow("acct1")
@@ -673,10 +610,7 @@ func TestACallbackMustNameTheFlowsProvider(t *testing.T) {
 	})
 }
 
-// TestACrossSiteCallbackPostIsAllowed holds that the callback route bypasses the
-// cross-origin check while another flow route keeps it: a cross-site POST to the
-// callback reaches its handler and is answered the bounce page, and the bypass
-// pattern does not cover the resume route the page posts to.
+// TestACrossSiteCallbackPostIsAllowed holds that the callback bypasses the cross-origin check and the resume route does not.
 func TestACrossSiteCallbackPostIsAllowed(t *testing.T) {
 	m := &redirectMethod{}
 	r := newRigMethod(t, m)
@@ -707,7 +641,6 @@ func TestACrossSiteCallbackPostIsAllowed(t *testing.T) {
 	}
 }
 
-// flowRecordOf reads and decodes the flow record a cookie's token keys.
 func flowRecordOf(t *testing.T, r *rig, cookie string) record {
 	t.Helper()
 	_, token, ok := strings.Cut(cookie, "=")
@@ -725,8 +658,6 @@ func flowRecordOf(t *testing.T, r *rig, cookie string) record {
 	return rec
 }
 
-// editFlowRecord rewrites the flow record a cookie names, as a competing writer
-// would.
 func editFlowRecord(t *testing.T, r *rig, cookie string, edit func(*record)) {
 	t.Helper()
 	_, token, _ := strings.Cut(cookie, "=")
@@ -741,11 +672,7 @@ func editFlowRecord(t *testing.T, r *rig, cookie string, edit func(*record)) {
 	}
 }
 
-// TestBeginProcessingLosingTheRecordIsRefused holds the flow's atomicity guard:
-// when a competing writer moved the record so the compare-and-swap from the
-// bytes just read cannot match, beginProcessing refuses and the method is never
-// asked. It is the branch a lost compare-and-swap reaches, which the concurrent
-// callback case stops short of.
+// TestBeginProcessingLosingTheRecordIsRefused holds that a lost compare-and-swap refuses the callback and never asks the method.
 func TestBeginProcessingLosingTheRecordIsRefused(t *testing.T) {
 	m := &redirectMethod{}
 	r := newRigMethod(t, m)
@@ -777,14 +704,7 @@ func TestBeginProcessingLosingTheRecordIsRefused(t *testing.T) {
 	}
 }
 
-// TestCallbackIDPInitiatedRecordsProviderAndResumableBinding holds that an
-// IdP-initiated sign-in runs through the bounce: the cookie-less cross-site post
-// to the callback is answered the page, and the page's same-origin post to the
-// resume route creates the record. The record carries the path's provider id —
-// which the method reads as FlowState.Provider — and a binding the issued
-// cookie resumes, so a login that still needs a second factor continues rather
-// than being lost. A provider whose row forbids it is refused at the resume
-// route and the method is never asked.
+// TestCallbackIDPInitiatedRecordsProviderAndResumableBinding holds that the bounce turns a cookie-less cross-site post into a same-origin resume that creates the record.
 func TestCallbackIDPInitiatedRecordsProviderAndResumableBinding(t *testing.T) {
 	build := func(allow bool) (*rig, *redirectMethod) {
 		m := &redirectMethod{}
@@ -845,10 +765,7 @@ func TestCallbackIDPInitiatedRecordsProviderAndResumableBinding(t *testing.T) {
 	})
 }
 
-// TestACallbackReadsOnlyTheCookie holds that a callback carrying the flow token
-// only in the Authn-Flow header is treated as carrying no binding: a user agent
-// navigation cannot set a header, so the callback reads the cookie alone and
-// falls to the IdP-initiated path.
+// TestACallbackReadsOnlyTheCookie holds that a header-only token is no binding on a callback, which falls to the IdP-initiated path.
 func TestACallbackReadsOnlyTheCookie(t *testing.T) {
 	m := &redirectMethod{}
 	r := newRigMethod(t, m)
@@ -865,9 +782,7 @@ func TestACallbackReadsOnlyTheCookie(t *testing.T) {
 	}
 }
 
-// TestACallbackAnsweringRefusedOrUnavailableLeavesATombstone holds that a method
-// that refuses or reports an outage on its callback leaves the flow a failed
-// tombstone and issues no session.
+// TestACallbackAnsweringRefusedOrUnavailableLeavesATombstone holds that a refusal or outage on a callback leaves a failed tombstone and no session.
 func TestACallbackAnsweringRefusedOrUnavailableLeavesATombstone(t *testing.T) {
 	cases := []struct {
 		name string
@@ -912,10 +827,7 @@ func TestACallbackAnsweringRefusedOrUnavailableLeavesATombstone(t *testing.T) {
 	}
 }
 
-// TestMaskEmail holds the shape a surface names a colliding address with: the
-// first rune of the local part, three asterisks and the domain as written. What
-// is not one @ with a local part and a domain on both sides masks to nothing
-// rather than to a misleading shape.
+// TestMaskEmail holds the mask shape: the first rune, three asterisks and the domain as written.
 func TestMaskEmail(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"ann@home.org", "a***@home.org"},
@@ -933,10 +845,7 @@ func TestMaskEmail(t *testing.T) {
 	}
 }
 
-// TestAMaskedAddressTravelsOnlyWithLinkRequired holds that a link-required
-// refusal records the masked address on the call and puts it in the landing
-// fragment as authn_email, while a refusal that named no address — a plain
-// link-required and any other code — carries no such key.
+// TestAMaskedAddressTravelsOnlyWithLinkRequired holds that authn_email appears only when a link-required refusal named an address.
 func TestAMaskedAddressTravelsOnlyWithLinkRequired(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -980,12 +889,7 @@ func TestAMaskedAddressTravelsOnlyWithLinkRequired(t *testing.T) {
 	}
 }
 
-// TestAFailedNavigationCallbackLandsBackInTheProduct holds the answer a browser
-// gets when the provider sends it back and the login is refused: the user agent
-// is landed on the configured failure page with the problem code in the URL
-// fragment, instead of a problem document a browser can only render as JSON. A
-// request that is not a navigation is an API client and keeps the problem
-// document, whose code is the same one the fragment carries.
+// TestAFailedNavigationCallbackLandsBackInTheProduct holds that a refused navigation callback lands on the failure page with the code in the fragment.
 func TestAFailedNavigationCallbackLandsBackInTheProduct(t *testing.T) {
 	m := &redirectMethod{}
 	m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
@@ -994,8 +898,6 @@ func TestAFailedNavigationCallbackLandsBackInTheProduct(t *testing.T) {
 	r := newRigMethod(t, m)
 	r.allow("acct1")
 
-	// A callback spends the flow it belongs to, so the two answers are read off
-	// two flows.
 	apiCookie := startRedirect(t, r, "")
 	api := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", apiCookie)
 	if api.Code != http.StatusUnauthorized {
@@ -1028,10 +930,7 @@ func TestAFailedNavigationCallbackLandsBackInTheProduct(t *testing.T) {
 	}
 }
 
-// TestAFailedCallbackOfAnotherPurposeLandsOnItsOwnPage holds that a failed link,
-// step-up or enrollment lands the user agent on the page that started it — the
-// flow's recorded return target — rather than on the sign-in surface a failed
-// login lands on, and carries the same fragment.
+// TestAFailedCallbackOfAnotherPurposeLandsOnItsOwnPage holds that a failed link, step-up or enrollment lands on its recorded return target with the same fragment.
 func TestAFailedCallbackOfAnotherPurposeLandsOnItsOwnPage(t *testing.T) {
 	m := &redirectMethod{}
 	m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
@@ -1057,9 +956,7 @@ func TestAFailedCallbackOfAnotherPurposeLandsOnItsOwnPage(t *testing.T) {
 	}
 }
 
-// TestACallbackOfAnUnregisteredMethodIsRefused holds that a flow record naming a
-// method the assembly does not hold cannot be walked into a proof: the callback
-// is refused and no method is dispatched.
+// TestACallbackOfAnUnregisteredMethodIsRefused holds that a flow naming an unassembled method is refused and no method dispatched.
 func TestACallbackOfAnUnregisteredMethodIsRefused(t *testing.T) {
 	m := &redirectMethod{}
 	r := newRigMethod(t, m)
@@ -1076,11 +973,7 @@ func TestACallbackOfAnUnregisteredMethodIsRefused(t *testing.T) {
 	}
 }
 
-// TestACallbackBodyOverTheLimitIsRefused holds the callback's posted-body bound
-// (the design's 512 KiB for SAML's ACS) on both routes a post reaches. On the
-// resume route a body over it is refused before any method reads it and the flow
-// is left a tombstone, and a body within it is dispatched. On the callback route
-// a body over it is refused without a page and without touching the flow.
+// TestACallbackBodyOverTheLimitIsRefused holds the 512 KiB posted-body bound on both callback routes.
 func TestACallbackBodyOverTheLimitIsRefused(t *testing.T) {
 	m := &redirectMethod{}
 	r := newRigMethod(t, m)
@@ -1115,10 +1008,7 @@ func TestACallbackBodyOverTheLimitIsRefused(t *testing.T) {
 	}
 }
 
-// TestACallbackWritesTheReturnTargetTheWayRedirectDoes holds the Location value
-// of the completion: a return target that is a path of this server has its dot
-// segments removed, and a byte outside ASCII is percent-escaped, so the header
-// carries a valid URI reference rather than a raw UTF-8 byte.
+// TestACallbackWritesTheReturnTargetTheWayRedirectDoes holds that a local target drops dot segments and a non-ASCII byte is percent-escaped.
 func TestACallbackWritesTheReturnTargetTheWayRedirectDoes(t *testing.T) {
 	for _, c := range []struct {
 		name     string
@@ -1146,12 +1036,6 @@ func TestACallbackWritesTheReturnTargetTheWayRedirectDoes(t *testing.T) {
 	}
 }
 
-// samlStandIn stands in for the SAML method. Begin draws a request identifier
-// into the flow's private state; Answer checks the form's InResponseTo against
-// it for an SP-initiated flow, or requires it empty and the flow to name
-// provider "ent" for an IdP-initiated one, before it accepts the one valid
-// response value. The form field InResponseTo stands in for the attribute
-// inside the signed response. sp and idp count the answers of each kind.
 type samlStandIn struct {
 	authn.LoginMethod
 	sp, idp atomic.Int32
@@ -1182,8 +1066,6 @@ func (m *samlStandIn) Answer(_ context.Context, f authn.FlowState, in authn.Step
 	return authn.StepProven(authn.Proof{Account: "acct-idp", Methods: []authn.Method{authn.MethodPassword}}), nil
 }
 
-// providerRows is an enterprise provider register that answers its rows by
-// identifier.
 type providerRows struct {
 	authn.SSOProviders
 	rows map[string]authn.SSOProvider
@@ -1197,9 +1079,6 @@ func (s *providerRows) Get(_ context.Context, id string) (authn.SSOProvider, err
 	return row, nil
 }
 
-// staleCookieRig holds a social redirect method, "github", whose flows leave the
-// browser a flow cookie, and the SAML stand-in for enterprise provider "ent",
-// whose row allows an IdP-initiated sign-in when allowIDP is set.
 func staleCookieRig(t *testing.T, allowIDP bool) (*rig, *redirectMethod, *samlStandIn) {
 	t.Helper()
 	social := &redirectMethod{name: "github"}
@@ -1214,7 +1093,6 @@ func staleCookieRig(t *testing.T, allowIDP bool) (*rig, *redirectMethod, *samlSt
 	return r, social, saml
 }
 
-// startGitHub starts a github login flow and returns its cookie.
 func startGitHub(t *testing.T, r *rig) string {
 	t.Helper()
 	rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"github"}`)
@@ -1224,18 +1102,12 @@ func startGitHub(t *testing.T, r *rig) string {
 	return flowCookie(t, rec)
 }
 
-// postIDPInitiated delivers a response from provider "ent" the way a browser
-// does: the cross-site post to the callback, then the bounce page's same-origin
-// navigation to the resume route carrying whatever flow cookie the browser
-// holds.
 func postIDPInitiated(t *testing.T, r *rig, form, cookie string) *httptest.ResponseRecorder {
 	t.Helper()
 	page := r.bounceThrough(t, "ent", form)
 	return r.resume(t, page, cookie, "Sec-Fetch-Mode", "navigate")
 }
 
-// rawFlowRecord is the stored bytes of the flow record a cookie names, or nil
-// when there is none.
 func rawFlowRecord(t *testing.T, r *rig, cookie string) []byte {
 	t.Helper()
 	_, token, _ := strings.Cut(cookie, "=")
@@ -1249,9 +1121,6 @@ func rawFlowRecord(t *testing.T, r *rig, cookie string) []byte {
 	return raw
 }
 
-// signedInFromTheIDP checks that an IdP-initiated post made one session for the
-// provider's account, landed on the default return target, and set a flow
-// cookie other than stale.
 func signedInFromTheIDP(t *testing.T, r *rig, out *httptest.ResponseRecorder, stale string) {
 	t.Helper()
 	if out.Code != http.StatusSeeOther {
@@ -1271,11 +1140,7 @@ func signedInFromTheIDP(t *testing.T, r *rig, out *httptest.ResponseRecorder, st
 	}
 }
 
-// TestAStaleFlowCookieDoesNotBlockAnIdPInitiatedSignIn holds that a flow cookie
-// whose flow cannot take a provider's posted callback binds nothing: the resume
-// post is answered as one that carries no cookie, so a provider that allows an
-// IdP-initiated sign-in signs the user in, and the flow the cookie names is
-// left as it stands.
+// TestAStaleFlowCookieDoesNotBlockAnIdPInitiatedSignIn holds that an unusable cookie binds nothing, so an allowing provider still signs the user in.
 func TestAStaleFlowCookieDoesNotBlockAnIdPInitiatedSignIn(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -1286,7 +1151,6 @@ func TestAStaleFlowCookieDoesNotBlockAnIdPInitiatedSignIn(t *testing.T) {
 			if cb := r.send(http.MethodGet, "/api/v1/auth/callback/github", "", "Cookie", cookie); cb.Code != http.StatusSeeOther {
 				t.Fatalf("the github callback answered %d: %s", cb.Code, cb.Body.String())
 			}
-			// The github login's session; the cookie now names a done tombstone.
 			r.sessions.created = nil
 			return cookie
 		}},
@@ -1340,11 +1204,7 @@ func TestAStaleFlowCookieDoesNotBlockAnIdPInitiatedSignIn(t *testing.T) {
 	}
 }
 
-// TestAnUnprovenIdPInitiatedPostLeavesALiveFlowAlone holds that a post the
-// method refuses, such as a planted or broken response, neither ends nor
-// displaces a live flow of another provider: no session, no flow cookie
-// written over the browser's, the live record untouched, and the original
-// cookie still completes its flow.
+// TestAnUnprovenIdPInitiatedPostLeavesALiveFlowAlone holds that a refused post neither ends nor displaces another provider's live flow.
 func TestAnUnprovenIdPInitiatedPostLeavesALiveFlowAlone(t *testing.T) {
 	r, _, saml := staleCookieRig(t, true)
 	cookie := startGitHub(t, r)
@@ -1377,10 +1237,7 @@ func TestAnUnprovenIdPInitiatedPostLeavesALiveFlowAlone(t *testing.T) {
 	}
 }
 
-// TestAStaleFlowCookieKeepsAProviderThatForbidsIdPInitiatedRefused holds that
-// the stale cookie's post still meets every guard of the IdP-initiated path: a
-// provider whose row forbids it answers flow-invalid, the method is not asked,
-// no record is written and the browser's cookie is not replaced.
+// TestAStaleFlowCookieKeepsAProviderThatForbidsIdPInitiatedRefused holds that a forbidding provider still answers flow-invalid, asking no method and writing nothing.
 func TestAStaleFlowCookieKeepsAProviderThatForbidsIdPInitiatedRefused(t *testing.T) {
 	r, _, saml := staleCookieRig(t, false)
 	cookie := startGitHub(t, r)
@@ -1401,10 +1258,7 @@ func TestAStaleFlowCookieKeepsAProviderThatForbidsIdPInitiatedRefused(t *testing
 	}
 }
 
-// TestAFirstFactorFlowOfTheSameProviderStaysBound holds that a live
-// SP-initiated flow of the posting provider keeps its binding: an IdP-initiated
-// response reaches the method as an answer to that flow, which refuses it
-// because it answers no request of the flow, and no session is made.
+// TestAFirstFactorFlowOfTheSameProviderStaysBound holds that an IdP-initiated response is delivered to the bound flow, which refuses it, and no session is made.
 func TestAFirstFactorFlowOfTheSameProviderStaysBound(t *testing.T) {
 	r, _, saml := staleCookieRig(t, true)
 	rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"saml","input":{"provider":"ent"}}`)
@@ -1422,10 +1276,7 @@ func TestAFirstFactorFlowOfTheSameProviderStaysBound(t *testing.T) {
 	}
 }
 
-// TestAFailedGETCallbackOfALinkFlowPastTheFirstFactorLandsOnItsReturnTo holds
-// that a GET callback keeps its bound answer: a link flow that has left the
-// first factor refuses a second navigation callback as flow-invalid and lands
-// the user agent on the page the link started from, not on the sign-in surface.
+// TestAFailedGETCallbackOfALinkFlowPastTheFirstFactorLandsOnItsReturnTo holds that such a callback answers flow-invalid and lands on the page the link started from.
 func TestAFailedGETCallbackOfALinkFlowPastTheFirstFactorLandsOnItsReturnTo(t *testing.T) {
 	m := &redirectMethod{}
 	m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
@@ -1462,10 +1313,7 @@ func TestAFailedGETCallbackOfALinkFlowPastTheFirstFactorLandsOnItsReturnTo(t *te
 	}
 }
 
-// TestAStoreOutageOnAFlowCookiePostIsUnavailable holds that only a flow the
-// store answered as invalid counts as no binding: when reading the flow record
-// fails, the resume post is answered unavailable and never reaches the
-// IdP-initiated path.
+// TestAStoreOutageOnAFlowCookiePostIsUnavailable holds that an unreadable flow record answers unavailable and never enters the IdP-initiated path.
 func TestAStoreOutageOnAFlowCookiePostIsUnavailable(t *testing.T) {
 	r, _, saml := staleCookieRig(t, true)
 	cookie := startGitHub(t, r)

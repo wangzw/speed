@@ -9,8 +9,6 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// scopedOn is the configuration body that names one endpoint per scope. A scope
-// left out of items keeps the key out.
 func scopedOn(items string) string {
 	if items == "" {
 		return `{}`
@@ -18,12 +16,7 @@ func scopedOn(items string) string {
 	return `{"authn":{"gate":{"mount":{"endpoints":{` + items + `}}}}}`
 }
 
-// TestEachScopeMountsOnItsOwnEndpoint holds the point of the per-scope endpoint:
-// the ordinary routes and the platform-management routes stay on the account
-// endpoint, while the tenant-management routes mount on the endpoint the tenant
-// layers guard. The base path each scope is published under is unchanged, so a
-// route's address says which scope it belongs to and the endpoint says which
-// chain decides it.
+// TestEachScopeMountsOnItsOwnEndpoint holds the ordinary and platform routes on the account endpoint and tenant routes on the tenant endpoint.
 func TestEachScopeMountsOnItsOwnEndpoint(t *testing.T) {
 	l := &ledger{}
 	err := stack{
@@ -60,10 +53,7 @@ func TestEachScopeMountsOnItsOwnEndpoint(t *testing.T) {
 	}
 }
 
-// TestTheSystemScopeFallsBackToTheDefaultEndpoint holds that only the tenant
-// scope needs an endpoint of its own: platform management and the ordinary
-// surface share the account endpoint unless the configuration separates them,
-// so an assembly that names none but the default keeps one place for both.
+// TestTheSystemScopeFallsBackToTheDefaultEndpoint holds that platform management shares the account endpoint unless separated.
 func TestTheSystemScopeFallsBackToTheDefaultEndpoint(t *testing.T) {
 	l := &ledger{}
 	err := stack{
@@ -84,12 +74,7 @@ func TestTheSystemScopeFallsBackToTheDefaultEndpoint(t *testing.T) {
 	}
 }
 
-// TestTenantScopedGroupsTakeTheSharedGuard holds that the mounter applies the
-// shared identity guard to every ScopeTenants registration and never the
-// tenant administration refusal. The members, invitations and SSO groups manage
-// the system tenant itself and are addressed by the platform domain
-// legitimately, so narrowing them here would break that surface; only the two
-// tenant management modules narrow the rule themselves.
+// TestTenantScopedGroupsTakeTheSharedGuard holds the shared identity guard on every tenant registration.
 func TestTenantScopedGroupsTakeTheSharedGuard(t *testing.T) {
 	guard := &scopedGuard{}
 	l := &ledger{}
@@ -118,10 +103,8 @@ func TestTenantScopedGroupsTakeTheSharedGuard(t *testing.T) {
 	}
 }
 
-// TestATenantScopeRegistrationNeedsThePathTenantGuard holds that a tenant-scoped
-// group cannot be mounted on a bare chain. The guard is what keeps a path
-// segment from addressing another tenant, so an assembly that delivers none is
-// refused at the registration instead of serving the group unguarded.
+// TestATenantScopeRegistrationNeedsThePathTenantGuard holds that a
+// tenant-scoped group cannot be mounted on a bare chain.
 func TestATenantScopeRegistrationNeedsThePathTenantGuard(t *testing.T) {
 	text, panicked := panicText(func() {
 		_ = stack{
@@ -143,12 +126,7 @@ func TestATenantScopeRegistrationNeedsThePathTenantGuard(t *testing.T) {
 	}
 }
 
-// TestTheTenantScopesEndpointMustBeNamed holds that there is no fallback for the
-// tenant scope: its routes make their decisions in a tenant policy domain, and
-// mounting them on the ordinary endpoint would put them on a chain no tenant
-// layer guards. The registration is the place the omission is visible, so it
-// panics naming the key instead of mounting the route somewhere it does not
-// belong.
+// TestTheTenantScopesEndpointMustBeNamed holds that the tenant scope has no fallback.
 func TestTheTenantScopesEndpointMustBeNamed(t *testing.T) {
 	text, panicked := panicText(func() {
 		_ = stack{

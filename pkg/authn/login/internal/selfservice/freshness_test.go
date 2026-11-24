@@ -15,8 +15,6 @@ import (
 
 const idpProvider = "0198f0aa-0000-7000-8000-000000000001"
 
-// factorsOnly is the one call a refused request leaves: the read of the
-// account's factors that decided what to ask for.
 var factorsOnly = []string{"mfa.Factors"}
 
 type freshnessCase struct {
@@ -88,11 +86,8 @@ func freshnessCases() []freshnessCase {
 	}
 }
 
-// TestFreshnessIsAskedForOnEveryRouteThatChangesTheWayIn runs each case on each
-// of the routes that add, choose or remove a way to sign in. A refusal is the
-// step-up 401 with the level and age the account's factors call for and nothing
-// is called but the read of the factors; an identity that meets it is let
-// through to the handler's own first call.
+// TestFreshnessIsAskedForOnEveryRouteThatChangesTheWayIn runs each case
+// on each of the routes that add, choose or remove a way to sign in.
 func TestFreshnessIsAskedForOnEveryRouteThatChangesTheWayIn(t *testing.T) {
 	for _, tc := range gatedRoutes() {
 		for _, c := range freshnessCases() {
@@ -136,10 +131,7 @@ func TestFreshnessIsAskedForOnEveryRouteThatChangesTheWayIn(t *testing.T) {
 	}
 }
 
-// TestTheFactorsThatCannotBeReadAreNotReadAsNone holds that an account whose
-// factors cannot be listed is a 503 and not the lower requirement of an account
-// with none, which would let a single-factor session through to change the
-// credentials of an account that has a second factor.
+// TestTheFactorsThatCannotBeReadAreNotReadAsNone holds that an unlistable account is a 503, not the lower requirement of no factors.
 func TestTheFactorsThatCannotBeReadAreNotReadAsNone(t *testing.T) {
 	for _, tc := range gatedRoutes() {
 		t.Run(tc.name, func(t *testing.T) {
@@ -156,10 +148,7 @@ func TestTheFactorsThatCannotBeReadAreNotReadAsNone(t *testing.T) {
 	}
 }
 
-// TestAnIdentityWithNoSessionIsRefusedBeforeAnyCall holds that an identity that
-// stands on no login session, which is what a credential table's subject is,
-// cannot change the account: with no session there is no current session to keep
-// when the others are revoked, and an empty one would revoke them all.
+// TestAnIdentityWithNoSessionIsRefusedBeforeAnyCall holds that an identity on no session cannot change the account.
 func TestAnIdentityWithNoSessionIsRefusedBeforeAnyCall(t *testing.T) {
 	for _, tc := range mutating {
 		t.Run(tc.name, func(t *testing.T) {
@@ -176,25 +165,13 @@ func TestAnIdentityWithNoSessionIsRefusedBeforeAnyCall(t *testing.T) {
 	}
 }
 
-// TestRegisteringAContactAddressNeedsNoFreshAuthentication holds the ruling that
-// registering and proving a contact address is a separate act from making it a
-// way to sign in: the request and the proof carry no fresh authentication of
-// their own. What the proof would change is held to it instead -- an address
-// that becomes the account's default contact or its only (and so automatic
-// sign-in) address, and a phone number an active SMS factor sends its codes to.
-// The acts that change how the account signs in are unchanged: adding a
-// username, choosing a sign-in way, choosing the default contact and removing an
-// identifier all answer the step-up 401.
+// TestRegisteringAContactAddressNeedsNoFreshAuthentication holds that registering and proving a contact is separate from making it a sign-in way.
 func TestRegisteringAContactAddressNeedsNoFreshAuthentication(t *testing.T) {
-	// stale is a single first factor proven a minute ago on an account whose
-	// active factor calls for a fresh local multi-factor proof.
 	stale := func(h *harness) {
 		h.t.Helper()
 		h.activeFactor()
 		h.as()
 	}
-	// settledAccount is an account that already has a default contact and a
-	// second address, so proving one more address changes neither.
 	settledAccount := func(h *harness) {
 		h.t.Helper()
 		h.accounts.identifiers = []authn.Identifier{
@@ -245,8 +222,6 @@ func TestRegisteringAContactAddressNeedsNoFreshAuthentication(t *testing.T) {
 		}
 	})
 
-	// The consequences a proof can carry are the protected writes: none of
-	// these may happen on a session that is not fresh.
 	for _, c := range []struct {
 		name  string
 		setup func(h *harness)
@@ -262,8 +237,6 @@ func TestRegisteringAContactAddressNeedsNoFreshAuthentication(t *testing.T) {
 		{
 			name: "a number the active SMS factor sends to",
 			setup: func(h *harness) {
-				// The SMS factor is what makes the number a factor's target;
-				// the TOTP factor is what makes the session one proof short.
 				h.mfa.factors = []authn.FactorRecord{
 					{ID: "factor-sms", Account: account, Kind: authn.FactorSMS, Status: authn.FactorActive},
 					{ID: "factor-totp", Account: account, Kind: authn.FactorTOTP, Status: authn.FactorActive},
@@ -322,9 +295,7 @@ func TestRegisteringAContactAddressNeedsNoFreshAuthentication(t *testing.T) {
 	}
 }
 
-// TestAnUnreadableSettingIsReportedOnceAndReadAsItsDefault holds that a setting
-// that cannot be read or lies outside its domain is written at Error once, not on
-// every request, and that the request is judged against the declared default.
+// TestAnUnreadableSettingIsReportedOnceAndReadAsItsDefault holds that an unreadable or out-of-domain value is logged once and the default used.
 func TestAnUnreadableSettingIsReportedOnceAndReadAsItsDefault(t *testing.T) {
 	h := newHarness(t)
 	h.activeFactor()

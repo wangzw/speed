@@ -13,7 +13,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// layerStore is a settings store that records the layers it was asked for.
 type layerStore struct {
 	*fakeSettings
 	mu     sync.Mutex
@@ -68,7 +67,6 @@ func TestASettingFaultThatChangesIsReportedAgain(t *testing.T) {
 func TestSharedBackoffGroupsAreEachNamedOnceInTheOrderOfTheirFirstMember(t *testing.T) {
 	got := sharedBackoffs([]string{"Zed", "bob", "Carol", "zed", "carol", "CAROL", "dave", "BOB"})
 	want := [][]string{{"Zed", "zed"}, {"bob", "BOB"}, {"Carol", "carol", "CAROL"}}
-	// The groups follow the first member of each: Zed, bob, Carol.
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("sharedBackoffs gives %v, want %v", got, want)
 	}

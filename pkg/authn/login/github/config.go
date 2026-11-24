@@ -34,17 +34,13 @@ const (
 // registered cannot complete a login.
 var configDefaults = moduleConfig{}
 
-// moduleConfig is the set of input items this module accepts.
 type moduleConfig struct {
-	// ClientID is the OAuth application's client identifier.
 	ClientID string `config:"client-id"`
 	// ClientSecret is the OAuth application's client secret. It signs the
 	// token exchange and is registered as a literal redaction rule.
 	ClientSecret string `config:"client-secret"`
-	// AuthorizeURL, when non-empty, replaces GitHub's authorization endpoint.
 	AuthorizeURL string `config:"authorize-url"`
-	// TokenURL, when non-empty, replaces GitHub's token endpoint.
-	TokenURL string `config:"token-url"`
+	TokenURL     string `config:"token-url"`
 	// APIBase, when non-empty, replaces the base the two reads are resolved
 	// against. A GitHub Enterprise API base carries its own path; trailing
 	// slashes are removed on read so the joined read path has exactly one.
@@ -71,22 +67,19 @@ type gateConfig struct {
 	} `config:"mount"`
 }
 
-// resolved is the configuration this module actually runs on.
 type resolved struct {
 	clientID     string
 	clientSecret string
 	// redirectURI is the callback address the provider is told to send the
 	// browser back to: the public base, the mount path and the callback route,
 	// which ends in this method's name.
-	redirectURI string
-	endpoint    oauth2.Endpoint
-	// apiBase is the base the two reads are resolved against.
+	redirectURI   string
+	endpoint      oauth2.Endpoint
 	apiBase       string
 	allowLoopback bool
 	rootCAs       *x509.CertPool
 }
 
-// schema declares this module's input items.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,

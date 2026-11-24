@@ -14,8 +14,6 @@ import (
 // 32-byte value written in hexadecimal is 64 such characters.
 const stateBytes = 32
 
-// stateVersion is the version of the private state written between the begin
-// step and the callback. A record of another version is refused.
 const stateVersion = 1
 
 // State is the state a WeChat flow carries between the begin step and the
@@ -65,7 +63,6 @@ func (s State) Matches(value string) bool {
 	return subtle.ConstantTimeCompare([]byte(hex.EncodeToString(sum[:])), []byte(s.digest)) == 1
 }
 
-// stateRecord is the private state as it is written into the flow record.
 type stateRecord struct {
 	Version int    `json:"v"`
 	Digest  string `json:"d"`

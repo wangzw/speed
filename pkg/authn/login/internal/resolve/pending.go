@@ -12,7 +12,6 @@ import (
 // set is closed.
 type Source string
 
-// The sources.
 const (
 	// SourceSocial is a social provider's first login.
 	SourceSocial Source = "social"
@@ -62,7 +61,9 @@ type Pending struct {
 	// which the account joins through a membership. Both are empty for a social
 	// or phone login.
 	Provider string `json:"provider,omitempty"`
-	Tenant   string `json:"tenant,omitempty"`
+	// Tenant is the enterprise provider's tenant, which the account joins
+	// through a membership; empty for a social or phone login.
+	Tenant string `json:"tenant,omitempty"`
 	// DisplayName is the provider's name for the person, made fit to store. A
 	// social first login carries it back to the client, read-only, on the
 	// pending-signup step.
@@ -144,7 +145,6 @@ func pendingSocial(ext *authn.External, aliases []authn.ExternalLink, email stri
 	return Result{Pending: &p}
 }
 
-// pendingPhone is the pending signup of a phone an SMS code just proved.
 func pendingPhone(phone string) Result {
 	return Result{Pending: &Pending{
 		Source: SourcePhone,
@@ -188,7 +188,6 @@ func externalOf(ext *authn.External) *authn.External {
 	return &copied
 }
 
-// cloneLinks copies the earlier keys of an external identity.
 func cloneLinks(links []authn.ExternalLink) []authn.ExternalLink {
 	if len(links) == 0 {
 		return nil
@@ -196,7 +195,6 @@ func cloneLinks(links []authn.ExternalLink) []authn.ExternalLink {
 	return append([]authn.ExternalLink(nil), links...)
 }
 
-// cloneAttributes copies a provider's attributes.
 func cloneAttributes(attrs map[string]string) map[string]string {
 	if len(attrs) == 0 {
 		return nil
@@ -208,7 +206,6 @@ func cloneAttributes(attrs map[string]string) map[string]string {
 	return out
 }
 
-// linkOf is the key a pending signup's external identity is bound under.
 func linkOf(p Pending) authn.ExternalLink {
 	if p.External == nil {
 		return authn.ExternalLink{}

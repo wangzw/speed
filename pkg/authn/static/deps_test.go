@@ -7,13 +7,6 @@ import (
 	"testing"
 )
 
-// forbiddenDependencies are the import path prefixes the compile closure of this
-// package does not hold: the database drivers, the message and cache clients,
-// and the packages of the other authn halves. The closure does hold pkg/db,
-// pkg/event and gorm, which pkg/settings imports, since the settings store this
-// backend reads its parameters from is declared in the package that also
-// carries its implementation; a driver or a client still arrives only when a
-// host assembles one.
 var forbiddenDependencies = []string{
 	"gorm.io/driver/",
 	"github.com/glebarez/",

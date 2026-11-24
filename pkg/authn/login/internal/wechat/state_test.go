@@ -7,6 +7,8 @@ import (
 	"testing"
 )
 
+// TestNewStateIsSixtyFourHexCharacters checks that NewState draws a fresh
+// 64-character hexadecimal value each time.
 func TestNewStateIsSixtyFourHexCharacters(t *testing.T) {
 	st, err := NewState()
 	if err != nil {
@@ -27,9 +29,7 @@ func TestNewStateIsSixtyFourHexCharacters(t *testing.T) {
 	}
 }
 
-// TestPrivateCarriesOnlyTheDigest holds that the state the flow record keeps is
-// the digest, not the value: a reader of the key-value store cannot send back
-// what it sees.
+// TestPrivateCarriesOnlyTheDigest holds that the flow record keeps the state's digest, not the value.
 func TestPrivateCarriesOnlyTheDigest(t *testing.T) {
 	st, err := NewState()
 	if err != nil {
@@ -52,6 +52,8 @@ func TestPrivateCarriesOnlyTheDigest(t *testing.T) {
 	}
 }
 
+// TestAMismatchedOrAbsentStateMatchesNothing checks that a state matches only its
+// own value, not a different one, the empty one or a zero state.
 func TestAMismatchedOrAbsentStateMatchesNothing(t *testing.T) {
 	st := stateOf("the-right-state")
 	if !st.Matches("the-right-state") {
@@ -68,6 +70,7 @@ func TestAMismatchedOrAbsentStateMatchesNothing(t *testing.T) {
 	}
 }
 
+// TestLoadStateRefusesAnythingItDidNotWrite checks the empty, non-JSON, wrong-version, missing-digest, unknown-field and trailing-value refusals.
 func TestLoadStateRefusesAnythingItDidNotWrite(t *testing.T) {
 	cases := []struct {
 		name    string

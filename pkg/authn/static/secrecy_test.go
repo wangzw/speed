@@ -14,18 +14,8 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// TestNoResolverErrorRepeatsTheSubjectTable holds the one thing a failure about
-// this module's credentials must not do: repeat the table. The subjects item is
-// the module's secret — the names it answers for and the password entries it
-// holds — so a refusal names the key to correct and never the stored material.
-//
-// Two parts of the table are driven here. A name that does not fit the format is
-// not echoed, because the table is a secret as a whole and a name outside the
-// format can be anything at all. An entry the module cannot read is not echoed
-// either, because it is the stored secret the table exists to hold. The entry
-// case repeats TestAnUnusableEntryNeverReachesAnErrorMessage on purpose: this
-// test states the whole-table rule in one place, and naming only the format rule
-// would leave the two halves of the table looking as though only one is guarded.
+// TestNoResolverErrorRepeatsTheSubjectTable holds the one thing a failure
+// about this module's credentials must not do: repeat the table.
 func TestNoResolverErrorRepeatsTheSubjectTable(t *testing.T) {
 	entry := cheapEntry(t, "x")
 
@@ -52,11 +42,7 @@ func TestNoResolverErrorRepeatsTheSubjectTable(t *testing.T) {
 	})
 }
 
-// TestTheModuleRequiresTheLogCapabilityOptionally holds the declaration New's
-// registration depends on: without the edge nothing orders the log module before
-// this one, and the registration happens against a capability that is not there.
-// It is optional, because a backend has to run in an assembly that never took
-// logging in.
+// TestTheModuleRequiresTheLogCapabilityOptionally holds the optional edge that orders the log module before this one.
 func TestTheModuleRequiresTheLogCapabilityOptionally(t *testing.T) {
 	var found bool
 	for _, r := range Module().Requires {
@@ -72,15 +58,7 @@ func TestTheModuleRequiresTheLogCapabilityOptionally(t *testing.T) {
 	}
 }
 
-// TestTheSubjectTableIsRegisteredAsARedactionRule holds the table's entries to
-// being masked wherever they turn up in a log line, through the real logging
-// chain rather than a stand-in: the module is driven beside the log module
-// writing JSON to a file, and a record that carries an entry is written through
-// the delivered capability.
-//
-// The assertion is that the destination shows the mask, not merely that it lacks
-// the entry: the entry might never have reached the record at all, and an
-// absence alone would pass for the wrong reason.
+// TestTheSubjectTableIsRegisteredAsARedactionRule holds that entries are masked through the real logging chain.
 func TestTheSubjectTableIsRegisteredAsARedactionRule(t *testing.T) {
 	entry := cheapEntry(t, "alices")
 	path := filepath.Join(t.TempDir(), "log.json")
@@ -102,8 +80,6 @@ func TestTheSubjectTableIsRegisteredAsARedactionRule(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			// Written while the destination is open: the drive closes it after
-			// the action returns.
 			lg.Named("probe").Info("a failed request carried the entry", "entry", entry)
 			return nil
 		},

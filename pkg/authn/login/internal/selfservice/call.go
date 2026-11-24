@@ -17,14 +17,8 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// writerKey carries the response writer to the typed handler. The session
-// library writes its Set-Cookie through a response writer, which a reply cannot
-// express; the wrapper below runs inside the mounter's own wrapper, so the
-// context it hands the handler carries both.
 type writerKey struct{}
 
-// withWriter leaves the response writer on the context the typed handler
-// receives.
 func withWriter(h gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := context.WithValue(c.Request.Context(), writerKey{}, c.Writer)
@@ -33,30 +27,23 @@ func withWriter(h gin.HandlerFunc) gin.HandlerFunc {
 	}
 }
 
-// writerOf is the response writer the handler writes through, or nil outside a
-// mounted route.
 func writerOf(ctx context.Context) http.ResponseWriter {
 	w, _ := ctx.Value(writerKey{}).(http.ResponseWriter)
 	return w
 }
 
-// The problem type prefix every refusal of this capability carries.
 const typePrefix = "urn:speed:authn:"
 
-// call is one request's answer being built.
 type call struct {
 	ctx      context.Context
 	w        http.ResponseWriter
 	endpoint string
-	// clientIP is the address the entry point resolved for this request, kept
-	// for the sends that carry it to the code engine as their source.
 	clientIP string
 
 	reply speedhttp.Reply
 	err   error
 }
 
-// call builds the answer builder of one request.
 func (r *routes) call(ctx context.Context, meta *speedhttp.Meta) *call {
 	c := &call{ctx: ctx, w: writerOf(ctx), endpoint: r.endpoint}
 	if meta != nil {
@@ -65,7 +52,6 @@ func (r *routes) call(ctx context.Context, meta *speedhttp.Meta) *call {
 	return c
 }
 
-// result is the answer the entry point writes.
 func (c *call) result() (speedhttp.Reply, error) {
 	if c.err != nil {
 		return nil, c.err
@@ -76,17 +62,14 @@ func (c *call) result() (speedhttp.Reply, error) {
 	return c.reply, nil
 }
 
-// json answers a body as JSON.
 func (c *call) json(status int, body any) {
 	c.reply = speedhttp.JSONReply(status, body)
 }
 
-// empty answers a status with no body.
 func (c *call) empty(status int) {
 	c.reply = speedhttp.EmptyReply(status)
 }
 
-// fail answers a problem code in the status the closed table gives it.
 func (c *call) fail(code string) {
 	status, ok := mount.Status(code)
 	if !ok {
@@ -95,7 +78,6 @@ func (c *call) fail(code string) {
 	c.err = speedhttp.Fault{Status: status, Type: typePrefix + code}
 }
 
-// unauthorized answers a 401 with the capability's challenge.
 func (c *call) unauthorized(code string) {
 	fault := speedhttp.Fault{Status: http.StatusUnauthorized}
 	if code != "" {
@@ -108,7 +90,6 @@ func (c *call) unauthorized(code string) {
 	c.err = fault
 }
 
-// forbidden answers a 403 with a code.
 func (c *call) forbidden(code string) {
 	status, ok := mount.Status(code)
 	if !ok || status != http.StatusForbidden {
@@ -117,8 +98,6 @@ func (c *call) forbidden(code string) {
 	c.err = speedhttp.Fault{Status: status, Type: typePrefix + code}
 }
 
-// throttled answers a 429, carrying the retry delay in whole seconds when one
-// is stated.
 func (c *call) throttled(retryAfter time.Duration) {
 	fault := speedhttp.Fault{Status: http.StatusTooManyRequests, Type: typePrefix + mount.CodeThrottled}
 	if retryAfter > 0 {
@@ -130,15 +109,10 @@ func (c *call) throttled(retryAfter time.Duration) {
 	c.err = fault
 }
 
-// unavailable answers a 503 that never says which dependency failed.
 func (c *call) unavailable() {
 	c.err = speedhttp.Fault{Status: http.StatusServiceUnavailable, Type: typePrefix + mount.CodeUnavailable}
 }
 
-// refuse writes the refusal the call holds, for a check that runs before the
-// typed handler and so has no return to carry it to the entry point. It writes
-// the fault's headers and the problem document, the answer a handler's refused
-// fault would have got.
 func (c *call) refuse(g *gin.Context) {
 	var fault speedhttp.Fault
 	if !errors.As(c.err, &fault) {
@@ -151,7 +125,6 @@ func (c *call) refuse(g *gin.Context) {
 	speedhttp.Fail(g, fault.Problem())
 }
 
-// busy answers the 503 of a password derivation refused for capacity.
 func (c *call) busy() {
 	c.err = speedhttp.Fault{
 		Status:  http.StatusServiceUnavailable,
@@ -160,7 +133,6 @@ func (c *call) busy() {
 	}
 }
 
-// stepUp answers the 401 of an identity that does not meet a requirement.
 func (c *call) stepUp(id authn.Identity, req authn.Requirement) {
 	c.err = speedhttp.Fault{
 		Status: http.StatusUnauthorized,
@@ -172,7 +144,6 @@ func (c *call) stepUp(id authn.Identity, req authn.Requirement) {
 	}
 }
 
-// fail maps an error from a dependency to the answer the design gives it.
 func (r *routes) fail(c *call, err error) {
 	var throttled *authn.ThrottledError
 	switch {
@@ -219,7 +190,6 @@ func (r *routes) fail(c *call, err error) {
 	}
 }
 
-// logWarn records a warning that does not change the answer.
 func logWarn(ctx context.Context, msg string, err error) {
 	attrs := []any{}
 	if err != nil {

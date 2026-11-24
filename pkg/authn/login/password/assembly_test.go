@@ -10,12 +10,8 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// accountModule is the stand-in for the account module: the one module that
-// delivers the password and back-off capabilities, each exclusively. The
-// instance a case supplies is a fake that records what it was asked.
 const accountModule = "stand-in.account"
 
-// standInAccount declares the two capabilities the way the account module does.
 func standInAccount() core.Module {
 	return core.Module{
 		Name: accountModule,
@@ -26,15 +22,11 @@ func standInAccount() core.Module {
 	}
 }
 
-// account is one instance that is both capabilities, as the account module's is.
 type account struct {
 	*fakePasswords
 	*fakeThrottle
 }
 
-// driveWith runs a real registry through this module's descriptor to the stage
-// where the instance exists and its dependencies were resolved, and hands the
-// registry to action.
 func driveWith(t *testing.T, supply any, action func(ctx context.Context, reg *core.Registry) error) error {
 	t.Helper()
 	reg := core.New()
@@ -52,6 +44,7 @@ func driveWith(t *testing.T, supply any, action func(ctx context.Context, reg *c
 	})
 }
 
+// TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt checks that the method is non-exclusive and requires the password and back-off capabilities.
 func TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt(t *testing.T) {
 	m := Module()
 	if m.Name != "authn.login.password" || ModuleName != "authn.login.password" {
@@ -77,6 +70,8 @@ func TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt(t *testing.T) {
 	}
 }
 
+// TestPrepareStatesEnabledAndNothingElse checks that Prepare reports the module
+// enabled and nothing else.
 func TestPrepareStatesEnabledAndNothingElse(t *testing.T) {
 	got, err := Module().Prepare(t.Context(), core.New())
 	if err != nil {
@@ -87,6 +82,7 @@ func TestPrepareStatesEnabledAndNothingElse(t *testing.T) {
 	}
 }
 
+// TestARealRegistryDeliversThePasswordMethodOnTheAccountModulesCapabilities checks that a real registry supplies and runs the method.
 func TestARealRegistryDeliversThePasswordMethodOnTheAccountModulesCapabilities(t *testing.T) {
 	l := &ledger{}
 	th := &fakeThrottle{led: l}
@@ -103,8 +99,6 @@ func TestARealRegistryDeliversThePasswordMethodOnTheAccountModulesCapabilities(t
 	if len(methods) != 1 || methods[0].Name() != "password" {
 		t.Fatalf("delivered %v, want one login method named password", methods)
 	}
-	// The instance is wired to the capabilities the registry resolved, not to
-	// nothing and not to a copy: a credential that holds goes through the fakes.
 	got, err := methods[0].Begin(t.Context(), loginStart(credentialFields("alice", sentinelPassword)))
 	if err != nil || step.KindOf(got) != step.KindProven {
 		t.Fatalf("Begin answered %s (error %v), want a proof", describe(got), err)
@@ -114,6 +108,7 @@ func TestARealRegistryDeliversThePasswordMethodOnTheAccountModulesCapabilities(t
 	}
 }
 
+// TestACommandWithoutAnAccountModuleFailsBeforeAnythingIsBuilt checks the missing-provider failure before the action runs.
 func TestACommandWithoutAnAccountModuleFailsBeforeAnythingIsBuilt(t *testing.T) {
 	err := driveWith(t, nil, func(context.Context, *core.Registry) error {
 		t.Error("the drive reached its action with no account module")
@@ -124,6 +119,7 @@ func TestACommandWithoutAnAccountModuleFailsBeforeAnythingIsBuilt(t *testing.T) 
 	}
 }
 
+// TestACommandWhoseAccountModuleLacksTheBackOffFailsToo checks that a missing back-off capability also fails as a missing provider.
 func TestACommandWhoseAccountModuleLacksTheBackOffFailsToo(t *testing.T) {
 	reg := core.New()
 	reg.Register(Module())
@@ -145,6 +141,8 @@ func TestACommandWhoseAccountModuleLacksTheBackOffFailsToo(t *testing.T) {
 	}
 }
 
+// TestImportingThePackageRegistersTheModuleWithTheProcess checks that importing
+// the package registers the module with the process registry.
 func TestImportingThePackageRegistersTheModuleWithTheProcess(t *testing.T) {
 	got, ok := core.ProcessRegistry.Lookup(ModuleName)
 	if !ok {

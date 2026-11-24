@@ -6,11 +6,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestTheRequestAddressReachesTheCodeEngine holds that the address a request
-// came from reaches the code engine, which counts it as the send's source:
-// Begin takes it from Start.Client, and the phone step of an answer takes it
-// from StepInput.Client. The engine fills both from the request, so a send made
-// over HTTP carries the client's address rather than an empty source.
+// TestTheRequestAddressReachesTheCodeEngine holds that Begin takes the address from Start.Client and the answer step from StepInput.Client.
 func TestTheRequestAddressReachesTheCodeEngine(t *testing.T) {
 	const source = "203.0.113.7"
 	ctx := t.Context()

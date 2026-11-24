@@ -12,9 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// abandoningMFA is the multi-factor module with the optional abandon callback a
-// case scripts: it records the flow states it is handed and answers the error
-// the case set.
 type abandoningMFA struct {
 	*fakeMFA
 	states    []authn.FlowState
@@ -30,8 +27,6 @@ func (m *abandoningMFA) Abandon(_ context.Context, f authn.FlowState) error {
 	return m.err
 }
 
-// abandoningMethod is a first-factor method with the optional abandon callback a
-// case scripts.
 type abandoningMethod struct {
 	*fakeMethod
 	states []authn.FlowState
@@ -42,8 +37,6 @@ func (m *abandoningMethod) Abandon(_ context.Context, f authn.FlowState) error {
 	return nil
 }
 
-// startEnrollment begins an authenticated enrollment flow and answers its flow
-// cookie and sequence number.
 func startEnrollment(t *testing.T, r *rig) (string, int) {
 	t.Helper()
 	r.loginAsAuthenticated("acct1", "sid")
@@ -54,16 +47,12 @@ func startEnrollment(t *testing.T, r *rig) (string, int) {
 	return flowCookie(t, start), int(decode(t, start.Body.String())["seq"].(float64))
 }
 
-// promptWithPrivate is a registration step whose private bytes are the given
-// ones, the state a later step (or the abandonment) is handed.
 func promptWithPrivate(private string) authn.Step {
 	return authn.StepPrompt("confirm", []byte(private),
 		authn.Field{Name: "code", Kind: authn.FieldCode, Required: true})
 }
 
-// TestAbandonHandsTheFlowsPrivateStateToItsModule holds that deleting a flow
-// hands the flow's own state to the module that owns it, and that the record is
-// gone afterwards: a second delete finds nothing to release.
+// TestAbandonHandsTheFlowsPrivateStateToItsModule holds that deleting a flow releases its state to the owning module and removes the record.
 func TestAbandonHandsTheFlowsPrivateStateToItsModule(t *testing.T) {
 	r := newRig(t, &fakeMethod{name: "password"})
 	mfa := &abandoningMFA{fakeMFA: r.mfa}
@@ -101,8 +90,7 @@ func TestAbandonHandsTheFlowsPrivateStateToItsModule(t *testing.T) {
 	}
 }
 
-// TestAbandonHandsALoginMethodsFlowToTheMethod holds the other owner: a flow a
-// first-factor method holds the state of is released through that method.
+// TestAbandonHandsALoginMethodsFlowToTheMethod holds that a first-factor flow's state is released through its method.
 func TestAbandonHandsALoginMethodsFlowToTheMethod(t *testing.T) {
 	m := &abandoningMethod{fakeMethod: &fakeMethod{name: "password"}}
 	m.begin = func(authn.Start) (authn.Step, error) {
@@ -126,9 +114,6 @@ func TestAbandonHandsALoginMethodsFlowToTheMethod(t *testing.T) {
 	}
 }
 
-// abandoningRedirectMethod is a redirect first-factor method that keeps an
-// upstream transaction of its own: the form the stateFirst/stateProcessing
-// branch of abandonOwner is kept for.
 type abandoningRedirectMethod struct {
 	*redirectMethod
 	states []authn.FlowState
@@ -139,11 +124,7 @@ func (m *abandoningRedirectMethod) Abandon(_ context.Context, f authn.FlowState)
 	return nil
 }
 
-// TestAbandonHandsAProcessingRedirectFlowsStateToItsMethod names the form the
-// first-factor branch reserves: a redirect method whose flow has swapped to
-// processing mid-callback and whose upstream transaction the method must
-// release. The method owns the flow's private bytes, so abandoning hands them
-// over before the record is removed.
+// TestAbandonHandsAProcessingRedirectFlowsStateToItsMethod holds the reserved seam: a processing redirect flow's upstream transaction is released through its method.
 func TestAbandonHandsAProcessingRedirectFlowsStateToItsMethod(t *testing.T) {
 	m := &abandoningRedirectMethod{redirectMethod: &redirectMethod{}}
 	r := newRigMethod(t, m)
@@ -169,9 +150,7 @@ func TestAbandonHandsAProcessingRedirectFlowsStateToItsMethod(t *testing.T) {
 	}
 }
 
-// TestAFailedAbandonCallbackStillRemovesTheFlowAndIsLogged holds that a release
-// that fails does not keep the record: the flow is abandoned all the same, the
-// failure is logged, and a later answer is an invalid flow.
+// TestAFailedAbandonCallbackStillRemovesTheFlowAndIsLogged holds that a failed release still removes the record, logs it, and leaves a later answer invalid.
 func TestAFailedAbandonCallbackStillRemovesTheFlowAndIsLogged(t *testing.T) {
 	r := newRig(t, &fakeMethod{name: "password"})
 	mfa := &abandoningMFA{fakeMFA: r.mfa, err: errors.New("the release failed")}
@@ -198,10 +177,7 @@ func TestAFailedAbandonCallbackStillRemovesTheFlowAndIsLogged(t *testing.T) {
 	}
 }
 
-// TestAPanickingAbandonCallbackIsLoggedAndStillRemovesTheFlow holds that a
-// release that panics does not keep the record either: releaseFlow recovers the
-// panic, logs it at ERROR with the callback's state and cause, and the handler
-// removes the flow all the same.
+// TestAPanickingAbandonCallbackIsLoggedAndStillRemovesTheFlow holds that a panicking release is recovered, logged at ERROR and the record still removed.
 func TestAPanickingAbandonCallbackIsLoggedAndStillRemovesTheFlow(t *testing.T) {
 	r := newRig(t, &fakeMethod{name: "password"})
 	mfa := &abandoningMFA{fakeMFA: r.mfa, panicWith: "the release exploded"}

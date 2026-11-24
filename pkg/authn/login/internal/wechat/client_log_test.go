@@ -23,15 +23,7 @@ func capturedLogs(t *testing.T, action func(ctx context.Context)) string {
 	return buf.String()
 }
 
-// TestTheDefaultClientRecordsEachExchange holds that the client built with no
-// client of its own leaves one record per exchange, success and failure alike,
-// through the logger the call's context carries.
-//
-// The client is the one [New] builds — the restricted egress client, admitted
-// to loopback and trusting the mock server's own certificate — so the assertion
-// is on the transport the product assembles rather than on one a case wrapped by
-// hand: a case that did the wrapping itself would pass with the wrap removed
-// from New and hold nothing about this package.
+// TestTheDefaultClientRecordsEachExchange holds one record per exchange, success and failure, through the context's logger.
 func TestTheDefaultClientRecordsEachExchange(t *testing.T) {
 	t.Run("an answered exchange", func(t *testing.T) {
 		srv, pool, _ := tokenServer(t, http.StatusOK, `{"openid":"OPEN-1"}`)

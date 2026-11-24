@@ -20,9 +20,7 @@ func TestTheStepNamesArePublished(t *testing.T) {
 	}
 }
 
-// TestTheVerifiedStateWireFormatIsPinned pins the must_change state's wire
-// format: the exact bytes the method writes, and that it reads a hand-written
-// blob of the same published shape.
+// TestTheVerifiedStateWireFormatIsPinned pins the exact bytes written and reads a hand-written blob of the same shape.
 func TestTheVerifiedStateWireFormatIsPinned(t *testing.T) {
 	want := fmt.Sprintf(`{"v":1,"account":%q}`, string(testAccount))
 	if got := string(markVerified(testAccount)); got != want {
@@ -34,10 +32,7 @@ func TestTheVerifiedStateWireFormatIsPinned(t *testing.T) {
 	}
 }
 
-// TestTheRefusalCausesAreDistinct holds that the refusals which are neither a bad
-// credential nor a malformed identifier carry distinct causes the engine logs: a
-// callback is not-submitted, an unnamed step is unknown-step, and a bad private
-// state is bad-state, distinct from a credential refusal.
+// TestTheRefusalCausesAreDistinct holds that a callback, an unnamed step and a bad private state each carry their own cause.
 func TestTheRefusalCausesAreDistinct(t *testing.T) {
 	r := newRig()
 
@@ -61,7 +56,6 @@ func TestTheRefusalCausesAreDistinct(t *testing.T) {
 		t.Error("the bad-state refusal reads as a credential refusal")
 	}
 
-	// A credential refusal is a distinct wrapped error, not the sentinel itself.
 	refused := must(r.m.Answer(t.Context(), flowAt(stepCredentials, nil), submit(credentialFields("alice", "wrong"))))
 	cause := step.CauseOf(refused)
 	if !errors.Is(cause, authn.ErrInvalidCredentials) {

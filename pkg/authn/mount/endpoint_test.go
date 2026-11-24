@@ -9,8 +9,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 )
 
-// mountOn is the configuration body that names the endpoint the ordinary
-// scope's routes go on; an empty name leaves the key out.
 func mountOn(endpoint string) string {
 	if endpoint == "" {
 		return `{}`
@@ -18,11 +16,8 @@ func mountOn(endpoint string) string {
 	return `{"authn":{"gate":{"mount":{"endpoints":{"default":"` + endpoint + `"}}}}}`
 }
 
-// TestTheMountEndpointIsTheConfiguredOneOrTheOnlyOneTheEntryPointDeclares holds
-// the rule from every side it has. The key written is used as written, whatever
-// else the entry point declares; the key empty takes the one endpoint there is;
-// and with none or several declared there is nothing to pick, which is
-// ErrRoutesUnconfigured naming the key and the endpoints to choose from.
+// TestTheMountEndpointIsTheConfiguredOneOrTheOnlyOneTheEntryPointDeclares
+// holds the rule from every side it has.
 func TestTheMountEndpointIsTheConfiguredOneOrTheOnlyOneTheEntryPointDeclares(t *testing.T) {
 	for _, c := range []struct {
 		name       string

@@ -1,15 +1,5 @@
 package resolve
 
-// The two boundary cases of the email claim, driven through the real assembly:
-// the account, the roster and the personal tenant are the modules' own, over
-// one SQLite database, so that "the account opens" and "nothing is written"
-// are read from rows rather than from a store that models no tenant at all.
-//
-// The claim strategy's own checks are in jitusername_test.go over the store
-// fake; these two cases answer the other question, whether a legal local part
-// becomes the personal tenant's name and whether a rejected one leaves the
-// database untouched.
-
 import (
 	"context"
 	"errors"
@@ -34,10 +24,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant/personal"
 )
 
-// emailClaimRegister is the register of enterprise providers an email-claim
-// case needs: one enabled just-in-time provider of tenantAcme whose username
-// strategy reads the email claim. It answers both domains the cases assert, so
-// the resolver's discovery step finds the provider for each proof.
 type emailClaimRegister struct{ authn.SSOProviders }
 
 func (emailClaimRegister) provider() authn.SSOProvider {
@@ -64,9 +50,6 @@ func (r emailClaimRegister) Discover(_ context.Context, domain string) ([]authn.
 	return nil, nil
 }
 
-// withEmailClaimAssembly drives the real account, roster, policy and personal
-// tenant modules over a SQLite file of this test's own, and runs use inside the
-// drive with the capabilities a claim login reads and writes through.
 func withEmailClaimAssembly(t *testing.T, use func(context.Context, *core.Registry)) {
 	t.Helper()
 	dsn := "file:" + filepath.Join(t.TempDir(), "email-claim.db")
@@ -103,7 +86,6 @@ func withEmailClaimAssembly(t *testing.T, use func(context.Context, *core.Regist
 	}
 }
 
-// countRows is how many rows a table holds under a condition.
 func countRows(t *testing.T, handle *gorm.DB, table, where string, args ...any) int64 {
 	t.Helper()
 	var n int64
@@ -113,7 +95,6 @@ func countRows(t *testing.T, handle *gorm.DB, table, where string, args ...any) 
 	return n
 }
 
-// usernameOf reads the single username identifier an account holds.
 func usernameOf(t *testing.T, accounts authn.Accounts, id authn.AccountID) string {
 	t.Helper()
 	var username string
@@ -125,9 +106,7 @@ func usernameOf(t *testing.T, accounts authn.Accounts, id authn.AccountID) strin
 	return username
 }
 
-// A legal email local part is the username and the personal tenant's name: the
-// account opens with it, owns the one tenant addressed by it, and the rows are
-// exactly the account, that tenant, the two memberships and the username.
+// TestEmailClaimWithALegalLocalPartOpensTheAccountAndItsPersonalTenant holds that the account owns the tenant, with exactly the expected rows.
 func TestEmailClaimWithALegalLocalPartOpensTheAccountAndItsPersonalTenant(t *testing.T) {
 	withEmailClaimAssembly(t, func(ctx context.Context, reg *core.Registry) {
 		accounts := mustResolve[authn.Accounts](t, reg)
@@ -195,9 +174,7 @@ func TestEmailClaimWithALegalLocalPartOpensTheAccountAndItsPersonalTenant(t *tes
 	})
 }
 
-// A local part with a dot or a plus is not the shared slug form, so the claim is
-// refused as an invalid JIT username and not as an unavailable dependency, and
-// no account, tenant or membership is written.
+// TestEmailClaimWithADottedOrPlussedLocalPartWritesNothing holds that a dotted or plussed local part is an invalid JIT username and writes nothing.
 func TestEmailClaimWithADottedOrPlussedLocalPartWritesNothing(t *testing.T) {
 	withEmailClaimAssembly(t, func(ctx context.Context, reg *core.Registry) {
 		accounts := mustResolve[authn.Accounts](t, reg)

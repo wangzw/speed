@@ -7,9 +7,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestADependencyReadThatFailsIsNotANotFound holds the fail-closed direction of
-// the two reads that decide whether an account or a binding exists: a dependency
-// that cannot answer is passed on, not read as none.
+// TestADependencyReadThatFailsIsNotANotFound holds that an unreadable dependency is passed on, never read as none.
 func TestADependencyReadThatFailsIsNotANotFound(t *testing.T) {
 	t.Run("an account read", func(t *testing.T) {
 		e := newEnv(t)
@@ -37,9 +35,7 @@ func TestADependencyReadThatFailsIsNotANotFound(t *testing.T) {
 	})
 }
 
-// TestProviderAddressMatchingIsCaseInsensitive holds that an address a provider
-// declares in a different case than the store holds still matches, for the
-// preprovisioned match.
+// TestProviderAddressMatchingIsCaseInsensitive holds that a differently cased address still matches the preprovisioned account.
 func TestProviderAddressMatchingIsCaseInsensitive(t *testing.T) {
 	t.Run("preprovisioned", func(t *testing.T) {
 		e := newEnv(t, withProvider(authn.ProvisioningPreprovisioned, false))
@@ -51,9 +47,7 @@ func TestProviderAddressMatchingIsCaseInsensitive(t *testing.T) {
 	})
 }
 
-// TestABindingWithTheSameDisplayFieldsIsNotRewritten holds the dedup of the
-// display refresh: a provider that declares the address the binding already
-// carries writes nothing.
+// TestABindingWithTheSameDisplayFieldsIsNotRewritten holds that an unchanged address writes nothing.
 func TestABindingWithTheSameDisplayFieldsIsNotRewritten(t *testing.T) {
 	e := newEnv(t)
 	id := e.s.seed(t, seed{id: "a1", status: authn.StatusActive, bindings: [][2]string{{"google", "g1"}}})
@@ -73,9 +67,7 @@ func TestABindingWithTheSameDisplayFieldsIsNotRewritten(t *testing.T) {
 	}
 }
 
-// TestACreateFailureIsNeverTurnedIntoALogin holds that a create that fails for a
-// reason other than a taken key is passed on as it came, not answered by reading
-// the account some other login might hold.
+// TestACreateFailureIsNeverTurnedIntoALogin holds that a create failure is passed on rather than answered by reading another login's account.
 func TestACreateFailureIsNeverTurnedIntoALogin(t *testing.T) {
 	t.Run("a phone signup", func(t *testing.T) {
 		e := newEnv(t, withSignup(SignupOpen))

@@ -7,15 +7,13 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// A8: a WeChat identity that was bound under the application's open identifier
-// and now comes with a union identifier.
-
 func wechat(union, open string) authn.Proof {
 	p := social("wechat", union, "", false)
 	p.Aliases = []authn.ExternalLink{{Provider: "wechat-openid:app1", Subject: open}}
 	return p
 }
 
+// TestWeChatUnionKeyIsAddedToTheAccountOfTheOpenKey checks that the union key is added to the open-key account and the open binding kept.
 func TestWeChatUnionKeyIsAddedToTheAccountOfTheOpenKey(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
 	id := e.s.seed(t, seed{id: "a1", status: authn.StatusActive, bindings: [][2]string{{"wechat-openid:app1", "o1"}}})
@@ -34,6 +32,7 @@ func TestWeChatUnionKeyIsAddedToTheAccountOfTheOpenKey(t *testing.T) {
 	}
 }
 
+// TestWeChatUnionKeyHeldByAnotherAccountIsAConflictAndMergesNothing checks that a held union key conflicts and merges nothing.
 func TestWeChatUnionKeyHeldByAnotherAccountIsAConflictAndMergesNothing(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
 	e.s.seed(t, seed{id: "a1", status: authn.StatusActive, bindings: [][2]string{{"wechat-openid:app1", "o1"}}})
@@ -52,6 +51,8 @@ func TestWeChatUnionKeyHeldByAnotherAccountIsAConflictAndMergesNothing(t *testin
 	}
 }
 
+// TestWeChatUnionKeyTakenWhileUpgradingIsAConflict checks that a union key another
+// account takes during the upgrade is a binding conflict.
 func TestWeChatUnionKeyTakenWhileUpgradingIsAConflict(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
 	e.s.seed(t, seed{id: "a1", status: authn.StatusActive, bindings: [][2]string{{"wechat-openid:app1", "o1"}}})
@@ -67,6 +68,8 @@ func TestWeChatUnionKeyTakenWhileUpgradingIsAConflict(t *testing.T) {
 	}
 }
 
+// TestWeChatBothKeysOnTheSameAccountIsAnOrdinaryLogin checks that both keys on
+// one account make an ordinary login with no write.
 func TestWeChatBothKeysOnTheSameAccountIsAnOrdinaryLogin(t *testing.T) {
 	e := newEnv(t)
 	e.s.seed(t, seed{id: "a1", status: authn.StatusActive, bindings: [][2]string{{"wechat", "u1"}, {"wechat-openid:app1", "o1"}}})
@@ -79,6 +82,8 @@ func TestWeChatBothKeysOnTheSameAccountIsAnOrdinaryLogin(t *testing.T) {
 	}
 }
 
+// TestWeChatUpgradeOfADisabledAccountDoesNotHappen checks that a disabled account
+// is refused and its union key is not bound.
 func TestWeChatUpgradeOfADisabledAccountDoesNotHappen(t *testing.T) {
 	e := newEnv(t)
 	e.s.seed(t, seed{id: "a1", status: authn.StatusDisabled, bindings: [][2]string{{"wechat-openid:app1", "o1"}}})
@@ -91,6 +96,8 @@ func TestWeChatUpgradeOfADisabledAccountDoesNotHappen(t *testing.T) {
 	}
 }
 
+// TestWeChatTwoEarlierKeysOfTwoAccountsAreAConflict checks that two earlier keys
+// naming two accounts are a binding conflict with no write.
 func TestWeChatTwoEarlierKeysOfTwoAccountsAreAConflict(t *testing.T) {
 	e := newEnv(t)
 	e.s.seed(t, seed{id: "a1", status: authn.StatusActive, bindings: [][2]string{{"wechat-openid:app1", "o1"}}})
@@ -105,6 +112,7 @@ func TestWeChatTwoEarlierKeysOfTwoAccountsAreAConflict(t *testing.T) {
 	}
 }
 
+// TestWeChatNewIdentityWithNoEarlierBindingIsAFirstLogin checks that a new identity binds the union key and writes no address.
 func TestWeChatNewIdentityWithNoEarlierBindingIsAFirstLogin(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
 	res, err := e.resolve(wechat("u1", "o1"))
@@ -119,6 +127,7 @@ func TestWeChatNewIdentityWithNoEarlierBindingIsAFirstLogin(t *testing.T) {
 	}
 }
 
+// TestEarlierKeysAreForWeChatOpenIdentifiersOnly checks that any other alias is an invalid argument.
 func TestEarlierKeysAreForWeChatOpenIdentifiersOnly(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -146,8 +155,6 @@ func TestEarlierKeysAreForWeChatOpenIdentifiersOnly(t *testing.T) {
 		}()},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// A victim's binding is on the key the alias names: honoring the alias
-			// would bind an attacker's identity to it.
 			e := newEnv(t, withSignup(SignupOpen), withProvider(authn.ProvisioningJIT, true))
 			e.s.seed(t, seed{id: "victim", status: authn.StatusActive, bindings: [][2]string{{"google", "g1"}, {"wechat-openid:app1", "o1"}}})
 			e.s.mu.Lock()

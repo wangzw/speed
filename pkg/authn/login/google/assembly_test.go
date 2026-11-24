@@ -22,7 +22,6 @@ const (
 	logModule    = "stand-in.log"
 )
 
-// standInLog declares the logging capability the way the log module does.
 func standInLog() core.Module {
 	return core.Module{
 		Name:     logModule,
@@ -30,8 +29,6 @@ func standInLog() core.Module {
 	}
 }
 
-// recordingLogger is a logging capability that records the redaction rules
-// registered with it.
 type recordingLogger struct {
 	patterns map[string]log.Matcher
 }
@@ -45,8 +42,6 @@ func (l *recordingLogger) Redaction() log.Redaction              { return l }
 func (l *recordingLogger) AddKeys(...string)                     {}
 func (l *recordingLogger) AddPattern(name string, m log.Matcher) { l.patterns[name] = m }
 
-// standInConfig declares the configuration reader the way the config module
-// does.
 func standInConfig() core.Module {
 	return core.Module{
 		Name:     configModule,
@@ -54,8 +49,6 @@ func standInConfig() core.Module {
 	}
 }
 
-// fakeReader is a configuration reader whose sections a case chooses. It
-// decodes the two paths this module reads and leaves anything else alone.
 type fakeReader struct {
 	cfg moduleConfig
 	gm  gateMount
@@ -90,7 +83,6 @@ func (f *fakeReader) Decode(path string, target any) error {
 	return nil
 }
 
-// validReader is a reader with a complete configuration.
 func validReader() *fakeReader {
 	return &fakeReader{
 		cfg: moduleConfig{ClientID: testClientID, ClientSecret: testClientSecret},
@@ -98,9 +90,6 @@ func validReader() *fakeReader {
 	}
 }
 
-// driveWith registers this module beside the stand-in config module and drives a
-// real registry to the stage where the instance exists, handing the registry to
-// action.
 func driveWith(t *testing.T, reader config.Reader, action func(ctx context.Context, reg *core.Registry) error) error {
 	t.Helper()
 	reg := core.New()
@@ -116,9 +105,7 @@ func driveWith(t *testing.T, reader config.Reader, action func(ctx context.Conte
 	})
 }
 
-// TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt holds the descriptor
-// shape: the login method capability alone, delivered non-exclusively, and no
-// capability required of another module.
+// TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt holds that the method is delivered non-exclusively and requires nothing of another module.
 func TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt(t *testing.T) {
 	m := Module()
 	if m.Name != "authn.login.google" || ModuleName != "authn.login.google" {
@@ -139,9 +126,7 @@ func TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt(t *testing.T) {
 	}
 }
 
-// TestPrepareStatesEnabledAndRefusesAnIncompleteConfiguration holds that a
-// complete configuration enables the module and an incomplete one fails the
-// start.
+// TestPrepareStatesEnabledAndRefusesAnIncompleteConfiguration holds that a complete configuration enables and an incomplete one fails the start.
 func TestPrepareStatesEnabledAndRefusesAnIncompleteConfiguration(t *testing.T) {
 	if err := driveWith(t, validReader(), func(context.Context, *core.Registry) error { return nil }); err != nil {
 		t.Fatalf("drive with a complete configuration: %v", err)
@@ -155,9 +140,7 @@ func TestPrepareStatesEnabledAndRefusesAnIncompleteConfiguration(t *testing.T) {
 	}
 }
 
-// TestPrepareStandsDownWhenNoCredentialIsGiven holds the unconfigured case: a
-// deployment that gave neither credential did not configure Google sign-in, so
-// the module is absent from the run without failing the startup.
+// TestPrepareStandsDownWhenNoCredentialIsGiven holds that neither credential means the module is absent without failing startup.
 func TestPrepareStandsDownWhenNoCredentialIsGiven(t *testing.T) {
 	err := driveWith(t, &fakeReader{}, func(_ context.Context, reg *core.Registry) error {
 		got, ok := reg.Enablement(ModuleName)
@@ -177,9 +160,7 @@ func TestPrepareStandsDownWhenNoCredentialIsGiven(t *testing.T) {
 	}
 }
 
-// TestPrepareNamesTheMissingCredentialWhenHalfConfigured holds the half-
-// configured case: one credential without the other is a startup failure, and
-// the failure names the item to write.
+// TestPrepareNamesTheMissingCredentialWhenHalfConfigured holds that one credential alone fails startup and names the missing item.
 func TestPrepareNamesTheMissingCredentialWhenHalfConfigured(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -205,9 +186,7 @@ func TestPrepareNamesTheMissingCredentialWhenHalfConfigured(t *testing.T) {
 	}
 }
 
-// TestPrepareRefusesAnIllegalPublicAddress holds the other required item: with
-// both credentials and a public address that is not an origin, the startup
-// fails rather than building a redirect from it.
+// TestPrepareRefusesAnIllegalPublicAddress holds that a public address that is not an origin fails the start.
 func TestPrepareRefusesAnIllegalPublicAddress(t *testing.T) {
 	reader := &fakeReader{
 		cfg: moduleConfig{ClientID: testClientID, ClientSecret: testClientSecret},
@@ -245,10 +224,7 @@ func TestARealRegistryDeliversTheGoogleMethod(t *testing.T) {
 	}
 }
 
-// TestTheClientSecretIsRegisteredAsARedactionRule holds that the client secret
-// is registered with the logging capability as a literal rule, so it is masked
-// wherever it turns up in a log line, and that a build with no logging
-// capability still succeeds.
+// TestTheClientSecretIsRegisteredAsARedactionRule holds that the secret is masked in logs, and a build without a logger still succeeds.
 func TestTheClientSecretIsRegisteredAsARedactionRule(t *testing.T) {
 	recorder := newRecordingLogger()
 	reg := core.New()
@@ -297,10 +273,7 @@ func TestImportingThePackageRegistersTheModuleWithTheProcess(t *testing.T) {
 	}
 }
 
-// TestTheProductionClientRefusesANonPublicAddress holds that the client newProduct
-// builds is the restricted egress client: driven through the real registry, the
-// product's own client refuses the loopback mock, which is the provider being
-// unreachable and not a refusal.
+// TestTheProductionClientRefusesANonPublicAddress holds that the product's egress client cannot reach loopback, which reads as an outage.
 func TestTheProductionClientRefusesANonPublicAddress(t *testing.T) {
 	d := newIDP(t)
 	var built *product

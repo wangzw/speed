@@ -24,8 +24,6 @@ const (
 	testRedirect  = "https://app.example.com/api/v1/auth/callback/wechat.mp"
 )
 
-// tokenServer serves one token answer over TLS and gives the method a client
-// pointed at it through the restricted egress client.
 func tokenServer(t *testing.T, status int, body string) (*httptest.Server, *wechat.Client) {
 	t.Helper()
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -70,9 +68,7 @@ func answer(m *method, private []byte, query url.Values) authn.Step {
 	return got
 }
 
-// TestBeginRedirectsToTheWebAuthorizationEndpointWithTheFragment holds the two
-// things the official-account entry adds to the shared shape: the snsapi_userinfo
-// scope and the #wechat_redirect fragment the address must end with.
+// TestBeginRedirectsToTheWebAuthorizationEndpointWithTheFragment holds the snsapi_userinfo scope and the #wechat_redirect fragment.
 func TestBeginRedirectsToTheWebAuthorizationEndpointWithTheFragment(t *testing.T) {
 	_, client := tokenServer(t, http.StatusOK, `{"openid":"x"}`)
 	m := newMethod(client, testRedirect)
@@ -104,6 +100,8 @@ func TestBeginRedirectsToTheWebAuthorizationEndpointWithTheFragment(t *testing.T
 	}
 }
 
+// TestTheCallbackProvesTheIdentity checks that the callback proves the WeChat
+// identity under the union key.
 func TestTheCallbackProvesTheIdentity(t *testing.T) {
 	_, client := tokenServer(t, http.StatusOK,
 		`{"access_token":"t","openid":"OPEN-1","unionid":"UNION-1"}`)
@@ -136,6 +134,8 @@ func TestNoUnionIDYieldsTheOpenIDKey(t *testing.T) {
 	}
 }
 
+// TestTheCallbackIsRefusedWhenTheStateIsWrongOrMissing checks that the callback is
+// refused when the state is wrong or missing, or the code is missing.
 func TestTheCallbackIsRefusedWhenTheStateIsWrongOrMissing(t *testing.T) {
 	_, client := tokenServer(t, http.StatusOK, `{"openid":"OPEN-1"}`)
 	m := newMethod(client, testRedirect)
@@ -158,6 +158,8 @@ func TestTheCallbackIsRefusedWhenTheStateIsWrongOrMissing(t *testing.T) {
 	}
 }
 
+// TestAnErrcodeIsRefusedAndANonTwoHundredIsAnOutage checks that an errcode is a
+// refusal without the secret and a non-200 answer is an outage.
 func TestAnErrcodeIsRefusedAndANonTwoHundredIsAnOutage(t *testing.T) {
 	t.Run("errcode", func(t *testing.T) {
 		_, client := tokenServer(t, http.StatusOK, `{"errcode":40029,"errmsg":"invalid code"}`)
@@ -181,6 +183,8 @@ func TestAnErrcodeIsRefusedAndANonTwoHundredIsAnOutage(t *testing.T) {
 	})
 }
 
+// TestTheMethodServesLoginLinkAndStepUpOnly checks that the method serves login,
+// link and step-up and refuses an enrollment.
 func TestTheMethodServesLoginLinkAndStepUpOnly(t *testing.T) {
 	_, client := tokenServer(t, http.StatusOK, `{"openid":"x"}`)
 	m := newMethod(client, testRedirect)
@@ -194,6 +198,8 @@ func TestTheMethodServesLoginLinkAndStepUpOnly(t *testing.T) {
 	}
 }
 
+// TestANameIsThePublishedOne checks that Name reports the published name
+// wechat.mp.
 func TestANameIsThePublishedOne(t *testing.T) {
 	_, client := tokenServer(t, http.StatusOK, `{"openid":"x"}`)
 	if got := newMethod(client, testRedirect).Name(); got != "wechat.mp" {
@@ -205,9 +211,7 @@ func describe(s authn.Step) string {
 	return "kind " + step.KindOf(s).String()
 }
 
-// TestACancelledAuthorizationIsRefusedAsACancellation holds that a callback that
-// reports the authorization was cancelled is refused with the cancellation cause,
-// not read as a callback with a missing code.
+// TestACancelledAuthorizationIsRefusedAsACancellation holds that a cancelled callback carries the cancellation cause, not a missing code.
 func TestACancelledAuthorizationIsRefusedAsACancellation(t *testing.T) {
 	_, client := tokenServer(t, http.StatusOK, `{"openid":"x"}`)
 	m := newMethod(client, testRedirect)
@@ -222,9 +226,7 @@ func TestACancelledAuthorizationIsRefusedAsACancellation(t *testing.T) {
 	}
 }
 
-// TestACancelledContextIsUnavailable holds that a call under a context that has
-// already ended answers an outage rather than drawing a state or reaching the
-// provider.
+// TestACancelledContextIsUnavailable holds that an ended context answers an outage before drawing or reaching the provider.
 func TestACancelledContextIsUnavailable(t *testing.T) {
 	_, client := tokenServer(t, http.StatusOK, `{"openid":"x"}`)
 	m := newMethod(client, testRedirect)

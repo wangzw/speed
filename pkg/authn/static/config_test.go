@@ -47,7 +47,6 @@ func TestAConfigurationThisBackendCannotRunOnIsRefusedAtStartup(t *testing.T) {
 		})
 	}
 
-	// The control: the longest name and the edges of the two sizes resolve.
 	for _, ok := range []moduleConfig{
 		valid(map[string]string{strings.Repeat("a", 57): entry}),
 		valid(map[string]string{"A-b_9": entry}),
@@ -60,9 +59,7 @@ func TestAConfigurationThisBackendCannotRunOnIsRefusedAtStartup(t *testing.T) {
 	}
 }
 
-// TestTheLongestAccountIdentifierIsTheLongestSubjectName holds the arithmetic the
-// subject pattern leans on: the static prefix and the longest name fit the 64
-// bytes of an account identifier, and one more byte would not.
+// TestTheLongestAccountIdentifierIsTheLongestSubjectName holds that the prefix plus the longest name fits 64 bytes and one more does not.
 func TestTheLongestAccountIdentifierIsTheLongestSubjectName(t *testing.T) {
 	longest := authn.StaticPrefix + strings.Repeat("a", 57)
 	if _, err := authn.ParseAccountID(longest); err != nil {
@@ -73,9 +70,7 @@ func TestTheLongestAccountIdentifierIsTheLongestSubjectName(t *testing.T) {
 	}
 }
 
-// TestAnEntryNothingCanReadIsBothAnInvalidClaimAndAMalformedHash holds the two
-// sentinels the startup failure wraps: the one every refusal of a declaration
-// carries, and the one that names what was wrong with the entry.
+// TestAnEntryNothingCanReadIsBothAnInvalidClaimAndAMalformedHash holds the two wrapped sentinels.
 func TestAnEntryNothingCanReadIsBothAnInvalidClaimAndAMalformedHash(t *testing.T) {
 	_, err := moduleConfig{Subjects: map[string]string{"alice": "plaintext"}, CacheSize: 16, Concurrency: 2}.resolve()
 	if !errors.Is(err, authn.ErrInvalidClaim) {
@@ -86,9 +81,7 @@ func TestAnEntryNothingCanReadIsBothAnInvalidClaimAndAMalformedHash(t *testing.T
 	}
 }
 
-// TestAFailureNamesTheKeyThatIsWrong holds where the blame lands: a failure
-// names the key to correct, and an unusable entry names its subject and no part
-// of the entry.
+// TestAFailureNamesTheKeyThatIsWrong holds that a failure names the key, and an unusable entry its subject only.
 func TestAFailureNamesTheKeyThatIsWrong(t *testing.T) {
 	_, err := moduleConfig{Subjects: map[string]string{"alice smith": cheapEntry(t, "x")}, CacheSize: 16, Concurrency: 2}.resolve()
 	if err == nil || !strings.Contains(err.Error(), ConfigNamespace+"."+subjectsItem) {
@@ -125,12 +118,7 @@ func TestAnUnusableEntryNeverReachesAnErrorMessage(t *testing.T) {
 	}
 }
 
-// TestABackendWithNobodyToVouchForRefusesToStart holds what this backend does
-// when its table names no subject, which is not a stance it may take. A command
-// that names this module has promised it starts, so a table it cannot answer for
-// stops the startup, and the failure names the key: under an assembly carrying
-// several backends, that line is the only thing telling an operator which of them
-// could not start and what it lacked.
+// TestABackendWithNobodyToVouchForRefusesToStart holds that an empty subject table refuses the start.
 func TestABackendWithNobodyToVouchForRefusesToStart(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -157,9 +145,7 @@ func TestABackendWithNobodyToVouchForRefusesToStart(t *testing.T) {
 	}
 }
 
-// TestTheNameKeyIsGone holds that authn.static.name is no longer a key. Left in
-// place and ignored it would make a configuration look as though it still did
-// something, which is worse than refusing to start: the name is a constant now.
+// TestTheNameKeyIsGone holds that authn.static.name is no longer a key.
 func TestTheNameKeyIsGone(t *testing.T) {
 	body := `{"authn":{"static":{"name":"local","subjects":{"alice":"` + cheapEntry(t, "x") + `"}}}}`
 	if _, err := load(t, body); err == nil {
@@ -169,9 +155,7 @@ func TestTheNameKeyIsGone(t *testing.T) {
 	}
 }
 
-// TestTheKeysAreReadFromConfigurationAndTheDefaultsHold holds the two sizes
-// through the real loader: unset they take the declared defaults, set they are
-// followed.
+// TestTheKeysAreReadFromConfigurationAndTheDefaultsHold holds the two sizes unset and set.
 func TestTheKeysAreReadFromConfigurationAndTheDefaultsHold(t *testing.T) {
 	entry := cheapEntry(t, "x")
 
@@ -200,10 +184,7 @@ func TestTheKeysAreReadFromConfigurationAndTheDefaultsHold(t *testing.T) {
 	}
 }
 
-// TestTheSubjectTableIsSensitiveAndTakesTheMainSourceAlone holds the declaration
-// of the one item that carries secrets: it is required, sensitive, and read from
-// the primary source only, so it cannot be set from a command line that a process
-// listing shows.
+// TestTheSubjectTableIsSensitiveAndTakesTheMainSourceAlone holds the secret item as required, sensitive and primary-source only.
 func TestTheSubjectTableIsSensitiveAndTakesTheMainSourceAlone(t *testing.T) {
 	item := schema().Items[subjectsItem]
 	if !item.Required || !item.Sensitive {

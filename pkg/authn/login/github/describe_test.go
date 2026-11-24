@@ -7,9 +7,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestDescribeReportsTheRedirect holds the descriptor the discovery endpoint
-// publishes for the GitHub method: a redirect button that speaks OAuth 2.0,
-// opens an account, and whose bindings land under the provider value "github".
+// TestDescribeReportsTheRedirect holds the GitHub descriptor: a redirect button speaking OAuth 2.0 that opens accounts, bound as "github".
 func TestDescribeReportsTheRedirect(t *testing.T) {
 	got := (&method{}).Describe()
 	if got.Name != "github" || got.Kind != authn.MethodKindRedirect ||

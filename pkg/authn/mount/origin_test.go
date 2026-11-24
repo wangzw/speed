@@ -19,9 +19,6 @@ type originVector struct {
 	trusted bool
 }
 
-// originConfig is the public URL and the trusted origins the vectors are judged
-// against. Each is written in a spelling a browser does not send: upper case, the
-// scheme's default port, a trailing dot.
 const (
 	originPublicURL = "https://App.Example.com:443"
 )
@@ -56,8 +53,6 @@ var originVectors = []originVector{
 	{"no Origin header at all", "", false},
 }
 
-// sameSitePost builds a POST a browser would send from another origin of the same
-// site: the fetch metadata says same-site, and the Origin header is the vector's.
 func sameSitePost(target, origin string) *http.Request {
 	r := httptest.NewRequest(http.MethodPost, target, nil)
 	r.Header.Set("Sec-Fetch-Site", "same-site")
@@ -75,11 +70,7 @@ func originSettings() settings {
 	return s
 }
 
-// TestTheTrustSetIsTheCanonicalFormOfThePublicURLAndTheTrustedOrigins holds the
-// check the capability hands out against every spelling of an origin. A same-site
-// request is trusted exactly when its Origin is the canonical form of one of the
-// configured origins, which is what a browser sends: case, a default port and a
-// trailing dot are normalised in the set and not in the header.
+// TestTheTrustSetIsTheCanonicalFormOfThePublicURLAndTheTrustedOrigins holds the check against every spelling of an origin.
 func TestTheTrustSetIsTheCanonicalFormOfThePublicURLAndTheTrustedOrigins(t *testing.T) {
 	p, err := newProduct(originSettings())
 	if err != nil {
@@ -98,10 +89,7 @@ func TestTheTrustSetIsTheCanonicalFormOfThePublicURLAndTheTrustedOrigins(t *test
 	}
 }
 
-// TestThePublicURLIsHandedOutAsTheOriginABrowserSends holds the value the
-// capability reports: the canonical origin, so that a module comparing an origin
-// it was given with it compares like with like, and empty when nothing is
-// configured.
+// TestThePublicURLIsHandedOutAsTheOriginABrowserSends holds the canonical origin, empty when none is configured.
 func TestThePublicURLIsHandedOutAsTheOriginABrowserSends(t *testing.T) {
 	for _, c := range []struct{ configured, want string }{
 		{"https://App.Example.com:443", "https://app.example.com"},
@@ -123,18 +111,12 @@ func TestThePublicURLIsHandedOutAsTheOriginABrowserSends(t *testing.T) {
 	}
 }
 
-// TestACallbackBypassHoldsForTheRegisteredPatternAndNoOtherPost holds the bypass
-// on the capability's own check: a cross-site POST to the callback pattern, for
-// whatever value the provider segment takes, is let through, and a POST to any
-// other path under the same base, a path that extends the callback's, or a
-// sibling of it is not.
+// TestACallbackBypassHoldsForTheRegisteredPatternAndNoOtherPost holds that the bypass covers the callback pattern and no sibling or extended path.
 func TestACallbackBypassHoldsForTheRegisteredPatternAndNoOtherPost(t *testing.T) {
 	p, err := newProduct(originSettings())
 	if err != nil {
 		t.Fatalf("building the product: %v", err)
 	}
-	// The bypass is written the way the module writes it for a callback; the
-	// check is read directly so that the pattern is what is under test.
 	p.wired.Store(&wiring{
 		defaultName: "main",
 		endpoints: map[speedhttp.Scope]wiredEndpoint{

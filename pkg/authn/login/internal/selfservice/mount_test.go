@@ -10,7 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/login/internal/selfservice"
 )
 
-// registered is "METHOD path" for each registration the Mounter holds.
 func registered(m *mounttest.Mounter) []string {
 	var out []string
 	for _, r := range m.Registrations() {
@@ -22,10 +21,7 @@ func registered(m *mounttest.Mounter) []string {
 	return out
 }
 
-// TestTheRoutesAreTheseAndNoOthers holds the set of routes: how the account's
-// own credentials are changed and how a login identifier is added or removed,
-// with no route for a flow. The account's own profile is not among them; it is
-// the profile module's.
+// TestTheRoutesAreTheseAndNoOthers holds the set of credential-changing and identifier routes, with no flow route.
 func TestTheRoutesAreTheseAndNoOthers(t *testing.T) {
 	h := newHarness(t)
 	want := []string{
@@ -44,10 +40,7 @@ func TestTheRoutesAreTheseAndNoOthers(t *testing.T) {
 }
 
 // TestEveryRouteIsGuardedAndImpersonable holds the access level of each
-// registration. A route registered as public or optional would be reachable with
-// no identity; every route here changes how the account is proven, so each is
-// guarded and each is impersonable, because the change is the effective
-// account's own.
+// registration.
 func TestEveryRouteIsGuardedAndImpersonable(t *testing.T) {
 	h := newHarness(t)
 	for _, r := range h.m.Registrations() {
@@ -61,10 +54,7 @@ func TestEveryRouteIsGuardedAndImpersonable(t *testing.T) {
 }
 
 // TestThePhoneRoutesAreMountedOnlyWithSMSCodes holds that without the SMS
-// capability the two phone routes are absent and the rest are there. A request
-// to an absent route is the engine's 404, not a handler's answer. The identifier
-// routes are mounted whatever the channels, so an unknown path is the only thing
-// that is absent.
+// capability the two phone routes are absent and the rest are there.
 func TestThePhoneRoutesAreMountedOnlyWithSMSCodes(t *testing.T) {
 	h := newHarness(t, func(c *config) { c.noSMS = true })
 	want := []string{
@@ -85,9 +75,7 @@ func TestThePhoneRoutesAreMountedOnlyWithSMSCodes(t *testing.T) {
 	}
 }
 
-// TestNewNamesWhatIsMissing holds that a service cannot be built without the
-// dependencies its routes call, and that the phone routes' own dependencies are
-// asked for only when the SMS capability is given.
+// TestNewNamesWhatIsMissing holds that missing dependencies are named and the phone dependencies were asked for only with SMS present.
 func TestNewNamesWhatIsMissing(t *testing.T) {
 	full := func() selfservice.Deps {
 		h := newHarness(t)
@@ -138,9 +126,7 @@ func TestNewNamesWhatIsMissing(t *testing.T) {
 	}
 }
 
-// TestACrossSiteRequestIsRefusedBeforeAnyCall holds that every route that changes
-// the account went through the Mounter's cross-origin check, and that a request
-// it refuses reaches no dependency.
+// TestACrossSiteRequestIsRefusedBeforeAnyCall holds that every write passed the cross-origin check and a refused one reaches no dependency.
 func TestACrossSiteRequestIsRefusedBeforeAnyCall(t *testing.T) {
 	for _, tc := range mutating {
 		t.Run(tc.name, func(t *testing.T) {

@@ -16,15 +16,15 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/step"
 )
 
-// The method is driven here the way its contract says it is tested: a Start, a
-// FlowState and a StepInput are built by hand, and the kind of answer is read.
-
+// TestTheMethodIsNamedPassword checks that Name reports the password method.
 func TestTheMethodIsNamedPassword(t *testing.T) {
 	if got := newRig().m.Name(); got != "password" {
 		t.Errorf("Name() = %q, want password", got)
 	}
 }
 
+// TestAMissingFieldIsAskedForAndNothingIsCalled checks that a request missing the
+// identifier or the password is asked for both fields again and calls nothing.
 func TestAMissingFieldIsAskedForAndNothingIsCalled(t *testing.T) {
 	for name, fields := range map[string]map[string]string{
 		"no fields":           nil,
@@ -72,6 +72,8 @@ func must(s authn.Step, err error) authn.Step {
 	return s
 }
 
+// TestACredentialThatHoldsIsProvenForThePasswordMethod checks that a credential
+// that holds is proven for the password method with a proof that claims no more.
 func TestACredentialThatHoldsIsProvenForThePasswordMethod(t *testing.T) {
 	for label, run := range map[string]func(r *rig) authn.Step{
 		"begin": func(r *rig) authn.Step {
@@ -104,6 +106,8 @@ func TestACredentialThatHoldsIsProvenForThePasswordMethod(t *testing.T) {
 	}
 }
 
+// TestTheCredentialReachesThePasswordCapabilityAsSubmitted checks that the
+// identifier and password reach the password capability exactly as submitted.
 func TestTheCredentialReachesThePasswordCapabilityAsSubmitted(t *testing.T) {
 	r := newRig()
 	const identifier, secret = "  Alice@Example.COM ", " " + sentinelPassword + " "
@@ -122,6 +126,8 @@ func TestTheCredentialReachesThePasswordCapabilityAsSubmitted(t *testing.T) {
 	}
 }
 
+// TestOnlyASubmittedAnswerAtANamedStepIsTaken checks that an answer that is not a
+// submit at the credentials step is refused without reaching a dependency.
 func TestOnlyASubmittedAnswerAtANamedStepIsTaken(t *testing.T) {
 	cases := map[string]struct {
 		flow authn.FlowState
@@ -147,6 +153,8 @@ func TestOnlyASubmittedAnswerAtANamedStepIsTaken(t *testing.T) {
 	}
 }
 
+// TestOnlyALoginAndAStepUpAreServed checks that only a login and a step-up are
+// served, and every other purpose is refused without a call.
 func TestOnlyALoginAndAStepUpAreServed(t *testing.T) {
 	for purpose, served := range map[string]bool{
 		authn.PurposeLogin:  true,
@@ -171,7 +179,6 @@ func TestOnlyALoginAndAStepUpAreServed(t *testing.T) {
 			if calls := r.l.all(); len(calls) != 0 {
 				t.Errorf("a purpose that is not served counted or checked something: %+v", calls)
 			}
-			// The same for an answer in a flow of that purpose.
 			flow := flowAt(stepCredentials, nil)
 			flow.Purpose = purpose
 			if a := must(r.m.Answer(t.Context(), flow, submit(credentialFields("alice", sentinelPassword)))); kindOf(a) != step.KindRefused {
@@ -184,10 +191,8 @@ func TestOnlyALoginAndAStepUpAreServed(t *testing.T) {
 	}
 }
 
-// What follows is the back-off shape: the key is read before anything is
-// derived, a success clears it, a refusal counts, and what is not a guess
-// counts for nothing.
-
+// TestTheBackOffIsReadBeforeTheCheckAndSettledAfterIt checks that the back-off is
+// read before the check and settled as a success or a failure after it.
 func TestTheBackOffIsReadBeforeTheCheckAndSettledAfterIt(t *testing.T) {
 	r := newRig()
 	must(r.m.Begin(t.Context(), loginStart(credentialFields("alice", sentinelPassword))))
@@ -202,6 +207,8 @@ func TestTheBackOffIsReadBeforeTheCheckAndSettledAfterIt(t *testing.T) {
 	}
 }
 
+// TestEveryCallToTheBackOffUsesTheIdentifierScopeAndOneKey checks that every
+// back-off call uses the identifier scope and the same one key.
 func TestEveryCallToTheBackOffUsesTheIdentifierScopeAndOneKey(t *testing.T) {
 	for label, password := range map[string]string{"success": sentinelPassword, "failure": "wrong"} {
 		t.Run(label, func(t *testing.T) {
@@ -224,6 +231,8 @@ func TestEveryCallToTheBackOffUsesTheIdentifierScopeAndOneKey(t *testing.T) {
 	}
 }
 
+// TestABackOffInForceIsAnsweredWithoutADerivation checks that a key in back-off
+// is answered as throttled with its retry delay, without a derivation or a count.
 func TestABackOffInForceIsAnsweredWithoutADerivation(t *testing.T) {
 	for _, wait := range []time.Duration{time.Second, 17 * time.Minute, time.Nanosecond, -time.Second} {
 		t.Run(wait.String(), func(t *testing.T) {
@@ -243,6 +252,8 @@ func TestABackOffInForceIsAnsweredWithoutADerivation(t *testing.T) {
 	}
 }
 
+// TestACorrectPasswordInsideABackOffIsStillNotChecked checks that a correct
+// password inside a back-off is still not checked.
 func TestACorrectPasswordInsideABackOffIsStillNotChecked(t *testing.T) {
 	r := newRig()
 	r.th.wait = time.Minute
@@ -255,6 +266,8 @@ func TestACorrectPasswordInsideABackOffIsStillNotChecked(t *testing.T) {
 	}
 }
 
+// TestABackOffThatCannotBeReadOrWrittenIsNeverAPass checks that a back-off that
+// cannot be read, counted or cleared answers as an outage and never a pass.
 func TestABackOffThatCannotBeReadOrWrittenIsNeverAPass(t *testing.T) {
 	boom := errors.New("kv down")
 	cases := map[string]struct {
@@ -265,8 +278,7 @@ func TestABackOffThatCannotBeReadOrWrittenIsNeverAPass(t *testing.T) {
 		"check fails": {func(r *rig) { r.th.checkErr = boom }, sentinelPassword, []string{"check"}},
 		// A refusal that cannot be counted is not a refusal the client may have: the
 		// guess would go uncounted.
-		"fail fails": {func(r *rig) { r.th.failErr = boom }, "wrong", []string{"check", "verify", "fail"}},
-		// A proof with the back-off left standing is not handed over either.
+		"fail fails":    {func(r *rig) { r.th.failErr = boom }, "wrong", []string{"check", "verify", "fail"}},
 		"succeed fails": {func(r *rig) { r.th.succeedErr = boom }, sentinelPassword, []string{"check", "verify", "succeed"}},
 	}
 	for name, c := range cases {
@@ -287,6 +299,8 @@ func TestABackOffThatCannotBeReadOrWrittenIsNeverAPass(t *testing.T) {
 	}
 }
 
+// TestACheckThatFailsToBeginIsNotAGuess checks that a check that fails to begin
+// is an outage, except a malformed identifier, and counts nothing.
 func TestACheckThatFailsToBeginIsNotAGuess(t *testing.T) {
 	cases := map[string]struct {
 		err      error
@@ -319,6 +333,7 @@ func TestACheckThatFailsToBeginIsNotAGuess(t *testing.T) {
 	}
 }
 
+// TestAnAccountThePasswordCapabilityMayNotAnswerForIsNotProven checks that such an account is neither proven nor cleared from the back-off.
 func TestAnAccountThePasswordCapabilityMayNotAnswerForIsNotProven(t *testing.T) {
 	for _, bad := range []authn.AccountID{"", "static.ops", "has space", authn.AccountID(strings.Repeat("a", 65))} {
 		t.Run(string(bad), func(t *testing.T) {
@@ -337,9 +352,8 @@ func TestAnAccountThePasswordCapabilityMayNotAnswerForIsNotProven(t *testing.T) 
 	}
 }
 
-// What follows is the enumeration guard: whatever made a credential fail, the
-// answer is one.
-
+// TestEveryWayACredentialFailsIsOneAnswer checks that every way a credential
+// fails is one refusal that counts one failure.
 func TestEveryWayACredentialFailsIsOneAnswer(t *testing.T) {
 	causes := map[string]error{
 		"unknown identifier": authn.ErrInvalidCredentials,
@@ -363,8 +377,6 @@ func TestEveryWayACredentialFailsIsOneAnswer(t *testing.T) {
 		if !errors.Is(step.CauseOf(got), authn.ErrInvalidCredentials) {
 			t.Errorf("%s: the cause %v is not in the class of invalid credentials", name, step.CauseOf(got))
 		}
-		// The whole of what the answer carries, the text of the cause included, is
-		// the same: the log does not tell the cases apart either.
 		if first == "" {
 			first, firstOps = describe(got), r.l.ops()
 		} else if describe(got) != first {
@@ -376,6 +388,8 @@ func TestEveryWayACredentialFailsIsOneAnswer(t *testing.T) {
 	}
 }
 
+// TestARefusalIsTheSameAtTheSecondStep checks that a refusal at the answer step
+// is the same as at the begin step.
 func TestARefusalIsTheSameAtTheSecondStep(t *testing.T) {
 	r := newRig()
 	first := must(r.m.Begin(t.Context(), loginStart(credentialFields("alice", "wrong"))))
@@ -385,10 +399,6 @@ func TestARefusalIsTheSameAtTheSecondStep(t *testing.T) {
 	}
 }
 
-// What follows is the must_change path.
-
-// directory is a Passwords with the state a must_change path needs: one account,
-// its password, whether it carries must_change, and a policy.
 type directory struct {
 	mu         sync.Mutex
 	password   string
@@ -424,6 +434,8 @@ func mustChangeRig(current string) (*rig, *directory) {
 	return r, d
 }
 
+// TestACredentialThatMustChangeIsNotProvenByItsPassword checks that a credential
+// that must change is asked for a new password instead of being proven.
 func TestACredentialThatMustChangeIsNotProvenByItsPassword(t *testing.T) {
 	r, _ := mustChangeRig(sentinelPassword)
 	got := must(r.m.Begin(t.Context(), loginStart(credentialFields(sentinelIdent, sentinelPassword))))
@@ -448,20 +460,18 @@ func TestACredentialThatMustChangeIsNotProvenByItsPassword(t *testing.T) {
 	if r.l.count("set") != 0 {
 		t.Error("a password was written before the client sent one")
 	}
-	// The password was verified, so the identifier's failures are cleared; nothing
-	// was counted against it.
 	if got, want := r.l.ops(), []string{"check", "verify", "succeed"}; !slices.Equal(got, want) {
 		t.Errorf("made %v, want %v", got, want)
 	}
 }
 
+// TestANewPasswordTheEngineHandsBackEndsInAProofOnlyWhenItIsSet checks that a new
+// password ends in a proof only once it satisfies the policy and is written.
 func TestANewPasswordTheEngineHandsBackEndsInAProofOnlyWhenItIsSet(t *testing.T) {
 	r, d := mustChangeRig(sentinelPassword)
 	prompt := must(r.m.Begin(t.Context(), loginStart(credentialFields("alice", sentinelPassword))))
 	flow := flowAt(stepNewPassword, step.PrivateOf(prompt))
 
-	// A policy violation keeps the flow: the same step is asked again with the
-	// same state, and the error says why, as a hint the client can answer.
 	for name, weak := range map[string]string{"too short": "short", "the current password": sentinelPassword} {
 		got, err := r.m.Answer(t.Context(), flow, submit(map[string]string{fieldNewPassword: weak}))
 		if !errors.Is(err, authn.ErrPasswordPolicy) {
@@ -503,12 +513,12 @@ func TestANewPasswordTheEngineHandsBackEndsInAProofOnlyWhenItIsSet(t *testing.T)
 	if len(set) != 3 || set[2].key != testAccount.String() {
 		t.Errorf("Set calls = %+v, want three, the last for %q", set, testAccount)
 	}
-	// The new password is not a guess at the identifier's credential.
 	if r.l.count("fail") != 0 {
 		t.Error("a policy refusal of the new password was counted as a failed guess")
 	}
 }
 
+// TestNothingIsProvenAtTheNewPasswordStepWithoutTheVerifiedState checks that an absent, malformed or wrong-version state proves nothing.
 func TestNothingIsProvenAtTheNewPasswordStepWithoutTheVerifiedState(t *testing.T) {
 	marker := func(v int, account string) []byte {
 		return fmt.Appendf(nil, `{"v":%d,"account":%q}`, v, account)
@@ -544,6 +554,8 @@ func TestNothingIsProvenAtTheNewPasswordStepWithoutTheVerifiedState(t *testing.T
 	}
 }
 
+// TestTheNewPasswordIsSetForTheAccountTheStateNames checks that the new password
+// is set for the account the state names with no options.
 func TestTheNewPasswordIsSetForTheAccountTheStateNames(t *testing.T) {
 	r := newRig()
 	var gotAccount authn.AccountID
@@ -559,13 +571,13 @@ func TestTheNewPasswordIsSetForTheAccountTheStateNames(t *testing.T) {
 	if gotAccount != "acct_other" {
 		t.Errorf("Set was called for %q", gotAccount)
 	}
-	// The password is changed to a settled one: it does not carry must_change on,
-	// and the current password is not one this method holds.
 	if gotOpt != (authn.SetPasswordOptions{}) {
 		t.Errorf("Set options = %+v, want none", gotOpt)
 	}
 }
 
+// TestAMissingNewPasswordIsAskedForAgainAndWritesNothing checks that a missing
+// new password is asked for again with the state kept and writes nothing.
 func TestAMissingNewPasswordIsAskedForAgainAndWritesNothing(t *testing.T) {
 	r, _ := mustChangeRig(sentinelPassword)
 	private := markVerified(testAccount)
@@ -578,6 +590,8 @@ func TestAMissingNewPasswordIsAskedForAgainAndWritesNothing(t *testing.T) {
 	}
 }
 
+// TestTheNewPasswordStepRefusesWhatIsNotASubmit checks that the new-password step
+// refuses an input that is not a submit and writes nothing.
 func TestTheNewPasswordStepRefusesWhatIsNotASubmit(t *testing.T) {
 	r, _ := mustChangeRig(sentinelPassword)
 	in := authn.StepInput{Action: authn.InputCallback, Fields: map[string]string{fieldNewPassword: sentinelNew}}
@@ -589,6 +603,8 @@ func TestTheNewPasswordStepRefusesWhatIsNotASubmit(t *testing.T) {
 	}
 }
 
+// TestAFailureToSetTheNewPasswordIsNotAProof checks that a failure to set the new
+// password is an outage or a refusal, never a proof.
 func TestAFailureToSetTheNewPasswordIsNotAProof(t *testing.T) {
 	cases := map[string]struct {
 		err  error
@@ -617,20 +633,20 @@ func TestAFailureToSetTheNewPasswordIsNotAProof(t *testing.T) {
 	}
 }
 
+// TestAPasswordThatMustChangeIsClearedOnceTheOldOneIsKnown checks that a
+// credential stops requiring a change once the new password is set.
 func TestAPasswordThatMustChangeIsClearedOnceTheOldOneIsKnown(t *testing.T) {
 	r, d := mustChangeRig(sentinelPassword)
 	prompt := must(r.m.Begin(t.Context(), loginStart(credentialFields("alice", sentinelPassword))))
 	must(r.m.Answer(t.Context(), flowAt(stepNewPassword, step.PrivateOf(prompt)), submit(map[string]string{fieldNewPassword: sentinelNew})))
-	// The next login with the new password is a plain proof.
 	got := must(r.m.Begin(t.Context(), loginStart(credentialFields("alice", sentinelNew))))
 	if kindOf(got) != step.KindProven {
 		t.Errorf("a login after the change answered %s, want a proof (must_change was %v)", describe(got), d.mustChange)
 	}
 }
 
-// What follows is the secrecy rule: a password is in no answer, no error and no
-// log line.
-
+// TestNoSecretReachesAnAnswerAnErrorOrALogLine checks that no password or
+// identifier reaches an answer, an error or a log line across the method's paths.
 func TestNoSecretReachesAnAnswerAnErrorOrALogLine(t *testing.T) {
 	logs := captureLogs(t)
 	boom := errors.New("backend failure")
@@ -723,6 +739,8 @@ func TestNoSecretReachesAnAnswerAnErrorOrALogLine(t *testing.T) {
 	}
 }
 
+// TestTheBackOffKeyHoldsNothingOfTheIdentifier checks that the back-off key
+// carries no part of the submitted identifier or password.
 func TestTheBackOffKeyHoldsNothingOfTheIdentifier(t *testing.T) {
 	r := newRig()
 	must(r.m.Begin(t.Context(), loginStart(credentialFields(sentinelIdent, sentinelPassword))))
@@ -736,8 +754,8 @@ func TestTheBackOffKeyHoldsNothingOfTheIdentifier(t *testing.T) {
 	}
 }
 
-// What follows is the context rule: a call that has ended derives nothing.
-
+// TestACancelledContextDerivesNothingAndCountsNothing checks that a cancelled or
+// expired context answers as an outage and reaches no dependency.
 func TestACancelledContextDerivesNothingAndCountsNothing(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -765,6 +783,8 @@ func TestACancelledContextDerivesNothingAndCountsNothing(t *testing.T) {
 	}
 }
 
+// TestAContextThatEndsWhileTheBackOffIsReadDerivesNothing checks that a context
+// that ends while the back-off is read answers as an outage without a derivation.
 func TestAContextThatEndsWhileTheBackOffIsReadDerivesNothing(t *testing.T) {
 	r := newRig()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -778,6 +798,7 @@ func TestAContextThatEndsWhileTheBackOffIsReadDerivesNothing(t *testing.T) {
 	}
 }
 
+// TestADerivationThatEndedWithTheContextIsNotARefusal checks that a context-ended derivation is an outage and not a wrong password.
 func TestADerivationThatEndedWithTheContextIsNotARefusal(t *testing.T) {
 	r := newRig()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -794,8 +815,7 @@ func TestADerivationThatEndedWithTheContextIsNotARefusal(t *testing.T) {
 	}
 }
 
-// What follows is the key: one identifier in several spellings is one key.
-
+// TestSpellingsOfOneIdentifierShareABackOffKey checks that folded spellings share one key while near misses do not.
 func TestSpellingsOfOneIdentifierShareABackOffKey(t *testing.T) {
 	spellings := []string{"alice", "Alice", "ALICE", " alice", "alice ", "\talice\n", "  ALice  ", "Alice "}
 	keyOf := func(identifier string) string {
@@ -814,14 +834,13 @@ func TestSpellingsOfOneIdentifierShareABackOffKey(t *testing.T) {
 			t.Errorf("identifier %q shares the key of alice", other)
 		}
 	}
-	// The key is the SHA-256 of the folded identifier in lower-case hexadecimal,
-	// which is the form the account module's table holds a key in.
 	sum := sha256.Sum256([]byte("alice"))
 	if want != hex.EncodeToString(sum[:]) {
 		t.Errorf("the key of alice is %s, want the SHA-256 of the folded identifier, %x", want, sum)
 	}
 }
 
+// TestTheSameKeyIsUsedForCheckFailAndSucceedWhateverTheSpelling checks one key across check, fail and succeed.
 func TestTheSameKeyIsUsedForCheckFailAndSucceedWhateverTheSpelling(t *testing.T) {
 	r := newRig()
 	must(r.m.Begin(t.Context(), loginStart(credentialFields("  Alice ", "wrong"))))
@@ -837,9 +856,8 @@ func TestTheSameKeyIsUsedForCheckFailAndSucceedWhateverTheSpelling(t *testing.T)
 	}
 }
 
-// What follows is the method under parallel use, for the race detector: it holds
-// nothing between calls.
-
+// TestTheMethodHoldsNoStateBetweenCalls checks, under the race detector, that the
+// method holds no state between concurrent calls.
 func TestTheMethodHoldsNoStateBetweenCalls(t *testing.T) {
 	r := newRig()
 	var wg sync.WaitGroup

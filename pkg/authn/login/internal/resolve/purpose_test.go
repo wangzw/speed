@@ -13,25 +13,20 @@ func (e *env) resolveFor(purpose string, account authn.AccountID, p authn.Proof)
 	return e.r.Resolve(context.Background(), Request{Proof: p, Purpose: purpose, Account: account})
 }
 
-// A link, a step-up and an enrollment never create, link, merge or touch a
-// membership; the explicit link of A6 writes nothing before the caller acts on
-// it.
-
+// TestLinkAnswersWhetherTheKeyIsFreeAndWritesNothing checks that a link reports
+// whether the external key is free for the flow's account and writes nothing.
 func TestLinkAnswersWhetherTheKeyIsFreeAndWritesNothing(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
 	e.s.seed(t, seed{id: "a1", status: authn.StatusActive, password: true, email: "ann@home.org", emailVia: "idp:google"})
 	e.s.seed(t, seed{id: "b1", status: authn.StatusActive, bindings: [][2]string{{"github", "gh-taken"}}})
 
-	// A key nobody holds, with an address an account already carries.
 	res, err := e.resolveFor(authn.PurposeLink, "a1", social("google", "g1", "ann@home.org", true))
 	if err != nil || res.Account != "a1" || res.Outcome != OutcomeVerified {
 		t.Fatalf("Resolve = %+v, %v, want a1 verified", res, err)
 	}
-	// A key another account holds.
 	if _, err := e.resolveFor(authn.PurposeLink, "a1", social("github", "gh-taken", "", false)); !errors.Is(err, authn.ErrBindingConflict) {
 		t.Errorf("err = %v, want ErrBindingConflict", err)
 	}
-	// A key this account holds already.
 	if res, err := e.resolveFor(authn.PurposeLink, "b1", social("github", "gh-taken", "", false)); err != nil || res.Account != "b1" {
 		t.Errorf("Resolve = %+v, %v, want b1", res, err)
 	}
@@ -40,6 +35,7 @@ func TestLinkAnswersWhetherTheKeyIsFreeAndWritesNothing(t *testing.T) {
 	}
 }
 
+// TestLinkIsOfAnExternalIdentityForTheFlowsAccountOnly checks that a password proof, a disabled account and a missing account are refused.
 func TestLinkIsOfAnExternalIdentityForTheFlowsAccountOnly(t *testing.T) {
 	e := newEnv(t)
 	e.s.seed(t, seed{id: "a1", status: authn.StatusActive})
@@ -58,16 +54,13 @@ func TestLinkIsOfAnExternalIdentityForTheFlowsAccountOnly(t *testing.T) {
 	}
 }
 
+// TestStepUpAndEnrollNeedTheProofToBeTheFlowsOwn checks that only a proof of the flow's own account is accepted.
 func TestStepUpAndEnrollNeedTheProofToBeTheFlowsOwn(t *testing.T) {
 	for _, purpose := range []string{authn.PurposeStepUp, authn.PurposeEnroll} {
 		t.Run(purpose, func(t *testing.T) {
 			e := newEnv(t, withSignup(SignupOpen))
 			e.s.seed(t, seed{id: "a1", status: authn.StatusActive, phone: "+8613800000001", bindings: [][2]string{{"google", "g1"}}})
 			e.s.seed(t, seed{id: "b1", status: authn.StatusActive, phone: "+8613800000002", bindings: [][2]string{{"google", "g2"}}})
-			// A login name and its password arrive as the account source: the
-			// password method resolves them to an account and names no
-			// identifier (resolve accepts only a phone identifier, and the
-			// phone has its own case).
 			own := map[string]authn.Proof{
 				"account":  {Account: "a1"},
 				"password": {Account: "a1", Methods: []authn.Method{authn.MethodPassword}},
@@ -99,6 +92,8 @@ func TestStepUpAndEnrollNeedTheProofToBeTheFlowsOwn(t *testing.T) {
 	}
 }
 
+// TestStepUpAcceptsAnEarlierWeChatKeyOfTheFlowsAccount checks that a step-up
+// accepts an earlier WeChat key already bound to the flow's account.
 func TestStepUpAcceptsAnEarlierWeChatKeyOfTheFlowsAccount(t *testing.T) {
 	e := newEnv(t)
 	e.s.seed(t, seed{id: "a1", status: authn.StatusActive, bindings: [][2]string{{"wechat-openid:app1", "o1"}}})
@@ -110,6 +105,8 @@ func TestStepUpAcceptsAnEarlierWeChatKeyOfTheFlowsAccount(t *testing.T) {
 	}
 }
 
+// TestPurposeAndSourceAreChecked checks that a request with no or an unknown
+// purpose, no source or more than one source is refused as an invalid argument.
 func TestPurposeAndSourceAreChecked(t *testing.T) {
 	e := newEnv(t)
 	for name, req := range map[string]Request{

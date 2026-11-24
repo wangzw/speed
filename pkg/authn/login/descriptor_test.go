@@ -9,8 +9,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// scopedHuman answers a different gate on each surface, so a case can tell the
-// two entries of the methods document apart.
 type scopedHuman map[authn.HumanScope]authn.HumanVerifier
 
 func (h scopedHuman) verifier(scope authn.HumanScope) authn.HumanVerifier {
@@ -34,8 +32,6 @@ func (h scopedHuman) Verify(ctx context.Context, p authn.HumanProof, scope authn
 	return h.verifier(scope).Verify(ctx, p, scope)
 }
 
-// signupStore is a settings store whose registration switch is open and whose
-// other declared switch, the disabled methods, names none.
 func signupStore() *fakeStore {
 	return &fakeStore{values: map[string]string{
 		signupPath:          signupOpen,
@@ -43,9 +39,7 @@ func signupStore() *fakeStore {
 	}}
 }
 
-// TestTheMethodsListingPublishesMethodDescriptors holds GET B/methods: it
-// answers a descriptor per method taking part, in name order, next to the
-// registration switch and the kinds of second factor the deployment offers.
+// TestTheMethodsListingPublishesMethodDescriptors holds that GET B/methods answers a descriptor per method in name order, with the signup switch and factor kinds.
 func TestTheMethodsListingPublishesMethodDescriptors(t *testing.T) {
 	password := &fakeMethod{name: "password", desc: authn.MethodDescriptor{
 		Name: "password", Kind: authn.MethodKindForm,
@@ -112,10 +106,7 @@ func TestTheMethodsListingPublishesMethodDescriptors(t *testing.T) {
 	}
 }
 
-// TestTheMethodsListingReportsTheHumanGatePerScope holds that the discovery
-// document reports the gate once per surface: the phone surface guards the SMS
-// sends and the other surface guards every send that does not address a phone
-// number, and a deployment may run a different mechanism on each.
+// TestTheMethodsListingReportsTheHumanGatePerScope holds that the phone and other surfaces each report their own mechanism.
 func TestTheMethodsListingReportsTheHumanGatePerScope(t *testing.T) {
 	r := newRigMethods(t, &fakeMethod{name: "password"})
 	r.p.settings = newReader(signupStore(), r.p.logger)
@@ -156,10 +147,7 @@ func TestTheMethodsListingReportsTheHumanGatePerScope(t *testing.T) {
 	}
 }
 
-// TestTheMethodsListingReportsTheTurnstileAction holds that a Turnstile
-// surface publishes both the widget key and the action the widget must be
-// rendered with: a token obtained under one action is not accepted for
-// another, so the client must render the widget under the configured action.
+// TestTheMethodsListingReportsTheTurnstileAction holds that a Turnstile surface publishes both its widget key and its action.
 func TestTheMethodsListingReportsTheTurnstileAction(t *testing.T) {
 	r := newRigMethods(t, &fakeMethod{name: "password"})
 	r.p.settings = newReader(signupStore(), r.p.logger)
@@ -184,9 +172,7 @@ func TestTheMethodsListingReportsTheTurnstileAction(t *testing.T) {
 	}
 }
 
-// TestTheMethodsListingReportsNoGateAsOffOnEverySurface holds that no seam and
-// the off mechanism read the same: every surface names off and requires
-// nothing, because in both cases a caller presents no proof.
+// TestTheMethodsListingReportsNoGateAsOffOnEverySurface holds that no seam and the off mechanism both read off on every surface.
 func TestTheMethodsListingReportsNoGateAsOffOnEverySurface(t *testing.T) {
 	r := newRigMethods(t, &fakeMethod{name: "password"})
 	r.p.settings = newReader(signupStore(), r.p.logger)
@@ -220,9 +206,7 @@ func TestTheMethodsListingHidesADisabledMethod(t *testing.T) {
 	}
 }
 
-// TestTheMethodsListingFollowsTheAssembly holds that the published registration
-// switch and factor kinds are the deployment's, read from what the assembly took
-// in.
+// TestTheMethodsListingFollowsTheAssembly holds that the published signup switch and factor kinds come from what the assembly took in.
 func TestTheMethodsListingFollowsTheAssembly(t *testing.T) {
 	r := newRig(t, &fakeMethod{name: "password"})
 
@@ -245,12 +229,7 @@ func TestTheMethodsListingFollowsTheAssembly(t *testing.T) {
 	}
 }
 
-// TestTheMethodsListingReportsBothRegistrationSwitches holds the two members of
-// the discovery document that carry registration: signup.enabled is true when
-// either the first-login switch or the register route's switch is open, and
-// signup.password.enabled reports the register route alone. A method that could
-// open an account is not shown as able to while the first-login switch is closed,
-// and the password descriptor never carries opens_account at all.
+// TestTheMethodsListingReportsBothRegistrationSwitches holds that signup.enabled unions the two switches and signup.password.enabled reports the register route alone.
 func TestTheMethodsListingReportsBothRegistrationSwitches(t *testing.T) {
 	cases := []struct {
 		name            string

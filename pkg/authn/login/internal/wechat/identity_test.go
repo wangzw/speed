@@ -6,9 +6,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestAUnionIDIsTheSubjectAndTheOpenIDIsTheAlias holds the key-upgrade rule: an
-// identity with a union id is bound under the union id and offers the open-id
-// key as an alias, so a binding made under the old key is upgraded in place.
+// TestAUnionIDIsTheSubjectAndTheOpenIDIsTheAlias holds that the union id is the subject and the open-id key is offered as an alias.
 func TestAUnionIDIsTheSubjectAndTheOpenIDIsTheAlias(t *testing.T) {
 	c := New(Options{AppID: testAppID, AppSecret: testAppSecret})
 	p := c.Proof(Identity{OpenID: "OPEN-9", UnionID: "UNION-9"})

@@ -7,9 +7,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestDescribeReportsTheFirstStepForm holds the descriptor the discovery
-// endpoint publishes for the SMS method: a form whose first step asks for a
-// phone number, and which may open an account.
+// TestDescribeReportsTheFirstStepForm holds the SMS descriptor: a form asking for a phone number that may open an account.
 func TestDescribeReportsTheFirstStepForm(t *testing.T) {
 	got := (&method{}).Describe()
 	if got.Name != "sms" || got.Kind != authn.MethodKindForm || got.Protocol != "" ||
