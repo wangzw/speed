@@ -1,10 +1,4 @@
-// Package configtest builds the configuration reader a carrier case hands a
-// module under test.
-//
-// It is the authentication capability's authntest reader without the authn
-// dependency: the sending capabilities' carriers read their own sections and
-// must not pull the authentication capability into their tests, so a local
-// reader is what keeps the sending capabilities free of it.
+// Package configtest builds the real configuration reader a carrier case hands a module under test.
 package configtest
 
 import (
@@ -18,15 +12,8 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// Reader builds the real configuration loader over a JSON primary source holding
-// body, with the given modules registered so their declared items are known.
-//
-// It is the loader itself rather than a stand-in because half of what these
-// cases hold belongs to the declaration rather than to the code — that an absent
-// item a module declared required is refused at all comes from the item being
-// declared required. The command line is given as empty and the prefix is one no
-// machine carries variables under, so the locator is the host identity's default
-// and nothing outside the case reaches the values.
+// Reader builds the real configuration loader over a JSON primary source holding body, with the
+// given modules registered so their declared items are known.
 func Reader(t testing.TB, body string, modules ...core.Module) config.Reader {
 	t.Helper()
 
