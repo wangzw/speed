@@ -11,6 +11,7 @@ import { useState } from 'react'
 import userEvent from '@testing-library/user-event'
 import { act, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@speed/test-utils/timers'
 import { alertClasses } from '@mui/material/Alert'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { expectNoAxeViolations } from '../../test-utils/axe.js'
@@ -401,8 +402,8 @@ const waitResolver = (code: string, seconds?: number): string =>
   seconds === undefined ? `${code}:no-wait` : `${code}:${seconds}s`
 
 describe('WriteFeedbackRegion wait countdown', () => {
-  afterEach(() => {
-    vi.useRealTimers()
+  afterEach(async () => {
+    await restoreRealTimers()
   })
 
   it('counts the visible sentence down against the deadline while the accessible sentence stays fixed', () => {

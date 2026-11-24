@@ -17,6 +17,7 @@ import { act, renderHook, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createContext, useContext, useEffect } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@speed/test-utils/timers'
 import { switchLanguage, useTranslation } from '@speed/i18n'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
@@ -42,8 +43,8 @@ function deferred<Value>(): Deferred<Value> {
 }
 
 describe('useWriteFeedback', () => {
-  afterEach(() => {
-    vi.useRealTimers()
+  afterEach(async () => {
+    await restoreRealTimers()
   })
 
   it('carries the wait a throttled refusal stated into the slot', async () => {
