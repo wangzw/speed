@@ -1,15 +1,5 @@
-/**
- * product-shell test configuration: jsdom DOM environment with the shared
- * jest-dom matcher setup, plus the workspace source aliases. Timeout and
- * coverage come from the workspace preset (web/vitest.shared.ts).
- *
- * The aliases come from the workspace's single package map
- * (web/scripts/speed-aliases.mjs): every @speed/* specifier -- subpaths
- * included -- resolves onto its sibling's live src entry, because a
- * sibling's dist/ is never committed and not guaranteed to exist when
- * tests run. The map is the one place a specifier is added or moved, so
- * this list cannot drift from what src/ and test-utils/ import.
- */
+// Aliases must resolve @speed/ specifiers onto sibling src entries: dist/ is
+// never committed and may not exist when tests run.
 import { defineConfig } from 'vitest/config'
 import { speedAliases } from '../../scripts/speed-aliases.mjs'
 import { sharedTestOptions } from '../../vitest.shared.ts'

@@ -1,41 +1,3 @@
-/**
- * bootstrap.test.tsx -- the contracts of the app-entry assembly, each
- * proven at the layer it belongs to:
- *
- * bootstrapSpeedApp -- jsdom mounts of the whole composition: the
- * definition's namespaces register alongside the family's automatic
- * four, a framework namespace listed in the definition replaces its
- * shipped bundle, resource overlays merge before registration (a leaf, a
- * replacement and a whole added language), every definition option
- * reaches what it configures (client, theme, i18n), the `<html lang>`
- * binding follows the instance and its opt-out, the provider chain wraps
- * the declared view in declared order with the assembled services, the
- * client the assembly built answers over the environment's own (stubbed)
- * fetch, the session-end strategy is wired (default and override), and
- * unmount tears the page down.
- *
- * createSpeedI18n -- the exported instance construction: the family four
- * and the platform error bundle registered, the definition namespaces and
- * overlays applied.
- *
- * SpeedAppProviders -- the exported provider stack serving translations,
- * theme and the supplied query client.
- *
- * createQueryClient -- the exported query policy: the read defaults are
- * written out on the client rather than inherited from the library.
- *
- * watchSessionEnd -- the session-ended default's transition matrix over
- * a real AuthSession (createAuthSession driven through the real-client
- * rig's scripted responder), a real QueryClient and no DOM tree: the
- * wiring is pure session-and-cache plumbing. The matrix pins the four
- * edges that matter: sign-out evicts, a silently refused refresh
- * (session death -- refresh() resolves false, the same authenticated ->
- * anonymous flip) evicts, a session that was never authenticated
- * evicts nothing, and a tenant switch (still authenticated throughout)
- * evicts nothing -- mid-session switch eviction is the host's own
- * concern.
- */
-
 import { QueryClient, useQueryClient } from '@tanstack/react-query'
 import { useTheme } from '@mui/material/styles'
 import { act, render, waitFor } from '@testing-library/react'
@@ -89,12 +51,8 @@ import {
 import type { RealResponder } from '../test-utils/real-client.js'
 import type { AuthSession } from '@speed/auth-core'
 
-/** The tenant the scripted happy-path answers name. */
 const TENANT_ID = 'tenant-1'
 
-/** A scripted answer table covering the flows both describes drive: a
- * password login (the flow start, its answer, the profile the completion
- * reads), a silent refresh's token endpoint, and logout. */
 const respond: RealResponder = (call) => {
   const key = `${call.method} ${call.path}`
   if (key === 'POST /api/v1/auth/flows') {
@@ -107,13 +65,9 @@ const respond: RealResponder = (call) => {
     return jsonResponse(200, principal())
   }
   if (key === 'GET /api/v1/auth/session') {
-    // The boot restore's read. Nobody is signed in by default, so the
-    // mounted view stays on the sign-in surface; a test that needs a
-    // remembered session overrides this responder.
     return jsonResponse(200, { authenticated: false })
   }
   if (key === 'GET /api/v1/features') {
-    // The boot restore's feature read, and every login commit's.
     return jsonResponse(200, { features: [] })
   }
   if (key === 'POST /api/v1/auth/token') {
@@ -125,8 +79,6 @@ const respond: RealResponder = (call) => {
   throw new Error(`unexpected request: ${key}`)
 }
 
-/** Drive a password login to completion on a session: the flow it starts,
- * the first answer, and the profile the completion reads. */
 async function signIn(session: AuthSession): Promise<void> {
   const first = await session.startFlow({ method: 'password' })
   if (!('next' in first)) {
@@ -142,9 +94,6 @@ async function signIn(session: AuthSession): Promise<void> {
   })
 }
 
-/** A query row under the app-side tenant-namespaced key convention
- * (['tenant', tenantId, ...]); the suffix is arbitrary -- the eviction
- * removes everything. */
 function seedTenantCache(queryClient: QueryClient): void {
   queryClient.setQueryData(
     ['tenant', TENANT_ID, '/notes', {}],
@@ -152,30 +101,22 @@ function seedTenantCache(queryClient: QueryClient): void {
   )
 }
 
-/** The identity-domain shape: bare spec-path keys nothing
- * tenant-namespaced, which only a total eviction reaches. */
 function seedIdentityCache(queryClient: QueryClient): void {
   queryClient.setQueryData(['/api/v1/auth/sessions'], {
     sessions: [{ id: 'session-1' }],
   })
 }
 
-/** A row no eviction call site names -- the "remove everything" proof
- * that no future domain needs a new eviction site either. */
 function seedUnrelatedCache(queryClient: QueryClient): void {
   queryClient.setQueryData(['preferences'], { theme: 'dark' })
 }
 
-/** Seeds every domain an authenticated session's reads populate. */
 function seedAllDomains(queryClient: QueryClient): void {
   seedTenantCache(queryClient)
   seedIdentityCache(queryClient)
   seedUnrelatedCache(queryClient)
 }
 
-/** Mounts a definition into a fresh container and returns the definite
- * handles (the mount runs inside act; the guard keeps the callers'
- * types definite). */
 async function mountApp(
   container: Element,
   definition: SpeedAppDefinition,
@@ -190,9 +131,6 @@ async function mountApp(
   return boot
 }
 
-/** A copy of a bundle with every string leaf prefixed: a complete bundle
- * for a language a package does not ship, with the shipped key set (the
- * shape registration validates). */
 function prefixedBundle(bundle: ResourceBundle, prefix: string): ResourceBundle {
   const copy: Record<string, string | ResourceBundle> = {}
   for (const [key, value] of Object.entries(bundle)) {
@@ -202,7 +140,6 @@ function prefixedBundle(bundle: ResourceBundle, prefix: string): ResourceBundle 
   return copy
 }
 
-/** Unmount a mounted app and drop its container. */
 async function teardown(boot: SpeedAppBootstrap, container: Element): Promise<void> {
   await act(async () => {
     boot.root.unmount()
@@ -224,8 +161,6 @@ describe('bootstrapSpeedApp', () => {
   let realLanguages: readonly string[] | undefined
   let realLocalStorage: PropertyDescriptor | undefined
   let realHref: string
-  /** The responder the mounted client's fetch consults; tests override
-   * it to script a remembered session or another boot answer. */
   let activeResponder: RealResponder
 
   beforeEach(() => {
@@ -234,19 +169,10 @@ describe('bootstrapSpeedApp', () => {
     realFetch = globalThis.fetch
     realLanguages = window.navigator.languages
     realHref = window.location.href
-    // Deterministic language: pin the navigator-languages leg of
-    // createI18n's negotiation so the mounted view speaks the zh-CN
-    // copy the assertions name (jsdom's own languages answer en-US).
     Object.defineProperty(window.navigator, 'languages', {
       value: ['zh-CN'],
       configurable: true,
     })
-    // createI18n reads the stored-language choice through a guarded
-    // globalThis.localStorage access; under Node 26 that global is the
-    // engine's experimental webstorage getter (it warns and offers
-    // nothing without --localstorage-file). A memory-backed stub keeps
-    // that leg exercised deterministically (an empty store reads back
-    // null) without tripping the engine global.
     realLocalStorage = Object.getOwnPropertyDescriptor(
       globalThis,
       'localStorage',
@@ -259,11 +185,6 @@ describe('bootstrapSpeedApp', () => {
       configurable: true,
       writable: true,
     })
-    // The environment fetch the assembly's client captures (no fetch
-    // option: createClient captures globalThis.fetch at construction).
-    // A fresh stub per test answers the scripted flows and fails loudly
-    // on anything else -- an unexpected request is a composition
-    // regression, not something to answer.
     Object.defineProperty(globalThis, 'fetch', {
       value: async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(String(input))
@@ -317,9 +238,6 @@ describe('bootstrapSpeedApp', () => {
     }
     const boot = await mountApp(container, { view: <Probe /> })
 
-    // The assembly's own four namespaces registered automatically --
-    // the namespaces the packages it composes render under -- and the
-    // view reads them.
     expect(boot.i18n.language).toBe('zh-CN')
     expect(boot.i18n.hasResourceBundle('zh-CN', UI_KIT_NAMESPACE)).toBe(true)
     expect(boot.i18n.hasResourceBundle('zh-CN', LAYOUT_KIT_NAMESPACE)).toBe(true)
@@ -340,8 +258,6 @@ describe('bootstrapSpeedApp', () => {
   it('restores the session the cookie names at boot, announcing the cookie credential mode', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
-    // A page load with a still-valid session cookie: the boot read says
-    // signed in, and the principal is re-read from /api/v1/auth/me.
     activeResponder = (call) => {
       if (call.path === '/api/v1/auth/session') {
         return jsonResponse(200, { authenticated: true, session_id: 's-1' })
@@ -350,16 +266,11 @@ describe('bootstrapSpeedApp', () => {
     }
     const boot = await mountApp(container, { view: <div /> })
 
-    // The reload kept the user logged in -- the bug this model fixes.
-    // The boot restore commits the principal and the feature document
-    // together, so the assertion waits for that commit rather than for
-    // the boot call itself (which returns before the read settles).
     await waitFor(() =>
       expect(boot.session.getSnapshot().state).toBe('authenticated'),
     )
     expect(boot.session.getSnapshot().principal).not.toBeNull()
 
-    // The boot read and its /me follow both rode the cookie mode.
     const sessionRead = observed.find((call) => call.path === '/api/v1/auth/session')
     expect(sessionRead?.credentials).toBe('same-origin')
     const meRead = observed.find((call) => call.path === '/api/v1/auth/me')
@@ -374,10 +285,6 @@ describe('bootstrapSpeedApp', () => {
   it('holds the declared view until the boot restore settles, so a reload never flashes the sign-in surface', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
-    // The boot read stays unanswered until the test releases it: the
-    // page load's snapshot is anonymous for that whole window, and the
-    // view (in a real app the shell, whose anonymous branch is the
-    // sign-in surface) must not render into it.
     let release!: () => void
     const answer = new Promise<void>((resolve) => {
       release = resolve
@@ -405,10 +312,6 @@ describe('bootstrapSpeedApp', () => {
   it('renders the declared view after a failed boot restore instead of holding the page blank', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
-    // A definitive refusal (not a transient class the transport would
-    // retry): restore rethrows, the snapshot stays anonymous, and the
-    // page must fall through to its sign-in surface rather than wait
-    // forever on a restore that already settled.
     activeResponder = (call) => {
       if (call.path === '/api/v1/auth/session') {
         return jsonResponse(400, { code: 'authn.invalid_request' })
@@ -433,8 +336,6 @@ describe('bootstrapSpeedApp', () => {
     await act(async () => {
       await boot.session.startFlow({ method: 'password' })
     })
-    // Every observed request carried the credential mode; none carried a
-    // bearer token (the cookie is the credential).
     for (const call of observed) {
       expect(call.credentials).toBe('same-origin')
     }
@@ -446,13 +347,6 @@ describe('bootstrapSpeedApp', () => {
   })
 
   it('settles a refused request even when the silent restore it triggers has its profile read refused', async () => {
-    // The wiring under test is the production one: the client's
-    // refreshAccessToken hook is the session's own restore, reading
-    // GET /api/v1/auth/session and then GET /api/v1/auth/me. The first read runs
-    // inside the hook's synchronous invocation; the profile read
-    // follows an await, so only the round-scoped request function the
-    // hook is handed keeps it from joining the round that is awaiting
-    // the hook -- a request awaiting itself never settles.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -461,8 +355,6 @@ describe('bootstrapSpeedApp', () => {
     activeResponder = (call) => {
       if (call.method === 'GET' && call.path === '/api/v1/auth/session') {
         sessionReads += 1
-        // The boot restore finds nobody signed in; the silent restore
-        // that follows the refused request finds a still-valid cookie.
         return jsonResponse(
           200,
           sessionReads === 1
@@ -495,7 +387,6 @@ describe('bootstrapSpeedApp', () => {
       throw new Error('the provider must receive the assembled client')
     }
 
-    // One credentialed request into the refused path.
     let settled = false
     let caught: unknown
     const driven = drive<unknown>('/notes').then(
@@ -507,15 +398,9 @@ describe('bootstrapSpeedApp', () => {
         caught = error
       },
     )
-    // The never-settling regression is deterministic: without the bound
-    // the profile read joins the round awaiting it. The bounded wait
-    // turns that hang into an assertion failure.
     for (let i = 0; i < 64 && !settled; i += 1) {
       await Promise.resolve()
     }
-    // Generous because it bounds only the wait: the assertion below is
-    // that the round settles at all, and a machine busy with other work
-    // must not turn a settled round into a failed one.
     const deadline = Date.now() + 30_000
     while (!settled && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 2))
@@ -527,9 +412,6 @@ describe('bootstrapSpeedApp', () => {
       expect(caught.code).toBe('authn.session_expired')
       expect(caught.traceId).toBe('trace-notes')
     }
-    // Each restore read happened exactly once: the round ended as a
-    // finite failed refresh instead of re-reading or retrying, and the
-    // client reported that failure through its own diagnostic channel.
     expect(sessionReads).toBe(2)
     expect(profileReads).toBe(1)
     expect(warn).toHaveBeenCalledTimes(1)
@@ -546,9 +428,6 @@ describe('bootstrapSpeedApp', () => {
     document.body.appendChild(container)
     const boot = await mountApp(container, { view: <div /> })
 
-    // A backend error code no package namespace covers resolves to the
-    // platform bundle's own text -- the same string a direct lookup of
-    // the bundle returns -- instead of rendering as the raw key.
     const code = 'admin.impersonation_reason_required'
     expect(boot.i18n.hasResourceBundle('zh-CN', PLATFORM_ERRORS_NAMESPACE)).toBe(
       true,
@@ -570,19 +449,12 @@ describe('bootstrapSpeedApp', () => {
     document.body.appendChild(container)
     const boot = await mountApp(container, { view: <div /> })
 
-    // The navigator leg resolved zh-CN at creation (pinned above), so
-    // the assembled client announces it -- the frontend chain's value,
-    // transported for the backend's requester-language tiers. A real
-    // flow drives the requests so the whole session wiring is on the
-    // path.
     await act(async () => {
       await signIn(boot.session)
     })
     expect(observed.length).toBeGreaterThan(0)
     expect(observed.every((call) => call.acceptLanguage === 'zh-CN')).toBe(true)
 
-    // A language switch moves what subsequent requests announce: the
-    // provider reads the instance per attempt, so nothing goes stale.
     const beforeSwitch = observed.length
     await act(async () => {
       await switchLanguage(boot.i18n, 'en-US')
@@ -609,17 +481,12 @@ describe('bootstrapSpeedApp', () => {
       tenantProvider: () => tenant,
     })
 
-    // Every request the session wiring drives announces the host's current
-    // tenant -- the routing fact the backend's tenant resolution layer reads
-    // on the api endpoint.
     await act(async () => {
       await signIn(boot.session)
     })
     expect(observed.length).toBeGreaterThan(0)
     expect(observed.every((call) => call.tenant === 'acme')).toBe(true)
 
-    // The provider is read per request, so a switch moves what subsequent
-    // requests announce rather than going stale.
     const beforeSwitch = observed.length
     tenant = 'globex'
     await act(async () => {
@@ -634,7 +501,6 @@ describe('bootstrapSpeedApp', () => {
     })
     container.remove()
 
-    // A definition with no tenantProvider announces no tenant at all.
     observed = []
     const bare = document.createElement('div')
     document.body.appendChild(bare)
@@ -673,8 +539,6 @@ describe('bootstrapSpeedApp', () => {
     })
 
     expect(boot.i18n.hasResourceBundle('zh-CN', probeNamespace)).toBe(true)
-    // The provider fold, outermost first: outer wraps inner wraps the
-    // view -- the declared order is the DOM nesting order.
     const outerNode = container.querySelector('[data-testid="outer"]')
     const innerNode = container.querySelector('[data-testid="inner"]')
     const viewNode = container.querySelector('[data-testid="view"]')
@@ -683,9 +547,6 @@ describe('bootstrapSpeedApp', () => {
     expect(viewNode).not.toBeNull()
     expect(outerNode?.contains(innerNode)).toBe(true)
     expect(innerNode?.contains(viewNode)).toBe(true)
-    // The providers receive the assembled services, and the api is the
-    // client bound into the runtime seam: the session operations
-    // travel over the environment fetch stub.
     expect(seen).toHaveLength(1)
     expect(typeof seen[0]?.api).toBe('function')
     await act(async () => {
@@ -747,8 +608,6 @@ describe('bootstrapSpeedApp', () => {
     await act(async () => {
       await signIn(boot.session)
     })
-    // Every request the assembly's client issued went through the
-    // supplied implementation -- and reached the endpoint script.
     expect(delegated).toBeGreaterThan(0)
     expect(delegated).toBe(observed.length)
     expect(observed.some((call) => call.path === '/api/v1/auth/flows')).toBe(true)
@@ -770,7 +629,6 @@ describe('bootstrapSpeedApp', () => {
     expect(
       observed.every((call) => call.headers.get('x-organization') === 'acme'),
     ).toBe(true)
-    // The default name is replaced, not duplicated.
     expect(observed.every((call) => call.headers.get('x-tenant') === null)).toBe(true)
     await teardown(boot, container)
   })
@@ -778,9 +636,6 @@ describe('bootstrapSpeedApp', () => {
   it('applies timeoutMs from the definition client table', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
-    // A fetch that never answers on its own but honours the abort signal,
-    // the way a real fetch does: only the client's own timeout can end
-    // the exchange.
     const recordingFetch = globalThis.fetch
     Object.defineProperty(globalThis, 'fetch', {
       value: (input: RequestInfo | URL, init?: RequestInit) => {
@@ -857,8 +712,6 @@ describe('bootstrapSpeedApp', () => {
         },
       }),
     ).toBe(1)
-    // No policy declared: the shipped default (three transient attempts)
-    // is unchanged.
     expect(await notesAttempts({ view: <div /> })).toBe(3)
   })
 
@@ -901,8 +754,6 @@ describe('bootstrapSpeedApp', () => {
       throw new Error('the provider must receive the assembled client')
     }
     await drive<unknown>('/notes').catch(() => undefined)
-    // The client's own diagnostic (the failed silent refresh) reached the
-    // supplied sink, not the console default.
     expect(reporter.warn).toHaveBeenCalledTimes(1)
     expect(reporter.error).not.toHaveBeenCalled()
     expect(consoleWarn).not.toHaveBeenCalled()
@@ -916,10 +767,6 @@ describe('bootstrapSpeedApp', () => {
         <span data-testid="probe">{`${theme.palette.mode}:${theme.palette.primary.main}`}</span>
       )
     }
-    // A role's main tone is the light-surface tone and its light tone the
-    // dark-surface one, so a definition that recolors both reaches the
-    // provider in both modes. The token override names each tone the mode
-    // reads: light mode takes main, dark mode takes light.
     const projectTokens = {
       color: { semantic: { primary: { main: '#123456', light: '#89ABCD' } } },
     }
@@ -947,8 +794,6 @@ describe('bootstrapSpeedApp', () => {
       const theme = useTheme()
       return <span data-testid="probe">{String(theme.shape.borderRadius)}</span>
     }
-    // The second entry is the deployment's default: a preset the list does
-    // not start with still wins when defaultPreset names it.
     const container = document.createElement('div')
     document.body.appendChild(container)
     const boot = await mountApp(container, {
@@ -975,15 +820,12 @@ describe('bootstrapSpeedApp', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const boot = await mountApp(container, { view: <ThemeProbe /> })
-    // The assembly's default: light mode over the shipped project tokens.
     const shipped = createAppTheme()
     expect(container.textContent).toBe(`light:${shipped.theme.palette.primary.main}`)
     await teardown(boot, container)
   })
 
   it('merges the definition i18n url parameter, storage key and profile language into instance creation', async () => {
-    // The URL parameter name: a custom parameter resolves the language
-    // even though the navigator leg is pinned to zh-CN.
     window.history.replaceState({}, '', '/?hl=en-US')
     const fromUrl = document.createElement('div')
     document.body.appendChild(fromUrl)
@@ -994,8 +836,6 @@ describe('bootstrapSpeedApp', () => {
     expect(urlBoot.i18n.language).toBe('en-US')
     await teardown(urlBoot, fromUrl)
 
-    // The storage key: the stored choice is read under the configured
-    // key, and a store answering only that key proves the key is used.
     window.history.replaceState({}, '', '/')
     Object.defineProperty(globalThis, 'localStorage', {
       value: {
@@ -1014,7 +854,6 @@ describe('bootstrapSpeedApp', () => {
     expect(storageBoot.i18n.language).toBe('en-US')
     await teardown(storageBoot, fromStorage)
 
-    // The profile language outranks the navigator leg (pinned zh-CN).
     const fromProfile = document.createElement('div')
     document.body.appendChild(fromProfile)
     const profileBoot = await mountApp(fromProfile, {
@@ -1026,8 +865,6 @@ describe('bootstrapSpeedApp', () => {
   })
 
   it('merges the definition i18n supported languages, default language and missing-key handler into instance creation', async () => {
-    // A narrowed supported set: registration covers only en-US, and the
-    // zh-CN bundles of the framework namespaces are reduced away.
     const narrowed = document.createElement('div')
     document.body.appendChild(narrowed)
     const narrowedBoot = await mountApp(narrowed, {
@@ -1043,8 +880,6 @@ describe('bootstrapSpeedApp', () => {
     ).toBe(false)
     await teardown(narrowedBoot, narrowed)
 
-    // The default language: an unsupported navigator language falls to
-    // the configured one instead of the shipped en-US default.
     Object.defineProperty(window.navigator, 'languages', {
       value: ['fr-FR'],
       configurable: true,
@@ -1058,7 +893,6 @@ describe('bootstrapSpeedApp', () => {
     expect(fallbackBoot.i18n.language).toBe('zh-CN')
     await teardown(fallbackBoot, fallback)
 
-    // The missing-key handler reaches the instance's lookups.
     const onMissingKey = vi.fn()
     const missing = document.createElement('div')
     document.body.appendChild(missing)
@@ -1076,9 +910,6 @@ describe('bootstrapSpeedApp', () => {
   })
 
   it('keeps the shipped bilingual instance and negotiation defaults when the definition sets no i18n options', async () => {
-    // No source resolves (the navigator language is unsupported), so the
-    // default fallback decides: en-US, the platform default -- not the
-    // zh-CN the definition could have named.
     Object.defineProperty(window.navigator, 'languages', {
       value: ['fr-FR'],
       configurable: true,
@@ -1110,7 +941,6 @@ describe('bootstrapSpeedApp', () => {
     expect(boot.i18n.t('product-shell:announcements.sessionEnded')).toBe(
       'Host announcement',
     )
-    // The untouched language keeps the shipped text.
     expect(
       boot.i18n.t('product-shell:announcements.sessionEnded', { lng: 'en-US' }),
     ).not.toBe('Host announcement')
@@ -1131,15 +961,10 @@ describe('bootstrapSpeedApp', () => {
           },
         },
       ],
-      // The overlay merges into the replacement, not the shipped bundle:
-      // the host can still replace a leaf of what it supplied.
       resourceOverrides: {
         [UI_KIT_NAMESPACE]: { 'zh-CN': { greeting: 'overlaid zh' } },
       },
     })
-    // The listed bundle is the namespace's registration (no double
-    // registration throw), the overlay landed on it, and the shipped
-    // bundle is gone.
     expect(boot.i18n.t('ui-kit:greeting')).toBe('overlaid zh')
     expect(boot.i18n.exists('ui-kit:components')).toBe(false)
     await teardown(boot, container)
@@ -1168,8 +993,6 @@ describe('bootstrapSpeedApp', () => {
         [PLATFORM_ERRORS_NAMESPACE]: { 'fr-FR': french(platformErrorResources) },
       },
     })
-    // Every registered namespace now carries the supplied language, and
-    // its text is the host's.
     expect(boot.i18n.hasResourceBundle('fr-FR', UI_KIT_NAMESPACE)).toBe(true)
     expect(
       boot.i18n.hasResourceBundle('fr-FR', PLATFORM_ERRORS_NAMESPACE),
@@ -1177,16 +1000,11 @@ describe('bootstrapSpeedApp', () => {
     expect(
       boot.i18n.t('product-shell:announcements.sessionEnded', { lng: 'fr-FR' }),
     ).toBe(`fr:${zhCN.announcements.sessionEnded}`)
-    // The platform default set is a constant, not a side effect of the
-    // instance's configuration.
     expect([...DEFAULT_SUPPORTED_LANGUAGES]).toEqual(['zh-CN', 'en-US'])
     await teardown(boot, container)
   })
 
   it('reduces an overlaid language the instance does not support', async () => {
-    // The overlay supplies a whole third language, but the instance's
-    // supported set is the shipped pair: the registration is reduced to
-    // it, so the extra bundle is not dead weight and nothing throws.
     const container = document.createElement('div')
     document.body.appendChild(container)
     const boot = await mountApp(container, {
@@ -1223,11 +1041,6 @@ describe('bootstrapSpeedApp', () => {
   })
 
   it('refuses a platform-error override that drops a packaged code', () => {
-    // Reachable when the instance's supported set omits the shipped pair:
-    // the framework namespaces are replaced wholesale, the platform bundle
-    // arrives only through the override, and registerNamespace then sees a
-    // single language -- so nothing but the packaged reference can catch a
-    // bundle missing a code.
     const fr = { a: 'x' }
     expect(() =>
       createSpeedI18n({
@@ -1270,8 +1083,6 @@ describe('bootstrapSpeedApp', () => {
     })
     expect(document.documentElement.lang).toBe('en-US')
     await teardown(boot, container)
-    // The subscription went with the page: a later switch on the same
-    // instance no longer touches the document.
     await act(async () => {
       await switchLanguage(boot.i18n, 'zh-CN')
     })
@@ -1315,11 +1126,6 @@ describe('bootstrapSpeedApp', () => {
       await boot.session.logout()
     })
 
-    // The override ran -- and only the override: the declared handler
-    // replaces the shipped default action rather than chaining onto it,
-    // so the cache the override did not evict is still there, and the
-    // context hands the default action back for an override that wants
-    // it (asserted next).
     expect(contexts).toHaveLength(1)
     expect(contexts[0]?.queryClient).toBe(boot.queryClient)
     expect(boot.queryClient.getQueryCache().findAll().length).toBeGreaterThan(0)
@@ -1358,10 +1164,6 @@ describe('createQueryClient', () => {
   it('writes the read policy out explicitly instead of leaving it to the library', () => {
     const { queries, mutations } = createQueryClient().getDefaultOptions()
 
-    // getDefaultOptions returns the options as constructed, without
-    // merging the library's own defaults, so an exact equality pins the
-    // keys the assembly wrote: an omitted trigger fails here even though
-    // the library would have supplied the same value.
     expect(queries).toEqual({
       retry: false,
       staleTime: 0,
@@ -1375,13 +1177,6 @@ describe('createQueryClient', () => {
 
 describe('watchSessionEnd', () => {
   it('empties every domain a sign-out leaves behind: the tenant rows, the identity-domain rows and any unrelated key', async () => {
-    // The identity-domain rows (bare spec-path keys -- nothing in
-    // @speed/api-sdk is tenant-namespaced) have no tenant segment for a
-    // tenant-prefixed removal to reach, so without total eviction a
-    // different account signing in afterward would inherit them. The
-    // eviction is total: every domain is asserted gone, including a key
-    // no eviction call site knows about -- a domain no eviction path
-    // names cannot leak either.
     const rig = makeRealClientRig(respond)
     const queryClient = new QueryClient()
     watchSessionEnd(rig.session, queryClient)
@@ -1401,18 +1196,8 @@ describe('watchSessionEnd', () => {
   })
 
   it('empties the same domains a session death (a refused silent refresh) leaves behind', async () => {
-    // refresh() never rejects for a refused token -- it resolves false
-    // and signs the session out locally (auth-core's own contract), the
-    // same authenticated -> anonymous transition a manual sign-out
-    // produces, so the default must fire on this path too.
     const rig = makeRealClientRig((call) => {
       if (call.method === 'POST' && call.path === '/api/v1/auth/token') {
-        // The token endpoint refuses an unusable grant the way RFC 6749
-        // §5.2 does -- a 400. auth-core reads it as terminal and signs
-        // the session out locally; a refusal authored as a 401 would
-        // instead re-enter the client's own refresh leg, because the
-        // generated token operation presents the access token (it is not
-        // the credential-less mutator the seam's design calls for).
         return errorResponse(400, 'authn.token_invalid')
       }
       return respond(call)
@@ -1438,8 +1223,6 @@ describe('watchSessionEnd', () => {
     watchSessionEnd(rig.session, queryClient)
     seedAllDomains(queryClient)
 
-    // No authenticated -> anonymous edge can occur without a login, so
-    // every seeded row survives.
     expect(queryClient.getQueryCache().findAll()).toHaveLength(3)
     expect(
       queryClient.getQueryData(['tenant', TENANT_ID, '/notes', {}]),
@@ -1447,10 +1230,6 @@ describe('watchSessionEnd', () => {
   })
 
   it('leaves the cache alone across a still-authenticated notify (a silent refresh)', async () => {
-    // A refresh rotates the credentials but keeps the session
-    // authenticated throughout, so the strategy -- which fires strictly
-    // on the authenticated -> anonymous edge -- must not also fire here;
-    // only a sign-out or a refused refresh (a session death) evicts.
     const rig = makeRealClientRig(respond)
     const queryClient = new QueryClient()
     watchSessionEnd(rig.session, queryClient)
@@ -1471,9 +1250,6 @@ describe('watchSessionEnd', () => {
 
 describe('createSpeedI18n', () => {
   it('creates the bilingual instance with the four framework namespaces and the platform error bundle registered', () => {
-    // The exported constructor is the production instance: same defaults
-    // as bootstrapSpeedApp's (the supported pair, the platform error
-    // fallback namespace) with the family four already registered.
     const i18n = createSpeedI18n({
       storage: null,
       urlParameterName: null,
@@ -1509,13 +1285,9 @@ describe('createSpeedI18n', () => {
       },
     })
     expect(i18n.t('app-probe:greeting')).toBe('overlaid')
-    // The untouched language keeps the definition's text.
     expect(i18n.t('app-probe:greeting', { lng: 'en-US' })).toBe('probe')
   })
   it('refuses a resourceOverrides key for a namespace the assembly never registers', () => {
-    // A misnamed namespace -- or a package whose override was written
-    // but never listed in `namespaces` -- would otherwise never be read:
-    // the host's copy would silently not apply.
     expect(() =>
       createSpeedI18n({
         storage: null,
