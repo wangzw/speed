@@ -11,7 +11,9 @@ import { describe, expect, it } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { page } from 'vitest/browser'
+import { captchaChallenge } from '@speed/test-utils/session-harness'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
+import uiKitZhCN from '../../ui-kit/src/locales/zh-CN.json' with { type: 'json' }
 import { profileBody } from '../test-utils/fixtures.js'
 import {
   jsonResponse,
@@ -24,6 +26,9 @@ import { ContactVerificationSection } from './ContactVerificationSection.js'
 
 const PROFILE_PATH = '/api/v1/auth/me'
 const VERIFY_PATH = '/api/v1/auth/identifiers/verify'
+const ADD_PATH = '/api/v1/auth/identifiers'
+const CAPTCHA_PATH = '/api/v1/auth/human/captcha/challenge'
+const CAPTCHA_ANSWER = uiKitZhCN.humanVerification.captcha.answerLabel
 
 /** One answer held open, so a case can inspect the in-flight control. */
 function deferredResponse(): {
@@ -158,5 +163,70 @@ describe('ContactVerificationSection verification actions in Chromium', () => {
       name: zhCN.verification.verifiedTitle,
     })
     await waitFor(() => expect(landing).toHaveFocus())
+  })
+
+  it('returns focus to the add-form send when the answered proof lets the add leave', async () => {
+    await page.viewport(900, 900)
+    const held = deferredResponse()
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        // No address yet: the add form is the surface that carries a send.
+        return jsonResponse(
+          200,
+          profileBody({
+            verification: { state: 'pending', email: '', since: null },
+          }),
+        )
+      }
+      if (call.method === 'POST' && call.path === CAPTCHA_PATH) {
+        return jsonResponse(200, captchaChallenge())
+      }
+      if (call.method === 'POST' && call.path === ADD_PATH) {
+        return held.response
+      }
+      return jsonResponse(404, { code: 'authn.bad_request' })
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <ContactVerificationSection
+        session={rig.session}
+        humanGate={{
+          phone: { required: false, provider: 'off' },
+          other: { required: true, provider: 'captcha' },
+        }}
+      />,
+    )
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.verification.addLabel),
+      'ada@x.test',
+    )
+    const add = screen.getByRole('button', {
+      name: zhCN.verification.addSubmit,
+    })
+    add.focus()
+    await user.keyboard('{Enter}')
+
+    const answer = await screen.findByLabelText(CAPTCHA_ANSWER)
+    answer.focus()
+    await user.type(answer, '12345')
+    await user.keyboard('{Enter}')
+
+    // The proof settled: the block disappears while the add it asked for is
+    // still in the air. Focus was in the block, so it comes back to the
+    // control that started the send rather than falling to the body.
+    await waitFor(() =>
+      expect(screen.queryByLabelText(CAPTCHA_ANSWER)).toBeNull(),
+    )
+    expect(add).toHaveFocus()
+
+    await act(async () => {
+      held.release(
+        jsonResponse(200, { state: 'pending', resend_after: 0 }),
+      )
+    })
+    await screen.findByLabelText(zhCN.verification.codeLabel)
   })
 })

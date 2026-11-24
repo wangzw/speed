@@ -202,11 +202,11 @@
  * document (or from a `humanGate` a host already read). The block appears
  * only once an email send has been asked for: the add face and a row show
  * no challenge until then, and the send the viewer asked for leaves by
- * itself when the proof arrives. The control that asked gives way to the
- * block while the proof is outstanding. A username write and every
- * verification send no message, so they present none and are not gated by
- * the block. Each landing or refused send obtains a fresh proof, because
- * the single-use one was spent.
+ * itself when the proof arrives. The control that asked stays mounted and
+ * busy while the proof is outstanding, and the block appears beside it. A
+ * username write and every verification send no message, so they present
+ * none and are not gated by the block. Each landing or refused send obtains
+ * a fresh proof, because the single-use one was spent.
  */
 
 import { Fragment } from 'react'

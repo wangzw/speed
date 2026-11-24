@@ -1406,12 +1406,11 @@ describe('PhoneSection', () => {
       await user.click(send)
 
       // The send waits on a proof: the block renders and the control that
-      // asked gives way, so one action is on screen at a time.
+      // asked stays mounted and busy, so one action is on screen at a time.
       await waitFor(() => expect(fake.widgets).toHaveLength(1))
       expect(fake.widgets[0]?.siteKey).toBe('site-1')
-      expect(
-        screen.queryByRole('button', { name: zhCN.phone.send }),
-      ).toBeNull()
+      const waiting = screen.getByRole('button', { name: zhCN.phone.send })
+      expect(waiting).toHaveAttribute('aria-busy', 'true')
       expect(rig.calls.filter((call) => call.path === PHONE_PATH)).toHaveLength(
         0,
       )
