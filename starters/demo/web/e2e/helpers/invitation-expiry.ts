@@ -1,16 +1,6 @@
-/**
- * The expiry a chosen invitation lifetime renders as, computed by the test
- * rather than read back from either page.
- *
- * The invitation forms read their own clock when submitted, so the deadline
- * lies between the two instants a spec records around that action. Formatting
- * that span's minutes from the chosen lifetime lets a spec assert the
- * deadline the product computed; a lifetime the product ignored renders
- * outside the set.
- */
+// The invitation form reads its own clock at submit, so the deadline lies between the two instants a spec records around that action.
 import { expect, type Locator } from '@playwright/test'
 
-/** The lifetime both invitation journeys choose: thirty days. */
 export const CHOSEN_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000
 
 const expiryFormatter = new Intl.DateTimeFormat('en-US', {
@@ -19,16 +9,7 @@ const expiryFormatter = new Intl.DateTimeFormat('en-US', {
   timeZone: 'UTC',
 })
 
-/**
- * The expiry strings the chosen lifetime can render as when the issue landed
- * between `from` and `to`.
- *
- * Both endpoints are formatted directly, and so is every minute the span
- * covers, with each endpoint rounded down to its minute first. The recorded
- * span can be shorter than a minute: a deadline that crosses the minute
- * boundary at its far end must still be in the set, which a loop that steps
- * from `from` alone would miss.
- */
+// Both endpoints round down to their minute and every minute of the span is formatted; a span shorter than a minute can still cross the boundary at its far end.
 export function expiryChoices(from: number, to: number): string[] {
   const first = Math.min(from, to)
   const last = Math.max(from, to)
@@ -44,12 +25,10 @@ export function expiryChoices(from: number, to: number): string[] {
   return [...choices]
 }
 
-/** Whitespace-normalized text, so two engines' spacing compares equal. */
 export function normalizedText(text: string): string {
   return text.replace(/\s+/g, ' ').trim()
 }
 
-/** Asserts the locator renders one of the computed expiry strings. */
 export async function expectOneOfText(
   locator: Locator,
   choices: readonly string[],

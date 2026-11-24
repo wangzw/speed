@@ -1,82 +1,3 @@
-/**
- * J13 -- an operator onboards a tenant from the admin: register it, open its
- * detail page, invite its first member, and see the member land in it.
- *
- * The operator is the seeded platform administrator. The seed writes its
- * email address as an administrator's assertion, not as a proof of ownership,
- * and every management write this journey makes -- the roster, the
- * authorization surface and the invitation surface -- refuses an account whose
- * email address is unproved. The spec therefore reaches the journey's
- * precondition the way a person does: the standing verification notice, the
- * code from the server's process log (the one non-UI read this spec makes),
- * and the verify action.
- *
- * OPENING A TENANT BINDS ITS CREATOR AS ITS FIRST TENANT-ADMIN. The roster's
- * registration route provisions the domain's tenant-admin role, its grants and
- * the creator's membership and binding, so the operator can address the new
- * tenant's management pages at once and the page's member list holds the
- * operator from the start. The permissions page is still driven in step 6: it
- * creates a second role, grants it `authn.membership.manage` through the
- * high-risk permission's two-step confirmation, and binds the operator to it.
- * That exercises the authorization surface without being the precondition the
- * invitation page needs.
- *
- * The seeded roster already carries acme; the second tenant is registered
- * through the standalone registration page, opened from the roster's header
- * link, and a successful registration lands on the new tenant's detail page,
- * addressed by its name. The form asks for the name, the display name and
- * the organization profile and never for an internal identifier, so the
- * roster and the detail page identify a tenant only by its name and display
- * name; the complete column and summary label lists are read to hold the
- * identifier's absence. The collision branch is a name acme holds, and the
- * roster is then asserted to have gained only the one row; the delete case
- * drives the other reuse conflict, a tombstone's name. A name is
- * immutable after creation, so the detail page shows it read-only and offers
- * no rename control.
- *
- * THE DOCUMENT'S STEP-10 RE-OPENED LINK RENDERS THE MEMBER TERMINAL STATE. An
- * accepted link opened again names the organization the viewer already belongs
- * to and offers the way in, with neither the summary nor a second accept
- * action. REQ-tenancy-013 is that read path, and REQ-tenancy-020's
- * second-redemption observation depends on it; both are driven below.
- *
- * `@covers` is narrower than the document's list in other ways.
- * REQ-tenancy-006 (the roster's read decided in the platform domain) is not
- * driven: this journey only reads it as a platform administrator, and the
- * refusal branch needs a caller authorized inside a tenant but not in the
- * platform domain, which the admin cannot present. REQ-tenancy-012 (a second
- * issue for the same address voids the first) is not a step of this journey.
- * REQ-tenancy-017's unrelated-session clause, REQ-tenancy-018 (an address with
- * no account) and REQ-tenancy-019 (an unproved reservation) are alternate
- * branches: the seeded invitee holds the invited address as a proved email on
- * its own account, so the acceptance binds the membership to that account. REQ-tenancy-023 is not
- * claimed: the invitee's account owns a personal tenant as well, so the
- * organization list has a second row available, but this spec only observes the
- * current row and leaves the switch to the journeys that drive it. REQ-tenancy-005 is
- * claimed narrowly: the roster is read with the seeded tenants and asserted in
- * name order, while the empty-roster clause needs a deployment that seeds
- * no tenant. REQ-platform-admin-058 (the detail page's ownership controls) is
- * not claimed: this spec reads the detail page's summary and its missing
- * rename control, while the transfer and delete controls it drives are the
- * roster's, and the PRD marks that requirement's end-to-end case unimplemented.
- * REQ-tenancy-008 is claimed narrowly too: the creator's member list
- * and the list after the acceptance are driven, while paging is not.
- * REQ-tenancy-011's malformed-address refusal is not driven. REQ-platform-admin-032
- * is claimed narrowly: the chosen lifetime and the deadline both the issuer
- * and the invitee read are driven, while the seven-day default is not named.
- * The platform invitation list's multi-page case is covered by
- * `web/packages/admin-ui/src/InvitationsPage.test.tsx`, because this journey
- * holds one invitation. REQ-platform-admin-006 is claimed narrowly to the
- * grouped navigation this assembly renders: the shell renders a group holding a
- * single entry as that entry alone, and this deployment serves one page in the
- * overview, tenant and audit sections (the SMS administration module is not
- * mounted), so the grouping is asserted through the multi-entry identity group
- * and the ordered entries the group table produces.
- *
- * Expected copy is read from the shipped en-US bundles through
- * helpers/i18n.ts. The only non-UI read is the operator's email verification
- * code from the server's process log (fixtures/log.ts).
- */
 // @journey journey-operator-onboards-tenant.md
 // @covers REQ-platform-admin-001, REQ-platform-admin-006, REQ-platform-admin-010, REQ-platform-admin-011, REQ-platform-admin-032, REQ-platform-admin-033, REQ-platform-admin-050, REQ-platform-admin-051, REQ-platform-admin-055, REQ-platform-admin-118, REQ-platform-admin-119, REQ-platform-admin-120, REQ-tenancy-001, REQ-tenancy-002, REQ-tenancy-005, REQ-tenancy-008, REQ-tenancy-011, REQ-tenancy-013, REQ-tenancy-016, REQ-tenancy-020, REQ-tenancy-021, REQ-tenancy-022, REQ-tenancy-058, REQ-tenancy-061, REQ-tenancy-062, REQ-tenancy-064
 import type { BrowserContext, Locator, Page } from '@playwright/test'
@@ -100,12 +21,9 @@ import { expiryChoices, expectOneOfText } from '../helpers/invitation-expiry'
 import { columnIndex } from '../helpers/organization-admin'
 import { chooseSelectOption } from '../helpers/select-option'
 
-// The admin tables carry low-priority columns and the admin sidebar takes
-// part of the width, so the desktop viewport has to be wide enough for the
-// container to render every column this journey reads.
+// The admin tables render their low-priority columns only at desktop widths, and the sidebar takes part of the width; keep the viewport wide enough for every column this spec reads.
 test.use({ seedInvitee: true, viewport: { width: 1920, height: 1080 } })
 
-/** The seeded platform administrator the e2e seed writes. */
 const OPERATOR = {
   identifier: 'operator@demo.test',
   username: 'operator',
@@ -113,54 +31,25 @@ const OPERATOR = {
   displayName: 'Demo Operator',
 } as const
 
-/** The invited address as the server masks it on the public read. */
 const MASKED_INVITEE = 'i***@demo.test'
 
-/**
- * The tenant the seed registers. The seed gives it no display name, so the
- * roster and the lifecycle dialogs fall back to its name.
- */
 const SEEDED_TENANT = 'acme'
 
-/** The name the tenant this journey registers is addressed by. */
 const TENANT_NAME = 'globex'
 
-/** The display name the registration form requires. */
 const TENANT_DISPLAY_NAME = 'Globex Labs'
 
-/**
- * The organization profile the registration form carries. The form asks for
- * the name, the display name and these fields, and for no identifier: the
- * server mints that.
- */
 const TENANT_DESCRIPTION = 'A partner organization onboarded by the operator.'
 const TENANT_CONTACT_EMAIL = 'hello@globex.test'
 const TENANT_WEBSITE = 'https://globex.test'
 
-/**
- * The role the operator creates in the new tenant and binds itself to. The
- * grant the role carries is the membership-management permission; the code is
- * the platform's own vocabulary, not user-facing copy.
- */
 const ROLE = 'tenant-inviter'
 const PERMISSION = 'authn.membership.manage'
 
-/** Escape the characters a regular expression reads as syntax. */
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-/**
- * The bind write's success notice.
- *
- * The admin names an account in a success notice by its display name and
- * first login identifier and never by the opaque account id, so the expected
- * sentence is the bundle's `bound` filled with the reference the same bundle's
- * `common.accountReference.nameWithIdentifier` renders. The seeded operator
- * resolves both, so the named form is the one the product renders; an
- * implementation that fell back to the neutral sentence or inserted the id
- * would fail this assertion.
- */
 function boundNotice(): string {
   return copy('adminUi', 'permissions.bindings.bound', {
     role: ROLE,
@@ -171,7 +60,6 @@ function boundNotice(): string {
   })
 }
 
-/** The email-verification notice under the app bar. */
 function verificationBanner(page: Page, email: string): Locator {
   return page.getByRole('region', {
     name: `${copy('demo', 'verificationBanner.region')}: ${copy(
@@ -183,7 +71,6 @@ function verificationBanner(page: Page, email: string): Locator {
   })
 }
 
-/** The account page's email-verification section. */
 function verificationSection(page: Page): Locator {
   return page.getByRole('region', {
     name: copy('accountUi', 'verification.title'),
@@ -191,7 +78,6 @@ function verificationSection(page: Page): Locator {
   })
 }
 
-/** The home page's admin card, the link the card's heading sits in. */
 function adminCard(page: Page): Locator {
   return page
     .getByRole('heading', {
@@ -202,7 +88,6 @@ function adminCard(page: Page): Locator {
     .locator('xpath=ancestor::a[1]')
 }
 
-/** The admin's navigation landmark. */
 function adminNav(page: Page): Locator {
   return page.getByRole('navigation', {
     name: copy('adminUi', 'shell.navLabel'),
@@ -210,12 +95,10 @@ function adminNav(page: Page): Locator {
   })
 }
 
-/** One admin navigation link by its page title. */
 function adminLink(page: Page, label: string): Locator {
   return adminNav(page).getByRole('link', { name: label, exact: true })
 }
 
-/** The tenant selector of a tenant-addressed admin page. */
 function tenantSelector(page: Page): Locator {
   return page.getByRole('combobox', {
     name: copy('adminUi', 'common.tenant'),
@@ -223,7 +106,6 @@ function tenantSelector(page: Page): Locator {
   })
 }
 
-/** The roster's create form, as the section named by its title. */
 function createSection(page: Page): Locator {
   return page.getByRole('region', {
     name: copy('adminUi', 'tenants.create.title'),
@@ -231,7 +113,6 @@ function createSection(page: Page): Locator {
   })
 }
 
-/** The roster table. */
 function rosterTable(page: Page): Locator {
   return page.getByRole('table', {
     name: copy('uiKit', 'dataTable.ariaLabel'),
@@ -239,11 +120,6 @@ function rosterTable(page: Page): Locator {
   })
 }
 
-/**
- * The roster's column labels, in the table's own order. The roster names a
- * tenant by its display name and its name and carries no identifier column;
- * reading the whole header row is what holds that absence.
- */
 function rosterColumns(): readonly string[] {
   return [
     copy('adminUi', 'tenantProfile.field.displayName'),
@@ -253,11 +129,6 @@ function rosterColumns(): readonly string[] {
   ]
 }
 
-/**
- * The detail summary's field labels, in the page's own order: name, display
- * name, status, the three profile fields and the creation time. The internal
- * identifier is not one of them, so the complete list is the absence check.
- */
 function summaryFields(): readonly string[] {
   return [
     copy('adminUi', 'tenantDetail.field.name'),
@@ -270,29 +141,20 @@ function summaryFields(): readonly string[] {
   ]
 }
 
-/** One roster row, by the tenant name it shows. */
 function rosterRow(page: Page, name: string): Locator {
   return rosterTable(page)
     .locator('tbody tr')
     .filter({ hasText: name })
 }
 
-/** The display-name cell of a roster row; it is the row's link to the
- * tenant's detail page. */
 function rosterDisplayName(row: Locator, name: string): Locator {
   return row.getByRole('link', { name, exact: true })
 }
 
-/**
- * The name cell of a roster row. The shared table puts the same value on the
- * cell's `title` and on the paragraph inside it, so the paragraph is addressed
- * by the title it carries; the names this spec uses are plain tokens.
- */
 function rosterName(row: Locator, name: string): Locator {
   return row.locator(`p[title="${name}"]`)
 }
 
-/** The tenant detail page's summary section. */
 function summarySection(page: Page): Locator {
   return page.getByRole('region', {
     name: copy('adminUi', 'tenantDetail.summary'),
@@ -300,17 +162,14 @@ function summarySection(page: Page): Locator {
   })
 }
 
-/** One value of the summary's definition list, by its field position. */
 function summaryValue(page: Page, index: number): Locator {
   return summarySection(page).locator('dd').nth(index)
 }
 
-/** The permissions page's named section. */
 function permissionsSection(page: Page, title: string): Locator {
   return page.getByRole('region', { name: title, exact: true })
 }
 
-/** The invitation section of the invitations-and-members page. */
 function invitationSection(page: Page): Locator {
   return page.getByRole('region', {
     name: copy('adminUi', 'invitations.section.title'),
@@ -318,7 +177,6 @@ function invitationSection(page: Page): Locator {
   })
 }
 
-/** The member section of the invitations-and-members page. */
 function memberSection(page: Page): Locator {
   return page.getByRole('region', {
     name: copy('adminUi', 'members.title'),
@@ -326,7 +184,6 @@ function memberSection(page: Page): Locator {
   })
 }
 
-/** The invitation list's row for the invited address. */
 function invitationRow(page: Page): Locator {
   return invitationSection(page)
     .getByRole('table')
@@ -334,14 +191,12 @@ function invitationRow(page: Page): Locator {
     .filter({ hasText: e2eInvitee.identifier })
 }
 
-/** The one-time panel that hands out the issued invitation's acceptance link. */
 function invitationLinkPanel(page: Page, email: string): Locator {
   return page.getByRole('status').filter({
     hasText: copy('adminUi', 'invitations.issued.link', { email }),
   })
 }
 
-/** The expiry line's copy prefix: the sentence with an empty value. */
 const EXPIRY_PREFIX = copy('authUi', 'acceptInvitation.expires', { expires: '' })
 
 test('operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins', async ({
@@ -352,18 +207,12 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
   let inviteeContext: BrowserContext | undefined
   let inviteePage: Page | undefined
   let acceptanceLink = ''
-  /** The instants around the issue, the origin of the chosen lifetime. */
   let issuedAt = 0
   let issuedAtConfirmed = 0
-  /** The expiry strings the chosen lifetime can render. */
   let expectedExpiry: string[] = []
 
   try {
     await test.step('precondition: the operator signs in and proves the account email', async () => {
-      // The journey's precondition is an operator whose email is proved. The
-      // seed writes the address unproved, so the spec reaches the
-      // precondition the way a person does: the standing notice's verify entry,
-      // the code from the server's process log, and the verify action.
       await accounts.signIn({
         identifier: OPERATOR.username,
         password: OPERATOR.password,
@@ -371,9 +220,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       const banner = verificationBanner(page, OPERATOR.identifier)
       await expect(banner).toBeVisible()
 
-      // The cursor is taken before the entry is followed: the verification
-      // section sends its one code after the arrival, and only that code may be
-      // used.
       const beforeCode = server.log.mark()
       await banner
         .getByRole('link', {
@@ -411,8 +257,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
     })
 
     await test.step('step 1: the operator enters the admin from the header entry and sees the grouped navigation', async () => {
-      // The account page the verification landed on is inside the tenant
-      // shell; the start page is where the admin entry and card are read.
       await page
         .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
         .click()
@@ -424,11 +268,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         }),
       ).toBeVisible()
 
-      // REQ-platform-admin-001's operator facet: both derivations of the
-      // admin destination are offered to platform staff, and only while the
-      // platform's own organization is current. The account menu's admin
-      // entry is read with the menu open; the card is read before it,
-      // because an open menu's backdrop hides the page from role queries.
       await switchOrganization(page, 'system')
       await expect(adminCard(page)).toBeVisible()
       await openAccountMenu(page)
@@ -437,12 +276,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       const nav = adminNav(page)
       await expect(nav).toBeVisible()
 
-      // REQ-platform-admin-006: the admin groups its pages by capability
-      // domain. This deployment serves a single page in the overview, tenant
-      // and audit sections, and the shell renders a single-entry group as that
-      // entry rather than a heading over one link; the multi-entry identity
-      // group keeps its heading, and the entries of all five sections render in
-      // the group table's order.
       await expect(
         nav.getByRole('button', {
           name: copy('adminUi', 'nav.groups.identity'),
@@ -469,12 +302,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         }),
       ).toBeVisible()
 
-      // REQ-platform-admin-010: every row carries the display name, the name
-      // and the status. The roster is every tenant the process serves: the
-      // system tenant, the seeded business tenant acme, and the personal
-      // tenant the account-creation hook gives each of this server's three
-      // seeded accounts. The complete header row is the absence check for an
-      // identifier column: a fifth column would fail it.
       const table = rosterTable(page)
       await expect(table.getByRole('columnheader')).toHaveText([
         ...rosterColumns(),
@@ -486,8 +313,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           rosterColumns().length,
         )
       }
-      // REQ-tenancy-005: the roster is read in name order (the new tenant
-      // registered in step 3 follows acme).
       const seeded = rosterRow(page, SEEDED_TENANT)
       await expect(seeded).toHaveCount(1)
       await expect(rosterDisplayName(seeded, SEEDED_TENANT)).toBeVisible()
@@ -500,8 +325,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
     })
 
     await test.step('step 3: the operator registers a new tenant from its own page, and the roster grows by one active row', async () => {
-      // The roster no longer carries an inline form. Its header links to the
-      // standalone registration page.
       const rows = rosterTable(page).locator('tbody tr')
       const before = await rows.count()
 
@@ -546,9 +369,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       })
       const conflict = copy('adminUi', 'errors.tenant.conflict')
 
-      // The form carries the name, the display name and the organization
-      // profile, and nothing that names an internal identifier: the server
-      // mints that. A field labelled after an identifier would fail here.
       await expect(form.getByLabel(/identifier/i)).toHaveCount(0)
       for (const field of [
         nameField,
@@ -560,16 +380,11 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         await expect(field).toBeVisible()
       }
 
-      // REQ-tenancy-001's first collision branch: a name another live
-      // tenant holds is refused, and the page stays on the registration form.
       await nameField.fill(SEEDED_TENANT)
       await displayNameField.fill('Acme Name Clash')
       await submit.click()
       await expect(page.getByText(conflict, { exact: true })).toBeVisible()
 
-      // The successful registration carries the name, the display name and
-      // the profile, and navigates to the new tenant's detail page,
-      // addressed by the name the answer returned.
       await nameField.fill(TENANT_NAME)
       await displayNameField.fill(TENANT_DISPLAY_NAME)
       await descriptionField.fill(TENANT_DESCRIPTION)
@@ -587,9 +402,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         true,
       )
 
-      // Back on the roster the refused attempt left no row: only the
-      // successful registration grew the table, and its row is active with
-      // the values typed.
       await page
         .getByRole('link', {
           name: copy('adminUi', 'tenants.title'),
@@ -615,15 +427,11 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         }),
       ).toBeVisible()
 
-      // The roster is read in name order: acme first, the new tenant after
-      // it.
       await expect(rows.nth(0)).toContainText(SEEDED_TENANT)
       await expect(rows.nth(1)).toContainText(TENANT_NAME)
     })
 
     await test.step("step 4: the detail page shows the tenant's name, display name, profile and status", async () => {
-      // REQ-platform-admin-011: the detail page is reached from the roster row
-      // and shows the name, the display name, the profile and the status.
       await rosterRow(page, TENANT_NAME)
         .getByRole('link', { name: TENANT_DISPLAY_NAME, exact: true })
         .click()
@@ -634,15 +442,10 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           exact: true,
         }),
       ).toBeVisible()
-      // The detail is addressed by the name, never by an internal
-      // identifier.
       expect(new URL(page.url()).pathname.endsWith(`/tenants/${TENANT_NAME}`)).toBe(
         true,
       )
 
-      // Summary fields, in the page's own order: name, display name, status,
-      // description, contact email, website, creation time. Reading the whole
-      // label list is the absence check for an identifier row.
       await expect(summarySection(page).locator('dt')).toHaveText([
         ...summaryFields(),
       ])
@@ -654,8 +457,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(summaryValue(page, 3)).toHaveText(TENANT_DESCRIPTION)
       await expect(summaryValue(page, 4)).toHaveText(TENANT_CONTACT_EMAIL)
       await expect(summaryValue(page, 5)).toHaveText(TENANT_WEBSITE)
-      // A name is immutable after creation: the cell is read-only and the
-      // page offers no rename control.
       await expect(
         page.getByLabel(
           copy('adminUi', 'tenantDetail.actions.renameLabel'),
@@ -663,7 +464,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         ),
       ).toHaveCount(0)
 
-      // The roster still shows the name chosen at registration.
       await page
         .getByRole('link', {
           name: copy('adminUi', 'tenantDetail.back'),
@@ -677,11 +477,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
     })
 
     await test.step('the operator manages the new tenant through the permissions page', async () => {
-      // Opening the tenant bound the operator as its first tenant-admin. This
-      // step still drives the authorization surface: it creates a second role
-      // in the tenant, grants it the membership-management permission and
-      // binds the operator to it. The tenant-addressed page decides in the
-      // tenant's own domain, which the created binding exercises.
       await adminLink(page, copy('adminUi', 'permissions.title')).click()
       await expect(
         page.getByRole('heading', {
@@ -691,14 +486,11 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         }),
       ).toBeVisible()
 
-      // The selector lists the roster by the name each tenant's profile
-      // shows (its display name), and reports the chosen name underneath.
       await chooseSelectOption(
         tenantSelector(page),
         page.getByRole('option', { name: TENANT_DISPLAY_NAME, exact: true }),
       )
 
-      // The role catalog, then the role.
       const roles = permissionsSection(
         page,
         copy('adminUi', 'permissions.roles.title'),
@@ -726,7 +518,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         .filter({ hasText: ROLE })
       await expect(roleRow).toHaveCount(1)
 
-      // Its grants: select the role, then grant the membership permission.
       await roleRow
         .getByRole('button', {
           name: copy('adminUi', 'permissions.roles.manageGrantsAria', {
@@ -762,8 +553,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           exact: true,
         })
         .click()
-      // The membership permission is dangerous, so the platform page asks for
-      // the same deliberate second click the organization page does.
       const dangerousDialog = page.getByRole('dialog', {
         name: copy('adminUi', 'permissions.grants.dangerousTitle'),
         exact: true,
@@ -794,7 +583,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         grants.getByRole('table').getByText(PERMISSION, { exact: true }),
       ).toBeVisible()
 
-      // The binding: the operator's own account holds the role in the tenant.
       const bindings = permissionsSection(
         page,
         copy('adminUi', 'permissions.bindings.title'),
@@ -819,13 +607,9 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           exact: true,
         })
         .click()
-      // The settled write names the account by its display name and login
-      // identifier.
       await expect(
         page.getByText(boundNotice(), { exact: true }),
       ).toBeVisible()
-      // The tenant already carries the creator's tenant-admin binding, so the
-      // row this write produced is the one naming the role it just granted.
       const bindingsTable = bindings.getByRole('table')
       const bound = bindingsTable
         .locator('tbody tr')
@@ -840,9 +624,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
     })
 
     await test.step('step 5: the operator opens invitations-and-members and selects the new tenant', async () => {
-      // The document's step offers the detail page's related link or the
-      // navigation; this spec takes the navigation branch, which is the one
-      // that can observe the page before a tenant is chosen.
       await adminLink(page, copy('adminUi', 'invitations.title')).click()
       await expect(
         page.getByRole('heading', {
@@ -852,7 +633,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         }),
       ).toBeVisible()
 
-      // Before a tenant is chosen the page lists no tenant's data.
       await expect(
         page.getByRole('heading', {
           name: copy('adminUi', 'invitations.needTenant.title'),
@@ -862,11 +642,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(invitationSection(page)).toHaveCount(0)
       await expect(memberSection(page)).toHaveCount(0)
 
-      // After choosing it, the invitation list opens on the pending filter
-      // and the new tenant has no pending invitation, so the filtered empty
-      // state is what shows. Its member list holds the operator: opening a
-      // tenant binds its creator as the first tenant-admin, and a tenant-admin
-      // is a member as well.
       await chooseSelectOption(
         tenantSelector(page),
         page.getByRole('option', { name: TENANT_DISPLAY_NAME, exact: true }),
@@ -896,8 +671,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           exact: true,
         })
         .fill(e2eInvitee.identifier)
-      // REQ-platform-admin-032: the expiry is a fixed lifetime choice, not a
-      // free-form time.
       await chooseSelectOption(
         page.getByRole('combobox', {
           name: copy('adminUi', 'invitations.issue.quickLabel'),
@@ -908,9 +681,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           exact: true,
         }),
       )
-      // The deadline the product must write is measured from this instant, so
-      // a chosen lifetime the implementation ignored cannot pass on both
-      // pages agreeing with each other.
       issuedAt = Date.now()
       await page
         .getByRole('button', {
@@ -929,8 +699,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toBeVisible()
       issuedAtConfirmed = Date.now()
 
-      // REQ-platform-admin-033: the list row carries the address, the status,
-      // the role, the inviter, the expiry and the sent-at time.
       const table = invitationSection(page).getByRole('table')
       for (const header of [
         copy('adminUi', 'invitations.column.email'),
@@ -962,15 +730,9 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         table,
         copy('adminUi', 'invitations.column.invitedBy'),
       )
-      // No role is a blank cell, as on the organization page: the table
-      // prints no stand-in label.
       await expect(row.getByRole('cell').nth(roleColumn)).toHaveText('')
-      // The inviter cell shows the display name alone; the complete
-      // "display name (username)" is its hover title.
       const invitedByCell = row.getByRole('cell').nth(invitedByColumn)
       await expect(invitedByCell).toHaveText(OPERATOR.displayName)
-      // The cell shows the display name alone; the complete reference is the
-      // hover title on the element inside the cell.
       await expect(invitedByCell.locator('p[title]')).toHaveAttribute(
         'title',
         `${OPERATOR.displayName} (${OPERATOR.username})`,
@@ -981,8 +743,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         }),
       ).toHaveCount(0)
 
-      // REQ-platform-admin-120: the list opens on the pending state and the
-      // filter narrows it to another state.
       await chooseSelectOption(
         page.getByRole('combobox', {
           name: copy('adminUi', 'invitations.filter.label'),
@@ -1011,13 +771,9 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       )
       await expect(invitationRow(page)).toBeVisible()
 
-      // REQ-tenancy-011's one-time handover: the panel carries the acceptance
-      // link and a copy control, and neither survives the panel's close.
       const panel = invitationLinkPanel(page, e2eInvitee.identifier)
       await expect(panel).toBeVisible()
-      // The message carries the delivery outcome beside the hand-out line, so
-      // it is matched as a substring of the panel's text rather than as an
-      // exact node.
+      // The delivery outcome sits beside the hand-out line, so match the panel's text as a substring, not an exact node.
       await expect(
         panel.getByText(
           copy('adminUi', 'invitations.issued.link', {
@@ -1038,7 +794,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(value).toBeVisible()
       const firstLink = ((await value.textContent()) ?? '').trim()
 
-      // The panel carries the only copy of the link, so closing it asks first.
       await panel
         .getByRole('button', {
           name: copy('adminUi', 'invitations.issued.closeAria', {
@@ -1061,8 +816,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         page.getByText(firstLink, { exact: true }),
       ).toHaveCount(0)
 
-      // REQ-platform-admin-119: resending keeps the row and its deadline but
-      // replaces the link, so the old one stops working.
       await invitationSection(page)
         .getByRole('button', {
           name: copy('adminUi', 'invitations.actionsAria', {
@@ -1094,12 +847,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(resentValue).toBeVisible()
       acceptanceLink = ((await resentValue.textContent()) ?? '').trim()
       expect(acceptanceLink).not.toBe(firstLink)
-      // Resending does not add a row: the same invitation now carries the new
-      // link.
       await expect(invitationSection(page).getByRole('table').locator('tbody tr')).toHaveCount(1)
-      // Resending keeps the row's deadline. The expected strings are computed
-      // from the chosen lifetime and the instants around the issue, so a
-      // lifetime the product ignored cannot pass by both pages agreeing.
       expectedExpiry = expiryChoices(issuedAt, issuedAtConfirmed)
       const expiryColumn = await columnIndex(
         table,
@@ -1128,10 +876,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         .click()
       await expect(resentPanel).toHaveCount(0)
 
-      // REQ-platform-admin-119: the replaced link stops working. A visitor
-      // opens the old link with no session and reads the invalid-link
-      // landing, not the invitation summary: the token no longer names an
-      // invitation, so no accept action is offered.
       const staleContext = await browser.newContext({
         locale: 'en-US',
         timezoneId: 'UTC',
@@ -1163,14 +907,9 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         await staleContext.close().catch(() => undefined)
       }
 
-      // The list pages by cursor. This journey holds one invitation, so the
-      // multi-page case is covered by the platform page's unit suite.
     })
 
     await test.step('step 7: the operator hands the acceptance link to the invitee', async () => {
-      // The operator's channel is outside the browser; what the tier can carry
-      // is the rendered link itself, which the invitee's device opens in step
-      // 8. The second context has no session and repeats the tier's pins.
       expect(acceptanceLink).toMatch(
         new RegExp(`^${escapeRegExp(server.url)}/invitations/\\S+$`),
       )
@@ -1189,9 +928,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       const invitee = inviteePage
       const invitationPath = new URL(acceptanceLink).pathname
 
-      // REQ-tenancy-016: an anonymous viewer sees the invitation itself on
-      // the landing -- the inviter, the organization, the masked address and
-      // the two account actions -- instead of a generic sign-in page.
       await invitee.goto(acceptanceLink)
       await expect(
         invitee.getByRole('heading', {
@@ -1231,9 +967,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toBeVisible()
       expect(new URL(invitee.url()).pathname).toBe(invitationPath)
 
-      // The sign-in action opens the host's surface in place; signing in
-      // stays on the link, so the session flip re-renders the accept screen
-      // at the same address.
       await invitee
         .getByRole('button', {
           name: copy('authUi', 'acceptInvitation.signIn'),
@@ -1274,8 +1007,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toBeVisible()
       expect(new URL(invitee.url()).pathname).toBe(invitationPath)
 
-      // The summary names the inviter and the tenant by its display name, the
-      // masked invited address and the expiry the issue carried.
       await expect(
         invitee.getByText(
           copy('authUi', 'acceptInvitation.invitedBy', {
@@ -1315,8 +1046,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         })
         .click()
 
-      // The acceptance navigates the landing to the tenant home; the home page
-      // carries the confirmation the landing cannot keep.
       await expect(
         invitee.getByRole('heading', {
           level: 1,
@@ -1340,10 +1069,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         }),
       ).toBeVisible()
 
-      // REQ-tenancy-021: the current organization is the invited one. The
-      // account menu's organization row names it by its display name (the
-      // name is the fallback when no display name is set); the accept
-      // summary names it by the name.
       await openAccountMenu(invitee)
       await expect(organizationRow(invitee, TENANT_DISPLAY_NAME)).toBeVisible()
       await expect(organizationRow(invitee, TENANT_DISPLAY_NAME)).toBeEnabled()
@@ -1356,11 +1081,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       }
       const invitee = inviteePage
 
-      // REQ-tenancy-022: the current organization is named by the menu's
-      // organization row. Expanding that row lists the organizations the
-      // account may switch to, so the current one is not offered again: the
-      // expansion does not hold a second row for it, and the account's other
-      // organization is the one choice it renders.
       const menu = await openAccountMenu(invitee)
       const row = organizationRow(invitee, TENANT_DISPLAY_NAME)
       await expect(row).toBeVisible()
@@ -1384,10 +1104,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toBeVisible()
       await closeAccountMenu(invitee)
 
-      // The document's re-opened-link sub-step: the accepted link opens
-      // again into the member terminal state. It names the organization the
-      // viewer already belongs to and offers the way in; the summary and a
-      // second accept action are gone. REQ-tenancy-013 and REQ-tenancy-020.
       await invitee.goto(acceptanceLink)
       await expect(
         invitee.getByRole('heading', {
@@ -1409,7 +1125,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           exact: true,
         }),
       ).toHaveCount(0)
-      // The way in lands on the tenant home without a second acceptance.
       await invitee
         .getByRole('button', {
           name: copy('authUi', 'acceptInvitation.member.open'),
@@ -1424,10 +1139,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         }),
       ).toBeVisible()
 
-      // REQ-platform-admin-001's member facet: a plain member is offered
-      // neither the account menu's admin entry nor the start page's admin
-      // card. The card is read with the menu closed; the menu entry with it
-      // open.
       await expect(
         invitee.getByRole('heading', {
           level: 2,
@@ -1448,8 +1159,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           exact: true,
         }),
       ).toBeVisible()
-      // The list opens on the pending state, so the accepted invitation is
-      // read under its own filter.
       await chooseSelectOption(
         page.getByRole('combobox', {
           name: copy('adminUi', 'invitations.filter.label'),
@@ -1467,7 +1176,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         })
         .click()
 
-      // The invitation's terminal state is now the accepted one.
       await expect(
         invitationRow(page).getByText(
           copy('adminUi', 'invitations.status.accepted'),
@@ -1475,10 +1183,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         ),
       ).toBeVisible()
 
-      // REQ-tenancy-008: the member list now holds the invited address's
-      // account, sourced from the invitation and active. The operator was
-      // already a member as the tenant's creator and first tenant-admin, so
-      // the acceptance grows the list from one row to two.
       const members = memberSection(page).getByRole('table')
       await expect(members.locator('tbody tr')).toHaveCount(2)
       const invited = members
@@ -1497,41 +1201,11 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toBeVisible()
     })
   } finally {
-    // The invitee context holds its own cookie session; closing it keeps a
-    // failed run from leaving a second browser context open while the server
-    // drains.
     await inviteeContext?.close().catch(() => undefined)
   }
 })
 
-/**
- * The platform roster's organization lifecycle: an owner transfer through the
- * member selector, one through the account selector, and the terminal delete.
- *
- * A transfer is a request between two parties: the dialog records the target
- * and leaves the owner column where it is until the target confirms on the
- * account-level transfer page, so this journey drives the request and asserts
- * what the requesting operator is told, not a moved owner.
- *
- * The platform transfer dialog chooses its target path from the caller's
- * tenant permission set -- the member selector when `authn.membership.manage`
- * is held in the current tenant, the platform account selector otherwise. The
- * first is the ordinary admin session: the current tenant is the platform's
- * own `system`, where the operator holds tenant-admin, so the dialogs attach
- * the member read. The second is reached the way the personal-tenant history
- * visit reaches a tenant-scoped surface: the operator enters the admin while
- * `system` is current, leaves to the tenant area, switches to the personal
- * tenant whose tenant-admin allowlist deliberately withholds membership
- * management, and returns to the admin URL through history, which keeps the
- * personal tenant current without a document load.
- *
- * The ownership requirements (REQ-platform-admin-051, -055 and -058) are
- * registered in the PRD's feature documents but not in this journey document,
- * so they stay out of `@covers`, which the honesty gate holds to the ids the
- * journey document lists.
- */
 
-/** The operator's password sign-in and its proved-email precondition. */
 async function signInAndVerifyOperator(
   page: Page,
   server: E2EServer,
@@ -1577,7 +1251,6 @@ async function signInAndVerifyOperator(
   ).toBeVisible()
 }
 
-/** Enter the platform admin from the tenant area, selecting `system` first. */
 async function enterAdminFromHome(page: Page): Promise<void> {
   await page
     .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
@@ -1595,11 +1268,6 @@ async function enterAdminFromHome(page: Page): Promise<void> {
   await expect(adminNav(page)).toBeVisible()
 }
 
-/**
- * One tenant roster row's transfer control. The control's accessible name
- * is the row's name -- the value the request surface addresses it by --
- * while the dialog it opens names the organization by its display name.
- */
 function transferTenantButton(page: Page, name: string): Locator {
   return rosterRow(page, name).getByRole('button', {
     name: copy('adminUi', 'tenantLifecycle.transferAria', { name }),
@@ -1607,7 +1275,6 @@ function transferTenantButton(page: Page, name: string): Locator {
   })
 }
 
-/** One tenant roster row's delete control, named by the row's name. */
 function deleteTenantButton(page: Page, name: string): Locator {
   return rosterRow(page, name).getByRole('button', {
     name: copy('adminUi', 'tenantLifecycle.deleteAria', { name }),
@@ -1615,7 +1282,6 @@ function deleteTenantButton(page: Page, name: string): Locator {
   })
 }
 
-/** The transfer dialog, whose visible title names the display name. */
 function transferDialog(page: Page, name: string): Locator {
   return page.getByRole('dialog', {
     name: copy('adminUi', 'tenantLifecycle.transfer.title', { name }),
@@ -1623,7 +1289,6 @@ function transferDialog(page: Page, name: string): Locator {
   })
 }
 
-/** The delete dialog, whose visible title names the display name. */
 function deleteDialog(page: Page, name: string): Locator {
   return page.getByRole('dialog', {
     name: copy('adminUi', 'tenantLifecycle.deleteConfirm.title', { name }),
@@ -1631,7 +1296,6 @@ function deleteDialog(page: Page, name: string): Locator {
   })
 }
 
-/** Arm and confirm the shared two-step danger dialog. */
 async function confirmTwice(dialog: Locator, confirmLabel: string): Promise<void> {
   await dialog
     .getByRole('button', { name: confirmLabel, exact: true })
@@ -1644,19 +1308,11 @@ async function confirmTwice(dialog: Locator, confirmLabel: string): Promise<void
   await again.click()
 }
 
-/**
- * The delete's typed guard: the confirming control is inert until the
- * organization's name is typed exactly. A near miss leaves it closed, so
- * the dialog is driven the way a person must drive it before the two-step
- * confirmation is armed.
- */
 async function confirmDelete(dialog: Locator, name: string): Promise<void> {
   const field = dialog.getByLabel(
     copy('adminUi', 'tenantLifecycle.deleteConfirm.nameLabel'),
     { exact: true },
   )
-  // The dialog names the organization twice: the visible title by its
-  // display name, the typed guard by its name.
   await expect(
     dialog.getByText(
       copy('adminUi', 'tenantLifecycle.deleteConfirm.nameHint', { name }),
@@ -1681,10 +1337,6 @@ async function confirmDelete(dialog: Locator, name: string): Promise<void> {
 test.describe('the platform lifecycle controls', () => {
   test.use({
     seedInvitee: true,
-    // acme's owner is the operator, so the ordinary member is an active
-    // member the owner can ask to take over. A request naming the current
-    // owner is refused, and the lifecycle transfer below is the operator
-    // handing the organization it owns to somebody else.
     tenantAdmins: { acme: [OPERATOR.identifier] },
     viewport: { width: 1920, height: 1080 },
   })
@@ -1707,8 +1359,6 @@ test.describe('the platform lifecycle controls', () => {
       }),
     ).toBeVisible()
 
-    // The operator is acme's tenant-admin, so the transfer dialog offers the
-    // organization's member selector rather than the platform account list.
     await transferTenantButton(page, SEEDED_TENANT).click()
     const dialog = transferDialog(page, SEEDED_TENANT)
     await expect(dialog).toBeVisible()
@@ -1751,8 +1401,6 @@ test.describe('the platform lifecycle controls', () => {
       copy('adminUi', 'tenantLifecycle.transfer.confirmLabel'),
     )
 
-    // A recorded request names the organization and the target it asks, and
-    // says that ownership moves only when that target confirms.
     await expect(
       page.getByText(
         copyPattern('adminUi', 'tenantLifecycle.transfer.success', {
@@ -1773,12 +1421,6 @@ test.describe('the platform lifecycle controls', () => {
     await signInAndVerifyOperator(page, server, accounts)
     await enterAdminFromHome(page)
 
-    // Leave the admin for the tenant area and switch to the account's personal
-    // organization. Its tenant-admin allowlist withholds membership
-    // management, so the platform transfer dialog falls back to the account
-    // selector. The return to the admin URL is a history visit: a document
-    // load would re-settle the current tenant from the caller's list and drop
-    // the personal organization, which is the state the dialog reads.
     await openAccountMenu(page)
     await backToApp(page).click()
     await expect(
@@ -1805,7 +1447,6 @@ test.describe('the platform lifecycle controls', () => {
     const dialog = transferDialog(page, SEEDED_TENANT)
     await expect(dialog).toBeVisible()
 
-    // The account selector is offered instead of the member selector.
     const accountField = dialog.getByRole('combobox', {
       name: copy('adminUi', 'tenantLifecycle.transfer.accountLabel'),
       exact: true,
@@ -1845,9 +1486,6 @@ test.describe('the platform lifecycle controls', () => {
       copy('adminUi', 'tenantLifecycle.transfer.confirmLabel'),
     )
 
-    // The target is not a member of the organization, so the endpoint answers
-    // 409 and the dialog states that refusal inline rather than claiming the
-    // account is a member.
     await expect(
       dialog.getByText(
         copy('adminUi', 'tenantLifecycle.transfer.failedConflict'),
@@ -1857,10 +1495,8 @@ test.describe('the platform lifecycle controls', () => {
   })
 })
 
-/** The tenant the platform lifecycle delete branch registers and ends. */
 const LIFECYCLE_TENANT_NAME = 'initrode'
 const LIFECYCLE_TENANT_DISPLAY_NAME = 'Initrode Labs'
-/** The profile the delete branch's registration carries. */
 const LIFECYCLE_TENANT_DESCRIPTION =
   'A disposable organization for the delete branch.'
 
@@ -1885,7 +1521,6 @@ test.describe('the platform lifecycle delete', () => {
       }),
     ).toBeVisible()
 
-    // Register a tenant of this branch's own, through the roster's page.
     await page
       .getByRole('link', { name: copy('adminUi', 'tenants.register'), exact: true })
       .click()
@@ -1922,8 +1557,6 @@ test.describe('the platform lifecycle delete', () => {
         exact: true,
       }),
     ).toBeVisible()
-    // The detail is addressed by the name and its summary carries no
-    // identifier row.
     expect(
       new URL(page.url()).pathname.endsWith(`/tenants/${LIFECYCLE_TENANT_NAME}`),
     ).toBe(true)
@@ -1942,15 +1575,10 @@ test.describe('the platform lifecycle delete', () => {
         exact: true,
       }),
     ).toBeVisible()
-    // The roster's complete header row carries no identifier column.
     await expect(rosterTable(page).getByRole('columnheader')).toHaveText([
       ...rosterColumns(),
     ])
 
-    // The platform staff path deletes the tenant. The row's control is named
-    // by the name; the dialog's visible title names the display name; the
-    // typed guard names the name, and only then does the two-step
-    // confirmation arm.
     await deleteTenantButton(page, LIFECYCLE_TENANT_NAME).click()
     const dialog = deleteDialog(page, LIFECYCLE_TENANT_DISPLAY_NAME)
     await expect(dialog).toBeVisible()
@@ -1964,16 +1592,12 @@ test.describe('the platform lifecycle delete', () => {
       ),
     ).toBeVisible()
 
-    // The row is a tombstone: its status says deleted and its actions cell
-    // carries no lifecycle control any more.
     const tombstone = rosterRow(page, LIFECYCLE_TENANT_NAME)
     await expect(
       tombstone.getByText(copy('adminUi', 'tenants.status.deleted'), {
         exact: true,
       }),
     ).toBeVisible()
-    // The tombstone names the tenant by name and display name only; its
-    // row carries exactly the roster's four cells.
     await expect(tombstone.getByRole('cell')).toHaveCount(
       rosterColumns().length,
     )
@@ -1982,10 +1606,6 @@ test.describe('the platform lifecycle delete', () => {
     ).toHaveCount(0)
     await expect(deleteTenantButton(page, LIFECYCLE_TENANT_NAME)).toHaveCount(0)
 
-    // Both reuse conflicts this spec drives are by name: the main journey
-    // collides with a live tenant's name, and here the tombstone's name
-    // cannot be registered again. The roster answers the registration's
-    // conflict in both.
     await page
       .getByRole('link', { name: copy('adminUi', 'tenants.register'), exact: true })
       .click()

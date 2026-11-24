@@ -1,12 +1,3 @@
-/**
- * The run directory retention rules.
- *
- * Every case works inside its own temporary prefix root, passed explicitly to
- * the retention functions, so no real /tmp run directory is ever touched. The
- * prefix root is a stand-in for /tmp: the functions only ever look at direct
- * children of the root they are given, which is what keeps a scan from leaving
- * the harness's own namespace.
- */
 import {
   chmod,
   lstat,
@@ -31,37 +22,29 @@ import {
   removeRunDirectory,
 } from './retention'
 
-/** A directory name the harness itself mints: pid, base36 clock, hex nonce. */
 const RUN_DIRECTORY = 'speed-e2e-4242-m1abc2de-0a1b2c3d'
 
-/** A per-spec server directory: the six characters mkdtemp appends. */
 const PER_SPEC_SERVER = 'speed-e2e-server-a1B2c3'
 
-/** A deploy fixture's kept volume directory. */
 const PER_SPEC_DEPLOY = 'speed-e2e-deploy-d4E5f6'
 
-/** The per-spec server temporary directory's near-miss name: wrong shape. */
 const SERVER_DIRECTORY = 'speed-e2e-server-ab12cd34'
 
-/** A day in milliseconds, for stating ages in the cases below. */
 const DAY_MS = 24 * 60 * 60 * 1000
 
 let prefixRoot: string
 
-/** Make a directory directly under the prefix root and answer its path. */
 async function makeDirectory(name: string): Promise<string> {
   const path = join(prefixRoot, name)
   await mkdir(path, { recursive: true })
   return path
 }
 
-/** Backdate a directory's modification time by `ageMs`. */
 async function backdate(path: string, now: number, ageMs: number): Promise<void> {
   const when = new Date(now - ageMs)
   await utimes(path, when, when)
 }
 
-/** Whether a path exists, whichever way the filesystem answers. */
 async function exists(path: string): Promise<boolean> {
   try {
     await stat(path)
@@ -94,8 +77,6 @@ describe('removeExpiredRunDirectories', () => {
   it('removes a run directory more than a day old', async () => {
     const now = Date.now()
     const run = await makeDirectory(RUN_DIRECTORY)
-    // The window is one day, so an age just past it is enough. A seven-day
-    // window would leave this directory in place.
     await backdate(run, now, DAY_MS + 1_000)
 
     const removed = await removeExpiredRunDirectories({ prefixRoot, now })
@@ -129,8 +110,6 @@ describe('removeExpiredRunDirectories', () => {
     const now = Date.now()
     const justInside = await makeDirectory('speed-e2e-4242-m1abc2de-00000001')
     const justOutside = await makeDirectory('speed-e2e-4242-m1abc2de-00000002')
-    // A second of margin on each side keeps filesystem timestamp rounding out
-    // of the verdict: the case is about the window, not about the clock.
     await backdate(justInside, now, RETENTION_WINDOW_MS - 1_000)
     await backdate(justOutside, now, RETENTION_WINDOW_MS + 1_000)
 
@@ -219,7 +198,6 @@ describe('removeExpiredPerSpecDirectories', () => {
       now,
     })
 
-    // The scan's order is the filesystem's; compare the set it removed.
     expect([...removed].sort()).toEqual([server, deploy].sort())
     await expect(exists(server)).resolves.toBe(false)
     await expect(exists(deploy)).resolves.toBe(false)
@@ -268,9 +246,6 @@ describe('removeRunDirectory', () => {
     await mkdir(nested)
     const file = join(nested, 'kept.txt')
     await writeFile(file, 'evidence\n')
-    // A read-only directory cannot have its children unlinked, and a
-    // read-only file cannot be rewritten; the removal has to restore both
-    // before the recursive delete.
     await chmod(nested, 0o500)
     await chmod(file, 0o400)
 

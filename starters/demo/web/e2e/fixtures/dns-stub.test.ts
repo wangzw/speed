@@ -1,10 +1,3 @@
-/**
- * The DNS stub's answer boundary.
- *
- * Every case runs the stub on a loopback port and asks it through a Node
- * resolver pointed at that address, so the check is the wire behaviour a real
- * resolver sees, not a call into the stub's own functions.
- */
 import { Resolver } from 'node:dns/promises'
 
 import { afterEach, describe, expect, it } from 'vitest'
@@ -15,7 +8,6 @@ import {
   enterpriseIdentityProviderRecordName,
 } from './identity-provider'
 
-/** A resolver with a short deadline, so a closed stub fails a case quickly. */
 function resolverAt(address: string): Resolver {
   const resolver = new Resolver({ timeout: 500, tries: 1 })
   resolver.setServers([address])
@@ -38,7 +30,6 @@ async function start(): Promise<{ stub: DNSStub; resolver: Resolver }> {
   return { stub, resolver: resolverAt(stub.address) }
 }
 
-/** The answer a TXT lookup of the stub's own record name makes. */
 function lookup(resolver: Resolver): Promise<string[][]> {
   return resolver.resolveTxt(enterpriseIdentityProviderRecordName)
 }

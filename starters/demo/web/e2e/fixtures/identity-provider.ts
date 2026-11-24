@@ -1,51 +1,3 @@
-/**
- * A real OpenID Connect provider on loopback, for the social and enterprise
- * journeys.
- *
- * The e2e configuration's client credentials are fixture values, and without a
- * provider behind them a social method could build an authorization URL but no
- * callback could ever reach it. This fixture stands up the provider the
- * configuration points the Google method at: a discovery document, a key set, a
- * token endpoint, a
- * userinfo endpoint, and an authorization page a person reaches and approves in
- * the browser. The round trip is genuine -- the browser leaves for this page,
- * clicks its control, and comes back to the product's own callback route.
- *
- * The same machinery serves the enterprise journey through
- * `startEnterpriseIdentityProvider`: a second provider with its own issuer,
- * certificate material and fixed user, whose work address is on the domain the
- * DNS stub fixture answers for. The enterprise provider is not a second
- * implementation; it is the same provider started from another definition, so
- * the TLS, discovery, authorization, token and userinfo halves have one
- * behaviour to keep true.
- *
- * The provider has two listeners:
- *
- *   - The HTTPS listener is the issuer and carries everything the product's
- *     restricted egress client reaches: discovery, the key set, the token
- *     exchange and userinfo. The product refuses plain http on that client, so
- *     this half is TLS. The certificate chains to a CA written into the run's
- *     temporary directory, and the e2e configuration names that CA file; the
- *     product appends its certificate to the system roots it verifies against.
- *   - The authorization page is served over plain http on a second loopback
- *     port, and the discovery document names it as `authorization_endpoint`.
- *     Only the browser reaches it: the product never fetches the authorization
- *     endpoint, it only hands its URL to the user agent. Serving that page over
- *     http is what keeps the tier from turning off Chromium's certificate
- *     checking for every journey; the server-to-server half stays TLS, where
- *     the trust decision actually is.
- *
- * The provider serves one fixed user. A journey that needs an existing account
- * to hold the same address seeds it through the binary's own seed command (the
- * fixture's configuration), never by writing a row. The authorization page's
- * visible copy belongs to the provider, not the product, so it is a constant
- * here rather than a locale-bundle read; a spec asserts it because a person at
- * the provider would see it.
- *
- * Only fixtures may assemble the environment. This module spawns openssl, writes
- * the certificates and listens on sockets; a spec or a helper may import its
- * constants and types but never these calls.
- */
 import { execFile } from 'node:child_process'
 import {
   createHash,
@@ -64,89 +16,59 @@ import { createServer as createHttpsServer } from 'node:https'
 import { createServer as createNetServer, type Server as NetServer } from 'node:net'
 import { join } from 'node:path'
 
-/** The fixed user the provider authenticates. */
 export const identityProviderUser = {
   subject: 'social-signin-user',
   email: 'social-signin@e2e.test',
   name: 'Social Signin',
 } as const
 
-/** The client the e2e configuration gives the Google method. */
 export const identityProviderClient = {
   id: 'e2e-google-client',
   secret: 'e2e-google-secret',
 } as const
 
-/** The copy the provider's own authorization page renders. */
 export const identityProviderCopy = {
   heading: 'Sign in with Google',
   approve: 'Continue',
   accountSentence: (email: string): string => `Continue as ${email}`,
 } as const
 
-/**
- * The fixed user the enterprise provider authenticates.
- *
- * The address is on `enterpriseIdentityProviderDomain`, the one domain the DNS
- * stub answers for. It is deliberately not the social user's address: the two
- * journeys must not be able to pass by each other's fixtures.
- */
 export const enterpriseIdentityProviderUser = {
   subject: 'enterprise-signin-user',
   email: 'employee@enterprise.e2e.test',
   name: 'Enterprise Employee',
 } as const
 
-/** The enterprise user's email domain, and the TXT name the DNS stub answers. */
 export const enterpriseIdentityProviderDomain = 'enterprise.e2e.test'
 export const enterpriseIdentityProviderRecordName = `_speed-authn.${enterpriseIdentityProviderDomain}`
 
-/** The enterprise provider's client, which a spec writes into the provider row. */
 export const enterpriseIdentityProviderClient = {
   id: 'e2e-enterprise-client',
   secret: 'e2e-enterprise-secret',
 } as const
 
-/**
- * The claim mapping an enterprise provider row needs to find the user's address
- * and display name. Without it the product reads the subject alone, and the
- * journey's email-domain matching has nothing to match.
- */
 export const enterpriseIdentityProviderClaims = {
   email: 'email',
   name: 'display_name',
 } as const
 
-/** The copy the enterprise provider's own authorization page renders. */
 export const enterpriseIdentityProviderCopy = {
   heading: 'Sign in with your enterprise account',
   approve: 'Continue',
   accountSentence: (email: string): string => `Continue as ${email}`,
 } as const
 
-/** What one started provider answers in common. */
 export interface StartedIdentityProvider {
-  /** The OpenID Connect issuer: the HTTPS listener the product discovers. */
   readonly issuer: string
-  /** The CA certificate the product verifies the issuer's leaf against. */
   readonly rootCAPath: string
-  /**
-   * Replace the `preferred_username` claim the provider's next identity token
-   * and userinfo answer carry. A claim-strategy just-in-time provider reads it
-   * as the account's username, and a journey varying it across sign-ins is the
-   * only thing that changes between attempts: the provider still serves its one
-   * fixed user. `undefined` omits the claim, which is the provider's default.
-   */
   setPreferredUsername(value: string | undefined): void
   stop(): Promise<void>
 }
 
-/** The provider a started e2e server points the Google method at. */
 export interface IdentityProvider extends StartedIdentityProvider {
   readonly user: typeof identityProviderUser
 }
 
-/** The provider an enterprise journey registers in its provider row. */
 export interface EnterpriseIdentityProvider extends StartedIdentityProvider {
   readonly user: typeof enterpriseIdentityProviderUser
   readonly clientID: string
@@ -154,31 +76,25 @@ export interface EnterpriseIdentityProvider extends StartedIdentityProvider {
 }
 
 export interface IdentityProviderInput {
-  /** The e2e server's temporary directory; the certificates live under it. */
   readonly dir: string
 }
 
-/** One authorization request the page approved, keyed by its code. */
 interface AuthorizationRequest {
   readonly challenge: string
   readonly nonce: string
   readonly redirectURI: string
 }
 
-/** How long openssl may take. */
 const OPENSSL_TIMEOUT_MS = 30_000
 
-/** Base64url of a buffer or string. */
 function base64url(value: Buffer | string): string {
   return Buffer.from(value).toString('base64url')
 }
 
-/** The PKCE S256 challenge of a verifier, matching the product's computation. */
 function s256(verifier: string): string {
   return createHash('sha256').update(verifier).digest('base64url')
 }
 
-/** Escape a value for an HTML attribute or text node. */
 export function escapeHTML(value: string): string {
   return value.replace(/[&<>"']/g, (character) => {
     switch (character) {
@@ -196,7 +112,6 @@ export function escapeHTML(value: string): string {
   })
 }
 
-/** Run one openssl command, failing with its whole output. */
 export function openssl(args: readonly string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     execFile(
@@ -219,7 +134,6 @@ export function openssl(args: readonly string[]): Promise<void> {
   })
 }
 
-/** Ask the kernel for ports that are free at this moment. */
 export async function freePorts(count: number): Promise<number[]> {
   const opened: NetServer[] = []
   try {
@@ -250,7 +164,6 @@ export async function freePorts(count: number): Promise<number[]> {
   }
 }
 
-/** Listen on one loopback port, failing the fixture when the bind does not. */
 export function listen(server: HTTPServer, port: number): Promise<void> {
   return new Promise((resolve, reject) => {
     server.once('error', reject)
@@ -258,7 +171,6 @@ export function listen(server: HTTPServer, port: number): Promise<void> {
   })
 }
 
-/** Close a listener, dropping the connections it still holds. */
 export function close(server: HTTPServer): Promise<void> {
   return new Promise((resolve) => {
     server.closeAllConnections()
@@ -266,7 +178,6 @@ export function close(server: HTTPServer): Promise<void> {
   })
 }
 
-/** Read a request's whole body. */
 export async function readBody(request: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = []
   for await (const chunk of request) {
@@ -275,7 +186,6 @@ export async function readBody(request: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString('utf8')
 }
 
-/** Write one JSON response. */
 function writeJSON(
   response: ServerResponse,
   status: number,
@@ -290,14 +200,12 @@ function writeJSON(
   response.end(payload)
 }
 
-/** The copy one provider's own authorization page renders. */
 interface AuthorizePageCopy {
   readonly heading: string
   readonly approve: string
   readonly accountSentence: (email: string) => string
 }
 
-/** The authorization page: the fixed user and the one control to approve. */
 function authorizePage(
   params: URLSearchParams,
   email: string,
@@ -339,16 +247,6 @@ function authorizePage(
 `
 }
 
-/**
- * Mint a private CA and a server leaf under `directory`, and answer the leaf
- * and the CA path.
- *
- * The CA file is what the e2e configuration names for the restricted egress
- * client, whose certificate verification is extended with it. The leaf's
- * subject alternative names cover the loopback host the issuer is written with.
- * Each provider gets its own directory, so one run's providers never overwrite
- * each other's material.
- */
 export async function mintServerCertificate(
   directory: string,
 ): Promise<{ certificate: string; privateKeyPEM: string; caPath: string }> {
@@ -370,9 +268,7 @@ export async function mintServerCertificate(
     ].join('\n'),
     { encoding: 'utf8' },
   )
-  // A private CA and a leaf it signs: the configuration names the CA file, whose
-  // certificate Go appends to the system roots, and the leaf's subject
-  // alternative names cover the loopback host the issuer is written with.
+  // A private CA and a leaf it signs: the configuration names the CA file, whose certificate Go appends to the system roots.
   await openssl([
     'req',
     '-x509',
@@ -433,16 +329,11 @@ export async function mintServerCertificate(
   return { certificate, privateKeyPEM, caPath }
 }
 
-/**
- * The one signing key a provider mints identity tokens with. Its public half is
- * the key set the product fetches; the private half never leaves this process.
- */
 interface SigningKey {
   readonly jwks: unknown
   sign(payload: Record<string, unknown>): string
 }
 
-/** Create a fresh ES256 signing key under the given key identifier. */
 function createSigningKey(keyID: string): SigningKey {
   const keyPair = generateKeyPairSync('ec', { namedCurve: 'P-256' })
   const publicJWK = keyPair.publicKey.export({ format: 'jwk' })
@@ -481,7 +372,6 @@ function createSigningKey(keyID: string): SigningKey {
   }
 }
 
-/** What one provider serves: its user, its client, its page copy and its key. */
 interface ProviderDefinition {
   readonly directory: string
   readonly user: {
@@ -494,14 +384,6 @@ interface ProviderDefinition {
   readonly keyID: string
 }
 
-/**
- * Start one provider: certificates, two listeners, one fixed user.
- *
- * The certificate material is minted into `<dir>/<definition.directory>`, so
- * stopping the server's temporary directory cleans it up with everything else.
- * The CA path is what the e2e configuration names as the CA file; the issuer
- * is the HTTPS listener the product discovers.
- */
 async function startProvider(
   definition: ProviderDefinition,
   input: IdentityProviderInput,
@@ -520,19 +402,15 @@ async function startProvider(
 
   const codes = new Map<string, AuthorizationRequest>()
   const accessTokens = new Map<string, ProviderDefinition['user']>()
-  // The claim-strategy journeys vary this between sign-ins; the fixed user and
-  // every other claim stay the same. A provider started without a journey
-  // touching it answers no preferred_username, which is its default.
+  // A claim-strategy journey varies this between sign-ins; unset omits the claim, which is the default.
   let preferredUsername: string | undefined
 
-  /** The standard preferred_username claim, present only once it is set. */
   function preferredUsernameClaim(): Record<string, string> {
     return preferredUsername === undefined
       ? {}
       : { preferred_username: preferredUsername }
   }
 
-  /** Mint one identity token for the fixed user. */
   function idToken(nonce: string): string {
     const now = Math.floor(Date.now() / 1000)
     return signer.sign({
@@ -549,7 +427,6 @@ async function startProvider(
     })
   }
 
-  /** The client credentials a token request carries. */
   function clientOf(
     request: IncomingMessage,
     form: URLSearchParams,
@@ -574,7 +451,6 @@ async function startProvider(
     }
   }
 
-  /** The discovery document, naming the HTTPS half for the server calls. */
   function discovery(): unknown {
     return {
       issuer,
@@ -593,7 +469,6 @@ async function startProvider(
     }
   }
 
-  /** The browser-facing half: the authorization page and its approval. */
   const httpServer = createHttpServer((request, response) => {
     void (async () => {
       const url = new URL(request.url ?? '/', authorizeOrigin)
@@ -632,10 +507,7 @@ async function startProvider(
           response.writeHead(400).end('the approval carries no request')
           return
         }
-        // A real provider never sends a code anywhere but a registered
-        // address. This one registers nothing, so it refuses anything that is
-        // not loopback: the e2e browser is the only user agent it serves,
-        // and a code must not leave the machine.
+        // A provider sends a code only to a registered address; this one registers nothing, so it refuses any non-loopback redirect.
         const back = new URL(redirectURI)
         if (
           !['localhost', '127.0.0.1', '::1', '[::1]'].includes(back.hostname)
@@ -664,7 +536,6 @@ async function startProvider(
     })
   })
 
-  /** The server-facing half: discovery, key set, token, userinfo. */
   const httpsServer = createHttpsServer(
     { cert: certificate, key: privateKeyPEM },
     (request, response) => {
@@ -761,8 +632,7 @@ async function startProvider(
       listen(httpServer, httpPort),
     ])
   } catch (error) {
-    // One listener up and the other refused would leave a socket this fixture
-    // never returns, so both are closed before the failure leaves here.
+    // A half-open pair would leak a socket, so both listeners are closed before the failure leaves.
     await Promise.all([close(httpsServer), close(httpServer)])
     throw error
   }
@@ -782,10 +652,6 @@ async function startProvider(
   }
 }
 
-/**
- * Start the social provider: the Google method the e2e configuration points
- * at, one fixed user, its certificate material under `dir/identity-provider`.
- */
 export async function startIdentityProvider(
   input: IdentityProviderInput,
 ): Promise<IdentityProvider> {
@@ -808,16 +674,6 @@ export async function startIdentityProvider(
   }
 }
 
-/**
- * Start the enterprise provider: an OIDC issuer on a concrete https loopback
- * URL with one fixed user whose work address is on the domain the DNS stub
- * answers for.
- *
- * Its certificate material lives under `dir/enterprise-identity-provider`, so
- * it neither shares nor overwrites the social provider's material when both
- * run in one server. The client identity and claim mapping it answers are the
- * values an enterprise provider row is created with.
- */
 export async function startEnterpriseIdentityProvider(
   input: IdentityProviderInput,
 ): Promise<EnterpriseIdentityProvider> {

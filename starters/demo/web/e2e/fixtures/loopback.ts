@@ -1,63 +1,28 @@
-/**
- * Port allocation and readiness probing for the fixtures' loopback servers.
- *
- * The e2e and deploy fixtures each start a real binary on ports the kernel
- * hands out. A port that is free on 127.0.0.1 can still be held on ::1, and a
- * browser resolving `localhost` prefers ::1, so a port the fixture picked can
- * be unreachable in the browser while 127.0.0.1 answers. Both fixtures
- * therefore ask this module for their ports and for the answer that the
- * server is reachable, and the module judges the two address families the way
- * the browser does.
- *
- * The product itself still binds 127.0.0.1 only: one Go listener has one
- * address, and binding every interface is outside the harness. So a port
- * allocated here can be taken on ::1 between allocation and the child's bind;
- * the readiness probe catches that window through the fixtures' existing
- * terminate-and-retry loop. An occupant that appears after the probe has
- * passed cannot be caught without widening the product's listener.
- */
 import { get as httpGet } from 'node:http'
 import { createServer } from 'node:net'
 
 import type { ProcessLog } from './log'
 import { scaledTimeout } from './time-scale'
 
-/** How long the readiness probes may take to answer after the ready record. */
 const PROBE_TIMEOUT_MS = scaledTimeout(15_000)
 
-/** How long one readiness probe request may take to answer. */
 const PROBE_REQUEST_TIMEOUT_MS = scaledTimeout(5_000)
 
-/** How long the readiness poll waits between answers that are not 200. */
 const PROBE_RETRY_DELAY_MS = scaledTimeout(100)
 
-/**
- * How many candidates one allocation may spend before it gives up. A free
- * 127.0.0.1 port is almost always free on ::1 too; the bound is what keeps a
- * machine whose ::1 is crowded from spinning forever, and what gives the
- * failure a place to list the rejected ports.
- */
+// Bound keeps a machine with a crowded ::1 from spinning; the rejected ports are listed in the failure.
 const MAX_PORT_CANDIDATES = 64
 
-/** The two literal loopback addresses this harness distinguishes. */
 export type LoopbackAddress = '127.0.0.1' | '::1'
 
-/** One listener the allocator holds until it has chosen every port. */
 export interface LoopbackListener {
   readonly address: LoopbackAddress
   readonly port: number
   close(): Promise<void>
 }
 
-/**
- * The socket operations allocation and readiness perform. The default uses
- * real listeners and real HTTP; a test substitutes one to stand a machine
- * without an IPv6 loopback in front of both callers.
- */
 export interface LoopbackSockets {
-  /** Bind one literal loopback address; port 0 asks the kernel for one. */
   bind(address: LoopbackAddress, port: number): Promise<LoopbackListener>
-  /** One HTTP GET to a literal loopback address; answer the status code. */
   request(
     address: LoopbackAddress,
     port: number,
@@ -66,14 +31,12 @@ export interface LoopbackSockets {
   ): Promise<number>
 }
 
-/** The system error code a failed bind or request carries, if any. */
 function errorCode(error: unknown): string | undefined {
   if (typeof error !== 'object' || error === null) return undefined
   const code = (error as { readonly code?: unknown }).code
   return typeof code === 'string' ? code : undefined
 }
 
-/** Bind one listener on a literal loopback address. */
 function nodeBind(
   address: LoopbackAddress,
   port: number,
@@ -85,8 +48,6 @@ function nodeBind(
       {
         port,
         host: address,
-        // A specific `::1` address already excludes IPv4; the flag makes the
-        // intent explicit and never asks for the wildcard.
         ipv6Only: address === '::1' ? true : undefined,
       },
       () => {
@@ -117,7 +78,6 @@ function nodeBind(
   })
 }
 
-/** One HTTP GET to a literal loopback address; the answer is the status. */
 function nodeRequest(
   address: LoopbackAddress,
   port: number,
@@ -140,42 +100,19 @@ function nodeRequest(
   })
 }
 
-/** The real sockets: listeners the kernel grants and HTTP over them. */
 export const nodeLoopbackSockets: LoopbackSockets = {
   bind: nodeBind,
   request: nodeRequest,
 }
 
-/** How one allocation gets its candidates and judges them. */
 export interface PortAllocationOptions {
-  /** The socket primitives. Defaults to {@link nodeLoopbackSockets}. */
   readonly sockets?: LoopbackSockets
-  /**
-   * Answers the next candidate port as a listener already holding it on
-   * 127.0.0.1. Defaults to asking the kernel for 127.0.0.1:0. A test feeds a
-   * specific port by binding it here.
-   */
   readonly nextCandidate?: () => Promise<LoopbackListener>
-  /**
-   * Whether a candidate must also be free on ::1. Defaults to true; the
-   * identity provider's origins are literal 127.0.0.1, so it is the one
-   * caller that turns this off.
-   */
   readonly requireIPv6?: boolean
-  /** How many candidates the allocation may spend. */
   readonly maxCandidates?: number
 }
 
-/**
- * Ask for ports that are free on both loopback families.
- *
- * Each candidate is held on 127.0.0.1 while ::1 at the same port is tried. A
- * candidate held on ::1 is rejected and its 127.0.0.1 listener closed; a
- * machine with no IPv6 loopback reports `EADDRNOTAVAIL`, `ENETUNREACH` or
- * `EAFNOSUPPORT` and is judged on 127.0.0.1 alone. Every accepted listener is
- * kept until the whole batch is chosen, then all are closed together, so a
- * selected port is not handed to the next candidate's kernel call.
- */
+// Each candidate is held on 127.0.0.1 while ::1 is tried, and every accepted listener is kept until the batch is chosen, so a selected port is never handed back to the kernel for the next candidate.
 export async function freePorts(
   count: number,
   options: PortAllocationOptions = {},
@@ -202,9 +139,7 @@ export async function freePorts(
         } catch (error) {
           const code = errorCode(error)
           if (code === 'EADDRINUSE') {
-            // Another process holds this port on ::1 even though 127.0.0.1
-            // is free. Drop the candidate; the listener is closed so the
-            // rejected port is not leaked for the rest of the worker.
+            // Another process holds this port on ::1 even though 127.0.0.1 is free; drop the candidate and close its listener so the port is not leaked.
             rejected.push({ port: ipv4.port, reason: code })
             await ipv4.close()
             continue
@@ -243,11 +178,7 @@ export async function freePorts(
   }
 }
 
-/**
- * A readiness failure caused by another process holding the port on ::1: the
- * connection was accepted but the peer did not answer like the harness's own
- * server. The fixtures treat it as a taken port and retry with fresh ones.
- */
+// A connection accepted on ::1 that does not answer like this server means another process holds the port; the fixtures retry with fresh ports.
 export class LoopbackPortOccupiedError extends Error {
   readonly address = '::1' as const
   readonly port: number
@@ -262,22 +193,15 @@ export class LoopbackPortOccupiedError extends Error {
   }
 }
 
-/** The codes that mean this machine has no usable ::1 address family. */
 const IPV6_ADDRESS_UNAVAILABLE = new Set([
   'EADDRNOTAVAIL',
   'ENETUNREACH',
   'EAFNOSUPPORT',
 ])
 
-/** The code that means ::1 exists but no process accepts a connection there. */
 const IPV6_CONNECTION_REFUSED = new Set(['ECONNREFUSED'])
 
-/**
- * Whether a failed start is worth another attempt with fresh ports: the child
- * could not bind its port, or another process answered on the port's ::1 side,
- * and the attempt bound has not run out. Every other failure is this server's
- * own and is reported at once.
- */
+// Retries only a bind failure or a taken ::1 port, while attempts remain.
 export function shouldRetryStart(
   error: unknown,
   bindFailure: boolean,
@@ -288,19 +212,13 @@ export function shouldRetryStart(
   return (bindFailure || portOccupied) && attempt < maxAttempts
 }
 
-/** How the readiness probe is bounded and, in a test, which sockets it uses. */
 export interface ReadinessOptions {
-  /** The socket primitives. Defaults to {@link nodeLoopbackSockets}. */
   readonly sockets?: LoopbackSockets
-  /** How long the probe may keep polling. */
   readonly readyTimeoutMs?: number
-  /** How long one request may take to answer. */
   readonly requestTimeoutMs?: number
-  /** How long the poll waits between answers that are not 200. */
   readonly retryDelayMs?: number
 }
 
-/** The port and path of one readiness URL; its host is the browser's name. */
 function probeTarget(url: string): {
   readonly port: number
   readonly path: string
@@ -315,13 +233,7 @@ function probeTarget(url: string): {
   }
 }
 
-/**
- * Judge the ::1 side of one ready path. A refused connection or a missing
- * address family means nothing is there and the answer is a pass; an accepted
- * connection must answer 200 on the same path, or the port belongs to another
- * process. The refused case returns at once, so a normal start pays one
- * immediate connection attempt and no wait.
- */
+// A refused connection or a missing address family means nothing is there (a pass); an accepted connection must answer 200 on the same path, or the port belongs to another process.
 async function checkIPv6(
   sockets: LoopbackSockets,
   port: number,
@@ -349,16 +261,7 @@ async function checkIPv6(
   }
 }
 
-/**
- * Poll a browser-facing origin until it answers 200 on both loopback families,
- * or fail after the bound.
- *
- * The URL is the origin the browser uses (`http://localhost:<port>/<path>`),
- * but its host is never resolved: the literal 127.0.0.1 and ::1 addresses are
- * probed instead. Node's resolver answers 127.0.0.1 for `localhost` on the
- * machines this tier runs on, while the browser prefers ::1, so a hostname
- * probe would report a server the browser cannot reach.
- */
+// The browser's localhost is never resolved here: the literal 127.0.0.1 and ::1 are probed because Node answers 127.0.0.1 while the browser prefers ::1.
 export async function waitForProbe(
   url: string,
   log: ProcessLog,
@@ -371,13 +274,7 @@ export async function waitForProbe(
   const { port, path } = probeTarget(url)
 
   const deadline = Date.now() + readyTimeoutMs
-  // The deadline bounds the 127.0.0.1 poll only: each of its requests may
-  // spend at most the time left, so a poll that starts near the bound
-  // overshoots it by at most one retry delay rather than by a whole request
-  // timeout. The ::1 check that follows a 200 keeps its full request timeout,
-  // because a 127.0.0.1 answer that lands just before the bound must not leave
-  // it a budget too small for this process's own server to answer; a timeout
-  // there is judged as another process holding the port.
+  // The deadline bounds the 127.0.0.1 poll only; the ::1 check keeps its full request timeout, so an answer just before the bound is not squeezed into a timeout read as an occupied port.
   const ipv4RequestBudget = (): number =>
     Math.max(1, Math.min(requestTimeoutMs, deadline - Date.now()))
   let last = ''

@@ -1,12 +1,3 @@
-/**
- * The e2e configuration's enterprise SSO block.
- *
- * The template states the deployment defaults -- the loopback relaxation off
- * and both outbound seams empty -- and the server fixture replaces the block
- * whole when a spec opts into the local fixtures. Both directions are held
- * here: an unconfigured server keeps the deployment defaults, and an opted-in
- * one names the resolver and the CA file it was handed.
- */
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,11 +16,6 @@ import {
   type ServerConfigInput,
 } from './config'
 
-// The templates are located from this file's URL: the unit-test gate runs
-// this suite from web/, not the package directory, so the working directory
-// cannot name them. The path comes through `fileURLToPath(import.meta.url)`
-// rather than `new URL(path, import.meta.url)`, whose literal form vite
-// rewrites to a dev-server asset URL under the jsdom transform.
 vi.mock('./paths', async () => {
   const nodePath = await import('node:path')
   const nodeUrl = await import('node:url')
@@ -75,11 +61,6 @@ async function rendered(input: TemplateInput): Promise<string> {
   return readFile(config.path, 'utf8')
 }
 
-/**
- * The rendered `seed.accounts` entry that names an identifier, from its own
- * `- identifier:` line to the next entry. A test uses it to read the flags a
- * single account carries without matching a sibling's lines.
- */
 function accountEntry(body: string, identifier: string): string {
   const needle = `    - identifier: ${JSON.stringify(identifier)}`
   const at = body.indexOf(needle)
@@ -126,10 +107,6 @@ describe('the e2e configuration', () => {
 
   it('keeps the operator out of acme on the impersonation server', async () => {
     const body = await rendered({ seedImpersonation: true })
-    // The impersonation requirement is a target inside the tenant and an
-    // initiator outside it, so the operator holds no grant in acme on this
-    // journey's server. The target is an ordinary member, not the tenant's
-    // administrator, so an account of the fixture's own administers acme.
     expect(body).toContain(
       `    - name: acme\n      admins:\n        - ${e2eImpersonationAdmin.identifier}\n  members:`,
     )
@@ -145,9 +122,6 @@ describe('the e2e configuration', () => {
       seedUnprovedTenantAdmin: true,
       tenantAdmins: { acme: [e2eTenantAdmin.identifier] },
     })
-    // Both administrators are seeded, but the override pins acme to one: not
-    // the unproved administrator the default list would add, the template's
-    // member, or the platform operator.
     expect(body).toContain(
       `    - name: acme\n      admins:\n        - ${e2eTenantAdmin.identifier}\n  members:`,
     )
@@ -161,9 +135,6 @@ describe('the e2e configuration', () => {
     expect(body).toContain(
       `    - name: acme\n      admins:\n        - ${e2eTenantAdmin.identifier}\n  members:`,
     )
-    // The account carries the username it signs in with, no platform mark and
-    // no proof flag: the server fixture proves the address through the
-    // product's own flow once the service is up.
     expect(body).toContain(
       `    - identifier: ${JSON.stringify(e2eTenantAdmin.identifier)}\n` +
         `      username: ${JSON.stringify(e2eTenantAdmin.username)}\n`,
@@ -201,9 +172,6 @@ describe('the e2e configuration', () => {
 
   it('carries the log carrier\'s configured verdict and the SAML switch', async () => {
     const body = await rendered({})
-    // The rollout journey's English code is approved by configuration; its
-    // Chinese code is absent and therefore pending. The SAML method is on only
-    // in this assembly.
     expect(body).toContain('demo-notice-en')
     expect(body).toContain('state: approved')
     expect(body).not.toContain('demo-notice-zh')
@@ -256,11 +224,7 @@ describe('the deployment configuration', () => {
       opsPort: 41082,
     })
     const body = await readFile(config.path, 'utf8')
-    // A leftover placeholder fails writeDeployConfig itself; this states the
-    // whole document, the action included, is rendered.
     expect(body).not.toMatch(/__[A-Z][A-Z0-9_]*__/)
-    // The entrypoint defaults the widget action to login, so the fixture
-    // renders the same action a deployment without the secret would carry.
     expect(body).toContain('    action: "login"')
   })
 })

@@ -1,24 +1,9 @@
-/**
- * Account journeys, driven the way a person drives them.
- *
- * The helpers fill and click the rendered form through accessible labels and
- * roles; they never call the API. The one non-UI read they make is the email
- * verification code, which the e2e mail carrier writes to the process log:
- * the mail reaches no relay, so a person running the e2e suite reads it there.
- *
- * Registration with a password lands on the account page's verification
- * section, which sends the first code by itself. `register` therefore answers
- * with a log cursor taken before the form was submitted; passing it to
- * `verifyEmail` makes the helper accept only a code written for this
- * registration, not an earlier one sent to the same address.
- */
 import type { Page } from '@playwright/test'
 
 import { waitForVerificationCode } from '../fixtures/log'
 import type { E2EServer } from '../fixtures/server'
 import { copy } from './i18n'
 
-/** A password-signup account. */
 export interface PasswordAccount {
   readonly username: string
   readonly email: string
@@ -26,95 +11,47 @@ export interface PasswordAccount {
 }
 
 export interface RegisterResult {
-  /** The log position before the registration was submitted. */
   readonly verificationAfter: number
 }
 
 export interface Accounts {
-  /** Open the sign-in surface at the deployment root. */
   openSignIn(): Promise<void>
-  /** Switch the sign-in surface to its registration mode. */
   openRegistration(): Promise<void>
-  /** Open the surface, switch to registration, and submit the form. */
   register(account: PasswordAccount): Promise<RegisterResult>
-  /** Fill the registration fields on the already-open form. */
   fillRegistration(account: PasswordAccount): Promise<void>
-  /**
-   * Submit the registration form without waiting for the landing. The caller
-   * observes the in-place refusal or the verification section itself.
-   */
   submitRegistration(): Promise<void>
-  /** Prove the email address from the code in the process log. */
   verifyEmail(
     address: string,
     options?: { readonly after?: number },
   ): Promise<void>
-  /** Register and then prove the email address in one call. */
   registerAndVerify(account: PasswordAccount): Promise<void>
-  /** Sign in with a password. */
   signIn(input: {
     readonly identifier: string
     readonly password: string
   }): Promise<void>
-  /**
-   * Answer the username step an enterprise just-in-time first login parks at
-   * before it opens an account. The server asks for the `username` field, and
-   * the sign-in family renders a field name it has no wording for verbatim, so
-   * the input's accessible name is the field's own name rather than a bundle
-   * string. That step asks for the username alone: the account signs in through
-   * the provider, so no password is collected there.
-   */
   answerSignupUsername(username: string): Promise<void>
-  /**
-   * Answer the phone first login's account-opening face: the username, the
-   * optional display name and the password with its confirmation. The phone
-   * code proved the number; the account is opened with what is answered here,
-   * so a submission carrying no password creates nothing. The display name is
-   * typed only when `displayName` is given; left out, the field stays empty and
-   * the server names the account after the username.
-   */
   answerPhoneSignup(input: {
     readonly username: string
     readonly password: string
     readonly displayName?: string
   }): Promise<void>
-  /**
-   * Answer the social first login's account-opening face: the username and
-   * the password with its confirmation. The face renders the provider's
-   * verified address read-only beside them; the answer never carries it.
-   */
   answerSocialSignup(input: {
     readonly username: string
     readonly password: string
   }): Promise<void>
-  /** Sign out through the account menu. */
   signOut(): Promise<void>
-  /** A fresh account whose identifiers do not collide with another run. */
   unique(prefix: string): PasswordAccount
 }
 
-/**
- * A password the account store's password policy accepts and that matches no
- * identifier.
- */
 const PASSWORD = 'e2e-Password-123'
 
-/** The email domain the e2e mail carrier accepts (it reaches no relay). */
 const EMAIL_DOMAIN = 'e2e.test'
 
-/**
- * The first-login username step's field name. The server's challenge names
- * the `username` field; the input keeps that name while its label comes from
- * the sign-in flow's bundle, so the answer addresses the element by name.
- */
 const SIGNUP_USERNAME_FIELD = 'username'
 
-/** The social account-opening step's password fields, by their contract
- * field names (the username's form scopes the lookup). */
 const SIGNUP_PASSWORD_FIELD = 'password'
 const SIGNUP_CONFIRM_FIELD = 'confirmPassword'
 
-/** The registered account's identifiers carry a run-scoped suffix. */
 function freshIdentifier(prefix: string): string {
   const stamp = Date.now().toString(36)
   const random = Math.random().toString(36).slice(2, 8)
@@ -150,12 +87,7 @@ export function createAccounts({
       .waitFor()
   }
 
-  /**
-   * The profile pane's email card. The verification surface mounts inside it
-   * (the pane owns the heading; the nested account-ui section renders no card
-   * of its own), so this card is the region the code field and its result sit
-   * in.
-   */
+  // The verification section mounts inside the pane's email card; this is the region the code field sits in.
   const emailSection = () =>
     page.getByRole('region', {
       name: copy('demo', 'account.rows.label.email'),
@@ -197,13 +129,10 @@ export function createAccounts({
     await openRegistration()
     await fillRegistration(account)
 
-    // The cursor is taken before submission: the verification section sends
-    // its first code after the form is accepted, and only that code may be
-    // used.
+    // Take the cursor before submission so only this registration's code can be accepted.
     const verificationAfter = server.log.mark()
     await submitRegistration()
 
-    // The password flow lands on the account page's verification section.
     await emailSection().waitFor()
     return { verificationAfter }
   }
@@ -228,9 +157,6 @@ export function createAccounts({
         exact: true,
       })
       .click()
-    // The verified card reports completion instead of a title of its own (the
-    // pane's email card owns the heading), so the completion sentence is the
-    // proof the proof landed.
     await section
       .getByText(
         copy('accountUi', 'verification.verifiedDescription', {
@@ -246,8 +172,7 @@ export function createAccounts({
     readonly password: string
   }): Promise<void> => {
     await openSignIn()
-    // The channel's tab shares its name with the password field, so the
-    // inputs are addressed as textboxes rather than by label alone.
+    // The channel's tab shares its name with the password field, so address the inputs as textboxes.
     const identifier = page.getByRole('textbox', {
       name: copy('authUi', 'passwordSignIn.identifierLabel'),
       exact: true,
@@ -265,18 +190,11 @@ export function createAccounts({
         exact: true,
       })
       .click()
-    // The sign-in form leaves the document when the session flips. A refused
-    // sign-in leaves it in place, and this wait then reports the failure.
     await identifier.waitFor({ state: 'detached' })
   }
 
   const signUpUsername = async (username: string): Promise<void> => {
-    // The challenge renders inside the form the flow parked on (the callback
-    // page, or the SMS channel's own panel); addressing the submit inside that
-    // form keeps the enterprise entry's "Continue" on the sign-in page out of
-    // the answer.
-    // The input carries the contract's field name; the label above it is copy
-    // and follows the language, so the answer addresses the element by name.
+    // Scope the submit to the form the username input belongs to, so another Continue on the page is not matched.
     const field = page.locator(`input[name="${SIGNUP_USERNAME_FIELD}"]`)
     await field.waitFor()
     await field.fill(username)
@@ -295,16 +213,12 @@ export function createAccounts({
     readonly password: string
     readonly displayName?: string
   }): Promise<void> => {
-    // The phone step renders in the SMS channel's own panel, so every lookup is
-    // scoped to the form the username input belongs to; the sign-in page's
-    // password form carries a field with the same label.
+    // Scope every lookup to the username input's form; the sign-in page has a field with the same label.
     const field = page.locator(`input[name="${SIGNUP_USERNAME_FIELD}"]`)
     await field.waitFor()
     const form = field.locator('xpath=ancestor::form[1]')
     await field.fill(input.username)
     if (input.displayName !== undefined) {
-      // The optional field is known to the family, so it carries the bundle's
-      // own label.
       await form
         .getByLabel(copy('authUi', 'register.displayNameLabel'), {
           exact: true,
@@ -334,11 +248,7 @@ export function createAccounts({
     readonly username: string
     readonly password: string
   }): Promise<void> => {
-    // The social first login's face asks for a username and a password with
-    // its confirmation; the provider's identity block is read-only and is not
-    // part of the answer. The username's own form scopes every lookup, so the
-    // sign-in page's password field (when it is in the document) is never
-    // touched.
+    // Scope every lookup to the username's own form so the sign-in page's password field is never touched.
     const field = page.locator(`input[name="${SIGNUP_USERNAME_FIELD}"]`)
     await field.waitFor()
     const form = field.locator('xpath=ancestor::form[1]')
@@ -359,11 +269,7 @@ export function createAccounts({
   }
 
   const signOut = async (): Promise<void> => {
-    // The account menu trigger carries a stable purpose identifier: its
-    // accessible name is the principal's display name when the account has one
-    // and the host's account-menu label otherwise, so the name alone cannot
-    // address it for every account. The data attribute is the trigger's own,
-    // independent of where it sits among the bar's other menus.
+    // The trigger's accessible name varies with the account; its test id is stable.
     await page
       .getByTestId('account-entry-trigger')
       .click()
@@ -373,8 +279,6 @@ export function createAccounts({
         exact: true,
       })
       .click()
-    // Signing out is terminal: the shell replaces the authenticated area with
-    // its session-ended surface, whose action returns to the sign-in form.
     await page
       .getByRole('heading', {
         name: copy('authUi', 'sessionEnded.title'),

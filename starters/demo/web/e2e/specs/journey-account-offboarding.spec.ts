@@ -1,62 +1,3 @@
-/**
- * The account-offboarding journey -- an operator disables a member, the
- * member's sessions end, the member is told to sign in again, and after the
- * operator restores the account the member signs back in on the page that was
- * refused.
- *
- * THE SEEDED OPERATOR HAS FACTORS, SO THE STEP-UP BRANCH IS NOT DRIVEN. The
- * status write is one of the privileged writes that ask for a fresh local
- * multi-factor proof (REQ-platform-admin-114). The seedImpersonation option
- * makes the fixture run factorseed after the seed, which gives the operator an
- * authenticator and an SMS factor. The operator signs in
- * with the password and the authenticator code, so the session already holds
- * a fresh local multi-factor proof and the save lands directly. The journey's
- * step-up paragraph -- the dialog and its one replay -- is therefore not
- * driven, and REQ-platform-admin-018 and REQ-security-014 stay out of
- * `@covers`. The no-factor half of that dialog is not reachable either: an
- * operator with no factor cannot make the privileged write at all.
- * REQ-security-013 stays out for the same class of reason: it names the
- * freshness rule of the self-service writes (password, identifiers, factors,
- * bindings, profile), and this journey's only privileged write is the
- * operator's status change. REQ-platform-admin-014 (display name, attributes
- * and the protected flag) is not driven by the journey's steps either.
- *
- * TWO MEMBER SESSIONS IN TWO CONTEXTS. The member signs in on two browser
- * contexts. Context A stays on the account page: before the disable its
- * session list holds two live rows with exactly one marked current. Context B
- * is the device the journey refuses: opening another in-app page after the
- * disable is refused, the session ends, and the frame is replaced by the
- * session-ended surface. The member then tries to sign in during the disable;
- * a wrong password and the account's own correct credentials both render the
- * one collapsed password failure, and the account-unavailable text never
- * appears.
- *
- * THE LIST IS RE-FILTERED AFTER EACH STATUS CHANGE. Step 2 narrows the list by
- * the member's login-identifier prefix and the enabled status, and step 3 says
- * the list then shows the account as disabled. The list read filters on the
- * server and the status write invalidates it, so the disabled row leaves the
- * enabled-filtered page. The spec re-submits the same prefix with the disabled
- * status to observe the row, and returns the filter to enabled after the
- * restore. Paging is not driven: the seed holds its accounts on one
- * page. The filter's "applies only on submit" clause is observed before the
- * first submission, where the list still shows every account.
- *
- * THE RESTORE PATH IS DRIVEN. After the operator restores the account the
- * member reloads the protected page, meets the sign-in surface, signs in with
- * the same credentials and lands back on that page, which is REQ-signin-030's
- * "continue in place". The account's session list then holds one row, the
- * current session: both pre-disable sessions (context A's and context B's
- * earlier one) are gone, so the count is what discriminates a revocation from
- * a stale list. REQ-security-022 is claimed for the fields this journey
- * drives: the rows, the current-session marker, the sign-in line and the
- * expiry, which each live row names. A last-active line appears only once a
- * coalesced touch moves it past the creation instant, so that clause stays
- * undriven. This surface therefore fails for a product that omits the expiry;
- * the registry keeps the document's full list.
- *
- * Expected copy is read from the shipped en-US bundles through
- * helpers/i18n.ts.
- */
 // @journey journey-account-offboarding.md
 // @covers REQ-platform-admin-012, REQ-presentation-027, REQ-security-022, REQ-security-025, REQ-signin-006, REQ-signin-007, REQ-signin-030, REQ-tenancy-022
 import type { BrowserContext, Locator, Page } from '@playwright/test'
@@ -86,47 +27,31 @@ import { chooseSelectOption } from '../helpers/select-option'
 import { switchToTenant } from '../helpers/switch-tenant'
 import { totpCode } from '../helpers/totp'
 
-// The operator needs its two seeded factors and a proved address; the admin
-// tables carry low-priority columns, so the viewport is wide enough for the
-// status column and the row controls.
+// The admin tables render their low-priority columns only at desktop widths; keep the viewport wide enough for the status column and row controls this spec reads.
 test.use({ seedImpersonation: true, viewport: { width: 1920, height: 1080 } })
 
-/** The seeded platform administrator the e2e seed writes. */
 const OPERATOR = {
   identifier: 'operator@demo.test',
   username: 'operator',
   password: 'operator-dev-secret',
 } as const
 
-/** The seeded member of acme; it holds a username and no second factor. */
 const MEMBER = {
   identifier: 'member',
   password: 'member-dev-secret',
   displayName: 'Demo Member',
 } as const
 
-/** The organization the member belongs to; its name is the identifier. */
 const TENANT = 'acme'
 
-/**
- * The operator's authenticator seed, written by the factorseed command. It is
- * a fixture value, not a credential: it is the value a person imports into an
- * authenticator app.
- */
 const TOTP_SEED = e2eImpersonationFactors.totpSeed
 
-/** A password that matches no account, used for the comparison attempt. */
 const WRONG_PASSWORD = 'not-the-member-password'
 
-/** The account settings' first pane, which is the protected page the member was on. */
 const ACCOUNT_PROFILE_PATH = '/account/profile'
 
-/** The platform's own organization. The account menu offers the admin entry
- * only while this is the current organization; platform administration is not
- * a tenant member's surface. */
 const PLATFORM_TENANT = 'system'
 
-/** The admin's navigation landmark. */
 function adminNav(page: Page): Locator {
   return page.getByRole('navigation', {
     name: copy('adminUi', 'shell.navLabel'),
@@ -134,10 +59,6 @@ function adminNav(page: Page): Locator {
   })
 }
 
-/**
- * Open the admin from the tenant area. The way in is the account menu's admin
- * entry, offered only while the platform's own organization is current.
- */
 async function openConsole(page: Page): Promise<void> {
   await switchToTenant(page, PLATFORM_TENANT)
   await openAccountMenu(page)
@@ -146,7 +67,6 @@ async function openConsole(page: Page): Promise<void> {
   await expect(adminNav(page)).toBeVisible()
 }
 
-/** The accounts table of the admin page. */
 function accountsTable(page: Page): Locator {
   return page.getByRole('table', {
     name: copy('uiKit', 'dataTable.ariaLabel'),
@@ -154,44 +74,22 @@ function accountsTable(page: Page): Locator {
   })
 }
 
-/** The accounts list's row for the member. */
 function memberRow(page: Page): Locator {
   return accountsTable(page)
     .locator('tbody tr')
     .filter({ hasText: MEMBER.displayName })
 }
 
-/**
- * The detail panel's accessible name for the member this journey acts on: the
- * console names an account by its display name and login username together,
- * never by the opaque account id.
- */
 function detailTitle(): string {
   return `${MEMBER.displayName} (${MEMBER.identifier})`
 }
 
-/**
- * The account row's manage control. Its accessible name is the bundle's
- * sentence with the composed identity label left open, because the label is a
- * rendering rule this helper does not reproduce.
- */
 function manageButton(row: Locator): Locator {
   return row.getByRole('button', {
     name: copyPattern('adminUi', 'accounts.manageAria', { name: '[^"]*' }),
   })
 }
 
-/**
- * The settled status write's success notice.
- *
- * The admin names an account in a success notice by its display name and
- * first login identifier and never by the opaque account id, so the expected
- * sentence is the bundle's `statusSaved` filled with the reference the same
- * bundle's `common.accountReference.nameWithIdentifier` renders. The seeded
- * member resolves both, so the named form is the one the product renders; an
- * implementation that fell back to the neutral sentence or inserted the id
- * would fail this assertion.
- */
 function statusSavedNotice(): string {
   return copy('adminUi', 'accounts.statusSaved', {
     account: copy('adminUi', 'common.accountReference.nameWithIdentifier', {
@@ -201,7 +99,6 @@ function statusSavedNotice(): string {
   })
 }
 
-/** The detail panel's status line for one status label. */
 function statusLine(panel: Locator, status: string): Locator {
   return panel.getByText(
     copy('adminUi', 'accounts.detail.statusLine', { value: status }),
@@ -209,7 +106,6 @@ function statusLine(panel: Locator, status: string): Locator {
   )
 }
 
-/** The status filter's select on the accounts page. */
 function statusFilter(page: Page): Locator {
   return page.getByRole('combobox', {
     name: copy('adminUi', 'accounts.filter.status'),
@@ -217,7 +113,6 @@ function statusFilter(page: Page): Locator {
   })
 }
 
-/** The identifier-kind select on the accounts page. */
 function identifierKind(page: Page): Locator {
   return page.getByRole('combobox', {
     name: copy('adminUi', 'accounts.identifierKindLabel'),
@@ -225,7 +120,6 @@ function identifierKind(page: Page): Locator {
   })
 }
 
-/** The login-identifier prefix field on the accounts page. */
 function identifierPrefixField(page: Page): Locator {
   return page.getByRole('textbox', {
     name: copy('adminUi', 'accounts.identifierLabel'),
@@ -233,7 +127,6 @@ function identifierPrefixField(page: Page): Locator {
   })
 }
 
-/** The accounts page's search control. */
 function searchButton(page: Page): Locator {
   return page.getByRole('button', {
     name: copy('adminUi', 'accounts.search'),
@@ -263,7 +156,6 @@ async function tabUntilFocused(page: Page, label: string): Promise<void> {
   }
 }
 
-/** The accounts page's empty state, shown when the applied filter matches none. */
 function emptyState(page: Page): Locator {
   return page.getByRole('heading', {
     name: copy('adminUi', 'accounts.empty.title'),
@@ -271,7 +163,6 @@ function emptyState(page: Page): Locator {
   })
 }
 
-/** The session-ended surface. */
 function sessionEndedHeading(page: Page): Locator {
   return page.getByRole('heading', {
     level: 1,
@@ -280,7 +171,6 @@ function sessionEndedHeading(page: Page): Locator {
   })
 }
 
-/** The account settings' profile pane heading, the page's one h1. */
 function profileHeading(page: Page): Locator {
   return page.getByRole('heading', {
     level: 1,
@@ -289,7 +179,6 @@ function profileHeading(page: Page): Locator {
   })
 }
 
-/** The sessions pane's devices card. */
 function sessionsSection(page: Page): Locator {
   return page.getByRole('region', {
     name: copy('demo', 'account.blocks.devices'),
@@ -297,7 +186,6 @@ function sessionsSection(page: Page): Locator {
   })
 }
 
-/** The password sign-in surface's fields and submit control. */
 function signInHeading(page: Page): Locator {
   return page.getByRole('heading', {
     name: copy('demo', 'signIn.heading'),
@@ -323,12 +211,6 @@ function signInButton(page: Page): Locator {
   })
 }
 
-/**
- * Prove the operator's email through the account page's own code flow. The
- * privileged writes that follow refuse an account whose address is unproved;
- * the seed writes the address as an administrator's assertion, so the journey
- * reaches the proof the way a person does.
- */
 async function proveOperatorEmail(
   page: Page,
   server: E2EServer,
@@ -371,16 +253,6 @@ async function proveOperatorEmail(
   ).toBeVisible()
 }
 
-/**
- * Sign the seeded operator in with its password and the seeded authenticator.
- *
- * The operator has a factor, so the password step parks the login at its
- * second factor. The step belongs to the password channel, which renders in
- * its own panel; the enterprise entry sits on the same sign-in page and
- * carries its own "Continue", so every control of the step is addressed
- * within that panel. A fresh local proof is what lets the privileged writes
- * land without a step-up dialog.
- */
 async function signInOperatorWithFactor(
   page: Page,
   accounts: Accounts,
@@ -434,12 +306,8 @@ test('account-offboarding: an operator disables a member and the member returns 
     await test.step('precondition: the operator signs in with a factor, and the member holds two sessions', async () => {
       await signInOperatorWithFactor(page, accounts)
 
-      // The privileged status write refuses an unproved address, so the
-      // operator proves the account email through the product's own code flow.
       await proveOperatorEmail(page, server)
 
-      // The member's two devices are two browser contexts with no shared
-      // cookie jar. Their language, zone and viewport repeat the tier's pins.
       const options = {
         locale: 'en-US',
         timezoneId: 'UTC',
@@ -468,11 +336,8 @@ test('account-offboarding: an operator disables a member and the member returns 
         }),
       ).toBeVisible()
 
-      // The account page lists this device's own sessions: the two rows are
-      // the two signed-in contexts, and exactly one of them is current.
       await openAccountSection(memberAPage, 'sessions')
       const sessions = sessionsSection(memberAPage)
-      // One list item per live session, no table and no header rail.
       await expect(sessions.getByRole('listitem')).toHaveCount(2)
       await expect(
         sessions.getByText(copy('accountUi', 'sessions.current'), {
@@ -481,7 +346,6 @@ test('account-offboarding: an operator disables a member and the member returns 
       ).toHaveCount(1)
       await expect(sessions.getByRole('table')).toHaveCount(0)
       await expect(sessions.getByRole('columnheader')).toHaveCount(0)
-      // Each item's second line names its address and last activity.
       const activityPrefix = copy('accountUi', 'sessions.rowActivity', {
         time: '',
       })
@@ -506,9 +370,6 @@ test('account-offboarding: an operator disables a member and the member returns 
         }),
       ).toBeVisible()
 
-      // The unfiltered list holds the operator, the member, and acme's own
-      // administrator (the impersonation fixture keeps the operator outside
-      // acme and seeds its administrator account beside the ordinary member).
       await expect(accountsTable(page).locator('tbody tr')).toHaveCount(3)
     })
 
@@ -529,8 +390,6 @@ test('account-offboarding: an operator disables a member and the member returns 
         }),
       )
 
-      // The draft filters apply nothing: the list still holds all three
-      // accounts.
       await expect(accountsTable(page).locator('tbody tr')).toHaveCount(3)
 
       await searchButton(page).click()
@@ -570,9 +429,6 @@ test('account-offboarding: an operator disables a member and the member returns 
         })
         .click()
 
-      // The settled write confirms with a message that names the account by
-      // its display name and login identifier, and the detail re-reads the
-      // account's own status.
       await expect(
         dialog.getByText(statusSavedNotice(), { exact: true }),
       ).toBeVisible()
@@ -588,8 +444,6 @@ test('account-offboarding: an operator disables a member and the member returns 
         .click()
       await expect(dialog).toHaveCount(0)
 
-      // The enabled-filtered list no longer matches the account, and the
-      // disabled filter lists it with the new status.
       await expect(emptyState(page)).toBeVisible()
       await chooseSelectOption(
         statusFilter(page),
@@ -615,9 +469,6 @@ test('account-offboarding: an operator disables a member and the member returns 
       const memberB = memberBPage
       const ended = sessionEndedHeading(memberB)
 
-      // The revocation can also end the frame through the live notification
-      // stream. When it has not, one in-app page open is the request the step
-      // describes; the state-based wait below is the assertion either way.
       if (!(await ended.isVisible())) {
         const trigger = memberB
           .getByTestId('account-entry-trigger')
@@ -646,8 +497,6 @@ test('account-offboarding: an operator disables a member and the member returns 
         }),
       ).toBeVisible()
 
-      // Nothing of the refused page renders: neither the account pane nor the
-      // tenant home heading is the page's heading any more.
       await expect(profileHeading(memberB)).toHaveCount(0)
       await expect(
         memberB.getByRole('heading', {
@@ -676,15 +525,11 @@ test('account-offboarding: an operator disables a member and the member returns 
         { exact: true },
       )
 
-      // A wrong password is the reference answer ...
       await identifierField(memberB).fill(MEMBER.identifier)
       await passwordField(memberB).fill(WRONG_PASSWORD)
       await signInButton(memberB).click()
       await expect(failure).toBeVisible()
 
-      // ... and the account's own correct credentials are answered the same
-      // way while the account is disabled. The account-unavailable text never
-      // replaces the collapsed failure.
       await passwordField(memberB).fill(MEMBER.password)
       await signInButton(memberB).click()
       await expect(failure).toBeVisible()
@@ -701,8 +546,6 @@ test('account-offboarding: an operator disables a member and the member returns 
       }
       const memberB = memberBPage
 
-      // The disabled-filtered list still holds the member; its detail is
-      // opened again and the status moved back.
       const row = memberRow(page)
       await expect(row).toHaveCount(1)
       await manageButton(row).click()
@@ -741,8 +584,6 @@ test('account-offboarding: an operator disables a member and the member returns 
         .click()
       await expect(dialog).toHaveCount(0)
 
-      // The disabled filter no longer matches the restored account, and the
-      // enabled filter lists it as enabled again.
       await expect(emptyState(page)).toBeVisible()
       await chooseSelectOption(
         statusFilter(page),
@@ -759,9 +600,6 @@ test('account-offboarding: an operator disables a member and the member returns 
         }),
       ).toBeVisible()
 
-      // The member reloads the protected page: the restore revived no old
-      // session, so the page starts at the sign-in surface and continues on
-      // the same address after the login.
       await memberB.reload()
       await expect(signInHeading(memberB)).toBeVisible()
       await identifierField(memberB).fill(MEMBER.identifier)
@@ -777,11 +615,8 @@ test('account-offboarding: an operator disables a member and the member returns 
       }
       const memberB = memberBPage
 
-      // The two pre-disable sessions are gone; the re-login created this one,
-      // and it is the current one.
       await selectAccountSection(memberB, 'sessions')
       const sessions = sessionsSection(memberB)
-      // The header row and the one remaining session.
       await expect(sessions.getByRole('listitem')).toHaveCount(1)
       await expect(
         sessions.getByText(copy('accountUi', 'sessions.current'), {
@@ -789,11 +624,6 @@ test('account-offboarding: an operator disables a member and the member returns 
         }),
       ).toHaveCount(1)
 
-      // The member's account owns a personal organization, which the host may
-      // settle as the current organization for an ordinary member. Move to the
-      // organization this journey disabled and restored it in through the
-      // account menu, then observe that the menu names it as current and does
-      // not offer it again among the choices.
       await switchToTenant(memberB, TENANT)
       const menu = await openAccountMenu(memberB)
       await expect(menu.getByText(TENANT, { exact: true })).toBeVisible()
@@ -811,26 +641,16 @@ test('account-offboarding: an operator disables a member and the member returns 
       await closeAccountMenu(memberB)
     })
   } finally {
-    // The member contexts hold cookie sessions of their own; closing them
-    // keeps a failed run from leaving them open while the server drains.
     await memberAContext?.close().catch(() => undefined)
     await memberBContext?.close().catch(() => undefined)
   }
 })
 
-/**
- * Checks that the account detail's save control stays reachable while its
- * precondition is unmet, sends nothing when activated, and keeps keyboard
- * focus through a write it starts.
- */
 test('account-offboarding: the save control keeps keyboard focus through its write and explains an unmet precondition', async ({
   demo,
 }) => {
   const { page, server, accounts } = demo
 
-  // The status write the case drives, observed rather than faked: the
-  // unavailable activation must add none, so the landing below is the only
-  // one this case sends.
   const statusWrites: string[] = []
   page.on('request', (outgoing) => {
     if (outgoing.method() !== 'POST') return
@@ -889,20 +709,15 @@ test('account-offboarding: the save control keeps keyboard focus through its wri
   })
 
   await test.step('an unmet precondition is Tab-reachable, announced once, and its activation sends nothing', async () => {
-    // The draft still matches the saved status, so the control is unavailable
-    // with the UI's own reason.
     await expect(saveStatus).toHaveAttribute('aria-disabled', 'true')
     await expect(saveStatus).toHaveAccessibleDescription(
       copy('adminUi', 'accounts.status.unchanged'),
     )
 
-    // Reached from the control before it by Tab, not by focusing it directly.
     await statusSelect.focus()
     await page.keyboard.press('Tab')
     await expect(saveStatus).toBeFocused()
 
-    // The activation is swallowed: nothing is written, and the control still
-    // reports its unmet precondition.
     const writesBeforeActivation = statusWrites.length
     await page.keyboard.press('Enter')
     await expect(saveStatus).toHaveAttribute('aria-disabled', 'true')
@@ -944,12 +759,8 @@ test('account-offboarding: the save control keeps keyboard focus through its wri
       )
     })
 
-    // Keyboard activation, not a pointer click.
     await page.keyboard.press('Enter')
-    // The control that started the write keeps focus from the activation on.
     await expect(saveStatus).toBeFocused()
-    // The write's request is on the wire, and the control still holds the
-    // focus it started with.
     await sent
     await expect(saveStatus).toBeFocused()
 
@@ -959,12 +770,9 @@ test('account-offboarding: the save control keeps keyboard focus through its wri
       dialog.getByText(statusSavedNotice(), { exact: true }),
     ).toBeVisible()
 
-    // The landing makes the draft match the saved status again; the control
-    // turns unavailable without taking the focus it never lost.
     await expect(saveStatus).toHaveAttribute('aria-disabled', 'true')
     await expect(saveStatus).toBeFocused()
 
-    // Tab from the control that started the write reaches the next control.
     await page.keyboard.press('Tab')
     await expect(
       dialog.getByRole('combobox', {
@@ -973,7 +781,6 @@ test('account-offboarding: the save control keeps keyboard focus through its wri
       }),
     ).toBeFocused()
 
-    // This write is the only one the case sends.
     expect(statusWrites).toHaveLength(1)
   })
 })

@@ -1,12 +1,3 @@
-/**
- * The enterprise provider's OIDC surface.
- *
- * The cases drive the provider over its real listeners: discovery and the
- * server-side endpoints over the HTTPS issuer, the authorization page and its
- * approval over the plain-http browser listener. Nothing here is a call into a
- * fixture function; every assertion is on the wire a product or a browser
- * would see.
- */
 import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { request as httpRequest, type IncomingHttpHeaders, type IncomingMessage } from 'node:http'
@@ -23,7 +14,6 @@ import {
   type EnterpriseIdentityProvider,
 } from './identity-provider'
 
-/** One response read whole, as text. */
 interface TextResponse {
   readonly status: number
   readonly headers: IncomingHttpHeaders
@@ -34,11 +24,9 @@ interface SendOptions {
   readonly method?: string
   readonly headers?: Record<string, string>
   readonly body?: string
-  /** The run CA's PEM content the issuer's leaf is verified against. */
   readonly ca?: string
 }
 
-/** Send one request to a URL, over the transport its scheme names. */
 function send(url: URL, options: SendOptions = {}): Promise<TextResponse> {
   return new Promise((resolve, reject) => {
     const onResponse = (response: IncomingMessage): void => {
@@ -75,7 +63,6 @@ function send(url: URL, options: SendOptions = {}): Promise<TextResponse> {
   })
 }
 
-/** Post one form body, for the token endpoint. */
 function postForm(
   url: URL,
   form: URLSearchParams,
@@ -95,7 +82,6 @@ function postForm(
   })
 }
 
-/** The discovery document as the product reads it. */
 interface Discovery {
   readonly issuer: string
   readonly authorization_endpoint: string
@@ -105,24 +91,20 @@ interface Discovery {
   readonly id_token_signing_alg_values_supported: readonly string[]
 }
 
-/** The key set as the product reads it. */
 interface KeySet {
   readonly keys: readonly { readonly kid?: string; readonly alg?: string }[]
 }
 
-/** The token endpoint's response, the fields these cases read. */
 interface TokenResponse {
   readonly access_token?: string
   readonly id_token?: string
   readonly token_type?: string
 }
 
-/** The PKCE S256 challenge, matching the product's computation. */
 function s256(verifier: string): string {
   return createHash('sha256').update(verifier).digest('base64url')
 }
 
-/** Decode a compact JWT's payload, without verifying it. */
 function decodePayload(token: string): Record<string, unknown> {
   const parts = token.split('.')
   const payload = parts[1]
@@ -133,12 +115,10 @@ function decodePayload(token: string): Record<string, unknown> {
   >
 }
 
-/** Read the run CA the provider minted, as the PEM content `ca` expects. */
 function caOf(provider: EnterpriseIdentityProvider): Promise<string> {
   return readFile(provider.rootCAPath, 'utf8')
 }
 
-/** Read and parse a provider's discovery document. */
 async function discoveryOf(
   provider: EnterpriseIdentityProvider,
   ca: string,
@@ -151,13 +131,10 @@ async function discoveryOf(
   return JSON.parse(response.body) as Discovery
 }
 
-/** The callback the product would have registered for this provider. */
 const redirectURI = 'http://localhost:41234/authn/gate/callback/provider-1'
 
-/** The PKCE verifier the authorization request and the token request share. */
 const codeVerifier = 'e2e-enterprise-code-verifier'
 
-/** The authorization request's parameters, as the product sends them. */
 function authorizationParams(): URLSearchParams {
   return new URLSearchParams({
     response_type: 'code',
@@ -171,10 +148,6 @@ function authorizationParams(): URLSearchParams {
   })
 }
 
-/**
- * Walk the browser half: read the authorization page, approve it, and answer
- * the code the redirect carries.
- */
 async function approveAuthorization(
   provider: EnterpriseIdentityProvider,
   ca: string,
@@ -206,10 +179,6 @@ async function approveAuthorization(
   return { code, discovery }
 }
 
-/**
- * Run one authorization round trip and answer what it proved about the user:
- * the identity token's claims and the userinfo document.
- */
 async function exchangeForUser(
   provider: EnterpriseIdentityProvider,
   ca: string,
@@ -370,14 +339,10 @@ describe('the enterprise provider', () => {
     const started = await start()
     const ca = await caOf(started)
 
-    // The provider's default answer carries no preferred_username: a provider
-    // started without a claim-strategy journey asserts nothing about it.
     const unset = await exchangeForUser(started, ca)
     expect(unset.idToken).not.toHaveProperty('preferred_username')
     expect(unset.userinfo).not.toHaveProperty('preferred_username')
 
-    // A claim-strategy journey varies the claim between sign-ins. The very
-    // next round trip carries it in both answers the product may read.
     started.setPreferredUsername('annsmith')
     const set = await exchangeForUser(started, ca)
     expect(set.idToken).toMatchObject({

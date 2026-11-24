@@ -1,110 +1,3 @@
-/**
- * J13 -- a deployer stands the deployment up on a fresh volume and hands it to
- * the operator the seed wrote.
- *
- * This is a fixture-type journey, not a pure browser one, by the requirements
- * author's ruling. The local tier cannot run the container entrypoint or reach
- * the Fly proxy, a real SMTP relay or a real OAuth application, so the parts
- * that are deployment machinery are driven as commands and the parts that are
- * product behaviour are driven in the browser:
- *
- *  - Command side (fixtures/deploy-server.ts): the default binary is built by
- *    the global setup; the fixture renders the deployment template
- *    (deploy/fly.yaml.tmpl) onto a temporary volume, runs the binary's own
- *    `sqlite seed`, then starts `sqlite serve` from that volume. The operations
- *    probes and the merged API document are read by HTTP from the operations
- *    listener, the login discovery document is read from the backend origin,
- *    and the first-run signing key's permission is read from the volume. This
- *    is the allowance the e2e README records for fixture-type journeys; no
- *    browser behaviour is replaced by it.
- *  - Browser side: one sign-in, driven with clicks and keys only. An anonymous
- *    viewer opens the protected account path and meets the sign-in surface; the
- *    seeded operator signs in with the username and password the seed wrote and
- *    the same path resumes with its content. The header admin entry and the
- *    home admin card appear; the account page shows the profile, the sign-in
- *    identifier and the standing, non-dismissible email notice; the admin
- *    shows its grouped navigation and the roster-derived overview; and a
- *    management write from the still-unproved operator is refused with the
- *    guidance to verify the address on the account page.
- *
- * Not covered here, and why:
- *
- *  - The container entrypoint itself, including its secret injection and its
- *    requirement checks (REQ-deployment-015, 024, 025, 027), is not executed.
- *    The fixture renders the same template and runs seed then serve, but the
- *    entrypoint's own missing-secret refusals, value validation and write of
- *    the rendered document are shell behaviour the tier does not reproduce.
- *    REQ-deployment-026's missing/short encryption-key refusals belong to the
- *    same startup path and are likewise not driven.
- *  - A real SMTP relay (REQ-deployment-028, 029): no message is sent, so the
- *    success and failure records of an external call and the redaction of their
- *    fields are not observed. The rendered configuration points at a loopback
- *    relay that is never reached.
- *  - The Fly proxy and the forwarded client-address behaviour are outside the
- *    local harness.
- *  - Seed's ordering, idempotency and operator-overwrite protections
- *    (REQ-deployment-009, 010, 011) need a second seed run and a settings write
- *    through the admin. This operator is unverified, so its write is refused
- *    before any value changes; the restart half of the journey is not driven.
- *  - Seed's alternate failure paths (REQ-deployment-013, 014) are not on this
- *    journey's main line.
- *  - REQ-deployment-001's single-executable claim is exercised for the HTTP and
- *    one-shot-command halves (the same binary seeds and serves page and API),
- *    but not for the in-process job delivery its acceptance also names, so it
- *    is not claimed.
- *  - REQ-deployment-017's down-state clause (the probe still answers 200 while
- *    the database or a backend is down) is not driven: stopping a declared
- *    endpoint would reach around the product. The claim is the probe's positive
- *    half -- an unauthenticated GET on the separate operations listener that
- *    answers 200 without a credential.
- *  - REQ-signin-004 (the login surface's set is derived from the discovery
- *    document) cannot be discriminated here: a hardcoded surface that listed
- *    the same four methods would pass the same assertions, so it is not
- *    claimed.
- *
- * The claims that are narrower than the requirement text:
- *
- *  - REQ-deployment-002 is claimed for the same-origin half: page and API
- *    answer on the one backend origin. That the deployment publishes no second
- *    service port is a topology fact this local run cannot observe.
- *  - REQ-deployment-005 is asserted by the fixture's start: the run does not
- *    answer `use` until the ready record has been written after every module
- *    started.
- *  - REQ-deployment-006 is claimed for the first-run generation and the
- *    owner-only permission; the token-survives-restart half is not driven.
- *  - REQ-deployment-007 is claimed for a plaintext-password account whose seed
- *    entry names an email address and a username: the seed writes both, and the
- *    password login accepts the username while the address remains an unproved
- *    identifier. The hash-only credential form is not driven.
- *  - REQ-deployment-008 is claimed for the one active tenant the seed registers:
- *    the overview's roster-derived total and active counts report it.
- *  - REQ-platform-admin-001 is claimed for the operator's side: the admin
- *    entry and the home admin card appear and name the same target. The
- *    ordinary-member and impersonating-session cases are not driven.
- *  - REQ-platform-admin-006 is claimed narrowly: the identity group renders as
- *    a disclosure control and the tenants page is reachable from it. The
- *    platform-configuration group folds to its one served entry in this
- *    assembly (no SMS-template page is served), so its group heading is not
- *    observable here.
- *  - REQ-platform-admin-007 is claimed for the total/active/disabled counts;
- *    the empty-roster case is not driven.
- *  - REQ-deployment-018 is claimed for its positive half only: with every
- *    declared endpoint and the database answering, `/ready` answers 200 and its
- *    body says ready. The 503 case that names each failed part is not driven.
- *  - REQ-signin-001 is claimed for the discovery document's assembled entry
- *    set: the document lists exactly the four methods this assembly serves,
- *    each with its rendering kind. The appear/disappear-when-toggled half is
- *    not driven, because it needs a second assembly or a runtime switch this
- *    tier does not perform.
- *  - REQ-platform-admin-017 and REQ-signup-027 are claimed for the refusal of a
- *    human write from an unproved operator and the guidance it renders; the
- *    step-up retry that must still be refused is not driven.
- *
- * Expected copy is read from the shipped en-US bundles through
- * helpers/i18n.ts. The command-side assertions read the product's own reports
- * (seed's output, the operations documents, the file permission), which are the
- * product's answers rather than interface copy.
- */
 // @journey journey-deploy-and-operate.md
 // @covers REQ-deployment-002, REQ-deployment-003, REQ-deployment-004, REQ-deployment-005, REQ-deployment-006, REQ-deployment-007, REQ-deployment-008, REQ-deployment-012, REQ-deployment-017, REQ-deployment-018, REQ-deployment-019, REQ-signin-001, REQ-signin-006, REQ-signin-030, REQ-signup-027, REQ-platform-admin-001, REQ-platform-admin-006, REQ-platform-admin-007, REQ-platform-admin-017
 import type { Locator, Page } from '@playwright/test'
@@ -122,41 +15,26 @@ import {
 } from '../helpers/account-menu'
 import { copy } from '../helpers/i18n'
 
-// The settings table's type column renders only from its container's `lg`
-// width, so the desktop viewport here is wide enough for the item the refusal
-// step names.
+// The settings table renders its type column only from `lg`; keep the viewport wide enough for the item the refusal step names.
 test.use({ viewport: { width: 1920, height: 1080 } })
 
-/** The operator the deployment's seed writes. */
 const OPERATOR = deployOperator
 
-/** The entry document's one mount point: the bundle the binary embeds. */
 const ENTRY_DOCUMENT_MARKER = '<div id="root"></div>'
 
-/** The one declared setting the refused write targets, and its declared type. */
 const SETTING_KEY = 'ratelimit.limit'
 const SETTING_TYPE = 'int'
 
-/** A value inside the item's declared domain; the write is refused unwritten. */
 const NEW_VALUE = '150'
 
-/** The operation the merged document must carry from a module no command runs. */
 const UNRUN_MODULE_PATH = '/api/v1/system/sms/templates'
 const UNRUN_MODULE_NAME = 'sms.admin'
 
-/** One login method as the discovery document reports it. */
 interface DiscoveryMethod {
   readonly name: string
   readonly kind: string
 }
 
-/**
- * The login methods the deploy assembly serves, as the discovery document
- * reports them: the two social methods (redirect buttons), the passkey
- * ceremony, password and the log SMS carrier (each a form). These are the
- * document's own stable method names, not interface copy, so they are
- * literals. The list is sorted by method name, matching the document.
- */
 const DISCOVERY_METHODS = [
   { name: 'github', kind: 'redirect' },
   { name: 'google', kind: 'redirect' },
@@ -165,7 +43,6 @@ const DISCOVERY_METHODS = [
   { name: 'sms', kind: 'form' },
 ] as const
 
-/** The profile pane's heading, the page's one h1. */
 function profileHeading(page: Page): Locator {
   return page.getByRole('heading', {
     level: 1,
@@ -174,7 +51,6 @@ function profileHeading(page: Page): Locator {
   })
 }
 
-/** The profile pane's email card, which carries the verification surface. */
 function verificationSection(page: Page): Locator {
   return page.getByRole('region', {
     name: copy('demo', 'account.rows.label.email'),
@@ -182,7 +58,6 @@ function verificationSection(page: Page): Locator {
   })
 }
 
-/** The email-verification notice under the app bar. */
 function verificationBanner(page: Page, email: string): Locator {
   return page.getByRole('region', {
     name: `${copy('demo', 'verificationBanner.region')}: ${copy(
@@ -194,7 +69,6 @@ function verificationBanner(page: Page, email: string): Locator {
   })
 }
 
-/** The sign-in surface's page heading. */
 function signInHeading(page: Page): Locator {
   return page.getByRole('heading', {
     level: 1,
@@ -203,7 +77,6 @@ function signInHeading(page: Page): Locator {
   })
 }
 
-/** The home page's admin card, as the link that carries it. */
 function adminCard(page: Page): Locator {
   return page
     .getByRole('heading', {
@@ -214,7 +87,6 @@ function adminCard(page: Page): Locator {
     .locator('xpath=ancestor::a[1]')
 }
 
-/** The admin's navigation landmark (the platform navigation). */
 function adminNav(page: Page): Locator {
   return page.getByRole('navigation', {
     name: copy('adminUi', 'shell.navLabel'),
@@ -222,7 +94,6 @@ function adminNav(page: Page): Locator {
   })
 }
 
-/** The settings page's namespace navigation. */
 function namespaceNav(page: Page): Locator {
   return page.getByRole('navigation', {
     name: copy('adminUi', 'settings.nav.label'),
@@ -230,12 +101,10 @@ function namespaceNav(page: Page): Locator {
   })
 }
 
-/** The settings table. */
 function settingsTable(page: Page): Locator {
   return page.getByRole('table')
 }
 
-/** The table row of the setting the refused write targets. */
 function settingRow(page: Page): Locator {
   return settingsTable(page)
     .getByRole('row')
@@ -244,16 +113,10 @@ function settingRow(page: Page): Locator {
     })
 }
 
-/** The item's value field: the value cell is the draft input. */
 function valueField(page: Page): Locator {
   return page.getByRole('textbox', { name: SETTING_KEY, exact: true })
 }
 
-/**
- * One overview KPI's value. The label is one paragraph and the count the next
- * sibling, and both sit inside the admin's main landmark; scoping there keeps
- * the navigation's own "Tenants" group out of the answer.
- */
 function kpiValue(page: Page, label: string): Locator {
   return page
     .getByRole('main')
@@ -261,7 +124,6 @@ function kpiValue(page: Page, label: string): Locator {
     .locator('xpath=following-sibling::p[1]')
 }
 
-/** Parse one JSON answer, failing with the body when it is not JSON. */
 function jsonBody(answer: { readonly body: string }): Record<string, unknown> {
   try {
     return JSON.parse(answer.body) as Record<string, unknown>
@@ -278,22 +140,13 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
   const { page, server } = deploy
 
   await test.step('steps 3-4: the deploy assembly seeds a fresh volume and mints the signing key', async () => {
-    // The fixture has already run the binary's own seed on a volume that never
-    // saw a migration and started serve without a separate migrate step. The
-    // seed's report is the deployment's own answer about what it wrote; the
-    // same writes are exercised again by the sign-in and the roster count below.
     expect(server.seedOutput).toContain(
       `seeded: account ${OPERATOR.identifier}`,
     )
     expect(server.seedOutput).toContain('seeded: tenant system')
-    // The template seeds no business tenant: the operator administers the
-    // platform, and the only other tenant is the personal space the hook gives
-    // the seeded account.
     expect(server.seedOutput).not.toContain('seeded: tenant acme')
     expect(server.seedOutput).toContain('seeded: role system/platform-admin')
 
-    // The first run mints the token signing key on the volume with owner-only
-    // permission; the key's bytes are never read by the tier.
     expect(server.signingKeyMode).toBe(0o600)
   })
 
@@ -302,29 +155,18 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
     expect(root.status).toBe(200)
     expect(root.body).toContain(ENTRY_DOCUMENT_MARKER)
 
-    // An unknown extension-less page path answers the same entry document: the
-    // client-side router owns it.
     const unknownPage = await server.probe('/deploy/unknown/page')
     expect(unknownPage.status).toBe(200)
     expect(unknownPage.body).toBe(root.body)
 
-    // A named static resource that the bundle does not carry is a 404, not the
-    // entry document.
     const unknownAsset = await server.probe('/assets/not-a-built-asset.js')
     expect(unknownAsset.status).toBe(404)
     expect(unknownAsset.body).not.toBe(root.body)
 
-    // The API answers on the same published origin as the page.
     const methods = await server.probe('/api/v1/auth/methods')
     expect(methods.status).toBe(200)
     expect(methods.contentType).toContain('application/json')
 
-    // The discovery document lists exactly the methods this assembly serves
-    // and not one it does not: password, the log SMS carrier, the passkey
-    // ceremony and the two social methods, each with the kind that says how
-    // the surface renders it. The document is sorted by method name.
-    // (REQ-signin-001's runtime-toggle half is not driven; see the file
-    // header.)
     const discovery = jsonBody(methods)
     const entries = (discovery.methods as readonly DiscoveryMethod[]).map(
       ({ name, kind }) => ({ name, kind }),
@@ -337,8 +179,6 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
     await expect(signInHeading(page)).toBeVisible()
     expect(new URL(page.url()).pathname).toBe('/account')
 
-    // The methods the discovery document lists reach the surface: the password
-    // form and the two redirect methods this deploy assembly holds.
     await expect(
       page.getByRole('textbox', {
         name: copy('authUi', 'passwordSignIn.identifierLabel'),
@@ -370,8 +210,6 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
       }),
     ).toBeVisible()
 
-    // The sign-in surface is not the admin: the admin's navigation is
-    // absent while the viewer is anonymous.
     await expect(adminNav(page)).toHaveCount(0)
   })
 
@@ -393,19 +231,13 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
         exact: true,
       })
       .click()
-    // The sign-in form leaves the document when the session flips. A refused
-    // sign-in leaves it in place, and this wait then reports the failure.
     await identifier.waitFor({ state: 'detached' })
 
-    // The requested path is resumed; the account group address lands on its
-    // first pane, and that pane renders its content rather than the sign-in
-    // surface.
     expect(new URL(page.url()).pathname).toBe('/account/profile')
     await expect(signInHeading(page)).toHaveCount(0)
     await expandAccountRows(page)
     await expect(profileHeading(page)).toBeVisible()
 
-    // The tenant home carries both admin entries, and they name one target.
     await page
       .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
       .click()
@@ -416,9 +248,6 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
         exact: true,
       }),
     ).toBeVisible()
-    // The home admin card and the account menu's admin entry are two
-    // derivations of one target. The card is read before the menu opens: an
-    // open menu's backdrop hides the rest of the app from role queries.
     const card = adminCard(page)
     await expect(card).toBeVisible()
     const cardHref = await card.getAttribute('href')
@@ -433,9 +262,6 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
   })
 
   await test.step('step 8: the account page shows the profile and identifiers, and an unproved write is refused', async () => {
-    // Opening the account page directly (not through the notice's verify
-    // entry) is what the journey describes: the verification section waits for
-    // a manual send, so no code has been sent on this arrival.
     await page.goto(`${server.url}/account`)
     await expandAccountRows(page)
     await expect(profileHeading(page)).toBeVisible()
@@ -445,8 +271,6 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
       }),
     ).toHaveValue(OPERATOR.displayName)
 
-    // The unproved address is on the profile pane's email card as a contact,
-    // carrying its own unverified state.
     const emailCard = verificationSection(page)
     await expect(
       emailCard.getByText(OPERATOR.identifier, { exact: true }),
@@ -457,8 +281,6 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
       }),
     ).toBeVisible()
 
-    // The standing notice names the address, offers both entries and carries no
-    // close control.
     const banner = verificationBanner(page, OPERATOR.identifier)
     await expect(banner).toBeVisible()
     await expect(
@@ -475,8 +297,6 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
     ).toBeVisible()
     await expect(banner.getByRole('button')).toHaveCount(0)
 
-    // The section waits for the operator: the send control is offered and no
-    // send has happened on arrival.
     await selectAccountSection(page, 'profile')
     await expandAccountRows(page)
     const section = verificationSection(page)
@@ -497,8 +317,6 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
         }),
     ).toHaveCount(0)
 
-    // Enter the admin and attempt a settings write. The deployment registers
-    // only the platform's own organization, so the entry is offered here.
     await openAccountMenu(page)
     await adminEntry(page).click()
     await expect(adminNav(page)).toBeVisible()
@@ -536,9 +354,6 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
       })
       .click()
 
-    // The refusal renders the code's own text -- the guidance to verify the
-    // address on the account page -- and the draft stays in the field. The
-    // item did not move off the declaration.
     const refusal = copy('adminUi', 'errors.authn.contact_required')
     await expect(page.getByRole('alert').filter({ hasText: refusal }))
       .toBeVisible()
@@ -553,7 +368,6 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
   })
 
   await test.step('step 9: the admin shows its grouped navigation and the roster-derived overview', async () => {
-    // Back to the app, then in through the account menu's admin entry.
     await openAccountMenu(page)
     await backToApp(page).click()
     await expect(
@@ -574,8 +388,6 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
       }),
     ).toBeVisible()
 
-    // The navigation is grouped: the multi-entry identity group renders as a
-    // disclosure control, and the served pages are reachable from it.
     const nav = adminNav(page)
     await expect(
       nav.getByRole('button', {
@@ -589,18 +401,10 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
         exact: true,
       }),
     ).toBeVisible()
-    // The SSO provider page is not in the navigation: this deployment leaves
-    // authn.admin.sso.enabled unset, so the management module mounts no SSO
-    // group and the page's feature is absent. The entry's absence is read from
-    // the DOM, not from a collapsed disclosure.
     await expect(
       nav.getByRole('link', { name: copy('adminUi', 'sso.title'), exact: true }),
     ).toHaveCount(0)
 
-    // The overview's roster counts come from the deployment's tenant list. The
-    // seed registers the system tenant, and the personal-tenant hook gives the
-    // seeded operator its own space, so two active tenants stand in the roster
-    // and nothing is disabled or deleted.
     await expect(
       kpiValue(page, copy('adminUi', 'dashboard.kpi.tenants')),
     ).toHaveText('2')
@@ -616,7 +420,6 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
   })
 
   await test.step('step 10: the operations listener answers the liveness and readiness probes', async () => {
-    // Liveness reads nothing and answers success on every request.
     const healthOne = await server.probeOps('/health')
     expect(healthOne.status).toBe(200)
     expect(jsonBody(healthOne)).toMatchObject({ status: 'ok' })
@@ -624,7 +427,6 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
     expect(healthTwo.status).toBe(200)
     expect(jsonBody(healthTwo)).toMatchObject({ status: 'ok' })
 
-    // Readiness answers once every declared endpoint and the database answer.
     const ready = await server.probeOps('/ready')
     expect(ready.status).toBe(200)
     expect(jsonBody(ready)).toMatchObject({ status: 'ready' })
@@ -640,8 +442,6 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
     >
     const operation = paths[UNRUN_MODULE_PATH]?.get
     expect(operation).toBeDefined()
-    // The operation is tagged with its declaring module, which the deploy
-    // assembly imports for its contract but names in no command's run set.
     expect(operation?.tags ?? []).toContain(UNRUN_MODULE_NAME)
   })
 })

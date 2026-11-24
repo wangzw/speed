@@ -1,17 +1,3 @@
-/**
- * The Playwright test the deploy journey is written against.
- *
- * The deployment is the same e2e binary over its rendered template: this test
- * gets the one build the run shares on a temporary volume, seeded and served by
- * fixtures/deploy-server.ts.
- * The built-in page fixture is created after the server (the deploy fixture
- * names it second), so teardown closes the browser context before SIGTERM and
- * the process can drain.
- *
- * A failed test keeps the volume and attaches the process log, so the rendered
- * configuration, the sqlite file and the first-run signing key can be read
- * without rerunning it. A passing test removes the whole temporary directory.
- */
 import {
   test as base,
   expect,
@@ -64,8 +50,7 @@ export const test = base.extend<{
       await use(server)
     } finally {
       const failed = unexpected(testInfo)
-      // Attaching the evidence is best effort; stopping the server and
-      // removing its temporary directory is not.
+      // Attaching evidence is best effort; stopping the server and removing its temporary directory is not.
       try {
         if (failed) await attachFailure(testInfo, server)
       } finally {
@@ -74,8 +59,7 @@ export const test = base.extend<{
     }
   },
   deploy: async ({ deployServer, page }, use) => {
-    // Closing the context before SIGTERM is what lets the notification stream
-    // go away first; the hook runs ahead of the signal in server.stop.
+    // Close the browser context before SIGTERM so the notification stream's connection goes away first.
     deployServer.beforeStop(async () => {
       await page.context().close().catch(() => undefined)
     })
