@@ -20,7 +20,10 @@
  * exempted module is src/runtime-config.ts, whose
  * sole request reads the deployment's static runtime-config.json beside the
  * entry document -- a static asset, not an API call, that the runtime API
- * origin contract requires (docs/adr/adr-web-runtime-config.md).
+ * origin contract requires (docs/adr/adr-web-runtime-config.md). The
+ * no-native-disabled-control rule turns on over the same runtime src, with
+ * the shared implementation and the shared exemption list in
+ * web/eslint-rules/.
  *
  * The end-to-end tier under e2e/** is held to the honesty rules instead: it
  * drives the built product through a real browser, so network calls, route
@@ -44,6 +47,7 @@ export default [
       'speed/no-dangerous-html': 'error',
       'speed/no-double-feedback-region': 'error',
       'speed/no-literal-text': 'error',
+      'speed/no-native-disabled-control': 'warn',
     },
   },
   {

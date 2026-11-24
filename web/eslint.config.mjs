@@ -34,8 +34,17 @@
  * one WriteFeedbackRegion per control group: two regions in one component
  * can show two results at once. Its exemption list states which components
  * legitimately own several control groups, and the rule's scan test keeps
- * that list exactly equal to the tree. The react-hooks plugin
- * stays out: no stateful component exists outside ui-kit's controlled
+ * that list exactly equal to the tree. The no-native-disabled-control rule
+ * (web/eslint-rules/no-native-disabled-control.js, tested in
+ * web/eslint-rules/no-native-disabled-control.test.mjs) reports a `disabled`
+ * value that is not a literal and a `loading` value other than the literal
+ * false on a button-shaped MUI control: either renders natively disabled,
+ * and a focused control that becomes natively disabled drops focus to the
+ * document body. Its
+ * exemption list states which controls cannot hold focus at that moment,
+ * and the rule's scan test keeps that list exactly equal to the tree. The
+ * react-hooks plugin stays out: no stateful component exists outside
+ * ui-kit's controlled
  * set -- state belongs to the host and every interaction reports up
  * through callbacks, the FileUploader queue rendering from host-owned
  * rows props with the upload transport as host code -- and staying out
@@ -48,6 +57,7 @@ import { noDirectHttpRule } from './eslint-rules/no-direct-http.js'
 import { noDoubleFeedbackRegionRule } from './eslint-rules/no-double-feedback-region.js'
 import { noE2eBypassRule } from './eslint-rules/no-e2e-bypass.js'
 import { noLiteralTextRule } from './eslint-rules/no-literal-text.js'
+import { noNativeDisabledControlRule } from './eslint-rules/no-native-disabled-control.js'
 
 /**
  * Inline plugin holding the workspace's own rules. Flat config has no
@@ -63,6 +73,7 @@ const localPlugin = {
         'no-double-feedback-region': noDoubleFeedbackRegionRule,
         'no-e2e-bypass': noE2eBypassRule,
         'no-literal-text': noLiteralTextRule,
+        'no-native-disabled-control': noNativeDisabledControlRule,
       },
     },
   },
@@ -103,6 +114,7 @@ export default defineConfig(
       'speed/no-dangerous-html': 'error',
       'speed/no-double-feedback-region': 'error',
       'speed/no-literal-text': 'error',
+      'speed/no-native-disabled-control': 'warn',
     },
   },
   {

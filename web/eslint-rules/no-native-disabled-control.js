@@ -39,9 +39,8 @@
  *
  * Not judged, and why:
  *
- *   - `ActionButton` no longer accepts `disabled` or `loading`; once the
- *     deprecated fields are removed the type checker reports them, so lint
- *     does not need to.
+ *   - `ActionButton` accepts neither `disabled` nor `loading`; the type
+ *     checker reports either, so lint does not need to.
  *   - `Select`, `Autocomplete` and `TextField` are selection- or input-shaped
  *     controls. The coding standard keeps them natively disabled while a
  *     write is in flight (or read-only when they start the write), and each
@@ -55,18 +54,16 @@
  * it becomes unavailable; that is the whole criterion. Register the file
  * and the declaring component in `NATIVE_DISABLED_EXEMPTIONS` with one
  * English sentence stating why. There is no inline escape: the rule reads no
- * comments, and the enabling unit's workspace scan rejects an
- * `eslint-disable` comment that names this rule. An exemption suppresses
+ * comments, and the workspace scan in
+ * no-native-disabled-control.test.mjs rejects an `eslint-disable` comment
+ * that names this rule and runs with `noInlineConfig`, so no inline
+ * directive takes effect. An exemption suppresses
  * only `nonLiteralDisabled`; `loading` always has `ActionButton`'s `busy` as
  * its replacement.
  *
  * Scope is set by the eslint configuration (each package's runtime `src`
  * and the demo host's `src`; tests and test utilities are excluded there);
  * the rule does not judge paths itself.
- *
- * The rule lands unregistered: no config references it yet. The follow-up
- * unit registers it and turns it on as `error` in both configs. (This
- * paragraph is removed by that unit.)
  */
 
 import { displayFile } from './no-double-feedback-region.js'
