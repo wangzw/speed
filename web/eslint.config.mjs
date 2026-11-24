@@ -114,7 +114,7 @@ export default defineConfig(
       'speed/no-dangerous-html': 'error',
       'speed/no-double-feedback-region': 'error',
       'speed/no-literal-text': 'error',
-      'speed/no-native-disabled-control': 'warn',
+      'speed/no-native-disabled-control': 'error',
     },
   },
   {
