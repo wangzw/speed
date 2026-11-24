@@ -1,9 +1,3 @@
-/**
- * The route table's shape: the business slot at the root, the admin area
- * mounted under its prefix, and the admin-area predicate the shell switch
- * reads.
- */
-
 import { describe, expect, it } from 'vitest'
 import { FEATURE_NAMES } from '@speed/api-sdk/features'
 import {
@@ -41,8 +35,6 @@ import { organizationAdminShellRoutes } from './organization-admin.js'
 
 describe('the route table', () => {
   it('names the business slot, the account page and the notification center, all labelled but for the completion points beside the unlabelled callback', () => {
-    // The account entry declares its four panes as pages of their own, each
-    // its own declaration, plus the group address that redirects to one.
     expect(businessRoutes.map((route) => route.path)).toEqual([
       '/',
       ACCOUNT_PATH,
@@ -64,27 +56,17 @@ describe('the route table', () => {
     expect(labelled.has('/')).toBe(true)
     expect(labelled.has(ACCOUNT_PATH)).toBe(true)
     expect(labelled.has(NOTIFICATIONS_PATH)).toBe(true)
-    // The panes nest under the account entry rather than listing at the top
-    // level, so they carry no label of their own.
     for (const pane of Object.values(ACCOUNT_SECTION_PATHS)) {
       expect(labelled.has(pane), pane).toBe(false)
     }
-    // The callback is a completion point, not a navigation destination.
     expect(labelled.has(ACCOUNT_CALLBACK_PATH)).toBe(false)
-    // The transfer requests are reached from the account menu, not the
-    // navigation rail.
     expect(labelled.has(TRANSFER_REQUESTS_PATH)).toBe(false)
     expect(labelled.has(TRANSFER_REQUEST_PATH)).toBe(false)
   })
 
   it('carries each navigation entry its icon on the declaration itself', () => {
-    // The frame builds an entry from a NavItem (whose id is the declaration
-    // path) and looks the mark up through navIconFor; the icon therefore has
-    // to ride the same declaration that names the entry, not a parallel table.
     for (const route of businessRoutes) {
       if (route.label === undefined) {
-        // A completion point contributes no navigation entry, so it carries
-        // no mark either.
         expect(navIconFor(route.path), route.path).toBeUndefined()
         continue
       }
@@ -110,9 +92,6 @@ describe('the route table', () => {
       `${ADMIN_PREFIX}/audit`,
       `${ADMIN_PREFIX}/audit/:id`,
     ])
-    // Every labelled admin page carries a permission code; the detail
-    // routes are unlabelled (reached from a row, not the navigation) and
-    // inherit the guard of the list they belong to.
     for (const route of adminShellRoutes) {
       if (route.label !== undefined) {
         expect(route.permission, route.path).toBeTruthy()
@@ -123,8 +102,6 @@ describe('the route table', () => {
   it('renders the dashboard at the admin prefix itself, labelled', () => {
     const landing = routes.find((route) => route.path === ADMIN_PREFIX)
     expect(landing).toBeDefined()
-    // The admin root is the dashboard, a labelled page (it adds the
-    // admin's own first navigation entry).
     expect(landing?.label).toBeDefined()
     expect(ADMIN_LANDING_PATH).toBe(ADMIN_PREFIX)
   })
@@ -133,7 +110,6 @@ describe('the route table', () => {
     expect(authCallbackRoutes.map((route) => route.path)).toEqual([
       AUTH_CALLBACK_PATH,
     ])
-    // Unlabelled, so it adds no navigation entry.
     expect(authCallbackRoutes[0]?.label).toBeUndefined()
   })
 
@@ -141,10 +117,6 @@ describe('the route table', () => {
     expect(invitationRoutes.map((route) => route.path)).toEqual([
       `${INVITATION_PREFIX}/:token`,
     ])
-    // Unlabelled, so it adds no navigation entry; the app renders its page
-    // outside both shells (src/app.tsx). It carries no feature gate: the
-    // feature document is unreadable to an anonymous caller, and the landing
-    // is exactly what the anonymous invitee arrives for.
     expect(invitationRoutes[0]?.label).toBeUndefined()
     expect(invitationRoutes[0]?.requires).toBeUndefined()
   })
@@ -153,9 +125,6 @@ describe('the route table', () => {
     expect(passwordResetRoutes.map((route) => route.path)).toEqual([
       PASSWORD_RESET_PATH,
     ])
-    // Unlabelled, so it adds no navigation entry; the app renders its page
-    // outside both shells (src/app.tsx) because the viewer arrives without a
-    // session.
     expect(passwordResetRoutes[0]?.label).toBeUndefined()
     expect(passwordResetRoutes[0]?.requires).toBeUndefined()
   })
@@ -172,8 +141,6 @@ describe('the route table', () => {
         ).toBe(true)
       }
     }
-    // The table must actually exercise the vocabulary: the notification
-    // surface and every admin page are gated.
     expect(gated).toBeGreaterThan(0)
     expect(
       businessRoutes.find((route) => route.path === NOTIFICATIONS_PATH)
@@ -205,16 +172,11 @@ describe('the route table', () => {
       `${ORGANIZATION_ADMIN_PREFIX}/settings`,
     ])
     for (const route of organizationAdminShellRoutes) {
-      // The two management surfaces have disjoint path spaces: the admin
-      // predicate does not claim an organization page.
       expect(isAdminPath(route.path)).toBe(false)
     }
   })
 
   it('keeps the five organization declarations with their tenant-domain codes', () => {
-    // The organization surface stays at five pages; the roles page is its
-    // own tenant-domain declaration, not the platform permissions page, and
-    // the profile page is the tenant profile module's own read.
     expect(organizationAdminShellRoutes.map((route) => route.id)).toEqual([
       'organization-profile',
       'organization-invitations',
@@ -254,21 +216,12 @@ describe('isAdminPath', () => {
   })
 })
 
-/**
- * The dev server's proxy matcher, mirrored from vite: a key that begins with
- * `^` is a regular expression matched against the request URL (query string
- * included), and every other key is a `startsWith` test. Asserting through
- * this mirror is what makes a plain-string `/api/v1/auth` key fail here: under
- * `startsWith` it swallows `/authx`, and under the anchored form it does not.
- */
 function proxyMatches(key: string, url: string): boolean {
   return key.startsWith('^') ? new RegExp(key).test(url) : url.startsWith(key)
 }
 
-/** Every page path the route table declares, parameter patterns included. */
 const PAGE_PATHS = [...new Set(routes.map((route) => route.path))]
 
-/** The path prefixes the pages mount under, beside the route table's paths. */
 const PAGE_PREFIXES = [
   ADMIN_PREFIX,
   INVITATION_PREFIX,
@@ -281,8 +234,6 @@ describe('the backend prefix manifest', () => {
     expect(BACKEND_PREFIXES.length).toBeGreaterThan(0)
     for (const prefix of BACKEND_PREFIXES) {
       expect(prefix, `${prefix} is not an absolute path`).toMatch(/^\//)
-      // The root is the fallback endpoint's claim, not an API namespace: it
-      // would sit above every page path.
       expect(prefix, 'the manifest lists the root').not.toBe('/')
       expect(prefix, `${prefix} ends with a slash`).not.toMatch(/\/$/)
     }
@@ -309,21 +260,17 @@ describe('the backend prefix manifest', () => {
 
   it('generates one segment-anchored proxy key per claimed prefix', () => {
     const proxy = backendProxyRules('http://backend.test')
-    // One entry per prefix: no hand-written key rides beside the generated
-    // ones, and none is dropped.
     expect(Object.keys(proxy)).toHaveLength(BACKEND_PREFIXES.length)
     for (const prefix of BACKEND_PREFIXES) {
       const key = proxyKeyFor(prefix)
       expect(key.startsWith('^'), `${key} is not an anchored pattern`).toBe(true)
       expect(proxy[key]).toEqual({ target: 'http://backend.test' })
-      // Both URL shapes the app sends: a descendant path and a query.
       expect(proxyMatches(key, `${prefix}/x`), `${key} misses ${prefix}/x`).toBe(
         true,
       )
       expect(proxyMatches(key, `${prefix}?q`), `${key} misses ${prefix}?q`).toBe(
         true,
       )
-      // A longer first segment is a different namespace.
       expect(proxyMatches(key, `${prefix}x`), `${key} matches ${prefix}x`).toBe(
         false,
       )

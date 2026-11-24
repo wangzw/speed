@@ -1,12 +1,3 @@
-/**
- * The persistent email-verification notice under the app bar.
- *
- * It renders while GET /api/v1/auth/me's `verification.state` is pending,
- * names the target address, links to the verification page for both the
- * verify and change actions, and carries no dismiss control. A verified
- * account, and an account with no unproved email, shows no notice.
- */
-
 import { act, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { getAuthnProfileGetQueryKey } from '@speed/api-sdk'
@@ -25,7 +16,6 @@ import {
 
 const PROFILE_PATH = '/api/v1/auth/me'
 
-/** Binds a request function answering only the profile read. */
 function bindProfile(profile: AuthnProfileProfile): void {
   const request = async <T,>(path: string): Promise<T> => {
     if (path === PROFILE_PATH) {
@@ -62,12 +52,9 @@ describe('ContactVerificationBanner', () => {
     expect(
       screen.getByRole('link', { name: demoEnUS.verificationBanner.verify }),
     ).toHaveAttribute('href', `${ACCOUNT_PATH}?verify=1`)
-    // The two actions reach the same page with different intent: the change
-    // link asks the page to start in the change-address form.
     expect(
       screen.getByRole('link', { name: demoEnUS.verificationBanner.change }),
     ).toHaveAttribute('href', `${ACCOUNT_PATH}?change=email`)
-    // No close control: the notice stays until the address is proved.
     expect(within(region).queryByRole('button')).toBeNull()
   })
 
@@ -93,10 +80,6 @@ describe('ContactVerificationBanner', () => {
     bindProfile(profileWithVerification('verified', 'ada@x.test'))
     const { queryClient } = renderFrame()
 
-    // The notice is derived from the profile read, so the absence assertion
-    // is only meaningful after that read has answered. Wait for the query to
-    // reach success (its answer carries the verified state), then assert the
-    // region is gone. A read that is merely issued proves nothing.
     await waitFor(() =>
       expect(
         queryClient.getQueryState(getAuthnProfileGetQueryKey())?.status,
@@ -110,8 +93,6 @@ describe('ContactVerificationBanner', () => {
   })
 
   it('disappears once verification moves the profile to verified', async () => {
-    // The verify write invalidates the profile; the banner reads the same
-    // query, so the settled pending notice clears without a reload.
     const profile = profileWithVerification('pending', 'ada@x.test')
     bindProfile(profile)
     const { queryClient } = renderFrame()
@@ -140,8 +121,6 @@ describe('ContactVerificationBanner', () => {
     bindProfile(profileWithVerification('none', ''))
     const { queryClient } = renderFrame()
 
-    // Same rule as the verified case: settle the profile read before ruling
-    // the notice out, because the pending read renders no notice either.
     await waitFor(() =>
       expect(
         queryClient.getQueryState(getAuthnProfileGetQueryKey())?.status,

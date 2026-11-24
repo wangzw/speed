@@ -1,21 +1,3 @@
-/**
- * The organization admin area in the demo host: its entry derivation and its
- * route admission.
- *
- * The entry (the account menu's organization group and the home card) is one
- * derivation over the feature-narrowed organization declarations and the
- * tenant-domain permission set scoped to the current tenant. These cases
- * drive the real composition:
- * the app under the production provider stack, the caller tenant read and
- * the permission read scripted at the api-sdk request seam.
- *
- * The scoping rule is the point of several cases: the permission set is a
- * pair with the tenant it was read for. A pending read, a failed one, and a
- * set still tagged with the tenant the viewer just left all fail closed --
- * no entry and no page -- rather than pairing the new tenant with the old
- * tenant's permissions.
- */
-
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -53,8 +35,6 @@ const tAdmin = createSpeedI18n({
   namespaces: [{ namespace: ADMIN_UI_NAMESPACE, resources: adminUiResources }],
 }).getFixedT('en-US', ADMIN_UI_NAMESPACE)
 
-/** The features this surface's declarations need, and nothing else: the
- * notification surfaces stay out, so their reads never join the script. */
 const ORGANIZATION_FEATURES = readyFeatures(
   'authn.admin',
   'authn.invitations',
@@ -75,11 +55,8 @@ interface PermissionAnswer {
   readonly tenant: string[]
 }
 
-/** One row of the tenant roles read, in the shape the generated view carries. */
 type TenantRoleRow = AuthzTenantAdminRoleView
 
-/** A non-builtin, caller-manageable tenant role: the host's protected mark,
- * not the server's can_manage, is what must lock the row this suite renders. */
 function tenantRole(role: string): TenantRoleRow {
   return {
     role,
@@ -97,16 +74,11 @@ type PermissionsFor = (
   name: string | null,
 ) => PermissionAnswer | Promise<PermissionAnswer>
 
-/** Scripts the reads the entry and the two pages depend on, recording every
- * path asked for. */
 function scriptReads(options: {
   readonly tenants: readonly TenantRow[]
-  /** Whether the caller tenant read refuses instead of answering. */
   readonly tenantsFailed?: boolean
-  /** Answers the caller tenant read instead of the static list or failure. */
   readonly tenantsRead?: () => Promise<{ readonly tenants: readonly TenantRow[] }>
   readonly permissionsFor: PermissionsFor
-  /** The rows the tenant roles read answers; absent leaves it empty. */
   readonly roles?: readonly TenantRoleRow[]
   readonly impersonationGrant?: boolean
 }): { readonly requested: string[] } {
@@ -127,9 +99,6 @@ function scriptReads(options: {
       ).then((answer) => answer as T)
     }
     if (path === '/api/v1/auth/impersonation') {
-      // An in-force grant lets the tenant frame settle a current tenant even
-      // while impersonating, so the impersonation case exercises the entry's
-      // own condition rather than falling out at an unsettled tenant.
       return options.impersonationGrant === true
         ? Promise.resolve({
             grant: {
@@ -137,15 +106,11 @@ function scriptReads(options: {
               target: 'account-2',
               tenant: 'acme',
               started_at: '2026-10-15T12:00:00Z',
-              // Near enough to stay within the timer range and far enough
-              // not to expire during the case.
               ends_at: new Date(Date.now() + 60_000).toISOString(),
             },
           } as T)
         : Promise.reject(new Error('no impersonation'))
     }
-    // The remaining tenant-scoped reads of a rendered page answer empty
-    // pages; a page that is not mounted asks nothing.
     if (path.endsWith('/invitations')) {
       return Promise.resolve({ invitations: [], next_cursor: '' } as T)
     }
@@ -155,9 +120,6 @@ function scriptReads(options: {
     if (path.endsWith('/sso/providers')) {
       return Promise.resolve({ providers: [], next_cursor: '' } as T)
     }
-    // The organization roles page's tenant-scoped reads. The grants read stays
-    // disabled until a role is selected, but it answers here too so a case
-    // that drives the selection needs no second script.
     if (path.endsWith('/grants')) {
       return Promise.resolve({ grants: [] } as T)
     }
@@ -170,7 +132,6 @@ function scriptReads(options: {
     if (path.endsWith('/bindings')) {
       return Promise.resolve({ bindings: [] } as T)
     }
-    // The organization security page's tenant-settings read.
     if (path.endsWith('/settings')) {
       return Promise.resolve({
         settings: [],
@@ -178,7 +139,6 @@ function scriptReads(options: {
         read_only_reason: '',
       } as T)
     }
-    // The organization profile page's read.
     if (path.endsWith('/profile')) {
       return Promise.resolve({
         profile: {
@@ -202,32 +162,23 @@ function scriptReads(options: {
   return { requested }
 }
 
-/** Lets the scripted reads resolve and React commit the settlement they
- * cause, so an absence assertion runs against a settled tree rather than a
- * pending one. */
 async function flushReads(): Promise<void> {
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
 }
 
-/** Mounts the app at `path` under the production permission attach. */
 function mountApp(options: {
   readonly path?: string
   readonly tenants: readonly TenantRow[]
   readonly tenantsFailed?: boolean
-  /** Answers the caller tenant read instead of the static list or failure. */
   readonly tenantsRead?: () => Promise<{ readonly tenants: readonly TenantRow[] }>
   readonly permissionsFor: PermissionsFor
-  /** The rows the tenant roles read answers; absent leaves it empty. */
   readonly roles?: readonly TenantRoleRow[]
   readonly impersonating?: boolean
   readonly impersonationGrant?: boolean
-  /** Mount the app with no session, as a fresh visitor would arrive. */
   readonly anonymous?: boolean
-  /** The feature document to mount; the organization surface's features by default. */
   readonly features?: ReturnType<typeof authenticatedSnapshot>['features']
-  /** The feature document a retry settles to; absent settles back to the mounted one. */
   readonly featureRetry?: () => Promise<
     ReturnType<typeof authenticatedSnapshot>['features']
   >
@@ -257,12 +208,6 @@ function mountApp(options: {
   return { requested, session }
 }
 
-/**
- * One account menu's organization group, its entry names in order, the href of
- * its first entry, and the element carrying the group -- null when the menu
- * offers no organization section. The menu is closed again before the caller
- * moves on.
- */
 async function accountMenuOrganization(
   user: ReturnType<typeof userEvent.setup>,
   triggerId: string,
@@ -291,16 +236,12 @@ async function accountMenuOrganization(
   return { group, names, firstHref }
 }
 
-/** Switches the current organization through the account menu: opens the
- * header menu, expands the current organization's row, and picks `name`. */
 async function switchOrganization(
   user: ReturnType<typeof userEvent.setup>,
   name: string,
 ): Promise<void> {
   await user.click(screen.getByTestId('user-menu-trigger'))
   const menu = await screen.findByRole('menu')
-  // The menu's first row names the current organization and expands to the
-  // others; the pick closes the menu.
   await user.click(
     within(menu).getByRole('menuitem', {
       name: getCurrentTenantName() ?? '',
@@ -309,14 +250,9 @@ async function switchOrganization(
   await user.click(await screen.findByRole('menuitem', { name }))
 }
 
-/** The organization group on both account-menu surfaces (the header's and the
- * sidebar's), plus the home card beside them. Every case reads both surfaces,
- * so a group that survives in one of them cannot pass as absent. `card` is
- * null unless the card is on the settled page. */
 async function organizationEntry(
   user: ReturnType<typeof userEvent.setup>,
   options: {
-    /** Waits for the groups to appear (the admission may still be settling). */
     readonly waitForGroup?: boolean
   } = {},
 ): Promise<{
@@ -349,7 +285,6 @@ async function organizationEntry(
   return { header, sidebar, card }
 }
 
-/** The entry is offered by neither account menu, and the home card is absent. */
 function expectOrganizationAbsent(
   entry: Awaited<ReturnType<typeof organizationEntry>>,
 ): void {
@@ -358,7 +293,6 @@ function expectOrganizationAbsent(
   expect(entry.card).toBeNull()
 }
 
-/** The four organization entries' labels, in the declarations' order. */
 const ORGANIZATION_ENTRY_LABELS = [
   tAdmin('organization.nav.profile'),
   tAdmin('organization.nav.invitations'),
@@ -367,7 +301,6 @@ const ORGANIZATION_ENTRY_LABELS = [
   tAdmin('organization.nav.settings'),
 ] as const
 
-/** Every organization permission, so all five declarations are openable. */
 const ALL_ORGANIZATION_PERMISSIONS = [
   'authn.membership.manage',
   'authn.idp.manage',
@@ -398,28 +331,20 @@ describe('the organization admin entry', () => {
     const entry = await organizationEntry(user, { waitForGroup: true })
     expect(entry.header.group).not.toBeNull()
     expect(entry.header.names).toEqual([...ORGANIZATION_ENTRY_LABELS])
-    // The group is named by aria-label alone: no caption is painted above its
-    // entries, so the menu carries no visible group title.
     expect(
       within(entry.header.group as HTMLElement).queryByText(
         demoEnUS.nav.organizationAdmin,
       ),
     ).toBeNull()
-    // Both surfaces carry the same section because they share one list.
     expect(entry.sidebar.names).toEqual([...ORGANIZATION_ENTRY_LABELS])
     expect(entry.card).toBeInTheDocument()
 
-    // The home card and the group's first entry are the two halves of the
-    // same entry: the card's anchor must open exactly the page the group
-    // lists first, or a card that drifts to another page passes unnoticed.
     const cardAnchor = entry.card?.closest('a')
     const firstHref = entry.header.firstHref
     expect(firstHref).toBe('/organization/admin/profile')
     expect(entry.sidebar.firstHref).toBe(firstHref)
     expect(cardAnchor?.getAttribute('href')).toBe(firstHref)
 
-    // The sidebar offers no organization control of its own any more: no
-    // landmark of the navigation column carries the group's name.
     const navigation = screen.getAllByRole('navigation')
     expect(navigation.length).toBeGreaterThan(0)
     for (const landmark of navigation) {
@@ -469,8 +394,6 @@ describe('the organization admin entry', () => {
       impersonating: true,
       impersonationGrant: true,
     })
-    // The grant settles the current tenant, so the surface has everything it
-    // would need but for the impersonation itself.
     await screen.findByText(demoEnUS.home.heading)
     await waitFor(() => expect(getCurrentTenant()).toBe('acme'))
     await flushReads()
@@ -481,7 +404,6 @@ describe('the organization admin entry', () => {
     const user = userEvent.setup()
     const { requested } = mountApp({
       tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
-      // A read that never answers: the entry must wait, not guess.
       permissionsFor: () => new Promise<PermissionAnswer>(() => undefined),
     })
     await screen.findByText(demoEnUS.home.heading)
@@ -507,8 +429,6 @@ describe('the organization admin entry', () => {
     })
     await screen.findByText(demoEnUS.home.heading)
     const beforeSwitch = await organizationEntry(user, { waitForGroup: true })
-    // Exactly the openable page: only invitations' code is held, so a group
-    // that also listed the un-openable declarations must fail here.
     expect(beforeSwitch.header.names).toEqual([
       tAdmin('organization.nav.invitations'),
     ])
@@ -518,8 +438,6 @@ describe('the organization admin entry', () => {
 
     await switchOrganization(user, 'globex')
 
-    // The switch clears the tenant domain and the read for globex has not
-    // answered: the old tenant's set must not stand in for the new tenant.
     await waitFor(() => expect(getCurrentTenant()).toBe('globex'))
     const whileStale = await organizationEntry(user)
     expect(whileStale.header.group).toBeNull()
@@ -560,8 +478,6 @@ describe('the organization admin entry', () => {
       await user.click(screen.getByTestId('user-menu-trigger'))
       await user.click(await screen.findByRole('menuitem', { name: label }))
       await waitFor(() => expect(window.location.pathname).toBe(path))
-      // The menu is dismissed by the activation, so the next entry starts
-      // from a closed menu.
       await waitFor(() =>
         expect(screen.queryByRole('menu')).not.toBeInTheDocument(),
       )
@@ -599,9 +515,6 @@ describe('the organization admin entry', () => {
         throw new Error(`the organization group has no entry at index ${index}`)
       }
       expect(item).toHaveTextContent(label)
-      // An entry is a real link: its href is the route the declaration names,
-      // so a modified click, a middle click and a copied address all reach
-      // the same page without the app intercepting them.
       expect(item.tagName).toBe('A')
       expect(item).toHaveAttribute('href', path)
     })
@@ -622,11 +535,6 @@ describe('the organization admin entry', () => {
     const item = await screen.findByRole('menuitem', {
       name: tAdmin('organization.nav.invitations'),
     })
-    // jsdom has no navigation implementation and reports the browser's
-    // follow-up as a warning. The listener runs after React's root handler,
-    // so route-kit has already judged the click; it records whether the app
-    // cancelled the browser's own action before keeping jsdom from attempting
-    // the navigation route-kit left to the browser.
     let preventedByTheApp = true
     const cancelBrowserNavigation = (event: Event): void => {
       preventedByTheApp = event.defaultPrevented
@@ -638,13 +546,7 @@ describe('the organization admin entry', () => {
     } finally {
       document.removeEventListener('click', cancelBrowserNavigation)
     }
-    // A modified click is the browser's: the app must not have called
-    // preventDefault before this listener ran. A regression that intercepts
-    // it (opening the page in place instead of a new tab) fails here.
     expect(preventedByTheApp).toBe(false)
-    // route-kit declines the modified click and leaves it to the browser;
-    // jsdom does not follow the anchor, so the app's location stays put. The
-    // surface still dismisses itself.
     expect(window.location.pathname).toBe('/')
     await waitFor(() =>
       expect(screen.queryByRole('menu')).not.toBeInTheDocument(),
@@ -672,8 +574,6 @@ describe('the organization admin route admission', () => {
     const { requested } = mountApp({
       path: '/organization/admin/invitations',
       tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
-      // SSO is openable; invitations is not. The guard redirects to the
-      // first openable declaration.
       permissionsFor: () => ({ platform: [], tenant: ['authn.idp.manage'] }),
     })
     await waitFor(() =>
@@ -682,7 +582,6 @@ describe('the organization admin route admission', () => {
     expect(
       await screen.findByRole('heading', { name: tAdmin('sso.title') }),
     ).toBeInTheDocument()
-    // The unheld page's reads were never issued.
     expect(
       requested.some((path) => path.endsWith('/invitations')),
     ).toBe(false)
@@ -706,13 +605,9 @@ describe('the organization admin route admission', () => {
     )
     await user.type(email, 'draft@example.com')
 
-    // A switch inside the organization area takes the viewer home; the page
-    // unmounts with its draft.
     await switchOrganization(user, 'globex')
     await waitFor(() => expect(window.location.pathname).toBe('/'))
 
-    // Re-entering under the new tenant starts a fresh page: the draft did
-    // not cross the switch. The entry lives in the account menu.
     await user.click(screen.getByTestId('user-menu-trigger'))
     await user.click(
       await screen.findByRole('menuitem', {
@@ -732,7 +627,6 @@ describe('the organization admin route admission', () => {
       tenantsFailed: true,
       permissionsFor: () => ({ platform: [], tenant: [] }),
     })
-    // A failed read is not a pending one: the surface must not spin forever.
     expect(
       await screen.findByRole('heading', {
         level: 1,
@@ -746,12 +640,8 @@ describe('the organization admin route admission', () => {
       }),
     ).toBeInTheDocument()
 
-    // A failed read offers no entry either: neither account menu carries the
-    // organization group, and the home card is absent.
     expectOrganizationAbsent(await organizationEntry(user))
 
-    // The retry re-issues the read that failed rather than leaving the page
-    // stuck on a failure the viewer cannot clear.
     const before = requested.filter((path) => path === SELF_TENANTS_PATH).length
     await user.click(
       screen.getByRole('button', {
@@ -778,8 +668,6 @@ describe('the organization admin route admission', () => {
         name: demoEnUS.organization.accessFailed.title,
       }),
     ).toBeInTheDocument()
-    // The denied redirect is reserved for a known empty set: an unknown one
-    // stays on the organization URL with a retry.
     expect(window.location.pathname).toBe('/organization/admin/invitations')
     expect(
       screen.getByRole('button', {
@@ -787,8 +675,6 @@ describe('the organization admin route admission', () => {
       }),
     ).toBeInTheDocument()
 
-    // An unknown permission set offers no entry: the organization group is
-    // absent from both account menus and the home card is gone.
     expectOrganizationAbsent(await organizationEntry(user))
   })
 
@@ -803,9 +689,6 @@ describe('the organization admin route admission', () => {
         tenant: ['authn.membership.manage'],
       }),
     })
-    // A failed feature document is unknown, not a denial: the organization
-    // admission renders its retryable failure rather than redirecting a
-    // possible manager home.
     expect(
       await screen.findByRole('heading', {
         level: 1,
@@ -834,9 +717,6 @@ describe('the organization admin route admission', () => {
       path: '/organization/admin/invitations',
       tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
       features: { state: 'failed', error: new Error('feature read refused') },
-      // The real session publishes `pending` synchronously when the retry
-      // starts; holding this promise keeps the case in that state so the
-      // waiting view's own focus can be observed.
       featureRetry: () => featureRetry,
       permissionsFor: () => ({
         platform: [],
@@ -849,9 +729,6 @@ describe('the organization admin route admission', () => {
 
     await user.click(retry)
 
-    // The failure page and its retry control unmounted with the pending
-    // document. The waiting view that replaced them holds the focus: it is
-    // never left on the document body.
     expect(document.activeElement).not.toBe(document.body)
     expect(document.activeElement).toHaveAccessibleName(
       demoEnUS.organization.accessPending,
@@ -861,8 +738,6 @@ describe('the organization admin route admission', () => {
       settleFeatures({ state: 'failed', error: new Error('still unavailable') })
     })
 
-    // The re-read failed again: the failure page returns and hands the focus
-    // back to the retry control that started it.
     const retryAgain = await screen.findByRole('button', {
       name: demoEnUS.organization.accessFailed.retry,
     })
@@ -903,9 +778,6 @@ describe('the organization admin route admission', () => {
       settleFeatures(ORGANIZATION_FEATURES)
     })
 
-    // The retry settled the admission into the page it retried for: the
-    // waiting view gives the focus to the page's own entry, as a whole-page
-    // swap does.
     const heading = await screen.findByRole('heading', {
       name: tAdmin('invitations.title'),
     })
@@ -941,8 +813,6 @@ describe('the organization admin route admission', () => {
       demoEnUS.organization.accessPending,
     )
 
-    // A connected control the operator moved to while the re-read was in
-    // flight: the returning failure page must leave it alone.
     const elsewhere = document.createElement('button')
     elsewhere.textContent = 'elsewhere'
     document.body.appendChild(elsewhere)
@@ -1052,7 +922,6 @@ describe('the organization admin route admission', () => {
     mountApp({
       path: '/organization/admin/invitations',
       tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
-      // A known, empty tenant permission set: a member, not a fault.
       permissionsFor: () => ({ platform: [], tenant: [] }),
     })
     await waitFor(() => expect(window.location.pathname).toBe('/'))
@@ -1068,8 +937,6 @@ describe('the organization admin route admission', () => {
     mountApp({
       path: '/organization/admin/invitations',
       tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
-      // The feature document is ready but serves none of the organization
-      // declarations: narrowing leaves no page to admit.
       features: readyFeatures(),
       permissionsFor: () => ({
         platform: [],
@@ -1095,7 +962,6 @@ describe('the organization admin route admission', () => {
       }),
     })
     await flushReads()
-    // An unsettled feature document admits nothing: no entry, no page.
     expectOrganizationAbsent(await organizationEntry(user))
     expect(
       screen.queryByRole('heading', { name: tAdmin('invitations.title') }),
@@ -1131,23 +997,15 @@ describe('the organization admin route admission', () => {
         name: tAdmin('organization.nav.roles'),
       }),
     ).toBeInTheDocument()
-    // Every read names the current tenant.
     expect(requested).toContain('/api/v1/tenants/acme/roles')
     expect(requested).toContain('/api/v1/tenants/acme/permissions')
-    // The page no longer reads the tenant's flat binding list: a role's
-    // holders are read from the role's own endpoint once a role is selected.
     expect(requested).not.toContain('/api/v1/tenants/acme/bindings')
-    // The page never reaches a platform asset.
     expect(requested.some((path) => path.startsWith('/api/v1/system'))).toBe(
       false,
     )
   })
 
   it('renders a host-configured protected role read-only', async () => {
-    // tenant-admin is the demo host's protected role (the seed writes and
-    // converges it). The read marks it non-builtin on purpose: the lock must
-    // come from the host's protectedRoles prop, not the server's builtin
-    // mark, so a page that dropped the prop would show its write controls.
     mountApp({
       path: '/organization/admin/roles',
       tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
@@ -1164,7 +1022,6 @@ describe('the organization admin route admission', () => {
     ).toBeInTheDocument()
     expect(await screen.findByText('tenant-admin')).toBeInTheDocument()
 
-    // The protected row keeps only the read-only grants entry.
     expect(
       screen.getByRole('button', {
         name: tAdmin('permissions.roles.viewGrantsAria', {
@@ -1188,16 +1045,11 @@ describe('the organization admin route admission', () => {
       screen.getByText(tAdmin('permissions.roles.protectedReadOnly')),
     ).toBeInTheDocument()
 
-    // An ordinary tenant role keeps its write controls, so the absence above
-    // distinguishes the host's protected mark from an empty action column.
     const user = userEvent.setup()
     const editorActions = screen.getByRole('button', {
       name: tAdmin('permissions.roles.actionsAria', { role: 'editor' }),
     })
     expect(editorActions).toBeEnabled()
-    // A natively enabled button that carries aria-disabled is still
-    // unavailable to the operator, so "enabled" alone is not the liveness
-    // this row asserts.
     expect(editorActions).not.toHaveAttribute('aria-disabled', 'true')
     await user.click(editorActions)
     expect(
@@ -1227,8 +1079,6 @@ describe('the organization admin route admission', () => {
       }),
     ).toBeInTheDocument()
     expect(requested).toContain('/api/v1/tenants/acme/settings')
-    // Neither the platform settings read nor any other platform asset is
-    // issued by the tenant settings page.
     expect(requested).not.toContain('/api/v1/system/settings')
     expect(requested.some((path) => path.startsWith('/api/v1/system'))).toBe(
       false,
@@ -1239,8 +1089,6 @@ describe('the organization admin route admission', () => {
     const { requested } = mountApp({
       path: '/organization/admin/roles',
       tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
-      // Settings is openable and roles is not: the page guard redirects to
-      // the admission's first enterable declaration.
       permissionsFor: () => ({
         platform: [],
         tenant: ['settings.tenant.read'],
@@ -1254,12 +1102,10 @@ describe('the organization admin route admission', () => {
         name: tAdmin('organization.nav.settings'),
       }),
     ).toBeInTheDocument()
-    // The denied page's reads were never issued.
     expect(requested).not.toContain('/api/v1/tenants/acme/roles')
   })
 
   it('names the organization first in the breadcrumb without linking it', async () => {
-    // The organization's display name is the caller tenant list's name.
     const organizationName = 'acme'
     mountApp({
       path: '/organization/admin/invitations',
@@ -1270,20 +1116,13 @@ describe('the organization admin route admission', () => {
       }),
     })
     await screen.findByRole('heading', { name: tAdmin('invitations.title') })
-    // The crumb is the one in the page header's breadcrumb landmark, not the
-    // navigation entry that shares its label.
     const trail = within(
       screen.getByRole('navigation', { name: 'Breadcrumb' }),
     )
-    // The trail starts at the organization, not at the tenant navigation's
-    // 「Home」 entry: it names the organization the pages belong to.
     expect(
       trail.queryByRole('link', { name: demoEnUS.nav.home }),
     ).toBeNull()
     expect(trail.getByText(organizationName)).toBeInTheDocument()
-    // The organization step is not a destination. The surface has no root
-    // page, so linking it could only send the viewer to the tenant home
-    // under the organization's name.
     expect(
       trail.queryByRole('link', { name: organizationName }),
     ).toBeNull()

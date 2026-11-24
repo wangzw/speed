@@ -1,28 +1,3 @@
-/**
- * The anonymous password reset page.
- *
- * auth-ui's PasswordResetScreen is the surface; this page is the host half the
- * screen leaves open: it reads the deployment's published reset channels from
- * the same discovery document the sign-in surface reads, binds the reset
- * operations to the app's generated API surface, and names the way back to
- * sign-in. The screen uses the session only for the human-verification gate --
- * an anonymous visitor has none -- so the page must sit outside both shells
- * (src/app.tsx), where no tenant context or authenticated frame is needed.
- *
- * The channels are a deployment fact: the discovery document's
- * `password_reset.methods`, published only while the switch is open, the audit
- * is present and the channel is assembled. An absent or closed member reads as
- * no channel, and the screen then renders its unavailable notice rather than
- * offering a send the server would refuse. The page waits for that read before
- * it mounts the screen, because the screen captures the resume operation once
- * at mount and cannot start a resume after a later channel list arrives.
- *
- * A password-policy refusal stays on the proved surface (the screen keeps the
- * record verified), so the page exposes no retry of its own. A settled reset
- * shows the screen's done state; leaving it through "Back to sign in" returns
- * the viewer to the anonymous sign-in surface at the deployment root.
- */
-
 import { useEffect, useState } from 'react'
 import type { ReactElement } from 'react'
 import Box from '@mui/material/Box'
@@ -45,7 +20,6 @@ import {
 } from '../app-api/index.js'
 import { useAppServices } from '../app-services.js'
 
-/** The reset channels this client renders, in the deployment's order. */
 function publishedChannels(
   document: AuthnMethodList,
 ): readonly PasswordResetChannel[] {
@@ -58,13 +32,6 @@ function publishedChannels(
   )
 }
 
-/**
- * The reset operations over the app's generated API surface. Each maps the
- * generated wire shape onto the screen's own: the state names, the deadlines
- * in whole seconds, and the snake_case request bodies. `currentReset` lets a
- * reload resume the record the reset cookie names; `abandonReset` is the
- * screen's best-effort cleanup on the way back to sign-in.
- */
 const operations: PasswordResetOperations = {
   async requestReset(input) {
     const state = await authnLoginPasswordResetStart({
@@ -103,13 +70,10 @@ const operations: PasswordResetOperations = {
   },
 }
 
-/** The anonymous reset page: the deployment's channels in a centered card. */
 export function PasswordResetPage(): ReactElement {
   const { session } = useAppServices()
   const { t } = useTranslation(AUTH_UI_NAMESPACE)
   const navigate = useNavigate()
-  // null means the discovery read has not settled. An empty list is a settled
-  // answer: the deployment offers no channel, and the screen says so.
   const [channels, setChannels] = useState<readonly PasswordResetChannel[] | null>(
     null,
   )
@@ -120,8 +84,6 @@ export function PasswordResetPage(): ReactElement {
         if (!cancelled) setChannels(publishedChannels(document))
       },
       () => {
-        // A discovery read that fails is not a published channel: the surface
-        // renders its unavailable notice rather than a send it cannot make.
         if (!cancelled) setChannels([])
       },
     )

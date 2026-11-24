@@ -50,12 +50,8 @@ describe('the caller time scale', () => {
   })
 
   it.each([
-    // A decimal literal that overflows to Infinity: the finite check is what
-    // refuses it, so deleting that check lets it through here.
     '1e999',
-    // Not a decimal literal at all.
     'NaN',
-    // Decimal, but below the floor.
     '-2',
   ])('refuses %s, which is not a usable scale', (raw) => {
     expect(() => parseGateTimeScale(raw)).toThrow(

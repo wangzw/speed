@@ -1,26 +1,3 @@
-/**
- * Copy-out guards for the skeleton's manifest and its suites.
- *
- * The demo host is both a workspace member (every repository gate runs it) and
- * the starting point a product copies out of the repository. Those two roles
- * pull in opposite directions: inside the repository a sibling resolves through
- * the workspace, while a copy outside it has only the published @speed
- * packages from the registry. Three properties keep the second role honest
- * without a copy:
- *
- * - no dependency specifier uses the workspace protocol, so `pnpm install`
- *   works from a registry alone;
- * - every @speed package a non-test source file imports is a declared runtime
- *   dependency, so nothing resolves through a hoisted workspace link by
- *   accident;
- * - no test file reaches back into the repository's web/ tree for a package or
- *   fixture, which does not exist outside the repository;
- * - no source file imports the workspace's private test-support package
- *   (`@speed/test-utils`), which the registry never serves: the app carries
- *   its own copies under `src/test-utils/`, and a copied-out tree has no other
- *   way to resolve that specifier.
- */
-
 import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -41,7 +18,6 @@ const manifest = JSON.parse(
   readFileSync(join(appDir, 'package.json'), 'utf8'),
 ) as PackageManifest
 
-/** Every .ts/.tsx file under `dir`, recursively. */
 function sourceFiles(dir: string): string[] {
   const files: string[] = []
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -52,19 +28,10 @@ function sourceFiles(dir: string): string[] {
   return files
 }
 
-/** A suite file: vitest picks it up by this naming convention. */
 function isTestFile(path: string): boolean {
   return /\.(test|spec)\.tsx?$/.test(path)
 }
 
-/**
- * Every module specifier a source file refers to: static imports and
- * re-exports (`from '...'`), side-effect imports (`import '...'`), dynamic
- * imports (`import('...')`) and module augmentations (`declare module '...'`,
- * which still has to resolve). A deliberately small reader: the hosts'
- * sources only use these forms, and a parser would be a dependency the
- * skeleton does not need.
- */
 function importedSpecifiers(source: string): string[] {
   const patterns = [
     /\bfrom\s*['"]([^'"]+)['"]/g,
@@ -81,19 +48,10 @@ function importedSpecifiers(source: string): string[] {
   return specifiers
 }
 
-/** The package a bare specifier resolves to (`@speed/api-sdk/runtime` ->
- * `@speed/api-sdk`). */
 function packageName(specifier: string): string {
   return specifier.split('/').slice(0, 2).join('/')
 }
 
-/**
- * The one suite allowed to import a path inside web/: the alias drift test
- * reads the workspace map (tsconfig cannot import it), and the copy-out
- * instructions delete that test along with the alias configuration. Every
- * other reach into web/ depends on repository source a copied-out skeleton
- * does not have.
- */
 const REPOSITORY_ONLY_SUITE = 'alias-manifest.test.ts'
 
 describe('the manifest installs from a registry', () => {
@@ -154,9 +112,6 @@ describe('no suite reaches into the repository web/ tree', () => {
 
 describe('no source file imports the workspace test-support package', () => {
   it('uses the app-local test-utils instead of @speed/test-utils', () => {
-    // The package is private, so it has no registry version to name and a
-    // copied-out skeleton cannot install it. The check covers suites too: a
-    // test file is as unresolvable after the copy as a runtime one.
     const offenders: string[] = []
     for (const file of sourceFiles(srcDir)) {
       const where = relative(appDir, file)

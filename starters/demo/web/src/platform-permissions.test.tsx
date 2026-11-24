@@ -1,16 +1,3 @@
-/**
- * PlatformPermissions: the caller's own permission sets are attached to the
- * session once signed in.
- *
- * The component drives the auth state (auth-core's useAuthState) and the api
- * seam (the app's bound client); the session records what setPermissionSet
- * receives, so the suite asserts the attached value without a live server. The
- * read under test is GET /api/v1/authz/me/permissions, whose answer carries the
- * platform and tenant sets; an answered read attaches both (an empty pair is a
- * known empty set), and a failed read attaches nothing: the sets stay unknown
- * and the read's state reports the failure so a surface can retry it.
- */
-
 import { act, render, screen, waitFor } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -31,17 +18,13 @@ import {
 } from './test-utils/session.js'
 import type { TestSession } from './test-utils/session.js'
 
-/** The route the bridge reads: the caller's own permissions. */
 const PERMISSIONS_PATH = '/api/v1/authz/me/permissions'
 
-/** One permission set the component attached, with the domain it targeted. */
 interface AttachedSet {
   readonly domain: AuthDomain
   readonly perms: readonly string[] | null
 }
 
-/** A session that records every permission set attached to it, and the
- * snapshot it can be flipped to (the identity-change trigger). */
 function recordingSession(snapshot: AuthSnapshot = authenticatedSnapshot()): {
   readonly session: TestSession
   readonly attached: AttachedSet[]
@@ -57,10 +40,6 @@ function recordingSession(snapshot: AuthSnapshot = authenticatedSnapshot()): {
   return { session, attached }
 }
 
-/** Binds a request function that answers the permission read with `answer`
- * and records every path it was asked for. Any other path rejects, so a
- * bridge reading a different route fails the assertion rather than passing
- * with an answer it did not earn. */
 function bindPermissionsAnswer(answer: {
   platform: string[]
   tenant: string[]
@@ -77,9 +56,6 @@ function bindPermissionsAnswer(answer: {
   return requested
 }
 
-/** A consumer of the read's outcome, so a case can observe the failure the
- * surfaces see, the tenant the settled sets are tagged with, and drive the
- * retry. */
 function ReadProbe(): ReactElement {
   const read = usePermissionRead()
   const tenantSet = useTenantPermissionSet()
@@ -101,8 +77,6 @@ function ReadProbe(): ReactElement {
   )
 }
 
-/** A promise a case settles when it chooses, so it can move the tenant while
- * a read is in flight. */
 function deferred<T>(): {
   readonly promise: Promise<T>
   readonly resolve: (value: T) => void
@@ -114,7 +88,6 @@ function deferred<T>(): {
   return { promise, resolve }
 }
 
-/** Mounts the attach with the probe beside its content. */
 function mountWithProbe(session: TestSession) {
   return render(
     <PlatformPermissions session={session}>
@@ -125,14 +98,10 @@ function mountWithProbe(session: TestSession) {
 
 describe('PlatformPermissions', () => {
   afterEach(() => {
-    // The current tenant is a module-level cell; a case that moves it must not
-    // leave the next one reading from a tenant it never settled.
     setCurrentTenant(null)
   })
 
   it("attaches the caller's own platform and tenant permission sets", async () => {
-    // The guarded route needs a tenant name: the host settles the current
-    // tenant before the read, as the tenant frame does on a page load.
     setCurrentTenant('acme')
     const requested = bindPermissionsAnswer({
       platform: ['audit.read', 'tenant.read'],
@@ -147,8 +116,6 @@ describe('PlatformPermissions', () => {
       </PlatformPermissions>,
     )
 
-    // The re-read resets both sets to unknown immediately before issuing its
-    // read, so the known sets always follow the unknown ones.
     await waitFor(() =>
       expect(attached).toEqual([
         { domain: 'system', perms: null },
@@ -178,10 +145,6 @@ describe('PlatformPermissions', () => {
     attachSession(session)
     mountWithProbe(session)
 
-    // The read reset both sets to unknown and then failed: no empty set is
-    // attached, and the failure is what the surfaces see. The tagged state
-    // keeps the sets unknown too -- a failure is not an empty answer -- and
-    // names the tenant the failed attempt was for.
     await waitFor(() => expect(screen.getByTestId('read')).toHaveTextContent('failed'))
     expect(attached).toEqual([
       { domain: 'system', perms: null },
@@ -192,8 +155,6 @@ describe('PlatformPermissions', () => {
     expect(screen.getByTestId('tenant')).toHaveTextContent('acme')
     expect(screen.getByTestId('pending')).toHaveTextContent('idle')
 
-    // The retry issues the read again; its answer attaches the sets and
-    // clears the failure.
     answer = { platform: ['audit.read'], tenant: [] }
     act(() => {
       screen.getByRole('button', { name: 'retry' }).click()
@@ -213,8 +174,6 @@ describe('PlatformPermissions', () => {
   })
 
   it('attaches an answered empty document as a known empty set', async () => {
-    // Both domains empty is a read answer, not a failure: a member's known
-    // empty set is what the admin gate turns into the home redirect.
     setCurrentTenant('acme')
     const requested = bindPermissionsAnswer({ platform: [], tenant: [] })
 
@@ -250,15 +209,10 @@ describe('PlatformPermissions', () => {
     )
 
     await waitFor(() => expect(requested).toEqual([PERMISSIONS_PATH]))
-    // The old bridge treated GET /api/v1/system/permissions as the held set.
-    // Its path must not appear: that route answers every declared permission,
-    // not the ones this caller holds.
     expect(requested).not.toContain('/api/v1/system/permissions')
   })
 
   it('reads even when the feature document does not serve authz.admin', async () => {
-    // The permission read is caller-scoped and serves no optional capability,
-    // so its availability does not depend on the management surface's feature.
     setCurrentTenant('acme')
     const requested = bindPermissionsAnswer({
       platform: ['audit.read'],
@@ -304,8 +258,6 @@ describe('PlatformPermissions', () => {
         </PlatformPermissions>,
       )
 
-      // Flush the microtask the read would be deferred into; a bridge that
-      // ignored the feature state would have requested and attached by now.
       await act(async () => {
         await Promise.resolve()
       })
@@ -346,8 +298,6 @@ describe('PlatformPermissions', () => {
       ]),
     )
 
-    // A started impersonation swaps the effective account without the feature
-    // state moving; the read is keyed on the identity, not on the features.
     answer = { platform: [], tenant: [] }
     act(() => {
       session.set({ ...authenticatedSnapshot(), impersonating: true })
@@ -376,9 +326,6 @@ describe('PlatformPermissions', () => {
       if (path !== PERMISSIONS_PATH) {
         return Promise.reject(new Error(`unexpected request: ${path}`))
       }
-      // The tenant list answers for the tenant the request resolved to, and
-      // the host announces the current tenant from the cell, so the answer
-      // varies with it.
       const tenantName = getCurrentTenant()
       return Promise.resolve({
         platform: ['audit.read'],
@@ -394,17 +341,12 @@ describe('PlatformPermissions', () => {
       </PlatformPermissions>,
     )
 
-    // The guarded route answers 404 to a request that names no tenant, so an
-    // undecided current tenant is not read at all: the sets stay unknown
-    // rather than being attached as the fail-closed empty answer.
     await act(async () => {
       await Promise.resolve()
     })
     expect(requested).toEqual([])
     expect(attached).toEqual([])
 
-    // The host settles the tenant: the first read carries its name and
-    // attaches the set held there.
     act(() => {
       setCurrentTenant('acme')
     })
@@ -417,7 +359,6 @@ describe('PlatformPermissions', () => {
       ]),
     )
 
-    // A switch to another tenant reads again and attaches that tenant's set.
     act(() => {
       setCurrentTenant('globex')
     })
@@ -455,8 +396,6 @@ describe('PlatformPermissions', () => {
     await waitFor(() =>
       expect(screen.getByTestId('tenant-set')).toHaveTextContent('acme:read'),
     )
-    // The state names the tenant its sets belong to, so a consumer can tell a
-    // current answer from one read for another tenant.
     expect(screen.getByTestId('tenant')).toHaveTextContent('acme')
     expect(screen.getByTestId('perms')).toHaveTextContent('acme:read')
     expect(screen.getByTestId('pending')).toHaveTextContent('idle')
@@ -488,9 +427,6 @@ describe('PlatformPermissions', () => {
       expect(screen.getByTestId('tenant-set')).toHaveTextContent('acme:read'),
     )
 
-    // Switch while the new read is in flight: the tag names the new tenant and
-    // the sets are unknown until that tenant's answer lands. No frame carries
-    // globex with acme's set.
     act(() => setCurrentTenant('globex'))
     expect(screen.getByTestId('tenant')).toHaveTextContent('globex')
     expect(screen.getByTestId('tenant-set')).toHaveTextContent('unknown')
@@ -524,12 +460,9 @@ describe('PlatformPermissions', () => {
     mountWithProbe(session)
 
     await waitFor(() => expect(answers).toHaveLength(1))
-    // Move the tenant with the first read still in flight.
     act(() => setCurrentTenant('globex'))
     await waitFor(() => expect(answers).toHaveLength(2))
 
-    // The answer for acme lands late: neither the session nor the tagged
-    // state may take it.
     act(() =>
       answers[0]?.resolve({ platform: ['audit.read'], tenant: ['acme:read'] }),
     )

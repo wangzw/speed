@@ -1,15 +1,3 @@
-/**
- * The live notification subscription and the tenant context.
- *
- * The notification endpoints are tenant-scoped, and the current tenant comes
- * from the caller tenant list the root reads. In one tab a session ends and a
- * new account signs in (the walkthrough's login-mode case): the ended
- * session's tenant must not stay behind, and the subscription must not open --
- * nor the bell read its unread count -- against a tenant that has not settled.
- * A connection opened early carries a tenant the caller is not a member of and
- * is refused with a bare 404.
- */
-
 import { act, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
@@ -33,8 +21,6 @@ const UNREAD_PATH = '/api/v1/notifications/messages/unread-count'
 
 const PERSONAL_NAME = 'notice-member'
 
-/** The caller's own profile: no self-registration, so the verification gate
- * lets the tenant context settle. */
 const PROFILE = {
   account_id: 'account-1',
   kind: 'user',
@@ -57,7 +43,6 @@ const STREAM_FEATURES = [
 ] as const
 
 beforeEach(() => {
-  // The tenant a previous session in this tab left behind.
   setCurrentTenant('acme')
   setTenantNames(new Map([['acme', 'acme']]))
 })
@@ -91,25 +76,18 @@ describe('the live subscription and the tenant context', () => {
       }
       throw new Error(`unexpected ${method} ${path}`)
     }) as RequestFn)
-    // The assembled client's opener is observable; requests still go through
-    // the scripted runtime seam above.
     const api = Object.assign(createHarnessClient(), {
       openEventStream: openStream,
     })
     const session = createTestSession(ANONYMOUS_SNAPSHOT)
     renderDemoApp({ api, session })
 
-    // An authenticated session arrives in the same tab (a login between the
-    // phases of the walkthrough).
     act(() =>
       session.set(
         authenticatedSnapshot({ features: readyFeatures(...STREAM_FEATURES) }),
       ),
     )
 
-    // The roster refused and the caller tenant read is in flight: the ended
-    // session's tenant is gone and the new context has not settled, so neither
-    // tenant-scoped surface may open.
     await waitFor(() => expect(calls).toContain(`GET ${SELF_PATH}`))
     expect(getCurrentTenant()).toBeNull()
     expect(openStream).not.toHaveBeenCalled()
@@ -119,10 +97,6 @@ describe('the live subscription and the tenant context', () => {
       tenants: [{ name: PERSONAL_NAME, kind: 'personal' }],
     })
 
-    // The list settled the current tenant, and both surfaces follow. The
-    // harness renders the production stack, StrictMode included, so the
-    // subscriber mounts, is torn down and mounts again: exactly one of the
-    // two connections stays live.
     await waitFor(() => expect(openStream).toHaveBeenCalledTimes(2))
     expect(closes).toHaveLength(1)
     expect(openStream.mock.calls.length - closes.length).toBe(1)

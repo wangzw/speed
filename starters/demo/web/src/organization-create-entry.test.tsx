@@ -1,13 +1,3 @@
-/**
- * The self-service organization-creation entries and their gating.
- *
- * The home card follows the route layer's presence answer for
- * `/organizations/new` (itself gated on the org.create feature) and stays
- * out of an impersonating session. The account menu's organization row
- * carries the same destination in its expansion, and the host withholds
- * it when the feature is absent or an impersonation is in force.
- */
-
 import { beforeEach, describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -57,7 +47,6 @@ beforeEach(() => {
   setTenantNames(new Map())
 })
 
-/** Answers the caller tenant read with a personal and a business tenant. */
 function bindSelfTenants(): void {
   bindRequestFn(<T,>(path: string): Promise<T> => {
     if (path === '/api/v1/auth/me/tenants') {
@@ -279,8 +268,6 @@ describe('the self-service creation success flow', () => {
     await waitFor(() => {
       expect(window.location.pathname).toBe('/organization/admin/profile')
     })
-    // The hand-over recorded the name and made the new organization the
-    // current one before navigating.
     expect(getCurrentTenant()).toBe('team')
     expect(getRecordedTenantName('team')).toBe('team')
   })

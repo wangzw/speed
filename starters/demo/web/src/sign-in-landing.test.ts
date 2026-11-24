@@ -1,10 +1,3 @@
-/**
- * The landing a refused social sign-in comes back on: the code is read out of
- * the URL fragment without changing the URL, and the fragment is cleared
- * separately so the message survives one render and a reload does not repeat
- * it.
- */
-
 import { describe, expect, it } from 'vitest'
 import { clearCallbackFragment, readCallbackError } from './sign-in-landing.js'
 
@@ -73,9 +66,6 @@ describe('readCallbackError', () => {
   })
 
   it('ignores an address paired with a code that never names one', () => {
-    // The fragment is the browser's to forge; the server writes authn_email
-    // only for link-required, so any other pairing is dropped rather than
-    // shown as if the server had sent it.
     window.history.replaceState(
       {},
       '',
@@ -86,8 +76,6 @@ describe('readCallbackError', () => {
   })
 
   it('ignores an unrelated fragment with a malformed percent sequence', () => {
-    // A marketing or analytics fragment can carry a bare %. It must not throw
-    // out of the mount effect, and it must not be consumed as an error.
     window.history.replaceState({}, '', '/#discount=50%')
 
     expect(readCallbackError()).toBeUndefined()

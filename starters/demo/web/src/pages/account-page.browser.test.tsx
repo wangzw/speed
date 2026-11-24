@@ -1,25 +1,3 @@
-/**
- * The account page's layout in a real browser. Two rules need the browser
- * tier: a block's title and the first element of its content start on one
- * vertical line under every shipped theme preset, and the sessions block's
- * bulk action rides the block title's row -- inside the band the heading and
- * its description occupy -- above the session list rather than a standalone
- * action row. jsdom proves node ancestry; only the browser tier lays the page
- * out, so only here can the placements be told apart by their boxes.
- *
- * The panes' status chips are swept here too: every chip the four account
- * panes render is read from the live DOM, so one chip that carries primary
- * away from the current session is named beside the panes that are correct.
- *
- * A block header is one icon column fixed at 2rem followed by one spacing-unit
- * gap before the title; the block's content skips the same column and gap. The
- * content inset therefore has to read the theme's spacing base, not a fixed
- * number of spacing steps: a fixed step count only meets the title at the
- * default unit, and drifts by the unit's difference under a preset that changes
- * it. These cases measure the two left edges in Chromium on the security pane,
- * which renders both block shapes -- a titled AccountSection and an expandable
- * SecurityRow.
- */
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -65,17 +43,11 @@ beforeEach(() => {
   window.history.replaceState({}, '', '/')
 })
 
-/** The two left edges a block's first line is judged on, in CSS pixels. */
 interface RailEdges {
   readonly title: number
   readonly item: number
 }
 
-/**
- * The block's title's left edge and the left edge of the first element in its
- * content. The header grid is the section's first element child; the content
- * container is the last one.
- */
 function railEdges(section: HTMLElement, title: string): RailEdges {
   const header = section.firstElementChild as HTMLElement
   const heading = within(header).getByRole('heading', { name: title })
@@ -87,7 +59,6 @@ function railEdges(section: HTMLElement, title: string): RailEdges {
   }
 }
 
-/** Asserts the two edges sit on one line, naming the preset and block. */
 function expectSameRail(preset: string, block: string, edges: RailEdges): void {
   expect(
     Math.abs(edges.title - edges.item),
@@ -95,7 +66,6 @@ function expectSameRail(preset: string, block: string, edges: RailEdges): void {
   ).toBeLessThanOrEqual(0.5)
 }
 
-/** The rendered width of a field's outlined input box, in CSS pixels. */
 function outlinedFieldWidth(field: HTMLElement): number {
   const root = field.closest('.MuiOutlinedInput-root')
   if (root === null) {
@@ -117,9 +87,6 @@ describe('account page block rail in Chromium', () => {
         theme: { presets: themePresets, defaultPreset: preset.id },
       })
 
-      // The titled block: its first item is the sign-in kind list's own
-      // heading, so waiting on that heading measures settled content rather
-      // than the loading branch.
       const loginWays = await screen.findByRole('region', {
         name: LOGIN_WAYS_TITLE,
       })
@@ -132,9 +99,6 @@ describe('account page block rail in Chromium', () => {
         railEdges(loginWays, LOGIN_WAYS_TITLE),
       )
 
-      // The expandable row: open the password row, wait for its form's first
-      // field (the block is on a plain surface, so the row's own title is the
-      // only heading in it), then measure the body against the row title.
       const passwordRow = await screen.findByRole('region', {
         name: PASSWORD_TITLE,
       })
@@ -153,9 +117,6 @@ describe('account page block rail in Chromium', () => {
 })
 
 it('gives the identity row fields the contact form field width', async () => {
-  // The identity rows and the contact forms are form fields on one pane, so
-  // they share one reading width and stop at the same cap; the identity rows
-  // used to stop at half that while the forms beside them ran to 600px.
   await page.viewport(1280, 900)
   bindRequestFn(createBackend('data'))
   window.history.replaceState({}, '', ACCOUNT_SECTION_PATHS.profile)
@@ -188,11 +149,6 @@ it('gives the identity row fields the contact form field width', async () => {
   ).toBeLessThanOrEqual(0.5)
 })
 
-/**
- * The profile the scripted request function answers with. Only the display
- * name moves between reads; every other field is the constant shape the
- * account page reads.
- */
 function profileWith(displayName: string) {
   return {
     account_id: 'account-1',
@@ -212,10 +168,6 @@ function profileWith(displayName: string) {
 }
 
 it('propagates a saved display name to the sidebar account entry', async () => {
-  // The account entry reads the display name from the session snapshot, not
-  // from the profile query. A save that only refetches the profile would
-  // leave the entry on the old name, so this case drives the inline field's
-  // blur commit and waits for the session notification to reach the entry.
   await page.viewport(1280, 900)
   const fallback = createBackend('data')
   let storedName = 'Test User'
@@ -262,22 +214,15 @@ it('propagates a saved display name to the sidebar account entry', async () => {
   })
   await user.clear(field)
   await user.type(field, savedName)
-  // The inline field commits on blur.
   await user.tab()
 
   await waitFor(() => expect(trigger).toHaveTextContent(savedName))
   expect(trigger).not.toHaveTextContent('Test User')
-  // The visible initials and the display name both feed the accessible name
-  // (WCAG 2.5.3), so the new identity reaches both surfaces.
   expect(trigger).toHaveAccessibleName(`${savedInitials} ${savedName}`)
 })
 
 it('puts the sessions bulk action on the block title row, above the list', async () => {
-  // A wide viewport keeps the block header from wrapping, so the action and
-  // the title are measured on the one line the rule describes.
   await page.viewport(1000, 900)
-  // The data profile signs in on one device only; a second live session is
-  // the state that renders the bulk action at all.
   const backend = createBackend('data')
   const twoSessions = (async (
     path: string,
@@ -329,22 +274,12 @@ it('puts the sessions bulk action on the block title row, above the list', async
   const descriptionBox = description.getBoundingClientRect()
   const listBox = list.getBoundingClientRect()
 
-  // The action shares the title's row: it lies within the band the heading
-  // and its description occupy, never on a row of its own below them.
   expect(bulkBox.top).toBeGreaterThanOrEqual(titleBox.top - 1)
   expect(bulkBox.bottom).toBeLessThanOrEqual(descriptionBox.bottom + 1)
 
-  // It is lifted out of the list: the control ends above the list's own top
-  // edge, where the section's standalone action row used to sit.
   expect(bulkBox.bottom).toBeLessThanOrEqual(listBox.top + 1)
 })
 
-/**
- * Waits for the pane's own data-driven content, so the chip sweep below runs
- * on settled rows rather than on a loading skeleton. Each pane names the
- * element its reads fill; preferences carries no chip, so its time zone
- * select is the readiness signal there.
- */
 async function waitForSettledPane(
   section: (typeof ACCOUNT_SECTIONS)[number],
 ): Promise<void> {
@@ -378,9 +313,6 @@ async function waitForSettledPane(
 describe('account pane status chip colors', () => {
   for (const section of ACCOUNT_SECTIONS) {
     it(`uses success or default for status chips on the ${section} pane, with primary only on the current session`, async () => {
-      // A status chip states a completed positive state (success) or a
-      // neutral/unfinished one (default). Primary is not a status: it marks
-      // the session the viewer is using, and nowhere else.
       await page.viewport(1280, 900)
       bindRequestFn(createBackend('data'))
       const path = ACCOUNT_SECTION_PATHS[section]
@@ -402,7 +334,6 @@ describe('account pane status chip colors', () => {
           name.startsWith(`${chipClasses.root}-color`),
         )
         if (chip.classList.contains(chipClasses.colorPrimary)) {
-          // Primary is allowed on exactly one chip: the current session's.
           const currentSession =
             section === 'sessions' && text === accountEnUS.sessions.current
           if (!currentSession) {

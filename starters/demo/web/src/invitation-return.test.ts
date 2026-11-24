@@ -1,12 +1,3 @@
-/**
- * The invitation landing a password registration started from, as the account
- * page reads it after the address is proved.
- *
- * The invitation token is the landing's bearer secret: the module's whole
- * contract is that it lives in this tab's session storage, is returned only
- * for a shape that is an invitation landing, and is dropped once used.
- */
-
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   forgetInvitationLanding,
@@ -14,8 +5,6 @@ import {
   rememberInvitationLanding,
 } from './invitation-return.js'
 
-/** The module's storage slot, written literally as the persistence contract
- * a tampered or stale value has to pass. */
 const STORAGE_KEY = 'speed.invitation-return'
 
 const LANDING = '/invitations/tok-123'
