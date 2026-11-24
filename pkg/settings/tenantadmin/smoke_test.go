@@ -5,9 +5,8 @@ import (
 	"testing"
 )
 
-// TestTheTenantSettingsRoutesAreMountedAndAnswer holds the route set as a whole:
-// every one of the three routes is mounted and answers as its operation
-// declares, with the layer fixed to the tenant in the path.
+// TestTheTenantSettingsRoutesAreMountedAndAnswer checks that all three routes
+// are mounted and answer with the layer fixed to the path tenant.
 func TestTheTenantSettingsRoutesAreMountedAndAnswer(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = admissionDeclared()

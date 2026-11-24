@@ -11,9 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// bounded is a declaration whose items each carry a domain, over the kinds a
-// domain is ordinarily given: an integer, a duration, a defined string and a
-// sensitive text.
 type bounded struct {
 	Limit   int
 	Window  time.Duration
@@ -22,7 +19,6 @@ type bounded struct {
 	Note    string
 }
 
-// boundedChannel is a defined string, the ordinary shape of an enumeration.
 type boundedChannel string
 
 const (
@@ -63,17 +59,8 @@ func boundedTable(t *testing.T) *keyTable {
 	return tableOf(t, boundedModule(boundedDefaults(), boundedItems()))
 }
 
-// A value outside the domain its declaration gives is refused before the row
-// is written, as a value of the wrong type is, but under ErrInvalidValue: the
-// value is of the declared type, and it is not one the declaring module acts
-// on. The refusal names the key and the rule, and quotes the text the value
-// would have been stored as. Nothing changes: no row, no change event, and a
-// read goes on answering what it answered.
-//
-// The domain is judged on the value held to the declared type, so the forms an
-// administrative endpoint hands the store — a number decoded from JSON, a text
-// — are refused as the typed value is. A value the type itself refuses is
-// still the type's refusal.
+// TestSetRefusesAValueOutsideTheDeclaredDomain checks that a value outside its
+// item's domain is refused with ErrInvalidValue before the row is written.
 func TestSetRefusesAValueOutsideTheDeclaredDomain(t *testing.T) {
 	bus := newRecordingBus()
 	store, _ := storeOf(t, boundedTable(t), bus)
@@ -144,12 +131,8 @@ func TestSetRefusesAValueOutsideTheDeclaredDomain(t *testing.T) {
 	}
 }
 
-// The predicate is handed a value of exactly the declared type, whatever form
-// the write arrived in: a []string written to a textList item — a value only
-// assignable to the declared type, which the write accepts as it is — reaches
-// it as a textList, and so does a text the type decodes. A predicate typed
-// for the declared type would otherwise never see the value it admits, and
-// every write in that form would be refused.
+// TestADomainIsHandedTheValueInTheDeclaredType checks that the predicate
+// receives a value of exactly the declared type whatever form the write took.
 func TestADomainIsHandedTheValueInTheDeclaredType(t *testing.T) {
 	var seen []reflect.Type
 	prototype := struct{ Addrs textList }{Addrs: textList{"x"}}
@@ -180,10 +163,7 @@ func TestADomainIsHandedTheValueInTheDeclaredType(t *testing.T) {
 	}
 }
 
-// A sensitive item's value outside its domain is refused like any other, and
-// the refusal carries neither the value nor the text it would have been
-// stored as: the error reaches an administrative endpoint's response and the
-// logs, where the marker exists to keep a credential out.
+// TestARefusalOfASensitiveValueWithholdsIt checks that a sensitive item's refusal carries neither the value nor the text.
 func TestARefusalOfASensitiveValueWithholdsIt(t *testing.T) {
 	store, _ := storeOf(t, boundedTable(t), newRecordingBus())
 	const secret = "hunter2"
@@ -201,10 +181,7 @@ func TestARefusalOfASensitiveValueWithholdsIt(t *testing.T) {
 	}
 }
 
-// The domain is judged when a value is written, and nowhere else. A row that
-// lies outside it — stored before the domain was declared, or written around
-// this module — reads back as it is, rather than as a failure or as the
-// default: a consumer that cannot act on such a value judges what it reads.
+// TestARowOutsideTheDomainReadsAsItIs checks that the domain is judged at the write and a stored row outside it reads back as it is.
 func TestARowOutsideTheDomainReadsAsItIs(t *testing.T) {
 	store, handle := storeOf(t, boundedTable(t), newRecordingBus())
 	insert := "INSERT INTO " + tableName + " (tenant_id, key, value, version, updated_at) VALUES (?, ?, ?, 1, ?)"
@@ -219,12 +196,7 @@ func TestARowOutsideTheDomainReadsAsItIs(t *testing.T) {
 	}
 }
 
-// A domain the declaration cannot be held to is the declaration's own defect,
-// found when the key table is built: one over another type than the item's,
-// which no write could hand a value of; one with no rule, which a refusal
-// could not name; one with no predicate; and one that does not admit the
-// item's own default, which a write could never store back once a row had
-// replaced it. The last names the default unless the item is sensitive.
+// TestADomainTheDeclarationCannotBeHeldToIsADeclarationDefect checks each domain defect found when the key table is built.
 func TestADomainTheDeclarationCannotBeHeldToIsADeclarationDefect(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -291,10 +263,7 @@ func TestADomainTheDeclarationCannotBeHeldToIsADeclarationDefect(t *testing.T) {
 	}
 }
 
-// Declared reports each item's domain with the rest of its metadata, so a
-// surface over the settings can state the values a key takes without
-// restating the declaration. An item with no domain reports the zero Domain,
-// whose rule is empty.
+// TestDeclaredReportsTheRuleOfEachDomain checks that Declared reports each item's domain rule.
 func TestDeclaredReportsTheRuleOfEachDomain(t *testing.T) {
 	store, _ := storeOf(t, boundedTable(t), newRecordingBus())
 	want := map[string]string{
@@ -320,9 +289,7 @@ func TestDeclaredReportsTheRuleOfEachDomain(t *testing.T) {
 	}
 }
 
-// Item stays comparable with a Domain in it, and two Domains are equal when
-// they come from one call to DomainOf: a caller that compared two Items, or
-// kept one as a map key, still compiles and still means what it meant.
+// TestADomainKeepsAnItemComparable checks that Item stays comparable with a Domain in it.
 func TestADomainKeepsAnItemComparable(t *testing.T) {
 	domain := DomainOf(positiveRule, func(v int) bool { return v > 0 })
 	same, other := Item{Domain: domain}, Item{Domain: DomainOf(positiveRule, func(v int) bool { return v > 0 })}

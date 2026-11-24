@@ -11,19 +11,13 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// errUnreachable is the failure a case scripts for a dependency that cannot
-// answer.
 var errUnreachable = errors.New("the database is unreachable")
 
-// The two admission policies this surface exists to carry, as the admission
-// module declares them.
 const (
 	mfaKey = "tenant.admission.require-mfa"
 	ssoKey = "tenant.admission.require-sso"
 )
 
-// admissionItem is one admission policy's declaration: a boolean switch a
-// tenant reads and writes, with the presentation metadata the surface renders.
 func admissionItem() settings.Item {
 	return settings.Item{
 		Description:    "whether a tenant's members must satisfy this policy to make a request in that tenant; per tenant",
@@ -36,8 +30,6 @@ func admissionItem() settings.Item {
 	}
 }
 
-// admissionItemFor is one admission policy's declaration: a boolean switch a
-// tenant reads and writes, with the presentation metadata the surface renders.
 func admissionItemFor(key string) settings.Item {
 	item := admissionItem()
 	item.TitleKey = key + ".title"
@@ -45,9 +37,6 @@ func admissionItemFor(key string) settings.Item {
 	return item
 }
 
-// admissionDeclared is the declaration set a tenant surface case starts from:
-// the two admission switches, plus platform items from namespaces that used to
-// be reachable.
 func admissionDeclared() []settings.DeclaredItem {
 	return []settings.DeclaredItem{
 		decl(mfaKey, "tenant.admission", reflect.TypeFor[bool](), "false", admissionItemFor(mfaKey)),
@@ -60,7 +49,6 @@ func admissionDeclared() []settings.DeclaredItem {
 	}
 }
 
-// tenantSetting is one item as the tenant surface's JSON answer carries it.
 type tenantSetting struct {
 	Key              string `json:"key"`
 	Title            string `json:"title"`
@@ -78,14 +66,12 @@ type tenantSetting struct {
 	Source           string `json:"source"`
 }
 
-// tenantEnvelope is the tenant surface's whole answer.
 type tenantEnvelope struct {
 	Settings       []tenantSetting `json:"settings"`
 	Writable       bool            `json:"writable"`
 	ReadOnlyReason string          `json:"read_only_reason"`
 }
 
-// listTenant sets the declaration and reads the tenant surface's answer.
 func listTenant(t *testing.T, r *rig) tenantEnvelope {
 	t.Helper()
 	w := r.do(http.MethodGet, base, nil)
@@ -97,9 +83,6 @@ func listTenant(t *testing.T, r *rig) tenantEnvelope {
 	return envelope
 }
 
-// noStoreWrites reports whether the store was asked to change anything. A
-// refused write may still have read the global layer to judge platform
-// enforcement; the action itself is what must not run.
 func noStoreWrites(calls []storeCall) bool {
 	for _, c := range calls {
 		if c.op == "Set" || c.op == "Delete" {
@@ -109,7 +92,6 @@ func noStoreWrites(calls []storeCall) bool {
 	return true
 }
 
-// keysOfSettings lists the keys the answer carries, in order.
 func keysOfSettings(envelope tenantEnvelope) []string {
 	keys := make([]string, len(envelope.Settings))
 	for i, item := range envelope.Settings {
@@ -118,8 +100,7 @@ func keysOfSettings(envelope tenantEnvelope) []string {
 	return keys
 }
 
-// The tenant surface lists the items whose declarations expose them and no
-// other: a platform item is not in the answer, not even as a read-only row.
+// TestTheTenantSurfaceListsOnlyTheDeclaredItems checks that only items whose declarations expose them are listed.
 func TestTheTenantSurfaceListsOnlyTheDeclaredItems(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = admissionDeclared()
@@ -143,16 +124,13 @@ func TestTheTenantSurfaceListsOnlyTheDeclaredItems(t *testing.T) {
 	}
 }
 
-// envelopeBody re-reads the listing as raw text, for the absence checks that a
-// decoded answer cannot make.
 func envelopeBody(t *testing.T, r *rig) string {
 	t.Helper()
 	w := r.do(http.MethodGet, base, nil)
 	return w.Body.String()
 }
 
-// The per-namespace read is gone. A namespace that used to answer is a routing
-// 404 whose body carries no key, value, source, default or row existence.
+// TestTheNamespaceReadRouteIsGone checks that no per-namespace read route exists and its path answers a routing 404.
 func TestTheNamespaceReadRouteIsGone(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = admissionDeclared()
@@ -171,8 +149,8 @@ func TestTheNamespaceReadRouteIsGone(t *testing.T) {
 	}
 }
 
-// A platform key and an undeclared key are the same answer on both write
-// routes: a bare 404, with the write seam, the audit and the store untouched.
+// TestAPlatformWriteIsTheSame404AnUndeclaredKeyGets checks that both write
+// routes answer a platform key and an undeclared one with the same bare 404.
 func TestAPlatformWriteIsTheSame404AnUndeclaredKeyGets(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -209,7 +187,7 @@ func TestAPlatformWriteIsTheSame404AnUndeclaredKeyGets(t *testing.T) {
 	}
 }
 
-// The two admission policies are visible and writable on the tenant layer.
+// TestTheAdmissionPoliciesAreVisibleAndWritable checks that the two admission policies are visible and writable.
 func TestTheAdmissionPoliciesAreVisibleAndWritable(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = admissionDeclared()
@@ -235,9 +213,8 @@ func TestTheAdmissionPoliciesAreVisibleAndWritable(t *testing.T) {
 	}
 }
 
-// A platform-enforced policy cannot be turned off: the write answers 409 with
-// this surface's enforcement problem, lands no audit row and changes no tenant
-// row. Writing the enforced value and dropping the tenant row stay legal.
+// TestPlatformEnforcementRefusesDisabling checks that a platform-enforced policy
+// cannot be turned off, while writing it and dropping the tenant row stay legal.
 func TestPlatformEnforcementRefusesDisabling(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = admissionDeclared()
@@ -265,16 +242,13 @@ func TestPlatformEnforcementRefusesDisabling(t *testing.T) {
 		t.Fatalf("writing the enforced value ended with %d, want 204: %s", w.Code, w.Body.String())
 	}
 
-	// Dropping the tenant row while the platform policy is on is legal: the
-	// effective value stays on, so there is no disable to refuse.
 	w = r.do(http.MethodDelete, base+"/tenant.admission/require-mfa", nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("dropping the tenant row ended with %d, want 204: %s", w.Code, w.Body.String())
 	}
 }
 
-// The effective value is the platform policy or the tenant policy; a platform
-// policy that is on locks the item, regardless of the tenant's own choice.
+// TestTheEffectiveValueIsPlatformOrTenant checks that the effective value is the platform policy OR the tenant policy.
 func TestTheEffectiveValueIsPlatformOrTenant(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -291,10 +265,8 @@ func TestTheEffectiveValueIsPlatformOrTenant(t *testing.T) {
 		{"platform off, tenant on", "false", "true", true, "true", false, "tenant", "false", "true"},
 		{"both off", "false", "false", true, "false", false, "tenant", "false", "false"},
 		{"platform on, no tenant row", "true", "", false, "true", true, "global", "true", "false"},
-		// A global row that says false is still the layer the value comes from
-		// when the tenant has no row of its own: the source names where the
-		// value was read, not whether the policy is on, and the item is not
-		// locked.
+		// A global row saying false is still the source when the tenant has no row: source
+		// names where the value was read, not whether the policy is on.
 		{"platform off, no tenant row", "false", "", false, "false", false, "global", "false", "false"},
 		{"no rows", "", "", false, "false", false, "default", "false", "false"},
 	}
@@ -333,7 +305,7 @@ func TestTheEffectiveValueIsPlatformOrTenant(t *testing.T) {
 	}
 }
 
-// Every declared field the surface renders reaches the answer.
+// TestTheViewCarriesEveryDeclaredField checks that every declared field reaches the answer.
 func TestTheViewCarriesEveryDeclaredField(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = admissionDeclared()
@@ -366,9 +338,7 @@ func TestTheViewCarriesEveryDeclaredField(t *testing.T) {
 	}
 }
 
-// A read-only declaration is visible and cannot be written: both write routes
-// answer 403 with the read-only problem, not the 404 an undeclared or
-// platform-only key gets.
+// TestAReadOnlyDeclarationIsVisibleButNotWritable checks that both write routes answer 403 read-only.
 func TestAReadOnlyDeclarationIsVisibleButNotWritable(t *testing.T) {
 	r := newRig(t)
 	item := settings.Item{
@@ -386,8 +356,7 @@ func TestAReadOnlyDeclarationIsVisibleButNotWritable(t *testing.T) {
 	if got := keysOfSettings(envelope); !reflect.DeepEqual(got, []string{"app.policy"}) {
 		t.Fatalf("the listing holds %v, want app.policy", got)
 	}
-	// The listing itself asks the seam whether the surface is writable; the
-	// refused writes must not add another question.
+	// The refused writes must not add a seam question to the one the listing makes.
 	asked := len(r.writeSeam.askedTenants())
 	for _, method := range []string{http.MethodPut, http.MethodDelete} {
 		var body any
@@ -414,9 +383,7 @@ func TestAReadOnlyDeclarationIsVisibleButNotWritable(t *testing.T) {
 	}
 }
 
-// The mask string a sensitive item's value is shown as cannot be written back:
-// the handler answers 422 with the masked-value problem before the seam, the
-// audit or the store is reached.
+// TestAMaskedWriteIsRefusedBeforeAnythingRuns checks that writing the mask back is a 422 before the seam, audit or store.
 func TestAMaskedWriteIsRefusedBeforeAnythingRuns(t *testing.T) {
 	r := newRig(t)
 	item := settings.Item{
@@ -449,8 +416,7 @@ func TestAMaskedWriteIsRefusedBeforeAnythingRuns(t *testing.T) {
 	}
 }
 
-// A protected tenant's surface is read-only: the answer says so, with the
-// reason, and both write routes refuse before the audit and the store.
+// TestAProtectedTenantIsReadOnly checks that a protected tenant is reported read-only and both write routes refuse.
 func TestAProtectedTenantIsReadOnly(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = admissionDeclared()
@@ -481,10 +447,8 @@ func TestAProtectedTenantIsReadOnly(t *testing.T) {
 	}
 }
 
-// A listing whose host seam cannot answer still serves the settings it read: the
-// answer is 200 with the declared items and writable false, named unavailable.
-// The seam's cause stays in the log and out of the body, and a 503 here would
-// hide settings the tenant can still read over a question about writing them.
+// TestTheTenantListingStaysAvailableWhenTheSeamCannotAnswer checks that the
+// listing still answers 200 with writable false and reason unavailable.
 func TestTheTenantListingStaysAvailableWhenTheSeamCannotAnswer(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = admissionDeclared()
@@ -513,8 +477,7 @@ func TestTheTenantListingStaysAvailableWhenTheSeamCannotAnswer(t *testing.T) {
 	}
 }
 
-// A listing that cannot read a layer's rows answers 503 rather than leaving an
-// item out or reporting a false source.
+// TestTheTenantListingFailsWhenALayerCannotAnswer checks that a layer read failure is a 503.
 func TestTheTenantListingFailsWhenALayerCannotAnswer(t *testing.T) {
 	for name, script := range map[string]func(*rig){
 		"tenant rows": func(r *rig) { r.store.listErr = errUnreachable },
@@ -531,9 +494,8 @@ func TestTheTenantListingFailsWhenALayerCannotAnswer(t *testing.T) {
 	}
 }
 
-// The fragment is a generic declaration: it names no concrete platform key, no
-// namespace the tenant surface used to exclude by prefix, and no platform-only
-// wording.
+// TestTheFragmentNamesNoPlatformKeyOrOldWording checks that the fragment names
+// no concrete platform key and carries no platform-only wording.
 func TestTheFragmentNamesNoPlatformKeyOrOldWording(t *testing.T) {
 	body, err := os.ReadFile(fragmentPath)
 	if err != nil {
@@ -550,10 +512,7 @@ func TestTheFragmentNamesNoPlatformKeyOrOldWording(t *testing.T) {
 	}
 }
 
-// A platform-only item is invisible on both write routes as it is on the read:
-// the tenant may not learn which org.create key exists by watching the status
-// change, so PUT and DELETE answer the same bare 404 an undeclared key gets and
-// reach neither the seam, the audit nor the store.
+// TestAPlatformOnlyKeyIsA404OnBothWriteRoutes checks that a platform-only key is invisible on both write routes, as on the read.
 func TestAPlatformOnlyKeyIsA404OnBothWriteRoutes(t *testing.T) {
 	for _, key := range []string{"/org.create/max-organizations", "/org.create/max-per-hour"} {
 		for _, method := range []string{http.MethodPut, http.MethodDelete} {

@@ -9,8 +9,6 @@ import (
 	"time"
 )
 
-// secretTable declares one sensitive item whose type can fail to decode, so
-// that the failure path has a value to withhold.
 func secretTable(t *testing.T) *keyTable {
 	t.Helper()
 	defaults := struct {
@@ -25,13 +23,7 @@ func secretTable(t *testing.T) *keyTable {
 	}))
 }
 
-// A declaration may name a defined scalar — an enumeration written as
-// `type mode string` is the ordinary way to write one — and a read has to hand
-// back that type rather than the builtin it is built from.
-//
-// The two are not interchangeable: a builtin string is not assignable to a
-// defined string type, so a read that built the builtin and assigned it would
-// panic inside the library the first time the key held a value.
+// TestADefinedScalarRoundTrips checks that a defined scalar is handed back as its own type, not the builtin it is built from.
 func TestADefinedScalarRoundTrips(t *testing.T) {
 	type mode string
 	type toggle bool
@@ -76,9 +68,8 @@ func TestADefinedScalarRoundTrips(t *testing.T) {
 	}
 }
 
-// A value of another numeric Go type is converted under the discipline
-// configuration shares, so a whole number reaches an integer item and a
-// fractional one does not.
+// TestANumberIsHeldToTheDeclaredType checks that a number of another Go type is
+// converted under the shared discipline, a fraction reaching no integer item.
 func TestANumberIsHeldToTheDeclaredType(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
@@ -101,8 +92,6 @@ func TestANumberIsHeldToTheDeclaredType(t *testing.T) {
 		t.Errorf("writing a string returned %v, want ErrTypeMismatch", err)
 	}
 
-	// An integer goes into a float item: 1 written from Go source is an int,
-	// and configuration takes it into the same field.
 	if err := store.Set(ctx, Write{Layer: Global(), Key: "demo.ratio", Value: 1}); err != nil {
 		t.Fatalf("writing an integer to a float item returned %v, want nil", err)
 	}
@@ -111,16 +100,8 @@ func TestANumberIsHeldToTheDeclaredType(t *testing.T) {
 	}
 }
 
-// The largest finite float32 goes back in as float32 writes it.
-//
-// float32's shortest text for math.MaxFloat32 is 3.4028235e+38, and that text
-// names a number a little above the value itself. It is still a number the item
-// holds by the round-trip rule: its nearest float32 is math.MaxFloat32, which
-// float32 writes as the same text. So the default the listing gives for such an
-// item, and the row List reports for it, are texts Set takes back, as they are
-// for every other value. A number whose nearest float32 is an infinity, and one
-// the item would hold as its largest value while writing it as a different
-// number, are refused as every other neighbour is.
+// TestTheLargestFloat32GoesBackInAsItIsWritten checks that float32's shortest text for
+// math.MaxFloat32 is accepted back, while a number rounding to infinity is refused.
 func TestTheLargestFloat32GoesBackInAsItIsWritten(t *testing.T) {
 	defaults := struct {
 		Ceiling float32
@@ -154,7 +135,7 @@ func TestTheLargestFloat32GoesBackInAsItIsWritten(t *testing.T) {
 		}
 	}
 
-	halfway := 0x1p128 - 0x1p103 // between math.MaxFloat32 and the next power of two
+	halfway := 0x1p128 - 0x1p103
 	cases := []struct {
 		value    any
 		accepted bool
@@ -183,13 +164,7 @@ func TestTheLargestFloat32GoesBackInAsItIsWritten(t *testing.T) {
 	}
 }
 
-// A duration item takes duration text and refuses a bare number.
-//
-// A duration counts nanoseconds underneath, so a bare number is the one value
-// that reads as one thing and means another: an endpoint receiving
-// {"value": 60} for a window it shows in seconds would store sixty
-// nanoseconds, and a consumer checking only that the window is positive would
-// act on it. The text is the form configuration takes for the same item.
+// TestADurationIsWrittenAsText checks that a duration item takes duration text and refuses a bare number.
 func TestADurationIsWrittenAsText(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
@@ -227,8 +202,6 @@ func TestAReadHandsOutItsOwnCopy(t *testing.T) {
 	store, _ := storeOf(t, keys, newRecordingBus())
 	ctx := context.Background()
 
-	// The declared default: writing through what a read returned must not
-	// change the declaration the next read resolves against.
 	var got textList
 	if err := store.Get(Global(), "copy.addrs", &got); err != nil {
 		t.Fatalf("reading the default: %v", err)
@@ -245,7 +218,6 @@ func TestAReadHandsOutItsOwnCopy(t *testing.T) {
 		t.Errorf("the prototype's field became %q", prototype.Addrs[0])
 	}
 
-	// The snapshot's value: the same has to hold once a row exists.
 	if err := store.Set(ctx, Write{Layer: Global(), Key: "copy.addrs", Value: textList{"x", "y"}}); err != nil {
 		t.Fatalf("writing: %v", err)
 	}
@@ -262,13 +234,8 @@ func TestAReadHandsOutItsOwnCopy(t *testing.T) {
 	}
 }
 
-// A sensitive item's stored value stays out of the error text, including the
-// error that reports it failing to decode.
-//
-// The error a read returns is the module's own writing, and it travels to
-// wherever the caller logs it. A credential reaches a table and a snapshot
-// legitimately; it does not reach a log line, which is what the sensitive
-// marker is for.
+// TestASensitiveValueStaysOutOfTheErrorText checks that a sensitive item's value
+// stays out of the error text, including a decode failure.
 func TestASensitiveValueStaysOutOfTheErrorText(t *testing.T) {
 	keys := secretTable(t)
 	handle := open(t)
@@ -297,8 +264,7 @@ func TestASensitiveValueStaysOutOfTheErrorText(t *testing.T) {
 	}
 }
 
-// An ordinary item's value is not withheld: the text is what the reader needs
-// to reconcile the declaration with the row.
+// TestAnOrdinaryValueIsNamedInTheErrorText checks that an ordinary item's value is named in the error.
 func TestAnOrdinaryValueIsNamedInTheErrorText(t *testing.T) {
 	keys := demoTable(t)
 	handle := open(t)

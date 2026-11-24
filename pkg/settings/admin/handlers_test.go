@@ -15,10 +15,8 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The read and write routes disagree on the permission they ask for and agree
-// on the domain the layer chooses: a global layer is decided in the platform
-// domain, a tenant's in that tenant's own domain. The two ride together, so a
-// caller authorized in one tenant cannot reach the global layer.
+// TestTheLayerChoosesTheDomainAndThePermission checks that the read and write
+// routes ask their permission in the domain the layer chooses.
 func TestTheLayerChoosesTheDomainAndThePermission(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -53,9 +51,8 @@ func TestTheLayerChoosesTheDomainAndThePermission(t *testing.T) {
 	}
 }
 
-// A layer selection that is absent, out of the closed set, or paired with a
-// tenant the wrong way is a 400 written before the guard is asked: the request
-// cannot be put to the policy until the layer names a domain.
+// TestAnUnreadableLayerSelectionIsA400BeforeTheDecision checks that a bad layer
+// selection is a 400 written before the guard is asked.
 func TestAnUnreadableLayerSelectionIsA400BeforeTheDecision(t *testing.T) {
 	targets := map[string]string{
 		"layer absent":            "/api/v1/system/settings",
@@ -87,9 +84,8 @@ func TestAnUnreadableLayerSelectionIsA400BeforeTheDecision(t *testing.T) {
 	}
 }
 
-// A request with no identity is answered by this module with a 401 carrying the
-// realm challenge and no problem type, and asks neither the guard nor the
-// settings surface.
+// TestNoIdentityIsA401WithTheRealmChallengeAndNoType checks that an
+// identity-less request gets 401 and asks neither the guard nor the store.
 func TestNoIdentityIsA401WithTheRealmChallengeAndNoType(t *testing.T) {
 	r := newRig(t)
 	w := r.doAnonymous(http.MethodGet, "/api/v1/system/settings?layer=global")
@@ -107,8 +103,7 @@ func TestNoIdentityIsA401WithTheRealmChallengeAndNoType(t *testing.T) {
 	}
 }
 
-// The guard writes its own refusal: a denial is a 403 and an outage a 503, and
-// the handler returns without touching the settings surface.
+// TestTheGuardWritesItsOwnRefusal checks that the guard writes its 403 or 503 and the store is untouched.
 func TestTheGuardWritesItsOwnRefusal(t *testing.T) {
 	t.Run("denied", func(t *testing.T) {
 		r := newRig(t)
@@ -131,10 +126,8 @@ func TestTheGuardWritesItsOwnRefusal(t *testing.T) {
 	})
 }
 
-// The list route shows every declared item with the value it resolves to on the
-// selected layer: the type is the declared type's text form, the description is
-// the text the declaration gave, the default is the declared default's text,
-// written is the selected layer's text and value is the resolved text.
+// TestTheListShowsEveryDeclaredItemWithItsResolvedValue checks the listing fields for each
+// declared item: the type, description, default and written texts, and the resolved value.
 func TestTheListShowsEveryDeclaredItemWithItsResolvedValue(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = []settings.DeclaredItem{
@@ -201,10 +194,7 @@ func TestTheListShowsEveryDeclaredItemWithItsResolvedValue(t *testing.T) {
 	}
 }
 
-// A row the layer holds as the empty string is reported as a row: the text is
-// empty either way, so has_row is what tells the client the answer holds an
-// override. The declaration's description is carried unchanged. A domain that
-// admits the empty text lets the write land.
+// TestAnEmptyTextRowIsReportedAsAHeldRow checks that an empty-text row is reported as held through has_row.
 func TestAnEmptyTextRowIsReportedAsAHeldRow(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = []settings.DeclaredItem{
@@ -236,10 +226,7 @@ func TestAnEmptyTextRowIsReportedAsAHeldRow(t *testing.T) {
 	}
 }
 
-// A sensitive item masks its text but not its description or its row's
-// existence: a request for a sensitive item whose layer holds no row reports
-// has_row false, and one whose layer holds a row reports true; either way the
-// description is the declaration's text.
+// TestASensitiveItemStillReportsWhetherItsRowExists checks that a sensitive item masks its text but still reports its row existence.
 func TestASensitiveItemStillReportsWhetherItsRowExists(t *testing.T) {
 	cases := []struct {
 		name string
@@ -283,8 +270,7 @@ func TestASensitiveItemStillReportsWhetherItsRowExists(t *testing.T) {
 	}
 }
 
-// The namespace route shows one module's items and refuses a namespace no
-// declared item belongs to with a bare 404.
+// TestANamespaceGroupIsShownAndAnEmptyOneIsA404 checks the namespace route and its bare 404.
 func TestANamespaceGroupIsShownAndAnEmptyOneIsA404(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = []settings.DeclaredItem{
@@ -306,8 +292,6 @@ func TestANamespaceGroupIsShownAndAnEmptyOneIsA404(t *testing.T) {
 		}
 	})
 	t.Run("a namespace with a module name that carries a dot", func(t *testing.T) {
-		// The namespace is the module name, which may contain a dot: the route
-		// parameter matches it whole, and the key is the rest under it.
 		w := r.do(http.MethodGet, "/api/v1/system/settings/authn.session?layer=global", nil)
 		if w.Code != http.StatusOK {
 			t.Fatalf("the request ended with %d: %s", w.Code, w.Body.String())
@@ -329,9 +313,7 @@ func TestANamespaceGroupIsShownAndAnEmptyOneIsA404(t *testing.T) {
 	})
 }
 
-// A sensitive item's value never reaches a client: its default is empty and its
-// written and value carry the fixed mask string, on every read route; its
-// description is the declaration's text unchanged.
+// TestASensitiveItemsValueIsMasked checks that a sensitive value never reaches a client.
 func TestASensitiveItemsValueIsMasked(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = []settings.DeclaredItem{
@@ -375,11 +357,8 @@ func TestASensitiveItemsValueIsMasked(t *testing.T) {
 	}
 }
 
-// A write of the mask string a sensitive item is shown as is refused before the
-// mandatory audit and the store: the mask is a display placeholder, not the
-// item's value, so writing it back would replace the credential with the
-// placeholder. The refusal is the settings capability's masked-value problem,
-// the same answer the tenant surface gives.
+// TestAMaskedWriteBackIsRefusedBeforeTheAuditAndTheStore checks that writing the
+// mask back is refused with 422 before the audit and store.
 func TestAMaskedWriteBackIsRefusedBeforeTheAuditAndTheStore(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = []settings.DeclaredItem{
@@ -407,9 +386,8 @@ func TestAMaskedWriteBackIsRefusedBeforeTheAuditAndTheStore(t *testing.T) {
 	}
 }
 
-// A write lands a 204 and passes the layer, the full key, the body's value and
-// the caller's account on to the settings module, and it writes one mandatory
-// audit row before the action.
+// TestAWriteLands204AndPassesTheActionOn checks that a write lands 204, passes
+// its arguments to the settings module and writes one mandatory audit row.
 func TestAWriteLands204AndPassesTheActionOn(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = []settings.DeclaredItem{
@@ -458,11 +436,7 @@ func TestAWriteLands204AndPassesTheActionOn(t *testing.T) {
 	}
 }
 
-// A write by an impersonating administrator is attributed to the administrator,
-// not to the account impersonated. The actor the settings module records is the
-// caller's accountability key, Identity.Key(), which is the hands on the request
-// and not the account the request is taken to be from; the same holds on the
-// delete route.
+// TestAnImpersonatedWriteIsAttributedToTheActor checks that an impersonated write is attributed to the administrator.
 func TestAnImpersonatedWriteIsAttributedToTheActor(t *testing.T) {
 	impersonation := []authntest.Option{
 		authntest.WithAccount(authn.AccountID("carol")),
@@ -524,8 +498,7 @@ func TestAnImpersonatedWriteIsAttributedToTheActor(t *testing.T) {
 	})
 }
 
-// A write whose key has no declaration is a 404 and reaches neither the audit
-// nor the settings module.
+// TestAWriteOfAnUndeclaredKeyIsA404 checks that it reaches neither the audit nor the settings module.
 func TestAWriteOfAnUndeclaredKeyIsA404(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = []settings.DeclaredItem{
@@ -543,9 +516,7 @@ func TestAWriteOfAnUndeclaredKeyIsA404(t *testing.T) {
 	}
 }
 
-// A value the settings module refuses is a 422 naming invalid-value, and the
-// write closes with a failed audit row linked to the mandatory one by its action
-// identifier.
+// TestARefusedValueIsA422WithAFailedAuditRow checks that a refused value is a 422 and closes with a failed audit row.
 func TestARefusedValueIsA422WithAFailedAuditRow(t *testing.T) {
 	cases := map[string]error{
 		"type mismatch": settings.ErrTypeMismatch,
@@ -580,8 +551,7 @@ func TestARefusedValueIsA422WithAFailedAuditRow(t *testing.T) {
 	}
 }
 
-// A key the settings module does not know is a 404, the module's other failures
-// a 503 with no problem type.
+// TestAWriteRefusedByTheModuleMapsToItsAnswer checks that an unknown key is a 404 and other failures a 503.
 func TestAWriteRefusedByTheModuleMapsToItsAnswer(t *testing.T) {
 	cases := map[string]struct {
 		cause  error
@@ -614,8 +584,7 @@ func TestAWriteRefusedByTheModuleMapsToItsAnswer(t *testing.T) {
 	}
 }
 
-// The mandatory audit row gates the action: when it does not land the write is a
-// 503 and the settings module is never called.
+// TestTheMandatoryAuditRowGatesTheAction checks that a row that does not land answers 503 and the store is never called.
 func TestTheMandatoryAuditRowGatesTheAction(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = []settings.DeclaredItem{
@@ -631,9 +600,8 @@ func TestTheMandatoryAuditRowGatesTheAction(t *testing.T) {
 	}
 }
 
-// The delete route drops a declared key's row on the selected layer and writes
-// its own mandatory audit row before the action. An undeclared key is a 404 and
-// a failure the module returns is a 503.
+// TestTheDeleteRoute checks that the delete drops a declared key, writes its
+// audit row, and refuses an undeclared key or a module failure.
 func TestTheDeleteRoute(t *testing.T) {
 	t.Run("landed", func(t *testing.T) {
 		r := newRig(t)
@@ -675,7 +643,7 @@ func TestTheDeleteRoute(t *testing.T) {
 	})
 }
 
-// A body the handler cannot read is a 400 before the settings module is called.
+// TestAnUnreadableBodyIsA400 checks that an unreadable body is a 400.
 func TestAnUnreadableBodyIsA400(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = []settings.DeclaredItem{
@@ -690,8 +658,7 @@ func TestAnUnreadableBodyIsA400(t *testing.T) {
 	}
 }
 
-// A failure to read the layer's rows or to resolve a value is a 503: a listing
-// that could not read a row must not answer as though the row were not there.
+// TestAListingFailureIsA503 checks that a failed row read or value resolve is a 503.
 func TestAListingFailureIsA503(t *testing.T) {
 	t.Run("the rows", func(t *testing.T) {
 		r := newRig(t)
@@ -717,23 +684,15 @@ func TestAListingFailureIsA503(t *testing.T) {
 	})
 }
 
-// The platform page edits a numeric item with a domain. The page submits the
-// text its input holds, so the body it sends carries a JSON string; the route's
-// declared body also admits a JSON number. Both reach the store as the value
-// the decoder produced, and the settings module applies the declared
-// positive-integer domain on the write. This is the shape org.create's two
-// limits declare, so a surface that could not pass either through would leave
-// the platform with no way to change them.
+// TestThePlatformSurfaceWritesANumericItemWithADomain checks that a text body
+// and a JSON number both reach the store as the decoder's value.
 func TestThePlatformSurfaceWritesANumericItemWithADomain(t *testing.T) {
 	positive := settings.DomainOf("the positive integers", func(limit int) bool { return limit > 0 })
 	shapes := []struct {
 		name string
-		// body is the value the route receives; want is what the store is
-		// handed for it.
 		body func(int) any
 		want func(int) any
 	}{
-		// The page's input holds text, so this is the shape it sends.
 		{"the page's text", func(n int) any { return strconv.Itoa(n) }, func(n int) any { return strconv.Itoa(n) }},
 		{"a JSON number", func(n int) any { return n }, func(n int) any { return float64(n) }},
 	}

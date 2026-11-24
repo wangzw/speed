@@ -9,18 +9,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// A write's result says what happened to the row, even when the caller's
-// context is cancelled while the statement's result is being read.
-//
-// The statement reads back what it wrote — the upsert its version, the delete
-// the removed value — so its result arrives after the server has executed it.
-// Run on its own, the statement has committed by then on PostgreSQL, and a
-// cancellation at that point would make Set and Delete return an error for a
-// change that is in the table: nothing would reload, nothing would be
-// published, and a caller that believed the error would not even retry. The case cancels at exactly
-// that point and holds the outcome to one of the two truthful ones: an error
-// and an untouched table, or nil and a change this replica serves and
-// published.
+// TestAWritesResultMatchesWhatLanded checks that a write's result matches what
+// landed even when the caller's context is cancelled while the result is read.
 func TestAWritesResultMatchesWhatLanded(t *testing.T) {
 	for _, d := range dialectsUnderTest {
 		t.Run(d.name+"/set", func(t *testing.T) {
@@ -63,9 +53,6 @@ func TestAWritesResultMatchesWhatLanded(t *testing.T) {
 	}
 }
 
-// cancelWhileReadingTheResult cancels a context once the statement starting
-// with prefix has been sent and before its result is read, and gives the
-// driver time to act on the cancellation.
 func cancelWhileReadingTheResult(t *testing.T, handle *gorm.DB, prefix string, cancel context.CancelFunc) {
 	t.Helper()
 	err := handle.Callback().Row().After("gorm:row").Register("test:cancel-while-reading-the-result",
@@ -80,8 +67,6 @@ func cancelWhileReadingTheResult(t *testing.T, handle *gorm.DB, prefix string, c
 	}
 }
 
-// assertServedAndPublished checks that a write reported as done is the one
-// this replica serves and the last one it published.
 func assertServedAndPublished(t *testing.T, store *settingsStore, bus *recordingBus, want int) {
 	t.Helper()
 	if got, _ := Get[int](store, Global(), "demo.limit"); got != want {

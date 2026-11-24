@@ -15,9 +15,6 @@ import (
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
-// PostgreSQL joins the cross-dialect cases on a database of this test's own.
-// Acquire fails the case when the server the compose stack brings up does not
-// answer rather than skipping it.
 func init() {
 	dialectsUnderTest = append(dialectsUnderTest, dialectUnderTest{
 		name: "postgres", dialect: db.Postgres, open: openPostgres,
@@ -27,9 +24,6 @@ func init() {
 	})
 }
 
-// openPostgres hands back the handle the PostgreSQL implementation of the
-// database module delivers over a database of this test's own, with this
-// module's PostgreSQL migration applied.
 func openPostgres(t *testing.T) *gorm.DB {
 	t.Helper()
 	handle := quietly(dbtest.Postgres(t, pgtest.Acquire(t), nil).DB())
@@ -37,12 +31,6 @@ func openPostgres(t *testing.T) *gorm.DB {
 	return handle
 }
 
-// openPostgresWithALinguisticCollation is the byte-order case's PostgreSQL leg:
-// the same database with the key column given a collation that sets punctuation
-// aside, which is what the default of a server built against the GNU C library
-// does. An ICU collation with alternate=shifted stands for that default here:
-// the fixture's server is built against a C library whose collations compare
-// bytes.
 func openPostgresWithALinguisticCollation(t *testing.T) *gorm.DB {
 	t.Helper()
 	handle := openPostgres(t)
@@ -57,16 +45,7 @@ func openPostgresWithALinguisticCollation(t *testing.T) *gorm.DB {
 	return handle
 }
 
-// The statements run against PostgreSQL as they do against SQLite: the
-// placeholders GORM rewrites for the dialect, the upsert that reads its version
-// back, the delete that reads its removed row back, the timestamp column List
-// scans, and the absent-table judgement on the text the PostgreSQL driver
-// actually produces.
-//
-// The statements are written once for both dialects, so each of these is a
-// claim that the two engines agree on the same text. A suite that ran on
-// SQLite alone would stay green while the one backend this module is deployed
-// against failed.
+// TestTheStatementsRunOnPostgreSQL checks that the statements run against PostgreSQL as they do against SQLite.
 func TestTheStatementsRunOnPostgreSQL(t *testing.T) {
 	handle := openPostgres(t)
 	bus := newRecordingBus()

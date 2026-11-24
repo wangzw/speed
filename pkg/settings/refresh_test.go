@@ -16,7 +16,6 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// levelRecorder keeps the level and message of every record a store writes.
 type levelRecorder struct {
 	mu      sync.Mutex
 	records []slog.Record
@@ -33,7 +32,6 @@ func (r *levelRecorder) Handle(_ context.Context, record slog.Record) error {
 	return nil
 }
 
-// errors returns the messages of the records written at error level.
 func (r *levelRecorder) errors() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -46,10 +44,6 @@ func (r *levelRecorder) errors() []string {
 	return out
 }
 
-// holdReadsUntilCancelled makes every read of the table wait until its
-// statement's context is done, reports through entered when one has started
-// waiting, and sets returned once such a read has come back. It stands for a
-// reload still in flight when the process begins to stop.
 func holdReadsUntilCancelled(t *testing.T, handle *gorm.DB, entered chan<- struct{}, returned *atomic.Bool) {
 	t.Helper()
 	isRead := func(tx *gorm.DB) bool {
@@ -73,15 +67,8 @@ func holdReadsUntilCancelled(t *testing.T, handle *gorm.DB, entered chan<- struc
 	}
 }
 
-// Stop waits for the refresh to finish, and a refresh that Stop cut short is
-// not reported as a failure.
-//
-// A reload in flight when Stop cancels it fails with the cancellation. That is
-// the stop working, not the refresh failing, and an error record for it would
-// appear on an ordinary shutdown whenever a tick happened to be running. Left
-// running past Stop, the same read would also go on using the database handle
-// while the database module, which stops and closes after this one, releases
-// it.
+// TestStoppingTheRefreshWaitsAndReportsNoFailure checks that Stop waits for the
+// refresh and does not report the cancellation as a failure.
 func TestStoppingTheRefreshWaitsAndReportsNoFailure(t *testing.T) {
 	store, handle := storeOf(t, demoTable(t), newRecordingBus())
 	recorder := &levelRecorder{}
@@ -102,20 +89,13 @@ func TestStoppingTheRefreshWaitsAndReportsNoFailure(t *testing.T) {
 		t.Error("Stop returned while the refresh it cancelled was still reading the table")
 	}
 
-	// Anything the refresh still had to write would have arrived by now.
 	time.Sleep(100 * time.Millisecond)
 	if lines := recorder.errors(); len(lines) != 0 {
 		t.Errorf("a refresh cut short by Stop was reported as a failure: %q", lines)
 	}
 }
 
-// A failed publish says how the other replicas will converge, and that depends
-// on whether the refresh runs.
-//
-// With the refresh on they read the change at their next tick. With it off
-// nothing will bring it but a later change's event or a restart, and a record
-// promising the next refresh would send whoever reads it to wait for one that
-// never comes.
+// TestAFailedPublishSaysHowTheOthersConverge checks that the record says whether the refresh runs.
 func TestAFailedPublishSaysHowTheOthersConverge(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -149,10 +129,7 @@ func TestAFailedPublishSaysHowTheOthersConverge(t *testing.T) {
 	}
 }
 
-// A reload whose delivery the bus withdrew is not reported as a failure
-// either. A transport bus cancels the context it delivers on when it stops,
-// which happens after this module has stopped, so a delivery in flight then
-// fails with the cancellation on every such shutdown.
+// TestAWithdrawnDeliveryReportsNoFailure checks that a delivery the bus withdrew is not reported as a failure.
 func TestAWithdrawnDeliveryReportsNoFailure(t *testing.T) {
 	bus := newRecordingBus()
 	store, _ := storeOf(t, demoTable(t), bus)
@@ -174,7 +151,6 @@ func TestAWithdrawnDeliveryReportsNoFailure(t *testing.T) {
 		t.Errorf("a delivery the bus withdrew was reported as a failure: %q", lines)
 	}
 
-	// A reload that fails on its own is still reported: the table is gone.
 	if err := store.handle.Exec("DROP TABLE " + tableName).Error; err != nil {
 		t.Fatalf("dropping the table: %v", err)
 	}

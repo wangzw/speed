@@ -8,10 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// TestTheAuditDetailNamesTheTenantName holds the write's mandatory row to the
-// name: the path-tenant guard resolved the segment to the internal identifier
-// before the handler runs, and a tenant detail carrying that identifier would
-// put it in a table operators read.
+// TestTheAuditDetailNamesTheTenantName checks that the mandatory row carries the tenant's name, not its internal identifier.
 func TestTheAuditDetailNamesTheTenantName(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = admissionDeclared()

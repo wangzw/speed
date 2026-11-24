@@ -13,18 +13,11 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// policyDecision is one (permission, domain) pair a policy guard decides on.
 type policyDecision struct {
 	perm   authz.Permission
 	domain authz.Domain
 }
 
-// policyGuard answers from a closed set of (permission, domain) pairs. It is how
-// a case holds that a layer is decided on one set of codes and not another: a
-// permission the policy grants in another domain is not granted here, and a
-// grant of the wrong code in the right domain is not a grant either. The real
-// guard walks the policy engine; this one lets a case state its answer without
-// one.
 type policyGuard struct {
 	mu      sync.Mutex
 	allowed map[policyDecision]bool
@@ -67,10 +60,8 @@ func (g *policyGuard) RequirePermissionIn(c *gin.Context, perm authz.Permission,
 	return false
 }
 
-// Tenant-admin in acme allows the tenant layer's read and write codes in that
-// tenant. A platform staff member holding that binding can still read and write
-// the tenant layer through the platform surface: the surface asks the tenant
-// codes in the addressed tenant's domain, not the global ones.
+// TestAPlatformStaffMemberWithATenantAdminBindingReachesThatTenantLayer checks
+// that the tenant codes in the tenant domain are what the tenant layer asks for.
 func TestAPlatformStaffMemberWithATenantAdminBindingReachesThatTenantLayer(t *testing.T) {
 	declared := []settings.DeclaredItem{
 		decl("app.mode", "app", reflect.TypeFor[string](), "auto", settings.Item{}),
@@ -104,10 +95,8 @@ func TestAPlatformStaffMemberWithATenantAdminBindingReachesThatTenantLayer(t *te
 	})
 }
 
-// A platform administrator who holds the global codes in the platform domain and
-// no tenant-admin binding in the addressed tenant is refused on that tenant's
-// layer. Holding settings.read in the tenant's domain is not the tenant code and
-// does not stand in for it; the two sets are decided apart.
+// TestAPlatformAdministratorWithoutATenantBindingIsRefusedOnATenantLayer checks
+// that the global codes do not stand in for the tenant codes.
 func TestAPlatformAdministratorWithoutATenantBindingIsRefusedOnATenantLayer(t *testing.T) {
 	declared := []settings.DeclaredItem{
 		decl("app.mode", "app", reflect.TypeFor[string](), "auto", settings.Item{}),
@@ -124,10 +113,6 @@ func TestAPlatformAdministratorWithoutATenantBindingIsRefusedOnATenantLayer(t *t
 		t.Run(name, func(t *testing.T) {
 			r := newRig(t)
 			r.store.declared = declared
-			// The platform codes in the platform domain are what a platform
-			// administrator holds. The global code granted in the tenant's domain
-			// is the trap the switch closes: under the old behaviour the surface
-			// asked this code there, and the write would land.
 			r.p.guard = newPolicyGuard(
 				policyDecision{authz.PermissionSettingsRead, authz.PlatformDomain},
 				policyDecision{authz.PermissionSettingsWrite, authz.PlatformDomain},
@@ -145,9 +130,7 @@ func TestAPlatformAdministratorWithoutATenantBindingIsRefusedOnATenantLayer(t *t
 	}
 }
 
-// The global layer keeps the global codes and the platform domain: the tenant
-// codes do not stand in for them, and a caller holding them cannot reach the
-// global layer.
+// TestTheGlobalLayerKeepsTheGlobalCodesAndThePlatformDomain checks that the tenant codes cannot reach the global layer.
 func TestTheGlobalLayerKeepsTheGlobalCodesAndThePlatformDomain(t *testing.T) {
 	declared := []settings.DeclaredItem{
 		decl("app.mode", "app", reflect.TypeFor[string](), "auto", settings.Item{}),

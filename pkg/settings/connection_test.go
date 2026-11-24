@@ -17,15 +17,10 @@ import (
 	"github.com/vislake/speed/pkg/internal/dbtest"
 )
 
-// connectionTimer is how long a case waits for a call that should give up on
-// a connection within connectionWait, before reporting it as still waiting.
 func connectionTimer() time.Duration {
 	return connectionWait + coretest.Scale(3*time.Second)
 }
 
-// storeOnOneConnection builds a loaded store over the in-memory database the
-// database module delivers for :memory:, which it holds to a single connection,
-// and seeds demo.limit's global row with 3.
 func storeOnOneConnection(t *testing.T) (*settingsStore, *gorm.DB, *recordingBus) {
 	t.Helper()
 	handle := quietly(dbtest.SQLite(t, ":memory:", nil).DB())
@@ -42,15 +37,11 @@ func storeOnOneConnection(t *testing.T) (*settingsStore, *gorm.DB, *recordingBus
 	return s, handle, bus
 }
 
-// insideTransaction runs call inside a transaction on the delivered handle and
-// returns what call returned, failing the case if it has not returned within
-// connectionTimer.
 func insideTransaction(t *testing.T, handle *gorm.DB, call func() error) error {
 	t.Helper()
 	done := make(chan error, 1)
 	go func() {
 		var returned error
-		// The transaction holds the pool's one connection from its begin on.
 		err := handle.Transaction(func(*gorm.DB) error {
 			returned = call()
 			return nil
@@ -71,19 +62,8 @@ func insideTransaction(t *testing.T, handle *gorm.DB, call func() error) error {
 	}
 }
 
-// A write, a delete and a listing made inside the caller's own transaction on a
-// database held to one connection give up on the connection instead of waiting
-// for the caller, and leave the table as it was.
-//
-// None of them can join the caller's transaction, so each takes a connection of
-// its own, and on such a database the only one is the caller's until the call
-// returns. Under a context with no deadline nothing else ends that wait, and a
-// write begins its transaction out of the caller's cancellation, so for a write
-// no deadline would end it either; the database's one connection would stay
-// held, and every other statement in the process would queue behind it. A
-// database module delivers an in-memory SQLite database this way, and an
-// in-process subscriber writing a setting inside its publisher's transaction is
-// the ordinary path into the call.
+// TestACallInsideTheCallersTransactionOnOneConnectionGivesUp checks that a write, a delete
+// and a listing inside the caller's transaction on one connection give up rather than wait.
 func TestACallInsideTheCallersTransactionOnOneConnectionGivesUp(t *testing.T) {
 	cases := []struct {
 		name string
@@ -125,17 +105,10 @@ func TestACallInsideTheCallersTransactionOnOneConnectionGivesUp(t *testing.T) {
 	}
 }
 
-// lockBusyTimeout is the busy timeout the locator in the case below sets: short
-// of the driver's default and of connectionWait, so that a lock wait held to
-// either is told apart from one held to the locator's.
 const lockBusyTimeout = time.Second
 
-// A write, a delete and a listing that meet a lock another connection holds on
-// a SQLite file wait for it for the connection's busy timeout, the one the
-// locator sets, whatever connectionWait is, then fail with SQLite's refusal and
-// leave the table as it was. A lock is what the same call waits for on a file
-// database when a caller holds the database in its own transaction;
-// connectionWait bounds the wait for a connection only.
+// TestACallThatMeetsALockWaitsForTheBusyTimeout checks that a call meeting
+// another connection's lock waits for the busy timeout, not for connectionWait.
 func TestACallThatMeetsALockWaitsForTheBusyTimeout(t *testing.T) {
 	t.Parallel()
 	cases := map[string]func(s *settingsStore, ctx context.Context) error{
@@ -158,12 +131,8 @@ func TestACallThatMeetsALockWaitsForTheBusyTimeout(t *testing.T) {
 			applyMigration(t, handle, "sqlite/0001_settings.sql")
 			bus := newRecordingBus()
 			s := storeOn(t, handle, db.SQLite, demoTable(t), bus)
-			// A wrong implementation applies the connection wait where the
-			// engine's busy timeout bounds the lock, so widening it makes that
-			// implementation need an hour while the right one still gives up
-			// after the locator's second. The upper bound is that unscaled second
-			// plus two seconds through GATE_TIME_SCALE alone; the hour is the
-			// wrong time stated to DeclaredAgainst.
+			// A wrong implementation applies the connection wait where the engine busy
+			// timeout bounds the lock; the hour is its time stated to DeclaredAgainst.
 			s.connectWithin = time.Hour
 			if err := s.Set(context.Background(), Write{Layer: Global(), Key: "demo.limit", Value: 3}); err != nil {
 				t.Fatalf("seeding the row: %v", err)
@@ -217,9 +186,7 @@ func TestACallThatMeetsALockWaitsForTheBusyTimeout(t *testing.T) {
 	}
 }
 
-// The store writes, deletes and lists over a handle the host opened itself
-// with gorm.Open, as it does over the one the database module delivers: every
-// call takes a connection of whatever pool the handle is on.
+// TestTheStoreWorksOverAHandleTheHostOpened checks that the store writes, deletes and lists over a parent-opened handle.
 func TestTheStoreWorksOverAHandleTheHostOpened(t *testing.T) {
 	handle, err := gorm.Open(sqlitedriver.Open(filepath.Join(t.TempDir(), "host.db")),
 		&gorm.Config{Logger: logger.Discard})
@@ -249,11 +216,8 @@ func TestTheStoreWorksOverAHandleTheHostOpened(t *testing.T) {
 	}
 }
 
-// A caller's deadline ends the wait for a connection when it falls due first.
-//
-// The wait comes before anything is written, so giving up there is what the
-// caller's cancellation is for, a write's included: the write takes its
-// connection under that cancellation and only begins its transaction out of it.
+// TestACallersDeadlineEndsTheWaitForAConnection checks that the caller's
+// deadline ends the wait for a connection before anything is written.
 func TestACallersDeadlineEndsTheWaitForAConnection(t *testing.T) {
 	const deadline = time.Second
 	cases := []struct {
@@ -291,14 +255,8 @@ func TestACallersDeadlineEndsTheWaitForAConnection(t *testing.T) {
 	}
 }
 
-// A reload waiting for the connection a caller's transaction holds does not
-// hold up that caller's write, and finishes once the transaction ends.
-//
-// A reload takes the reload lock and then the table, and the ticker's and a
-// delivered event's reloads run whenever they fall due, a caller's
-// transaction or not. A write that waited on that lock before taking its own
-// connection would wait on a reload that waits on the caller: neither bound
-// would reach it.
+// TestAReloadWaitingForTheCallersConnectionHoldsNoWriteUp checks that a reload
+// waiting for the caller's connection does not hold up that caller's write.
 func TestAReloadWaitingForTheCallersConnectionHoldsNoWriteUp(t *testing.T) {
 	s, handle, _ := storeOnOneConnection(t)
 	reloaded := make(chan struct{})

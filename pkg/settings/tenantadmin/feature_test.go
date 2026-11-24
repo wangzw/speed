@@ -6,9 +6,7 @@ import (
 	"github.com/vislake/speed/pkg/feature"
 )
 
-// TestTheModuleDeclaresTheTenantSettingsFeature holds the declaration the
-// frontend gates the tenant settings surface on: one static Spec with the exact
-// name.
+// TestTheModuleDeclaresTheTenantSettingsFeature checks that the module declares one static feature.Spec with the exact name.
 func TestTheModuleDeclaresTheTenantSettingsFeature(t *testing.T) {
 	want := feature.Spec{Name: "settings.tenantadmin"}
 	var got []feature.Spec

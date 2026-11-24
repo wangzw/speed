@@ -12,10 +12,8 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The layer is fixed by the tenant in the path and the decision is made in that
-// tenant's domain on the tenant settings codes: a read asks settings.tenant.read
-// and a write settings.tenant.write, both in authz.Domain(tenant). There is no
-// query parameter that could point either at another layer or another tenant.
+// TestThePathSettlesTheLayerAndThePermission checks that the path tenant fixes
+// the layer and the decision is made in that tenant's domain.
 func TestThePathSettlesTheLayerAndThePermission(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -49,7 +47,6 @@ func TestThePathSettlesTheLayerAndThePermission(t *testing.T) {
 	}
 }
 
-// asksLayer reports whether any settings call named the layer.
 func asksLayer(calls []storeCall, layer settings.Layer) bool {
 	for _, c := range calls {
 		if c.layer == layer {
@@ -59,11 +56,8 @@ func asksLayer(calls []storeCall, layer settings.Layer) bool {
 	return false
 }
 
-// A layer or tenant query parameter belongs to the platform surface and is
-// refused here with 400: the layer is fixed by the path, and either parameter is
-// a client trying to point the action at another layer or another tenant. The
-// refusal comes after the permission decision, as the design fixes the order, so
-// a caller without the permission is answered by the guard instead.
+// TestALayerOrTenantQueryParameterIsA400AfterTheDecision checks that either
+// parameter is a 400 written after the permission decision.
 func TestALayerOrTenantQueryParameterIsA400AfterTheDecision(t *testing.T) {
 	cases := map[string]struct {
 		method string
@@ -97,9 +91,7 @@ func TestALayerOrTenantQueryParameterIsA400AfterTheDecision(t *testing.T) {
 	}
 }
 
-// The permission decision precedes the query-parameter refusal: a caller the
-// guard refuses is answered by the guard's 403 even when the request also carries
-// a layer parameter.
+// TestThePermissionDecisionPrecedesTheQueryRefusal checks that the guard refusal wins over the query refusal.
 func TestThePermissionDecisionPrecedesTheQueryRefusal(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
@@ -109,9 +101,8 @@ func TestThePermissionDecisionPrecedesTheQueryRefusal(t *testing.T) {
 	}
 }
 
-// A request with no identity is answered by this module with a 401 carrying the
-// realm challenge and no problem type, and asks neither the guard nor the
-// settings surface.
+// TestNoIdentityIsA401WithTheRealmChallengeAndNoType checks that an
+// identity-less request gets 401 and asks neither the guard nor the store.
 func TestNoIdentityIsA401WithTheRealmChallengeAndNoType(t *testing.T) {
 	r := newRig(t)
 	w := r.doAnonymous(http.MethodGet, base)
@@ -129,8 +120,7 @@ func TestNoIdentityIsA401WithTheRealmChallengeAndNoType(t *testing.T) {
 	}
 }
 
-// The guard writes its own refusal: a denial is a 403 and an outage a 503, and
-// the handler returns without touching the settings surface.
+// TestTheGuardWritesItsOwnRefusal checks that the guard writes its 403 or 503 and the store is untouched.
 func TestTheGuardWritesItsOwnRefusal(t *testing.T) {
 	t.Run("denied", func(t *testing.T) {
 		r := newRig(t)
@@ -153,8 +143,7 @@ func TestTheGuardWritesItsOwnRefusal(t *testing.T) {
 	})
 }
 
-// A tenant outside the identifier's value domain is a 400 naming bad-request,
-// written before a layer is built or the settings module is reached.
+// TestAPathTenantOutsideTheIdentifierDomainIsA400 checks that a bad tenant is a 400 before a layer is built.
 func TestAPathTenantOutsideTheIdentifierDomainIsA400(t *testing.T) {
 	r := newRig(t)
 	w := r.do(http.MethodGet, "/api/v1/tenants/acme%20x/settings", nil)
@@ -169,9 +158,7 @@ func TestAPathTenantOutsideTheIdentifierDomainIsA400(t *testing.T) {
 	}
 }
 
-// A write lands a 204 and passes the path tenant's layer, the full key, the
-// body's value and the caller's accountability key on to the settings module,
-// and it writes one mandatory audit row before the action.
+// TestAWriteLands204AndPassesTheActionOn checks that a write lands 204, passes its arguments on and writes one mandatory audit row.
 func TestAWriteLands204AndPassesTheActionOn(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = admissionDeclared()
@@ -221,10 +208,7 @@ func TestAWriteLands204AndPassesTheActionOn(t *testing.T) {
 	}
 }
 
-// A write by an impersonating administrator is attributed to the administrator,
-// not to the account impersonated: the actor the settings module records is the
-// caller's accountability key, Identity.Key(), which is the hands on the request.
-// The same holds on the delete route.
+// TestAnImpersonatedWriteIsAttributedToTheActor checks that an impersonated write is attributed to the administrator.
 func TestAnImpersonatedWriteIsAttributedToTheActor(t *testing.T) {
 	impersonation := []authntest.Option{
 		authntest.WithAccount(authn.AccountID("carol")),
@@ -273,8 +257,7 @@ func TestAnImpersonatedWriteIsAttributedToTheActor(t *testing.T) {
 	}
 }
 
-// A write whose key has no declaration is a 404 and reaches neither the write
-// seam, the audit nor the settings module.
+// TestAWriteOfAnUndeclaredKeyIsA404 checks that it reaches neither the seam, the audit nor the store.
 func TestAWriteOfAnUndeclaredKeyIsA404(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = admissionDeclared()
@@ -293,9 +276,7 @@ func TestAWriteOfAnUndeclaredKeyIsA404(t *testing.T) {
 	}
 }
 
-// A value the settings module refuses is a 422 naming invalid-value, and the
-// write closes with a failed audit row linked to the mandatory one by its action
-// identifier.
+// TestARefusedValueIsA422WithAFailedAuditRow checks that a refused value is a 422 and closes with a failed audit row.
 func TestARefusedValueIsA422WithAFailedAuditRow(t *testing.T) {
 	cases := map[string]error{
 		"type mismatch": settings.ErrTypeMismatch,
@@ -328,8 +309,7 @@ func TestARefusedValueIsA422WithAFailedAuditRow(t *testing.T) {
 	}
 }
 
-// A key the settings module does not know is a 404, the module's other failures
-// a 503 with no problem type.
+// TestAWriteRefusedByTheModuleMapsToItsAnswer checks that an unknown key is a 404 and other failures a 503.
 func TestAWriteRefusedByTheModuleMapsToItsAnswer(t *testing.T) {
 	cases := map[string]struct {
 		cause  error
@@ -360,8 +340,7 @@ func TestAWriteRefusedByTheModuleMapsToItsAnswer(t *testing.T) {
 	}
 }
 
-// The mandatory audit row gates the action: when it does not land the write is a
-// 503 and the settings module is never asked to change a row.
+// TestTheMandatoryAuditRowGatesTheAction checks that a row that does not land answers 503 and the store is never changed.
 func TestTheMandatoryAuditRowGatesTheAction(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = admissionDeclared()
@@ -375,9 +354,8 @@ func TestTheMandatoryAuditRowGatesTheAction(t *testing.T) {
 	}
 }
 
-// The delete route drops a declared key's row on the path tenant's layer and
-// writes its own mandatory audit row before the action. An undeclared key is a
-// 404 and a failure the module returns is a 503.
+// TestTheDeleteRoute checks that the delete drops a declared key, writes its
+// audit row, and refuses an undeclared key or a module failure.
 func TestTheDeleteRoute(t *testing.T) {
 	t.Run("landed", func(t *testing.T) {
 		r := newRig(t)
@@ -418,7 +396,7 @@ func TestTheDeleteRoute(t *testing.T) {
 	})
 }
 
-// A body the handler cannot read is a 400 before the settings module is called.
+// TestAnUnreadableBodyIsA400 checks that an unreadable body is a 400.
 func TestAnUnreadableBodyIsA400(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = admissionDeclared()
@@ -431,9 +409,7 @@ func TestAnUnreadableBodyIsA400(t *testing.T) {
 	}
 }
 
-// The host's settings write seam refuses a write: the answer is 403 protected,
-// the action does not run, no audit row lands and the settings module is not
-// asked to change a row. The seam is asked once, with the tenant in the path.
+// TestAWriteSettingsRefusalIsProtected checks that a seam refusal is a 403 protected and the action does not run.
 func TestAWriteSettingsRefusalIsProtected(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = admissionDeclared()
@@ -456,10 +432,7 @@ func TestAWriteSettingsRefusalIsProtected(t *testing.T) {
 	}
 }
 
-// The seam's own failure is a 503 on both write routes, never read as
-// permission to proceed, and the action does not run. This is where a write
-// differs from the listing, which still answers 200 with the items it read and
-// reports the surface read-only instead.
+// TestAWriteSettingsFailureIs503 checks that a seam failure is a 503 on both write routes.
 func TestAWriteSettingsFailureIs503(t *testing.T) {
 	for _, method := range []string{http.MethodPut, http.MethodDelete} {
 		t.Run(method, func(t *testing.T) {
@@ -484,10 +457,7 @@ func TestAWriteSettingsFailureIs503(t *testing.T) {
 	}
 }
 
-// A declared but read-only item is visible and unwritable: both write routes
-// answer 403 with the read-only problem, before the seam, the audit and the
-// store. It is not the bare 404 an undeclared or platform-only key gets: the
-// caller can see the item and is told why it cannot write it.
+// TestAWriteToAReadOnlyItemIs403 checks that both write routes answer 403 read-only before the seam, the audit and the store.
 func TestAWriteToAReadOnlyItemIs403(t *testing.T) {
 	r := newRig(t)
 	item := settings.Item{

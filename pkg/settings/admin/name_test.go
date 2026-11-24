@@ -12,7 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// directoryStub answers the identifier each mapped name addresses.
 type directoryStub map[string]string
 
 func (d directoryStub) TenantIDOf(_ context.Context, name string) (string, bool, error) {
@@ -20,10 +19,8 @@ func (d directoryStub) TenantIDOf(_ context.Context, name string) (string, bool,
 	return id, ok, nil
 }
 
-// TestTheTenantLayerIsKeyedByIdentifierAndCarriesTheName holds the two names
-// apart: the query string names the tenant by its name, the layer and the
-// policy domain are keyed by the identifier it resolves to, and the audit
-// detail carries the name a reader can recognise.
+// TestTheTenantLayerIsKeyedByIdentifierAndCarriesTheName checks that the query names the tenant,
+// the layer and domain key by the identifier, and the audit detail carries its name.
 func TestTheTenantLayerIsKeyedByIdentifierAndCarriesTheName(t *testing.T) {
 	r := newRig(t)
 	r.p.directory = directoryStub{"acme": "t-acme"}
@@ -59,9 +56,7 @@ func TestTheTenantLayerIsKeyedByIdentifierAndCarriesTheName(t *testing.T) {
 	}
 }
 
-// TestATenantNameNoRosterCarriesIsA400 holds the unknown-name answer: the
-// directory knows no such tenant, so there is no layer to act on and nothing is
-// read or written.
+// TestATenantNameNoRosterCarriesIsA400 checks that an unknown tenant name is a 400 with nothing read or written.
 func TestATenantNameNoRosterCarriesIsA400(t *testing.T) {
 	r := newRig(t)
 	r.p.directory = directoryStub{"acme": "t-acme"}
@@ -74,10 +69,7 @@ func TestATenantNameNoRosterCarriesIsA400(t *testing.T) {
 	}
 }
 
-// TestATenantLayerWithNoRosterIsRefused holds the assembly with no tenant
-// directory: the query carries a name and there is nothing to resolve it
-// with, so the surface refuses rather than reading the value as an identifier.
-// The global layer is untouched by the absence.
+// TestATenantLayerWithNoRosterIsRefused checks that a tenant layer cannot be selected without a roster.
 func TestATenantLayerWithNoRosterIsRefused(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = []settings.DeclaredItem{

@@ -16,13 +16,10 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// noConfig is the configuration reader a host supplies. It decodes nothing,
-// which leaves every declared default in place.
 type noConfig struct{}
 
 func (noConfig) Decode(string, any) error { return nil }
 
-// providingDB delivers the database capability over a real handle.
 func providingDB(handle *gorm.DB) core.Module {
 	return core.Module{
 		Name:     "test.database",
@@ -33,7 +30,6 @@ func providingDB(handle *gorm.DB) core.Module {
 	}
 }
 
-// providingBus delivers the event capability.
 func providingBus(bus event.Bus) core.Module {
 	return core.Module{
 		Name:     "test.event",
@@ -42,16 +38,8 @@ func providingBus(bus event.Bus) core.Module {
 	}
 }
 
-// contestedCapability is the token the two declarers below claim. Nothing ever
-// resolves it: the exclusive claim alone is what makes resolution run over
-// them.
 type contestedCapability interface{ contested() }
 
-// contesting is a declarer that claims one capability exclusively, stating
-// whether it is the provider the host explicitly enabled. Two of these on the
-// same claim are what puts one through resolution and leaves it with the
-// registry's StateDisabled verdict — the one way a participating module ends
-// a run without running.
 func contesting(name, namespace string, explicit bool) core.Module {
 	defaults := demoDefaults()
 	m := declaring(name, Schema{Namespace: namespace, Mounts: []Mount{{Value: &defaults}}})
@@ -65,14 +53,13 @@ func contesting(name, namespace string, explicit bool) core.Module {
 	return m
 }
 
-// declarerNamed is an ordinary declarer in a namespace of its own.
 func declarerNamed(name, namespace string) core.Module {
 	defaults := demoDefaults()
 	return declaring(name, Schema{Namespace: namespace, Mounts: []Mount{{Value: &defaults}}})
 }
 
-// The module takes part in the lifecycle: it constructs, loads, serves reads
-// and writes, and subscribes to its own change type.
+// TestTheModuleDrivesAndServes checks that the module constructs, loads, serves
+// reads and writes, and subscribes to its own change type.
 func TestTheModuleDrivesAndServes(t *testing.T) {
 	handle := open(t)
 	bus := newRecordingBus()
@@ -102,8 +89,6 @@ func TestTheModuleDrivesAndServes(t *testing.T) {
 			if entries, err := store.List(ctx, ForTenant("t1")); err != nil || len(entries) != 1 {
 				t.Errorf("List returned %+v (%v), want one row", entries, err)
 			}
-			// Another module's declaration, read through the delivered
-			// capability rather than restated here.
 			if !slices.ContainsFunc(store.Declared(), func(d DeclaredItem) bool {
 				return d.Key == "demo.limit" && d.Module == "test.declarer" && d.Default == "100"
 			}) {
@@ -124,8 +109,6 @@ func TestTheModuleDrivesAndServes(t *testing.T) {
 	}
 }
 
-// readingInInit is a module that reads a setting in its own Init, and keeps
-// what the read returned for the case to inspect.
 func readingInInit(name string, requires []core.Requirement, got *int, readErr *error) core.Module {
 	return core.Module{
 		Name:     name,
@@ -142,15 +125,7 @@ func readingInInit(name string, requires []core.Requirement, got *int, readErr *
 	}
 }
 
-// A read made before this module's Init has loaded the snapshot is refused,
-// and one made by a module ordered after it gets the table's value.
-//
-// Before the load the snapshot holds nothing, so a read would answer with the
-// declared default whatever the table holds, and nothing would say so. A
-// module that reads in its own Init without declaring the requirement lands
-// wherever the construction order puts it — ahead of this one whenever its
-// name sorts first — and the value it acts on for the rest of the process
-// would be the default.
+// TestAReadBeforeTheLoadIsRefused checks that a read before Init is refused and a module ordered after it reads the table value.
 func TestAReadBeforeTheLoadIsRefused(t *testing.T) {
 	handle := open(t)
 	if err := handle.Exec("INSERT INTO settings (tenant_id, key, value, version, updated_at) "+
@@ -165,8 +140,6 @@ func TestAReadBeforeTheLoadIsRefused(t *testing.T) {
 	reg.Register(declarerNamed("test.declarer", demoNamespace))
 	reg.Register(Module())
 
-	// "crm" sorts ahead of "settings" and declares nothing, so it is
-	// initialised first; "crm.after" declares the requirement.
 	var early, late int
 	var earlyErr, lateErr error
 	reg.Register(readingInInit("crm", nil, &early, &earlyErr))
@@ -190,8 +163,7 @@ func TestAReadBeforeTheLoadIsRefused(t *testing.T) {
 	}
 }
 
-// A store that has not loaded refuses a read rather than answering from the
-// declared default, and the refusal names the key and what to do about it.
+// TestAStoreThatHasNotLoadedRefusesAReadNamingTheKey checks that an unloaded store refuses a read naming the key.
 func TestAStoreThatHasNotLoadedRefusesAReadNamingTheKey(t *testing.T) {
 	store := newSettingsStore(demoTable(t), stubDatabase{handle: open(t), dialect: db.SQLite},
 		newRecordingBus(), moduleSettings{})
@@ -206,8 +178,6 @@ func TestAStoreThatHasNotLoadedRefusesAReadNamingTheKey(t *testing.T) {
 	}
 }
 
-// eventsOnly is the configuration a host that relies on change events alone
-// supplies: the periodic refresh is off.
 type eventsOnly struct{}
 
 func (eventsOnly) Decode(namespace string, target any) error {
@@ -217,29 +187,16 @@ func (eventsOnly) Decode(namespace string, target any) error {
 	return nil
 }
 
-// A change made between this module's Init and its Start is served once the
-// module has started, even though no event for it ever arrives.
-//
-// A transport bus creates its consumers when it starts, and hands them only
-// what is published from then on, while this module loads its snapshot in
-// Init, before any Start. A change another replica published in between is
-// therefore delivered to nobody here, and with the refresh off this replica
-// would serve the value from before it until a restart. This module requires
-// the bus, so it starts after it: a load at its own Start sees everything
-// written before the consumers existed.
+// TestAChangeBeforeTheBusStartsIsNotLost checks that a change between Init and Start is served once the module starts.
 func TestAChangeBeforeTheBusStartsIsNotLost(t *testing.T) {
 	handle := open(t)
 	reg := core.New()
 	reg.Register(config.Module())
 	reg.Supply(eventsOnly{}, config.ModuleName)
 	reg.Register(providingDB(handle))
-	// The recording bus delivers nothing unless a case drives it, which is
-	// what a transport bus does with an event published before it started.
 	reg.Register(providingBus(newRecordingBus()))
 	reg.Register(declarerNamed("test.declarer", demoNamespace))
 	reg.Register(Module())
-	// Initialised after this module, and before any module starts: the row it
-	// writes is the one another replica writes in that window.
 	reg.Register(core.Module{
 		Name:     "test.other-replica",
 		Requires: []core.Requirement{{Token: (*Store)(nil)}},
@@ -274,17 +231,8 @@ func TestAChangeBeforeTheBusStartsIsNotLost(t *testing.T) {
 	}
 }
 
-// A key's validity follows the binary rather than this run's verdict on its
-// module. The key table is the available set and no consumer point subtracts
-// from it (architecture invariant 15, design-settings.md), so a module that
-// lost a resolution keeps its keys exactly as one the command never took in
-// does: a subtraction would make the same key legal under one command and
-// illegal under another while the declaration itself did not change.
-//
-// The resolution loser is the case a subtraction would drop: it took part in
-// the run and did not run. Reading the verdict back first is what keeps this a
-// test of that case: if the drive stopped disabling the loser, the assertion
-// would hold for the wrong reason.
+// TestEveryRegisteredDeclarationStaysInTheKeyTable checks that a module that
+// lost a resolution keeps its keys, as the available set is not subtracted.
 func TestEveryRegisteredDeclarationStaysInTheKeyTable(t *testing.T) {
 	handle := open(t)
 	reg := core.New()
@@ -299,11 +247,7 @@ func TestEveryRegisteredDeclarationStaysInTheKeyTable(t *testing.T) {
 
 	ctx := context.Background()
 	err := reg.Drive(ctx, core.Drive{
-		// To Prepare and no further: the verdicts are what this case reads, and
-		// the contesting declarers stand in for modules rather than delivering a
-		// capability anything resolves.
-		Depth: core.StagePrepare,
-		// test.out is registered but named by no drive: this run never took it in.
+		Depth:        core.StagePrepare,
 		Participants: []string{"test.database", "test.event", "test.loser", "test.winner", ModuleName},
 	})
 	if err != nil {
@@ -324,7 +268,7 @@ func TestEveryRegisteredDeclarationStaysInTheKeyTable(t *testing.T) {
 		key  string
 		want bool
 	}{
-		{"loser.limit", true},  // took part and lost the resolution
+		{"loser.limit", true},
 		{"winner.limit", true}, // took part and won it
 		{"out.limit", true},    // never took part: no verdict to honour
 	}
@@ -335,21 +279,8 @@ func TestEveryRegisteredDeclarationStaysInTheKeyTable(t *testing.T) {
 	}
 }
 
-// suppliedStore is a settings store the host builds itself, the way a
-// consumer's test does, rather than one this module constructed. It satisfies
-// the capability through the embedded interface, and no call is meant to reach
-// it.
 type suppliedStore struct{ Store }
 
-// driveWithSupplied drives a registry holding this module, with store supplied
-// as its instance, as far as Start, and returns what the capability resolves
-// to there.
-//
-// This module's Prepare and New do not run for a supplied instance, so no
-// configuration reader is involved. The module is not named in the drive,
-// because a module with a supplied instance takes part in every drive, but the
-// two providers it requires are: its requirements are resolved as they are for
-// any module.
 func driveWithSupplied(t *testing.T, handle *gorm.DB, bus event.Bus, store Store) Store {
 	t.Helper()
 	reg := core.New()
@@ -374,21 +305,14 @@ func driveWithSupplied(t *testing.T, handle *gorm.DB, bus event.Bus, store Store
 	return resolved
 }
 
-// subscribersTo counts the handlers subscribed to an event type.
 func subscribersTo(bus *recordingBus, eventType string) int {
 	bus.mu.Lock()
 	defer bus.mu.Unlock()
 	return len(bus.handlers[eventType])
 }
 
-// A store the host supplies for this module, one this module did not build, is
-// the instance the capability resolves to and is left alone by the module's
-// callbacks: nothing is subscribed for it.
-//
-// The drive reaches Init, Start and Stop with the stand-in in hand. A callback
-// that took its instance for this module's own store without checking would
-// panic there, and one that subscribed on its own account would leave a handler
-// on the bus.
+// TestAStandInSuppliedForTheModuleIsLeftAlone checks that a supplied store this
+// module did not build is resolved and left alone by the callbacks.
 func TestAStandInSuppliedForTheModuleIsLeftAlone(t *testing.T) {
 	bus := newRecordingBus()
 	standIn := &suppliedStore{}
@@ -404,12 +328,8 @@ func TestAStandInSuppliedForTheModuleIsLeftAlone(t *testing.T) {
 	}
 }
 
-// A store this module built and the host supplied for it is acted on as one the
-// module constructed itself: it is subscribed to the change event and loaded.
-//
-// It is the control for the stand-in's case. Callbacks that skipped every
-// supplied instance would pass that case without having decided anything about
-// the stand-in, and fail this one.
+// TestTheModulesOwnStoreSuppliedForItIsSubscribedAndLoaded checks that the
+// module's own store supplied by the host is subscribed and loaded.
 func TestTheModulesOwnStoreSuppliedForItIsSubscribedAndLoaded(t *testing.T) {
 	handle := open(t)
 	bus := newRecordingBus()
@@ -424,8 +344,6 @@ func TestTheModulesOwnStoreSuppliedForItIsSubscribedAndLoaded(t *testing.T) {
 	if n := subscribersTo(bus, ChangedEventType); n != 1 {
 		t.Errorf("%d handlers subscribed to %q, want the one this module's own store gets", n, ChangedEventType)
 	}
-	// A store that has not loaded refuses a read, so a value at all says the
-	// load ran.
 	if value, err := Get[int](own, Global(), "demo.limit"); err != nil || value != 100 {
 		t.Errorf("read %v (%v) from the supplied store, want the declared 100 of a loaded one", value, err)
 	}

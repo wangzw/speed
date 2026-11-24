@@ -14,10 +14,8 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The endpoint list refuses a shape the module cannot run on, naming the key: an
-// empty list mounts the routes nowhere, the name that stands for every endpoint
-// would put them on the public endpoints, an empty name names no endpoint, and a
-// name written twice would register every route on it twice.
+// TestTheEndpointListRefusesShapesItCannotRunOn checks that an empty list, the
+// every-endpoint name, an empty name and a duplicate are refused naming the key.
 func TestTheEndpointListRefusesShapesItCannotRunOn(t *testing.T) {
 	cases := map[string]string{
 		"empty":      `[]`,
@@ -39,10 +37,7 @@ func TestTheEndpointListRefusesShapesItCannotRunOn(t *testing.T) {
 	}
 }
 
-// The schema declares the endpoint list as a required item taking the primary
-// source alone: it decides where the management routes are mounted, so it must
-// be named, and an environment variable or argument must not be able to move
-// them.
+// TestTheEndpointItemIsRequiredOnThePrimarySource checks that the endpoint list is required and takes the primary source alone.
 func TestTheEndpointItemIsRequiredOnThePrimarySource(t *testing.T) {
 	var declared config.Schema
 	for _, res := range Module().Resources {
@@ -65,8 +60,7 @@ func TestTheEndpointItemIsRequiredOnThePrimarySource(t *testing.T) {
 	}
 }
 
-// The descriptor requires the settings surface, the guard, the audit capability
-// and the registration-verification read, and takes the logger optionally.
+// TestTheDescriptorRequiresItsCapabilities checks the required capabilities and the optional logger.
 func TestTheDescriptorRequiresItsCapabilities(t *testing.T) {
 	optional := map[any]bool{}
 	for _, req := range Module().Requires {
