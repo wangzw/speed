@@ -43,18 +43,27 @@ this file adds what is specific to the npm side.
 - Environment-dependent globals (navigator, localStorage, location) are
   never relied on implicitly: inject deterministic stand-ins or guard the
   reads, or the suite breaks under Node and CI.
-- Vitest runs from the package directory, and every package with tests
-  carries a `vitest.config.ts` whose `test` block is built with
+- Every workspace member with tests except the demo host carries a
+  `vitest.config.ts` whose `test` block is built with
   `sharedTestOptions()` from `web/vitest.shared.ts` -- the workspace's one
   pair of test and hook timeouts and its coverage block, multiplied by the
-  caller's `GATE_TIME_SCALE` (default 1). A case does not lower its own
-  budget, and nothing probes the machine's load or core count to widen
-  one. A package config declares only what differs:
-  a DOM-rendering package sets the jsdom environment and its setup file,
-  and keeps jsdom, Testing Library and friends in its own devDependencies,
+  caller's `GATE_TIME_SCALE` (default 1). The demo host builds its own
+  `test` block and takes the shared budgets and reporters from the same
+  file by hand. The gate runs every member's suite as a project of one
+  Vitest process (`web/vitest.unit.config.ts`), with `GATE_JOBS` workers
+  shared across them, so individual cases take longer than 5s under that
+  load; a package's own `pnpm test` still runs from its directory. A case
+  does not lower its own budget, and nothing probes the machine's load or
+  core count to widen one. A package config declares only what differs: a
+  DOM-rendering package sets the jsdom environment and its setup file, and
+  keeps jsdom, Testing Library and friends in its own devDependencies,
   never the shared root. The workspace guard
   (`web/scripts/workspace-test-config.test.mjs`) fails a package whose
-  config stops spreading the preset.
+  config stops spreading the preset, and a member whose config is missing
+  from the unit config's project list.
+- Tests do not depend on the working directory: the gate's single process
+  runs every member from `web/`, so a test that reads a file derives the
+  path from the test file's own location (`fileURLToPath(import.meta.url)`).
 - Browser cases are named `*.browser.test.tsx` and live beside the
   component under test. They run only through the root `make web-browser`
   (Vitest browser mode, Playwright provider, Chromium --

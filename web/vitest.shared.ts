@@ -1,23 +1,7 @@
 /**
- * The workspace's shared Vitest test options.
- *
- * Every member's vitest.config.ts takes its `test` block from here
- * instead of restating the timeout and the coverage block, so a package
- * cannot fall back to Vitest's 5s default by omission: the workspace's
- * suites run concurrently under `pnpm -r test`, and that load pushes
- * individual cases past 5s on a machine running every package at once,
- * failing the gate on the clock rather than on an assertion. The budget
- * is the wait, not the work: a genuine hang still fails, a minute later.
- *
- * The caller sets `GATE_TIME_SCALE` (a multiplier it decides on, never a
- * value measured from the machine) when it runs the gate beside other
- * heavy work; the budget is multiplied by it. The wait bounds scale;
- * nothing else about a case changes.
- *
- * What stays package-specific is what actually differs: the environment
- * (`jsdom` for DOM-rendering packages, node otherwise), the setup file,
- * the aliases from the workspace's single package map
- * (web/scripts/speed-aliases.mjs), and any coverage exclusion.
+ * The workspace's shared Vitest test options: every member's
+ * vitest.config.ts builds its `test` block from here, so a package cannot
+ * fall back to Vitest's 5s default by omission.
  */
 import { configDefaults } from 'vitest/config'
 import type { ViteUserConfig } from 'vitest/config'

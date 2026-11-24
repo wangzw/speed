@@ -25,13 +25,35 @@ import {
   type ServerConfigInput,
 } from './config'
 
-// The fixture paths derive from `import.meta.url`, which the jsdom transform
-// does not turn into a file URL, so this suite names the templates from the
-// package's working directory instead. Vitest runs from the package directory.
-vi.mock('./paths', () => ({
-  E2E_CONFIG_TEMPLATE: `${process.cwd()}/../server/e2e/config.yaml`,
-  DEPLOY_CONFIG_TEMPLATE: `${process.cwd()}/../deploy/fly.yaml.tmpl`,
-}))
+// The templates are located from this file's URL: the unit-test gate runs
+// this suite from web/, not the package directory, so the working directory
+// cannot name them. The path comes through `fileURLToPath(import.meta.url)`
+// rather than `new URL(path, import.meta.url)`, whose literal form vite
+// rewrites to a dev-server asset URL under the jsdom transform.
+vi.mock('./paths', async () => {
+  const nodePath = await import('node:path')
+  const nodeUrl = await import('node:url')
+  const here = nodePath.dirname(nodeUrl.fileURLToPath(import.meta.url))
+  return {
+    E2E_CONFIG_TEMPLATE: nodePath.join(
+      here,
+      '..',
+      '..',
+      '..',
+      'server',
+      'e2e',
+      'config.yaml',
+    ),
+    DEPLOY_CONFIG_TEMPLATE: nodePath.join(
+      here,
+      '..',
+      '..',
+      '..',
+      'deploy',
+      'fly.yaml.tmpl',
+    ),
+  }
+})
 
 const dirs: string[] = []
 

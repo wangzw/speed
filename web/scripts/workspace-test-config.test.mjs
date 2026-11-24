@@ -3,12 +3,14 @@
  * Vitest options from the shared preset (web/vitest.shared.ts).
  *
  * A package that hand-writes its test block can silently run on Vitest's
- * 5s default, which the parallel workspace run (`pnpm -r test`) exceeds
- * on a loaded machine -- the failure lands on the clock, not on an
- * assertion. This suite makes that omission red at the source: each
- * package with a `test` script must import `sharedTestOptions` from the
- * preset, must not pin its own `testTimeout` or `hookTimeout`, and its
- * exported config must carry the preset's budgets and coverage options.
+ * 5s default, which the gate's single vitest process exceeds under load:
+ * it runs every member's suite as a project with GATE_JOBS workers shared
+ * between them, and individual cases there take longer than 5s, so the
+ * failure lands on the clock, not on an assertion. This suite makes that
+ * omission red at the source: each package with a `test` script must
+ * import `sharedTestOptions` from the preset, must not pin its own
+ * `testTimeout` or `hookTimeout`, and its exported config must carry the
+ * preset's budgets and coverage options.
  *
  * The preset also owns the boundary between the unit tier and the
  * browser tier: `*.browser.test.tsx` cases run only through the root
@@ -83,6 +85,8 @@
  */
 import {
   existsSync,
+  globSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -90,7 +94,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, extname, join } from 'node:path'
+import { dirname, extname, join, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
@@ -153,6 +157,66 @@ const testPackages = packageDirs
     return { dir, name: manifest.name, test: manifest.scripts?.test }
   })
   .filter((pkg) => typeof pkg.test === 'string')
+
+/** The single config the unit-test leg runs, at the web root. */
+const UNIT_CONFIG_PATH = join(webRoot, 'vitest.unit.config.ts')
+
+/**
+ * Every workspace member directory under `root`, with the `packages:`
+ * patterns of its pnpm-workspace.yaml expanded. The roster is read from
+ * that file rather than derived from `packageDirs`, which holds only
+ * `packages/*` and test-utils: the demo host is a member outside web/
+ * (`../starters/demo/web`). A pattern that matches nothing throws rather
+ * than shrinking the set silently. Only a directory that carries a
+ * package.json is a member, as pnpm counts them, so a bare directory left
+ * beside a package is not one.
+ */
+function workspaceMemberDirs(root = webRoot) {
+  const workspaceFile = join(root, 'pnpm-workspace.yaml')
+  const lines = readFileSync(workspaceFile, 'utf8').split('\n')
+  const start = lines.findIndex((line) => /^packages:\s*$/.test(line))
+  if (start === -1) {
+    throw new Error(`${workspaceFile}: no top-level packages: list`)
+  }
+  const patterns = []
+  for (const line of lines.slice(start + 1)) {
+    if (/^\s*(?:#.*)?$/.test(line)) {
+      continue
+    }
+    const item = /^\s*-\s*(.+?)\s*$/.exec(line)
+    if (item === null) {
+      break
+    }
+    patterns.push(item[1].replace(/\s+#.*$/, '').replace(/^['"]|['"]$/g, ''))
+  }
+  if (patterns.length === 0) {
+    throw new Error(`${workspaceFile}: packages: lists no member`)
+  }
+  const dirs = []
+  for (const pattern of patterns) {
+    const matches = globSync(`${pattern}/package.json`, { cwd: root })
+    if (matches.length === 0) {
+      throw new Error(`${workspaceFile}: ${pattern} matches no member`)
+    }
+    for (const match of matches) {
+      dirs.push(join(root, dirname(match)))
+    }
+  }
+  return dirs
+}
+
+/** The workspace members whose manifest declares a `test` script. */
+const workspaceTestMembers = workspaceMemberDirs()
+  .map((dir) => {
+    const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+    return { dir, name: manifest.name, test: manifest.scripts?.test }
+  })
+  .filter((member) => typeof member.test === 'string')
+
+/** A member's vitest config path as web/vitest.unit.config.ts names it. */
+function unitProjectPath(dir) {
+  return relative(webRoot, join(dir, 'vitest.config.ts')).split(sep).join('/')
+}
 
 /** The script kind a test source is parsed as, by its extension. */
 const SCRIPT_KINDS = {
@@ -853,6 +917,81 @@ describe('workspace test configuration', () => {
     expect(hasCallNamed(sourceFile, 'sharedTestOptions')).toBe(true)
     expect(hasPropertyNamed(sourceFile, 'testTimeout')).toBe(false)
     expect(hasPropertyNamed(sourceFile, 'hookTimeout')).toBe(false)
+  })
+
+  it('runs every workspace member that has tests in one vitest process', async () => {
+    // The single process covers exactly the workspace members that carry
+    // tests: a member without a project here would stop running in the gate.
+    expect(workspaceTestMembers.length).toBeGreaterThan(0)
+    const config = (await import(pathToFileURL(UNIT_CONFIG_PATH).href)).default
+    const projects = config.test?.projects
+    expect(Array.isArray(projects)).toBe(true)
+    const expanded = new Set()
+    for (const project of projects) {
+      expect(typeof project, String(project)).toBe('string')
+      const matches = globSync(project, { cwd: webRoot })
+      expect(matches, project).not.toHaveLength(0)
+      for (const match of matches) {
+        expanded.add(match.split(sep).join('/'))
+      }
+    }
+    expect([...expanded].sort()).toEqual(
+      workspaceTestMembers.map((member) => unitProjectPath(member.dir)).sort(),
+    )
+  })
+
+  it('ignores a workspace pattern match that carries no manifest', () => {
+    const root = mkdtempSync(join(tmpdir(), 'workspace-members-'))
+    try {
+      writeFileSync(
+        join(root, 'pnpm-workspace.yaml'),
+        'packages:\n  - packages/*\n',
+      )
+      mkdirSync(join(root, 'packages', 'real'), { recursive: true })
+      writeFileSync(
+        join(root, 'packages', 'real', 'package.json'),
+        JSON.stringify({ name: 'real', scripts: { test: 'vitest run' } }),
+      )
+      // A directory with only node_modules inside is a pattern match but
+      // not a member: pnpm counts only directories that carry a manifest.
+      mkdirSync(join(root, 'packages', 'stray', 'node_modules'), {
+        recursive: true,
+      })
+      writeFileSync(
+        join(root, 'packages', 'stray', 'node_modules', 'left.txt'),
+        '',
+      )
+      expect(workspaceMemberDirs(root)).toEqual([
+        join(root, 'packages', 'real'),
+      ])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('gives the single-process unit config the shared preset and reporters', async () => {
+    // Under `projects`, only the root config's reporters are honoured, so
+    // this config has to be the one that pins them; the shared preset is
+    // also where its case and hook budgets come from. The budgets must not
+    // be written here, where the guard reads a package's own values.
+    const sourceFile = parseTestSource(
+      readFileSync(UNIT_CONFIG_PATH, 'utf8'),
+      UNIT_CONFIG_PATH,
+    )
+    expect(hasCallNamed(sourceFile, 'sharedTestOptions')).toBe(true)
+    expect(hasPropertyNamed(sourceFile, 'testTimeout')).toBe(false)
+    expect(hasPropertyNamed(sourceFile, 'hookTimeout')).toBe(false)
+    const config = (await import(pathToFileURL(UNIT_CONFIG_PATH).href)).default
+    expect(config.test?.reporters).toEqual(sharedReporters())
+  })
+
+  it("runs each workspace member's tests with the package's own script", () => {
+    // The gate runs vitest directly, so a member's own `test` script must
+    // run the same thing: a script that grew flags would no longer match
+    // what the gate runs.
+    for (const member of workspaceTestMembers) {
+      expect(member.test, member.name).toBe('vitest run')
+    }
   })
 
   it('fixes the test reporter so the log does not depend on the runner', () => {

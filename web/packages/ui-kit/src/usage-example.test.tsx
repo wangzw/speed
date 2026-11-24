@@ -31,7 +31,8 @@
  */
 
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { act, fireEvent, within } from '@testing-library/react'
 import { useEffect, useRef, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -60,6 +61,15 @@ import {
   useWriteFeedback,
   WriteFeedbackRegion,
 } from './index.js'
+
+// The package README, located from this file rather than the working
+// directory: the unit-test gate runs every member from web/, so the working
+// directory is not the package root.
+const README_PATH = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  'README.md',
+)
 
 interface Member {
   id: number
@@ -321,9 +331,7 @@ describe('README usage example', () => {
   })
 
   it('documents the write-feedback resolver composition the suite executes', () => {
-    // The package's test commands run with the package root as the working
-    // directory (`pnpm test` here, or `pnpm --filter @speed/ui-kit test`).
-    const readme = readFileSync(join(process.cwd(), 'README.md'), 'utf8')
+    const readme = readFileSync(README_PATH, 'utf8')
     const sectionStart = readme.indexOf('### Write feedback')
     expect(sectionStart).toBeGreaterThanOrEqual(0)
     const fenceStart = readme.indexOf('```tsx', sectionStart)

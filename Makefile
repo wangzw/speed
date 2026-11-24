@@ -58,14 +58,12 @@ PYTHON ?= python3
 # variable or by environment variable of the same name.
 #
 # Where a leg nests two of those widths, the product is what must stay within
-# the budget, not either factor alone. pnpm -r starting several package scripts
-# and each script starting its own vitest process is the case in this tree: a
-# workspace concurrency of GATE_JOBS with a GATE_JOBS-wide vitest behind each
-# package would use GATE_JOBS squared. Such a leg runs its packages one at a
-# time (--workspace-concurrency=1) and gives each process the whole budget
-# (--maxWorkers=$(GATE_JOBS)). A leg that starts a single process (web-a11y,
-# web-browser) has no package width to multiply, so its per-process worker
-# count is already the budget.
+# the budget, not either factor alone. The lint leg does: pnpm -r starts
+# GATE_JOBS packages at once and each ESLint process is given --concurrency=off
+# so it lints on one thread. The frontend unit tests nest no width at all: one
+# vitest process runs every member's suite as a project of
+# web/vitest.unit.config.ts, so its --maxWorkers is the whole budget, and
+# web-a11y and web-browser likewise start a single vitest process each.
 #
 # `make -j N` and this number multiply. With -j N up to N segments run at
 # once, each able to use GATE_JOBS cores, so a caller that runs parallel
@@ -390,24 +388,22 @@ python-version:
 # test-utils is left out because its build is its typecheck, which the static
 # phase already runs.
 #
-# The unit-test leg is serial at the package level, but for the budget rather
-# than correctness: each package's `test` script starts its own vitest
-# process, and pnpm -r's --workspace-concurrency and that process's
-# --maxWorkers multiply. Running the packages one at a time with
-# --workspace-concurrency=1 lets each vitest process take the whole GATE_JOBS
-# budget, so the product stays GATE_JOBS instead of GATE_JOBS squared. The
-# install does not nest a second width: the workspace shares one lockfile, so
+# The unit-test leg is one vitest process over the whole workspace: every
+# member's suite is a project of web/vitest.unit.config.ts, they are scheduled
+# in one pool, and --maxWorkers=$(GATE_JOBS) is the whole width with no package
+# layer to multiply it. A project keeps the environment, setup file, env and
+# aliases its own config declares. The a11y sweep and the browser tier each run
+# as a separate process and config, so their --maxWorkers is their own budget.
+# The install does not nest a second width: the workspace shares one lockfile, so
 # --workspace-concurrency does not apply to it; --child-concurrency=$(GATE_JOBS)
 # caps the single installation's child processes, and both flags only write
-# the width out explicitly. The lint leg nests the other way round: pnpm -r
-# starts GATE_JOBS packages at once, and each ESLint process is given
+# the width out explicitly. The lint leg splits the width across two layers:
+# pnpm -r starts GATE_JOBS packages at once, and each ESLint process is given
 # --concurrency=off so it lints on one thread rather than probing the host's
 # core count. The typecheck leg starts one process per package and carries no
 # second width, so it keeps GATE_JOBS.
 # The lint and typecheck legs emit no file (every package extends noEmit), so
-# they also pass --no-sort: no ordering dependency exists to respect. The a11y
-# sweep and the browser tier each start a single vitest process, so their
-# --maxWorkers is already the budget.
+# they also pass --no-sort: no ordering dependency exists to respect.
 #
 # The frontend gate is three phases, so `check` can run each at the point its
 # cost belongs: the static phase rejects most changes in a fraction of a run,
@@ -427,7 +423,7 @@ web-check-static: ## Install the frontend dependencies and run its static checks
 	@pnpm -C web exec vitest run --maxWorkers=$(GATE_JOBS) eslint-rules/ scripts/
 
 web-check-test: ## Run the frontend's unit tests and route-level accessibility sweep
-	@pnpm -C web -r --workspace-concurrency=1 test --maxWorkers=$(GATE_JOBS)
+	@pnpm -C web exec vitest run --config vitest.unit.config.ts --maxWorkers=$(GATE_JOBS)
 	@$(MAKE) web-a11y
 
 web-check-build: ## Build every frontend package
