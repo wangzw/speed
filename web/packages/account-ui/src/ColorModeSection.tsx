@@ -68,8 +68,10 @@ export function ColorModeSection({
   // shows the preference the host reports as currently in effect.
   const storedMode = data?.color_mode ?? ''
   const value = storedMode !== '' ? storedMode : effective
-  // A write in flight disables the control, so a change can never race
-  // its own predecessor.
+  // A write in flight makes the control readOnly, so a change can never
+  // race its own predecessor while the select stays focusable: the select
+  // is the control that started the write and must keep focus until it
+  // settles.
   const saving = patchProfile.isPending || feedback.pending
 
   /** PATCH-first write: the server answers before anything local moves,
@@ -105,6 +107,11 @@ export function ColorModeSection({
         // selects: a mode name does not need to span the content width.
         sx={{ maxWidth: '24rem' }}
         slotProps={{
+          // readOnly rides the input slot and reaches the select's own
+          // combobox element: a write in flight keeps the control
+          // focusable and unchangeable instead of dropping focus to the
+          // document.
+          input: { readOnly: saving },
           // displayEmpty keeps the control rendering whatever value it
           // is given; the explicit shrink keeps a visible label above the
           // value instead of overlapping it.
@@ -121,7 +128,6 @@ export function ColorModeSection({
         label={hideLabel ? undefined : t('appearance.colorMode.label')}
         helperText={t('appearance.colorMode.description')}
         value={value}
-        disabled={saving}
         onChange={(event) => {
           void save(event.target.value as AppThemeModePreference)
         }}
