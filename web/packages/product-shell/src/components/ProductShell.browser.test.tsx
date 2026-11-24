@@ -1,26 +1,3 @@
-/**
- * ProductShell's header in a real browser: the band invariant across the
- * full matrix the acceptance names -- the tenant-facing shell at 375px and
- * 430px, in en-US and zh-CN.
- *
- * The narrow header is the frame's topbar shape: the drawer trigger, the
- * brand and the header actions share the first band, and the user menu
- * takes a full-width second band. At md and up the whole header is one
- * row. Both properties are geometry, so jsdom cannot answer them; the
- * cases measure the real Chromium layout.
- *
- * The second half of the invariant is the one a layout fix must not win
- * by cheating: every control the shell renders stays in the accessibility
- * tree with its accessible name, enabled and non-zero-sized. A control
- * folded away, aria-hidden, disabled or collapsed to nothing fails the
- * case even when the band count is two.
- *
- * Host content is data in this fixture, as the surrounding host-content
- * fixtures document: the strings stand in for the demo's own translated
- * labels, and the zh-CN set carries the wider real-language text (a
- * Chinese tenant name and the localized action labels) that the invariant
- * has to hold for too.
- */
 import type { ReactElement } from 'react'
 import { describe, expect, it } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
@@ -52,13 +29,6 @@ const NAV_ITEMS = [
 
 type Language = 'en-US' | 'zh-CN'
 
-/**
- * The host's header labels, per language. Host content, not copy this
- * shell renders -- data for the slots, exactly as a real host's own
- * translation bundle supplies it. The zh-CN set is deliberately the wider
- * one: the invariant exists to hold in the language whose labels measure
- * longer.
- */
 interface HostCopy {
   readonly brand: string
   readonly notifications: string
@@ -87,12 +57,8 @@ const HOST_COPY: Readonly<Record<Language, HostCopy>> = {
   },
 }
 
-/** The signed-in account's display name: the account avatar's accessible
- * name, as the demo's own user menu derives it from the principal. */
 const ACCOUNT = principal().display_name
 
-/** One icon-form header control: the glyph is decorative, and the
- * accessible name is the part the shell has to keep reachable. */
 function GlyphButton({
   label,
   glyph,
@@ -107,9 +73,6 @@ function GlyphButton({
   )
 }
 
-/** The tenant-facing top bar: the brand plus the six ruled controls the
- * tenant area renders -- notification bell, language switch, colour mode,
- * console entry, tenant switcher, account avatar. */
 function tenantHeaderShell(language: Language): ReactElement {
   const copy = HOST_COPY[language]
   return (
@@ -152,8 +115,6 @@ function tenantHeaderShell(language: Language): ReactElement {
   )
 }
 
-/** A login script over the real-client rig: the flow start, its first
- * answer and the profile the completion reads. */
 async function signIn(): Promise<ReturnType<typeof makeRealClientRig>['session']> {
   const rig = makeRealClientRig((call) => {
     const key = `${call.method} ${call.path}`
@@ -186,24 +147,12 @@ async function signIn(): Promise<ReturnType<typeof makeRealClientRig>['session']
   return rig.session
 }
 
-/** The app-shell strings in the case's language: the drawer trigger's
- * accessible name is the shell's own copy, from its shipped bundle. */
 function shellCopy(language: Language): typeof layoutKitEnUS {
   return language === 'zh-CN' ? layoutKitZhCN : layoutKitEnUS
 }
 
-/** The tolerance a pair of controls on one band may differ by. The Toolbar
- * centers its items, so every control on a row shares a vertical center;
- * members of another row are a whole row height away. The tolerance only
- * absorbs subpixel rounding. */
 const BAND_TOLERANCE_PX = 4
 
-/**
- * The number of vertical bands the header's content occupies: the brand
- * and every control, clustered by their vertical center. The brand counts
- * because a brand alone on a band is still a band the header takes, which
- * is exactly the arrangement the invariant rules out.
- */
 function headerBands(): number {
   const header = screen.getByRole('banner')
   const toolbar = header.querySelector<HTMLElement>(`.${toolbarClasses.root}`)
@@ -231,9 +180,6 @@ function headerBands(): number {
   return bands
 }
 
-/** Every control the tenant shell renders, in the case's language. The
- * drawer trigger is the shell's own; the other six are the ruled host
- * controls. */
 function expectEveryTenantControlReachable(
   language: Language,
   drawerTrigger: boolean,
@@ -241,8 +187,6 @@ function expectEveryTenantControlReachable(
   const copy = HOST_COPY[language]
   const shell = shellCopy(language)
   const controls: readonly { role: 'button' | 'link'; name: string }[] = [
-    // The drawer trigger exists only below md: at md the permanent drawer
-    // has no hamburger, so there is no control to reach.
     ...(drawerTrigger
       ? [{ role: 'button' as const, name: shell.appShell.openNav }]
       : []),
@@ -255,17 +199,10 @@ function expectEveryTenantControlReachable(
   ]
   for (const { role, name } of controls) {
     const control = screen.getByRole(role, { name })
-    // In the accessibility tree with its name: role+name already skips
-    // hidden elements, and the explicit check spells out the half the
-    // invariant names.
     expect(control).toBeVisible()
     expect(control).toHaveAccessibleName(name)
-    // Clickable: neither disabled nor aria-hidden.
     expect(control).toBeEnabled()
     expect(control).not.toHaveAttribute('aria-hidden', 'true')
-    // Non-zero-sized and on screen: a control collapsed to nothing, or
-    // pushed out of the viewport by the layout, is not reachable by
-    // pointer even when it still has a role.
     const rect = control.getBoundingClientRect()
     expect(rect.width).toBeGreaterThan(0)
     expect(rect.height).toBeGreaterThan(0)
@@ -276,7 +213,6 @@ function expectEveryTenantControlReachable(
   }
 }
 
-/** Mount the tenant frame authenticated and wait for its banner. */
 async function renderTenantShell(language: Language): Promise<void> {
   await signIn()
   renderWithProviders(tenantHeaderShell(language), { language })
@@ -313,12 +249,6 @@ describe('ProductShell md header band in Chromium', () => {
 
 describe('ProductShell session-ended announcement in Chromium', () => {
   it('inserts the live region empty and fills it a frame later', async () => {
-    // The ended branch mounts its announcement region and the whole
-    // session-ended screen in one commit. A MutationObserver records the
-    // region's text in every batch after it appears, so the empty birth
-    // frame and the later fill are observed facts: an effect-armed gate
-    // could be flushed inside that commit by a descendant's commit-phase
-    // update and the region would be born with its text.
     const message = productShellEnUS.announcements.sessionEnded
     const snapshots: string[] = []
     const observer = new MutationObserver(() => {
@@ -346,14 +276,11 @@ describe('ProductShell session-ended announcement in Chromium', () => {
         expect(screen.getByRole('status')).toBeInTheDocument(),
       )
       await waitFor(() => expect(snapshots.length).toBeGreaterThan(0))
-      // The batch that reported the region's insertion read it empty.
       expect(snapshots[0]).toBe('')
 
       await waitFor(() =>
         expect(screen.getByRole('status')).toHaveTextContent(message),
       )
-      // Some later batch carried the text, so the change reached an
-      // already-inserted region rather than being born with it.
       expect(snapshots).toContain(message)
     } finally {
       observer.disconnect()
