@@ -13,6 +13,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
+// TestTheSweepDeletesOnlyPendingRowsPastTheirTime checks that the sweep deletes only pending rows past their time.
 func TestTheSweepDeletesOnlyPendingRowsPastTheirTime(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -54,7 +55,6 @@ func TestTheSweepDeletesOnlyPendingRowsPastTheirTime(t *testing.T) {
 			t.Errorf("the factor was asked to clean %v, want the one row of its kind that went", totp.removed)
 		}
 
-		// The setting moves the line, and one outside its domain is the default.
 		r.store.set(pendingTTLPath, 10*time.Minute)
 		if n, err := r.p.Sweep(context.Background()); err != nil || n != 2 {
 			t.Errorf("under a ten-minute setting Sweep = %d, %v, want the boundary and the young row", n, err)
@@ -62,9 +62,10 @@ func TestTheSweepDeletesOnlyPendingRowsPastTheirTime(t *testing.T) {
 	})
 }
 
+// TestTheSweepReadsThePendingTTLFromTheSettingWithinItsDomain checks that the sweep reads the pending TTL from the setting within its domain.
 func TestTheSweepReadsThePendingTTLFromTheSettingWithinItsDomain(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
-		r.store.set(pendingTTLPath, 100*time.Hour) // outside 5m..24h: the default of one hour applies
+		r.store.set(pendingTTLPath, 100*time.Hour)
 		id := r.insertRow(acct, authn.FactorTOTP, authn.FactorPending, r.clock.read().Add(-2*time.Hour), nil)
 		if n, err := r.p.Sweep(context.Background()); err != nil || n != 1 {
 			t.Fatalf("Sweep = %d, %v, want the two-hour-old row gone under the default", n, err)
@@ -78,6 +79,7 @@ func TestTheSweepReadsThePendingTTLFromTheSettingWithinItsDomain(t *testing.T) {
 	})
 }
 
+// TestTheSweepGoesOnPastOneBatch checks that the sweep goes on past one batch.
 func TestTheSweepGoesOnPastOneBatch(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h, newFactor(authn.FactorTOTP))
@@ -105,6 +107,7 @@ func TestTheSweepGoesOnPastOneBatch(t *testing.T) {
 	})
 }
 
+// TestADeleteIsConditionalOnTheRowStillBeingPending checks that a delete is conditional on the row still being pending.
 func TestADeleteIsConditionalOnTheRowStillBeingPending(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		id := r.insertRow(acct, authn.FactorTOTP, authn.FactorPending, r.clock.read().Add(-5*time.Hour), nil)
@@ -126,9 +129,7 @@ func TestADeleteIsConditionalOnTheRowStillBeingPending(t *testing.T) {
 	})
 }
 
-// Registrations finishing while the sweep runs: each old pending row is either
-// activated or swept, never both, and a row that was swept had its data cleaned
-// and one that was activated did not.
+// TestTheSweepAndARegistrationThatIsFinishingDoNotDeleteEachOthersWork checks that a finishing registration and the sweep never both take one row.
 func TestTheSweepAndARegistrationThatIsFinishingDoNotDeleteEachOthersWork(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
@@ -188,6 +189,7 @@ func TestTheSweepAndARegistrationThatIsFinishingDoNotDeleteEachOthersWork(t *tes
 	})
 }
 
+// TestASweepThatCannotCleanAFactorsDataStillRemovesTheRowAndSaysSo checks that a sweep that cannot clean a factor's data still removes the row and says so.
 func TestASweepThatCannotCleanAFactorsDataStillRemovesTheRowAndSaysSo(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		r.p.factors[authn.FactorTOTP].(*fakeFactor).removeFn = func(context.Context, authn.AccountID, authn.FactorRecord) error {
@@ -206,6 +208,7 @@ func TestASweepThatCannotCleanAFactorsDataStillRemovesTheRowAndSaysSo(t *testing
 	})
 }
 
+// TestTheSweepRunsAtStartAndOnItsInterval checks that the sweep runs at start and on its interval.
 func TestTheSweepRunsAtStartAndOnItsInterval(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h, newFactor(authn.FactorTOTP))
@@ -236,12 +239,12 @@ func TestTheSweepRunsAtStartAndOnItsInterval(t *testing.T) {
 			}
 		}
 		expect(first)
-		// A row that goes stale later is reached by a later pass.
 		second := r.insertRow(acct, authn.FactorTOTP, authn.FactorPending, r.clock.read().Add(-4*time.Hour), nil)
 		expect(second)
 	})
 }
 
+// TestStopEndsTheSweepWithinItsBound checks that Stop ends the sweep within its bound.
 func TestStopEndsTheSweepWithinItsBound(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h, newFactor(authn.FactorTOTP))
@@ -251,13 +254,10 @@ func TestStopEndsTheSweepWithinItsBound(t *testing.T) {
 		if r.p.sweepEvery != time.Hour {
 			t.Errorf("the interval is %v, want an hour", r.p.sweepEvery)
 		}
-		// Stop on a module that never started is nothing to wait for.
 		if err := r.p.stopSweep(); err != nil {
 			t.Errorf("stopSweep before any start: %v", err)
 		}
 
-		// A sweep that is in the middle of a call that honours its context ends
-		// with the context, well inside the bound.
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
 		inside := make(chan struct{})
 		totp.removeFn = func(ctx context.Context, _ authn.AccountID, _ authn.FactorRecord) error {
@@ -278,6 +278,7 @@ func TestStopEndsTheSweepWithinItsBound(t *testing.T) {
 	})
 }
 
+// TestStopGivesUpOnASweepThatDoesNotEnd checks that Stop gives up on a sweep that does not end.
 func TestStopGivesUpOnASweepThatDoesNotEnd(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h, newFactor(authn.FactorTOTP))
@@ -300,10 +301,7 @@ func TestStopGivesUpOnASweepThatDoesNotEnd(t *testing.T) {
 	})
 }
 
-// A pending-ttl that cannot be read reads as its declared default of an hour: a
-// row ten minutes old is kept and a row two hours old is swept. Reading the type's
-// zero value instead would put the cutoff at the present and sweep every pending
-// row, deleting registrations that are still in flight.
+// TestTheSweepUnderAnUnreadablePendingTTLUsesTheDeclaredDefault checks that an unreadable pending-ttl reads as its declared default of one hour.
 func TestTheSweepUnderAnUnreadablePendingTTLUsesTheDeclaredDefault(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		r.store.fail(pendingTTLPath, errors.New("settings: not loaded"))
@@ -323,9 +321,7 @@ func TestTheSweepUnderAnUnreadablePendingTTLUsesTheDeclaredDefault(t *testing.T)
 	})
 }
 
-// A pending-ttl below its domain's minimum reads as the declared default of an
-// hour: a row thirty minutes old survives the sweep. Honoring a stored minute
-// instead would remove a registration that is still in flight.
+// TestAnOutOfDomainPendingTTLUsesTheDeclaredDefault checks that a pending-ttl outside its domain reads as the declared default of one hour.
 func TestAnOutOfDomainPendingTTLUsesTheDeclaredDefault(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		r.store.set(pendingTTLPath, time.Minute)
@@ -340,11 +336,7 @@ func TestAnOutOfDomainPendingTTLUsesTheDeclaredDefault(t *testing.T) {
 	})
 }
 
-// A full batch from which nothing is removed is the state a racing replica
-// leaves: the sweep reads a full batch of expired rows, and every conditional
-// delete finds its row already gone. The sweep must return once a batch removed
-// nothing rather than reread the same full batch forever. The rows are made
-// undeletable with a trigger, which is how the conditional delete finds nothing.
+// TestTheSweepReturnsWhenAFullBatchRemovesNothing checks that the sweep returns when a full batch removes nothing.
 func TestTheSweepReturnsWhenAFullBatchRemovesNothing(t *testing.T) {
 	h := openDialect(t, sqliteDialect)
 	r := newRig(t, h, newFactor(authn.FactorTOTP))

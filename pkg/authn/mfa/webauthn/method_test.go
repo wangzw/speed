@@ -13,8 +13,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/step"
 )
 
-// A passkey login's assertion requires user verification, so the client is asked
-// for it and an assertion without the bit is refused by the library.
+// TestAPasskeyStartRequiresUserVerification checks that a passkey start requires user verification.
 func TestAPasskeyStartRequiresUserVerification(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -25,9 +24,7 @@ func TestAPasskeyStartRequiresUserVerification(t *testing.T) {
 	})
 }
 
-// A passkey login proves the account the client picks: the discoverable assertion
-// yields a proof naming the account and the webauthn method, and user
-// verification when the assertion carried it.
+// TestPasskeyLoginProvesAnAccount checks that a passkey login proves the account the client picks.
 func TestPasskeyLoginProvesAnAccount(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -50,9 +47,7 @@ func TestPasskeyLoginProvesAnAccount(t *testing.T) {
 	})
 }
 
-// A passkey assertion that did not verify the user is refused: the login
-// assertion requires user verification, so the library rejects it rather than
-// handing over a proof that would stand for one factor.
+// TestAPasskeyWithoutUserVerificationIsRefused checks that an assertion without user verification is refused.
 func TestAPasskeyWithoutUserVerificationIsRefused(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -69,8 +64,7 @@ func TestAPasskeyWithoutUserVerificationIsRefused(t *testing.T) {
 	})
 }
 
-// The same passkey assertion presented twice is refused the second time, because
-// its counter was already spent.
+// TestASecondPasskeyAssertionIsRefused checks that the same passkey assertion presented twice is refused.
 func TestASecondPasskeyAssertionIsRefused(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -90,7 +84,7 @@ func TestASecondPasskeyAssertionIsRefused(t *testing.T) {
 	})
 }
 
-// An assertion signed by another key is refused, and it names no account.
+// TestAPasskeyWithATamperedSignatureIsRefused checks that an assertion signed by another key is refused.
 func TestAPasskeyWithATamperedSignatureIsRefused(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -105,7 +99,7 @@ func TestAPasskeyWithATamperedSignatureIsRefused(t *testing.T) {
 	})
 }
 
-// A handle nobody holds resolves to no account, and the login is refused.
+// TestAPasskeyWithAnUnknownHandleIsRefused checks that a handle nobody holds resolves to no account.
 func TestAPasskeyWithAnUnknownHandleIsRefused(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -121,8 +115,7 @@ func TestAPasskeyWithAnUnknownHandleIsRefused(t *testing.T) {
 	})
 }
 
-// The method answers a login and a step-up, and refuses a purpose a passkey does
-// not prove.
+// TestTheMethodServesLoginAndStepUpOnly checks that the method serves login and step-up only.
 func TestTheMethodServesLoginAndStepUpOnly(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -147,8 +140,7 @@ func TestTheMethodServesLoginAndStepUpOnly(t *testing.T) {
 	})
 }
 
-// A step the method never named is refused, so a flow record it did not write
-// cannot be walked into a proof.
+// TestTheMethodRefusesAStepItDidNotMake checks that the method refuses a flow record whose step it did not write.
 func TestTheMethodRefusesAStepItDidNotMake(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -163,8 +155,6 @@ func TestTheMethodRefusesAStepItDidNotMake(t *testing.T) {
 	})
 }
 
-// handle is the account's stored user handle decoded to bytes, the value a
-// discoverable assertion returns.
 func (r *rig) handle(t *testing.T) []byte {
 	t.Helper()
 	h, found, err := r.p.register.handleOf(context.Background(), acct)
@@ -178,8 +168,6 @@ func (r *rig) handle(t *testing.T) []byte {
 	return b
 }
 
-// passkeyStart begins a passkey login and returns the options and the private
-// state that answers it.
 func (r *rig) passkeyStart(t *testing.T) (assertionOptions, []byte) {
 	t.Helper()
 	got, err := r.p.Begin(context.Background(), authn.Start{Purpose: authn.PurposeLogin})
@@ -192,7 +180,6 @@ func (r *rig) passkeyStart(t *testing.T) (assertionOptions, []byte) {
 	return decodeAssertion(t, step.DataOf(got)), step.PrivateOf(got)
 }
 
-// answer submits a credential body to the login method and returns the step.
 func (r *rig) answer(t *testing.T, private, body []byte) authn.Step {
 	t.Helper()
 	got, err := r.p.Answer(context.Background(), authn.FlowState{Purpose: authn.PurposeLogin, Step: stepPasskey, Private: private},
@@ -203,7 +190,6 @@ func (r *rig) answer(t *testing.T, private, body []byte) authn.Step {
 	return got
 }
 
-// passkeyAnswer submits a credential body and returns the proof it carried.
 func (r *rig) passkeyAnswer(t *testing.T, private, body []byte) authn.Proof {
 	t.Helper()
 	got := r.answer(t, private, body)
@@ -213,12 +199,7 @@ func (r *rig) passkeyAnswer(t *testing.T, private, body []byte) authn.Proof {
 	return step.ProofOf(got)
 }
 
-// A cloned credential and a replayed assertion each write one security log line
-// on the passkey login path: a Warn for the clone and an Info for the replay,
-// carrying the account, the factor and the cause. The clone is driven through a
-// real ceremony whose counter went backwards; the replay is the loss of the
-// conditional write-back, which a concurrent writer causes, so the outcome is
-// handed to the answer directly.
+// TestAssertionOutcomesWriteSecurityLog checks that a clone warning writes a Warn and a replay an Info on the passkey login path.
 func TestAssertionOutcomesWriteSecurityLog(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)

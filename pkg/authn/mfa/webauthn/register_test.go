@@ -8,8 +8,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// seedCredential writes a credential row directly, the way a running module
-// would, and returns its factor id.
 func seedCredential(t *testing.T, r *rig, factorID string, signCount int64, cloneWarning bool) {
 	t.Helper()
 	err := r.p.register.insertCredential(context.Background(), credentialRow{
@@ -27,9 +25,7 @@ func seedCredential(t *testing.T, r *rig, factorID string, signCount int64, clon
 	}
 }
 
-// The write-back wins only when the presented counter is at or above the stored
-// one, which is what makes a concurrent assertion that advanced the counter
-// first win and this one read as a replay.
+// TestWriteBackWinsOnlyAtOrAboveTheStoredCounter checks that the write-back wins only at or above the stored counter.
 func TestWriteBackWinsOnlyAtOrAboveTheStoredCounter(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -50,7 +46,6 @@ func TestWriteBackWinsOnlyAtOrAboveTheStoredCounter(t *testing.T) {
 			if won != tc.want {
 				t.Errorf("writeBack at counter %d over a stored 5 returned won=%v, want %v", tc.presented, won, tc.want)
 			}
-			// Reset the stored counter for the next case.
 			if _, err := r.p.register.writeBack(ctx, "f1", credentialRow{SignCount: 5}); err != nil {
 				t.Fatalf("resetting the counter: %v", err)
 			}
@@ -58,7 +53,7 @@ func TestWriteBackWinsOnlyAtOrAboveTheStoredCounter(t *testing.T) {
 	})
 }
 
-// The write-back stores the flags the assertion advanced along with the counter.
+// TestWriteBackStoresTheFlags checks that the write-back stores the assertion's flags.
 func TestWriteBackStoresTheFlags(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -78,8 +73,7 @@ func TestWriteBackStoresTheFlags(t *testing.T) {
 	})
 }
 
-// The clone flag is written independently of the counter, so a counter that went
-// backwards is recorded rather than advanced.
+// TestFlagCloneSetsTheFlag checks that the clone flag is written independently of the counter.
 func TestFlagCloneSetsTheFlag(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -101,9 +95,7 @@ func TestFlagCloneSetsTheFlag(t *testing.T) {
 	})
 }
 
-// A write-back that carries no clone warning leaves one a concurrent flagClone
-// already set: the column is set, not assigned, so the flag is not cleared under
-// a writer that does not know about it.
+// TestWriteBackDoesNotClearACloneFlag checks that a write-back without a warning does not clear a concurrent clone flag.
 func TestWriteBackDoesNotClearACloneFlag(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -129,8 +121,7 @@ func TestWriteBackDoesNotClearACloneFlag(t *testing.T) {
 	})
 }
 
-// A write-back that does carry the clone warning sets it, so the set semantics do
-// not lose the flag when the presented assertion is the one that reports it.
+// TestWriteBackSetsACloneFlag checks that a write-back carrying the clone warning sets it.
 func TestWriteBackSetsACloneFlag(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -149,8 +140,7 @@ func TestWriteBackSetsACloneFlag(t *testing.T) {
 	})
 }
 
-// probe is an outage naming ErrNotMigrated for a table that is not there, and
-// nil once both tables are.
+// TestProbeReportsAMissingTable checks that probe reports ErrNotMigrated for a missing table.
 func TestProbeReportsAMissingTable(t *testing.T) {
 	h := openDialect(t, sqliteDialect)
 	r := newRig(t, h)

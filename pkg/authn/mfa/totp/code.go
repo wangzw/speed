@@ -12,13 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/mfa/internal/totpseed"
 )
 
-// The parameters a seed is generated with. They are the convention every
-// authenticator app follows: a 20-byte random secret, HMAC-SHA1, six digits and
-// a thirty-second step. They are not settings; the step is fixed so that a wider
-// window cannot be turned on, which would only widen an attacker's. The step,
-// the digit count and the digest are stated once, in the seed store, so that a
-// fixture writing a seed through it records the same parameters a registration
-// does.
 const (
 	periodSeconds = totpseed.PeriodSeconds
 	secretBytes   = 20
@@ -26,18 +19,10 @@ const (
 	algorithmSHA1 = totpseed.AlgorithmSHA1
 )
 
-// window is how many steps either side of the current one a code is accepted
-// for: one, so a clock that drifts by one step still works and a code two steps
-// out does not. It is fixed and not a setting.
 const window = 1
 
-// codeField is the input key a code arrives under, in a challenge answer and in
-// the confirmation step of an enrollment. The name is this factor's own.
 const codeField = "code"
 
-// validateOpts turns a seed's stored algorithm and digit count into the options
-// the library's code generator takes. The step is the fixed one: the design
-// fixes it at thirty seconds, so the column that records it is not read here.
 func validateOpts(s seed) (totp.ValidateOpts, error) {
 	algorithm, err := algorithmByName(s.Algorithm)
 	if err != nil {
@@ -50,8 +35,6 @@ func validateOpts(s seed) (totp.ValidateOpts, error) {
 	return totp.ValidateOpts{Period: periodSeconds, Digits: otp.Digits(digits), Algorithm: algorithm}, nil
 }
 
-// algorithmByName maps the algorithm column to the library's value. It is the
-// one statement of the correspondence.
 func algorithmByName(name string) (otp.Algorithm, error) {
 	switch strings.ToUpper(strings.TrimSpace(name)) {
 	case "SHA1", "":
@@ -67,16 +50,7 @@ func algorithmByName(name string) (otp.Algorithm, error) {
 	}
 }
 
-// match reports whether code is the code the seed produces at the current step
-// or one step either side, and the counter it matched. The library's own
-// Validate is not used: it answers only whether some counter matched and reports
-// none of them, and the counter is what the replay check needs.
-//
-// The comparison is constant time, and every candidate is generated before the
-// first match is honoured, so the time taken before a match does not depend on
-// which step matched. A code of the wrong length is generated against all the
-// same and falls out at the constant-time comparison, which leaks nothing a
-// code's length does not already.
+// match returns the counter of the code at the current step or one either side. Every candidate is generated and compared in constant time, so timing does not show which step matched.
 func match(s seed, now time.Time, code string) (int64, bool) {
 	code = strings.TrimSpace(code)
 	if code == "" {
@@ -87,8 +61,7 @@ func match(s seed, now time.Time, code string) (int64, bool) {
 		return 0, false
 	}
 	current := now.Unix() / periodSeconds
-	// Guard the step below zero, so a clock set before the epoch cannot wrap a
-	// counter around to a huge value that would then be taken for a fresh one.
+	// Keep the step at or above zero: a clock before the epoch would wrap the counter to a huge value.
 	if current < 0 {
 		return 0, false
 	}

@@ -12,8 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// The names the module reports under. The metric names and attributes are read
-// by dashboards and are not renamed.
 const (
 	meterName         = "authn"
 	verificationsName = "authn.mfa.verifications"
@@ -26,7 +24,6 @@ const (
 	mandatoryAttribute = "mandatory"
 )
 
-// The outcomes of a verification, as the counter's outcome attribute takes them.
 const (
 	verifyOK          = "ok"
 	verifyBad         = "bad"
@@ -35,8 +32,6 @@ const (
 	verifyUnavailable = "unavailable"
 )
 
-// The audit actions and their outcomes, the changes an event announces, and the
-// classes of whoever acted. The sets are closed by the events design.
 const (
 	actionEnroll   = "authn.factor.enroll"
 	actionRemove   = "authn.factor.remove"
@@ -53,21 +48,14 @@ const (
 	byClassSystem = "system"
 )
 
-// The keys of an audit row's detail, which are among the closed set the events
-// design lists.
 const (
 	detailFactorID = "factor_id"
 	detailKind     = "kind"
 	detailBy       = "by"
 )
 
-// throttleScopeFactor is the scope of the back-off this module keeps, as the
-// engagement counter and the event write it.
 const throttleScopeFactor = string(authn.ScopeFactor)
 
-// meters are the instruments the module reports through. Every one is nil when
-// the assembly has no metric capability, and the methods then do nothing, which
-// is the legal assembly.
 type meters struct {
 	verifications metric.Int64Counter
 	engagements   metric.Int64Counter
@@ -96,7 +84,6 @@ func (s *meters) auditFailed(ctx context.Context) {
 	s.auditFailures.Add(ctx, 1, metric.WithAttributes(attribute.Bool(mandatoryAttribute, false)))
 }
 
-// newMeters creates the instruments on the authn meter of provider.
 func newMeters(provider metric.MeterProvider) (*meters, error) {
 	meter := provider.Meter(meterName)
 	verifications, err := meter.Int64Counter(verificationsName,
@@ -117,9 +104,6 @@ func newMeters(provider metric.MeterProvider) (*meters, error) {
 	return &meters{verifications: verifications, engagements: engagements, auditFailures: failures}, nil
 }
 
-// by is the class of whoever acted, for the event's by field and the audit
-// row's: the account holder, another account, or nobody in the request, which is
-// a command on the Go interface or a login that is still registering.
 func by(ctx context.Context, account authn.AccountID) string {
 	id, ok := authn.FromContext(ctx)
 	switch {
@@ -132,9 +116,6 @@ func by(ctx context.Context, account authn.AccountID) string {
 	}
 }
 
-// publishChanged announces a change to the account's factors after it has been
-// committed. The event is a hint and the register is the authority, so a failure
-// to publish is a Warn and changes nothing for the caller.
 func (m *product) publishChanged(ctx context.Context, rec authn.FactorRecord, change, byClass string) {
 	if m.bus == nil {
 		return
@@ -152,7 +133,6 @@ func (m *product) publishChanged(ctx context.Context, rec authn.FactorRecord, ch
 	}
 }
 
-// publishEngaged announces that a failure put a factor into back-off.
 func (m *product) publishEngaged(ctx context.Context, account authn.AccountID) {
 	if m.bus == nil {
 		return
@@ -164,11 +144,6 @@ func (m *product) publishEngaged(ctx context.Context, account authn.AccountID) {
 	}
 }
 
-// record writes a best-effort audit row: a failure is an Error and a count, and
-// the action goes on, because the actions audited here are the account holder's
-// own and a table that is slow must not stop them. A mandatory row is not
-// written here at all: the administration handler that resets factors writes it
-// and refuses the reset when it cannot.
 func (m *product) record(ctx context.Context, action, outcome string, rec authn.FactorRecord, byClass string) {
 	if m.audit == nil {
 		return

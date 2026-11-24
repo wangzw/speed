@@ -7,8 +7,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// Without a relying party id or origins the module takes the public address's
-// host and origin, and the fixed display name.
+// TestTheRelyingPartyDefaultsToThePublicAddress checks that the relying party id, origin and display name default off the public address.
 func TestTheRelyingPartyDefaultsToThePublicAddress(t *testing.T) {
 	got, err := moduleConfig{}.resolve(gateMount{PublicURL: "https://auth.example.com"})
 	if err != nil {
@@ -25,19 +24,18 @@ func TestTheRelyingPartyDefaultsToThePublicAddress(t *testing.T) {
 	}
 }
 
-// A relying party id that is the host or a parent domain of it is accepted, at a
-// label boundary and no other way.
+// TestTheRelyingPartyIDMustCoverTheHost checks that only the host or a parent domain at a label boundary is accepted.
 func TestTheRelyingPartyIDMustCoverTheHost(t *testing.T) {
 	cases := []struct {
 		rpID string
 		ok   bool
 	}{
-		{"auth.example.com", true}, // the host itself
-		{"example.com", true},      // a parent domain
-		{"com", true},              // a further parent, the public suffix table not being consulted
-		{"evil.com", false},        // an unrelated domain
+		{"auth.example.com", true},
+		{"example.com", true},
+		{"com", true},
+		{"evil.com", false},
 		{"notauth.example.com", false},
-		{"xample.com", false}, // a suffix but not at a label boundary
+		{"xample.com", false},
 	}
 	for _, tc := range cases {
 		_, err := moduleConfig{RPID: tc.rpID}.resolve(gateMount{PublicURL: "https://auth.example.com"})
@@ -50,15 +48,14 @@ func TestTheRelyingPartyIDMustCoverTheHost(t *testing.T) {
 	}
 }
 
-// An empty public address is refused: it is the base the relying party id is
-// checked against and the origins are drawn from.
+// TestAnEmptyPublicAddressIsRefused checks that an empty public address is refused.
 func TestAnEmptyPublicAddressIsRefused(t *testing.T) {
 	if _, err := (moduleConfig{}).resolve(gateMount{}); !errors.Is(err, authn.ErrInvalidConfig) {
 		t.Errorf("resolve with no public address returned %v, want ErrInvalidConfig", err)
 	}
 }
 
-// Explicit origins and a display name are kept rather than defaulted.
+// TestExplicitValuesAreKept checks that explicit origins and display name are kept.
 func TestExplicitValuesAreKept(t *testing.T) {
 	got, err := moduleConfig{
 		RPName:  "Acme",
@@ -75,8 +72,7 @@ func TestExplicitValuesAreKept(t *testing.T) {
 	}
 }
 
-// readConfig draws the same result from a reader as the resolve step does, which
-// is what Prepare and New both go through.
+// TestReadConfigReadsTheGateAddress checks that readConfig takes the gate's host as the relying party id.
 func TestReadConfigReadsTheGateAddress(t *testing.T) {
 	got, err := readConfig(configReader("https://auth.example.com"))
 	if err != nil {
@@ -87,8 +83,7 @@ func TestReadConfigReadsTheGateAddress(t *testing.T) {
 	}
 }
 
-// A host with a port compares without it, because a relying party id carries no
-// port.
+// TestTheHostIsComparedWithoutItsPort checks that a host compares without its port.
 func TestTheHostIsComparedWithoutItsPort(t *testing.T) {
 	got, err := moduleConfig{}.resolve(gateMount{PublicURL: "http://localhost:8080"})
 	if err != nil {

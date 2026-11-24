@@ -14,22 +14,15 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/step"
 )
 
-// requireCase is one row of the policy table: the account's rows and flags, the
-// proof the first factor gave, and what Require has to answer.
 type requireCase struct {
-	name string
-	// rows are written for the account before the call.
-	rows []rowSpec
-	// mfaRequired is the account's own flag, and global the deployment's.
-	mfaRequired bool
-	global      bool
-	// factors are the kinds taken in; the default is TOTP, SMS and WebAuthn.
-	factors []authn.FactorKind
-	first   authn.Proof
-	want    authn.MFAOutcome
-	// offered are the kinds of the factors the list has to hold, in order.
-	offered []authn.FactorKind
-	// noAccountRead says the answer was found without reading the account.
+	name          string
+	rows          []rowSpec
+	mfaRequired   bool
+	global        bool
+	factors       []authn.FactorKind
+	first         authn.Proof
+	want          authn.MFAOutcome
+	offered       []authn.FactorKind
 	noAccountRead bool
 }
 
@@ -136,6 +129,7 @@ func requireCases() []requireCase {
 	}
 }
 
+// TestRequireFollowsThePolicyTable checks that Require follows the policy table.
 func TestRequireFollowsThePolicyTable(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		for i, c := range requireCases() {
@@ -153,7 +147,6 @@ func TestRequireFollowsThePolicyTable(t *testing.T) {
 				for _, row := range c.rows {
 					r.insertRow(account, row.kind, row.status, r.clock.read(), nil)
 				}
-				// A factor of another account is no evidence about this one.
 				r.activeFactor("someone-else", authn.FactorTOTP, time.Hour)
 				r.accounts.required[account] = c.mfaRequired
 				r.store.set(globalRequiredPath, c.global)
@@ -183,11 +176,7 @@ func TestRequireFollowsThePolicyTable(t *testing.T) {
 	})
 }
 
-// A deployment's requirement and an account's are each enough alone, and an IdP
-// declaration is no substitute for either: three conditions have to hold for the
-// declaration to raise anything, and each one failing is the cases above. This one
-// holds that the three are the whole set, by running every combination of the two
-// flags and the account's factor against an IdP-asserted proof.
+// TestAnIDPDeclarationNeedsAllThreeConditionsEachOfWhichIsNecessary checks that an IdP declaration raises the level only when all three conditions hold.
 func TestAnIDPDeclarationNeedsAllThreeConditionsEachOfWhichIsNecessary(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h, newFactor(authn.FactorTOTP))
@@ -218,6 +207,7 @@ func TestAnIDPDeclarationNeedsAllThreeConditionsEachOfWhichIsNecessary(t *testin
 	})
 }
 
+// TestRequireRefusesWhenTheMandatorySwitchCannotBeRead checks that Require refuses when the mandatory switch cannot be read.
 func TestRequireRefusesWhenTheMandatorySwitchCannotBeRead(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h, newFactor(authn.FactorTOTP))
@@ -233,14 +223,11 @@ func TestRequireRefusesWhenTheMandatorySwitchCannotBeRead(t *testing.T) {
 			}
 		}
 
-		// The switch is not consulted when the answer does not depend on it: an
-		// account with a factor has to use it whatever the switch says.
 		r.activeFactor("with-factor", authn.FactorTOTP, time.Hour)
 		outcome, _, err := r.p.Require(context.Background(), "with-factor", "with-factor", byPassword)
 		if err != nil || outcome != authn.MFAFactor {
 			t.Errorf("an account with a factor: Require = %v, %v, want MFAFactor and no error", outcome, err)
 		}
-		// An account that requires one is asked to register without the switch too.
 		r.accounts.required["flagged"] = true
 		outcome, _, err = r.p.Require(context.Background(), "flagged", "flagged", byPassword)
 		if err != nil || outcome != authn.MFAEnroll {
@@ -249,10 +236,7 @@ func TestRequireRefusesWhenTheMandatorySwitchCannotBeRead(t *testing.T) {
 	})
 }
 
-// TestRequireDecidesTheOutcomeFromTheRequirementAccount holds the split an
-// impersonating identity needs: the effective account's factors decide whether a
-// second factor is needed, while the factors that may be offered are the proof
-// account's own, because those are the only ones the operator can prove.
+// TestRequireDecidesTheOutcomeFromTheRequirementAccount checks that the requirement account decides the outcome while the proof account's factors are offered.
 func TestRequireDecidesTheOutcomeFromTheRequirementAccount(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h, newFactor(authn.FactorTOTP), newFactor(authn.FactorSMS))
@@ -270,8 +254,6 @@ func TestRequireDecidesTheOutcomeFromTheRequirementAccount(t *testing.T) {
 			t.Errorf("the list offers %+v, want the operator's own factor alone", offered)
 		}
 
-		// The effective account holds no factor: nothing more is asked of the
-		// operator, whose own factor must not raise the requirement.
 		outcome, offered, err = r.p.Require(context.Background(), "operator", "bare", byPassword)
 		if err != nil {
 			t.Fatalf("Require for an account with no factor: %v", err)
@@ -282,6 +264,7 @@ func TestRequireDecidesTheOutcomeFromTheRequirementAccount(t *testing.T) {
 	})
 }
 
+// TestRequirePassesTheAccountReadFailureOn checks that Require passes the account read failure on.
 func TestRequirePassesTheAccountReadFailureOn(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h, newFactor(authn.FactorTOTP))
@@ -301,6 +284,7 @@ func TestRequirePassesTheAccountReadFailureOn(t *testing.T) {
 	})
 }
 
+// TestAssuranceComposesTheLevelFromTheFactorsProven checks that Assurance composes the level from the factors proven.
 func TestAssuranceComposesTheLevelFromTheFactorsProven(t *testing.T) {
 	r := &rig{p: build(nil, nil, nil, nil, nil)}
 	otp := authn.Pass{Methods: []authn.Method{authn.MethodTOTP}}
@@ -351,10 +335,7 @@ func TestAssuranceComposesTheLevelFromTheFactorsProven(t *testing.T) {
 	}
 }
 
-// A factor registered during a login is not counted in that login: the engine does
-// not ask for the level of a login that enrolled, the session records a single
-// factor, and nothing in the registration produces a pass the level could be built
-// on.
+// TestAFactorRegisteredDuringALoginAddsNothingToItsStrength checks that a factor registered during a login adds nothing to that login's strength.
 func TestAFactorRegisteredDuringALoginAddsNothingToItsStrength(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		totp := newFactor(authn.FactorTOTP)
@@ -378,9 +359,6 @@ func TestAFactorRegisteredDuringALoginAddsNothingToItsStrength(t *testing.T) {
 		if res := r.p.Assurance(byPassword, nil); res.Assurance != authn.AssuranceSingle {
 			t.Errorf("the level of the login that registered is %v, want a single factor", res.Assurance)
 		}
-		// The factor is the account's from the next login on, and not before the
-		// registration finished: its activation is the instant of the last step, which
-		// is what step-up compares with the time the session authenticated.
 		rec := step.RecordOf(got)
 		if rec.Status != authn.FactorActive || !rec.ActivatedAt.Equal(r.clock.read()) {
 			t.Errorf("the registered factor is %+v, want it active as of the last step", rec)

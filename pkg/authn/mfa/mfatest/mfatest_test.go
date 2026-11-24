@@ -13,20 +13,12 @@ import (
 	"github.com/vislake/speed/pkg/internal/dbtest"
 )
 
-// rootKey is a root key for the field encryption of the test handles. It is
-// longer than the floor and is not a secret of any deployment.
 const rootKey = "mfatest-root-key-0123456789-abcdefghijklmnop"
 
-// account is the account the cases write factors for.
 const account = authn.AccountID("acct-mfatest")
 
-// totpSeed is the base32 seed the cases write, from the RFC 6238 test vectors.
 const totpSeed = "JBSWY3DPEHPK3PXP"
 
-// open delivers a real database handle with the encryption key set and the
-// factor register's table built from the module's own migration. The TOTP seed
-// table is built only when withSeedTable is true, which is how a case reaches a
-// seed write that fails after the factor row is written.
 func open(t *testing.T, withSeedTable bool) db.Database {
 	t.Helper()
 	database := dbtest.SQLite(t, filepath.Join(t.TempDir(), "mfatest.db"),
@@ -38,8 +30,6 @@ func open(t *testing.T, withSeedTable bool) db.Database {
 	return database
 }
 
-// applyMigration runs the statements of one of the modules' migration files, so
-// the tables a case writes are the ones the modules ship.
 func applyMigration(t *testing.T, database db.Database, path string) {
 	t.Helper()
 	raw, err := os.ReadFile(path)
@@ -56,9 +46,7 @@ func applyMigration(t *testing.T, database db.Database, path string) {
 	}
 }
 
-// TestASeededFactorIsActiveAtTheInstantGiven writes an active factor and holds
-// both halves of that: the register reads it back active, and its activation
-// instant is the one asked for rather than the moment of the write.
+// TestASeededFactorIsActiveAtTheInstantGiven checks that a seeded factor is active at the activation instant given.
 func TestASeededFactorIsActiveAtTheInstantGiven(t *testing.T) {
 	ctx := t.Context()
 	database := open(t, true)
@@ -84,9 +72,7 @@ func TestASeededFactorIsActiveAtTheInstantGiven(t *testing.T) {
 	}
 }
 
-// TestATOTPFactorBackdatedTwoHoursIsSeasoned is the acceptance the impersonation
-// journey rests on: a non-SMS factor activated two hours ago is seasoned at a
-// one-hour minimum age.
+// TestATOTPFactorBackdatedTwoHoursIsSeasoned checks that a non-SMS factor activated two hours ago is seasoned at a one-hour minimum.
 func TestATOTPFactorBackdatedTwoHoursIsSeasoned(t *testing.T) {
 	ctx := t.Context()
 	database := open(t, true)
@@ -103,10 +89,7 @@ func TestATOTPFactorBackdatedTwoHoursIsSeasoned(t *testing.T) {
 	}
 }
 
-// TestATOTPFactorActivatedNowIsNotSeasoned holds the direction the minimum age
-// is for: a factor activated at the moment of the write is not seasoned at a
-// one-hour minimum age, so the backdated case above rests on the instant the
-// fixture chose and not on the write itself.
+// TestATOTPFactorActivatedNowIsNotSeasoned checks that a factor activated now is not seasoned at a one-hour minimum.
 func TestATOTPFactorActivatedNowIsNotSeasoned(t *testing.T) {
 	ctx := t.Context()
 	database := open(t, true)
@@ -123,8 +106,7 @@ func TestATOTPFactorActivatedNowIsNotSeasoned(t *testing.T) {
 	}
 }
 
-// TestAnSMSFactorAloneIsNotSeasoned holds the other direction: the SMS kind does
-// not count toward the seasoned answer, however old it is.
+// TestAnSMSFactorAloneIsNotSeasoned checks that an SMS factor alone is never seasoned.
 func TestAnSMSFactorAloneIsNotSeasoned(t *testing.T) {
 	ctx := t.Context()
 	database := open(t, true)
@@ -141,8 +123,7 @@ func TestAnSMSFactorAloneIsNotSeasoned(t *testing.T) {
 	}
 }
 
-// TestTheTOTPSeedReadsBackAsWritten holds the encrypted round trip: the seed a
-// case writes is the seed TOTPSecret answers, read through the serializer.
+// TestTheTOTPSeedReadsBackAsWritten checks that a TOTP seed reads back as written through the encrypted model.
 func TestTheTOTPSeedReadsBackAsWritten(t *testing.T) {
 	ctx := t.Context()
 	database := open(t, true)
@@ -163,8 +144,7 @@ func TestTheTOTPSeedReadsBackAsWritten(t *testing.T) {
 	}
 }
 
-// TestASeedWriteThatFailsLeavesNoFactorRow holds the rollback: with no seed
-// table, the write fails and the factor row it wrote first is taken back out.
+// TestASeedWriteThatFailsLeavesNoFactorRow checks that a failed seed write leaves no factor row.
 func TestASeedWriteThatFailsLeavesNoFactorRow(t *testing.T) {
 	ctx := t.Context()
 	database := open(t, false)
@@ -181,8 +161,7 @@ func TestASeedWriteThatFailsLeavesNoFactorRow(t *testing.T) {
 	}
 }
 
-// TestAnEmptySeedIsRefused holds the input check: an empty secret is an error
-// and writes no factor row at all.
+// TestAnEmptySeedIsRefused checks that an empty seed is refused and writes no row.
 func TestAnEmptySeedIsRefused(t *testing.T) {
 	ctx := t.Context()
 	database := open(t, true)

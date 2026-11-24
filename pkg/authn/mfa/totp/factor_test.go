@@ -14,7 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/step"
 )
 
-// verify runs the factor's Verify over the record and code given.
 func (r *rig) verify(rec authn.FactorRecord, code string) authn.Step {
 	r.t.Helper()
 	got, err := r.factor.Verify(context.Background(), flow(), rec, input(code))
@@ -24,7 +23,7 @@ func (r *rig) verify(rec authn.FactorRecord, code string) authn.Step {
 	return got
 }
 
-// TestKindIsTOTP holds the one kind this module delivers.
+// TestKindIsTOTP checks that the module delivers the totp kind.
 func TestKindIsTOTP(t *testing.T) {
 	r := newRig(t)
 	if got := r.factor.Kind(); got != authn.FactorTOTP {
@@ -32,8 +31,7 @@ func TestKindIsTOTP(t *testing.T) {
 	}
 }
 
-// TestVerifyAcceptsTheCodeOfTheCurrentStep holds the ordinary pass and the pass
-// it hands over: the factor reports the otp method.
+// TestVerifyAcceptsTheCodeOfTheCurrentStep checks that a code of the current step passes and reports the otp method.
 func TestVerifyAcceptsTheCodeOfTheCurrentStep(t *testing.T) {
 	r := newRig(t)
 	secret := generate(t)
@@ -49,8 +47,7 @@ func TestVerifyAcceptsTheCodeOfTheCurrentStep(t *testing.T) {
 	}
 }
 
-// TestVerifyAcceptsOneStepEitherSide holds the fixed window: a code one step
-// behind or ahead of the current one is accepted, and a fresh row accepts each.
+// TestVerifyAcceptsOneStepEitherSide checks that a code one step behind or ahead is accepted.
 func TestVerifyAcceptsOneStepEitherSide(t *testing.T) {
 	cases := []struct {
 		name string
@@ -71,9 +68,7 @@ func TestVerifyAcceptsOneStepEitherSide(t *testing.T) {
 	}
 }
 
-// TestVerifyRefusesACodeTwoStepsOut holds the other side of the window: a code
-// two steps either way does not match, and the refusal leaves the counter where
-// it was, so the code of the current step still passes afterwards.
+// TestVerifyRefusesACodeTwoStepsOut checks that a code two steps out is refused and leaves the counter unchanged.
 func TestVerifyRefusesACodeTwoStepsOut(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -96,9 +91,7 @@ func TestVerifyRefusesACodeTwoStepsOut(t *testing.T) {
 	}
 }
 
-// TestVerifyRefusesACodeBuiltWithOtherParameters holds the negative vectors: a
-// code generated for another algorithm, another digit count or another period
-// does not match the seed, whatever the seed's own parameters are.
+// TestVerifyRefusesACodeBuiltWithOtherParameters checks that a code built for other parameters is refused.
 func TestVerifyRefusesACodeBuiltWithOtherParameters(t *testing.T) {
 	secret := generate(t)
 	cases := []struct {
@@ -122,8 +115,7 @@ func TestVerifyRefusesACodeBuiltWithOtherParameters(t *testing.T) {
 	}
 }
 
-// TestVerifyRefusesAForgedCode holds that a well-formed code that is not the
-// seed's is refused.
+// TestVerifyRefusesAForgedCode checks that a well-formed code that is not the seed's is refused.
 func TestVerifyRefusesAForgedCode(t *testing.T) {
 	r := newRig(t)
 	secret := generate(t)
@@ -137,8 +129,7 @@ func TestVerifyRefusesAForgedCode(t *testing.T) {
 	}
 }
 
-// TestVerifyRefusesTheSameCodeTwiceAsAReplay holds the replay protection: the
-// second presentation of the counter that just passed is ErrReplay.
+// TestVerifyRefusesTheSameCodeTwiceAsAReplay checks that a repeated counter is refused as a replay.
 func TestVerifyRefusesTheSameCodeTwiceAsAReplay(t *testing.T) {
 	r := newRig(t)
 	secret := generate(t)
@@ -157,9 +148,7 @@ func TestVerifyRefusesTheSameCodeTwiceAsAReplay(t *testing.T) {
 	}
 }
 
-// TestTwoConcurrentVerificationsOfOneCodeLeaveExactlyOneTheWinner holds the
-// design's assumption: the conditional write, not a read, decides which of two
-// attempts that present one code is the one, on this engine.
+// TestTwoConcurrentVerificationsOfOneCodeLeaveExactlyOneTheWinner checks that the conditional write lets exactly one of two concurrent verifications through.
 func TestTwoConcurrentVerificationsOfOneCodeLeaveExactlyOneTheWinner(t *testing.T) {
 	r := newSerialRig(t)
 	secret := generate(t)
@@ -202,8 +191,7 @@ func TestTwoConcurrentVerificationsOfOneCodeLeaveExactlyOneTheWinner(t *testing.
 	}
 }
 
-// TestVerifyRefusesAFactorThatIsNotActive holds that a row that is not active is
-// never used to verify, whatever its seed says: the zero status is pending.
+// TestVerifyRefusesAFactorThatIsNotActive checks that a row that is not active is never used to verify.
 func TestVerifyRefusesAFactorThatIsNotActive(t *testing.T) {
 	r := newRig(t)
 	secret := generate(t)
@@ -223,8 +211,7 @@ func TestVerifyRefusesAFactorThatIsNotActive(t *testing.T) {
 	}
 }
 
-// TestVerifyRefusesAFactorWhoseSeedIsGone holds that a row with no seed is a
-// factor that is not enrolled, not an outage.
+// TestVerifyRefusesAFactorWhoseSeedIsGone checks that a row with no seed reads as not enrolled.
 func TestVerifyRefusesAFactorWhoseSeedIsGone(t *testing.T) {
 	r := newRig(t)
 	got := r.verify(active("missing"), "123456")
@@ -236,8 +223,7 @@ func TestVerifyRefusesAFactorWhoseSeedIsGone(t *testing.T) {
 	}
 }
 
-// TestChallengeAsksForACodeAndSendsNothing holds that a TOTP has nothing to
-// send: its challenge is a prompt for a code.
+// TestChallengeAsksForACodeAndSendsNothing checks that a TOTP challenge only asks for a code.
 func TestChallengeAsksForACodeAndSendsNothing(t *testing.T) {
 	r := newRig(t)
 	got, err := r.factor.Challenge(context.Background(), flow(), active("f1"))
@@ -247,8 +233,6 @@ func TestChallengeAsksForACodeAndSendsNothing(t *testing.T) {
 	if k := kindOf(t, got); k != step.KindPrompt {
 		t.Fatalf("Challenge answered %v, want a prompt", k)
 	}
-	// The field name is the client's contract, so it is pinned to the literal and
-	// not to the constant this factor happens to read the code by.
 	fields := step.FieldsOf(got)
 	if len(fields) != 1 || fields[0].Name != "code" || !fields[0].Required {
 		t.Errorf("the prompt asks for %+v, want a required %q", fields, "code")
@@ -258,8 +242,7 @@ func TestChallengeAsksForACodeAndSendsNothing(t *testing.T) {
 	}
 }
 
-// TestRemoveIsIdempotent holds that removing a factor's seed twice is not an
-// error, because the row that names the factor is not this module's.
+// TestRemoveIsIdempotent checks that removing a seed twice is not an error.
 func TestRemoveIsIdempotent(t *testing.T) {
 	r := newRig(t)
 	secret := generate(t)

@@ -10,30 +10,18 @@ import (
 	"github.com/vislake/speed/pkg/authn/mfa"
 )
 
-// The causes this module puts on an answer. None carries a value a client sent.
 var (
-	// errNotEnrolled is the cause of a call about a factor that has no
-	// credential, which the client is answered as a login that failed.
-	errNotEnrolled = errors.New("the factor has no credential registered")
-	// errNoHandle is the cause of a call for an account that holds no user
-	// handle, which is an account with no registration here.
-	errNoHandle = errors.New("the account holds no webauthn user handle")
-	// errNoCredential is the cause of an answer that carries no credential.
+	errNotEnrolled  = errors.New("the factor has no credential registered")
+	errNoHandle     = errors.New("the account holds no webauthn user handle")
 	errNoCredential = errors.New("the answer carries no credential")
 )
 
-// Kind is the kind of factor this module is.
 func (p *product) Kind() authn.FactorKind { return authn.FactorWebAuthn }
 
-// Enroll registers a credential, one step at a time. The first step draws the
-// account's user handle if it has none and answers with the creation options;
-// the second verifies the client's response and writes the credential. The
-// profile is the one the client named, a passkey by default.
+// Enroll registers a credential: the first step draws the account's user handle if needed and answers creation options, and the second verifies the response and writes the credential.
 func (p *product) Enroll(ctx context.Context, f authn.FlowState, in authn.StepInput) (authn.Step, error) {
 	rec, ok := mfa.PendingFactor(ctx)
 	if !ok || rec.Account == "" {
-		// The multi-factor module is the only caller that hands a pending row,
-		// so a call without one is not a registration and writes nothing.
 		return authn.StepRefused(errNotEnrolled), nil
 	}
 	if len(f.Private) == 0 {
@@ -42,8 +30,6 @@ func (p *product) Enroll(ctx context.Context, f authn.FlowState, in authn.StepIn
 	return p.finishEnroll(ctx, rec, f, in)
 }
 
-// beginEnroll is the first registration step: it makes sure the account has a
-// user handle and answers with the creation options for the named profile.
 func (p *product) beginEnroll(ctx context.Context, rec authn.FactorRecord, in authn.StepInput) (authn.Step, error) {
 	if in.Action != authn.InputSubmit {
 		return authn.StepRefused(errNoCredential), nil
@@ -64,8 +50,6 @@ func (p *product) beginEnroll(ctx context.Context, rec authn.FactorRecord, in au
 	return authn.StepData(stepRegistration, state, options), nil
 }
 
-// finishEnroll is the last registration step: it verifies the response, writes
-// the credential and answers that the factor is registered.
 func (p *product) finishEnroll(ctx context.Context, rec authn.FactorRecord, f authn.FlowState, in authn.StepInput) (authn.Step, error) {
 	if in.Action != authn.InputSubmit {
 		return authn.StepRefused(errNoCredential), nil
@@ -111,16 +95,13 @@ func (p *product) finishEnroll(ctx context.Context, rec authn.FactorRecord, f au
 	return authn.StepEnrolled(rec), nil
 }
 
-// Challenge starts a second-factor assertion on the named factor: it answers
-// with the assertion options and keeps the session in the flow's private bytes.
+// Challenge starts a second-factor assertion on the named factor and keeps the session in the flow's private bytes.
 func (p *product) Challenge(ctx context.Context, _ authn.FlowState, rec authn.FactorRecord) (authn.Step, error) {
 	row, found, err := p.register.getCredential(ctx, rec.ID)
 	if err != nil {
 		return authn.Step{}, err
 	}
 	if !found || row.CloneWarning {
-		// A factor with no credential, or one already flagged, starts nothing:
-		// the client is answered as a login that failed.
 		return authn.StepRefused(errNotEnrolled), nil
 	}
 	handle, found, err := p.register.handleOf(ctx, rec.Account)
@@ -145,10 +126,7 @@ func (p *product) Challenge(ctx context.Context, _ authn.FlowState, rec authn.Fa
 	return authn.StepData(stepAssertion, state, options), nil
 }
 
-// Verify checks a second-factor assertion. The factor's back-off and its audit
-// row are the multi-factor module's; this call parses the response, has the
-// library check it against the stored credential, and writes the counter and
-// flags back.
+// Verify checks a second-factor assertion against the stored credential and writes the counter and flags back.
 func (p *product) Verify(ctx context.Context, f authn.FlowState, rec authn.FactorRecord, in authn.StepInput) (authn.Step, error) {
 	row, found, err := p.register.getCredential(ctx, rec.ID)
 	if err != nil {
@@ -196,8 +174,7 @@ func (p *product) Verify(ctx context.Context, f authn.FlowState, rec authn.Facto
 	}
 }
 
-// Remove deletes a factor's credential and, with it the account's last one, the
-// account's user handle. It is idempotent.
+// Remove deletes the factor's credential and, with the account's last one, the user handle; it is idempotent.
 func (p *product) Remove(ctx context.Context, account authn.AccountID, rec authn.FactorRecord) error {
 	deleted, err := p.register.deleteCredential(ctx, rec.ID)
 	if err != nil {
@@ -222,7 +199,6 @@ func (p *product) Remove(ctx context.Context, account authn.AccountID, rec authn
 	return nil
 }
 
-// assertionOutcome is how settleAssertion reads a verified assertion.
 type assertionOutcome int
 
 const (
@@ -231,11 +207,6 @@ const (
 	assertionReplay
 )
 
-// settleAssertion writes the counter and flags a verified assertion carried. A
-// counter that went backwards is the library's clone warning: the credential is
-// flagged and the assertion is refused. Otherwise the write-back is conditional,
-// so a concurrent assertion that advanced the counter first makes this one a
-// replay. A false winner is not an error.
 func (p *product) settleAssertion(ctx context.Context, stored credentialRow, res assertionResult) (assertionOutcome, error) {
 	if res.credential.Authenticator.CloneWarning {
 		if err := p.register.flagClone(ctx, stored.FactorID); err != nil {
@@ -258,18 +229,10 @@ func (p *product) settleAssertion(ctx context.Context, stored credentialRow, res
 	return assertionPassed, nil
 }
 
-// factorIDs is the account's factor rows of this module's kind, read through the
-// multi-factor module's seam. The module's own tables are keyed by these ids and
-// carry no account of their own.
 func (p *product) factorIDs(ctx context.Context, account authn.AccountID) ([]string, error) {
 	return p.factorIDsOf(ctx, account, false)
 }
 
-// activeFactorIDs is factorIDs restricted to the factors that are active. A
-// factor a reset disabled, or a clone warning did, authenticates nothing, so its
-// credential is not offered to the library. Remove reads the account's rows whole
-// — a handle goes only with the account's last credential, whatever its factor's
-// status — which is where the two differ.
 func (p *product) activeFactorIDs(ctx context.Context, account authn.AccountID) ([]string, error) {
 	return p.factorIDsOf(ctx, account, true)
 }
@@ -292,11 +255,6 @@ func (p *product) factorIDsOf(ctx context.Context, account authn.AccountID, acti
 	return ids, nil
 }
 
-// buildUser is the library's view of an account. Which credentials go in it is
-// the caller's: a registration excludes the account's active credentials, so a
-// disabled factor's credential is not offered and the authenticator that holds it
-// can be registered again; a challenge may hand the library just the one
-// credential it is for.
 func (p *product) buildUser(ctx context.Context, account authn.AccountID, handle string, only []credentialRow) (user, error) {
 	rows := only
 	if rows == nil {
@@ -312,11 +270,6 @@ func (p *product) buildUser(ctx context.Context, account authn.AccountID, handle
 	return p.userOf(ctx, account, handle, rows)
 }
 
-// buildPasskeyUser is the library's view of an account for a passkey login. Only
-// an active passkey factor's credential may prove a first factor: a factor a
-// reset or a clone warning disabled authenticates nothing, and a security key's
-// credential is a second factor only. Neither is offered to the library, so an
-// assertion against either is refused before it can stand for a first factor.
 func (p *product) buildPasskeyUser(ctx context.Context, account authn.AccountID, handle string) (user, error) {
 	ids, err := p.activeFactorIDs(ctx, account)
 	if err != nil {
@@ -335,8 +288,6 @@ func (p *product) buildPasskeyUser(ctx context.Context, account authn.AccountID,
 	return p.userOf(ctx, account, handle, passkeys)
 }
 
-// userOf is the library's user built from the credential rows given, with the
-// account's handle and the name an authenticator shows.
 func (p *product) userOf(ctx context.Context, account authn.AccountID, handle string, rows []credentialRow) (user, error) {
 	id, err := handleBytesOf(handle)
 	if err != nil {
@@ -354,10 +305,6 @@ func (p *product) userOf(ctx context.Context, account authn.AccountID, handle st
 	return user{id: id, name: name, display: name, creds: creds}, nil
 }
 
-// nameOf is the name the authenticator shows for the account: its username
-// identifier, or the account identifier when it has none. It never fails a call:
-// a read that fails falls back to the identifier, because the name is shown to
-// the person registering and decides nothing.
 func (p *product) nameOf(ctx context.Context, account authn.AccountID) string {
 	ids, err := p.accounts.Identifiers(ctx, account)
 	if err != nil {
@@ -371,9 +318,6 @@ func (p *product) nameOf(ctx context.Context, account authn.AccountID) string {
 	return string(account)
 }
 
-// credentialBody reads the WebAuthn response a client submitted. The field is
-// the one this module's options tell the client to answer in; the engine has
-// already bounded the request.
 func credentialBody(in authn.StepInput) ([]byte, bool) {
 	v := in.Fields[fieldCredential]
 	if v == "" {

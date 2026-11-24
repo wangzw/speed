@@ -5,11 +5,7 @@ import (
 	"time"
 )
 
-// A setting read on every request that is wrong is reported once, not on each
-// read: the same fault written again and again would flood the log. The fault
-// here is a value outside the setting's domain, which reads as the declared
-// default and is said at Error the first time and not after. A fault that changes
-// is said again, so a setting that went bad a second time is not silent.
+// TestASettingFaultIsReportedOnceAndNotOnEveryRead checks that a faulty setting is reported once and again only when the fault changes.
 func TestASettingFaultIsReportedOnceAndNotOnEveryRead(t *testing.T) {
 	store := newStore()
 	logs := &logBuffer{}

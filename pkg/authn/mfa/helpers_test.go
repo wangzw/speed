@@ -30,12 +30,8 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// base is the instant the cases that need a fixed time start from.
 var base = time.Date(2026, time.March, 14, 12, 0, 0, 0, time.UTC)
 
-// fakeClock is a clock a case moves. It reads in the zone it was built with, so a
-// case can hand the module a time that is not UTC, which is what the module has
-// to write and bind in UTC whatever it is given.
 type fakeClock struct {
 	mu  sync.Mutex
 	now time.Time
@@ -55,8 +51,6 @@ func (c *fakeClock) advance(d time.Duration) {
 	c.now = c.now.Add(d)
 }
 
-// logBuffer collects what the module logs, as text lines, so a case can read the
-// level and the fields of a line and look for what must not be in any of them.
 type logBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -78,7 +72,6 @@ func (b *logBuffer) logger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(b, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
 
-// lines returns the lines that carry every one of the substrings.
 func (b *logBuffer) lines(substrings ...string) []string {
 	var out []string
 	for _, line := range strings.Split(b.String(), "\n") {
@@ -93,9 +86,6 @@ func (b *logBuffer) lines(substrings ...string) []string {
 	return out
 }
 
-// fakeThrottle is the failure back-off a case drives. A key is in back-off while
-// its wait is set; a failure engages the back-off when the key's count reaches
-// freeAttempts. Every call is recorded in order.
 type fakeThrottle struct {
 	mu           sync.Mutex
 	waits        map[string]time.Duration
@@ -164,9 +154,6 @@ func (f *fakeThrottle) count(prefix string) int {
 	return n
 }
 
-// fakeAccounts and fakeAdmin are the account module as far as this module reads
-// and writes it. A method a case does not need is the nil embedded interface's,
-// which panics: reaching one is a failure of the case.
 type fakeAccounts struct {
 	authn.Accounts
 	mu        sync.Mutex
@@ -192,8 +179,7 @@ type fakeAdmin struct {
 	mu       sync.Mutex
 	err      error
 	calls    []string
-	// onSet runs as the call arrives, so a case can read the state the call finds.
-	onSet func()
+	onSet    func()
 }
 
 func (a *fakeAdmin) SetMFARequired(_ context.Context, id authn.AccountID, required bool) error {
@@ -212,11 +198,6 @@ func (a *fakeAdmin) SetMFARequired(_ context.Context, id authn.AccountID, requir
 	return nil
 }
 
-// fakeSessions records the revocations and rotations it is asked for and keeps
-// the set of live sessions a case gave it, so a case can read which of them a
-// revocation ended and which token a session holds. It models RevokeAccount's
-// rule — every live session of the account goes except the one named by except —
-// and Rotate's: a live session gets a new token and keeps its identifier.
 type fakeSessions struct {
 	authn.Sessions
 	mu        sync.Mutex
@@ -226,9 +207,7 @@ type fakeSessions struct {
 	rotated   []authn.SessionID
 	live      map[authn.SessionID]authn.AccountID
 	tokens    map[authn.SessionID]string
-	// onRevoke runs as the call arrives, so a case can read the state the call
-	// finds.
-	onRevoke func()
+	onRevoke  func()
 }
 
 func newFakeSessions() *fakeSessions {
@@ -238,8 +217,6 @@ func newFakeSessions() *fakeSessions {
 	}
 }
 
-// add makes a session live for an account, as a completed login would, with an
-// initial token a case can read back and check a rotation against.
 func (s *fakeSessions) add(id authn.SessionID, account authn.AccountID) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -247,15 +224,12 @@ func (s *fakeSessions) add(id authn.SessionID, account authn.AccountID) {
 	s.tokens[id] = "original-token-of-" + string(id)
 }
 
-// tokenOf is the token the session holds now.
 func (s *fakeSessions) tokenOf(id authn.SessionID) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.tokens[id]
 }
 
-// authenticates reports whether token is still the credential of a live
-// session, which is what a browser presenting it would be let in with.
 func (s *fakeSessions) authenticates(token string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -269,7 +243,6 @@ func (s *fakeSessions) authenticates(token string) bool {
 	return false
 }
 
-// rotationCalls reports the Rotate calls in the order they arrived.
 func (s *fakeSessions) rotationCalls() []authn.SessionID {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -302,7 +275,6 @@ func (s *fakeSessions) SetCookie(w http.ResponseWriter, in authn.Issued) {
 	http.SetCookie(w, &http.Cookie{Name: "sid", Value: in.Token, Path: "/"})
 }
 
-// isLive reports whether the session is still one a request could use.
 func (s *fakeSessions) isLive(id authn.SessionID) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -310,7 +282,6 @@ func (s *fakeSessions) isLive(id authn.SessionID) bool {
 	return ok
 }
 
-// revocations reports the revocation calls in the order they arrived.
 func (s *fakeSessions) revocations() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -338,8 +309,6 @@ func (s *fakeSessions) RevokeAccount(_ context.Context, account authn.AccountID,
 	return ended, nil
 }
 
-// recordingBus is a bus that keeps what was published and delivers it to the
-// handlers subscribed, which is what a process-local bus does.
 type recordingBus struct {
 	mu        sync.Mutex
 	handlers  map[string][]event.Handler
@@ -363,7 +332,6 @@ func (b *recordingBus) Publish(_ context.Context, evt event.Event) error {
 	return err
 }
 
-// deliver hands an event to the handlers of its type, as the bus would.
 func (b *recordingBus) deliver(ctx context.Context, evt event.Event) error {
 	b.mu.Lock()
 	hs := append([]event.Handler(nil), b.handlers[evt.Type]...)
@@ -387,8 +355,6 @@ func (b *recordingBus) ofType(typ string) []event.Event {
 	return out
 }
 
-// payload decodes the one event of a type into dst, failing the case when there
-// is not exactly one.
 func (b *recordingBus) payload(t *testing.T, typ string, dst any) {
 	t.Helper()
 	got := b.ofType(typ)
@@ -400,7 +366,6 @@ func (b *recordingBus) payload(t *testing.T, typ string, dst any) {
 	}
 }
 
-// recordingAudit keeps the rows it was asked to write.
 type recordingAudit struct {
 	mu   sync.Mutex
 	rows []audit.Entry
@@ -420,8 +385,6 @@ func (a *recordingAudit) entries() []audit.Entry {
 	return append([]audit.Entry(nil), a.rows...)
 }
 
-// fakeStore is the settings store, holding the values a case wrote and failing the
-// reads it was told to.
 type fakeStore struct {
 	settings.Store
 	mu     sync.Mutex
@@ -455,8 +418,6 @@ func (s *fakeStore) Get(_ settings.Layer, key string, target any) error {
 		reflect.ValueOf(target).Elem().Set(reflect.ValueOf(v))
 		return nil
 	}
-	// A key nobody wrote reads as its declared default, which the store does for
-	// the module.
 	switch p := target.(type) {
 	case *bool:
 		*p = defaults.GlobalRequired
@@ -475,8 +436,6 @@ func (s *fakeStore) Get(_ settings.Layer, key string, target any) error {
 	return nil
 }
 
-// fakeFactor is a factor a case scripts. A step it was not given a script for is
-// the answer a working factor of its kind gives.
 type fakeFactor struct {
 	kind authn.FactorKind
 
@@ -488,8 +447,7 @@ type fakeFactor struct {
 
 	calls   []string
 	removed []string
-	// seen is what each Enroll call found with PendingFactor and in its flow state.
-	seen []enrollSight
+	seen    []enrollSight
 }
 
 type enrollSight struct {
@@ -571,7 +529,6 @@ func (f *fakeFactor) Remove(ctx context.Context, account authn.AccountID, rec au
 	return nil
 }
 
-// rig is the module over a real database with every dependency a case drives.
 type rig struct {
 	t        *testing.T
 	p        *product
@@ -589,9 +546,6 @@ type rig struct {
 	mounter  *mounttest.Mounter
 }
 
-// newRig builds the module over the handle with the factors taken in. Sessions,
-// the bus, the audit and the metric provider are all present; a case that wants
-// one absent sets the field to nil on the product.
 func newRig(t *testing.T, h *gorm.DB, factors ...authn.Factor) *rig {
 	t.Helper()
 	accounts := &fakeAccounts{required: map[authn.AccountID]bool{}, passwords: map[authn.AccountID]bool{}}
@@ -629,13 +583,10 @@ func newRig(t *testing.T, h *gorm.DB, factors ...authn.Factor) *rig {
 	return r
 }
 
-// flow is the flow state of an account's flow.
 func flow(account authn.AccountID) authn.FlowState {
 	return authn.FlowState{ID: "flow-1", Purpose: authn.PurposeEnroll, Account: account}
 }
 
-// insertRow writes a row of the register directly, in UTC, the way another
-// replica would, and returns its identifier.
 func (r *rig) insertRow(account authn.AccountID, kind authn.FactorKind, status authn.FactorStatus, created time.Time, activated *time.Time) string {
 	r.t.Helper()
 	id := event.NewID()
@@ -655,7 +606,6 @@ func utcPtr(t *time.Time) any {
 	return u
 }
 
-// activeFactor writes an active row of the kind that was activated a while ago.
 func (r *rig) activeFactor(account authn.AccountID, kind authn.FactorKind, activatedAgo time.Duration) string {
 	r.t.Helper()
 	at := r.clock.read().Add(-activatedAgo)
@@ -683,8 +633,6 @@ func (r *rig) status(id string) (authn.FactorStatus, bool) {
 	return authn.FactorStatus(rows[0].Status), true
 }
 
-// counter reads the value of a counter from the metric reader for the data points
-// whose attributes include every pair given.
 func (r *rig) counter(name string, want ...attribute.KeyValue) int64 {
 	r.t.Helper()
 	var rm metricdata.ResourceMetrics
@@ -717,10 +665,8 @@ func (r *rig) counter(name string, want ...attribute.KeyValue) int64 {
 	return total
 }
 
-// sqliteDialect is the engine every case of this build runs on.
 const sqliteDialect = "sqlite"
 
-// applyMigrations builds the module's table from the files it ships.
 func applyMigrations(t *testing.T, h *gorm.DB, dialect string) {
 	t.Helper()
 	entries, err := fs.ReadDir(migrationsFS, dialect)
@@ -743,18 +689,11 @@ func applyMigrations(t *testing.T, h *gorm.DB, dialect string) {
 	}
 }
 
-// dialect is one engine a case iterates: its name, and how to reach a database of
-// the case's own on it.
 type dialect struct {
 	name string
 	open func(t *testing.T) *gorm.DB
 }
 
-// dialects lists the engines a case iterates, SQLite first.
-//
-// Only the engines whose fixture needs nothing installed belong here. The
-// integration build appends the ones that reach a server, so an untagged run
-// cannot name a dialect whose opener would fail for want of one.
 var dialects = []dialect{{
 	name: sqliteDialect,
 	open: func(t *testing.T) *gorm.DB {
@@ -762,10 +701,6 @@ var dialects = []dialect{{
 	},
 }}
 
-// openDialect delivers the database of the dialect with the module's table built.
-//
-// A dialect no engine of this build answers to is a programming error, since
-// dialects never names one.
 func openDialect(t *testing.T, dialect string) *gorm.DB {
 	t.Helper()
 	for _, d := range dialects {
@@ -779,7 +714,6 @@ func openDialect(t *testing.T, dialect string) *gorm.DB {
 	return nil
 }
 
-// forEachDialect runs a case on every engine this build's cases run on.
 func forEachDialect(t *testing.T, run func(t *testing.T, h *gorm.DB, dialect string)) {
 	t.Helper()
 	for _, d := range dialects {
@@ -789,7 +723,6 @@ func forEachDialect(t *testing.T, run func(t *testing.T, h *gorm.DB, dialect str
 	}
 }
 
-// onEachDialect is forEachDialect with the rig built.
 func onEachDialect(t *testing.T, kinds []authn.FactorKind, run func(t *testing.T, r *rig)) {
 	t.Helper()
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
@@ -803,10 +736,8 @@ func onEachDialect(t *testing.T, kinds []authn.FactorKind, run func(t *testing.T
 
 const acct = authn.AccountID("acct-1")
 
-// decode reads an event payload into dst the way a subscriber does.
 func decode(payload, dst any) error { return event.DecodePayload(payload, dst) }
 
-// subscribedTypes lists the event types something subscribed to, sorted.
 func (b *recordingBus) subscribedTypes() []string {
 	b.mu.Lock()
 	defer b.mu.Unlock()

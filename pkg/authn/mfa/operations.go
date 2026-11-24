@@ -8,17 +8,11 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The fragment's info section: the title this module's fragment carries and the
-// version of the fragment's shape.
 const (
 	fragmentTitle   = "authn mfa"
 	fragmentVersion = "1.0.0"
 )
 
-// The routes as the fragment writes them: relative to the module's API root,
-// which is the mounter's base less the part this capability owns. The mounter
-// registration resolves the same declaration against its base, so the path is
-// written once.
 const (
 	factorsPath = "/auth/factors"
 	factorPath  = "/auth/factors/:id"
@@ -29,13 +23,20 @@ const (
 type AuthnMfaFactor struct {
 	_ struct{} `description:"One factor row of the caller's account: what the register holds about the factor, with nothing a kind keeps for itself."`
 
-	ID          string     "json:\"id\" required:\"true\" description:\"The factor's identifier; use it as the `id` path parameter of `DELETE /auth/factors/{id}` or `PATCH /auth/factors/{id}`.\""
-	Kind        string     "json:\"kind\" required:\"true\" description:\"The factor kind: `totp`, `sms` or `webauthn`.\""
-	Label       string     `json:"label" required:"true" description:"The display label stored with the factor: what the caller submitted at registration or at a later rename, with surrounding whitespace trimmed. Empty means the factor has no name; the module generates none."`
-	Status      string     "json:\"status\" required:\"true\" enum:\"pending,active,disabled\" description:\"Lifecycle status: `pending` is registered but not yet confirmed and is never used to verify, `active` may verify, and `disabled` (left by an administrator reset or a clone warning) stays as a row that no longer counts.\""
-	CreatedAt   time.Time  `json:"created_at" required:"true" description:"When the factor row was created, as an RFC 3339 instant"`
+	// ID is the factor's identifier.
+	ID string "json:\"id\" required:\"true\" description:\"The factor's identifier; use it as the `id` path parameter of `DELETE /auth/factors/{id}` or `PATCH /auth/factors/{id}`.\""
+	// Kind is the factor kind.
+	Kind string "json:\"kind\" required:\"true\" description:\"The factor kind: `totp`, `sms` or `webauthn`.\""
+	// Label is the display label stored with the factor.
+	Label string `json:"label" required:"true" description:"The display label stored with the factor: what the caller submitted at registration or at a later rename, with surrounding whitespace trimmed. Empty means the factor has no name; the module generates none."`
+	// Status is the lifecycle status of the row.
+	Status string "json:\"status\" required:\"true\" enum:\"pending,active,disabled\" description:\"Lifecycle status: `pending` is registered but not yet confirmed and is never used to verify, `active` may verify, and `disabled` (left by an administrator reset or a clone warning) stays as a row that no longer counts.\""
+	// CreatedAt is when the row was created.
+	CreatedAt time.Time `json:"created_at" required:"true" description:"When the factor row was created, as an RFC 3339 instant"`
+	// ActivatedAt is when the factor became active, absent until it is.
 	ActivatedAt *time.Time `json:"activated_at,omitempty" description:"When the factor became active, as an RFC 3339 instant; absent until it is"`
-	LastUsedAt  *time.Time `json:"last_used_at,omitempty" description:"When the factor last passed a verification, as an RFC 3339 instant; absent until it first does"`
+	// LastUsedAt is when the factor last passed a verification, absent until it first does.
+	LastUsedAt *time.Time `json:"last_used_at,omitempty" description:"When the factor last passed a verification, as an RFC 3339 instant; absent until it first does"`
 }
 
 // AuthnMfaFactorList is the object the listing answers: the caller's factor
@@ -43,19 +44,14 @@ type AuthnMfaFactor struct {
 type AuthnMfaFactorList struct {
 	_ struct{} `description:"An object whose single member lists every factor the caller's account has registered."`
 
+	// Factors lists the caller's factor rows, oldest first.
 	Factors []AuthnMfaFactor `json:"factors" required:"true" description:"The caller's factor rows, ordered oldest first by creation time and then by identifier; an empty array when the account has registered none."`
 }
 
-// removeFactorInput is the declaration's input for the route that removes one
-// factor by identifier: the identifier is a path parameter and the operation
-// takes no body.
 type removeFactorInput struct {
 	ID string "path:\"id\" description:\"The factor identifier, as returned in `id` by `GET /auth/factors`. Empty or longer than 64 bytes is refused as a bad request without reading the register.\""
 }
 
-// updateFactorInput is the declaration's input for the route that renames one
-// factor by identifier: the identifier is a path parameter and the body carries
-// the new label.
 type updateFactorInput struct {
 	_ struct{} `description:"The new display label of one factor the caller's account registered."`
 
@@ -63,20 +59,11 @@ type updateFactorInput struct {
 	Label string "json:\"label\" required:\"true\" description:\"The factor's new display label: at most 64 characters with no control character. Surrounding whitespace is trimmed before it is stored, and an empty value clears the name; the module generates none.\""
 }
 
-// plainChallengeHeader declares the header every 401 on a route that asks for
-// no freshness beyond the login session carries: the gateway writes the
-// endpoint's challenge when it refuses the request first, and a handler that
-// answers 401 itself returns it in the fault's headers.
 var plainChallengeHeader = speedhttp.Header{
 	Name:        "WWW-Authenticate",
 	Description: "The capability's challenge: the Bearer and Cookie schemes, never Basic.",
 }
 
-// removeChallengeHeader declares the header every 401 on the deletion carries.
-// A request without a usable credential is challenged with the Bearer and
-// Cookie schemes; one that needs a fresher authentication is challenged with
-// the scheme the identity authenticated with, the level it must reach and, when
-// the requirement has one, a maximum age.
 var removeChallengeHeader = speedhttp.Header{
 	Name: "WWW-Authenticate",
 	Description: "The capability's challenge. An unusable credential is challenged with the " +
@@ -84,17 +71,12 @@ var removeChallengeHeader = speedhttp.Header{
 		"identity authenticated with, the level it must reach and, when one applies, a maximum age.",
 }
 
-// unauthorized is the declaration of a 401 that carries the capability's
-// challenge.
 func unauthorized(header speedhttp.Header, description string) speedhttp.Response {
 	response := speedhttp.ProblemResponse(http.StatusUnauthorized, description)
 	response.Headers = []speedhttp.Header{header}
 	return response
 }
 
-// factorsOperation declares the route that lists the caller's own factors. The
-// handler binds no input and returns the page, so the entry point writes the
-// declared 200.
 var factorsOperation = speedhttp.NewOperation[struct{}, AuthnMfaFactorList](
 	"authn.mfa.factors",
 	http.MethodGet,
@@ -117,9 +99,6 @@ var factorsOperation = speedhttp.NewOperation[struct{}, AuthnMfaFactorList](
 	),
 )
 
-// removeFactorOperation declares the route that removes one of the caller's own
-// factors. The handler builds the 204 itself, and each refusal is a fault whose
-// 401 carries the capability's challenge.
 var removeFactorOperation = speedhttp.NewReplyOperation[removeFactorInput](
 	"authn.mfa.removeFactor",
 	http.MethodDelete,
@@ -161,9 +140,6 @@ var removeFactorOperation = speedhttp.NewReplyOperation[removeFactorInput](
 	),
 )
 
-// updateFactorOperation declares the route that renames one of the caller's own
-// factors. The handler binds the declared body and returns the updated row, so
-// the entry point writes the declared 200.
 var updateFactorOperation = speedhttp.NewOperation[updateFactorInput, AuthnMfaFactor](
 	"authn.mfa.updateFactor",
 	http.MethodPatch,
@@ -205,8 +181,6 @@ var updateFactorOperation = speedhttp.NewOperation[updateFactorInput, AuthnMfaFa
 	},
 )
 
-// operations is this module's declaration of the API it serves. The fragment is
-// generated from it; the routes are mounted from the same declarations.
 var operations = speedhttp.Operations{
 	factorsOperation,
 	removeFactorOperation,

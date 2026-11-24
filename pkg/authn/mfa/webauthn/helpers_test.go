@@ -32,24 +32,19 @@ import (
 	"github.com/vislake/speed/pkg/internal/dbtest"
 )
 
-// The relying party every case runs under.
 const (
 	testRPID   = "example.com"
 	testOrigin = "https://example.com"
 )
 
-// acct is the account the cases register factors for.
 const acct = authn.AccountID("acct-1")
 
-// testConfig is the resolved configuration a case builds a product with.
 func testConfig() resolved {
 	return resolved{rpID: testRPID, rpName: "speed", origins: []string{testOrigin}}
 }
 
-// sqliteDialect is the engine every case of this build runs on.
 const sqliteDialect = "sqlite"
 
-// applyMigrations builds this module's tables from the files it ships.
 func applyMigrations(t *testing.T, h *gorm.DB, dialect string) {
 	t.Helper()
 	entries, err := fs.ReadDir(migrationsFS, dialect)
@@ -72,18 +67,11 @@ func applyMigrations(t *testing.T, h *gorm.DB, dialect string) {
 	}
 }
 
-// dialect is one engine a case iterates: its name, and how to reach a database of
-// the case's own on it.
 type dialect struct {
 	name string
 	open func(t *testing.T) *gorm.DB
 }
 
-// dialects lists the engines a case iterates, SQLite first.
-//
-// Only the engines whose fixture needs nothing installed belong here. The
-// integration build appends the ones that reach a server, so an untagged run
-// cannot name a dialect whose opener would fail for want of one.
 var dialects = []dialect{{
 	name: sqliteDialect,
 	open: func(t *testing.T) *gorm.DB {
@@ -91,11 +79,6 @@ var dialects = []dialect{{
 	},
 }}
 
-// openDialect delivers the database of the dialect with this module's tables
-// built.
-//
-// A dialect no engine of this build answers to is a programming error, since
-// dialects never names one.
 func openDialect(t *testing.T, dialect string) *gorm.DB {
 	t.Helper()
 	for _, d := range dialects {
@@ -109,7 +92,6 @@ func openDialect(t *testing.T, dialect string) *gorm.DB {
 	return nil
 }
 
-// forEachDialect runs a case on every engine this build's cases run on.
 func forEachDialect(t *testing.T, run func(t *testing.T, h *gorm.DB, dialect string)) {
 	t.Helper()
 	for _, d := range dialects {
@@ -119,8 +101,6 @@ func forEachDialect(t *testing.T, run func(t *testing.T, h *gorm.DB, dialect str
 	}
 }
 
-// fakeMFA is the multi-factor module as far as this module reads it: the factor
-// records of an account and the kinds taken in.
 type fakeMFA struct {
 	authn.MFA
 	mu      sync.Mutex
@@ -146,8 +126,6 @@ func (m *fakeMFA) Factors(_ context.Context, id authn.AccountID) ([]authn.Factor
 
 func (m *fakeMFA) Kinds() []authn.FactorKind { return append([]authn.FactorKind(nil), m.kinds...) }
 
-// fakeAccounts is the account read surface as far as this module reads it: the
-// username identifier a name is drawn from.
 type fakeAccounts struct {
 	authn.Accounts
 	usernames map[authn.AccountID]string
@@ -160,8 +138,6 @@ func (a *fakeAccounts) Identifiers(_ context.Context, id authn.AccountID) ([]aut
 	return nil, nil
 }
 
-// rig is the module over a real database with a fake multi-factor module and
-// account read surface.
 type rig struct {
 	t        *testing.T
 	p        *product
@@ -190,14 +166,10 @@ func newRig(t *testing.T, h *gorm.DB) *rig {
 	return &rig{t: t, p: p, h: h, mfa: mfa, accounts: accounts}
 }
 
-// pending is a pending factor record of this module's kind for the account.
 func pending() authn.FactorRecord {
 	return authn.FactorRecord{ID: "factor-1", Account: acct, Kind: authn.FactorWebAuthn, Status: authn.FactorPending}
 }
 
-// authenticator is a virtual authenticator: one ES256 key, one credential id,
-// and the ceremonies built from them. It is what produces the response bytes a
-// client would, so the cases drive the real protocol end to end.
 type authenticator struct {
 	key    *ecdsa.PrivateKey
 	credID []byte
@@ -218,9 +190,6 @@ func newAuthenticator(t *testing.T) *authenticator {
 	return &authenticator{key: key, credID: cred, rpID: testRPID, origin: testOrigin}
 }
 
-// coseKey is the ES256 public key in COSE encoding, as an authenticator reports
-// it at registration. The point is the uncompressed SEC 1 form: a leading 0x04
-// and the two 32-byte coordinates.
 func (a *authenticator) coseKey(t *testing.T) []byte {
 	t.Helper()
 	point, err := a.key.PublicKey.Bytes()
@@ -243,9 +212,6 @@ func (a *authenticator) coseKey(t *testing.T) []byte {
 	return data
 }
 
-// authData builds the authenticator data. attested adds the credential's data
-// for a registration; an assertion omits it. The user-verification bit follows
-// uv, and the backup-eligible and backup-state bits follow the flags given.
 func (a *authenticator) authData(t *testing.T, flags protocol.AuthenticatorFlags, count uint32, uv, attested bool) []byte {
 	t.Helper()
 	h := sha256.Sum256([]byte(a.rpID))
@@ -256,7 +222,7 @@ func (a *authenticator) authData(t *testing.T, flags protocol.AuthenticatorFlags
 	out = append(out, byte(flags))
 	out = binary.BigEndian.AppendUint32(out, count)
 	if attested {
-		out = append(out, make([]byte, 16)...) // AAGUID
+		out = append(out, make([]byte, 16)...)
 		out = binary.BigEndian.AppendUint16(out, uint16(len(a.credID)))
 		out = append(out, a.credID...)
 		out = append(out, a.coseKey(t)...)
@@ -264,7 +230,6 @@ func (a *authenticator) authData(t *testing.T, flags protocol.AuthenticatorFlags
 	return out
 }
 
-// clientData is the collected client data for a ceremony.
 func (a *authenticator) clientData(t *testing.T, ceremony, challenge string) []byte {
 	t.Helper()
 	data, err := json.Marshal(map[string]any{
@@ -279,7 +244,6 @@ func (a *authenticator) clientData(t *testing.T, ceremony, challenge string) []b
 	return data
 }
 
-// sign signs an assertion over the authenticator data and the client data hash.
 func (a *authenticator) sign(t *testing.T, authData, clientDataJSON []byte) []byte {
 	t.Helper()
 	h := sha256.Sum256(clientDataJSON)
@@ -292,9 +256,6 @@ func (a *authenticator) sign(t *testing.T, authData, clientDataJSON []byte) []by
 	return sig
 }
 
-// registration builds a registration response for the given challenge. attest is
-// never set here: this module asks for no attestation, so the body carries the
-// "none" format.
 func (a *authenticator) registration(t *testing.T, challenge string, uv bool) []byte {
 	t.Helper()
 	authData := a.authData(t, protocol.FlagUserPresent|protocol.FlagAttestedCredentialData, 0, uv, true)
@@ -309,8 +270,6 @@ func (a *authenticator) registration(t *testing.T, challenge string, uv bool) []
 	}, nil)
 }
 
-// assertion builds an assertion response for the given challenge and counter.
-// handle, when non-empty, is the user handle a discoverable credential returns.
 func (a *authenticator) assertion(t *testing.T, challenge string, count uint32, uv bool, handle []byte) []byte {
 	t.Helper()
 	authData := a.authData(t, protocol.FlagUserPresent, count, uv, false)
@@ -327,9 +286,6 @@ func (a *authenticator) assertion(t *testing.T, challenge string, count uint32, 
 	return credentialBodyJSON(t, a.credID, response, nil)
 }
 
-// tamperedAssertion builds an assertion whose signature is broken, by signing
-// with a different key. It carries user verification, so a passkey login refuses
-// it for the signature and not for a missing user-verification bit.
 func tamperedAssertion(t *testing.T, a *authenticator, challenge string, count uint32) []byte {
 	t.Helper()
 	other := newAuthenticator(t)
@@ -343,8 +299,6 @@ func tamperedAssertion(t *testing.T, a *authenticator, challenge string, count u
 	}, nil)
 }
 
-// credentialBodyJSON is the response body a client submits: the credential
-// identifier and type, and the ceremony's response object.
 func credentialBodyJSON(t *testing.T, credID []byte, response map[string]any, extra map[string]any) []byte {
 	t.Helper()
 	id := base64.RawURLEncoding.EncodeToString(credID)
@@ -364,7 +318,6 @@ func credentialBodyJSON(t *testing.T, credID []byte, response map[string]any, ex
 	return data
 }
 
-// creationOptions is the part of the registration options a case reads.
 type creationOptions struct {
 	Challenge string `json:"challenge"`
 	RP        struct {
@@ -384,7 +337,6 @@ type creationOptions struct {
 	} `json:"excludeCredentials"`
 }
 
-// assertionOptions is the part of the assertion options a case reads.
 type assertionOptions struct {
 	Challenge        string `json:"challenge"`
 	UserVerification string `json:"userVerification"`
@@ -419,8 +371,6 @@ func decodeAssertion(t *testing.T, v any) assertionOptions {
 	return out
 }
 
-// enroll runs a full registration on the rig and returns the record used and the
-// authenticator, with the account's user handle read back.
 func (r *rig) enroll(t *testing.T, a *authenticator, profile string, passkey bool) authn.FactorRecord {
 	t.Helper()
 	ctx := context.Background()
@@ -450,9 +400,6 @@ func (r *rig) enroll(t *testing.T, a *authenticator, profile string, passkey boo
 	return rec
 }
 
-// expiredCeremony is a ceremony state whose session has already expired, built
-// the way the module builds it so that the library reads the expiry the module
-// records. It stands in for a client slow enough to answer after the timeout.
 func expiredCeremony(t *testing.T, challenge string, userID []byte) []byte {
 	t.Helper()
 	session := libwebauthn.SessionData{
@@ -468,7 +415,6 @@ func expiredCeremony(t *testing.T, challenge string, userID []byte) []byte {
 	return state
 }
 
-// storedCount reads the stored sign counter and clone flag of a factor.
 func (r *rig) storedCount(t *testing.T, factorID string) (int64, bool) {
 	t.Helper()
 	row, found, err := r.p.register.getCredential(context.Background(), factorID)
@@ -481,8 +427,6 @@ func (r *rig) storedCount(t *testing.T, factorID string) (int64, bool) {
 	return row.SignCount, row.CloneWarning
 }
 
-// mapReader is a configuration reader a case fills with the values its module
-// reads, without the loading step.
 type mapReader struct{ values map[string]any }
 
 func (m mapReader) Decode(path string, target any) error {
@@ -494,14 +438,10 @@ func (m mapReader) Decode(path string, target any) error {
 	return nil
 }
 
-// configReader is a reader for a case that gives the public address and nothing
-// else; the module's own items then take their defaults.
 func configReader(publicURL string) config.Reader {
 	return mapReader{values: map[string]any{gateNamespace + "." + gateMountPath: gateMount{PublicURL: publicURL}}}
 }
 
-// configReaderFor is configReader with this module's own section set as well, for
-// a case that drives the item checks through the descriptor.
 func configReaderFor(publicURL string, cfg moduleConfig) config.Reader {
 	return mapReader{values: map[string]any{
 		gateNamespace + "." + gateMountPath: gateMount{PublicURL: publicURL},

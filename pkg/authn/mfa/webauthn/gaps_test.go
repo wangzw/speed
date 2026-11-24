@@ -14,10 +14,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/step"
 )
 
-// The credential a passkey login may prove a first factor with is the one of an
-// active passkey factor: a factor a reset disabled authenticates nothing, so its
-// credential is not offered to the library and an assertion against it is
-// refused. This holds the status filter on the account's factor rows.
+// TestGapDisabledPasskeyFactorCannotProveAFirstFactor checks that a disabled passkey factor's credential cannot prove a first factor.
 func TestGapDisabledPasskeyFactorCannotProveAFirstFactor(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -34,9 +31,7 @@ func TestGapDisabledPasskeyFactorCannotProveAFirstFactor(t *testing.T) {
 	})
 }
 
-// A security key is a second factor only, so its credential cannot prove a first
-// factor: it is not a passkey and the login method does not offer it to the
-// library.
+// TestGapSecurityKeyCredentialCannotProveAFirstFactor checks that a security key credential cannot prove a first factor.
 func TestGapSecurityKeyCredentialCannotProveAFirstFactor(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -53,8 +48,7 @@ func TestGapSecurityKeyCredentialCannotProveAFirstFactor(t *testing.T) {
 	})
 }
 
-// A credential registered under the security-key profile is stored as not a
-// passkey, which is what the login method's first-factor filter reads.
+// TestGapSecurityKeyProfileStoresNotAPasskey checks that a credential registered under the security-key profile is stored as not a passkey.
 func TestGapSecurityKeyProfileStoresNotAPasskey(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -70,9 +64,7 @@ func TestGapSecurityKeyProfileStoresNotAPasskey(t *testing.T) {
 	})
 }
 
-// A flagged credential proves nothing at the factor's verification either: the
-// flag is checked before the library is asked, so a second factor cannot be
-// verified with a credential a clone warning already took out.
+// TestGapVerifyRefusesFlaggedCredential checks that a flagged credential cannot verify a second factor.
 func TestGapVerifyRefusesFlaggedCredential(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -89,9 +81,7 @@ func TestGapVerifyRefusesFlaggedCredential(t *testing.T) {
 	})
 }
 
-// A flagged credential proves nothing at the passkey login either: the login
-// method refuses it after resolving the account, and the login is answered as
-// one that failed.
+// TestGapPasskeyRefusesFlaggedCredential checks that a flagged credential cannot prove a passkey login.
 func TestGapPasskeyRefusesFlaggedCredential(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -111,9 +101,7 @@ func TestGapPasskeyRefusesFlaggedCredential(t *testing.T) {
 	})
 }
 
-// The login method's step guard refuses a flow record whose step it did not make
-// even when the submitted body and the ceremony state are otherwise valid, so a
-// record cannot be walked into a proof through a step of another method.
+// TestGapAnswerRefusesForeignStepWithValidBody checks that a flow record whose step the method did not make is refused.
 func TestGapAnswerRefusesForeignStepWithValidBody(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -136,8 +124,7 @@ func TestGapAnswerRefusesForeignStepWithValidBody(t *testing.T) {
 	})
 }
 
-// The login method's purpose guard refuses a purpose a passkey does not prove
-// even when the body and the ceremony state are otherwise valid.
+// TestGapAnswerRefusesAForeignPurpose checks that a purpose a passkey does not prove is refused.
 func TestGapAnswerRefusesAForeignPurpose(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -160,9 +147,7 @@ func TestGapAnswerRefusesAForeignPurpose(t *testing.T) {
 	})
 }
 
-// Every entry point refuses a submission whose action is not a submit, even when
-// the body and the ceremony state it is given are otherwise valid, so a first
-// step that is not a client's submission cannot start or advance a ceremony.
+// TestGapEntryPointsRefuseANonSubmitAction checks that every entry point refuses a non-submit action.
 func TestGapEntryPointsRefuseANonSubmitAction(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -186,8 +171,6 @@ func TestGapEntryPointsRefuseANonSubmitAction(t *testing.T) {
 		enrollPrivate := step.PrivateOf(begin)
 		enrollBody := a.registration(t, decodeCreation(t, step.DataOf(begin)).Challenge, true)
 
-		// A non-submit action with a valid body: the action guard, not the body,
-		// is what must refuse it.
 		nonSubmit := func(body []byte) authn.StepInput {
 			return authn.StepInput{Fields: map[string]string{fieldCredential: string(body)}}
 		}
@@ -236,8 +219,7 @@ func TestGapEntryPointsRefuseANonSubmitAction(t *testing.T) {
 	})
 }
 
-// factorIDs keeps only the account's factors of this module's kind, so another
-// kind's factor row is never taken for one of these.
+// TestGapFactorIDsKeepsOnlyWebAuthn checks that factorIDs keeps only this module's kind.
 func TestGapFactorIDsKeepsOnlyWebAuthn(t *testing.T) {
 	r := newRig(t, openDialect(t, sqliteDialect))
 	r.mfa.set(acct,
@@ -252,9 +234,7 @@ func TestGapFactorIDsKeepsOnlyWebAuthn(t *testing.T) {
 	}
 }
 
-// Enroll with a submission and no pending row is refused and writes nothing: the
-// pending-row guard is what refuses it, not the empty action the other case
-// passes.
+// TestGapEnrollWithNoPendingRowWritesNothing checks that Enroll with no pending row writes nothing.
 func TestGapEnrollWithNoPendingRowWritesNothing(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -272,9 +252,7 @@ func TestGapEnrollWithNoPendingRowWritesNothing(t *testing.T) {
 	})
 }
 
-// Remove drops the account's user handle with its last credential: the credential
-// is read back through the multi-factor module's seam, and once none is left the
-// handle goes with it.
+// TestGapRemoveDropsHandleOnLastCredential checks that Remove drops the user handle with the last credential.
 func TestGapRemoveDropsHandleOnLastCredential(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -290,8 +268,7 @@ func TestGapRemoveDropsHandleOnLastCredential(t *testing.T) {
 	})
 }
 
-// A write-back that loses — a concurrent assertion advanced the counter first —
-// is a replay and not a pass.
+// TestGapLostWriteBackIsReplay checks that a lost write-back is a replay.
 func TestGapLostWriteBackIsReplay(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -309,9 +286,7 @@ func TestGapLostWriteBackIsReplay(t *testing.T) {
 	})
 }
 
-// The BackupEligible bit a credential was registered with reaches the library:
-// it compares the stored bit against the presented one, so a bit dropped on the
-// way in would break login for a synchronizable passkey.
+// TestGapToLibraryKeepsBackupEligible checks that the backup-eligible bit reaches the library.
 func TestGapToLibraryKeepsBackupEligible(t *testing.T) {
 	row := credentialRow{
 		CredentialID:   base64.RawURLEncoding.EncodeToString([]byte("cred")),
@@ -328,9 +303,7 @@ func TestGapToLibraryKeepsBackupEligible(t *testing.T) {
 	}
 }
 
-// A verification that did not verify the user reports no user verification: the
-// bit comes from the ceremony, and an implementation that always reported it
-// would escalate the assurance silently.
+// TestGapFactorVerifyWithoutUserVerification checks that a verification without user verification reports none.
 func TestGapFactorVerifyWithoutUserVerification(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
@@ -347,9 +320,7 @@ func TestGapFactorVerifyWithoutUserVerification(t *testing.T) {
 	})
 }
 
-// The low-level readers refuse the values this module did not write: an empty
-// handle, an empty credential identifier and an empty public key, and a counter
-// outside the width the protocol carries.
+// TestGapMalformedStoredValuesAreRefused checks that stored values this module did not write are refused.
 func TestGapMalformedStoredValuesAreRefused(t *testing.T) {
 	if _, err := handleBytesOf(""); err == nil {
 		t.Error("handleBytesOf accepted an empty handle")
@@ -375,8 +346,7 @@ func TestGapMalformedStoredValuesAreRefused(t *testing.T) {
 	}
 }
 
-// A credential bound to another relying party id is not handed to the library, so
-// an assertion collected at another site cannot complete a ceremony here.
+// TestGapCredentialsAreScopedByRelyingParty checks that a credential bound to another relying party id is not offered.
 func TestGapCredentialsAreScopedByRelyingParty(t *testing.T) {
 	r := newRig(t, openDialect(t, sqliteDialect))
 	ctx := context.Background()
@@ -395,8 +365,7 @@ func TestGapCredentialsAreScopedByRelyingParty(t *testing.T) {
 	}
 }
 
-// probe reports ErrNotMigrated for this module's own tables when they are not
-// there, rather than a plain read failure.
+// TestGapProbeReportsAMissingTable checks that probe reports ErrNotMigrated for a missing table.
 func TestGapProbeReportsAMissingTable(t *testing.T) {
 	h := openDialect(t, sqliteDialect)
 	r := newRig(t, h)
@@ -410,8 +379,6 @@ func TestGapProbeReportsAMissingTable(t *testing.T) {
 	}
 }
 
-// seedCredentialUnderRP writes a credential row bound to the relying party id
-// given, for a case that must see the scoping read exclude it.
 func seedCredentialUnderRP(t *testing.T, r *rig, factorID, rpID string, credID []byte) {
 	t.Helper()
 	err := r.p.register.insertCredential(context.Background(), credentialRow{
