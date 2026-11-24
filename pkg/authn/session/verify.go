@@ -11,8 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/clock"
 )
 
-// Name reports the name this backend answers under. It is a constant: the
-// gateway stamps it on every identity this backend vouches for.
 func (p *product) Name() string { return backendName }
 
 // Accepts declares what this backend takes and what it may hand back: the session
@@ -27,19 +25,9 @@ func (p *product) Accepts() authn.Accepts {
 	}
 }
 
-// Verify checks one session cookie.
-//
-// The order is what keeps a check cheap for whoever has nothing to check: a value
-// that cannot be a token is refused at once; a token whose digest is cached is
-// judged without the library and without the database; otherwise the store is
-// read once, through the library. The account is then checked against the
-// snapshot cache, which repeats the account's part of the session's validity on
-// purpose: a cleanup hook that was missed still does not let a session through.
-// Last, an impersonation record the session names is checked.
-//
-// A database that cannot be reached is Unavailable and the cookie is left for the
-// browser to send again. A cookie that does not hold is Denied, and the gateway
-// has the cookie cleared.
+// Verify checks one session cookie and returns Denied, Unavailable or
+// Authenticated. An unreachable database is Unavailable and leaves the cookie
+// alone; a cookie that does not hold is Denied and the gateway clears it.
 func (p *product) Verify(ctx context.Context, c authn.Credential) authn.Verdict {
 	if c.Value == "" || len(c.Value) > maxTokenLen {
 		return authn.Denied(fmt.Errorf("%s: the cookie value cannot be a session token", ModuleName))
@@ -123,10 +111,9 @@ func (p *product) readCookie(ctx context.Context, cs *cacheSet, token, key strin
 	return e, nil
 }
 
-// impersonate turns the principal of a session that names an impersonation record
-// into the principal of the impersonation, when the record is still valid. A
-// record that has ended leaves the principal as it is: the administrator is back
-// as themselves, and that is no refusal.
+// impersonate turns the principal into the impersonation's when the record is
+// still valid; a record that has ended leaves the principal as it is, which is
+// no refusal.
 func (p *product) impersonate(ctx context.Context, cs *cacheSet, st authn.SessionStatus, own authn.Principal) (authn.Principal, *authn.Verdict) {
 	if p.impersonation == nil {
 		v := authn.Denied(fmt.Errorf("%s: the session names an impersonation record and this command has no "+
@@ -155,12 +142,9 @@ func (p *product) impersonate(ctx context.Context, cs *cacheSet, st authn.Sessio
 		return authn.Principal{}, &v
 	}
 
-	// The identity is the target's: its account and its attributes. What the
-	// administrator's own login carried, the SSO attributes among it, is not
-	// the target's and does not go with it. The authentication facts — the level,
-	// the IdP declaration and the provider — are the operator's own, uncapped:
-	// the operator is the one who authenticated, and a sensitive action's
-	// strength is answered by the operator's proof.
+	// The identity is the target's: its account and attributes. The
+	// authentication facts — level, IdP declaration and provider — stay the
+	// operator's own, since the operator is the one who authenticated.
 	imp := own
 	imp.Account = g.grant.Target
 	imp.Actor = st.Account
@@ -183,10 +167,9 @@ func (p *product) activeGrant(ctx context.Context, cs *cacheSet, id string) (gra
 	return g, nil
 }
 
-// touch extends the idle period of a browser session when the touch interval has
-// run out since it was last written. Of the requests that find it run out, one
-// writes. A failed write is only written to the log at Debug level: it costs
-// the precision of the idle period and nothing else.
+// touch extends a browser session's idle period when the touch interval has run
+// out, letting one of the concurrent requests write. A failed write is logged at
+// Debug only: it costs precision of the idle period, nothing else.
 func (p *product) touch(ctx context.Context, e *sessionEntry) {
 	if e.status.Kind != authn.SessionBrowser {
 		return
@@ -211,10 +194,9 @@ func (p *product) extend(ctx context.Context, id authn.SessionID, now time.Time)
 	return p.touchRow(ctx, id, clock.UTC(now), clock.UTC(now).Add(idle))
 }
 
-// touchInterval is how seldom a session is written to for being used: the
-// setting, but never more than half the idle timeout. A touch interval that is
-// longer than the idle period would let the period end under a user who never
-// stopped, since the first write would come after it.
+// touchInterval is how seldom a session is written for being used: the setting,
+// never more than half the idle timeout, so the period cannot end under a user
+// who never stopped.
 func (p *product) touchInterval() time.Duration {
 	return min(p.settings.touchInterval(), p.settings.timing().idle/2)
 }

@@ -39,25 +39,16 @@ func run(g *gateway, endpoint string, r *nethttp.Request) (*httptest.ResponseRec
 	return w, seen
 }
 
-// layerOn builds the gateway's layer for one endpoint, without serving
-// anything through it yet. The layer is assembled in Init, where the dispatch
-// table exists, so a case that wants to break the gateway's state has to build
-// the layer first and break it afterwards.
+// layerOn builds the gateway's layer for one endpoint without serving anything
+// through it; a case that breaks the gateway's state builds the layer first and
+// breaks it afterwards, since the layer is assembled in Init.
 func layerOn(g *gateway, endpoint string) (*gin.Engine, *arrival) {
 	return engineWith(g.middlewareFor(endpoint).Handler)
 }
 
 // engineWith is a gin engine carrying one layer, with a handler behind it that
-// records what it was handed. The handler answers every request, whatever its
-// path, so the cases that are about who is let through and not about routing
-// need no routes. A request that matches no route reaches the layers all the
-// same, which is the case the entry point's own engine shares.
-//
-// What a real chain does with a route — the path a request is matched to, the
-// order of the layers, the shape of a refusal the entry point writes — is not
-// held here by an engine that has no routes: the cases that need a route use
-// routedEngine, and the ones that need the entry point itself run against the
-// real one, in live_test.go.
+// records what it was handed and answers every request, whatever its path. A
+// request matching no route still reaches the layer; routedEngine is for routes.
 func engineWith(layer gin.HandlerFunc) (*gin.Engine, *arrival) {
 	seen := &arrival{}
 	engine := gin.New()
@@ -75,10 +66,9 @@ func record(seen *arrival, c *gin.Context) {
 	seen.access = identity.AccessFrom(c.Request.Context())
 }
 
-// routedEngine is engineWith for the cases about routes: the gateway's layer in
-// front of the routes named, each a method and a path, whose handler records the
-// request. A request to anything else is answered by the engine's own 404 and
-// reaches only the layer.
+// routedEngine is engineWith for route cases: the gateway's layer in front of
+// the routes named, each a method and a path, whose handler records the
+// request; anything else gets the engine's own 404 and reaches only the layer.
 func routedEngine(g *gateway, endpoint string, routes ...[2]string) (*gin.Engine, *arrival) {
 	seen := &arrival{}
 	engine := gin.New()
@@ -173,9 +163,8 @@ func TestARequestWithNoUsableCredentialIsRefusedByTheGateway(t *testing.T) {
 	}
 }
 
-// TestAGatewayRefusalIsChargedToTheGatewayAtInfo holds the attribution of what
-// the gateway refuses on its own: it is the gateway's judgement, not a backend's,
-// and it is ordinary traffic.
+// TestAGatewayRefusalIsChargedToTheGatewayAtInfo charges a gateway refusal to
+// the gateway at Info.
 func TestAGatewayRefusalIsChargedToTheGatewayAtInfo(t *testing.T) {
 	g := testGateway(t, []string{"public"}, passes(basicBackend("static", "static.")), passes(cookieBackend("session", "sid")))
 	sealed(t, g, routerWith("public"))
@@ -208,10 +197,8 @@ func TestAGatewayRefusalIsChargedToTheGatewayAtInfo(t *testing.T) {
 	}
 }
 
-// TestTheCredentialsTheGatewayHandsOverAreTheCarriersAsTheyArrived holds what a
-// backend is handed: for a header, the scheme folded and the value trimmed, and
-// for a cookie, its name and its value with no scheme, and in both the peer
-// address the entry point reported.
+// TestTheCredentialsTheGatewayHandsOverAreTheCarriersAsTheyArrived hands a
+// backend the carrier as it arrived, with the peer address the entry point reported.
 func TestTheCredentialsTheGatewayHandsOverAreTheCarriersAsTheyArrived(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -287,10 +274,8 @@ func TestACredentialReachesOnlyTheBackendThatTakesItsCarrier(t *testing.T) {
 	}
 }
 
-// TestTheAuthorizationHeaderIsReadAloneAndDoesNotFallBackToACookie holds the
-// precedence: when the header is there it is the credential, the cookie is
-// not read and not asked about, and a header that does not hold is not made
-// up for by a cookie that might.
+// TestTheAuthorizationHeaderIsReadAloneAndDoesNotFallBackToACookie reads the
+// header alone: a cookie does not answer for a header that is absent or refused.
 func TestTheAuthorizationHeaderIsReadAloneAndDoesNotFallBackToACookie(t *testing.T) {
 	t.Run("a header and a cookie that both hold", func(t *testing.T) {
 		var tokenAsked, cookieAsked atomic.Int64
@@ -350,10 +335,8 @@ func TestTheAuthorizationHeaderIsReadAloneAndDoesNotFallBackToACookie(t *testing
 	})
 }
 
-// TestTwoCookiesABackendTakesAreAmbiguousAndRefused holds the cookie planting
-// defence: a page that can set a cookie for this site must not choose which
-// credential is judged, so the same name twice, or two names two backends take,
-// is a refusal and not a pick.
+// TestTwoCookiesABackendTakesAreAmbiguousAndRefused refuses an ambiguous cookie
+// set rather than letting a page choose which credential is judged.
 func TestTwoCookiesABackendTakesAreAmbiguousAndRefused(t *testing.T) {
 	var asked atomic.Int64
 	one := passes(cookieBackend("one", "sid"))
@@ -387,11 +370,8 @@ func TestTwoCookiesABackendTakesAreAmbiguousAndRefused(t *testing.T) {
 	}
 }
 
-// TestACookieCredentialOnAnUnsafeRequestMustPassTheCrossOriginCheck holds the
-// CSRF defence at the gateway: a cookie is sent by the browser on a request a
-// page of another site makes, as it does a Basic pair it stored after a
-// challenge, and a Bearer header it never does, so the check applies to those two
-// carriers and only to the methods that change state.
+// TestACredentialABrowserAttachesOnAnUnsafeRequestMustPassTheCrossOriginCheck
+// applies the cross-origin check to cookie and Basic credentials on unsafe methods.
 func TestACredentialABrowserAttachesOnAnUnsafeRequestMustPassTheCrossOriginCheck(t *testing.T) {
 	forged := func(r *nethttp.Request) *nethttp.Request {
 		r.Header.Set("Sec-Fetch-Site", "cross-site")
@@ -479,9 +459,8 @@ func TestACredentialABrowserAttachesOnAnUnsafeRequestMustPassTheCrossOriginCheck
 	}
 }
 
-// TestACrossOriginRefusalIsTheGatewaysOwnAtInfo holds the attribution of the
-// refusal: it is the gateway's own, it is ordinary traffic, and it is a 401 and
-// never a 403, since the gateway does not write 403.
+// TestACrossOriginRefusalIsTheGatewaysOwnAtInfo charges the refusal to the
+// gateway at Info as a 401, never a 403.
 func TestACrossOriginRefusalIsTheGatewaysOwnAtInfo(t *testing.T) {
 	g := testGateway(t, []string{"public"}, passes(cookieBackend("session", "sid")))
 	sealed(t, g, routerWith("public"))
@@ -502,10 +481,8 @@ func TestACrossOriginRefusalIsTheGatewaysOwnAtInfo(t *testing.T) {
 	}
 }
 
-// TestAnOptionalRouteLetsARequestWithNoCredentialThroughAsAnonymous holds the
-// one thing an optional route changes: a request with no credential passes with
-// no identity, the access level says why, and it is counted in a bucket of its
-// own and not as a pass.
+// TestAnOptionalRouteLetsARequestWithNoCredentialThroughAsAnonymous passes a
+// credential-free request as anonymous, counted in a bucket of its own.
 func TestAnOptionalRouteLetsARequestWithNoCredentialThroughAsAnonymous(t *testing.T) {
 	var asked atomic.Int64
 	basic := passes(basicBackend("static", "static."))
@@ -548,10 +525,8 @@ func TestAnOptionalRouteLetsARequestWithNoCredentialThroughAsAnonymous(t *testin
 	}
 }
 
-// TestACredentialOnAnOptionalRouteIsAuthenticatedAsAnywhereElse holds the
-// other half of the optional route, which is the half that matters: a
-// credential that is there is judged, and one that does not hold is a 401,
-// never an anonymous pass.
+// TestACredentialOnAnOptionalRouteIsAuthenticatedAsAnywhereElse judges a
+// credential present on an optional route, refusing one that does not hold.
 func TestACredentialOnAnOptionalRouteIsAuthenticatedAsAnywhereElse(t *testing.T) {
 	for _, c := range []struct {
 		name    string
@@ -678,9 +653,8 @@ func TestWhatABackendAnswersDecidesTheStatusAndTheBucket(t *testing.T) {
 	}
 }
 
-// TestAPassingRequestCarriesTheIdentityTheGatewayStamped holds the stamp: the
-// fields come from the principal the backend handed over, except the two the
-// gateway stamps from what it knows, which no backend can choose.
+// TestAPassingRequestCarriesTheIdentityTheGatewayStamped carries the principal's
+// fields, except backend and challenge, which the gateway stamps itself.
 func TestAPassingRequestCarriesTheIdentityTheGatewayStamped(t *testing.T) {
 	b := &fakeVerifier{
 		name:    "issuer",
@@ -736,9 +710,8 @@ func TestAPassingRequestCarriesTheIdentityTheGatewayStamped(t *testing.T) {
 	}
 }
 
-// TestTheChallengeNameFollowsTheCarrier holds Identity.Challenge, which a
-// re-authentication challenge is written with: the scheme as a header carried
-// it, in its conventional capitalisation, and Cookie for a cookie.
+// TestTheChallengeNameFollowsTheCarrier names Identity.Challenge after the
+// carrier: the scheme's conventional capitalisation, or Cookie for a cookie.
 func TestTheChallengeNameFollowsTheCarrier(t *testing.T) {
 	g := testGateway(t, []string{"public"},
 		passes(basicBackend("static", "static.")), passes(schemeBackend("token", "bearer", "dpop")),
@@ -766,10 +739,8 @@ func TestTheChallengeNameFollowsTheCarrier(t *testing.T) {
 	}
 }
 
-// TestTheBackendAndTheChallengeAreNotTheBackendsToChoose holds that nothing a
-// backend hands over reaches the two fields the gateway stamps: the backend
-// is the name the gateway read from the verifier, and the challenge is the
-// carrier's.
+// TestTheBackendAndTheChallengeAreNotTheBackendsToChoose keeps attributes from
+// reaching the backend and challenge fields, which only the gateway stamps.
 func TestTheBackendAndTheChallengeAreNotTheBackendsToChoose(t *testing.T) {
 	b := schemeBackend("honest", "bearer")
 	b.verify = func(context.Context, authn.Credential) authn.Verdict {
@@ -787,9 +758,7 @@ func TestTheBackendAndTheChallengeAreNotTheBackendsToChoose(t *testing.T) {
 }
 
 // TestAPassBindsTheCorrelationFieldsOnTheLoggerOfTheLayersBehindTheGateway
-// holds what the gateway puts on the request's logger: the account, the
-// backend, and, when they apply, the actor of an impersonation and the
-// session.
+// binds the account and backend, plus the actor and session of an impersonation.
 func TestAPassBindsTheCorrelationFieldsOnTheLoggerOfTheLayersBehindTheGateway(t *testing.T) {
 	plain := basicBackend("static", "static.")
 	plain.verify = func(context.Context, authn.Credential) authn.Verdict { return held(plain, "ops") }
@@ -849,10 +818,6 @@ func TestTheGatewaysOwnDefectBecomesAStatusCode(t *testing.T) {
 	g := testGateway(t, []string{"public"}, passes(basicBackend("static", "static.")))
 	sealed(t, g, routerWith("public"))
 
-	// The layer is built first, the way Init builds it, and the gateway is
-	// broken afterwards: a table that went missing under a running server is a
-	// defect of this module, and it is the cheapest way to reach the panic path
-	// without a backend being involved.
 	engine, seen := layerOn(g, "public")
 	g.table = nil
 
@@ -889,10 +854,8 @@ func TestALayerCannotBeBuiltBeforeTheDispatchTable(t *testing.T) {
 	})
 }
 
-// TestTheGatewayStopsAcceptingBackendCallsWhenItIsStopped holds the Stop
-// contract: a call that has not begun does not begin, and the request ends as an
-// outage rather than as a refusal, because nothing was learned about the
-// credential.
+// TestTheGatewayStopsAcceptingBackendCallsWhenItIsStopped ends a request after
+// Stop as an outage, without asking a backend.
 func TestTheGatewayStopsAcceptingBackendCallsWhenItIsStopped(t *testing.T) {
 	var asked atomic.Int64
 	b := passes(basicBackend("static", "static."))
@@ -999,9 +962,8 @@ func TestARefusalMayCarryRetryAfterOnlyWhenTheCapacityWasInUse(t *testing.T) {
 	})
 }
 
-// TestEveryResponseOnAGuardedRouteVariesByTheCredentialCarriers holds the Vary
-// header: a cache that stored the answer to one caller's credential and served
-// it to another would hand over what the first was let see.
+// TestEveryResponseOnAGuardedRouteVariesByTheCredentialCarriers sets Vary to
+// the credential carriers on every guarded response.
 func TestEveryResponseOnAGuardedRouteVariesByTheCredentialCarriers(t *testing.T) {
 	g := testGateway(t, []string{"public"}, passes(basicBackend("static", "static.")))
 	g.Exempt("public", "GET", "/status")
@@ -1029,9 +991,8 @@ func TestEveryResponseOnAGuardedRouteVariesByTheCredentialCarriers(t *testing.T)
 	}
 }
 
-// TestACookieThatIsRefusedIsClearedAndNoOtherCredentialIs holds ClearCookie:
-// it is called when the backend refuses a credential that came in a cookie,
-// so a browser does not keep sending one that cannot hold.
+// TestACookieThatIsRefusedIsClearedAndNoOtherCredentialIs clears a refused
+// cookie and clears nothing else.
 func TestACookieThatIsRefusedIsClearedAndNoOtherCredentialIs(t *testing.T) {
 	for _, c := range []struct {
 		name   string

@@ -10,18 +10,14 @@ import (
 var ErrInvalidAccountID = errors.New("authn: account identifier is not well formed")
 
 // StaticPrefix starts the identifier of every subject in a static credential
-// table. It is what AccountID.IsStatic tests for.
+// table.
 const StaticPrefix = "static."
 
 const maxAccountIDLen = 64
 
-// AccountID names one account. It is opaque, immutable and never reused, 1 to
-// 64 bytes long, drawn from [A-Za-z0-9._-], and compared case-sensitively.
-//
-// An account in the library carries a UUIDv7 text; a subject of the static
-// table carries StaticPrefix and the subject's name; a host importing existing
-// users may bring its own identifiers provided they fit this format and do not
-// begin with StaticPrefix. The empty AccountID is no account.
+// AccountID names one account: opaque, immutable, never reused, 1 to 64 bytes
+// of [A-Za-z0-9._-], compared case-sensitively. A static-table subject carries
+// StaticPrefix; the empty AccountID is no account.
 type AccountID string
 
 // ParseAccountID checks the format and returns the identifier, or
@@ -46,8 +42,7 @@ func ParseAccountID(s string) (AccountID, error) {
 func (id AccountID) String() string { return string(id) }
 
 // IsStatic reports whether the identifier begins with StaticPrefix, which makes
-// it a subject of the static credential table rather than an account in the
-// library. The prefix is matched exactly: Static.bob is not one.
+// it a subject of the static credential table; the prefix is case-sensitive.
 func (id AccountID) IsStatic() bool { return strings.HasPrefix(string(id), StaticPrefix) }
 
 // SessionID is the public identifier of a login session, a UUIDv7 text. It is

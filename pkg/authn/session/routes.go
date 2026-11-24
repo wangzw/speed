@@ -14,11 +14,8 @@ import (
 )
 
 // The seam-level audit actions and outcome of the self-service revocation
-// routes, taken from the capability's closed action table. Both actions are in
-// the best-effort tier: a row that cannot be written is an Error and never
-// changes the route's outcome. The object is the session the row is about, and a
-// route that revokes several sessions writes one row per session, which is what
-// the management surface does for the same action.
+// routes: both are best-effort, the object is the session, and a route that
+// revokes several sessions writes one row per session.
 const (
 	actionLogout        = "authn.logout"
 	actionSessionRevoke = "authn.session.revoke"
@@ -28,9 +25,7 @@ const (
 const typePrefix = "urn:speed:authn:"
 
 // cacheControlSetCookie is the directive a response that clears the session
-// cookie carries. The mounter puts Cache-Control: no-store on every response
-// already; this one is what the session library wrote beside it, and it keeps a
-// cache from holding a response whose Set-Cookie it may ignore.
+// cookie carries, so a cache does not hold a response whose Set-Cookie it may ignore.
 const cacheControlSetCookie = `no-cache="Set-Cookie"`
 
 func authnFailure(status int, code string) error {
@@ -50,18 +45,9 @@ func (p *product) recordAudit(ctx context.Context, e audit.Entry) {
 	}
 }
 
-// mountRoutes registers the five self-service routes through the mounter. Each
-// route is registered from the operation that declares it, so the handler's
-// input and answer types, the fragment and the route are one source. The route
-// and the access level the gateway applies to it are registered in one call, and
-// the mounter puts every response under Cache-Control: no-store and every unsafe
-// method behind the cross-origin check.
-//
-// GET /session may be asked without a credential and answers that nobody is
-// logged in; a credential that does not hold is still a 401. All five routes are
-// open to an identity that is impersonating: the session read and logout act on
-// the operator's own session, and listing and revoking sessions act on the
-// effective account's sessions, never on the operator's.
+// mountRoutes registers the five self-service routes through the mounter. All
+// five are impersonable: the read and logout act on the operator's own session,
+// listing and revoking on the impersonated account's; GET /session also answers with no credential.
 func (p *product) mountRoutes() {
 	mount.Declared(p.mounter, sessionOperation, mountRel(sessionOperation.Path),
 		sessionOperation.Handle(p.handleSession), mount.Impersonable())
@@ -76,14 +62,8 @@ func (p *product) mountRoutes() {
 }
 
 // mountRel turns a declared route into the relative path the mounter joins to
-// its base. The declaration writes the route against the module's API root, and
-// the fragment is a static declaration fixed before configuration, so the part
-// of it the capability owns is the default mount base less that root. Removing
-// it leaves the relative path the mounter takes, whatever base the deployment
-// configured: a configured base moves the routes without moving the contract,
-// which is the split the Spec already accepts. A declared route that does not
-// begin with the owned part is a declaration defect, not something to mount at a
-// guessed path.
+// its base, so a configured base moves the routes without moving the contract.
+// A declared route outside the capability's mounted path panics.
 func mountRel(declared string) string {
 	owned := strings.TrimPrefix(mount.DefaultBasePath, sessionSpec.APIRoot())
 	rel, found := strings.CutPrefix(declared, owned)
@@ -226,17 +206,14 @@ func (p *product) handleRevokeOne(ctx context.Context, in revokeOneInput, _ *spe
 	return reply, nil
 }
 
-// ownSessionCaller reads the caller of a route that lists or revokes sessions.
-// The account every one of them reads is the identity's own, which is the
-// impersonated account under an impersonation: the operator's session is outside
-// that set, so it is neither listed nor revoked through these routes.
+// ownSessionCaller reads the caller of a route that lists or revokes sessions;
+// under an impersonation it reads the impersonated account's identity, never
+// the operator's, which these routes neither list nor revoke.
 func (p *product) ownSessionCaller(ctx context.Context) (authn.Identity, error) {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
-		// The gateway refuses this first, with the capability's challenge. Where
-		// the route is reached without the gateway the handler answers the same
-		// challenge itself, as the fault's declared header, so its 401 is the one
-		// RFC 9110 requires a 401 to carry rather than a bare problem document.
+		// Without the gateway, the handler answers its own 401 with the same
+		// challenge header, as RFC 9110 requires of a 401.
 		return authn.Identity{}, speedhttp.Fault{
 			Status: http.StatusUnauthorized,
 			Headers: []speedhttp.HeaderValue{{

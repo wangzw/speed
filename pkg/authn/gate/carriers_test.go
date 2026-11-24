@@ -50,11 +50,8 @@ func (c *carrierBackends) gateway(t *testing.T, set settings) *gateway {
 	return g
 }
 
-// TestTwoCookiesOfOneNameAreAmbiguousEvenWhenTheValuesAgree holds the planting
-// defence at its narrowest: a request carrying the same cookie name twice is
-// refused whatever the values are, because the gateway cannot tell the one the
-// browser set from the one a page of a sibling subdomain set, and equal values
-// are not evidence that they are the same cookie.
+// TestTwoCookiesOfOneNameAreAmbiguousEvenWhenTheValuesAgree refuses a request
+// that carries the same cookie name twice, whatever the values are.
 func TestTwoCookiesOfOneNameAreAmbiguousEvenWhenTheValuesAgree(t *testing.T) {
 	for name, values := range map[string][2]string{
 		"different values": {"cookie-value-1", "cookie-value-2"},
@@ -94,13 +91,11 @@ func TestTwoCookiesOfOneNameAreAmbiguousEvenWhenTheValuesAgree(t *testing.T) {
 	}
 }
 
-// TestAHeaderThatDoesNotHoldIsTheOnlyCredentialAsked holds the header's priority
-// from the side of the call counts: a header that is refused is asked of its own
-// backend once, and the cookie that would have held is asked of nobody, so the
-// refusal cannot be turned into a pass by adding a cookie.
+// TestAHeaderThatDoesNotHoldIsTheOnlyCredentialAsked asks only the header's
+// backend when the header is refused and a cookie would have held.
 func TestAHeaderThatDoesNotHoldIsTheOnlyCredentialAsked(t *testing.T) {
 	b := newCarrierBackends()
-	passes(b.session) // the cookie would hold; the header's backend refuses
+	passes(b.session)
 	g := b.gateway(t, settings{})
 
 	w, seen := run(g, "public", withCookie(withBearer(request("GET", "/x"), "stale"), "sid", "good"))
@@ -122,9 +117,8 @@ func TestAHeaderThatDoesNotHoldIsTheOnlyCredentialAsked(t *testing.T) {
 	}
 }
 
-// TestAValidHeaderLeavesTheCookieUnread holds the other half: a header that holds
-// is judged alone, and a cookie beside it, even a second one under the same name
-// that would be an ambiguity on its own, is neither read nor judged.
+// TestAValidHeaderLeavesTheCookieUnread judges a holding header alone, even
+// beside a repeated cookie that would be an ambiguity on its own.
 func TestAValidHeaderLeavesTheCookieUnread(t *testing.T) {
 	b := newCarrierBackends()
 	passes(b.token)
@@ -145,9 +139,8 @@ func TestAValidHeaderLeavesTheCookieUnread(t *testing.T) {
 	}
 }
 
-// TestACookieNoBackendTakesIsNotACredential holds that a cookie is a carrier only
-// when a backend claimed its name: any other cookie on the request, the site's
-// own preferences and trackers included, reads as no credential at all.
+// TestACookieNoBackendTakesIsNotACredential reads a cookie no backend claimed as
+// no credential at all.
 func TestACookieNoBackendTakesIsNotACredential(t *testing.T) {
 	t.Run("on a route that requires one", func(t *testing.T) {
 		b := newCarrierBackends()
@@ -204,10 +197,8 @@ func TestACookieNoBackendTakesIsNotACredential(t *testing.T) {
 	})
 }
 
-// TestACookieCredentialOnAnOptionalRouteGoesAllTheWayThrough holds that optional
-// means "no credential is fine" and nothing more: a cookie that holds gives an
-// identity, stamped with the cookie challenge and the optional access level, and
-// a cookie that does not hold is a 401 that clears it.
+// TestACookieCredentialOnAnOptionalRouteGoesAllTheWayThrough gives a holding
+// cookie an identity on an optional route and a 401 for one that does not hold.
 func TestACookieCredentialOnAnOptionalRouteGoesAllTheWayThrough(t *testing.T) {
 	for _, c := range []struct {
 		name    string
@@ -253,10 +244,8 @@ func TestACookieCredentialOnAnOptionalRouteGoesAllTheWayThrough(t *testing.T) {
 	}
 }
 
-// TestACookieCredentialIsHandedOverWithItsNameAndNoScheme holds the shape of what
-// a cookie backend is handed: the cookie's name and value as they arrived, and an
-// empty scheme, because a cookie is not an authentication scheme and a backend
-// that took the empty one for Basic would be reading something that is not there.
+// TestACookieCredentialIsHandedOverWithItsNameAndNoScheme hands a cookie backend
+// the cookie's name and value as they arrived, with no scheme.
 func TestACookieCredentialIsHandedOverWithItsNameAndNoScheme(t *testing.T) {
 	b := newCarrierBackends()
 	passes(b.session)
@@ -278,10 +267,8 @@ func TestACookieCredentialIsHandedOverWithItsNameAndNoScheme(t *testing.T) {
 	}
 }
 
-// TestTheCrossOriginCheckHoldsEveryVectorTheDesignNames holds the check
-// against the cases the rules in the design describe: Sec-Fetch-Site, Origin
-// against Host, the trusted origins in the form a browser sends them, and a
-// request that carries neither header.
+// TestTheCrossOriginCheckHoldsEveryVectorTheDesignNames holds the check against
+// Sec-Fetch-Site, Origin against Host, trusted origins, and neither header.
 func TestTheCrossOriginCheckHoldsEveryVectorTheDesignNames(t *testing.T) {
 	const sibling = "https://sibling.example.com"
 	trusting := settings{trustedOrigins: []string{sibling}}
@@ -399,9 +386,8 @@ func TestTheCrossOriginCheckHoldsEveryVectorTheDesignNames(t *testing.T) {
 	}
 }
 
-// TestTheCrossOriginCheckSparesOnlyTheBearerScheme holds the criterion of the
-// check at the scheme a backend that is not one of this module's own can
-// declare.
+// TestTheCrossOriginCheckSparesOnlyTheBearerScheme spares a cross-site request
+// only when its scheme is Bearer.
 func TestTheCrossOriginCheckSparesOnlyTheBearerScheme(t *testing.T) {
 	const sibling = "https://sibling.example.com"
 	crossSite := map[string]string{"Sec-Fetch-Site": "cross-site", "Origin": "https://evil.example"}
@@ -461,9 +447,8 @@ func TestTheCrossOriginCheckSparesOnlyTheBearerScheme(t *testing.T) {
 	}
 }
 
-// TestACookieIsClearedOnlyWhenTheBackendRefusedIt holds the one trigger of
-// ClearCookie from every other way a request with a cookie can end badly:
-// only a refusal by the backend that took the cookie clears it.
+// TestACookieIsClearedOnlyWhenTheBackendRefusedIt clears a cookie only when the
+// backend that took it refused it, not on any other failure.
 func TestACookieIsClearedOnlyWhenTheBackendRefusedIt(t *testing.T) {
 	cookieOnly := func(r *nethttp.Request) *nethttp.Request { return withCookie(r, "sid", "v") }
 	for _, c := range []struct {

@@ -32,8 +32,7 @@ func requirementTokens(reqs []core.Requirement) []any {
 	return out
 }
 
-// TestTheModuleDeclaresWhatTheDesignSays checks that the module declares what
-// the design says.
+// TestTheModuleDeclaresWhatTheDesignSays checks the module's name, requires and provides.
 func TestTheModuleDeclaresWhatTheDesignSays(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName {
@@ -136,9 +135,7 @@ func TestStartLaunchesTheSweepAndStopEndsIt(t *testing.T) {
 	}
 }
 
-// TestWireMountsTheTokenEndpoints holds the module wiring: wire mounts the
-// token and revocation endpoints, so an assembly that reaches Init answers
-// POST B/token.
+// TestWireMountsTheTokenEndpoints mounts the token and revocation endpoints through wire.
 func TestWireMountsTheTokenEndpoints(t *testing.T) {
 	r := newRig(t)
 	m := mounttest.New(t)
@@ -159,8 +156,7 @@ func TestWireMountsTheTokenEndpoints(t *testing.T) {
 	}
 }
 
-// TestTheModuleNamesItsStableSurfaceAsTheDesignFixesIt checks that the module
-// names its stable surface as the design fixes it.
+// TestTheModuleNamesItsStableSurfaceAsTheDesignFixesIt pins the backend name, routes, token prefix and reserved claims.
 func TestTheModuleNamesItsStableSurfaceAsTheDesignFixesIt(t *testing.T) {
 	if backendName != "token" {
 		t.Errorf("the backend name is %q, want token", backendName)
@@ -240,9 +236,7 @@ func TestMarshalMergesAnExtraClaimAndRefusesAReservedOne(t *testing.T) {
 	}
 }
 
-// TestIsMissingTableRecognisesBothDialects holds the table probe's message
-// match: SQLite's and PostgreSQL's wording for a missing table both read as the
-// table being absent, and an unrelated error does not.
+// TestIsMissingTableRecognisesBothDialects reads both dialects' missing-table wording as absent.
 func TestIsMissingTableRecognisesBothDialects(t *testing.T) {
 	for _, text := range []string{
 		"no such table: " + tableName,
@@ -260,9 +254,7 @@ func TestIsMissingTableRecognisesBothDialects(t *testing.T) {
 	}
 }
 
-// TestTheStableInstrumentAndTokenNamesArePinned holds the literals a dashboard
-// and an external reader depend on: the instrument names and the refresh token's
-// randomness, which a rename or a weaker size would otherwise change unnoticed.
+// TestTheStableInstrumentAndTokenNamesArePinned pins the instrument names and the token's 32 random bytes.
 func TestTheStableInstrumentAndTokenNamesArePinned(t *testing.T) {
 	if operationsInstrument != "authn.token.operations" {
 		t.Errorf("the operations instrument is %q, want authn.token.operations", operationsInstrument)
@@ -275,9 +267,7 @@ func TestTheStableInstrumentAndTokenNamesArePinned(t *testing.T) {
 	}
 }
 
-// TestImportingThePackageRegistersTheModule holds the module registration:
-// importing the package puts the token module in the process registry, which is
-// what makes it part of a binary's available set.
+// TestImportingThePackageRegistersTheModule puts the token module in the process registry.
 func TestImportingThePackageRegistersTheModule(t *testing.T) {
 	got, ok := core.ProcessRegistry.Lookup(ModuleName)
 	if !ok {

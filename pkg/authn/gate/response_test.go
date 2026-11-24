@@ -18,12 +18,10 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// fallbackMsg is the record the entry point's fallback writes when it catches a
-// panic. A case that wants to know which layer answered one reads for it.
+// fallbackMsg is the record the entry point's fallback writes when it catches a panic.
 const fallbackMsg = "a request panicked and the endpoint's recovery layer caught it"
 
-// problemBody decodes the entry point's default error response, keeping every
-// member it carries so that a case can say which ones are there.
+// problemBody decodes the entry point's default error response into its members.
 func problemBody(t *testing.T, what string, got reply) map[string]any {
 	t.Helper()
 	if media := got.header.Get("Content-Type"); media != "application/problem+json" {
@@ -37,9 +35,7 @@ func problemBody(t *testing.T, what string, got reply) map[string]any {
 	return members
 }
 
-// TestARefusalIsWrittenThroughTheEntryPointsErrorResponse holds that the
-// gateway decides the status and the header and the entry point decides the
-// rest.
+// TestARefusalIsWrittenThroughTheEntryPointsErrorResponse holds the gateway deciding the status and header and the entry point the rest.
 func TestARefusalIsWrittenThroughTheEntryPointsErrorResponse(t *testing.T) {
 	const cause = "wrong password for alice in db-7"
 	for _, c := range []struct {
@@ -119,9 +115,7 @@ func TestARefusalIsWrittenThroughTheEntryPointsErrorResponse(t *testing.T) {
 	}
 }
 
-// shapedResponder is the error shape of a module that owns an API's responses.
-// It records what it was asked to write, which is how a case reads what the
-// gateway handed the entry point.
+// shapedResponder is a module's error shape that records what it was asked to write.
 type shapedResponder struct {
 	mu    sync.Mutex
 	asked []speedhttp.Problem
@@ -142,10 +136,7 @@ func (s *shapedResponder) problems() []speedhttp.Problem {
 	return append([]speedhttp.Problem(nil), s.asked...)
 }
 
-// TestADeliveredErrorResponderDecidesTheShapeAndTheHeaderStays holds the
-// other half: when a module delivers the error shape, it decides the whole of
-// it, and the header the gateway set before asking for the response is still
-// on it.
+// TestADeliveredErrorResponderDecidesTheShapeAndTheHeaderStays holds a delivered error responder deciding the whole shape with the header kept.
 func TestADeliveredErrorResponderDecidesTheShapeAndTheHeaderStays(t *testing.T) {
 	responder := &shapedResponder{}
 	delivers := core.Module{
@@ -154,9 +145,6 @@ func TestADeliveredErrorResponderDecidesTheShapeAndTheHeaderStays(t *testing.T) 
 		New:      func(context.Context, *core.Registry) (any, error) { return responder, nil },
 	}
 
-	// The first request carries no credential and is refused by the gateway
-	// before any backend is asked; the second reaches the backend, which
-	// cannot answer.
 	unreachable := basicBackend("static", "static.")
 	unreachable.verify = func(context.Context, authn.Credential) authn.Verdict {
 		return authn.Unavailable(errors.New("the store at db-7 is unreachable"))
@@ -201,8 +189,7 @@ func TestADeliveredErrorResponderDecidesTheShapeAndTheHeaderStays(t *testing.T) 
 	}
 }
 
-// TestABackendPanicIsAnsweredByTheGatewayNotTheFallback holds where a
-// backend's panic is caught.
+// TestABackendPanicIsAnsweredByTheGatewayNotTheFallback holds where a backend's panic is caught.
 func TestABackendPanicIsAnsweredByTheGatewayNotTheFallback(t *testing.T) {
 	crashing := basicBackend("static", "static.")
 	crashing.verify = func(context.Context, authn.Credential) authn.Verdict {
@@ -253,9 +240,7 @@ func TestABackendPanicIsAnsweredByTheGatewayNotTheFallback(t *testing.T) {
 	}
 }
 
-// TestAHandlerPanicBehindTheGatewayIsTheEntryPointsToAnswer holds the
-// boundary of that recover: it is the gateway's own, and stops where the
-// gateway's code does.
+// TestAHandlerPanicBehindTheGatewayIsTheEntryPointsToAnswer holds the gateway's recover stopping where its code does.
 func TestAHandlerPanicBehindTheGatewayIsTheEntryPointsToAnswer(t *testing.T) {
 	var crashed reply
 	logs := liveAssembly{
@@ -279,10 +264,7 @@ func TestAHandlerPanicBehindTheGatewayIsTheEntryPointsToAnswer(t *testing.T) {
 	}
 }
 
-// TestAPassHandsTheIdentityToTheHandlerBehindTheEntryPoint holds that the
-// identity the gateway stamps is the one the handler reads from the request it
-// is given, through the real chain: the layer replaces the request, and the
-// handler is the next link of that chain.
+// TestAPassHandsTheIdentityToTheHandlerBehindTheEntryPoint holds the identity reaching the handler through the real chain.
 func TestAPassHandsTheIdentityToTheHandlerBehindTheEntryPoint(t *testing.T) {
 	var got reply
 	liveAssembly{

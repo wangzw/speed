@@ -24,10 +24,7 @@ func impersonatingBackend() *fakeVerifier {
 	return b
 }
 
-// TestAnImpersonatingIdentityIsAdmittedOnlyWhereTheRuleSaysSo holds the
-// impersonation scope rule from every side it has: the route is registered
-// Impersonable, or the endpoint is one the scope guard covers, and nothing
-// else admits it.
+// TestAnImpersonatingIdentityIsAdmittedOnlyWhereTheRuleSaysSo holds the impersonation scope rule from every side.
 func TestAnImpersonatingIdentityIsAdmittedOnlyWhereTheRuleSaysSo(t *testing.T) {
 	for _, c := range []struct {
 		name         string
@@ -80,10 +77,7 @@ func TestAnImpersonatingIdentityIsAdmittedOnlyWhereTheRuleSaysSo(t *testing.T) {
 	}
 }
 
-// TestAnIdentityThatIsNotImpersonatingIsNotHeldToTheScopeRule holds the other
-// half of the rule: it applies to an actor that differs from the account and to
-// nothing else, so an ordinary pass reaches a route that is not registered
-// Impersonable on an endpoint the guard does not cover.
+// TestAnIdentityThatIsNotImpersonatingIsNotHeldToTheScopeRule holds the rule applying only to an actor that differs from the account.
 func TestAnIdentityThatIsNotImpersonatingIsNotHeldToTheScopeRule(t *testing.T) {
 	plain := passes(basicBackend("static", "static."))
 	g := testGateway(t, []string{"public"}, plain, impersonatingBackend())
@@ -99,9 +93,7 @@ func TestAnIdentityThatIsNotImpersonatingIsNotHeldToTheScopeRule(t *testing.T) {
 	}
 }
 
-// TestAnImpersonationOutOfScopeIsRefusedAfterTheBackendAnswered holds the
-// order of the conclusion: the backend is asked, its pass is read, and only
-// then is the scope rule applied.
+// TestAnImpersonationOutOfScopeIsRefusedAfterTheBackendAnswered holds the scope rule applied to the backend's answer.
 func TestAnImpersonationOutOfScopeIsRefusedAfterTheBackendAnswered(t *testing.T) {
 	imp := impersonatingBackend()
 	g := testGateway(t, []string{"public"}, imp)
@@ -123,10 +115,7 @@ func TestAnImpersonationOutOfScopeIsRefusedAfterTheBackendAnswered(t *testing.T)
 	}
 }
 
-// TestAnImpersonationReachesAnOptionalRouteOnlyWhenItIsAlsoImpersonable holds
-// that Optional and Impersonable do not stand in for one another: an optional
-// route admits a request with no credential, and an impersonating identity is a
-// credential that held.
+// TestAnImpersonationReachesAnOptionalRouteOnlyWhenItIsAlsoImpersonable holds Optional and Impersonable not standing in for one another.
 func TestAnImpersonationReachesAnOptionalRouteOnlyWhenItIsAlsoImpersonable(t *testing.T) {
 	g := testGateway(t, []string{"public"}, impersonatingBackend())
 	g.Optional("public", "GET", "/catalog")
@@ -144,9 +133,7 @@ func TestAnImpersonationReachesAnOptionalRouteOnlyWhenItIsAlsoImpersonable(t *te
 	}
 }
 
-// TestAnExemptRouteDoesNotApplyTheScopeRuleBecauseItReadsNoCredential holds that
-// an exempt route is reached with no identity at all, so there is nothing for the
-// scope rule to apply to, even with an impersonating credential on the request.
+// TestAnExemptRouteDoesNotApplyTheScopeRuleBecauseItReadsNoCredential holds an exempt route reached with no identity.
 func TestAnExemptRouteDoesNotApplyTheScopeRuleBecauseItReadsNoCredential(t *testing.T) {
 	imp := impersonatingBackend()
 	g := testGateway(t, []string{"public"}, imp)
@@ -165,12 +152,7 @@ func TestAnExemptRouteDoesNotApplyTheScopeRuleBecauseItReadsNoCredential(t *test
 	}
 }
 
-// TestTheMountEndpointIsHeldToBeingGuardedAndOutsideTheAdmissionLayer holds
-// the checks Start makes of the endpoint the capability's own routes are
-// mounted on, each with its own sentinel: it has to be an endpoint the entry
-// point has, one this gateway guards, and not one the admission layer guards,
-// since that layer answers an impersonating request with no tenant context
-// with 404 and an impersonating caller could not even end the impersonation.
+// TestTheMountEndpointIsHeldToBeingGuardedAndOutsideTheAdmissionLayer holds the Start checks of the mount endpoint, each with its own sentinel.
 func TestTheMountEndpointIsHeldToBeingGuardedAndOutsideTheAdmissionLayer(t *testing.T) {
 	for _, c := range []struct {
 		name      string
@@ -225,10 +207,8 @@ func TestTheMountEndpointIsHeldToBeingGuardedAndOutsideTheAdmissionLayer(t *test
 	}
 }
 
-// resolutionLayer is a stand-in for the tenant resolution layer's section of the
-// configuration, which the gateway reads the endpoints of at Start. The
-// endpoint list is required, as it is in the real layer's schema: a command
-// that takes the layer in and does not write the list is a case the gateway meets.
+// resolutionLayer is a stand-in for the tenant resolution layer's configuration
+// section: its endpoint list is required, as in the real layer's schema.
 func resolutionLayer(endpoints string) core.Module {
 	type shape struct {
 		Endpoints []string `config:"endpoints"`
@@ -243,10 +223,7 @@ func resolutionLayer(endpoints string) core.Module {
 	}
 }
 
-// TestTheMountEndpointIsNotOneTheResolutionLayerResolvesATenantOn holds the
-// last check of Start, through the descriptor: a global account's request
-// carries no tenant name, and the resolution layer answers it 404, so the
-// authentication routes cannot be on an endpoint that layer resolves.
+// TestTheMountEndpointIsNotOneTheResolutionLayerResolvesATenantOn holds the mount endpoint outside what the resolution layer resolves a tenant on.
 func TestTheMountEndpointIsNotOneTheResolutionLayerResolvesATenantOn(t *testing.T) {
 	for _, c := range []struct {
 		name    string
@@ -281,10 +258,7 @@ func TestTheMountEndpointIsNotOneTheResolutionLayerResolvesATenantOn(t *testing.
 	}
 }
 
-// TestAnImpersonatingRequestThroughTheRealEntryPoint holds the scope rule against
-// the real entry point and the real chain: an impersonation is let into a route
-// registered Impersonable and into every route of an endpoint the scope guard
-// covers, and refused on a route of an endpoint it does not.
+// TestAnImpersonatingRequestThroughTheRealEntryPoint holds the scope rule against the real entry point.
 func TestAnImpersonatingRequestThroughTheRealEntryPoint(t *testing.T) {
 	var ended, orders, adminOrders, publicOrders reply
 	liveAssembly{
@@ -314,9 +288,7 @@ func TestAnImpersonatingRequestThroughTheRealEntryPoint(t *testing.T) {
 	}
 }
 
-// TestTheScopeGuardTheGatewayReadsIsTheOneTheAssemblyDelivers holds the optional
-// taking-up in Init: a guard that is delivered is the one consulted, and none
-// delivered means no endpoint is covered.
+// TestTheScopeGuardTheGatewayReadsIsTheOneTheAssemblyDelivers holds the guard consulted being the delivered one.
 func TestTheScopeGuardTheGatewayReadsIsTheOneTheAssemblyDelivers(t *testing.T) {
 	guard := fakeScope{"tenanted": true}
 	for name, supplied := range map[string][]supply{

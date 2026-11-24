@@ -18,17 +18,9 @@ import (
 	"testing"
 )
 
-// exportedSurface is the root package's exported surface, written out, one
-// entry per declaration a dependant can see and so one this module has to keep.
-// The aliases are included with what they carry: an alias's fields, and the
-// method set of the type behind it, are on the surface even though the source
-// of this package declares none of them, which is why the list is read from the
-// type checker's view and not from this package's syntax.
-//
-// The list is here rather than derived because deriving it would only restate
-// whatever the code happens to say. Pinned, a new exported symbol has to be
-// added by hand, and the entry is where the reader asks whether it belongs on
-// the surface at all.
+// exportedSurface is the root package's exported surface, one entry per
+// declaration a dependant can see, read from the type checker so an alias's
+// fields and methods are included. A new symbol must be added by hand.
 var exportedSurface = []string{
 	"const AccessOpen",
 	"const AccessOptional",
@@ -975,12 +967,8 @@ var exportedSurface = []string{
 }
 
 // authntestSurface is the exported surface of pkg/authn/authntest, pinned the
-// same way and for the same reason: the package is what other modules' tests
-// build an identity with, so an entry added to it is a way of building one that
-// the gateway's own checks are then asked to match, and an entry removed breaks
-// every test that calls it. It has no type with methods or fields to list, only
-// the option constructors, the two context builders, the configuration reader
-// builders and the defaults a test leaves unsaid.
+// same way: the package other modules' tests build an identity with, so an entry
+// removed breaks every test that calls it.
 var authntestSurface = []string{
 	"const DefaultAccount",
 	"const DefaultBackend",
@@ -1006,31 +994,23 @@ var authntestSurface = []string{
 	"type Option",
 }
 
-// forbiddenNames are names the surface may never carry, whatever the kind:
-// the ownership model has no place in it, and the readers of a verdict and of an
-// identity's internals are functions of the internal packages and not part of
-// this one.
+// forbiddenNames are names the surface may never carry, whatever the kind: the
+// ownership model has no place in it, and the verdict and identity-internals
+// readers belong to the internal packages.
 var forbiddenNames = []string{
 	"Owner", "Subject", "Separator", "Claim", "OutcomeOf", "PrincipalOf", "CauseOf",
 }
 
-// forbiddenExceptions are entries that carry a forbidden name and are not what
-// the name forbids. External.Subject, ExternalLink.Subject and
-// ExternalBinding.Subject are an external provider's own identifier for the
-// person, the "sub" of an OIDC token, which has nothing to do with the subject
-// space of a credential backend that an Identity.Subject would have read.
+// forbiddenExceptions are entries carrying a forbidden name that is not what the
+// name forbids: External.Subject and its siblings are an OIDC provider's own
+// "sub", not the credential backend's subject.
 var forbiddenExceptions = []string{
 	"field External.Subject", "field ExternalLink.Subject", "field ExternalBinding.Subject",
 }
 
-// surfaceOf type-checks the non-test files of the package in dir and renders its
-// exported surface, one entry per declaration.
-//
-// A package-level name gives one entry by its kind. A named type, or an alias
-// of one, gives in addition one entry per exported field of a struct and one
-// per exported method of the method set of its pointer, which for an alias is
-// the method set of the type it names. Embedding is flattened, because what a
-// dependant can call is what the method set says.
+// surfaceOf type-checks the non-test files of dir and renders the exported
+// surface: one entry per package-level name, plus one per exported struct field
+// and pointer method, with embedding flattened.
 func surfaceOf(dir string) ([]string, error) {
 	bp, err := build.Default.ImportDir(dir, 0)
 	if err != nil {
@@ -1127,10 +1107,8 @@ func forbiddenIn(entries []string) []string {
 
 var rootSurface = sync.OnceValues(func() ([]string, error) { return surfaceOf(".") })
 
-// TestExportedSurfaceIsPinned compares what the type checker says the package
-// exports with the list above, in both directions: a symbol added to the code
-// and not to the list fails, and so does one removed from the code while the
-// list still names it.
+// TestExportedSurfaceIsPinned compares the type checker's view of the package's
+// exports with the pinned list, in both directions.
 func TestExportedSurfaceIsPinned(t *testing.T) {
 	got, err := rootSurface()
 	if err != nil {
@@ -1188,9 +1166,8 @@ func writeSurfacePackage(t *testing.T, files map[string]string) string {
 	return dir
 }
 
-// TestTheSurfaceCheckSeesWhatItIsMeantToSee runs the checker over a package
-// built to hold each shape the real one relies on, and over a violating one,
-// so the pin cannot pass by seeing nothing.
+// TestTheSurfaceCheckSeesWhatItIsMeantToSee runs the checker over each shape it
+// relies on and a violating one, so it cannot pass by seeing nothing.
 func TestTheSurfaceCheckSeesWhatItIsMeantToSee(t *testing.T) {
 	dir := writeSurfacePackage(t, map[string]string{
 		"p.go": `package p
@@ -1302,11 +1279,8 @@ const KindA Kind = "a"
 	}
 }
 
-// claimsContributorFunc is ClaimsContributor's shape written as a function type:
-// one method, Claims, taking a context and a Principal and returning a claim
-// mapping. The assertion below makes that shape a compile-time fact, so an
-// interface that grows another method, loses Claims or moves it off this
-// signature no longer compiles.
+// claimsContributorFunc is ClaimsContributor's shape as a function type, asserted
+// against the interface so a change to it no longer compiles.
 type claimsContributorFunc func(context.Context, Principal) (map[string]any, error)
 
 func (f claimsContributorFunc) Claims(ctx context.Context, p Principal) (map[string]any, error) {
@@ -1315,9 +1289,8 @@ func (f claimsContributorFunc) Claims(ctx context.Context, p Principal) (map[str
 
 var _ ClaimsContributor = claimsContributorFunc(nil)
 
-// TestTheClaimsContributorDocHoldsTheDesignClaimSet holds the reserved claim
-// names in the ClaimsContributor doc to the design's closed set, name for
-// name and in order.
+// TestTheClaimsContributorDocHoldsTheDesignClaimSet holds the doc's reserved claim
+// names to the closed set, name for name and in order.
 func TestTheClaimsContributorDocHoldsTheDesignClaimSet(t *testing.T) {
 	got := reservedClaimNamesFromDoc(t)
 	want := []string{
@@ -1330,9 +1303,8 @@ func TestTheClaimsContributorDocHoldsTheDesignClaimSet(t *testing.T) {
 }
 
 // reservedClaimNamesFromDoc returns the reserved claim names listed in the
-// ClaimsContributor doc comment, in the order the design lists them. It reads
-// the set back out of the source, so a name added, dropped, reordered or
-// respelled in the comment changes what it returns.
+// ClaimsContributor doc comment, read back from the source so a change there
+// changes what it returns.
 func reservedClaimNamesFromDoc(t *testing.T) []string {
 	t.Helper()
 	const anchor = "The reserved claim names are a closed set: "
@@ -1349,9 +1321,8 @@ func reservedClaimNamesFromDoc(t *testing.T) []string {
 	return strings.Split(rest[:end], ", ")
 }
 
-// TestTheClaimsContributorDocAndTheTokenModuleHoldOneSet forces the reserved
-// claim set the ClaimsContributor doc promises and the set the token module
-// enforces to be one set.
+// TestTheClaimsContributorDocAndTheTokenModuleHoldOneSet forces the doc's reserved
+// claim set and the token module's to be one set.
 func TestTheClaimsContributorDocAndTheTokenModuleHoldOneSet(t *testing.T) {
 	doc := reservedClaimNamesFromDoc(t)
 	enforced := reservedClaimNamesFromToken(t)
@@ -1379,10 +1350,9 @@ func TestTheClaimsContributorDocAndTheTokenModuleHoldOneSet(t *testing.T) {
 	}
 }
 
-// reservedClaimNamesFromToken reads the keys of the token module's reservedClaims
-// map literal out of token/claims.go, the set the module actually refuses a
-// contributor claim against. A rename of that map or a change of its shape fails
-// the test rather than silently reading nothing.
+// reservedClaimNamesFromToken reads the keys of token/claims.go's reservedClaims
+// map, the set the module refuses a contributor claim against; a rename or
+// reshape fails the test rather than reading nothing.
 func reservedClaimNamesFromToken(t *testing.T) []string {
 	t.Helper()
 	fset := token.NewFileSet()

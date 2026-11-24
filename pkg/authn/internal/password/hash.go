@@ -12,20 +12,13 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-// Verify reports whether the password derives the entry. The comparison is
-// constant-time in the length of the derived key, so a wrong password cannot be
-// walked towards a right one byte by byte.
-//
-// It derives at the cost the entry states and checks nothing about what that
-// cost is: Parse bounded it, and a caller that has to bound what runs at once
-// goes through a Governor. An error is a derivation the process cannot run,
-// which is not a wrong password and is not told apart by the caller as one.
+// Verify reports whether the password derives the entry, comparing in constant
+// time so a wrong password cannot be walked towards the right one. An error is a
+// derivation the process cannot run, never a wrong password.
 func (e Entry) Verify(password string) (bool, error) {
 	switch e.params.Algorithm {
 	case Argon2id:
-		// Parse bounded every number, and none of them is below the one the
-		// derivation panics on, so the call below runs within the cost the
-		// entry stated.
+		// Parse bounded every number, so the derivation below cannot panic.
 		key := argon2.IDKey([]byte(password), e.salt, e.params.Iterations, e.params.MemoryKiB,
 			e.params.Parallelism, e.keyLen)
 		return subtle.ConstantTimeCompare(key, e.key) == 1, nil
@@ -40,8 +33,7 @@ func (e Entry) Verify(password string) (bool, error) {
 }
 
 // Check says whether p can be written: the algorithm is one of the two and every
-// number is within the bounds Parse holds an entry to, so that what is written
-// can be read back.
+// number is within the bounds Parse holds an entry to.
 func (p Params) Check() error {
 	switch p.Algorithm {
 	case Argon2id:
@@ -62,11 +54,8 @@ func (p Params) Check() error {
 }
 
 // Hash derives a storable PHC string of the password with these parameters and a
-// salt drawn fresh from the system's source. Two calls on one password produce
-// different strings, which is what stops one entry from confirming another.
-//
-// It does not normalise the password: whether to is the caller's rule, since an
-// account's password is put through NFKC and a table entry is hashed as bytes.
+// salt drawn fresh, so two calls on one password differ. It does not normalise;
+// whether to is the caller's rule.
 func (p Params) Hash(password string) (string, error) {
 	if err := p.Check(); err != nil {
 		return "", err

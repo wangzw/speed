@@ -13,10 +13,8 @@ import (
 	"testing"
 )
 
-// designSentinels is every sentinel of the root package that the two failure
-// tables name, the startup table and the runtime table together, written out.
-// ErrMalformedHash, the three egress sentinels and the tenant module's sentinels
-// are not here: they belong to packages of their own.
+// designSentinels is every sentinel of the root package the failure tables
+// name.
 var designSentinels = map[string]error{
 	"ErrNoRouter": ErrNoRouter, "ErrNoVerifier": ErrNoVerifier, "ErrClaimConflict": ErrClaimConflict,
 	"ErrInvalidClaim": ErrInvalidClaim, "ErrInvalidConfig": ErrInvalidConfig, "ErrUnknownEndpoint": ErrUnknownEndpoint,
@@ -93,9 +91,8 @@ func declaredSentinels(t *testing.T) []string {
 	return out
 }
 
-// TestTheSentinelsAreExactlyTheDesignsTables holds the set of sentinels
-// against the tables in both directions: one a table names and the package
-// lacks, and one the package declares that no table names.
+// TestTheSentinelsAreExactlyTheDesignsTables fails when a named sentinel is
+// missing or an undeclared one exists.
 func TestTheSentinelsAreExactlyTheDesignsTables(t *testing.T) {
 	declared := declaredSentinels(t)
 	for name := range designSentinels {
@@ -110,9 +107,8 @@ func TestTheSentinelsAreExactlyTheDesignsTables(t *testing.T) {
 	}
 }
 
-// TestEveryDesignSentinelIsDistinctAndSafeToLog holds each sentinel apart
-// from the others, under the authn: prefix, with no format verb and no word
-// that says it carries a value.
+// TestEveryDesignSentinelIsDistinctAndSafeToLog checks each sentinel is
+// distinct, under the authn: prefix, with no format verb.
 func TestEveryDesignSentinelIsDistinctAndSafeToLog(t *testing.T) {
 	names := make([]string, 0, len(designSentinels))
 	for n := range designSentinels {
@@ -141,8 +137,8 @@ func TestEveryDesignSentinelIsDistinctAndSafeToLog(t *testing.T) {
 	}
 }
 
-// TestASentinelSurvivesWrapping holds the one property callers use: errors.Is
-// finds a sentinel through the %w wraps, and does not find the one next to it.
+// TestASentinelSurvivesWrapping checks errors.Is finds a sentinel through
+// %w wraps and not the one next to it.
 func TestASentinelSurvivesWrapping(t *testing.T) {
 	err := fmt.Errorf("outer: %w", fmt.Errorf("inner: %w", ErrCleanupIncomplete))
 	if !errors.Is(err, ErrCleanupIncomplete) {
@@ -153,9 +149,8 @@ func TestASentinelSurvivesWrapping(t *testing.T) {
 	}
 }
 
-// TestLinkRequiredErrorKeepsTheAddressOutOfItsText holds the split: the value
-// carries the address so a surface can name the collision, while its text stays
-// the sentinel's, so a log line names no address.
+// TestLinkRequiredErrorKeepsTheAddressOutOfItsText wants Is to find
+// ErrLinkRequired while the text names no address.
 func TestLinkRequiredErrorKeepsTheAddressOutOfItsText(t *testing.T) {
 	err := fmt.Errorf("resolve: %w", &LinkRequiredError{Email: "ann@home.org"})
 	if !errors.Is(err, ErrLinkRequired) {
@@ -169,7 +164,7 @@ func TestLinkRequiredErrorKeepsTheAddressOutOfItsText(t *testing.T) {
 	}
 }
 
-// TestContactRequiredProblemTypeIsTheWireValue holds the exported code to its
+// TestContactRequiredProblemTypeIsTheWireValue pins the exported code to its
 // wire value.
 func TestContactRequiredProblemTypeIsTheWireValue(t *testing.T) {
 	if ContactRequiredProblemType != "urn:speed:authn:contact-required" {
@@ -178,9 +173,8 @@ func TestContactRequiredProblemTypeIsTheWireValue(t *testing.T) {
 	}
 }
 
-// TestErrInsecureConfigStatesAProtectionTheDeploymentNeeds holds the text an
-// operator reads when startup refuses an http public URL or a same-site of
-// none.
+// TestErrInsecureConfigStatesAProtectionTheDeploymentNeeds pins the sentinel's
+// exact text.
 func TestErrInsecureConfigStatesAProtectionTheDeploymentNeeds(t *testing.T) {
 	const want = "authn: the configuration weakens a protection the deployment cannot run without"
 	if got := ErrInsecureConfig.Error(); got != want {

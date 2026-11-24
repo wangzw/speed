@@ -22,27 +22,22 @@ const recentEventsCapacity = 4096
 // stored only when one is asked for. The hook is idempotent and returns nil.
 func (p *product) AccountCreated(context.Context, authn.AccountID) error { return nil }
 
-// AccountDisabled revokes the account's browser and token sessions and clears
-// what this replica cached for the account. A service session is left: it lapses
-// with the account's status and its valid-after instant, and comes back through
-// ForCredential once the account is enabled. The hook is idempotent and reads
-// nothing of the account: it is called after the account's transaction committed.
+// AccountDisabled revokes the account's browser and token sessions and clears this
+// replica's cache for it. A service session is left, lapsing with the account's
+// status; the hook is idempotent and runs after the account's transaction commits.
 func (p *product) AccountDisabled(ctx context.Context, id authn.AccountID) error {
 	_, err := p.RevokeAccount(ctx, id, "", authn.ReasonAccountDisabled)
 	return err
 }
 
-// AccountEnabled changes nothing: the browser and token sessions of before the
-// disable were void by the account's valid-after instant, which enabling does
-// not move back, so none of them comes to life again. A service session is not
-// stored until it is asked for: ForCredential issues it again once the account
-// is enabled. The hook is idempotent and returns nil.
+// AccountEnabled changes nothing: the sessions of before the disable were void by
+// the account's valid-after instant, which enabling does not move back, and a
+// service session is issued again by ForCredential. The hook is idempotent.
 func (p *product) AccountEnabled(context.Context, authn.AccountID) error { return nil }
 
-// AccountDeleted revokes every session of the account and deletes the rows,
-// service sessions included, and clears what this replica cached for it. The
-// rows are revoked before they are deleted, so a failure in between leaves them
-// unusable.
+// AccountDeleted revokes every session of the account, service sessions included,
+// deletes the rows and clears this replica's cache for it. Revoking happens before
+// deleting, so a failure in between leaves the rows unusable.
 func (p *product) AccountDeleted(ctx context.Context, id authn.AccountID) error {
 	if _, err := p.exec(ctx, "revoking a deleted account's sessions",
 		"UPDATE "+tableName+" SET revoked_at = ?, revoke_reason = ? WHERE account_id = ? AND revoked_at IS NULL",
@@ -97,10 +92,8 @@ func (p *product) count(ctx context.Context, operation string) {
 }
 
 // subscribe registers the handlers of the four events this module reads, and the
-// settings change it watches when the assembly carries a settings store. The
-// subscriptions are made in Init and their types are static. A handler clears
-// caches and repeats a cleanup that is idempotent, so a second delivery, an
-// earlier one that was lost and a different order all leave the same state.
+// settings change when a settings store is present. A handler clears caches and
+// repeats an idempotent cleanup, so redelivery and reordering leave the same state.
 func (p *product) subscribe() {
 	if p.bus == nil {
 		return
@@ -109,9 +102,6 @@ func (p *product) subscribe() {
 	p.bus.Subscribe(authn.EventImpersonationEnded, ModuleName, p.once(p.onImpersonationEnded))
 	p.bus.Subscribe(authn.EventAccountStatusChanged, ModuleName, p.once(p.onAccountStatusChanged))
 	p.bus.Subscribe(authn.EventAccountDeleted, ModuleName, p.once(p.onAccountDeleted))
-	// A settings change is watched only when there is a settings store to have
-	// published it: without one every setting reads as its declared default and
-	// there is no change to see.
 	if p.settings.store != nil {
 		p.bus.Subscribe(settings.ChangedEventType, ModuleName, p.onSettingsChanged)
 	}
@@ -170,15 +160,9 @@ func (p *product) onImpersonationEnded(_ context.Context, evt event.Event) error
 	return nil
 }
 
-// onAccountStatusChanged clears the caches for the account and, when the account
-// is no longer enabled, repeats the cleanup the hook does, which covers a hook
-// that failed or a process that stopped between the commit and the hook.
-//
-// The event may arrive late and again. Before it revokes anything it reads the
-// account: one that is enabled again has moved on, and sessions made since are
-// not what the event was about; the ones made before were already void by the
-// account's valid-after instant. So a stale disable event cannot revoke a session
-// of an account that is enabled.
+// onAccountStatusChanged clears the account's caches and, when it is no longer
+// enabled, repeats the hook's cleanup. It reads the account first, so a stale
+// disable event cannot revoke a session of an account that is enabled again.
 func (p *product) onAccountStatusChanged(ctx context.Context, evt event.Event) error {
 	var payload authn.AccountStatusChanged
 	if err := event.DecodePayload(evt.Payload, &payload); err != nil {

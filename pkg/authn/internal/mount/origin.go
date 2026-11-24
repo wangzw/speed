@@ -11,18 +11,9 @@ import (
 	"unicode"
 )
 
-// Origin is the scheme://host[:port] of publicURL in the form a browser sends it
-// in an Origin request header, which the cross-origin check compares byte for
-// byte: the scheme and host are lower-case, the port is left out when it is the
-// scheme's default, and a trailing dot on the host is dropped. An empty
-// publicURL has no origin and is not an error.
-//
-// What cannot be turned into an origin is refused, because an origin built from
-// it would trust nothing or the wrong thing: a value that is not a URL with an
-// http or https scheme and a host, one that carries user information, a query
-// or a fragment, an empty or out-of-range port, a wildcard, and a host that is
-// not ASCII (an internationalised name is written in punycode, which is what a
-// browser sends).
+// Origin canonicalises publicURL to the scheme://host[:port] a browser sends in an
+// Origin header: lower-case scheme and host, default port omitted, trailing dot
+// dropped. An empty publicURL returns "", nil; anything else is refused.
 func Origin(publicURL string) (string, error) {
 	if publicURL == "" {
 		return "", nil
@@ -70,15 +61,9 @@ func canonicalOrigin(raw string, allowPath bool) (string, error) {
 
 var defaultPort = map[string]int{"http": 80, "https": 443}
 
-// TrustedOrigins is every origin the cross-origin check trusts: the origin of
-// publicURL first, when there is one, then each of trusted that is not already
-// in the list. Every origin is in the canonical form of [Origin], so a list
-// entry written as https://Example.com:443 is the origin a browser sends as
-// https://example.com. An entry that is not an origin is refused and not
-// skipped: a skipped entry would read as a list that was applied. The gateway's
-// check on a cookie or a Basic credential and the check the Mounter applies to the routes
-// of this capability are both built from it, so the two cannot come to trust
-// different sets from the same configuration.
+// TrustedOrigins is every origin the cross-origin check trusts: publicURL's origin
+// first when there is one, then each trusted entry not already present, all in
+// [Origin]'s canonical form. An entry that is not an origin is refused, not skipped.
 func TrustedOrigins(publicURL string, trusted []string) ([]string, error) {
 	origin, err := Origin(publicURL)
 	if err != nil {
@@ -102,14 +87,9 @@ func TrustedOrigins(publicURL string, trusted []string) ([]string, error) {
 	return origins, nil
 }
 
-// CrossOrigin builds a cross-origin check that trusts TrustedOrigins(publicURL,
-// trusted) and nothing else. An origin the standard library cannot trust, which
-// is any that is not scheme://host[:port], is refused and not skipped: a
-// skipped entry would read as a list that was applied.
-//
-// Every caller gets an instance of its own. The check has no state beyond its
-// trusted set and its bypass patterns, and a pattern one holder adds is not one
-// the other should honour.
+// CrossOrigin builds a check that trusts TrustedOrigins(publicURL, trusted) and
+// nothing else, refusing an unusable entry rather than skipping it. Every caller
+// gets an instance of its own.
 func CrossOrigin(publicURL string, trusted []string) (*http.CrossOriginProtection, error) {
 	origins, err := TrustedOrigins(publicURL, trusted)
 	if err != nil {

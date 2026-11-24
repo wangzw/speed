@@ -24,9 +24,8 @@ func (*fake) CSRF() *http.CrossOriginProtection                   { return nil }
 
 var _ Mounter = (*fake)(nil)
 
-// TestMounterHasExactlyTheMethodsTheDesignNames holds the other direction of
-// the compile-time assertion: an interface that gained a method the design does
-// not list would still be satisfied by a fake that had it, and by nothing else.
+// TestMounterHasExactlyTheMethodsTheDesignNames holds that Mounter's method set is
+// exactly the fixed list, the other direction of the compile-time assertion.
 func TestMounterHasExactlyTheMethodsTheDesignNames(t *testing.T) {
 	typ := reflect.TypeFor[Mounter]()
 
@@ -42,24 +41,23 @@ func TestMounterHasExactlyTheMethodsTheDesignNames(t *testing.T) {
 	}
 }
 
-// TestNoOptionLeavesTheRoutePlain holds that the zero reading of a
-// registration is the route no impersonating identity may pass.
+// TestNoOptionLeavesTheRoutePlain holds that a registration with no option is not
+// impersonable.
 func TestNoOptionLeavesTheRoutePlain(t *testing.T) {
 	if got := Resolve(); got.Impersonable {
 		t.Errorf("Resolve() = %+v, want Impersonable false", got)
 	}
 }
 
-// TestImpersonableMarksTheRoute holds that the option reaches the reader: a
-// Resolve that ignored its options would answer false here.
+// TestImpersonableMarksTheRoute holds that the option reaches the reader.
 func TestImpersonableMarksTheRoute(t *testing.T) {
 	if got := Resolve(Impersonable()); !got.Impersonable {
 		t.Errorf("Resolve(Impersonable()) = %+v, want Impersonable true", got)
 	}
 }
 
-// TestANilOptionIsNoAction holds that a nil option neither panics nor changes
-// the result, whichever side of a real option it sits on.
+// TestANilOptionIsNoAction holds that a nil option neither panics nor changes the
+// result, whichever side of a real option it sits on.
 func TestANilOptionIsNoAction(t *testing.T) {
 	if got := Resolve(nil); got.Impersonable {
 		t.Errorf("Resolve(nil) = %+v, want Impersonable false", got)
@@ -69,8 +67,8 @@ func TestANilOptionIsNoAction(t *testing.T) {
 	}
 }
 
-// TestResolveStartsFromNothingEachTime holds that one registration's options do
-// not leak into the next: the accumulator is per call.
+// TestResolveStartsFromNothingEachTime holds that one call's options do not leak
+// into the next.
 func TestResolveStartsFromNothingEachTime(t *testing.T) {
 	_ = Resolve(Impersonable())
 	if got := Resolve(); got.Impersonable {

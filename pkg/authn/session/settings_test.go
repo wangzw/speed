@@ -97,8 +97,8 @@ func TestTheSSOPeriodCapsWhateverKindTheSessionIs(t *testing.T) {
 	}
 }
 
-// The declared defaults are the ones the design lists, so a change to them is a
-// change to what an assembly without a store runs on.
+// TestTheDeclaredDefaultsAreTheDesignsNumbers holds the built-in defaults an
+// assembly without a store runs on.
 func TestTheDeclaredDefaultsAreTheDesignsNumbers(t *testing.T) {
 	want := options{
 		IdleTimeout: 30 * time.Minute, AbsoluteTimeout: 12 * time.Hour,

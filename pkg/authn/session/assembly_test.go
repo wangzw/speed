@@ -61,10 +61,8 @@ func driveRegister(t *testing.T, action func(context.Context, *core.Registry) er
 	})
 }
 
-// The three capabilities the descriptor declares resolve to the one product the
-// module built: the delivery check (assertDelivered) runs as the instance is
-// registered, so a product that did not implement one of them would fail the
-// drive before this case's action ran.
+// TestTheModuleDeliversItsThreeCapabilities resolves the three declared
+// capabilities to the one product the module built.
 func TestTheModuleDeliversItsThreeCapabilities(t *testing.T) {
 	var sessions authn.Sessions
 	var verifier authn.Verifier
@@ -100,9 +98,8 @@ func TestTheModuleDeliversItsThreeCapabilities(t *testing.T) {
 	}
 }
 
-// The descriptor states what the design states: three required capabilities and
-// one optional (the audit seam, taken up in Init), three provisions with the
-// session store exclusive, and the enabled stance.
+// TestTheDescriptorStatesWhatTheDesignStates checks three required capabilities,
+// one optional, and the provision set.
 func TestTheDescriptorStatesWhatTheDesignStates(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "authn.session" {

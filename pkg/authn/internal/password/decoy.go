@@ -7,14 +7,8 @@ import (
 )
 
 // Decoy is an entry no password derives, written with the current parameters,
-// which a login that found no account derives against so that an unknown name
-// costs what a known one does.
-//
-// It is made when it is first asked for and again whenever the parameters it
-// was made with are not the ones asked for. It is not made once at start: a
-// parameter changed while the process runs would leave the entries of known
-// accounts derived at the new cost and the decoy at the old one, and the
-// difference in time would tell a caller which names exist.
+// which a login that found no account derives against so an unknown name costs
+// what a known one does. It is remade whenever the parameters change.
 type Decoy struct {
 	// text draws the password a decoy is made from; nil draws from the
 	// system's source of randomness, and a test replaces it to see the draws.

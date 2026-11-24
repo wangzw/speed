@@ -14,8 +14,8 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/verdict"
 )
 
-// TestAVerdictNobodyAnsweredReadsAsSaidNothing holds the criterion the whole
-// shape of a verdict rests on.
+// TestAVerdictNobodyAnsweredReadsAsSaidNothing reads an unanswered verdict as
+// unspoken and without a principal.
 func TestAVerdictNobodyAnsweredReadsAsSaidNothing(t *testing.T) {
 	var nobodyAnswered Verdict
 
@@ -50,8 +50,8 @@ func TestEachConstructorSaysWhatItWasCalledFor(t *testing.T) {
 	}
 }
 
-// TestAnAuthenticatedVerdictCarriesItsPrincipal pins the payload that decides
-// who the caller is.
+// TestAnAuthenticatedVerdictCarriesItsPrincipal carries the principal without
+// sharing the backend's copies.
 func TestAnAuthenticatedVerdictCarriesItsPrincipal(t *testing.T) {
 	authTime := time.Date(2026, time.October, 11, 8, 0, 0, 0, time.UTC)
 	p := Principal{
@@ -82,8 +82,8 @@ func TestAnAuthenticatedVerdictCarriesItsPrincipal(t *testing.T) {
 	}
 }
 
-// TestWhatARefusalCarriesDoesNotChangeThatItIsARefusal holds the one thing a
-// backend must not be able to do with the cause it hands over.
+// TestWhatARefusalCarriesDoesNotChangeThatItIsARefusal stays a refusal whatever
+// cause it carries.
 func TestWhatARefusalCarriesDoesNotChangeThatItIsARefusal(t *testing.T) {
 	for _, cause := range []error{
 		errors.New("wrong password"),
@@ -101,8 +101,8 @@ func TestWhatARefusalCarriesDoesNotChangeThatItIsARefusal(t *testing.T) {
 	}
 }
 
-// TestAnIdentityIsAccountedForByItsActor holds the accountability key through
-// the surface a reader of FromContext sees.
+// TestAnIdentityIsAccountedForByItsActor accounts an impersonating identity to
+// its actor.
 func TestAnIdentityIsAccountedForByItsActor(t *testing.T) {
 	plain := identity.New(Principal{Account: "acct-1", Methods: []Method{MethodPassword}}, "session", "Cookie")
 	impersonating := identity.New(Principal{
@@ -134,8 +134,8 @@ func TestAnIdentityIsAccountedForByItsActor(t *testing.T) {
 	}
 }
 
-// TestAContextThatWentThroughNoGatewayCarriesNobody holds the other half: the
-// absence has to read as absence.
+// TestAContextThatWentThroughNoGatewayCarriesNobody reads a context with no
+// gateway as carrying nobody.
 func TestAContextThatWentThroughNoGatewayCarriesNobody(t *testing.T) {
 	if _, ok := FromContext(context.Background()); ok {
 		t.Fatal("a context that went through no gateway carries an identity, so an anonymous " +
@@ -147,9 +147,8 @@ func TestAContextThatWentThroughNoGatewayCarriesNobody(t *testing.T) {
 	}
 }
 
-// TestTheAccessLevelTravelsAlongsideTheIdentity pins the wrapper that reads the
-// level out of the context: a level that came back as another one would tell a
-// consumer a guarded route was open.
+// TestTheAccessLevelTravelsAlongsideTheIdentity reads back the access level the
+// context carries.
 func TestTheAccessLevelTravelsAlongsideTheIdentity(t *testing.T) {
 	for _, level := range []Access{AccessOpen, AccessOptional, AccessRequired} {
 		ctx := identity.WithAccess(context.Background(), level)
@@ -159,8 +158,8 @@ func TestTheAccessLevelTravelsAlongsideTheIdentity(t *testing.T) {
 	}
 }
 
-// TestAnAccountIdentifierIsCheckedAgainstTheFormat holds the wrapper and the
-// sentinel it returns.
+// TestAnAccountIdentifierIsCheckedAgainstTheFormat parses a well-formed
+// identifier and refuses a malformed one.
 func TestAnAccountIdentifierIsCheckedAgainstTheFormat(t *testing.T) {
 	id, err := ParseAccountID("static.ops")
 	if err != nil {
@@ -184,8 +183,8 @@ func TestAnAccountIdentifierIsCheckedAgainstTheFormat(t *testing.T) {
 	}
 }
 
-// TestEachStepConstructorMakesTheKindItIsNamedFor holds the nine answers
-// apart.
+// TestEachStepConstructorMakesTheKindItIsNamedFor gives each Step constructor
+// its kind.
 func TestEachStepConstructorMakesTheKindItIsNamedFor(t *testing.T) {
 	cause := errors.New("cause")
 	for _, c := range []struct {
@@ -219,11 +218,8 @@ func TestEachStepConstructorMakesTheKindItIsNamedFor(t *testing.T) {
 	}
 }
 
-// The signatures of the seams, held where a change shows up as a compile
-// failure of this file. The surface list pins names; these pin the shapes:
-// Verify takes a context and a credential and no subject, Accepts is a method
-// that returns the declaration, and the registrations take an endpoint, a
-// method and a path.
+// Compile-time pins of the seam signatures: a change to any shows up as a
+// failure in this file.
 var (
 	_ func(Verifier, context.Context, Credential) Verdict = Verifier.Verify
 	_ func(Verifier) Accepts                              = Verifier.Accepts
@@ -243,8 +239,8 @@ var (
 	_ = Accepts{Schemes: []string{"basic"}, Cookies: []string{"sid"}, Accounts: "", Impersonation: true, SSO: true}
 )
 
-// TestTheClaimSentinelsDoNotSpeakOfOwnership holds the wording of the two
-// sentinels that concern the carriers a backend takes.
+// TestTheClaimSentinelsDoNotSpeakOfOwnership keeps the claim sentinels' wording
+// free of ownership terms.
 func TestTheClaimSentinelsDoNotSpeakOfOwnership(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -265,10 +261,8 @@ func TestTheClaimSentinelsDoNotSpeakOfOwnership(t *testing.T) {
 	}
 }
 
-// TestEverySentinelIsDistinctAndNamesItsDirectory holds the sentinel set apart:
-// two that were the same error would make errors.Is answer yes for a failure
-// the caller meant to treat differently, and a text without the prefix would be
-// the one line of a startup log that does not say where it came from.
+// TestEverySentinelIsDistinctAndNamesItsDirectory makes each sentinel distinct
+// and prefixed with authn:.
 func TestEverySentinelIsDistinctAndNamesItsDirectory(t *testing.T) {
 	all := []error{
 		ErrNoRouter, ErrNoVerifier, ErrClaimConflict, ErrInvalidClaim, ErrInvalidConfig,
@@ -287,10 +281,8 @@ func TestEverySentinelIsDistinctAndNamesItsDirectory(t *testing.T) {
 	}
 }
 
-// TestAThrottledErrorReadsAsTheSentinelAndCarriesItsWait holds both halves of
-// the carrying shape: errors.Is finds the sentinel through a wrap, and
-// errors.As finds the wait, which is the only way a handler can write
-// Retry-After.
+// TestAThrottledErrorReadsAsTheSentinelAndCarriesItsWait finds the sentinel and
+// the wait through a wrap.
 func TestAThrottledErrorReadsAsTheSentinelAndCarriesItsWait(t *testing.T) {
 	carried := fmt.Errorf("checking the identifier: %w", &ThrottledError{RetryAfter: 7 * time.Second})
 
@@ -334,20 +326,3 @@ func TestTheThrottleScopesAreTheClosedSetUnderTheseNames(t *testing.T) {
 		}
 	}
 }
-
-// Why there is no case here asserting that nothing outside this capability
-// directory can write an identity: making one and putting one into a context
-// both live in pkg/authn/internal/identity, and Go admits an internal package
-// to the subtree it sits in alone. The compiler enforces it for every package
-// outside, and a case written from inside — the only place a case can be
-// written — would hold nothing, since the restriction does not apply there and
-// is not meant to. A test that cannot fail under a wrong implementation is a
-// comment wearing a test's name, so this is a comment. The half that is
-// observable from outside is held above: a context nothing wrote to carries
-// nobody.
-//
-// The packages inside the tree are admitted to that internal package too, and
-// the compiler has nothing to say about them. What stops a backend or a login
-// method from importing it is the writer list in deps_test.go: the root package,
-// which re-exports the read side only, the gateway, the login engine and
-// authntest, and no other package in a file that is not a test.

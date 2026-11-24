@@ -12,11 +12,9 @@ import (
 	"github.com/vislake/speed/pkg/config"
 )
 
-// The keys this module accepts, relative to its namespace, and the key of the
-// gateway it reads. The gateway declares the public URL and this module reads
-// it in Prepare, because whether the session cookie can be written at all, and
-// the host its Domain has to cover, follow from the public address the
-// deployment is reached at.
+// The keys this module accepts, relative to its namespace, and the gateway's
+// public URL key it reads in Prepare, because whether the session cookie can be
+// written and its Domain follow from the public address.
 const (
 	cookieDomainItem = "cookie-domain"
 	sameSiteItem     = "same-site"
@@ -26,11 +24,9 @@ const (
 )
 
 type moduleConfig struct {
-	// CookieDomain, when non-empty, is written as the Domain attribute of the
-	// session cookie and makes the cookie __Secure-authn-sid, which loses the
-	// guarantee that no subdomain can set it. An http public URL refuses it: a
-	// cookie with a Domain needs the __Secure- prefix, and so Secure, which an
-	// http public URL leaves off.
+	// CookieDomain, when non-empty, is the Domain of the session cookie and makes
+	// it __Secure-authn-sid, which loses the guarantee no subdomain can set it. An
+	// http public URL refuses it, as a Domain needs the __Secure- prefix and so Secure.
 	CookieDomain string `config:"cookie-domain"`
 	// SameSite is lax or strict. none is refused.
 	SameSite string `config:"same-site"`
@@ -43,12 +39,8 @@ type gateMount struct {
 }
 
 // cookieSpec is what the configuration comes to: the public URL the session
-// cookie is built for and the attributes of it that vary with the
-// configuration, and the diagnostics that follow from them. cookiename.Cookie
-// builds the cookie from it, so the name is the one cookiename.Name gives the
-// public URL, __Host-authn-sid, __Secure-authn-sid with a Domain, and authn-sid
-// on an http public URL, and Secure is what cookiename.Secure gives the same
-// URL, on https and off on http. HttpOnly and Path=/ do not vary.
+// cookie is built for and the attributes that vary with the configuration.
+// cookiename.Cookie builds it, so the name and Secure follow from that URL.
 type cookieSpec struct {
 	publicURL string
 	domain    string
@@ -121,10 +113,9 @@ func (c moduleConfig) resolve(gm gateMount) (cookieSpec, error) {
 	return spec, nil
 }
 
-// publicHost reads the public address: its host, lower-cased, whether startup
-// admits it, which it does for https and for http on a loopback host, whose
-// traffic never leaves the machine, and whether it is http, which writes the
-// session cookie without a prefix and without Secure.
+// publicHost reads the public address's host, whether startup admits it (https,
+// or http on a loopback host) and whether it is http, which writes the session
+// cookie without a prefix and without Secure.
 func publicHost(raw string) (host string, admitted, plainHTTP bool, err error) {
 	if raw == "" {
 		return "", false, false, fmt.Errorf("%w: %s.%s is empty, and the session cookie is named and "+

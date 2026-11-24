@@ -93,9 +93,8 @@ func TestTheJWKSRouteCarriesItsOwnHeadersAndContentType(t *testing.T) {
 	}
 }
 
-// TestTheJWKSHeadersAreTheStableLiterals holds the two header values an external
-// reader depends on, pinned to their literal text rather than compared with the
-// constants that produce them.
+// TestTheJWKSHeadersAreTheStableLiterals pins the two header values to their
+// literal text rather than to the constants that produce them.
 func TestTheJWKSHeadersAreTheStableLiterals(t *testing.T) {
 	set := loadedSet(t, algES256)
 	m := mounttest.New(t)

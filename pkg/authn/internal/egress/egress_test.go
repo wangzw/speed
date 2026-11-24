@@ -84,13 +84,9 @@ func (f *fixedLookup) lookup(_ context.Context, host string) ([]netip.Addr, erro
 	return out, nil
 }
 
-// tlsServer starts a TLS server on the loopback interface and returns it with a
-// pool that trusts its certificate. Its certificate names example.com and the
-// loopback addresses.
-//
-// The server's error log is discarded: the cases that refuse a certificate or
-// a protocol version end the handshake on the client's side by design, and the
-// server would log each of them as a handshake error.
+// tlsServer starts a TLS server on the loopback interface with a pool that
+// trusts its certificate; the certificate names example.com and the loopback
+// addresses. Its error log is discarded, since a refused handshake is by design.
 func tlsServer(t *testing.T, h http.Handler) (*httptest.Server, *x509.CertPool) {
 	t.Helper()
 	srv := httptest.NewUnstartedServer(h)
@@ -199,9 +195,8 @@ func TestTheDevelopmentSwitchDoesNotOpenAnythingButLoopback(t *testing.T) {
 	}
 }
 
-// TestTheDevelopmentSwitchDoesNotAdmitAPlainHTTPNonLoopbackEndpoint holds the
-// boundary of the loopback switch: it opens loopback addresses and nothing
-// else.
+// TestTheDevelopmentSwitchDoesNotAdmitAPlainHTTPNonLoopbackEndpoint holds that
+// the loopback switch opens loopback addresses and nothing else.
 func TestTheDevelopmentSwitchDoesNotAdmitAPlainHTTPNonLoopbackEndpoint(t *testing.T) {
 	var j judged
 	client := build(Options{AllowLoopback: true}, hooks{control: j.hook})
@@ -650,12 +645,10 @@ func TestTheConnectionTimeJudgement(t *testing.T) {
 		{"tcp6", "[64:ff9b::a9fe:a9fe]:443", true, true},
 		{"tcp4", "169.254.169.254:80", true, true},
 		{"tcp6", "[fe80::1%eth0]:443", false, true},
-		// What is not an address and a port is refused, not passed.
 		{"tcp", "example.com:443", false, true},
 		{"tcp", "8.8.8.8", false, true},
 		{"tcp", "", false, true},
 		{"tcp", ":443", false, true},
-		// Only stream sockets are dialled.
 		{"udp", "8.8.8.8:443", false, true},
 		{"ip4:1", "8.8.8.8:0", false, true},
 		{"unix", "/var/run/docker.sock", false, true},
@@ -724,10 +717,8 @@ func TestACallStopsAtItsContextDeadline(t *testing.T) {
 	}
 }
 
-// TestWrappingTheTransportKeepsEveryRefusal holds the way a caller adds the
-// trace headers: it wraps the client's Transport in observability.Transport
-// from outside, and the egress client is given no entry point of its own for
-// it.
+// TestWrappingTheTransportKeepsEveryRefusal holds that a caller wrapping the
+// transport in observability.Transport keeps every refusal.
 func TestWrappingTheTransportKeepsEveryRefusal(t *testing.T) {
 	wrapped := func(o Options) *http.Client {
 		client := build(o, hooks{})

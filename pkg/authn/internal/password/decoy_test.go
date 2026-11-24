@@ -2,9 +2,8 @@ package password
 
 import "testing"
 
-// TestTheDecoyIsMadeForTheParametersAskedFor holds the decoy's reason to exist:
-// it costs what a real entry written with the current parameters costs, so it
-// carries those parameters, and it is made again when they change.
+// TestTheDecoyIsMadeForTheParametersAskedFor holds that the decoy carries the
+// parameters it is made for and is made again when they change.
 func TestTheDecoyIsMadeForTheParametersAskedFor(t *testing.T) {
 	var d Decoy
 	first := cheapArgon2id
@@ -57,9 +56,8 @@ func TestNoPasswordMatchesTheDecoy(t *testing.T) {
 	}
 }
 
-// TestADecoyIsRefusedForParametersNoReaderAccepts holds that a decoy is made
-// under the same bounds as an entry, so a misconfigured setting cannot make the
-// decoy something other than what a login derives against.
+// TestADecoyIsRefusedForParametersNoReaderAccepts holds that a decoy is refused the
+// parameters no entry reader accepts.
 func TestADecoyIsRefusedForParametersNoReaderAccepts(t *testing.T) {
 	var d Decoy
 	if _, err := d.For(Params{}); err == nil {
@@ -67,9 +65,8 @@ func TestADecoyIsRefusedForParametersNoReaderAccepts(t *testing.T) {
 	}
 }
 
-// TestTheDecoyIsMadeFromAFreshDrawEachTime holds where the decoy's password
-// comes from: one draw for each decoy that is made, none for one that is
-// served again, and never the same text twice.
+// TestTheDecoyIsMadeFromAFreshDrawEachTime holds that each new decoy draws a fresh
+// text, a served-again decoy draws none, and no text repeats.
 func TestTheDecoyIsMadeFromAFreshDrawEachTime(t *testing.T) {
 	var drawn []string
 	d := Decoy{text: func() string {
@@ -93,8 +90,8 @@ func TestTheDecoyIsMadeFromAFreshDrawEachTime(t *testing.T) {
 	}
 }
 
-// TestRandomTextIsFreshAndLongEnoughToBeNoOnesChoice holds the default source:
-// 32 bytes as hex, and a new text on every call.
+// TestRandomTextIsFreshAndLongEnoughToBeNoOnesChoice holds that randomText is 64
+// hex characters and differs on every call.
 func TestRandomTextIsFreshAndLongEnoughToBeNoOnesChoice(t *testing.T) {
 	a, b := randomText(), randomText()
 	if len(a) != 64 || len(b) != 64 {

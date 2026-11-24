@@ -38,11 +38,7 @@ const (
 )
 
 // identityWriters are the packages that may import the identity package in a
-// file that is not a test: the root package, which re-exports its read side;
-// the gateway, which writes the identity of the request chain; the login
-// engine, which derives a context for the one audit record of a login and
-// hands it to nothing else; and authntest, whose context builder is for tests.
-// The package itself is not an importer of itself.
+// non-test file: the root package, the gateway, the login engine and authntest.
 var identityWriters = []string{
 	rootPath,
 	rootPath + "/gate",
@@ -72,12 +68,8 @@ type listed struct {
 	IgnoredGoFiles []string
 	InvalidGoFiles []string
 	// Imports are the imports of every non-test file of the package, whether or
-	// not it builds under this GOOS, GOARCH and set of build tags: go list's own
-	// Imports are only those of the files that do, and a file for another
-	// platform or under a custom tag is production code all the same. goList
-	// fills it from the source after decoding, and go list's own list is
-	// merged into it. The test imports are a separate list in go list's output,
-	// and are not asked for.
+	// not it builds under this GOOS, GOARCH and set of build tags. Test imports
+	// are not included.
 	Imports []string
 }
 
@@ -116,8 +108,6 @@ func readImports(path string) ([]string, error) {
 	}
 	var out []string
 	for _, spec := range f.Imports {
-		// An import path in the AST is a quoted literal that the parser has
-		// already checked is well formed.
 		out = append(out, strings.Trim(spec.Path.Value, "\"`"))
 	}
 	return out, nil
@@ -145,10 +135,8 @@ func moduleRoot(t *testing.T) string {
 	return root
 }
 
-// moduleRootFrom finds the module that holds source, the path the compiler
-// recorded for this file. Built with -trimpath that path is module-qualified
-// and names no directory, and then the module is the one the test runs in: go
-// test runs a package's tests from its source directory.
+// moduleRootFrom finds the module that holds source, falling back to the module
+// of the working directory when -trimpath recorded no directory.
 func moduleRootFrom(source, cwd string) (string, error) {
 	dir := filepath.Dir(source)
 	if info, err := os.Stat(dir); err != nil || !filepath.IsAbs(source) || !info.IsDir() {
@@ -168,14 +156,8 @@ func moduleRootFrom(source, cwd string) (string, error) {
 }
 
 // goList runs go list -e -json over patterns in dir and decodes the packages.
-// -e keeps a package that does not compile in the listing, with its imports as
-// the parser read them: the dependency rules are about what a package imports,
-// and a package half way through a change still imports something.
-//
-// Every non-test file the package holds is then parsed for its imports, the
-// ones a build constraint leaves out included, so the rules see what a build on
-// another platform or with another tag would compile. Standard library packages
-// are not parsed: nothing is asked of what they import.
+// Every non-test file is parsed for its imports, including files a build
+// constraint leaves out; standard library packages are not parsed.
 func goList(t *testing.T, dir string, env []string, args ...string) []listed {
 	t.Helper()
 	const fields = "ImportPath,Standard,Dir,Imports,GoFiles,CgoFiles,IgnoredGoFiles,InvalidGoFiles"
@@ -207,14 +189,9 @@ func goList(t *testing.T, dir string, env []string, args ...string) []listed {
 	}
 }
 
-// listModule lists every package of the module at dir: go list ./..., and the
-// directories it leaves out. A directory whose files a build constraint all
-// excludes is matched by no pattern, so it is not in go list's output at all,
-// and a package of nothing but files for another platform or under a custom tag
-// is production code that nothing else would read. Those directories are found
-// by walking the tree the way go list does: no directory that starts with a dot
-// or an underscore, none named testdata or vendor, and none that is a module of
-// its own.
+// listModule lists every package of the module at dir, including directories
+// that go list matches with no pattern because every file is for another
+// platform or under a custom tag.
 func listModule(t *testing.T, dir string, env []string) []listed {
 	t.Helper()
 	pkgs := goList(t, dir, env, "./...")
@@ -280,12 +257,7 @@ func find(pkgs []listed, path string) (listed, bool) {
 }
 
 // rootImportViolations is the first rule: the root package's non-test imports
-// are the standard library and the four value-type packages. The standard
-// library is taken whole, net/http with it, because the cookie clearer's
-// signature is written in its types; the rule is about what of this module and of
-// third parties the root package may pull in. Every package in
-// the second list is imported by tenant/resolve, audit/journal and ratelimit
-// through this one, so an import added here enters all of their closures.
+// are the standard library and the four value-type packages.
 func rootImportViolations(pkgs []listed) []string {
 	root, ok := find(pkgs, rootPath)
 	if !ok {
@@ -324,14 +296,8 @@ func layerViolations(pkgs []listed) []string {
 }
 
 // authntestViolations is the third rule: no package imports authntest,
-// mounttest or mfatest in a file that is not a test, except those three
-// themselves, and mounttest, which builds the identities of its requests with
-// authntest, is the one package besides authntest that may import it. The
-// compiler cannot stop production code importing either, and an identity built
-// there would be one no gateway stamped, a route registered there one no gateway
-// guards. mfatest writes and reads the multi-factor register for a test; a
-// production import of it would let the product seed factors with nobody
-// enrolled for them.
+// mounttest or mfatest in a non-test file, except those packages themselves and
+// mounttest, which may import authntest.
 func authntestViolations(pkgs []listed) []string {
 	var out []string
 	for _, p := range pkgs {
@@ -350,23 +316,15 @@ func authntestViolations(pkgs []listed) []string {
 }
 
 // internalStoreImporters are the packages that may import the multi-factor
-// module's internal statement packages in a file that is not a test: the module
-// whose register delegates to factorstore, the TOTP factor whose seed table is
-// totpseed's, and the test-support package that writes and reads both so a
-// fixture breaks with a renamed column. The internal packages exist so those
-// three share one set of statements; any other importer would be a second
-// writer of the register or of a kind's own data, which the module's API is
-// meant to be the only way through.
+// module's internal statement packages in a non-test file: the module itself,
+// the TOTP factor and the test-support package.
 var internalStoreImporters = map[string][]string{
 	factorStorePath: {mfaPackagePath, mfatestPath},
 	totpSeedPath:    {totpPackagePath, mfatestPath},
 }
 
-// internalStoreViolations is the seventh rule: no package outside
-// internalStoreImporters imports a multi-factor module's internal statement
-// package in a file that is not a test. Go admits every package under
-// pkg/authn/mfa to them, so the compiler stops what sits outside the module and
-// this rule stops what sits inside it.
+// internalStoreViolations is the seventh rule: no other package imports a
+// multi-factor module's internal statement package in a non-test file.
 func internalStoreViolations(pkgs []listed) []string {
 	var out []string
 	for _, p := range pkgs {
@@ -383,12 +341,8 @@ func internalStoreViolations(pkgs []listed) []string {
 	return out
 }
 
-// identityWriterViolations is the fourth rule: no package outside identityWriters
-// imports the identity package in a file that is not a test. The identity
-// package holds the one way to put an identity into a context, and Go admits
-// every package under pkg/authn to it, so the compiler stops what sits outside
-// the tree and this rule stops what sits inside it: a backend or a login method
-// that imported it could stamp an identity the gateway never decided on.
+// identityWriterViolations is the fourth rule: no package outside
+// identityWriters imports the identity package in a non-test file.
 func identityWriterViolations(pkgs []listed) []string {
 	var out []string
 	for _, p := range pkgs {
@@ -403,13 +357,9 @@ func identityWriterViolations(pkgs []listed) []string {
 	return out
 }
 
-// unusedWriterViolations is the other direction of the fourth rule: a package on
-// identityWriters that is in the listing and does not import the identity package
-// in a non-test file is a name on the list with no code behind it, which the
-// list should not carry, because a closed list that names a package that does
-// not write is a list that hides what the writers are. A writer that is not in
-// the listing at all is not reported: the login engine is on the list before it
-// exists, and the entry is held to the code from the day the package appears.
+// unusedWriterViolations is the other direction of the fourth rule: a listed
+// package that exists but imports no identity package in a non-test file is
+// reported; one that is not in the listing at all is not.
 func unusedWriterViolations(pkgs []listed) []string {
 	var out []string
 	for _, w := range identityWriters {
@@ -429,16 +379,9 @@ func inAuthnTree(path string) bool {
 	return path == rootPath || strings.HasPrefix(path, rootPath+"/")
 }
 
-// tenantViolations is the fifth rule: no package of the authn tree, the root
-// package and every package below it, reaches the tenant module. Tenancy depends
-// on authentication and the admission layer that joins the two lives in the
-// tenant directory, so the reverse edge would make the identity system know the
-// directory of the tenants it is meant to serve. A package is judged on every
-// non-test file it holds, the ones a build constraint leaves out included, and
-// on what the packages outside the tree that it imports import in turn: an edge
-// through another package of the module is the same edge. A package of the tree
-// is judged on its own files and is not walked into from its importers, so one
-// import of the tenant module is reported once, where it is written.
+// tenantViolations is the fifth rule: no package of the authn tree imports or
+// reaches the tenant module through a package outside the tree, over every
+// non-test file it holds.
 func tenantViolations(pkgs []listed) []string {
 	var out []string
 	for _, p := range pkgs {
@@ -467,11 +410,7 @@ func tenantViolations(pkgs []listed) []string {
 
 // guardImportViolations is the sixth rule: the guard package's non-test imports
 // are the standard library, the root package, the HTTP entry point and gin, and
-// nothing else. The middleware decides a request from the identity the gateway
-// stamped, so no factor module, no store and no other package of the capability
-// may enter its closure; Go admits every package under pkg/authn to it, so this
-// rule is what keeps a leaf factor out. A host that mounts a guarded route then
-// carries the factor only if its own code imports it.
+// nothing else.
 func guardImportViolations(pkgs []listed) []string {
 	p, ok := find(pkgs, guardPath)
 	if !ok {
@@ -519,18 +458,11 @@ func reachable(pkgs []listed, start string) []string {
 }
 
 // closure is the set of non-standard packages reachable from the root package
-// through imports, over the listing of the whole module and the imports of
-// every non-test file. It is walked here rather than read from go list -deps,
-// which follows only the files that build under one platform and one set of
-// tags. A package outside the listing is a third-party one: it is in the set
-// and is not walked into, and any package of the listing is, whether or not the
-// rules allow it.
+// through the imports of every non-test file, over the listing of the module.
 func closure(pkgs []listed) []string { return reachable(pkgs, rootPath) }
 
 // closureViolations is the transitive form of the first rule, over the closure
-// of the root package: nothing outside the standard library and the four
-// value-type packages is in it, so no third-party library and no gin reaches a
-// package that only reads an identity.
+// of the root package.
 func closureViolations(pkgs []listed) []string {
 	var out []string
 	for _, path := range closure(pkgs) {
@@ -545,8 +477,8 @@ func closureViolations(pkgs []listed) []string {
 	return out
 }
 
-// TestTheRootPackageImportsOnlyWhatItMay is the executable form of the
-// packaging decision's dependency statement, over the tree as it stands.
+// TestTheRootPackageImportsOnlyWhatItMay holds that the root package's non-test
+// imports are the standard library and the four value-type packages.
 func TestTheRootPackageImportsOnlyWhatItMay(t *testing.T) {
 	root := moduleRoot(t)
 	pkgs := listModule(t, root, nil)
@@ -613,9 +545,8 @@ func TestTheRootPackageImportsOnlyWhatItMay(t *testing.T) {
 	}
 }
 
-// TestTheRootPackageClosureHoldsNoThirdPartyPackage reads the closure
-// transitively: the direct-import rule says what the root writes, this says
-// what it ends up pulling in.
+// TestTheRootPackageClosureHoldsNoThirdPartyPackage holds that the root
+// package's closure holds no third-party package.
 func TestTheRootPackageClosureHoldsNoThirdPartyPackage(t *testing.T) {
 	pkgs := listModule(t, moduleRoot(t), nil)
 
@@ -640,9 +571,8 @@ func mapKeys[V any](m map[string]V) []string {
 	return out
 }
 
-// TestTheModuleRootIsFoundFromAnyDirectory holds that the checks do not
-// depend on the directory they run from: a test binary started elsewhere
-// still lists this module.
+// TestTheModuleRootIsFoundFromAnyDirectory holds that the module root is found
+// from any working directory.
 func TestTheModuleRootIsFoundFromAnyDirectory(t *testing.T) {
 	if _, file, _, ok := runtime.Caller(0); !ok || !filepath.IsAbs(file) {
 		t.Skip("built with -trimpath: the source file's directory is not recorded")
@@ -658,9 +588,8 @@ func TestTheModuleRootIsFoundFromAnyDirectory(t *testing.T) {
 	}
 }
 
-// TestTheModuleRootIsFoundFromTrimmedSourcePaths holds that the checks run
-// under -trimpath, which records the source file as a module-qualified path
-// that is no directory: the module is then the one in the working directory.
+// TestTheModuleRootIsFoundFromTrimmedSourcePaths holds that a source path
+// trimmed to a module-qualified name still finds the module.
 func TestTheModuleRootIsFoundFromTrimmedSourcePaths(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -694,41 +623,8 @@ func writeTree(t *testing.T, files map[string]string) string {
 	return dir
 }
 
-// violatingTree writes a module shaped like pkg, in which each rule is broken
-// once, and returns its directory. The rules above are only worth anything if
-// they fail on such a tree: a check that passes on the real tree and on this
-// one holds nothing.
-//
-// Each file is a package whose non-test code breaks one rule:
-//
-//   - the root imports a third-party library and, through model, a package that
-//     is not the standard library or one of the four;
-//   - model imports identity, which the layering forbids;
-//   - step imports a third-party library;
-//   - a production package imports authntest, and another does so from a test
-//     file alone, which is allowed; one imports mounttest, another does so from
-//     a test file alone, and mounttest itself imports authntest, which is
-//     allowed; a production package imports mfatest, and another does so from a
-//     test file alone;
-//   - another factor package imports the multi-factor module's internal
-//     factorstore, and one imports totpseed, beside the module, the kind and
-//     mfatest that may; the module imports totpseed and the TOTP factor
-//     imports factorstore, which are each the other store and so keep the two
-//     allowed lists from being one list;
-//   - a backend imports the identity package, as model does too, while the
-//     gateway and the login engine do so legitimately and a session package
-//     does so from a test file alone;
-//   - packages of the tree import the tenant module: a subpackage directly, one
-//     through a file under a custom tag, the root package from a platform
-//     file, and one that only reaches it through a package of the module, while
-//     the tenant module imports the root package, which is the direction the
-//     design fixes and is no violation;
-//   - files that the host's own GOOS and no build tag compile break the same
-//     rules where go list does not read them: a root file for another
-//     platform, an identity file under a custom tag, a package reached from the
-//     root whose own tagged file imports a third-party library, and two
-//     packages that import authntest from a platform file, a tagged file, or
-//     tagged files alone.
+// violatingTree writes a module shaped like pkg in which each dependency rule
+// is broken once, and returns its directory.
 func violatingTree(t *testing.T) string {
 	t.Helper()
 	return writeTree(t, map[string]string{
@@ -903,9 +799,8 @@ func TestTheDependencyRulesFailOnAViolatingTree(t *testing.T) {
 	})
 }
 
-// TestTheDependencyRulesPassOnACleanTree is the control for the case above:
-// the same shape with no violation reports none, so the failures above are the
-// rules finding something and not their being unable to pass.
+// TestTheDependencyRulesPassOnACleanTree is the control: a clean tree reports
+// no violation.
 func TestTheDependencyRulesPassOnACleanTree(t *testing.T) {
 	dir := writeTree(t, map[string]string{
 		"go.mod":                              "module " + moduleImportPath + "\n\ngo 1.26\n",
@@ -953,10 +848,8 @@ func anyContains(list []string, fragment string) bool {
 	return slices.ContainsFunc(list, func(s string) bool { return strings.Contains(s, fragment) })
 }
 
-// TestTheListOfWritersIsHeldToTheCodeBehindIt holds the other direction of the
-// writer rule on small trees: an entry of the list whose package exists and does
-// not import the identity package is reported, an entry whose package does not
-// exist yet is not, and one that imports it from a test file alone is.
+// TestTheListOfWritersIsHeldToTheCodeBehindIt holds the writer rule's other
+// direction: an existing listed package that does not write is reported.
 func TestTheListOfWritersIsHeldToTheCodeBehindIt(t *testing.T) {
 	writes := "package p\n\nimport _ \"" + identityPath + "\"\n"
 	tree := func(files map[string]string) []listed {
@@ -1019,12 +912,9 @@ func TestTheListOfWritersIsHeldToTheCodeBehindIt(t *testing.T) {
 	})
 }
 
-// The token bridge is the module's one place the JOSE library is named, and the
-// library's floor is a requirement the pkg module states for itself. These two
-// hold the design's statements about it: the bridge is the only non-test file
-// that imports the library, no non-test file names the claims-without-
-// verification escape hatch, and pkg/go.mod requires at least the version the
-// design fixes.
+// The token bridge is the only non-test importer of the JOSE library, no
+// non-test file names the claims-without-verification escape hatch, and
+// pkg/go.mod requires at least the version fixed here.
 const (
 	goJosePath       = "github.com/go-jose/go-jose/v4"
 	goJoseFloor      = "v4.1.5"
@@ -1032,14 +922,9 @@ const (
 	unsafeClaims     = "UnsafeClaimsWithoutVerification"
 )
 
-// The module binds several third-party libraries, each to one leaf package: the
-// TOTP library to the TOTP factor, the WebAuthn library to the passkey factor and
-// login method, and the SAML and XML-signature libraries to the SAML method. A
-// host that imports none of the leaves carries none of the libraries, so each is
-// confined to its leaf. Their versions, and those of the other libraries the
-// selection table fixes to an exact version, are pinned in pinnedLibraries
-// below. The SMS carrier SDKs are the sending capability's own, guarded in
-// pkg/sms.
+// Each third-party library is bound to one leaf package, so a host that imports
+// none of the leaves carries none of the libraries. Their versions are pinned in
+// pinnedLibraries below.
 const (
 	otpPath         = "github.com/pquerna/otp"
 	otpVersion      = "v1.5.0"
@@ -1075,11 +960,9 @@ type bridgeLibrary struct {
 	leaf string
 }
 
-// bridgeLibraries are the libraries this file holds to a leaf package by the
-// package name rather than by a file list, so the leaf's own files may grow
-// without the guard changing. The JOSE bridge is not here: its importer is a
-// single file, and TestTheTokenBridgeIsTheOnlyGoJoseUserAndTheFloorIsHeld holds
-// it to that file and to the claims-without-verification escape hatch besides.
+// bridgeLibraries are the libraries held to a leaf package by the package name,
+// so the leaf's own files may grow without the guard changing. The JOSE bridge
+// is held separately by file, in TestTheTokenBridgeIsTheOnlyGoJoseUserAndTheFloorIsHeld.
 var bridgeLibraries = []bridgeLibrary{
 	{path: otpPath, leaf: totpPackagePath},
 	{path: webauthnPath, leaf: webauthnPackagePath},
@@ -1087,26 +970,16 @@ var bridgeLibraries = []bridgeLibrary{
 	{path: goxmldsigPath, leaf: samlPackagePath},
 }
 
-// pinnedLibrary is one third-party library the design's selection table fixes
-// to an exact version, which pkg/go.mod must state and no other.
+// pinnedLibrary is one third-party library fixed to an exact version, which
+// pkg/go.mod must state and no other.
 type pinnedLibrary struct {
 	path    string
 	version string
 }
 
-// pinnedLibraries are the libraries the module requires whose version the
-// design's selection table fixes exactly rather than as a floor. The design
-// states floors for the JOSE, goxmldsig and x/oauth2 bridges, each held by its
-// own test; every other library it names is fixed to the table version, so
-// pkg/go.mod must state exactly that version for each: an upgrade goes through a
-// dedicated change, not go get -u, and a transitive requirement could otherwise
-// move one.
-//
-// The TOTP, WebAuthn, SAML and goxmldsig libraries are also the
-// bridgeLibraries above, which hold each to its leaf; go-oidc is also a
-// multiLeafLibrary, held to its leaves. The session store, the Argon2id encoder
-// and the uuid, x/crypto and x/text libraries have no single leaf, so they are
-// pinned here alone.
+// pinnedLibraries are the libraries the module requires at an exact version
+// rather than at a floor: pkg/go.mod must state exactly that version for each,
+// and a missing requirement is reported too.
 var pinnedLibraries = []pinnedLibrary{
 	{path: goOIDCPath, version: goOIDCVersion},
 	{path: gosaml2Path, version: gosaml2Version},
@@ -1119,13 +992,9 @@ var pinnedLibraries = []pinnedLibrary{
 	{path: xTextPath, version: xTextVersion},
 }
 
-// The OIDC and OAuth 2.0 bridges bind their library to more than one leaf: the
-// google login method and, once the enterprise protocol modules are in, the
-// authn.sso.oidc method both import go-oidc; the google and github login methods
-// and the enterprise OIDC method all import x/oauth2. Each library is confined
-// to the set of leaves that bridge it; go-oidc's version is pinned to the table
-// version in pinnedLibraries below, and x/oauth2 is held at or above the floor
-// the design fixes, in floorLibraries.
+// The OIDC and OAuth 2.0 bridges bind their library to more than one leaf:
+// go-oidc's version is pinned in pinnedLibraries and x/oauth2 is held at or
+// above a floor in floorLibraries.
 const (
 	goOIDCPath         = "github.com/coreos/go-oidc/v3"
 	goOIDCVersion      = "v3.21.0"
@@ -1136,45 +1005,36 @@ const (
 	ssoOIDCPackagePath = rootPath + "/sso/oidc"
 )
 
-// multiLeafBridge is one third-party library the module binds to a set of leaf
-// packages: each of them, and its subpackages, may import the library and no
-// other package of the module may. It is the multi-leaf form of bridgeLibrary,
-// for a library more than one leaf bridges.
+// multiLeafBridge is one third-party library bound to a set of leaf packages:
+// each of them, and its subpackages, may import it and no other package may.
 type multiLeafBridge struct {
 	path   string
 	leaves []string
 }
 
 // multiLeafLibraries are the libraries more than one package bridges, each held
-// to the leaves that bridge it. A leaf that is not in the tree yet is listed all
-// the same: the entry is held to the code from the day the package appears, and
-// an import from a package that is not one of the leaves is reported either way.
+// to the leaves that bridge it.
 var multiLeafLibraries = []multiLeafBridge{
 	{path: goOIDCPath, leaves: []string{googlePackagePath, ssoOIDCPackagePath}},
 	{path: xOAuth2Path, leaves: []string{googlePackagePath, githubPackagePath, ssoOIDCPackagePath}},
 }
 
-// floorLibrary is one third-party library the design holds at or above a version
-// floor rather than pinning to an exact table version, because it carries a
-// security advisory below that floor.
+// floorLibrary is one third-party library held at or above a version floor
+// because it carries a security advisory below that floor.
 type floorLibrary struct {
 	path  string
 	floor string
 }
 
-// floorLibraries are the libraries the design holds at or above a floor rather
-// than pinning: x/oauth2 and goxmldsig here. go-jose has its own test, which
-// holds the bridge file and the claims-without-verification escape hatch besides.
+// floorLibraries are the libraries held at or above a floor rather than pinned:
+// x/oauth2 and goxmldsig here. go-jose has its own test.
 var floorLibraries = []floorLibrary{
 	{path: xOAuth2Path, floor: xOAuth2Floor},
 	{path: goxmldsigPath, floor: goxmldsigFloor},
 }
 
 // floorViolation reports, if any, how pkg/go.mod fails to hold lib at or above
-// its floor. A version below the floor is reported, and so is a missing
-// requirement, because a transitive requirement alone could resolve below the
-// floor. A version at or above the floor is not reported: the floor is a lower
-// bound, so an upgrade beyond it is what the design asks for.
+// its floor: a version below it, and a missing requirement, are reported.
 func floorViolation(gomod string, lib floorLibrary) string {
 	version, ok := requiredVersion(gomod, lib.path)
 	if !ok {
@@ -1186,12 +1046,9 @@ func floorViolation(gomod string, lib floorLibrary) string {
 	return ""
 }
 
-// libraryConfinementViolations reports the packages of the module that import
-// the library at libPath in a non-test file but are not any of the leaf packages
-// that bind it, nor a package under one of them. An import anywhere else would
-// put the library into that package's closure, and so into a host that never
-// asked for it. A test file is not what puts a library into a closure, so the
-// rule reads the non-test imports that go list and readSourceImports collect.
+// libraryConfinementViolations reports the packages that import libPath in a
+// non-test file but are not one of the leaf packages that bind it, nor under
+// one of them.
 func libraryConfinementViolations(pkgs []listed, libPath string, leaves ...string) []string {
 	var out []string
 	for _, p := range pkgs {
@@ -1215,10 +1072,9 @@ func underAnyLeaf(path string, leaves []string) bool {
 	return false
 }
 
-// libraryImporters lists every non-test file of the module that imports the
-// library at libPath or one of its subpackages, as slash-separated paths
-// relative to the module root, sorted. The subpackages count as the library: a
-// bridge that imports github.com/example/lib/sub still binds the library whole.
+// libraryImporters lists every non-test file of the module that imports libPath
+// or one of its subpackages, as slash-separated paths relative to the module
+// root, sorted.
 func libraryImporters(t *testing.T, root string, pkgs []listed, libPath string) []string {
 	t.Helper()
 	var out []string
@@ -1245,9 +1101,7 @@ func libraryImporters(t *testing.T, root string, pkgs []listed, libPath string) 
 }
 
 // namesUnsafeClaims reports whether a non-test file names the library's
-// claims-without-verification escape hatch. It reads the parsed identifiers, so
-// a mention in a comment is not one, and a file that does not parse is left to
-// the build to report.
+// claims-without-verification escape hatch; a mention in a comment is not one.
 func namesUnsafeClaims(path string) bool {
 	f, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
 	if err != nil {
@@ -1349,11 +1203,8 @@ func TestTheTokenBridgeIsTheOnlyGoJoseUserAndTheFloorIsHeld(t *testing.T) {
 }
 
 // pinViolation reports, if any, how pkg/go.mod fails to state the exact version
-// the design pins for lib. A version other than the pinned one, above or below,
-// is a violation: the design fixes these libraries to the table version and
-// routes an upgrade through a dedicated change, so a requirement that floats is
-// not what it asks for. A missing requirement is reported too, because a
-// transitive requirement alone could resolve to anything.
+// pinned for lib: another version, above or below, and a missing requirement
+// are both reported.
 func pinViolation(gomod string, lib pinnedLibrary) string {
 	version, ok := requiredVersion(gomod, lib.path)
 	if !ok {
@@ -1365,10 +1216,8 @@ func pinViolation(gomod string, lib pinnedLibrary) string {
 	return ""
 }
 
-// TestEachBridgeLibraryIsConfinedToItsLeaf is the executable form of the
-// design's per-library confinement statement: the pquerna/otp, go-webauthn,
-// gosaml2 and goxmldsig bindings appear in the non-test files of their own
-// leaf package and nowhere else.
+// TestEachBridgeLibraryIsConfinedToItsLeaf holds each bridge library to the
+// non-test imports of its own leaf package.
 func TestEachBridgeLibraryIsConfinedToItsLeaf(t *testing.T) {
 	root := moduleRoot(t)
 	pkgs := listModule(t, root, nil)
@@ -1391,11 +1240,8 @@ func TestEachBridgeLibraryIsConfinedToItsLeaf(t *testing.T) {
 	}
 }
 
-// TestEachPinnedLibraryStatesTheTableVersion is the other half of the design's
-// per-library statement, over every library the module requires and the
-// selection table fixes to an exact version: pkg/go.mod states that version and
-// no other, so a requirement that floats above or below it, or is missing, is
-// reported.
+// TestEachPinnedLibraryStatesTheTableVersion holds that pkg/go.mod states the
+// exact pinned version of every pinned library.
 func TestEachPinnedLibraryStatesTheTableVersion(t *testing.T) {
 	root := moduleRoot(t)
 	gomod, err := os.ReadFile(filepath.Join(root, "go.mod"))
@@ -1412,10 +1258,8 @@ func TestEachPinnedLibraryStatesTheTableVersion(t *testing.T) {
 	}
 }
 
-// TestTheVersionPinFailsOnADriftedRequirement holds the pin above to be a pin
-// and not a floor: a go.mod that states a version above the table's, or below
-// it, or does not name the library at all, is reported, so the check cannot
-// pass on the real tree by only ever accepting a lower bound.
+// TestTheVersionPinFailsOnADriftedRequirement holds that a version above the
+// pinned one, below it, or a missing requirement is reported.
 func TestTheVersionPinFailsOnADriftedRequirement(t *testing.T) {
 	lib := pinnedLibrary{path: otpPath, version: otpVersion}
 	line := func(version string) string { return "\t" + otpPath + " " + version + "\n" }
@@ -1429,9 +1273,8 @@ func TestTheVersionPinFailsOnADriftedRequirement(t *testing.T) {
 	}
 }
 
-// TestTheBridgeConfinementFailsOnAViolatingTree runs the confinement rule
-// over a tree that imports a bridge library from outside its leaf, so the
-// rule can fail and is not passing on the real tree by accident.
+// TestTheBridgeConfinementFailsOnAViolatingTree holds that the confinement rule
+// reports an import from outside the leaf.
 func TestTheBridgeConfinementFailsOnAViolatingTree(t *testing.T) {
 	tree := writeTree(t, map[string]string{
 		"go.mod":                        "module " + moduleImportPath + "\n\ngo 1.26\n",
@@ -1454,9 +1297,8 @@ func TestTheBridgeConfinementFailsOnAViolatingTree(t *testing.T) {
 	}
 }
 
-// TestTheGuardImportRuleFailsOnAViolatingTree runs the guard rule over a tree
-// whose guard package imports a factor leaf, so the rule can fail and is not
-// passing on the real tree by accident.
+// TestTheGuardImportRuleFailsOnAViolatingTree holds that the guard rule reports
+// a factor leaf import.
 func TestTheGuardImportRuleFailsOnAViolatingTree(t *testing.T) {
 	tree := writeTree(t, map[string]string{
 		"go.mod":               "module " + moduleImportPath + "\n\ngo 1.26\n",
@@ -1472,9 +1314,8 @@ func TestTheGuardImportRuleFailsOnAViolatingTree(t *testing.T) {
 	}
 }
 
-// TestTheMultiLeafBridgesAreConfinedToTheirLeaves holds the libraries more
-// than one leaf bridges, each to the set of leaves that bridge it: a non-test
-// import from a package outside the set is reported.
+// TestTheMultiLeafBridgesAreConfinedToTheirLeaves holds each multi-leaf library
+// to the leaves that bridge it.
 func TestTheMultiLeafBridgesAreConfinedToTheirLeaves(t *testing.T) {
 	root := moduleRoot(t)
 	pkgs := listModule(t, root, nil)
@@ -1512,10 +1353,8 @@ func TestTheMultiLeafBridgesAreConfinedToTheirLeaves(t *testing.T) {
 	}
 }
 
-// TestTheFloorFailsBelowIt holds the floor above to be a floor and not a pin:
-// a go.mod that states a version below the floor, or does not name the
-// library at all, is reported; a requirement exactly at the floor, and one
-// above it, are not.
+// TestTheFloorFailsBelowIt holds that a version below the floor, or a missing
+// requirement, is reported.
 func TestTheFloorFailsBelowIt(t *testing.T) {
 	lib := floorLibrary{path: xOAuth2Path, floor: xOAuth2Floor}
 	line := func(version string) string { return "\t" + xOAuth2Path + " " + version + "\n" }
@@ -1531,10 +1370,8 @@ func TestTheFloorFailsBelowIt(t *testing.T) {
 	}
 }
 
-// TestTheMultiLeafConfinementFailsOnAViolatingTree runs the confinement rule
-// over a tree in which a library more than one leaf bridges is imported from
-// each of its allowed leaves and from a package that is not one of them, so
-// the rule can fail and is not passing on the real tree by accident.
+// TestTheMultiLeafConfinementFailsOnAViolatingTree holds that an import from
+// outside the leaves is reported.
 func TestTheMultiLeafConfinementFailsOnAViolatingTree(t *testing.T) {
 	tree := writeTree(t, map[string]string{
 		"go.mod":                  "module " + moduleImportPath + "\n\ngo 1.26\n",
@@ -1554,9 +1391,8 @@ func TestTheMultiLeafConfinementFailsOnAViolatingTree(t *testing.T) {
 	}
 }
 
-// TestTheRootPackageDoesNotImportTheSendingCapability states outright what
-// the import budget already holds: the root package must not reach the
-// top-level sending capability.
+// TestTheRootPackageDoesNotImportTheSendingCapability holds that the root
+// package does not reach the sending capability.
 func TestTheRootPackageDoesNotImportTheSendingCapability(t *testing.T) {
 	const smsCapabilityPath = moduleImportPath + "/sms"
 	pkgs := listModule(t, moduleRoot(t), nil)

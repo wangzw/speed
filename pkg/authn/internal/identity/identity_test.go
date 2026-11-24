@@ -54,8 +54,6 @@ func TestKeyIsTheActor(t *testing.T) {
 			if got := c.id.Impersonating(); got != c.imper {
 				t.Errorf("Impersonating() = %v, want %v", got, c.imper)
 			}
-			// The one assertion the design names: the accountability key is
-			// the actor, whatever the account is.
 			if got := c.id.Key(); got != string(c.id.Actor()) {
 				t.Errorf("Key() = %q, want Actor() = %q", got, c.id.Actor())
 			}
@@ -168,8 +166,6 @@ func TestReadersReturnCopies(t *testing.T) {
 
 // TestEmptyReadersAreSafeToWrite checks that empty readers are safe to write.
 func TestEmptyReadersAreSafeToWrite(t *testing.T) {
-	// A caller may write into what Attributes returns even when there are
-	// none: a nil map would panic there.
 	a := (identity.Identity{}).Attributes()
 	if a == nil {
 		t.Fatal("Attributes() on an identity with none is nil")
@@ -245,10 +241,6 @@ func TestSatisfies(t *testing.T) {
 		{"age exactly max age", at(model.AssuranceMulti, t0.Add(-10*time.Minute), false), model.Requirement{Assurance: model.AssuranceMulti, MaxAge: 10 * time.Minute}, t0, true},
 		{"age one nanosecond over", at(model.AssuranceMulti, t0.Add(-10*time.Minute-time.Nanosecond), false), model.Requirement{Assurance: model.AssuranceMulti, MaxAge: 10 * time.Minute}, t0, false},
 		{"age one nanosecond under", at(model.AssuranceMulti, t0.Add(-10*time.Minute+time.Nanosecond), false), model.Requirement{Assurance: model.AssuranceMulti, MaxAge: 10 * time.Minute}, t0, true},
-		// An authentication time ahead of now is a negative age, which no MaxAge
-		// is below: two hosts whose clocks differ a little must not make a login
-		// that has just happened read as stale. How far ahead a time may be is
-		// the gateway's exit check, 120 seconds, and is not this method's to say.
 		{"auth time after now is not stale", at(model.AssuranceMulti, t0.Add(time.Hour), false), model.Requirement{Assurance: model.AssuranceMulti, MaxAge: time.Minute}, t0, true},
 		{"zero auth time is stale under a max age", at(model.AssuranceMulti, time.Time{}, false), model.Requirement{Assurance: model.AssuranceMulti, MaxAge: 1000 * hour}, t0, false},
 		{"negative max age is met by nobody", at(model.AssuranceMulti, t0, false), model.Requirement{Assurance: model.AssuranceSingle, MaxAge: -time.Second}, t0, false},
@@ -324,9 +316,8 @@ func TestWithAccessAndAccessFrom(t *testing.T) {
 	}
 }
 
-// TestNewSettlesNothing holds that New stores the assurance as it was handed:
-// reading an unstated assurance as a single factor is the gateway's step, made
-// before the call, and an identity built without it carries AssuranceNone.
+// TestNewSettlesNothing holds that New stores the assurance as handed, so an
+// unstated assurance stays AssuranceNone.
 func TestNewSettlesNothing(t *testing.T) {
 	p := principal()
 	p.Assurance = model.AssuranceNone

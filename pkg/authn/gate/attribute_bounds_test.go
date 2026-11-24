@@ -9,13 +9,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/model"
 )
 
-// The two writers of an identity's attribute set are held to bounds of their own,
-// declared once in the model package, so that what they write together stays
-// inside what the exit check stamps. These cases read the model's constants and
-// the exit check's against each other, and put the largest set each writer may
-// produce, merged, to the exit check and to authntest, which holds a second copy
-// of the totals.
-
 func worstAccountAttributes(t *testing.T) map[string]string {
 	t.Helper()
 	m := make(map[string]string, model.AccountAttributesMax)
@@ -49,9 +42,8 @@ func worstIDPAttributes(t *testing.T) map[string]string {
 	return m
 }
 
-// TestTheModelsTotalsAreTheExitChecksOwn holds the three numbers the model
-// repeats from this package against the constants the exit check enforces, so
-// that a change to one is a change to the other.
+// TestTheModelsTotalsAreTheExitChecksOwn holds the model's repeated totals equal
+// to the constants the exit check enforces.
 func TestTheModelsTotalsAreTheExitChecksOwn(t *testing.T) {
 	if model.IdentityAttributesMax != maxAttributes {
 		t.Errorf("model.IdentityAttributesMax = %d, the exit check's maxAttributes = %d", model.IdentityAttributesMax, maxAttributes)
@@ -67,10 +59,8 @@ func TestTheModelsTotalsAreTheExitChecksOwn(t *testing.T) {
 	}
 }
 
-// TestTheSubBoundsAddUpToLessThanTheStampedTotals is the arithmetic of the
-// design: 24 and 8 entries come to the 32 the exit check allows, and the worst
-// size, 2 KiB of account attributes and eight entries of a 32-byte key and a
-// 128-byte value, comes to 3328 bytes under its 4 KiB.
+// TestTheSubBoundsAddUpToLessThanTheStampedTotals holds the two writers'
+// sub-bounds to totals the exit check admits.
 func TestTheSubBoundsAddUpToLessThanTheStampedTotals(t *testing.T) {
 	entries := model.AccountAttributesMax + model.SessionIDPAttributesMax
 	if entries != 32 || entries > maxAttributes {
@@ -85,10 +75,8 @@ func TestTheSubBoundsAddUpToLessThanTheStampedTotals(t *testing.T) {
 	}
 }
 
-// TestTheLargestSetOfBothWritersPassesTheExitCheckAndAuthntest merges the
-// worst account set with the worst idp.* set and asks the exit check and
-// authntest whether each admits it, which is the sentence the sub-bounds
-// exist for.
+// TestTheLargestSetOfBothWritersPassesTheExitCheckAndAuthntest admits the merged
+// worst set to the exit check and authntest.
 func TestTheLargestSetOfBothWritersPassesTheExitCheckAndAuthntest(t *testing.T) {
 	d := exitTable(t)
 	capable := backendNamed(t, d, "capable")
@@ -140,11 +128,8 @@ func TestTheLargestSetOfBothWritersPassesTheExitCheckAndAuthntest(t *testing.T) 
 	check("one byte past the byte total", bytesOf(model.IdentityAttributeBytesMax+1), false)
 }
 
-// TestEachWritersLargestKeyAndValueAreKeysAndValuesTheExitCheckKnows holds that
-// what each writer may put in an entry is spelt as the exit check spells a key
-// and bounds a value: the longest account key and the longest idp.* key are keys
-// to it, one byte more than the exit check's own bound is not, and a value at
-// each writer's bound is admitted.
+// TestEachWritersLargestKeyAndValueAreKeysAndValuesTheExitCheckKnows admits each
+// writer's largest key and value, and refuses one byte more.
 func TestEachWritersLargestKeyAndValueAreKeysAndValuesTheExitCheckKnows(t *testing.T) {
 	d := exitTable(t)
 	capable := backendNamed(t, d, "capable")

@@ -8,10 +8,8 @@ import (
 	"time"
 )
 
-// createSessionTable makes the session table the sweep's condition joins to. The
-// real table is the session module's, with more columns; the sweep reads only
-// the identifier, the revocation and the absolute term, so those are what the
-// fixture carries.
+// createSessionTable makes the session table the sweep's condition joins to, with
+// the three columns the sweep reads.
 func (r *rig) createSessionTable() {
 	r.t.Helper()
 	err := r.p.handle.Exec("CREATE TABLE IF NOT EXISTS " + sessionTable +
@@ -55,10 +53,8 @@ func past() time.Time   { return epoch.Add(-time.Hour) }
 
 func ptr(t time.Time) *time.Time { return &t }
 
-// TestTheSweepRemovesEachStaleConditionAndKeepsALiveRow holds the closed set of
-// delete conditions: a row whose session is gone, revoked, or past its absolute
-// term, or whose own idle window has passed, goes; a row on a live session
-// within its idle window stays.
+// TestTheSweepRemovesEachStaleConditionAndKeepsALiveRow deletes a row whose
+// session is gone, revoked or past its term, or whose idle window has passed.
 func TestTheSweepRemovesEachStaleConditionAndKeepsALiveRow(t *testing.T) {
 	r := newRig(t)
 	r.createSessionTable()
@@ -92,8 +88,8 @@ func TestTheSweepRemovesEachStaleConditionAndKeepsALiveRow(t *testing.T) {
 	}
 }
 
-// TestTheSweepWorksOffMoreThanOneBatch holds the batch bound: a backlog larger
-// than one batch is deleted across several statements in a single run.
+// TestTheSweepWorksOffMoreThanOneBatch deletes a backlog larger than one batch in
+// a single run.
 func TestTheSweepWorksOffMoreThanOneBatch(t *testing.T) {
 	r := newRig(t)
 	r.createSessionTable()
@@ -117,9 +113,8 @@ func TestTheSweepWorksOffMoreThanOneBatch(t *testing.T) {
 	}
 }
 
-// TestTwoReplicasSweepingOnceDeleteNothingTwice holds that the conditional
-// delete needs no coordination: two sweeps of the same table, run at once,
-// delete a row once between them and neither errors.
+// TestTwoReplicasSweepingOnceDeleteNothingTwice deletes each row once between two
+// concurrent sweeps, neither erroring.
 func TestTwoReplicasSweepingOnceDeleteNothingTwice(t *testing.T) {
 	r := newRig(t)
 	r.createSessionTable()
@@ -155,9 +150,8 @@ func TestTwoReplicasSweepingOnceDeleteNothingTwice(t *testing.T) {
 	}
 }
 
-// TestStartSweepIsBoundedAndStopEndsIt holds the sweep's shape: one goroutine
-// per product, a second start is a no-op, and Stop ends it without waiting
-// beyond the module's own bound.
+// TestStartSweepIsBoundedAndStopEndsIt starts one goroutine per product, treats a
+// second start as a no-op and ends on Stop.
 func TestStartSweepIsBoundedAndStopEndsIt(t *testing.T) {
 	if sweepInterval != time.Hour {
 		t.Errorf("sweepInterval = %s, want 1h", sweepInterval)
@@ -172,13 +166,11 @@ func TestStartSweepIsBoundedAndStopEndsIt(t *testing.T) {
 	r := newRig(t)
 	r.createSessionTable()
 	r.p.startSweep(context.Background())
-	// A second start of the same product must not launch a second goroutine.
 	r.p.startSweep(context.Background())
 
 	done := make(chan struct{})
 	go func() {
 		r.p.stopSweep()
-		// After a stop, a further stop is a no-op and must not block.
 		r.p.stopSweep()
 		close(done)
 	}()
@@ -201,9 +193,8 @@ func waitUntil(t *testing.T, cond func() bool) {
 	t.Fatal("the condition was not met within the bound")
 }
 
-// TestTheSweepGoroutineRunsAndASecondStartAddsNone holds the design property
-// the map-entry check cannot observe: one sweep goroutine per product,
-// actually running, and a second start launching none.
+// TestTheSweepGoroutineRunsAndASecondStartAddsNone shows the one sweep goroutine
+// running and a second start adding none.
 func TestTheSweepGoroutineRunsAndASecondStartAddsNone(t *testing.T) {
 	r := newRig(t)
 	r.p.startSweep(context.Background())
@@ -216,9 +207,8 @@ func TestTheSweepGoroutineRunsAndASecondStartAddsNone(t *testing.T) {
 	}
 }
 
-// TestTheSweepNeverDeletesAProtectedRow holds the safety direction: rows on a
-// live session whose idle window is open are never read by the delete, however
-// many stale rows sit beside them.
+// TestTheSweepNeverDeletesAProtectedRow keeps a row on a live session within its
+// idle window however many stale rows sit beside it.
 func TestTheSweepNeverDeletesAProtectedRow(t *testing.T) {
 	r := newRig(t)
 	r.createSessionTable()

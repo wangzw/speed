@@ -20,16 +20,15 @@ const (
 	verifyKeyFilesItem = "verify-key-files"
 )
 
-// gateNamespace and gatePublicURLItem are the gateway's, read here because the
-// issuer defaults to the address the deployment is reached at.
+// gateNamespace and gatePublicURLItem are the gateway's, read for the issuer
+// default.
 const (
 	gateNamespace     = "authn.gate"
 	gatePublicURLItem = "mount.public-url"
 )
 
 // clientIDDefault is the client identifier a token issued for a session carries
-// when the configuration names none. It is the value RFC 9068 requires a token
-// to carry and a deployment rarely cares about, so it has a fixed default.
+// when the configuration names none.
 const clientIDDefault = "speed"
 
 type moduleConfig struct {
@@ -69,9 +68,7 @@ type resolved struct {
 }
 
 // resolve turns decoded configuration into what the module runs on, or says
-// which item to correct. The issuer and the audience are filled from the public
-// address when they are not given, so an assembly that names neither still
-// issues tokens with an "iss" and an "aud" that a verifier can compare.
+// which item to correct; the issuer and audience default from the public address.
 func (c moduleConfig) resolve(gm gateMount) (resolved, error) {
 	r := resolved{
 		clientID:    strings.TrimSpace(c.ClientID),

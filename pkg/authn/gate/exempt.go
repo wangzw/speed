@@ -12,25 +12,16 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// phase is the three states the route registration surface moves through. The
-// window in the middle opens in Migrate and shuts in Start: a stage advances one
-// module at a time, so it contains the Init stage whole and reaches into the
-// rest of the Migrate stage and the Start callbacks ordered ahead of this
-// module.
+// phase is the three states the route registration surface moves through; the
+// middle one is the window Migrate opens and Start shuts.
 type phase int
 
 const (
-	// phaseShut is before Migrate. A write here comes from a module
-	// constructing, which is too early for the registry to have every
-	// instance.
+	// phaseShut is before Migrate, when the registry has no instance yet.
 	phaseShut phase = iota
-	// phaseOpen is the window Migrate opens and Start shuts: the Init stage
-	// whole, plus the rest of the Migrate stage and the Start callbacks
-	// ordered ahead of this module.
+	// phaseOpen is the window Migrate opens and Start shuts.
 	phaseOpen
-	// phaseSealed is Start onwards. The tables are frozen and requests read
-	// them without a lock, so a later write would change what is guarded while
-	// traffic is being served.
+	// phaseSealed is Start onwards, when the tables are frozen.
 	phaseSealed
 )
 
@@ -39,7 +30,6 @@ type route struct {
 	path   string
 }
 
-// String renders the pair the way a diagnostic names a route.
 func (r route) String() string { return r.method + " " + r.path }
 
 type kind uint8
@@ -63,10 +53,8 @@ func (k kind) String() string {
 	return "unknown"
 }
 
-// registration is one call, kept as it was written. Nothing is judged at
-// registration time: the registrants run in dependency order through the open
-// window, and whether the set is well formed can only be asked once the window
-// has shut.
+// registration is one call, kept as it was written; whether the set is well
+// formed is judged once the window has shut.
 type registration struct {
 	kind     kind
 	endpoint string
@@ -79,32 +67,21 @@ type access struct {
 	impersonable bool
 }
 
-// Exempt registers a route that this gateway lets through without a credential.
-//
-// It returns nothing, for the reason the entry point's own registration surface
-// does: the only way a registration can fail is a programming error at the call
-// site, and handing back an error a registrant is free to drop would leave a
-// route believed exempt and in fact guarded — or, worse, the other way round.
-// What can only be judged once the window has shut is judged in Start and ends
-// the startup there.
-//
-// A write outside the registration window panics. The window opens in this
-// module's Migrate callback and shuts in its Start callback, so it contains the
-// whole Init stage. It is not a configuration mistake but a call from the wrong
-// stage, and the two ends of the window are stages of the drive, not anything a
-// caller can retry.
+// Exempt registers a route that the gateway lets through without a credential.
+// The call is accepted in the window Migrate opens and Start shuts and panics
+// outside it; what can only be judged then is judged in Start.
 func (g *gateway) Exempt(endpoint, method, path string) {
 	g.register(kindExempt, endpoint, method, path)
 }
 
-// Optional registers a route that accepts a request with no credential. See
-// Exempt for when the call may be made.
+// Optional registers a route that accepts a request with no credential; the
+// call window is Exempt's.
 func (g *gateway) Optional(endpoint, method, path string) {
 	g.register(kindOptional, endpoint, method, path)
 }
 
-// Impersonable registers a route that lets an impersonating identity through.
-// See Exempt for when the call may be made.
+// Impersonable registers a route that lets an impersonating identity through;
+// the call window is Exempt's.
 func (g *gateway) Impersonable(endpoint, method, path string) {
 	g.register(kindImpersonable, endpoint, method, path)
 }
@@ -143,16 +120,8 @@ func (g *gateway) open() {
 }
 
 // seal shuts the gate, validates what was registered and freezes one table per
-// guarded endpoint. It runs in Start.
-//
-// The gate is shut before anything is judged, so that a registration racing the
-// validation lands on the closed side rather than in a table already being
-// read.
-//
-// What is validated is the endpoint each registration names and the access
-// levels one route is given. The route is not: this module cannot read the entry
-// point's routing table, so it cannot tell a route that was registered from one
-// that was not, and a pair no route carries is a pair that never matches.
+// guarded endpoint, in Start. It validates the named endpoint and each route's
+// access levels, not the route, which this module cannot read.
 func (g *gateway) seal(router speedhttp.Router) error {
 	g.mu.Lock()
 	g.phase = phaseSealed
@@ -179,9 +148,6 @@ func (g *gateway) seal(router speedhttp.Router) error {
 				authn.ErrExemptionUnguarded, r.kind, r.route, r.endpoint,
 				describeGuarded(g.guardedNames()), ConfigNamespace, endpointsItem)
 		}
-		// The same registration made twice on one route is one registration:
-		// two modules asking for a route to be public are asking for the same
-		// thing.
 		if frozen[r.endpoint] == nil {
 			frozen[r.endpoint] = make(map[route]access)
 		}
@@ -197,11 +163,6 @@ func (g *gateway) seal(router speedhttp.Router) error {
 		frozen[r.endpoint][r.route] = a
 	}
 
-	// A route that carries no credential cannot be one that is still being
-	// authenticated, and cannot let an impersonating identity through: an
-	// exempt route reads no credential, so it never has an identity to be
-	// impersonating. Optional and Impersonable do not conflict, they act on
-	// requests that do not overlap.
 	for _, endpoint := range sortedKeys(frozen) {
 		for _, r := range sortedRoutes(frozen[endpoint]) {
 			a := frozen[endpoint][r]
@@ -228,14 +189,9 @@ func describeGuarded(endpoints []string) string {
 	return strings.Join(endpoints, ", ")
 }
 
-// accessOf looks up what the frozen tables hold for the route a request matched.
-//
-// The request is compared by the route the entry point matched it to, which gin
-// reports in the spelling the route was registered under, and by its method. A
-// request that matched no route reports no path, so it is no route's request:
-// the empty path is refused here rather than looked up, because a registration
-// made with an empty path would otherwise be the one that every unmatched
-// request hits.
+// accessOf looks up the frozen table by the route gin matched, c.FullPath() plus
+// method. An unmatched request reports no path and is refused here, so an
+// empty-path registration is never hit by one.
 func (g *gateway) accessOf(endpoint string, c *gin.Context) access {
 	path := c.FullPath()
 	if path == "" {
@@ -244,8 +200,8 @@ func (g *gateway) accessOf(endpoint string, c *gin.Context) access {
 	return g.routes[endpoint][route{method: c.Request.Method, path: path}]
 }
 
-// routesOf lists the routes of one endpoint's table that carry the access, in a
-// stable order, rendered as method and path.
+// routesOf lists the endpoint's routes that carry the access, as method and
+// path, in a stable order.
 func routesOf(table map[route]access, has func(access) bool) []string {
 	var out []string
 	for r, a := range table {
@@ -267,8 +223,7 @@ func sortedKeys(table map[string]map[route]access) []string {
 	return names
 }
 
-// sortedRoutes lists the routes of one endpoint's table in ascending order of
-// their rendering.
+// sortedRoutes lists the endpoint's routes in ascending order of their rendering.
 func sortedRoutes(table map[route]access) []route {
 	routes := make([]route, 0, len(table))
 	for r := range table {

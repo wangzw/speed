@@ -67,13 +67,8 @@ func TestCrossOriginCheckHoldsOnOptionalAndImpersonableRoutes(t *testing.T) {
 	}
 }
 
-// TestExitAndScopeRefusalsAreChallengedAsARejectedCredential holds that a
-// refusal the gateway judged itself, a pass that fails the exit check and an
-// impersonating pass on a route that does not admit one, is challenged the
-// way a refusal of a credential the backend took is: the request carries a
-// credential that backend claimed, and it is refused, so the 401 carries the
-// backend's rejected challenge, which for a token backend is the one with
-// error="invalid_token".
+// TestExitAndScopeRefusalsAreChallengedAsARejectedCredential carries the backend's
+// rejected challenge on a 401 the gateway judged itself.
 func TestExitAndScopeRefusalsAreChallengedAsARejectedCredential(t *testing.T) {
 	for name, principal := range map[string]func(*fakeVerifier) authn.Principal{
 		"the principal fails the exit check": func(f *fakeVerifier) authn.Principal {
@@ -208,9 +203,8 @@ func TestTheCallContextEndsOnceTheCallReturns(t *testing.T) {
 	}
 }
 
-// TestRejectedChallengeKeepsTheChallengesOfBackendsThatSortAfterIt checks
-// that rejected challenge keeps the challenges of backends that sort after
-// it.
+// TestRejectedChallengeKeepsTheChallengesOfBackendsThatSortAfterIt appends the
+// rejected backend's error challenge and keeps the later backends' challenges.
 func TestRejectedChallengeKeepsTheChallengesOfBackendsThatSortAfterIt(t *testing.T) {
 	first := challengingVerifier{
 		fakeVerifier: schemeBackend("aaa", "bearer"),
@@ -364,9 +358,8 @@ func TestTwoCookieHeaderLinesOfOneNameAreAmbiguous(t *testing.T) {
 	}
 }
 
-// TestCrossOriginRefusalRecordNamesBasicAndCause holds that the refusal of a Basic
-// credential names the scheme it came under and the cause and carries no cookie
-// name.
+// TestCrossOriginRefusalRecordNamesBasicAndCause names the scheme and the cause
+// and no cookie, carrying no password.
 func TestCrossOriginRefusalRecordNamesBasicAndCause(t *testing.T) {
 	b := newCarrierBackends()
 	passes(b.basic)
@@ -489,11 +482,8 @@ func bareEngine(g *gateway, endpoint string) *gin.Engine {
 	return engine
 }
 
-// TestACookieCredentialOnAnOptionalRouteIsHeldToTheSameChecks holds that a
-// route which accepts a request with no credential does not accept a cookie
-// credential on easier terms: the cross-origin check applies to an unsafe
-// request, and a cookie that cannot be told from another is a refusal, not an
-// anonymous caller.
+// TestACookieCredentialOnAnOptionalRouteIsHeldToTheSameChecks refuses a cookie
+// credential on an optional route under the same cross-origin and ambiguity rules.
 func TestACookieCredentialOnAnOptionalRouteIsHeldToTheSameChecks(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -546,10 +536,8 @@ func TestACookieCredentialOnAnOptionalRouteIsHeldToTheSameChecks(t *testing.T) {
 	}
 }
 
-// TestAtMostOneClaimedCookieMayComeInARequest holds the reading of two
-// claimed cookies of different names: which was meant cannot be told, so the
-// request is refused as a whole, whether the two names belong to one backend
-// or to two, the same as for one name twice.
+// TestAtMostOneClaimedCookieMayComeInARequest refuses two claimed cookies of
+// different names, whether one backend owns both or two do.
 func TestAtMostOneClaimedCookieMayComeInARequest(t *testing.T) {
 	for _, c := range []struct {
 		name     string

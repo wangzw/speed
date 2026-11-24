@@ -86,10 +86,8 @@ func TestFreshLocalMultiIsMultiFactorWithinTheWindowAndLocal(t *testing.T) {
 	}
 }
 
-// TestAWindowThatIsNotPositiveIsARequirementNobodyMeets holds the failure
-// direction: a window of zero would be a MaxAge of zero, which asks for no
-// freshness at all, and the requirement of a sensitive action would silently
-// lose its limit.
+// TestAWindowThatIsNotPositiveIsARequirementNobodyMeets checks that a non-positive
+// window is met by nobody, rather than a requirement with no limit.
 func TestAWindowThatIsNotPositiveIsARequirementNobodyMeets(t *testing.T) {
 	best := identityAt(AssuranceMulti, 0, false)
 	for _, w := range []time.Duration{0, -time.Second, -time.Hour} {
@@ -106,9 +104,8 @@ func TestAWindowThatIsNotPositiveIsARequirementNobodyMeets(t *testing.T) {
 	}
 }
 
-// TestTheRootConstructorsAreTheModelsAndNothingElse holds that the requirement
-// the root hands out is the model's, so a second five-minute constant in either
-// place cannot drift from the other unseen.
+// TestTheRootConstructorsAreTheModelsAndNothingElse keeps the root's requirements
+// identical to the model's, so a second constant cannot drift.
 func TestTheRootConstructorsAreTheModelsAndNothingElse(t *testing.T) {
 	if FreshFirstFactor() != model.FreshFirstFactor() {
 		t.Error("the root FreshFirstFactor differs from the model's")

@@ -13,14 +13,13 @@ import (
 )
 
 // eventTable is the expected event table: for each type, its name, its payload
-// and the top-level fields of the payload, in their JSON names. The names are
-// the contract with subscribers, so they are written out here and not derived
-// from the code under test.
+// and the payload's top-level JSON fields. The names are the contract with
+// subscribers, so they are written out here, not derived from the code.
 var eventTable = []struct {
 	name    string
 	typ     reflect.Type
 	fields  []string
-	omitted []string // fields that a zero value leaves out of the JSON
+	omitted []string
 }{
 	{EventAccountCreated, reflect.TypeFor[AccountCreated](), []string{"account_id", "kind", "via"}, nil},
 	{EventAccountStatusChanged, reflect.TypeFor[AccountStatusChanged](), []string{"account_id", "from", "to", "reason_class"}, nil},
@@ -138,9 +137,8 @@ var (
 	freeTextNames = []string{"reason", "note", "message", "text", "display_name", "name", "label", "detail", "purpose"}
 )
 
-// TestEveryPayloadHasTheDesignsShape holds the shape each payload is held to:
-// JSON names in lower case with underscores, top-level scalars only, and no field
-// whose name says it holds a secret, free text or a typed handle.
+// TestEveryPayloadHasTheDesignsShape holds each payload's JSON names, scalar
+// top-level fields, and that no field names a secret, free text or a typed handle.
 func TestEveryPayloadHasTheDesignsShape(t *testing.T) {
 	for _, e := range eventTable {
 		t.Run(e.name, func(t *testing.T) {
@@ -187,9 +185,8 @@ func TestEveryPayloadHasTheDesignsShape(t *testing.T) {
 	}
 }
 
-// TestAPayloadMarshalsToExactlyItsFields marshals each payload with every field
-// set and reads back the keys, so a field that carries a tag the reflection above
-// read and the encoder does not honour, or one the encoder leaves out, is found.
+// TestAPayloadMarshalsToExactlyItsFields marshals each payload and checks the
+// encoder writes exactly its fields and omits the empty ones it should.
 func TestAPayloadMarshalsToExactlyItsFields(t *testing.T) {
 	for _, e := range eventTable {
 		full := reflect.New(e.typ).Elem()
@@ -232,9 +229,8 @@ func TestAPayloadMarshalsToExactlyItsFields(t *testing.T) {
 	}
 }
 
-// TestAThrottleEventCarriesAnAccountOnlyForTheScopesThatHaveOne is the one
-// payload with an optional field, which is there for account and factor and
-// absent for the keys that are not accounts.
+// TestAThrottleEventCarriesAnAccountOnlyForTheScopesThatHaveOne checks the one
+// optional payload field is present for account and factor scopes, absent otherwise.
 func TestAThrottleEventCarriesAnAccountOnlyForTheScopesThatHaveOne(t *testing.T) {
 	raw, _ := json.Marshal(ThrottleEngaged{Scope: string(ScopeIdentifier)})
 	if strings.Contains(string(raw), "account_id") {

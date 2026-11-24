@@ -110,7 +110,6 @@ func TestTheCounterIsWithdrawnWhenTheGatewayCloses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the drive failed: %v", err)
 	}
-	// The drive has returned, so Stop and Close have run.
 	var rm metricdata.ResourceMetrics
 	if err := collected.Collect(t.Context(), &rm); err != nil {
 		t.Fatal(err)
@@ -159,9 +158,6 @@ func TestABudgetOverrunIsTheBackendsEvenWhenTheCallerHadMoreTime(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			slow := basicBackend("static", "static.")
 			slow.verify = func(ctx context.Context, _ authn.Credential) authn.Verdict {
-				// It answers only once its budget has run out, and answers
-				// as though it had not: what it says after the deadline is
-				// not to be believed.
 				<-ctx.Done()
 				return answer(slow)
 			}
@@ -183,10 +179,8 @@ func TestABudgetOverrunIsTheBackendsEvenWhenTheCallerHadMoreTime(t *testing.T) {
 	}
 }
 
-// TestNoCallHoldsASlotOnceDrainHasReturned holds the atomicity enter
-// promises: a call is counted in the in-flight wait group under the same lock
-// Stop flips the flag under, so a call that got a slot before Stop is waited
-// for by drain, and one that did not is refused.
+// TestNoCallHoldsASlotOnceDrainHasReturned holds that a call which got a slot
+// before Stop is waited for, and one that did not is refused.
 func TestNoCallHoldsASlotOnceDrainHasReturned(t *testing.T) {
 	const rounds, callers = 1500, 64
 	for round := range rounds {
@@ -371,9 +365,8 @@ func TestPassesAreCountedExactlyUnderConcurrency(t *testing.T) {
 	}
 }
 
-// TestOpeningAndSealingTheWindowRaceWithRegistrations holds that opening and
-// sealing the registration window are safe against registrations made from
-// other goroutines.
+// TestOpeningAndSealingTheWindowRaceWithRegistrations holds that registrations
+// racing the registration window's opening and sealing stay safe.
 func TestOpeningAndSealingTheWindowRaceWithRegistrations(t *testing.T) {
 	g := testGateway(t, []string{"public"}, basicBackend("static", "static."))
 	g.mu.Lock()

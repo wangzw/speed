@@ -18,7 +18,8 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// S1: the library's manager is built to the adaptation rules.
+// TestTheManagerIsBuiltToTheAdaptationRules builds the library's manager to the
+// adaptation rules.
 func TestTheManagerIsBuiltToTheAdaptationRules(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	sm := f.p.sm
@@ -52,7 +53,8 @@ func TestTheManagerIsBuiltToTheAdaptationRules(t *testing.T) {
 	}
 }
 
-// S1: the payload is stored as JSON and no token is stored in clear.
+// TestThePayloadIsJSONAndNoTokenIsInTheTable stores the payload as JSON and no
+// token in clear.
 func TestThePayloadIsJSONAndNoTokenIsInTheTable(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -96,8 +98,8 @@ func TestThePayloadIsJSONAndNoTokenIsInTheTable(t *testing.T) {
 	})
 }
 
-// S2: the write that extends the idle period cannot bring a revoked session
-// back.
+// TestARevokedSessionIsNotWrittenBackByATouch keeps a touch from writing a
+// revoked session back.
 func TestARevokedSessionIsNotWrittenBackByATouch(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -129,7 +131,7 @@ func TestARevokedSessionIsNotWrittenBackByATouch(t *testing.T) {
 	})
 }
 
-// S2: requests within the touch interval write once between them.
+// TestTheIdlePeriodIsExtendedOncePerTouchInterval writes once per touch interval.
 func TestTheIdlePeriodIsExtendedOncePerTouchInterval(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -145,11 +147,11 @@ func TestTheIdlePeriodIsExtendedOncePerTouchInterval(t *testing.T) {
 			writes  int
 		}{
 			{5 * time.Second, 0},
-			{6 * time.Second, 1}, // 11s: the interval has run out
-			{1 * time.Second, 1}, // 12s
-			{3 * time.Second, 1}, // 15s
-			{8 * time.Second, 2}, // 23s: run out again since the write at 11s
-			{2 * time.Second, 2}, // 25s
+			{6 * time.Second, 1},
+			{1 * time.Second, 1},
+			{3 * time.Second, 1},
+			{8 * time.Second, 2},
+			{2 * time.Second, 2},
 		}
 		for i, s := range steps {
 			f.clock.Advance(s.advance)
@@ -171,9 +173,8 @@ func TestTheIdlePeriodIsExtendedOncePerTouchInterval(t *testing.T) {
 	})
 }
 
-// S3: the absolute period written to the row is the one computed from the
-// setting and not the library's lifetime, which is the upper bound of the
-// domain.
+// TestTheAbsolutePeriodIsTheSettingsAndNotTheLibrarys writes the setting's
+// absolute period to the row, not the library's lifetime.
 func TestTheAbsolutePeriodIsTheSettingsAndNotTheLibrarys(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -207,8 +208,8 @@ func TestTheAbsolutePeriodIsTheSettingsAndNotTheLibrarys(t *testing.T) {
 	})
 }
 
-// S3: a commit whose period is over by the time it would be written writes
-// nothing, and the expiry the library passes is not used.
+// TestACommitIgnoresTheLibrarysExpiryAndSkipsAnEndedPeriod writes nothing for an
+// ended period and ignores the expiry the library passes.
 func TestACommitIgnoresTheLibrarysExpiryAndSkipsAnEndedPeriod(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -250,8 +251,8 @@ func TestACommitIgnoresTheLibrarysExpiryAndSkipsAnEndedPeriod(t *testing.T) {
 	})
 }
 
-// S4: only a live browser row is found by its token, and unlinking a token
-// revokes nothing.
+// TestTheStoreFindsOnlyLiveBrowserRows finds only a live browser row by its
+// token and revokes nothing on unlink.
 func TestTheStoreFindsOnlyLiveBrowserRows(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -334,8 +335,8 @@ func (s *recordingStore) Commit(key string, _ []byte, _ time.Time) error {
 	return nil
 }
 
-// S5 and the first external assumption: the store key this module computes is
-// the one the library computes for the same token.
+// TestTheStoreKeyIsTheOneTheLibraryComputes computes the same store key as the
+// library for the same token.
 func TestTheStoreKeyIsTheOneTheLibraryComputes(t *testing.T) {
 	store := &recordingStore{}
 	sm := scs.New()
@@ -389,8 +390,8 @@ func raceBefore(t *testing.T, f *fixture, match string, fn func(attempt int)) {
 	t.Cleanup(func() { armed.Store(false) })
 }
 
-// S5: a conditional update that loses to another writer changes nothing, and the
-// call reads the row again to learn why.
+// TestARotationThatLosesTheRaceLeavesTheRowAlone leaves the row alone when a
+// conditional update loses, then reads it again.
 func TestARotationThatLosesTheRaceLeavesTheRowAlone(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		ctx := context.Background()
@@ -486,8 +487,8 @@ func (s *countingStore) Commit(key string, b []byte, e time.Time) error {
 }
 func (s *countingStore) Delete(key string) error { return s.DeleteCtx(context.Background(), key) }
 
-// S6: the adapter does not cache, and the verifying backend's cache answers
-// without the library and without the database.
+// TestACacheHitReadsNothingAndAMissReadsOnce answers a hit without the library or
+// the database.
 func TestACacheHitReadsNothingAndAMissReadsOnce(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -529,7 +530,6 @@ func TestACacheHitReadsNothingAndAMissReadsOnce(t *testing.T) {
 	})
 }
 
-// the cookie header a recorder holds, parsed.
 func cookiesOf(h http.Header) []*http.Cookie {
 	return (&http.Response{Header: h}).Cookies()
 }

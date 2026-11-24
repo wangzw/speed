@@ -11,9 +11,8 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// TestTheSettingDomainsAdmitTheirBounds holds the endpoints of the domains
-// this module declares: a value exactly at a bound is inside it, and one past
-// it is out.
+// TestTheSettingDomainsAdmitTheirBounds holds that a value at a domain's bound is
+// inside it and one past is out.
 func TestTheSettingDomainsAdmitTheirBounds(t *testing.T) {
 	if !accessTTLInDomain(accessTTLMin) || !accessTTLInDomain(accessTTLMax) {
 		t.Error("an access-ttl at its own bound is outside the domain")
@@ -105,9 +104,8 @@ func (s *steerStore) Get(_ settings.Layer, key string, target any) error {
 	return nil
 }
 
-// TestASettingOutsideItsDomainReadsAsTheDefault holds the read-side domain
-// check: a value stored outside the setting's declared domain is not served, its
-// declared default is used instead.
+// TestASettingOutsideItsDomainReadsAsTheDefault holds that a stored value outside
+// the domain reads as the default.
 func TestASettingOutsideItsDomainReadsAsTheDefault(t *testing.T) {
 	reader := newSettingReader(slog.Default())
 	reader.store = &steerStore{value: 5 * time.Minute}
@@ -150,9 +148,8 @@ func (s *switchStore) setErr(err error) {
 	s.err = err
 }
 
-// TestTheSettingFaultIsReportedOnceAndCleared holds report's bookkeeping: a
-// standing fault is written once, a cleared one is written again when it
-// returns.
+// TestTheSettingFaultIsReportedOnceAndCleared holds that a standing fault is
+// logged once and a cleared one again when it returns.
 func TestTheSettingFaultIsReportedOnceAndCleared(t *testing.T) {
 	logs := &logBuffer{}
 	reader := newSettingReader(logs.logger())

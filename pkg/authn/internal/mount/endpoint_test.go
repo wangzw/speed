@@ -10,10 +10,8 @@ import (
 
 const endpointKey = "authn.gate.mount.endpoints.default"
 
-// TestEndpointIsTheConfiguredOneOrTheOnlyOneDeclared holds the rule the module
-// that mounts routes and the gateway both read: a name that was written wins over
-// whatever the entry point declares, and an empty one takes the only endpoint
-// there is.
+// TestEndpointIsTheConfiguredOneOrTheOnlyOneDeclared holds that a written name wins
+// and an empty one takes the only declared endpoint.
 func TestEndpointIsTheConfiguredOneOrTheOnlyOneDeclared(t *testing.T) {
 	for _, c := range []struct {
 		name       string
@@ -24,8 +22,6 @@ func TestEndpointIsTheConfiguredOneOrTheOnlyOneDeclared(t *testing.T) {
 		{"a name written, one declared", "public", []string{"public"}, "public"},
 		{"a name written, several declared", "admin", []string{"admin", "public"}, "admin"},
 		{"nothing written, one declared", "", []string{"public"}, "public"},
-		// Whether the name exists is the caller's to judge, with its own
-		// sentinel; this function only says where the routes go.
 		{"a name written that is not declared", "typo", []string{"public"}, "typo"},
 		{"a name written, none declared", "public", nil, "public"},
 	} {
@@ -41,10 +37,8 @@ func TestEndpointIsTheConfiguredOneOrTheOnlyOneDeclared(t *testing.T) {
 	}
 }
 
-// TestEndpointLeftEmptyWithNoOneToPickIsRefused holds the failure: nothing
-// written and an entry point that declares none or several endpoints is a
-// startup error that names the key to write and, for several, the endpoints
-// to choose among.
+// TestEndpointLeftEmptyWithNoOneToPickIsRefused holds that an empty setting with no
+// single endpoint is refused, naming the key and the endpoints to choose among.
 func TestEndpointLeftEmptyWithNoOneToPickIsRefused(t *testing.T) {
 	for _, c := range []struct {
 		name     string

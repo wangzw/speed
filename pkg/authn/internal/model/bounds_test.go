@@ -8,10 +8,8 @@ import (
 	"unicode/utf8"
 )
 
-// TestEveryRefusalOfAnAttributeSetIsAnInvalidArgument holds that each way an
-// attribute set is refused, by either check, is one failure a caller tells with
-// errors.Is: an administration route answers it 400 and a session writer treats
-// it as its own defect, and neither can do that from the text.
+// TestEveryRefusalOfAnAttributeSetIsAnInvalidArgument checks every refusal either
+// check makes is ErrInvalidArgument.
 func TestEveryRefusalOfAnAttributeSetIsAnInvalidArgument(t *testing.T) {
 	account := map[string]map[string]string{
 		"count":    entries(AccountAttributesMax+1, plainKey, "v"),
@@ -41,11 +39,8 @@ func TestEveryRefusalOfAnAttributeSetIsAnInvalidArgument(t *testing.T) {
 	}
 }
 
-// TestTheBoundsAreTheDesignsNumbers holds the sub-bounds as the design writes
-// them, once, and the arithmetic that makes the two writers' sets fit the totals
-// the gateway stamps: 24 and 8 entries come to the 32 it allows, and the worst
-// case of 2 KiB of account attributes and eight idp.* entries of 32 bytes of key
-// and 128 of value comes to 3328 bytes under its 4 KiB.
+// TestTheBoundsAreTheDesignsNumbers pins the sub-bounds and checks both writers'
+// worst-case sets fit the gateway's totals.
 func TestTheBoundsAreTheDesignsNumbers(t *testing.T) {
 	for _, c := range []struct {
 		name      string
@@ -128,7 +123,6 @@ func TestAccountAttributesAreHeldToTheirBounds(t *testing.T) {
 		{"an authn. key", map[string]string{"authn.flag": "v"}, false},
 		{"idp without the dot is not the prefix", map[string]string{"idpgroups": "v"}, true},
 		{"authn without the dot is not the prefix", map[string]string{"authnflag": "v"}, true},
-		// 8 entries of key "kN" (2 bytes) and value 254 bytes: 8 x 256 = 2048.
 		{"2048 bytes of keys and values", entries(8, func(i int) string { return fmt.Sprintf("k%d", i) }, strings.Repeat("v", 254)), true},
 		{"2049 bytes of keys and values", func() map[string]string {
 			m := entries(8, func(i int) string { return fmt.Sprintf("k%d", i) }, strings.Repeat("v", 254))
@@ -145,9 +139,8 @@ func TestAccountAttributesAreHeldToTheirBounds(t *testing.T) {
 	}
 }
 
-// TestTheAccountCheckNeverEchoesWhatItRefused holds that an error from the check
-// names the class and not the key or the value, because an attribute set is the
-// host's and may hold anything.
+// TestTheAccountCheckNeverEchoesWhatItRefused checks a refusal names the class,
+// not the key or value.
 func TestTheAccountCheckNeverEchoesWhatItRefused(t *testing.T) {
 	for _, m := range []map[string]string{
 		{"SECRET-KEY": "v"},
@@ -202,9 +195,8 @@ func TestIDPAttributesAreHeldToTheirBounds(t *testing.T) {
 	}
 }
 
-// TestAWorstCaseSetOfEachWriterTogetherFitsTheTotals builds the largest set each
-// writer may produce, merges them, and holds the union to the gateway's totals:
-// the arithmetic above stated as the thing it is about.
+// TestAWorstCaseSetOfEachWriterTogetherFitsTheTotals checks the merged largest
+// sets fit the gateway's entry and byte totals.
 func TestAWorstCaseSetOfEachWriterTogetherFitsTheTotals(t *testing.T) {
 	account := map[string]string{}
 	size := 0
@@ -246,12 +238,10 @@ func TestAWorstCaseSetOfEachWriterTogetherFitsTheTotals(t *testing.T) {
 	}
 }
 
-// TestTruncateUTF8CutsOnACharacterBoundary holds the truncation for every limit
-// over a string of one-, two-, three- and four-byte characters: the result is a
-// prefix of the input, valid UTF-8, no longer than the limit, and the longest such
-// prefix, so no character that would have fit is dropped.
+// TestTruncateUTF8CutsOnACharacterBoundary checks every limit yields the longest
+// valid UTF-8 prefix within it.
 func TestTruncateUTF8CutsOnACharacterBoundary(t *testing.T) {
-	s := "aé用😀b用😀éz" // 1, 2, 3, 4, 1, 3, 4, 2, 1 bytes
+	s := "aé用😀b用😀éz"
 	if !utf8.ValidString(s) {
 		t.Fatal("the fixture is not UTF-8")
 	}
@@ -301,9 +291,8 @@ func TestTruncateUTF8CutsOnACharacterBoundary(t *testing.T) {
 	}
 }
 
-// TestACutValueIsAdmissible ties the truncation to the check it feeds: a value
-// the IdP mapping produced, of any length, once cut to SessionIDPValueMax passes
-// the idp.* check, and the same value uncut does not.
+// TestACutValueIsAdmissible checks a value cut to SessionIDPValueMax passes the
+// idp.* check that the uncut value fails.
 func TestACutValueIsAdmissible(t *testing.T) {
 	for _, v := range []string{strings.Repeat("v", 500), strings.Repeat("用", 100), strings.Repeat("😀", 100), strings.Repeat("é", 200)} {
 		raw := map[string]string{"idp.g": v}

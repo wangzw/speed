@@ -9,8 +9,7 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The keys of the settings this module reads, relative to its namespace. They
-// are read from the global layer of the settings store while the process runs.
+// The keys of the settings this module reads, relative to its namespace.
 const (
 	idleTimeoutKey     = "idle-timeout"
 	absoluteTimeoutKey = "absolute-timeout"
@@ -31,10 +30,8 @@ const (
 	retentionPath       = ConfigNamespace + "." + retentionKey
 )
 
-// The domains of the settings: the one statement of each range. The settings
-// store holds a write to it, and a read is judged against it again, since a
-// value stored before the domain was declared, or written around the store, is
-// served as it is.
+// The domains of the settings: the one statement of each range. A stored value
+// is judged against it again on every read.
 const (
 	idleTimeoutMin     = time.Minute
 	idleTimeoutMax     = 24 * time.Hour
@@ -53,17 +50,13 @@ const (
 	retentionMax       = 8760 * time.Hour
 )
 
-// lifetimeUpperBound is the longest absolute period any kind of session may be
-// given by its setting: the largest upper bound among the absolute-timeout
-// domains. It is the Lifetime the session library is built with, so that the
-// library's own deadline never ends a session the settings still allow. The
-// period a session actually gets is computed here from the settings and written
-// to its row.
+// lifetimeUpperBound is the largest upper bound among the absolute-timeout
+// domains: the Lifetime the session library is built with, so its own deadline
+// never ends a session the settings still allow.
 const lifetimeUpperBound = max(absoluteTimeoutMax, tokenAbsoluteMax, ssoAbsoluteMax)
 
-// options carries the settings items and their declared defaults. It is the
-// prototype the settings module reads the declared defaults off, and never
-// receives a value.
+// options carries the settings items and their declared defaults; it is the
+// prototype the settings module reads the defaults off and never receives a value.
 type options struct {
 	IdleTimeout          time.Duration `config:"idle-timeout"`
 	AbsoluteTimeout      time.Duration `config:"absolute-timeout"`
@@ -148,11 +141,9 @@ func settingsSchema() settings.Schema {
 	}
 }
 
-// settingReader reads the settings this module acts on. The store is nil when
-// the assembly has none, and then every setting reads as its declared default.
-// A read that fails and a value outside the setting's domain, which the store
-// judges when it is written and not when it is read, both read as the declared
-// default and are reported at Error, once for as long as the same fault stands.
+// settingReader reads the settings this module acts on. With no store every
+// setting reads as its declared default, as does a failed read or a value outside
+// the domain; the fault is reported at Error once for as long as it stands.
 type settingReader struct {
 	store  settings.Store
 	logger *slog.Logger
@@ -165,7 +156,7 @@ func newSettingReader(logger *slog.Logger) *settingReader {
 	return &settingReader{logger: logger, reported: make(map[string]string)}
 }
 
-// read returns the value of one setting, or the declared default.
+// readSetting returns the value of one setting, or the declared default.
 func readSetting[T any](r *settingReader, path string, fallback T, inDomain func(T) bool) T {
 	if r.store == nil {
 		return fallback
@@ -184,9 +175,8 @@ func readSetting[T any](r *settingReader, path string, fallback T, inDomain func
 	return value
 }
 
-// report writes the Error line for a setting read as its default. A setting is
-// read on every request, so a fault is written once and again only when it
-// changes or has been cleared in between; an empty problem clears it.
+// report writes the Error line for a setting read as its default, once per fault
+// and again only when it changes; an empty problem clears it.
 func (r *settingReader) report(path, problem, detail string) {
 	r.mu.Lock()
 	last, reported := r.reported[path]

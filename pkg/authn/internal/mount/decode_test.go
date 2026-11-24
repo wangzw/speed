@@ -30,9 +30,8 @@ func decodeWith(contentType, body string) (code int, ok bool, got decoded, abort
 	return w.Code, res, dst, ab, problemType
 }
 
-// TestDecodeTakesOnlyApplicationJSON holds the media types: the one, with no
-// parameter or with charset=utf-8, and a 415 for every other, including the ones
-// that only look like it.
+// TestDecodeTakesOnlyApplicationJSON admits application/json with an optional
+// charset=utf-8 and answers 415 to every other type.
 func TestDecodeTakesOnlyApplicationJSON(t *testing.T) {
 	for _, ct := range []string{
 		"application/json", "Application/JSON", "application/json; charset=utf-8", "application/json;charset=UTF-8",
@@ -60,9 +59,8 @@ func TestDecodeTakesOnlyApplicationJSON(t *testing.T) {
 	}
 }
 
-// TestDecodeRefusesWhatIsNotExactlyOneObject holds the 400s: a field the target
-// does not have, anything after the value, an empty or broken body, and a value
-// of the wrong type.
+// TestDecodeRefusesWhatIsNotExactlyOneObject answers 400 to a body that is not
+// exactly one object of the target.
 func TestDecodeRefusesWhatIsNotExactlyOneObject(t *testing.T) {
 	for name, body := range map[string]string{
 		"an unknown field":                              `{"a":1,"extra":2}`,
@@ -93,8 +91,8 @@ func TestDecodeRefusesWhatIsNotExactlyOneObject(t *testing.T) {
 	}
 }
 
-// TestDecodeAllowsWhiteSpaceAroundTheValue holds the other side of the trailing
-// check: white space after the value is not data.
+// TestDecodeAllowsWhiteSpaceAroundTheValue takes white space around and after
+// the value as no data.
 func TestDecodeAllowsWhiteSpaceAroundTheValue(t *testing.T) {
 	for _, body := range []string{`{"a":1}`, "{\"a\":1}\n", "  {\"a\":1}  ", "\t\r\n{\"a\":1}\r\n\r\n", `{ "a" : 1 }`} {
 		code, ok, got, _, _ := decodeWith("application/json", body)
@@ -104,9 +102,8 @@ func TestDecodeAllowsWhiteSpaceAroundTheValue(t *testing.T) {
 	}
 }
 
-// TestDecodeHoldsTheBodyAtSixtyFourKiB holds the limit at the byte: a body of
-// exactly 64 KiB is read, one byte more is refused, and a body far past it is
-// refused without being read to the end.
+// TestDecodeHoldsTheBodyAtSixtyFourKiB reads exactly 64 KiB and refuses one byte
+// more.
 func TestDecodeHoldsTheBodyAtSixtyFourKiB(t *testing.T) {
 	if MaxBodyBytes != 64*1024 {
 		t.Fatalf("MaxBodyBytes = %d, want 65536", MaxBodyBytes)
@@ -128,16 +125,14 @@ func TestDecodeHoldsTheBodyAtSixtyFourKiB(t *testing.T) {
 	if code, ok, _, _, _ := decodeWith("application/json", fill(10*MaxBodyBytes)); ok || code != http.StatusBadRequest {
 		t.Errorf("a body ten times the limit: ok = %v, status %d", ok, code)
 	}
-	// Padding after a valid value counts against the limit too.
 	padded := `{"a":1}` + strings.Repeat(" ", MaxBodyBytes)
 	if code, ok, _, _, _ := decodeWith("application/json", padded); ok || code != http.StatusBadRequest {
 		t.Errorf("a valid value followed by white space past the limit: ok = %v, status %d", ok, code)
 	}
 }
 
-// TestTheBodyIsNotReadWhenTheTypeIsRefused holds the order: the media type is
-// judged first, so a body that would also have been malformed is answered 415 and
-// not 400.
+// TestTheBodyIsNotReadWhenTheTypeIsRefused judges the media type first, so a
+// refused type answers 415 rather than the body's 400.
 func TestTheBodyIsNotReadWhenTheTypeIsRefused(t *testing.T) {
 	if code, _, _, _, _ := decodeWith("text/plain", `not json at all`); code != http.StatusUnsupportedMediaType {
 		t.Errorf("status = %d, want 415: the type is judged before the body", code)

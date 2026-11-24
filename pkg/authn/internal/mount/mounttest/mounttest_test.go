@@ -49,9 +49,8 @@ func send(m *mounttest.Mounter, method, path string, hdr ...string) *httptest.Re
 	return m.Do(r)
 }
 
-// TestTheRegistrationsAreRecordedWithTheirKindAndTheImpersonableMark holds what
-// a module's test reads back: for each Mounter method, the kind, the methods,
-// the full path and the mark.
+// TestTheRegistrationsAreRecordedWithTheirKindAndTheImpersonableMark reads back
+// each registration's kind, methods, path and impersonable mark.
 func TestTheRegistrationsAreRecordedWithTheirKindAndTheImpersonableMark(t *testing.T) {
 	m := mounttest.New(t)
 	h := func(*gin.Context) {}
@@ -89,8 +88,7 @@ func TestTheRegistrationsAreRecordedWithTheirKindAndTheImpersonableMark(t *testi
 		t.Error("Registered finds a route nobody registered")
 	}
 
-	// What Registrations returns is a copy: a test that edits it cannot
-	// change what the next read says.
+	// Registrations returns a copy, so editing the result cannot change later reads.
 	got[0].Methods[0] = "PATCH"
 	got[0].Kind = mounttest.Guarded
 	if again := m.Registrations(); again[0].Kind != mounttest.Public || again[0].Methods[0] != "GET" {
@@ -119,9 +117,8 @@ func TestTheMounterReportsItsBaseOriginAndEndpoint(t *testing.T) {
 	}
 }
 
-// TestAPublicRouteCarriesNoIdentityAndTheOpenLevel holds that a registration
-// made Public is read as exempt by the handler, whoever the test chose to be: the
-// gateway reads no credential on such a route.
+// TestAPublicRouteCarriesNoIdentityAndTheOpenLevel reads a public route as
+// AccessOpen with no identity, whoever the test chose to be.
 func TestAPublicRouteCarriesNoIdentityAndTheOpenLevel(t *testing.T) {
 	m := mounttest.New(t)
 	var s seen
@@ -135,9 +132,8 @@ func TestAPublicRouteCarriesNoIdentityAndTheOpenLevel(t *testing.T) {
 	}
 }
 
-// TestAnOptionalRouteCarriesTheChosenIdentityOrNone holds both readings of a
-// route that accepts no credential: the access level is AccessOptional either
-// way, and the identity is the one the test chose.
+// TestAnOptionalRouteCarriesTheChosenIdentityOrNone reads an optional route as
+// AccessOptional either way, with the identity the test chose.
 func TestAnOptionalRouteCarriesTheChosenIdentityOrNone(t *testing.T) {
 	m := mounttest.New(t)
 	var s seen
@@ -163,9 +159,8 @@ func TestAnOptionalRouteCarriesTheChosenIdentityOrNone(t *testing.T) {
 	}
 }
 
-// TestAGuardedRouteNeedsTheIdentityTheTestChose holds that without an identity a
-// guarded route is refused as the gateway refuses it, with the handler never
-// reached, and with one the handler reads it at AccessRequired.
+// TestAGuardedRouteNeedsTheIdentityTheTestChose refuses a guarded route with no
+// identity and reads the chosen identity at AccessRequired.
 func TestAGuardedRouteNeedsTheIdentityTheTestChose(t *testing.T) {
 	m := mounttest.New(t, mounttest.WithEndpoint("main"))
 	var s seen
@@ -194,9 +189,8 @@ func TestAGuardedRouteNeedsTheIdentityTheTestChose(t *testing.T) {
 	}
 }
 
-// TestAnImpersonatingIdentityReachesOnlyTheRoutesMarkedForIt holds the gateway's
-// rule that the stand-in applies: an identity whose actor is not its account is
-// refused on a route that is not Impersonable and admitted on one that is.
+// TestAnImpersonatingIdentityReachesOnlyTheRoutesMarkedForIt refuses an
+// impersonating identity on unmarked routes and admits it on marked ones.
 func TestAnImpersonatingIdentityReachesOnlyTheRoutesMarkedForIt(t *testing.T) {
 	m := mounttest.New(t)
 	var plain, marked seen
@@ -222,9 +216,8 @@ func TestAnImpersonatingIdentityReachesOnlyTheRoutesMarkedForIt(t *testing.T) {
 	}
 }
 
-// TestTheWrapperIsTheProductionOne holds that what a registration runs through is
-// mount.Wrap: no-store on the response, the cross-origin check before the
-// handler, and the callback's bypass, each as in production.
+// TestTheWrapperIsTheProductionOne checks that registrations run through mount.Wrap
+// with no-store, the cross-origin check before the handler and the callback bypass.
 func TestTheWrapperIsTheProductionOne(t *testing.T) {
 	m := mounttest.New(t)
 	var public, guarded, callback seen
@@ -257,9 +250,8 @@ func TestTheWrapperIsTheProductionOne(t *testing.T) {
 	}
 }
 
-// TestTheTrustedOriginsAreTheOptionsOwn holds that the public URL and the trusted
-// origins of the Mounter are what its check trusts, so a test of a handler that
-// depends on a trusted origin can say which.
+// TestTheTrustedOriginsAreTheOptionsOwn checks that the check trusts the Mounter's
+// public URL and trusted origins.
 func TestTheTrustedOriginsAreTheOptionsOwn(t *testing.T) {
 	m := mounttest.New(t, mounttest.WithPublicURL("https://id.example.org"), mounttest.WithTrustedOrigins("https://partner.example.net"))
 	m.Public(http.MethodPost, "/flows", func(c *gin.Context) { c.Status(http.StatusNoContent) })
@@ -279,9 +271,8 @@ func TestTheTrustedOriginsAreTheOptionsOwn(t *testing.T) {
 	}
 }
 
-// TestAHandlerThatPanicsEndsInA500 holds that the stand-in survives a
-// handler's panic, so a test that drives one gets a response instead of the
-// panic ending the test.
+// TestAHandlerThatPanicsEndsInA500 checks that the stand-in answers 500 when a
+// handler panics.
 func TestAHandlerThatPanicsEndsInA500(t *testing.T) {
 	m := mounttest.New(t)
 	m.Public(http.MethodGet, "/boom", func(*gin.Context) { panic("boom") })
@@ -290,9 +281,8 @@ func TestAHandlerThatPanicsEndsInA500(t *testing.T) {
 	}
 }
 
-// TestARouteIsReachableOverTheLoopback holds that the Mounter is an http.Handler
-// a real server can serve: a test that needs real connections, cookies set and
-// read by a client, drives its routes through it.
+// TestARouteIsReachableOverTheLoopback serves a route over a real connection, so a
+// test can set and read cookies through a client.
 func TestARouteIsReachableOverTheLoopback(t *testing.T) {
 	m := mounttest.New(t)
 	m.Public(http.MethodGet, "/hello", func(c *gin.Context) {
@@ -315,9 +305,8 @@ func TestARouteIsReachableOverTheLoopback(t *testing.T) {
 	}
 }
 
-// TestAConflictingRegistrationPanicsAsTheRouterDoes holds the registration
-// convention the module follows: a route registered twice is a defect at the call
-// site and panics.
+// TestAConflictingRegistrationPanicsAsTheRouterDoes checks that registering a route
+// twice panics.
 func TestAConflictingRegistrationPanicsAsTheRouterDoes(t *testing.T) {
 	m := mounttest.New(t)
 	m.Public(http.MethodGet, "/x", func(*gin.Context) {})
@@ -341,9 +330,8 @@ func (r *refuses) Fatalf(format string, args ...any) {
 	r.text = fmt.Sprintf(format, args...)
 }
 
-// TestAnOriginTheCheckCannotTrustFailsTheTest holds that a public URL or a
-// trusted origin that is not an origin is a failure of the test that gave it, not
-// a Mounter that trusts nothing without saying so.
+// TestAnOriginTheCheckCannotTrustFailsTheTest fails the test that gives a public
+// URL or a trusted origin that is not an origin.
 func TestAnOriginTheCheckCannotTrustFailsTheTest(t *testing.T) {
 	for name, opt := range map[string]mounttest.Option{
 		"a public URL with a scheme the check cannot use": mounttest.WithPublicURL("ftp://x.example"),

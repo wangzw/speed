@@ -56,9 +56,8 @@ func TestParseAccountID(t *testing.T) {
 	}
 }
 
-// TestAnInvalidAccountIDFailureSaysWhatItIs holds that the sentinel carries a
-// text that names the capability and the identifier, which is all a log line
-// has when the failure reaches one without its input.
+// TestAnInvalidAccountIDFailureSaysWhatItIs checks the failure names authn and
+// the account identifier.
 func TestAnInvalidAccountIDFailureSaysWhatItIs(t *testing.T) {
 	_, err := ParseAccountID("not valid")
 	if err == nil {

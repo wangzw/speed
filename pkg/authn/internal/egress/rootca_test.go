@@ -75,9 +75,7 @@ func TestRootCAsFromFileReadsAPEMFile(t *testing.T) {
 }
 
 // TestRootCAsFromFileAppendsToTheSystemRoots holds that a configured file
-// extends the trust the system already has instead of replacing it: the
-// returned pool verifies a certificate from the file, and it is equal to the
-// system roots with the file's certificate appended.
+// extends the system roots rather than replacing them.
 func TestRootCAsFromFileAppendsToTheSystemRoots(t *testing.T) {
 	system, err := x509.SystemCertPool()
 	if err != nil {

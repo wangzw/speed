@@ -17,10 +17,8 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
 )
 
-// The five self-service routes are mounted through the mounter with the access
-// level the design gives each: the session read is optional and impersonable,
-// logout is guarded and impersonable, and listing and revoking sessions is
-// guarded and impersonable because they act on the effective account's sessions.
+// TestTheSelfServiceRoutesAreMountedWithTheirAccessLevels holds each self-service
+// route's access level and impersonability.
 func TestTheSelfServiceRoutesAreMountedWithTheirAccessLevels(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	want := []mounttest.Registration{
@@ -144,9 +142,6 @@ func TestLogoutRevokesTheCallersSession(t *testing.T) {
 	if got := cookiesOf(rec.Header()); len(got) != 1 || got[0].MaxAge >= 0 {
 		t.Errorf("logout wrote %+v, want one clearing cookie", got)
 	}
-	// The mounter's no-store stays, and the route adds the directive the session
-	// library wrote beside it: a response that sets a cookie must not be cached
-	// under a Cache-Control a cache may ignore Set-Cookie in.
 	if got := rec.Header().Values("Cache-Control"); !slices.Contains(got, "no-store") ||
 		!slices.Contains(got, `no-cache="Set-Cookie"`) {
 		t.Errorf("logout answered Cache-Control %v, want no-store and %q", got, `no-cache="Set-Cookie"`)
@@ -157,9 +152,8 @@ func TestLogoutRevokesTheCallersSession(t *testing.T) {
 // action it performed.
 func TestTheSelfServiceRevocationRoutesWriteTheirAuditRows(t *testing.T) {
 	cases := []struct {
-		name   string
-		method string
-		// path is the route, with the session identifier the case acts on.
+		name    string
+		method  string
 		path    func(current, first, second authn.SessionID) string
 		action  string
 		objects func(current, first, second authn.SessionID) []string
@@ -202,9 +196,6 @@ func TestTheSelfServiceRevocationRoutesWriteTheirAuditRows(t *testing.T) {
 			if rec.Code != http.StatusNoContent && rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 204 or 200", rec.Code)
 			}
-			// The action, the objects and the outcome are asserted as the literals
-			// the capability's closed tables state, so the case does not move with
-			// a production constant.
 			var got []string
 			for _, row := range sink.entries() {
 				if row.Action != tc.action || row.Outcome != "success" {
@@ -304,10 +295,8 @@ func TestAnImpersonatingIdentityHandlersActOnTheTarget(t *testing.T) {
 	}
 }
 
-// A request that reaches one of the session-management handlers without the
-// gateway — the path the handler's own refusal exists for — is answered
-// 401 with the capability's challenge, not a bare problem document: RFC 9110
-// requires a 401 to carry one.
+// TestTheHandlersOwn401CarriesTheCapabilityChallenge holds that a bare 401 carries
+// the capability's challenge and a problem document.
 func TestTheHandlersOwn401CarriesTheCapabilityChallenge(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	cases := []struct {
@@ -360,9 +349,8 @@ func TestTheHandlersOwn401CarriesTheCapabilityChallenge(t *testing.T) {
 	}
 }
 
-// Revoking another of the caller's sessions leaves the caller logged in: the
-// cookie is cleared only when the revoked session is the one the request came
-// on.
+// TestRevokingAnotherOfTheCallersSessionsKeepsTheCookie holds that revoking a
+// different session leaves the caller's cookie in place.
 func TestRevokingAnotherOfTheCallersSessionsKeepsTheCookie(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -388,9 +376,8 @@ func TestRevokingAnotherOfTheCallersSessionsKeepsTheCookie(t *testing.T) {
 	}
 }
 
-// Revoking the session the request came on is the other half: the cookie is
-// cleared, and the response carries the directive the session library wrote
-// beside the mounter's no-store.
+// TestRevokingTheCurrentSessionClearsTheCookieWithTheCacheDirective holds that
+// revoking the request's own session clears the cookie.
 func TestRevokingTheCurrentSessionClearsTheCookieWithTheCacheDirective(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)

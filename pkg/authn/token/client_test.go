@@ -132,9 +132,7 @@ func TestClientCredentialsWithNoSigningKeyIsErrNoSigningKey(t *testing.T) {
 }
 
 // TestAClientCredentialBackOffThatCannotAnswerIsUnavailable holds that a failed
-// back-off check refuses the grant with ErrUnavailable rather than falling
-// through to verify the secret: the throttle store being unreachable is not a
-// reason to skip the check.
+// back-off check refuses with ErrUnavailable instead of verifying the secret.
 func TestAClientCredentialBackOffThatCannotAnswerIsUnavailable(t *testing.T) {
 	r := newRig(t)
 	r.throttle.checkErr = errors.New("token test: the back-off store is down")
@@ -150,9 +148,8 @@ func TestAClientCredentialBackOffThatCannotAnswerIsUnavailable(t *testing.T) {
 	}
 }
 
-// TestASecretStoreOutageIsUnavailableNotAnInvalidCredential holds the failure
-// direction: a store that cannot answer is ErrUnavailable, not a credential
-// failure that would count against the client and read as a wrong secret.
+// TestASecretStoreOutageIsUnavailableNotAnInvalidCredential holds that a store
+// outage is ErrUnavailable, not a credential failure counted against the client.
 func TestASecretStoreOutageIsUnavailableNotAnInvalidCredential(t *testing.T) {
 	r := newRig(t)
 	r.passwords.verify = func(string, string) (authn.AccountID, string, time.Time, error) {
@@ -170,9 +167,8 @@ func TestASecretStoreOutageIsUnavailableNotAnInvalidCredential(t *testing.T) {
 	}
 }
 
-// TestTheSecretExpiryIsHandedToTheSessionStore holds that a real expiry is
-// passed through as a non-nil pointer and an absent one as nil, so the service
-// session is bound to the secret's lifetime only when it has one.
+// TestTheSecretExpiryIsHandedToTheSessionStore holds that a real expiry is passed as
+// a non-nil pointer and an absent one as nil.
 func TestTheSecretExpiryIsHandedToTheSessionStore(t *testing.T) {
 	r := newRig(t)
 	r.serviceSession()

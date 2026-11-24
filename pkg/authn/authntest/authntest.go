@@ -1,36 +1,6 @@
 // Package authntest builds the context a gateway would have left on a request,
-// for tests of the modules that read an identity.
-//
-// Context returns a context carrying a real Identity and the access level of the
-// route, as the gateway leaves them once a backend's principal has passed its
-// checks. Anonymous returns the other shape the gateway leaves: a level and no
-// identity, on an exempt route and on an optional one with no credential. A
-// test that built an Identity by hand could only make the zero one, which has
-// no account and an empty key, and could not drive the step where a module
-// reads who is calling.
-//
-// ConfigReader and ConfigReaderAll build the other thing a backend's tests
-// need: the configuration reader the real loader serves from a JSON body, for a
-// module whose Prepare or New reads its own configuration.
-//
-// Each field of the identity is held to the shape and the bound the gateway's
-// exit check holds it to, and a pairing the gateway never produces fails the
-// test that asked for it: an identity beside AccessOpen or AccessUnknown, and
-// AccessRequired with no identity. Three things the exit check decides are not
-// checked here. One is the 120-second ceiling on the time of authentication,
-// which needs the gateway's clock. Another is the account namespaces other than
-// the static one, and the capabilities a backend declares for an actor, an
-// impersonation scope and an SSO provider, which need the backends a gateway
-// holds. The last is the reserved attribute prefixes, which the exit check does
-// not look at either.
-//
-// Context takes a testing.TB, but that is no barrier: a *testing.T that nobody
-// runs is a valid one. What keeps this package out of production code is the
-// dependency test in the parent directory, which fails when any package's
-// non-test code imports it.
-//
-// The package lives under pkg/authn so that it may import the internal
-// identity package, which is the only place an Identity is made.
+// for tests of the modules that read an identity: an identity beside its access
+// level, or an access level alone, and the configuration reader a loader serves.
 package authntest
 
 import (
@@ -72,13 +42,9 @@ func DefaultAuthTime() time.Time {
 	return time.Date(2026, time.October, 1, 8, 0, 0, 0, time.UTC)
 }
 
-// Bounds the gateway holds an identity to, read from the model package, which is
-// where the numbers of the attribute set are declared once: the totals the exit
-// check stamps and the longest key and value an entry may have. authntest is not
-// the gateway and imports none of it, so the exit check keeps constants of its
-// own, and gate/attribute_bounds_test.go holds them equal to the model's and the
-// two writers' sub-bounds under them. The number of authentication methods is
-// the gateway's alone.
+// Bounds the gateway holds an identity to, read from the model package, which
+// declares the numbers once. authntest is not the gateway, so the exit check
+// keeps its own, and gate/attribute_bounds_test.go holds them equal.
 const (
 	maxMethods       = 8
 	maxAttributes    = model.IdentityAttributesMax
@@ -119,12 +85,9 @@ type Option func(*spec)
 // a well-formed identifier, which ParseAccountID decides.
 func WithAccount(id authn.AccountID) Option { return func(s *spec) { s.account = id } }
 
-// WithActor makes the identity an impersonation: id is the account whose hands
-// are on the request, and the account WithAccount names, or the default, is the
-// one impersonated. Key then reads id, and Account reads the account
-// impersonated. An impersonation carries a session and a scope, so it needs
-// WithSession and WithScope too, and it fails the test without them; so does an
-// actor equal to the account.
+// WithActor makes the identity an impersonation: id is the account acting, and
+// the account WithAccount names is impersonated. It needs WithSession and
+// WithScope, and an actor equal to the account fails the test.
 func WithActor(id authn.AccountID) Option { return func(s *spec) { s.actor = id } }
 
 // WithSession names the login session the request belongs to.
@@ -158,11 +121,9 @@ func WithAuthTime(t time.Time) Option { return func(s *spec) { s.authTime = t } 
 // named static, and the backend named static can hand back no other account.
 func WithBackend(name string) Option { return func(s *spec) { s.backend = name } }
 
-// WithChallenge sets the scheme name Identity.Challenge reads, which the
-// gateway stamps from the credential's carrier: "Cookie" for a session cookie,
-// the scheme of the Authorization header otherwise, written with its first
-// letter in capitals ("Bearer", "Basic"). The name is an RFC 9110 token whose
-// only capital is its first character, which is the shape the gateway writes.
+// WithChallenge sets the scheme name Identity.Challenge reads: "Cookie" for a
+// session cookie, otherwise the Authorization scheme with its first letter in
+// capitals, an RFC 9110 token whose only capital is its first character.
 func WithChallenge(scheme string) Option { return func(s *spec) { s.challenge = scheme } }
 
 // WithProvider sets the enterprise SSO provider, a UUID text in its canonical
@@ -174,44 +135,22 @@ func WithProvider(id string) Option { return func(s *spec) { s.provider = id } }
 // without it: a scope belongs to an impersonation.
 func WithScope(tenant string) Option { return func(s *spec) { s.scope = tenant } }
 
-// WithAttributes sets the read-only attribute set. The map is copied. Keys and
-// values are held to the gateway's bounds: at most 32 entries, 4 KiB of keys
-// and values together, keys of the form [a-z0-9][a-z0-9._-]{0,63}, values of
-// valid UTF-8 without control characters and at most 256 bytes. The reserved
-// prefixes idp. and authn. are not checked: the gateway cannot tell who wrote a
-// key, so they are kept by whoever writes an attribute.
+// WithAttributes sets the read-only attribute set, copied. Keys are
+// [a-z0-9][a-z0-9._-]{0,63} and values valid UTF-8 of at most 256 bytes, at most
+// 32 entries and 4 KiB together; the reserved idp. and authn. prefixes are not checked.
 func WithAttributes(m map[string]string) Option {
 	own := maps.Clone(m)
 	return func(s *spec) { s.attributes = own }
 }
 
-// WithAccess sets the access level recorded for the route. The default is
-// AccessRequired, a guarded route with no registration, which is the level a
-// request that carries an identity usually has; AccessOptional is the other
-// level the gateway pairs with an identity. AccessOpen and AccessUnknown are
-// never paired with one, and Context fails the test that asks for either:
-// Anonymous makes the contexts those levels belong to.
+// WithAccess sets the access level recorded for the route, AccessRequired by
+// default; AccessOptional is the other level paired with an identity, and Context
+// fails the test that asks for AccessOpen or AccessUnknown, which Anonymous builds.
 func WithAccess(a authn.Access) Option { return func(s *spec) { s.access = a } }
 
-// Context returns ctx with an identity and an access level in it, the way the
-// gateway leaves them: authn.FromContext reads the identity and
-// authn.AccessFromContext reads the level.
-//
-// The identity is built from the options over these defaults: the account is
-// DefaultAccount, the methods are the password alone, the assurance is
-// AssuranceSingle, the time of authentication is DefaultAuthTime, the backend
-// is DefaultBackend, the challenge is DefaultChallenge, the access level is
-// AccessRequired, and there is no actor, session, scope, provider or attribute.
-//
-// A combination the gateway would not stamp fails the test, through t.Fatalf,
-// naming the field: a malformed account, an impersonation without a session or
-// a scope or with the actor equal to the account, a scope without an actor, a
-// multi-factor declaration of an IdP with no multi-factor assurance or no
-// provider, methods out of the set, a zero authentication time, a malformed
-// backend name, challenge, scope, provider or attribute, an account or actor
-// whose static prefix and backend disagree, and an access level of AccessOpen
-// or AccessUnknown, which the gateway leaves no identity beside. The context
-// returned on that path is ctx unchanged, which carries no identity.
+// Context returns ctx carrying an identity and an access level, as the gateway
+// leaves them, built from the options over the package defaults; a combination
+// the gateway would not stamp fails the test through t.Fatalf, returning ctx unchanged.
 func Context(t testing.TB, ctx context.Context, opts ...Option) context.Context {
 	t.Helper()
 	s := spec{
@@ -249,17 +188,9 @@ func Context(t testing.TB, ctx context.Context, opts ...Option) context.Context 
 	return identity.WithAccess(identity.With(ctx, id), s.access)
 }
 
-// Anonymous returns ctx with an access level in it and no identity, the way the
-// gateway leaves a request that carries none: AccessOpen on an exempt route and
-// AccessOptional on an optional route that got no credential. authn.FromContext
-// reads false and authn.AccessFromContext reads access, so a module's anonymous
-// branch, which has to tell the two apart, is driven by the real thing.
-//
-// Any other level fails the test through t.Fatalf and returns ctx unchanged:
-// AccessRequired never reaches a handler without an identity, because the
-// gateway refuses the request first, and AccessUnknown is what a context the
-// gateway never decided anything for already reads as, so there is nothing to
-// build.
+// Anonymous returns ctx with an access level and no identity: AccessOpen on an
+// exempt route and AccessOptional on an optional route with no credential, where
+// authn.FromContext reads false; any other level fails the test and returns ctx.
 func Anonymous(t testing.TB, ctx context.Context, access authn.Access) context.Context {
 	t.Helper()
 	if access != authn.AccessOpen && access != authn.AccessOptional {
@@ -270,8 +201,8 @@ func Anonymous(t testing.TB, ctx context.Context, access authn.Access) context.C
 	return identity.WithAccess(ctx, access)
 }
 
-// check applies the gateway's checks before stamping, in the order the design
-// lists them, and reports the first that fails.
+// check applies the gateway's checks before stamping, in their fixed order, and
+// reports the first that fails.
 func (s *spec) check() error {
 	if _, err := authn.ParseAccountID(string(s.account)); err != nil {
 		return fmt.Errorf("the account is not a well-formed identifier: %w", err)
@@ -376,10 +307,7 @@ func (s *spec) checkNamespace() error {
 	return nil
 }
 
-// challengeScheme reports whether v is a scheme name as the gateway writes one
-// into a challenge: an RFC 9110 token that is not in lower case at its first
-// character and has no capital after it, the folded name with its first letter
-// raised.
+// challengeScheme reports whether v is an RFC 9110 token with no capital but its first character.
 func challengeScheme(v string) bool {
 	if v == "" {
 		return false

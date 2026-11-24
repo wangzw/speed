@@ -13,14 +13,13 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// schemeBearer is the one Authorization scheme this backend takes whole. A token
-// arrives only under it, and the design fixes the value.
+// schemeBearer is the one Authorization scheme this backend takes whole; a token
+// arrives only under it.
 const schemeBearer = "bearer"
 
-// maxTokenLen is the longest an access token may be, in bytes. It is checked
-// before the token is parsed, so the arbitrary bytes an unauthenticated caller
-// controls reach the parser bounded: go-jose has a disclosed malformed-input
-// panic, and this limit together with the gateway's recover is what contains it.
+// maxTokenLen is the longest an access token may be, in bytes, checked before it
+// is parsed: go-jose has a disclosed malformed-input panic, and this limit with
+// the gateway's recover is what contains it.
 const maxTokenLen = 8192
 
 // maxTokenLifetime is the longest interval an access token may claim between its
@@ -28,15 +27,9 @@ const maxTokenLen = 8192
 // backend refuses a token whose exp - iat is past it whatever was configured.
 const maxTokenLifetime = accessTTLUpperBound
 
-// verifyClaims is the claim set of an access token as the backend reads it. It
-// is decoded by signedToken.validate, which checks the signature and the
-// library's standard claims first, so a value of it was carried by a token that
-// verifies.
-//
-// The standard claims are plain fields rather than a library type: this file may
-// not import the JOSE library (jose.go is the package's one importer). The
-// library's own claim rules are applied by the bridge, signedToken.validate; the
-// rules the library leaves out are the ones checkRequiredClaims writes here.
+// verifyClaims is the claim set of an access token. It is decoded by
+// signedToken.validate, which checks the signature and the library's standard
+// claims first; the rules the library leaves out are checkRequiredClaims'.
 type verifyClaims struct {
 	Issuer    string   `json:"iss"`
 	Subject   string   `json:"sub"`
@@ -53,17 +46,12 @@ type verifyClaims struct {
 
 	ClientID string `json:"client_id"`
 
-	// The impersonation claims, present only on an impersonation token. The
-	// imp_tenant claim is not read here: this process takes the scope from the
-	// impersonation record, and the claim is only for an external verifier that
-	// reads the token offline.
+	// The impersonation claims, present only on an impersonation token. imp_tenant
+	// is not read here; the scope comes from the impersonation record.
 	Actor *actorClaim `json:"act"`
 	Imp   string      `json:"imp"`
 }
 
-// Name reports the name this backend answers under. It is a constant of the code
-// and not an input: the gateway stamps it on every identity this backend vouches
-// for.
 func (p *product) Name() string { return backendName }
 
 // Accepts declares what this backend takes and what it may hand back: the bearer
@@ -78,11 +66,9 @@ func (p *product) Accepts() authn.Accepts {
 	}
 }
 
-// Challenge writes this backend's part of a 401's challenge. A token backend adds
-// error="invalid_token" when the request carried a token this backend refused, as
-// RFC 6750 and RFC 9068 require; otherwise the token is not refused on this
-// backend's account and the challenge names the scheme alone. realm is already
-// escaped by the gateway.
+// Challenge writes this backend's part of a 401. With a refused token it adds
+// error="invalid_token" as RFC 6750 and RFC 9068 require; realm is already escaped
+// by the gateway.
 func (p *product) Challenge(realm string, rejected bool) []string {
 	value := `Bearer realm="` + realm + `"`
 	if rejected {
@@ -91,18 +77,10 @@ func (p *product) Challenge(realm string, rejected bool) []string {
 	return []string{value}
 }
 
-// Verify checks one bearer access token, in the order the design fixes: length
-// and shape, header and algorithm, local key, signature, standard claims, the
-// account snapshot, the session and the impersonation record, and the principal
-// drawn from all of them last. A step that does not hold ends the request in a
-// Denied whose cause reaches the log; a store that cannot be reached is
-// Unavailable, never a pass.
-//
-// The input is arbitrary bytes: the steps are ordered so the cheap, state-free
-// checks run before anything reads a store, and the token's kid, typ and
-// algorithm are held to closed sets before the signature is checked at all.
+// Verify checks one bearer access token, from its length and shape through the
+// local key, signature, standard claims, account, session and impersonation
+// record; a failing step denies, and an unreachable store is never a pass.
 func (p *product) Verify(ctx context.Context, c authn.Credential) authn.Verdict {
-	// Step 1: bound the input and require the three segments of a compact JWS.
 	if len(c.Value) > maxTokenLen {
 		return p.deny(ctx, slog.LevelInfo, "the token is longer than the limit")
 	}
@@ -110,10 +88,9 @@ func (p *product) Verify(ctx context.Context, c authn.Credential) authn.Verdict 
 		return p.deny(ctx, slog.LevelInfo, "the token is not three segments")
 	}
 
-	// Step 2: parse under the configured algorithms only; require a kid and an
-	// access-token typ, and refuse any critical header extension. A header that
-	// points at key material elsewhere (jku, x5u, jwk, x5c) is never used and
-	// never fetched: the key is taken from the local set below alone.
+	// Parsed under the configured algorithms only, with a kid and an access-token
+	// typ required and any critical extension refused. A header pointing at key
+	// material elsewhere is never used: the key comes from the local set alone.
 	st, err := parseSigned(c.Value, p.keys.algorithms)
 	if err != nil {
 		return p.deny(ctx, slog.LevelInfo, "the token does not parse under the configured algorithms",
@@ -131,8 +108,6 @@ func (p *product) Verify(ctx context.Context, c authn.Credential) authn.Verdict 
 		return p.deny(ctx, slog.LevelInfo, "the token names a critical header extension")
 	}
 
-	// Step 3: take the key from the local set by its kid and require the key's
-	// registered algorithm to be the one in the header.
 	key, ok := p.keys.lookup(kid)
 	if !ok {
 		return p.deny(ctx, slog.LevelInfo, "the token's kid is not in the configured key set")
@@ -141,9 +116,6 @@ func (p *product) Verify(ctx context.Context, c authn.Credential) authn.Verdict 
 		return p.deny(ctx, slog.LevelInfo, "the token's algorithm is not the one its key carries")
 	}
 
-	// Steps 4 and the library's half of step 5: check the signature and the
-	// standard claims the library validates — the issuer, the audience and the
-	// times. The claims come back only from this call.
 	now := p.clock.Now()
 	var vc verifyClaims
 	if verr := st.validate(key.pub, &vc, p.cfg.issuer, p.cfg.audience, now, p.settings.leeway()); verr != nil {
@@ -151,18 +123,14 @@ func (p *product) Verify(ctx context.Context, c authn.Credential) authn.Verdict 
 			slog.Any("error", verr))
 	}
 
-	// Step 5's own rules: the claims the library treats as optional and the
-	// lifetime bound.
 	if refused := p.checkRequiredClaims(ctx, vc); refused != nil {
 		return *refused
 	}
 	sub := authn.AccountID(vc.Subject)
 
-	// Step 6: the account snapshot, through the cache so that a database which
-	// cannot be reached still serves an identity read within check-ttl. The
-	// account of sub must be enabled, and the token not older than the instant
-	// after which the account's tokens are void, compared by the second the
-	// token's iat carries.
+	// The account snapshot through the cache, so an unreachable database still
+	// serves an identity read within check-ttl. The account must be enabled and the
+	// token not issued before its valid-after instant.
 	acct, err := p.accountFor(ctx, sub)
 	switch {
 	case errors.Is(err, authn.ErrAccountNotFound):
@@ -177,19 +145,12 @@ func (p *product) Verify(ctx context.Context, c authn.Credential) authn.Verdict 
 		return p.deny(ctx, slog.LevelInfo, "the token was issued before the account's valid-after instant")
 	}
 
-	// Steps 7 and 8: the session, the impersonation record, and the principal.
 	return p.authenticate(ctx, vc, sub, acct)
 }
 
-// checkRequiredClaims applies the standard-claim rules the library does not: the
-// claims it treats as optional — exp, iat, jti, sub, sid, client_id — are
-// required, the lifetime is bounded, and the subject is held to a well-formed
-// account identifier. The issuer, the audience and the times are the bridge's,
-// checked in signedToken.validate before this runs.
-//
-// A claim the library treats as optional but this backend requires is a defect
-// the bridge is there to catch, and an over-long lifetime is the same, so both
-// are logged at Error.
+// checkRequiredClaims applies the standard-claim rules the library omits: exp, iat,
+// jti, sub, sid and client_id are required, the lifetime is bounded, and the
+// subject must be a well-formed account identifier.
 func (p *product) checkRequiredClaims(ctx context.Context, vc verifyClaims) *authn.Verdict {
 	if vc.Expiry == nil || vc.IssuedAt == nil {
 		v := p.deny(ctx, slog.LevelError, "the token carries no exp or no iat, which the bridge requires")
@@ -223,13 +184,8 @@ func (p *product) checkRequiredClaims(ctx context.Context, vc verifyClaims) *aut
 }
 
 // authenticate runs the session and impersonation steps and builds the principal
-// the token's kind calls for.
-//
-// The session step runs only when check-session is on; the impersonation step
-// runs whenever the token names a record, whatever check-session says, so an
-// impersonation the switch would otherwise drop still takes effect, bounded by
-// the impersonation cache's check-ttl. A token that names an impersonation record
-// or a session whose capability is absent is a refusal, never a pass.
+// the token's kind calls for. The impersonation step runs whenever the token names
+// a record, whatever check-session says; an absent capability refuses.
 func (p *product) authenticate(ctx context.Context, vc verifyClaims, sub authn.AccountID, acct authn.Account) authn.Verdict {
 	sid := authn.SessionID(vc.Session)
 	service := slices.Contains(vc.Methods, string(authn.MethodClientSecret))
@@ -294,10 +250,9 @@ func (p *product) authenticate(ctx context.Context, vc verifyClaims, sub authn.A
 	principal := authn.Principal{Account: sub, Session: sid}
 	switch {
 	case impersonation:
-		// The identity is the target's; the actor and the tenant come from the
-		// record, never from the imp_tenant claim. The authentication facts are the
-		// operator session's own, uncapped, because the operator is the one who
-		// authenticated; check-session off takes what the token itself carries.
+		// The identity is the target's; the actor and tenant come from the record,
+		// never from the imp_tenant claim. Authentication facts are the operator
+		// session's own.
 		principal.Actor = actor
 		principal.Scope = grant.Tenant
 		if haveSession {
@@ -313,8 +268,6 @@ func (p *product) authenticate(ctx context.Context, vc verifyClaims, sub authn.A
 		}
 		principal.Attributes = principalAttributes(acct.Attributes, nil)
 	case service:
-		// A service-account token's facts come from the token: the session row
-		// records them once at creation and they do not change per issuance.
 		principal.Methods = []authn.Method{authn.MethodClientSecret}
 		principal.Assurance = authn.AssuranceSingle
 		principal.AuthTime = time.Unix(*vc.IssuedAt, 0)
@@ -399,10 +352,8 @@ func assuranceOf(acr string) authn.Assurance {
 	return authn.AssuranceSingle
 }
 
-// principalAttributes is the attribute set of an identity: the account's, and the
-// idp.* entries the session carried. An account attribute under a reserved prefix
-// is dropped, because idp.* and authn.* belong to whoever writes them, which is
-// the IdP mapping and this capability.
+// principalAttributes is the account's attributes plus the session's idp.* entries,
+// dropping any account attribute under a reserved prefix.
 func principalAttributes(account, idp map[string]string) map[string]string {
 	out := make(map[string]string, len(account)+len(idp))
 	for k, v := range account {

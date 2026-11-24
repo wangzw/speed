@@ -44,9 +44,8 @@ func TestOriginIsTheSchemeAndTheHostAlone(t *testing.T) {
 	}
 }
 
-// TestOriginRefusesWhatIsNotAnHTTPURL holds that a value that cannot name an
-// origin is an error and not an empty origin, which would read as "no public
-// URL" and trust nothing without saying so.
+// TestOriginRefusesWhatIsNotAnHTTPURL checks a value that cannot name an origin
+// is an error, not an empty origin.
 func TestOriginRefusesWhatIsNotAnHTTPURL(t *testing.T) {
 	for _, c := range []struct{ name, url string }{
 		{"no scheme", "example.com"},
@@ -75,9 +74,8 @@ func TestOriginRefusesWhatIsNotAnHTTPURL(t *testing.T) {
 	}
 }
 
-// TestTrustedOriginsListsThePublicOneFirstAndEachOtherOnce holds the set the
-// check is built from: the public origin is always in it when there is one, what
-// is trusted besides is in it as written, and nothing is in it twice.
+// TestTrustedOriginsListsThePublicOneFirstAndEachOtherOnce checks the public
+// origin leads and no origin appears twice.
 func TestTrustedOriginsListsThePublicOneFirstAndEachOtherOnce(t *testing.T) {
 	for _, c := range []struct {
 		name    string
@@ -108,9 +106,8 @@ func TestTrustedOriginsListsThePublicOneFirstAndEachOtherOnce(t *testing.T) {
 	}
 }
 
-// TestTrustedOriginsDoesNotWriteIntoWhatItWasGiven holds that the list a caller
-// passed in is not the list the origin is appended to: the configuration slice
-// is shared with whoever else reads it.
+// TestTrustedOriginsDoesNotWriteIntoWhatItWasGiven checks the caller's slice is
+// not written into.
 func TestTrustedOriginsDoesNotWriteIntoWhatItWasGiven(t *testing.T) {
 	trusted := make([]string, 1, 4)
 	trusted[0] = "https://a.example"
@@ -122,9 +119,8 @@ func TestTrustedOriginsDoesNotWriteIntoWhatItWasGiven(t *testing.T) {
 	}
 }
 
-// TestTrustedOriginsRefusesAnEntryThatIsNotAnOrigin holds that a list entry is
-// judged on its own and is not skipped, and that what is said about it does not
-// repeat the value, which may carry user information.
+// TestTrustedOriginsRefusesAnEntryThatIsNotAnOrigin checks a bad entry is
+// refused, not skipped, without echoing it.
 func TestTrustedOriginsRefusesAnEntryThatIsNotAnOrigin(t *testing.T) {
 	for _, entry := range []string{
 		"", "a.example", "https://a.example/x", "https://a.example/", "https://*.a.example",
@@ -141,9 +137,8 @@ func TestTrustedOriginsRefusesAnEntryThatIsNotAnOrigin(t *testing.T) {
 	}
 }
 
-// TestTrustedOriginsRefusesAPublicURLThatHasNoOrigin holds that the public URL
-// is judged here too: a caller that did not validate it first is not handed a set
-// that quietly lacks the one origin that is always trusted.
+// TestTrustedOriginsRefusesAPublicURLThatHasNoOrigin checks an unusable public
+// URL is an error, not a set quietly missing it.
 func TestTrustedOriginsRefusesAPublicURLThatHasNoOrigin(t *testing.T) {
 	if got, err := TrustedOrigins("not a url", []string{"https://a.example"}); err == nil {
 		t.Errorf("TrustedOrigins gave %v with no error for a public URL with no origin", got)
@@ -182,9 +177,8 @@ func TestCrossOriginTrustsThePublicOriginAndTheListedOnesAndNoOther(t *testing.T
 	}
 }
 
-// TestCrossOriginRefusesAnUnusablePublicURL holds that a public URL that names
-// no origin fails the build of the check; swallowing it would hand back a check
-// that trusts nothing, with no sign at start-up.
+// TestCrossOriginRefusesAnUnusablePublicURL checks an unusable public URL fails
+// the build of the check.
 func TestCrossOriginRefusesAnUnusablePublicURL(t *testing.T) {
 	for _, publicURL := range []string{
 		"ftp://app.example.com", "https://", "not a url", "mailto:a@b.example",
@@ -201,8 +195,7 @@ func TestCrossOriginRefusesAnUnusablePublicURL(t *testing.T) {
 	}
 }
 
-// TestCrossOriginTrustsTheOriginAsABrowserSendsIt holds the point of the
-// canonical form: a public URL or entry written with a default port or capitals
+// TestCrossOriginTrustsTheOriginAsABrowserSendsIt checks non-canonical config
 // still trusts the origin header the browser sends.
 func TestCrossOriginTrustsTheOriginAsABrowserSendsIt(t *testing.T) {
 	check, err := CrossOrigin("https://App.Example.com:443/ui", []string{"HTTPS://Sibling.example.com:443"})
@@ -228,9 +221,8 @@ func TestCrossOriginWithNoPublicURLTrustsOnlyTheList(t *testing.T) {
 	}
 }
 
-// TestCrossOriginRefusesAnOriginTheLibraryCannotTrust holds that an entry that
-// is not an origin fails the build of the check, and is not left out of it: a
-// list with a dropped entry would read as a list that was applied.
+// TestCrossOriginRefusesAnOriginTheLibraryCannotTrust checks an entry that is not
+// an origin fails the build, not dropped.
 func TestCrossOriginRefusesAnOriginTheLibraryCannotTrust(t *testing.T) {
 	for _, c := range []struct{ name, origin string }{
 		{"no scheme", "a.example"},
@@ -245,9 +237,8 @@ func TestCrossOriginRefusesAnOriginTheLibraryCannotTrust(t *testing.T) {
 	}
 }
 
-// TestEachCrossOriginCheckIsItsOwn holds that two checks built from one
-// configuration do not share a bypass table: the callback pattern the Mounter
-// adds to its own is not a hole in the gateway's.
+// TestEachCrossOriginCheckIsItsOwn checks two checks from one configuration do
+// not share a bypass table.
 func TestEachCrossOriginCheckIsItsOwn(t *testing.T) {
 	mounter, err := CrossOrigin("https://app.example.com", nil)
 	if err != nil {

@@ -42,10 +42,8 @@ func bytesOf(size int) map[string]string {
 	return m
 }
 
-// TestAuthntestAndTheExitCheckAgreeOnEveryShapeAndBound holds the two copies
-// of the shape and bound rules to one another: the same principal is put to
-// checkPrincipal and to authntest.Context, and they have to accept or refuse
-// together.
+// TestAuthntestAndTheExitCheckAgreeOnEveryShapeAndBound accepts or refuses the
+// same principal in checkPrincipal and authntest.Context.
 func TestAuthntestAndTheExitCheckAgreeOnEveryShapeAndBound(t *testing.T) {
 	d := exitTable(t)
 	capable, static := backendNamed(t, d, "capable"), backendNamed(t, d, "static")

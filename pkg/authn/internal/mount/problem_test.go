@@ -100,8 +100,8 @@ var codeTable = []struct {
 	{"unavailable", 503},
 }
 
-// TestTheProblemCodesAreTheDesignsSetWithTheirStatuses holds the closed set
-// against the design, code by code, and refuses what is near it.
+// TestTheProblemCodesAreTheDesignsSetWithTheirStatuses holds each code's status
+// and refuses a near miss.
 func TestTheProblemCodesAreTheDesignsSetWithTheirStatuses(t *testing.T) {
 	if len(statusOf) != len(codeTable) {
 		t.Errorf("the code table has %d entries, the design has %d", len(statusOf), len(codeTable))
@@ -147,10 +147,8 @@ func TestTheProblemCodesAreTheDesignsSetWithTheirStatuses(t *testing.T) {
 	}
 }
 
-// TestFailWritesTheCodeAsAProblemWithNoCause holds the shape of an answer: the
-// media type, the type under urn:speed:authn:, the status of the code, a body
-// that is nothing but the problem's own members, and the headers the handler set
-// before the call.
+// TestFailWritesTheCodeAsAProblemWithNoCause holds the shape of a Fail answer
+// and that a header set before it survives.
 func TestFailWritesTheCodeAsAProblemWithNoCause(t *testing.T) {
 	for _, code := range []string{CodeBadRequest, CodeUnsupportedRegion, CodeFactorNotFound, CodeConflict, CodeLoginIdentifierRequired, CodeLastLoginMethod, CodeUsernameTaken, CodeEmailTaken, CodeUnsupportedMediaType} {
 		t.Run(code, func(t *testing.T) {
@@ -199,9 +197,8 @@ func mustPanic(t *testing.T, name string, f func()) string {
 	return s
 }
 
-// TestAWrongCodeIsADefectOfTheHandlerAndPanics holds that none of the writers
-// accepts a code it does not write: an unknown string, a code of another status
-// class, and the 401 that carries a challenge written through Fail.
+// TestAWrongCodeIsADefectOfTheHandlerAndPanics holds that a writer accepts only
+// the codes it writes.
 func TestAWrongCodeIsADefectOfTheHandlerAndPanics(t *testing.T) {
 	ctx := func() *gin.Context {
 		c, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -252,9 +249,8 @@ func TestForbiddenWritesThe403CodesItOwns(t *testing.T) {
 	}
 }
 
-// TestUnauthorizedOffersBearerAndCookieAndNeverBasic holds the challenge of a 401
-// this capability's handlers write: a Basic challenge would make a browser open
-// its own password prompt on a fetch that did not ask for a Basic credential.
+// TestUnauthorizedOffersBearerAndCookieAndNeverBasic holds the 401 challenge,
+// which never offers Basic.
 func TestUnauthorizedOffersBearerAndCookieAndNeverBasic(t *testing.T) {
 	for _, code := range []string{"", CodeLoginFailed, CodeFlowInvalid, CodeLinkRequired} {
 		w := serve(func(c *gin.Context) { Unauthorized(c, "main", code) }, http.MethodGet, nil, nil)
@@ -307,9 +303,8 @@ func TestTheRealmIsEscapedBeforeItIsWritten(t *testing.T) {
 	}
 }
 
-// TestThrottledCarriesTheWaitRoundedUp holds Retry-After on a 429: whole seconds,
-// never rounded down to a time the client would retry too early, and absent when
-// there is nothing to wait.
+// TestThrottledCarriesTheWaitRoundedUp holds Retry-After in whole seconds, never
+// rounded down, and absent when there is nothing to wait.
 func TestThrottledCarriesTheWaitRoundedUp(t *testing.T) {
 	for _, c := range []struct {
 		wait time.Duration
@@ -331,9 +326,8 @@ func TestThrottledCarriesTheWaitRoundedUp(t *testing.T) {
 	}
 }
 
-// TestUnavailableNeverSaysWhichDependencyFailed holds the 503: one type, no
-// Retry-After, and a body of nothing but the problem's members; Busy is the one
-// 503 that asks the client to come back in a second.
+// TestUnavailableNeverSaysWhichDependencyFailed holds the bare 503 body; Busy
+// alone carries Retry-After.
 func TestUnavailableNeverSaysWhichDependencyFailed(t *testing.T) {
 	w := serve(Unavailable, http.MethodGet, nil, nil)
 	if w.Code != http.StatusServiceUnavailable || problemBodyOf(t, w)["type"] != "urn:speed:authn:unavailable" {
@@ -363,9 +357,8 @@ func identityOf(t *testing.T, opts ...authntest.Option) authn.Identity {
 	return id
 }
 
-// TestStepUpRequiredNamesTheSchemeTheLevelAndTheAge holds the challenge of a
-// requirement not met: the scheme of the identity's own carrier, the RFC 9470
-// parameters, acr_values as the level's number and max_age as whole seconds.
+// TestStepUpRequiredNamesTheSchemeTheLevelAndTheAge holds the step-up challenge's
+// scheme, acr_values and max_age.
 func TestStepUpRequiredNamesTheSchemeTheLevelAndTheAge(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -423,9 +416,8 @@ func TestStepUpRequiredNamesTheSchemeTheLevelAndTheAge(t *testing.T) {
 	}
 }
 
-// TestStepUpRequiredMarksItsAnswer holds the mark a layer charging by outcome
-// reads: the step-up 401 is marked, and the plain 401 writers leave the request
-// unmarked so it stays a refusal of a credential.
+// TestStepUpRequiredMarksItsAnswer holds that StepUpRequired marks its 401 as a
+// step-up.
 func TestStepUpRequiredMarksItsAnswer(t *testing.T) {
 	var marked bool
 	serve(func(c *gin.Context) {
@@ -452,8 +444,7 @@ func TestUnauthorizedDoesNotMarkItsAnswer(t *testing.T) {
 }
 
 // TestStepUpRequiredDoesNotTrustTheSchemeToBeAHeaderValue holds that a scheme
-// that is not a token, which a defective stamp could carry, does not put a line
-// ending or a space into the header.
+// that is not a token falls back to Bearer.
 func TestStepUpRequiredDoesNotTrustTheSchemeToBeAHeaderValue(t *testing.T) {
 	for _, bad := range []string{"", "Bea rer", "Bearer\r\nX: 1", "Be\"arer", "Bearer,Basic", "用户"} {
 		if got := challengeScheme(bad); got != "Bearer" {
@@ -467,11 +458,8 @@ func TestStepUpRequiredDoesNotTrustTheSchemeToBeAHeaderValue(t *testing.T) {
 	}
 }
 
-// TestContactRequiredCodeMatchesTheRootConstant holds the two writers of the
-// contact-required type to one value: this capability's handlers build it as
-// typePrefix + CodeContactRequired, and the managing faces of the other
-// capabilities and a host's own surfaces write
-// authn.ContactRequiredProblemType.
+// TestContactRequiredCodeMatchesTheRootConstant holds the contact-required type
+// equal to authn.ContactRequiredProblemType.
 func TestContactRequiredCodeMatchesTheRootConstant(t *testing.T) {
 	if got := typePrefix + CodeContactRequired; got != authn.ContactRequiredProblemType {
 		t.Errorf("typePrefix+CodeContactRequired = %q, but authn.ContactRequiredProblemType = %q",

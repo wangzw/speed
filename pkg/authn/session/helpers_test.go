@@ -428,11 +428,9 @@ type dialectCase struct {
 	newDSN func(t *testing.T) string
 }
 
-// dialects lists the engines a case runs over, SQLite first.
-//
-// Only the engines whose fixture needs nothing installed belong here. The
-// integration build appends the ones that reach a server, so an untagged run
-// cannot name a dialect whose opener would fail for want of one.
+// dialects lists the engines a case runs over, SQLite first. The integration
+// build appends the engines that reach a server, so an untagged run names no
+// dialect whose opener would fail for want of one.
 var dialects = []dialectCase{
 	{
 		name:    "sqlite",
@@ -606,7 +604,6 @@ func noErr(t *testing.T, err error) {
 	}
 }
 
-// cookieOf is the credential a request carries after a browser session was made.
 func (f *fixture) cookieOf(token string) authn.Credential {
 	return authn.Credential{Cookie: f.p.cookie.name(), Value: token, Peer: "192.0.2.7:1234"}
 }

@@ -16,10 +16,8 @@ type provenWay struct {
 	named string
 }
 
-// TestTheProvenDescriptionsNameTheProvingWays holds the two identifier views'
-// `proven` descriptions to Verification.Proves: the description names every
-// way once, in runs joined by commas and conjunctions, and each run carries
-// only ways that share a Proves() answer.
+// TestTheProvenDescriptionsNameTheProvingWays holds that each identifier view's
+// `proven` description names every way once, grouped by its Proves() answer.
 func TestTheProvenDescriptionsNameTheProvingWays(t *testing.T) {
 	ways := []provenWay{
 		{authn.VerifiedViaSMSCode, "sms-code"},
@@ -90,10 +88,8 @@ func TestTheProvenDescriptionsNameTheProvingWays(t *testing.T) {
 	}
 }
 
-// describedRuns splits the ways a description names into the runs its commas
-// and conjunctions join. A run ends where prose, not punctuation and "and" or
-// "or", lies between two names, so a rewritten sentence still yields the runs
-// it means. Names are matched on word boundaries, which keeps "admin" out of
+// describedRuns splits the ways a description names into the runs its commas and
+// conjunctions join, matching names on word boundaries so "admin" stays out of
 // "administrator".
 func describedRuns(description string, ways []provenWay) [][]string {
 	type mention struct {

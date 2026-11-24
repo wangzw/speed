@@ -58,10 +58,8 @@ func relaxWarns(f *fixture, substrings ...string) []string {
 	return out
 }
 
-// TestARelaxingChangeWritesAWarnAndAnAuditRow holds the visibility: for every
-// watched setting, a change that moves it in its relaxing direction writes one
-// Warn naming the key and the direction and one best-effort audit row, and
-// nothing else.
+// TestARelaxingChangeWritesAWarnAndAnAuditRow holds that a relaxing change writes
+// one Warn naming the key and direction and one best-effort audit row.
 func TestARelaxingChangeWritesAWarnAndAnAuditRow(t *testing.T) {
 	cases := []struct{ key, old, new string }{
 		{idleTimeoutPath, "30m0s", "45m0s"},
@@ -93,9 +91,8 @@ func TestARelaxingChangeWritesAWarnAndAnAuditRow(t *testing.T) {
 	}
 }
 
-// TestATighteningOrUnwatchedChangeWritesNothing holds the other direction and
-// the filter: a move that checks more is not a relaxation, and a setting this
-// module does not watch is not reported.
+// TestATighteningOrUnwatchedChangeWritesNothing holds that a tightening or
+// unwatched change writes nothing.
 func TestATighteningOrUnwatchedChangeWritesNothing(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	audit := f.withAudit()
@@ -111,9 +108,8 @@ func TestATighteningOrUnwatchedChangeWritesNothing(t *testing.T) {
 	}
 }
 
-// TestASensitiveChangeIsIgnoredEntirely holds the Sensitive filter against a
-// change whose values would relax: a withheld change is dropped before the
-// relaxation test, so it writes no Warn and no audit row.
+// TestASensitiveChangeIsIgnoredEntirely holds that a withheld change is dropped
+// before the relaxation test.
 func TestASensitiveChangeIsIgnoredEntirely(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	audit := f.withAudit()
@@ -126,10 +122,8 @@ func TestASensitiveChangeIsIgnoredEntirely(t *testing.T) {
 	}
 }
 
-// TestADeleteThatFallsBackToALongerDefaultIsARelaxation holds the comparison
-// over the declared default: a watched setting whose row is deleted reads as its
-// declared default, so a stored value shorter than the default is a relaxation
-// when it is removed.
+// TestADeleteThatFallsBackToALongerDefaultIsARelaxation holds that a deleted row
+// reads as its declared default, so a shorter stored value is a relaxation.
 func TestADeleteThatFallsBackToALongerDefaultIsARelaxation(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	audit := f.withAudit()
@@ -142,9 +136,8 @@ func TestADeleteThatFallsBackToALongerDefaultIsARelaxation(t *testing.T) {
 	}
 }
 
-// TestTheMonitorIsNotSubscribedWithoutASettingsStore holds the guard: without a
-// settings store there is no change to see, so the settings.changed handler is
-// not subscribed and a delivered change leaves no trace.
+// TestTheMonitorIsNotSubscribedWithoutASettingsStore holds that without a
+// settings store nothing is subscribed.
 func TestTheMonitorIsNotSubscribedWithoutASettingsStore(t *testing.T) {
 	f := newFixture(t, dialects[0], withoutSettings())
 	audit := f.withAudit()
@@ -156,8 +149,7 @@ func TestTheMonitorIsNotSubscribedWithoutASettingsStore(t *testing.T) {
 		t.Errorf("a change wrote audit rows without a settings store: %+v", audit.entries())
 	}
 
-	// Invoking the handler directly must not panic when the audit seam is absent:
-	// it writes the Warn alone and returns without failing the event.
+	// The handler must not panic when the audit seam is absent.
 	audit.err = errors.New("the audit is down")
 	if err := f.p.onSettingsChanged(context.Background(), event.Event{
 		Type: settings.ChangedEventType, Payload: settings.Change{Key: idleTimeoutPath, Old: "30m0s", New: "45m0s"},
@@ -166,9 +158,8 @@ func TestTheMonitorIsNotSubscribedWithoutASettingsStore(t *testing.T) {
 	}
 }
 
-// TestAnAuditWriteFailureStillWarnsAndDoesNotFail holds the best-effort
-// direction: the change is still reported at Warn and the handler carries on
-// rather than failing the event.
+// TestAnAuditWriteFailureStillWarnsAndDoesNotFail holds that a failed audit write
+// still warns and leaves the event unfailed.
 func TestAnAuditWriteFailureStillWarnsAndDoesNotFail(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	audit := f.withAudit()

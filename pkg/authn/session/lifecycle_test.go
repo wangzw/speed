@@ -11,9 +11,8 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// AccountDisabled revokes the account's browser and token sessions and leaves the
-// service row, which lapses with the account's status and comes back through
-// ForCredential.
+// TestAccountDisabledRevokesTheCookieAndTokenKindsAndLeavesTheServiceOne revokes
+// browser and token sessions and leaves the service row.
 func TestAccountDisabledRevokesTheCookieAndTokenKindsAndLeavesTheServiceOne(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -24,7 +23,7 @@ func TestAccountDisabledRevokesTheCookieAndTokenKindsAndLeavesTheServiceOne(t *t
 		secret, err := f.p.ForCredential(ctx, alice, "secret-1", nil)
 		noErr(t, err)
 
-		f.clock.Advance(time.Minute) // so the disabled instant is after the sessions
+		f.clock.Advance(time.Minute)
 		noErr(t, f.p.AccountDisabled(ctx, alice))
 
 		for _, id := range []authn.SessionID{browser.ID, token.ID} {
@@ -126,9 +125,8 @@ func TestTheAccountDeletedEventRemovesTheRowsToo(t *testing.T) {
 	})
 }
 
-// Correctness does not depend on the hook running: a session of a disabled
-// account is invalid even when no cleanup ever ran, because the validity is
-// judged against the account's status and valid-after instant.
+// TestASessionOfAnAccountWhoseHookWasMissedIsStillInvalid refuses a session of a
+// disabled account even when no cleanup ran.
 func TestASessionOfAnAccountWhoseHookWasMissedIsStillInvalid(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -138,8 +136,6 @@ func TestASessionOfAnAccountWhoseHookWasMissedIsStillInvalid(t *testing.T) {
 			t.Fatal("the session is not active to begin with")
 		}
 
-		// The account is disabled and no hook is invoked; only the account row
-		// changed.
 		f.clock.Advance(time.Minute)
 		f.disable(alice)
 		f.p.caches().accounts.Invalidate(string(alice))
@@ -170,9 +166,8 @@ func TestAnAssemblyWithoutABusStillRevokes(t *testing.T) {
 	}
 }
 
-// The account snapshot is cached: the account store is consulted once for a
-// session and not again while the entry holds, so a burst of requests is not a
-// burst of reads of the account table.
+// TestTheAccountIsReadOnceWhileItsSnapshotHolds reads the account store once for
+// repeated requests while the entry holds.
 func TestTheAccountIsReadOnceWhileItsSnapshotHolds(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -190,9 +185,8 @@ func TestTheAccountIsReadOnceWhileItsSnapshotHolds(t *testing.T) {
 	}
 }
 
-// An impersonation-ended event that names no record clears every cached
-// answer on the replica, which is what the publication that ends all
-// impersonations at once carries.
+// TestAnImpersonationEndedWithNoRecordClearsEveryCachedAnswer clears every cached
+// answer when the event names no record.
 func TestAnImpersonationEndedWithNoRecordClearsEveryCachedAnswer(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	_, token := impersonate(t, f)

@@ -4,9 +4,8 @@ import (
 	"testing"
 )
 
-// The session index is bounded like the cache beside it: past its capacity
-// the least recently used identifier is dropped, and an identifier it no
-// longer holds is a no-op to remove.
+// TestTheSessionIndexIsBounded drops the least recently used identifier past
+// capacity.
 func TestTheSessionIndexIsBounded(t *testing.T) {
 	x := newSessionIndex(2)
 	x.add("s1", "k1", alice)

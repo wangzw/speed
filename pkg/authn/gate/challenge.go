@@ -7,42 +7,26 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 )
 
-// cookieChallengeScheme is the scheme name a 401 carries when no backend takes
-// an Authorization scheme, so the credentials in the assembly all travel in
-// cookies. RFC 9110 requires a 401 to carry at least one challenge. The name is
-// not in the IANA registry of authentication schemes, and no standard client
-// knows it: it is a convention that satisfies the requirement, and a browser
-// does not open a password prompt for a scheme other than Basic and Digest.
+// cookieChallengeScheme is the challenge a 401 carries when no backend takes an
+// Authorization scheme: a scheme name no client knows, which still satisfies
+// RFC 9110 and does not make a browser open a password prompt.
 const cookieChallengeScheme = "Cookie"
 
 // challenge is the WWW-Authenticate value the 401s on one endpoint carry. It is
 // built once per endpoint in Init and read-only afterwards.
 type challenge struct {
 	// base is the value for a 401 on a request that carried no credential a
-	// backend took, or one that was not refused on a backend's account.
+	// backend took, or that was not refused on a backend's account.
 	base string
 	// rejected is the value for a 401 on a request whose credential reached the
 	// backend and was refused, for the backends that write their own challenge:
-	// the backend's part is built again with rejected set, which is where a
-	// token backend adds error="invalid_token". A backend without an entry
-	// answers with base.
+	// a backend without an entry answers with base.
 	rejected map[*backend]string
 }
 
-// newChallenge builds the challenge of one endpoint.
-//
-// The schemes are the ones backends take whole, each written the way a
-// challenge writes a scheme, and a backend that implements Challenger writes its
-// own part instead. The realm is the endpoint's name: a realm is the name of a
-// protection space, which is what an endpoint is here, since what a gateway
-// guards is named per endpoint and a caller's credentials are worth exactly as
-// much as the endpoint they were issued for. Inventing a word instead would put
-// a name of this module's choosing into every client that keeps credentials per
-// realm. It is escaped before it is handed to a backend or written, so a quote
-// or a backslash in an endpoint name cannot end the quoted string early.
-//
-// With no challenge to write, which is the case when no backend takes a scheme,
-// the value is the cookie challenge, so a 401 never goes out bare.
+// newChallenge builds the endpoint's challenge values: each backend's own parts,
+// or the cookie challenge when none takes a scheme, with the realm escaped so a
+// quote or backslash in the endpoint name cannot end the quoted string early.
 func newChallenge(d *dispatch, endpoint string) *challenge {
 	realm := mount.QuoteRealm(endpoint)
 	parts := make(map[*backend][]string, len(d.backends))

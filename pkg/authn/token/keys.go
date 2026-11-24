@@ -15,9 +15,8 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// The signing algorithms the module supports, as their JOSE names. They are the
-// closed set the "algorithm" item may take and the algorithms a configured key
-// may carry; the symmetric algorithms and "none" are not among them.
+// The signing algorithms the module supports, as their JOSE names: the closed
+// set the "algorithm" item may take; the symmetric algorithms and "none" are not.
 const (
 	algES256 = "ES256"
 	algRS256 = "RS256"
@@ -25,8 +24,8 @@ const (
 
 const useSig = "sig"
 
-// The sizes of a generated key. An ES256 key is a P-256 pair; an RS256 key is
-// an RSA pair of the least size the startup check accepts.
+// The sizes of a generated key: an ES256 key is a P-256 pair, an RS256 key the
+// least RSA size the startup check accepts.
 const (
 	rsaBits    = 2048
 	minRSABits = 2048
@@ -34,8 +33,7 @@ const (
 
 // keyEntry is one key of the set: its identifier, its algorithm, its public half
 // for verification and publication, and, for the signing key alone, the private
-// half as a signer. file names where it was read from, for the errors and the
-// diagnostics that point a reader at it.
+// half as a signer; file names where it was read from.
 type keyEntry struct {
 	kid    string
 	alg    string
@@ -44,20 +42,17 @@ type keyEntry struct {
 	file   string
 }
 
-// keySet is the keyset loaded at startup and never changed afterwards. entries
-// holds every key, signing the one that signs (nil when none is configured), and
-// algorithms the allow-list the verifying backend parses a token with.
+// keySet is the keyset loaded at startup and never changed afterwards: every
+// entry, the one that signs, and the allow-list the verifying backend parses with.
 type keySet struct {
 	entries    []keyEntry
 	signing    *keyEntry
 	algorithms []string
 }
 
-// loadKeySet reads the configured files into a keyset, validating the closed set
-// of startup conditions. A failure is ErrInvalidKey naming the file; the
-// diagnostics collected here are the cautions written once at startup: a private
-// key file that other users can read. The signing key file, when given, is the
-// one key that signs; the verification files are read for their public halves.
+// loadKeySet reads the configured files into a keyset, validating the startup
+// conditions. A failure is ErrInvalidKey naming the file; a private key other
+// users can read yields a caution. The signing file, when given, is the signer.
 func loadKeySet(cfg resolved) (*keySet, []diagnostic, error) {
 	var diags []diagnostic
 	var entries []keyEntry
@@ -117,12 +112,10 @@ func loadKeySet(cfg resolved) (*keySet, []diagnostic, error) {
 }
 
 // loadKeyFile reads one key file and validates it against the configured
-// algorithm. mustSign is true for the signing key file, which has to hold a
-// private key. The second return is the caution about the file's permissions,
-// present only for a file that holds a private key other users can read.
+// algorithm. mustSign is true for the signing file, which must hold a private
+// key. The second return is a caution for a world-readable private key.
 func loadKeyFile(path, algorithm string, mustSign bool) (keyEntry, *diagnostic, error) {
-	// The path is a configuration value and is cleaned before it is opened, so
-	// the traversal gosec's G304 warns about cannot be written into it.
+	// The path is cleaned before opening, so a configuration value cannot carry a traversal.
 	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		return keyEntry{}, nil, fmt.Errorf("%w: reading %s: %w", authn.ErrInvalidKey, path, err)
@@ -180,7 +173,7 @@ func keyAlgorithm(pub crypto.PublicKey) (string, error) {
 }
 
 // parseKeyPEM reads the first PEM block of data as a private key, a public key or
-// a certificate. A private key is returned both as it is and as its public half.
+// a certificate; a private key is returned both as it is and as its public half.
 func parseKeyPEM(data []byte) (crypto.PrivateKey, crypto.PublicKey, error) {
 	block, _ := pem.Decode(data)
 	if block == nil {
@@ -212,8 +205,7 @@ func parseKeyPEM(data []byte) (crypto.PrivateKey, crypto.PublicKey, error) {
 	return nil, nil, fmt.Errorf("the PEM block is not a private key, a public key or a certificate")
 }
 
-// worldReadable reports whether a file is readable by any user other than its
-// owner, which is only worth a caution for a file that holds a private key.
+// worldReadable reports whether a file is readable by any user other than its owner.
 func worldReadable(path string) bool {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -224,8 +216,7 @@ func worldReadable(path string) bool {
 
 // GenerateKey makes a signing key of the given algorithm and returns it as a
 // PKCS#8 PEM, the form the signing-key-file and the verification-key-files read.
-// It is for a host's command that mints a key and for tests; the module itself
-// never generates or rotates a key.
+// It is for a host command and for tests; the module never rotates a key.
 func GenerateKey(alg string) ([]byte, error) {
 	var key crypto.Signer
 	switch alg {

@@ -14,10 +14,8 @@ import (
 
 const modelPath = "github.com/vislake/speed/pkg/authn/internal/model"
 
-// TestTheValueTypePackagesDependOnLittle holds the layering the packaging
-// decision rests on: model imports only the standard library, and identity,
-// verdict and step import only the standard library and model, and none of
-// the three imports another.
+// TestTheValueTypePackagesDependOnLittle holds that model imports only the
+// standard library and identity, verdict and step import only those and model.
 func TestTheValueTypePackagesDependOnLittle(t *testing.T) {
 	const base = "github.com/vislake/speed/pkg/authn/internal/"
 	for _, c := range []struct {
@@ -41,10 +39,8 @@ func TestTheValueTypePackagesDependOnLittle(t *testing.T) {
 }
 
 // importsOf lists the imports of every non-test Go file in the package's
-// directory. The files are parsed and not asked of go list, which evaluates
-// build constraints and so would not show a file built only under another tag
-// or on another platform; a third-party import in such a file enters the
-// closure all the same.
+// directory, parsed rather than asked of go list so a file built only under
+// another tag still counts.
 func importsOf(t *testing.T, pkg string) []string {
 	t.Helper()
 	out, err := exec.Command("go", "list", "-f", "{{.Dir}}", pkg).CombinedOutput()

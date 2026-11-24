@@ -13,18 +13,9 @@ import (
 // malformed token reaches no parser.
 const maxAccessTokenBytes = 8192
 
-// Revoke handles a presented token as the kind it is: a refresh token revokes
-// the session it belongs to, an ordinary access token whose signature holds
-// revokes its session, an impersonation token ends its record and leaves the
-// administrator's session alone, and a service token is a no-op. A token that
-// cannot be recognised is a no-op too, and none of these outcomes tells the
-// caller whether the token was valid or even existed, so a presenter cannot use
-// this endpoint to probe a token's state.
-//
-// A dependency that cannot answer is ErrUnavailable instead: the revocation did
-// not happen, and the endpoint refuses rather than reporting a success the
-// session does not back. The direction is the design's — refuse, do not answer
-// the 200 a presenter would read as "the token is gone".
+// Revoke revokes the session or impersonation record a presented token names;
+// a service or unrecognized token is a no-op. No outcome reveals whether the
+// token existed, and a dependency that cannot answer is ErrUnavailable.
 func (p *product) Revoke(ctx context.Context, presented string) error {
 	if presented == "" {
 		return nil
@@ -71,12 +62,9 @@ func (p *product) revokeSession(ctx context.Context, session authn.SessionID) er
 	return nil
 }
 
-// endImpersonation ends the impersonation record an impersonation token names,
-// by force and with the reason revoked. It is a no-op when the capability is
-// absent, which is what an assembly without impersonation gets: the token is
-// already refused wherever it would be read. A store that cannot be reached is
-// ErrUnavailable, so the endpoint does not report a success the still-live
-// record contradicts.
+// endImpersonation ends the record an impersonation token names, by force with
+// reason revoked. Absent capability is a no-op; an unreachable store is
+// ErrUnavailable.
 func (p *product) endImpersonation(ctx context.Context, id string) error {
 	if p.impersonation == nil {
 		return nil
@@ -97,10 +85,8 @@ func (p *product) revokeUnavailable(ctx context.Context, op string, err error) e
 }
 
 // revokeClaims reads the claims of a presented access token whose signature
-// holds. It is the verifying path's first steps only — length, structure, the
-// header and the signature against the local key set — because a revocation
-// judges no lifetime and no session of its own. Anything that does not hold is
-// reported as "not a token I can act on".
+// holds: length, structure, header and signature only, judging no lifetime or
+// session; anything that fails reports the token unusable.
 func (p *product) revokeClaims(presented string) (tokenClaims, bool) {
 	if p.keys == nil || len(presented) > maxAccessTokenBytes {
 		return tokenClaims{}, false

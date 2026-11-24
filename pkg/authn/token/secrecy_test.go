@@ -10,9 +10,8 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestAConfigurationErrorNeverRepeatsTheSigningKeyMaterial holds that the
-// text of a failure to load the signing key carries the file and the reason
-// and never the key material itself.
+// TestAConfigurationErrorNeverRepeatsTheSigningKeyMaterial checks a key-load
+// failure never repeats the key material.
 func TestAConfigurationErrorNeverRepeatsTheSigningKeyMaterial(t *testing.T) {
 	const secret = "s3cr3t-signing-key-material-sentinel-9f8e7d6c"
 	dir := t.TempDir()

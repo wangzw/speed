@@ -46,7 +46,8 @@ func normalIssue(session authn.SessionID) authn.IssueToken {
 	}
 }
 
-// checks that the issued claim set is the design's table.
+// TestTheIssuedClaimSetIsTheDesignsTable holds the issued claim set against the
+// claim table it must match.
 func TestTheIssuedClaimSetIsTheDesignsTable(t *testing.T) {
 	r := newRig(t)
 	session := authn.SessionID("sess-1")
@@ -137,10 +138,8 @@ func TestAnImpersonationTokenCarriesTheOperatorsLevelAndTheActor(t *testing.T) {
 	}
 }
 
-// TestAnImpersonationTokenExpiresNoLaterThanItsRecord holds the cap on the
-// issuing path: a record with less time left than the access-ttl setting makes
-// the token expire with the record, so an offline verifier reading exp alone
-// cannot extend the impersonation past its own end.
+// TestAnImpersonationTokenExpiresNoLaterThanItsRecord checks the token expires
+// with its record when that ends sooner than the TTL.
 func TestAnImpersonationTokenExpiresNoLaterThanItsRecord(t *testing.T) {
 	r := newRig(t)
 	remaining := 3 * time.Minute
@@ -165,10 +164,8 @@ func TestAnImpersonationTokenExpiresNoLaterThanItsRecord(t *testing.T) {
 	}
 }
 
-// TestAnImpersonationTokenIsRefusedForARecordThatDoesNotHold holds the failure
-// direction of the cap: no remaining time can be read from a record that is not
-// active, from one whose store cannot answer, or from an assembly with no
-// impersonation capability, so none of them issues a token.
+// TestAnImpersonationTokenIsRefusedForARecordThatDoesNotHold checks an inactive,
+// unreadable or absent record issues no token.
 func TestAnImpersonationTokenIsRefusedForARecordThatDoesNotHold(t *testing.T) {
 	in := normalIssue(authn.SessionID("sess-1"))
 	in.Actor = "acct-admin"
@@ -355,9 +352,8 @@ func jwksKIDs(t *testing.T, set *keySet) map[string]bool {
 	return out
 }
 
-// TestAKeyRotationRollsOverInTwoPhases walks the four-step rotation: publish
-// a new key for verification, switch the signing key to it, then retire the
-// old one.
+// TestAKeyRotationRollsOverInTwoPhases checks a new key verifies before it signs
+// and the old one retires after.
 func TestAKeyRotationRollsOverInTwoPhases(t *testing.T) {
 	a := generatedKey(t, algES256)
 	b := generatedKey(t, algES256)
@@ -425,10 +421,8 @@ func standIn(name string, token core.Token) core.Module {
 	return core.Module{Name: name, Provides: []core.Provision{{Token: token}}}
 }
 
-// TestTheModuleDeliversTheTokenSurfaceThroughTheRegistry drives the real
-// registry through this module's descriptor: it arrives at Init with the
-// product constructed, resolves the token surface from it and issues through
-// it.
+// TestTheModuleDeliversTheTokenSurfaceThroughTheRegistry checks the real
+// registry resolves the token surface and issues through it.
 func TestTheModuleDeliversTheTokenSurfaceThroughTheRegistry(t *testing.T) {
 	database := dbtest.SQLite(t, filepath.Join(t.TempDir(), "tokens.db")+"?_pragma=busy_timeout(5000)", nil)
 	mounter := mounttest.New(t)
@@ -514,9 +508,8 @@ func TestTheAccessTTLBoundaryIsExact(t *testing.T) {
 	}
 }
 
-// TestTheRevokeLengthBoundaryActsOnATokenOfExactlyTheLimit holds the revoke
-// path's length guard at its boundary: a token of exactly maxAccessTokenBytes is
-// recognised, so the comparison is not one off.
+// TestTheRevokeLengthBoundaryActsOnATokenOfExactlyTheLimit checks a token of
+// exactly maxAccessTokenBytes is recognised.
 func TestTheRevokeLengthBoundaryActsOnATokenOfExactlyTheLimit(t *testing.T) {
 	r := newRig(t)
 	id, _ := r.issueRefresh()

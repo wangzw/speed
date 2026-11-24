@@ -7,18 +7,9 @@ import (
 	"testing"
 )
 
-// forbidden are the packages the gateway's closure may not hold: it keeps no
-// store, and it does not know the tenant directory. A gateway that depended on
-// the database or the key-value primitives would stop being the layer that
-// answers when the store is down, and one that imported the tenant module would
-// reverse the direction the design fixes between authentication and tenancy.
-//
-// The first credential backend, pkg/authn/static, is held out as well: the
-// gateway knows backends only through the interface and the backend does not
-// import the gateway, so neither reaches the other. The rule is about this
-// package's production closure, which is what depsOf lists; the external test
-// package imports the backend to run the two together, and a test import is not
-// an edge of the closure.
+// forbidden are the packages the gateway's production closure may not hold: it
+// keeps no store, knows no tenant directory and reaches no credential backend.
+// The rule is over the closure depsOf lists; a test import is not an edge of it.
 var forbidden = []string{
 	"github.com/vislake/speed/pkg/authn/static",
 	"github.com/vislake/speed/pkg/db",
@@ -52,9 +43,8 @@ func forbiddenIn(listing []string) []string {
 	return out
 }
 
-// TestTheGatewayHoldsNoStoreAndNoTenantInItsClosure holds the dependency
-// statement of the design over the closure and not only over the direct
-// imports: something it imports for another reason could bring a store in.
+// TestTheGatewayHoldsNoStoreAndNoTenantInItsClosure checks the closure, not only
+// the direct imports, for a store, the tenant module and the static backend.
 func TestTheGatewayHoldsNoStoreAndNoTenantInItsClosure(t *testing.T) {
 	listing := depsOf(t)
 

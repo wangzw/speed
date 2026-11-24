@@ -11,17 +11,13 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The directions this module's settings relax in. A duration relaxes in
-// dirIncrease, where a larger value admits a token or a retry the declared
-// default would have refused: a longer-lived access token, a wider clock-skew
-// allowance, a longer idle refresh lifetime, a longer reuse window. A switch
-// relaxes by moving to the value it names in relaxingSwitch.
+// The directions this module's settings relax in: dirIncrease admits a token or a
+// retry a larger value would have refused, and dirRelaxed is a switch moved to
+// the value that checks less.
 const (
 	dirIncrease = "increase"
-	// dirRelaxed is the direction of a switch moved to the value that checks
-	// less. It is the authn events contract's direction for the relaxation
-	// switches, whose value set also includes to-false, to-zero, add-member and
-	// remove-member.
+	// dirRelaxed is a switch moved to the value that checks less; the authn events
+	// contract also defines to-false, to-zero, add-member and remove-member.
 	dirRelaxed = "relax"
 )
 
@@ -47,11 +43,8 @@ const (
 	relaxedOutcome = "relaxed"
 )
 
-// onSettingsChanged is the subscriber of the settings module's change event. A
-// change to one of this module's settings in the direction that relaxes a check
-// is a Warn and a best-effort audit record, and nothing else: the settings store
-// has no access control of its own and cannot be made to refuse, so what this
-// module guarantees is that the change is visible after the fact. The handler is
+// onSettingsChanged reports, as a Warn and a best-effort audit record, a change
+// to one of this module's settings in the direction that relaxes a check. It is
 // idempotent and never fails an event.
 func (p *product) onSettingsChanged(ctx context.Context, evt event.Event) error {
 	var change settings.Change
@@ -61,9 +54,8 @@ func (p *product) onSettingsChanged(ctx context.Context, evt event.Event) error 
 	if change.Sensitive {
 		return nil
 	}
-	// Every setting this module watches is read from the global layer alone, so
-	// a row written at a tenant layer leaves the effective value unchanged and
-	// is not a relaxation.
+	// Every watched setting is read from the global layer alone, so a tenant-layer
+	// row is not a relaxation.
 	if evt.TenantID != "" {
 		return nil
 	}
@@ -85,8 +77,7 @@ func (p *product) onSettingsChanged(ctx context.Context, evt event.Event) error 
 }
 
 // warnRelaxation writes the Warn a removed check is visible by: the key and the
-// direction, never the value. The startup diagnostics write it when the value is
-// already relaxed, and the change handler writes it when a value is moved there.
+// direction, never the value.
 func (p *product) warnRelaxation(key, direction string) {
 	p.logger.Warn(diagnosticPrefix+ModuleName+": a setting is at a value that checks less than before",
 		slog.String("setting", key), slog.String("direction", direction))

@@ -31,10 +31,8 @@ import (
 
 const testCheckSessionKey = "authn.token.check-session"
 
-// TestTheCheckSessionSettingOffLetsARevokedSessionVerify holds that the session
-// step is governed at run time by the settings store: a token naming a session
-// the store no longer holds is refused under the declared default and verifies
-// once authn.token.check-session is written false.
+// TestTheCheckSessionSettingOffLetsARevokedSessionVerify verifies a token naming
+// a session the store no longer holds once check-session is written false.
 func TestTheCheckSessionSettingOffLetsARevokedSessionVerify(t *testing.T) {
 	store, _ := deliveredSettings(t)
 	v := newVfy(t)
@@ -50,10 +48,8 @@ func TestTheCheckSessionSettingOffLetsARevokedSessionVerify(t *testing.T) {
 	}
 }
 
-// TestRelaxingTheCheckSessionSettingWritesAWarnAndAnAuditRecord holds the
-// visibility of turning the session check off: the write publishes a change,
-// the module's subscription answers it with one Warn naming the key and never
-// the value, and one best-effort audit record with the relaxed action.
+// TestRelaxingTheCheckSessionSettingWritesAWarnAndAnAuditRecord writes one Warn
+// naming the key and never its value, plus one best-effort audit record.
 func TestRelaxingTheCheckSessionSettingWritesAWarnAndAnAuditRecord(t *testing.T) {
 	store, bus := deliveredSettings(t)
 	r := newRig(t)
@@ -97,10 +93,8 @@ func TestRelaxingTheCheckSessionSettingWritesAWarnAndAnAuditRecord(t *testing.T)
 	}
 }
 
-// TestATenantLayerWriteIsNotARelaxation holds that a write at a tenant layer is
-// not reported: the switch is read from the global layer alone, so a tenant row
-// leaves the effective value unchanged and must not manufacture a relaxation
-// warning or an audit row.
+// TestATenantLayerWriteIsNotARelaxation reports nothing for a write at a tenant
+// layer, since the switch is read from the global layer alone.
 func TestATenantLayerWriteIsNotARelaxation(t *testing.T) {
 	store, bus := deliveredSettings(t)
 	r := newRig(t)
@@ -120,9 +114,8 @@ func TestATenantLayerWriteIsNotARelaxation(t *testing.T) {
 	}
 }
 
-// TestAConfigurationCarryingTheRemovedCheckSessionItemFailsStartup holds the
-// move out of configuration: a configuration file that still carries the item is
-// an unknown key and refuses the startup, naming the key.
+// TestAConfigurationCarryingTheRemovedCheckSessionItemFailsStartup refuses a
+// configuration that still carries the item as an unknown key.
 func TestAConfigurationCarryingTheRemovedCheckSessionItemFailsStartup(t *testing.T) {
 	_, err := loadConfig(t, `{"authn":{"token":{"issuer":"https://auth.example.com","check-session":false}}}`)
 	if !errors.Is(err, config.ErrUnknownKey) {
@@ -173,11 +166,9 @@ func (b *deliveredBus) lastChange(t *testing.T) settings.Change {
 	return settings.Change{}
 }
 
-// deliveredSettings runs this module's declaration through the settings module
-// that builds the key table from it, over a SQLite database the database module
-// opened, and returns the store it delivers and the bus it publishes on. This
-// module is registered for its declaration alone, the way the key table reads
-// every registered module's: it does not take part in the drive.
+// deliveredSettings drives this module's declaration through the settings
+// module over SQLite and returns the store it delivers and the bus it publishes
+// on; this module is registered for its declaration alone.
 func deliveredSettings(t *testing.T) (settings.Store, *deliveredBus) {
 	t.Helper()
 	database := dbtest.SQLite(t, filepath.Join(t.TempDir(), "settings.db"), nil)
@@ -285,10 +276,9 @@ func TestTheCheckSessionSwitchIsReadAfterTheSettingsSnapshotLoads(t *testing.T) 
 	reader := authntest.ConfigReaderAll(t, body, Module(), gate.Module())
 	logs := &logBuffer{}
 
-	// The providers are named so that all of them sort before "settings", as the
-	// real ones do ("authn.account", "authn.mount", "authn.session"): without the
-	// token module's optional requirement on the settings store, the graph then
-	// leaves both modules ready at once and takes "authn.token" first.
+	// The providers sort before "settings", as the real ones do: without the
+	// token module's optional requirement on the store, the graph would take
+	// "authn.token" before the snapshot loads.
 	const (
 		providerDB        = "provider.db"
 		providerMount     = "provider.mount"

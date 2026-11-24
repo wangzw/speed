@@ -39,9 +39,8 @@ type refreshRow struct {
 	ReplacedBy    sql.NullString `gorm:"column:replaced_by"`
 }
 
-// errNoRefreshRow is what a lookup that found no row reports. A presented token
-// that is not in the table is the design's "the row does not exist" case, which
-// answers invalid_grant and triggers no revocation.
+// errNoRefreshRow is what a lookup that found no row reports: a presented token
+// that is not in the table answers invalid_grant and triggers no revocation.
 var errNoRefreshRow = errors.New("token: no such refresh row")
 
 func (r *refreshRow) normalize() {
@@ -110,13 +109,9 @@ func nullTime(t sql.NullTime) any {
 	return clock.UTC(t.Time)
 }
 
-// rotate consumes row in one transaction: it marks the row used with replaced_by
-// pointing at the child, calls sign, inserts the child and commits. The
-// conditional update is the arbiter between concurrent presentations of the same
-// token: exactly one caller sees one row changed, and its result is true; every
-// other caller sees none, and the transaction rolls back so nothing is written.
-// When sign or the insert fails the whole rotation rolls back and the old token
-// stays unused, so the client may retry it.
+// rotate consumes row in one transaction: it marks the row used with replaced_by,
+// calls sign, inserts the child and commits. The conditional update lets exactly
+// one concurrent caller win; a failure rolls back and leaves the token unused.
 func (s *refreshStore) rotate(ctx context.Context, row, child refreshRow, sign func() error) (bool, error) {
 	tx := s.handle.WithContext(ctx).Begin()
 	if tx.Error != nil {
@@ -149,10 +144,8 @@ func (s *refreshStore) rotate(ctx context.Context, row, child refreshRow, sign f
 	return true, nil
 }
 
-// NewRefresh makes the first refresh token of a token session. It reads the
-// session fresh and refuses anything that is not a live token session: a browser
-// session and a service session are ErrInvalidGrant, as an impersonation session
-// and a client credential are never here, because neither carries one.
+// NewRefresh makes the first refresh token of a token session, reading the session
+// fresh and refusing anything that is not a live token session as ErrInvalidGrant.
 func (p *product) NewRefresh(ctx context.Context, session authn.SessionID) (authn.RefreshToken, error) {
 	status, err := p.sessions.StatusFresh(ctx, session)
 	if err != nil {
@@ -186,14 +179,9 @@ func (p *product) NewRefresh(ctx context.Context, session authn.SessionID) (auth
 	return authn.RefreshToken{Value: value, ExpiresAt: row.IdleExpiresAt}, nil
 }
 
-// Refresh rotates a refresh token in one transaction and issues a new access
-// token. The order is the design's: read the row, read the session fresh, then
-// consume the row with a conditional update whose affected-row count decides the
-// winner. The session has to be a live token session that is not marked an
-// impersonation, which NewRefresh refuses the same way: an impersonation session
-// never carries a refresh token, however its row came to exist. A row that is not
-// there is ErrInvalidGrant and triggers nothing; a row already used past the
-// grace is ErrRefreshReuse, which has revoked the whole family.
+// Refresh rotates a refresh token in one transaction and issues a new access token,
+// consuming the row with a conditional update whose affected-row count decides the
+// winner. A missing row is ErrInvalidGrant; one used past the grace is ErrRefreshReuse.
 func (p *product) Refresh(ctx context.Context, presented string) (authn.AccessToken, authn.RefreshToken, error) {
 	now := p.clock.Now()
 	row, err := p.refresh.byHash(ctx, digestRefreshToken(presented))
@@ -256,11 +244,9 @@ func (p *product) Refresh(ctx context.Context, presented string) (authn.AccessTo
 	used, err := p.refresh.byID(ctx, row.ID)
 	if err != nil {
 		if errors.Is(err, errNoRefreshRow) {
-			// The row went between the read by digest and this one, most likely
-			// through a concurrent revoke or sweep. A refresh token that is not
-			// in the table is invalid_grant here, as it is on the byHash branch,
-			// so the same "the row does not exist" reads alike wherever it is
-			// found.
+			// The row went between the digest read and this one, most likely through
+			// a concurrent revoke or sweep; a token not in the table is invalid_grant
+			// here as on the byHash branch.
 			return p.refreshDenied(ctx, outcomeInvalid, authn.ErrInvalidGrant)
 		}
 		p.recordOperation(ctx, operationRefreshed, outcomeUnavailable)
@@ -341,14 +327,9 @@ func (p *product) issueSibling(ctx context.Context, row refreshRow, status authn
 	return renewal{access: access, refresh: authn.RefreshToken{Value: value, ExpiresAt: child.IdleExpiresAt}}, nil
 }
 
-// revokeFamily ends the whole family on a detected reuse: it revokes the session
-// the token belongs to, publishes authn.token.reuse-detected and writes the audit
-// row. The revocation is the authority and must happen whatever the caller's
-// request does; the reuse is detected on the retry path, where the response is
-// already on its way, so the request's cancellation says nothing about whether
-// the family must be ended. All three therefore run on a context detached from
-// the request, bounded by the module's own short timeout. The event and the audit
-// are best-effort.
+// revokeFamily ends the whole family on a detected reuse: it revokes the token's
+// session, publishes reuse-detected and writes the audit row, all on a context
+// detached from the request and bounded by the module's short timeout.
 func (p *product) revokeFamily(ctx context.Context, session string, account authn.AccountID) {
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), publishTimeout)
 	defer cancel()

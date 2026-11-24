@@ -8,10 +8,8 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// mask applies the spans the matcher reports, the way the logging layer does —
-// ordered by start and with overlapping ones merged, since the matcher hands
-// them back in the order it found them — so that a case reads what would
-// actually reach a destination.
+// mask applies the spans the matcher reports, ordered by start and with
+// overlapping ones merged, the way the logging layer does.
 func mask(matcher log.Matcher, value string) string {
 	spans := slices.Clone(matcher(value))
 	slices.SortFunc(spans, func(a, b log.Span) int { return a.Start - b.Start })
@@ -69,10 +67,7 @@ func TestTheCredentialIsMaskedWhereverTheSchemeAppears(t *testing.T) {
 			kept:  "YWxpY2U6czNjcmV0",
 		},
 		{
-			// RFC 9110 separates the scheme from the credential with
-			// one or more spaces, and the gateway reads a credential
-			// written with several, so a string carrying one that way
-			// carries a credential the gateway would have accepted.
+			// RFC 9110 separates the scheme from the credential with one or more spaces.
 			name:   "a credential after more than one space",
 			value:  "Basic   YWxpY2U6czNjcmV0",
 			secret: "YWxpY2U6czNjcmV0",
@@ -174,9 +169,8 @@ func TestEverySpanHandedOverIsUsable(t *testing.T) {
 	}
 }
 
-// TestTheSchemesMaskedAreTheOnesInPlay holds that the rule follows the
-// assembly rather than a fixed list: a scheme no backend claims is not
-// searched for, and every scheme one does claim is, Basic included.
+// TestTheSchemesMaskedAreTheOnesInPlay holds that the rule follows the assembly:
+// a scheme no backend claims is not searched for.
 func TestTheSchemesMaskedAreTheOnesInPlay(t *testing.T) {
 	const secret = "ey.Jh.bGci"
 
@@ -206,9 +200,8 @@ const (
 	inviteToken  = "spd_inv_Qm4Nc8vT2pXkR7dLwZs1"
 )
 
-// TestEveryShapeOfSecretIsMaskedWhereverItIsWritten holds one value of each shape
-// the design lists, under no key at all: the rule is what is left when nobody
-// registered a key for a value that was logged under a name nobody thought of.
+// TestEveryShapeOfSecretIsMaskedWhereverItIsWritten holds that each shape of
+// secret is masked even under no key at all.
 func TestEveryShapeOfSecretIsMaskedWhereverItIsWritten(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -256,10 +249,8 @@ func TestEveryShapeOfSecretIsMaskedWhereverItIsWritten(t *testing.T) {
 	}
 }
 
-// TestAWordThatOnlyResemblesASecretShapeIsLeftAlone holds the other side of a rule
-// that runs on every string of every record in the process: each value here is
-// text a component writes about something that is not a secret, and has to reach
-// its destination as written.
+// TestAWordThatOnlyResemblesASecretShapeIsLeftAlone holds that text about
+// something that is not a secret reaches its destination as written.
 func TestAWordThatOnlyResemblesASecretShapeIsLeftAlone(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -302,9 +293,8 @@ func TestAJWTNeedsExactlyThreeSegments(t *testing.T) {
 	}
 }
 
-// TestEverySpanTheShapeRuleHandsOverIsUsable holds the shape of what the matcher
-// returns, for the reason the scheme rule's test gives: pkg/log drops an unusable
-// span without a word, so a wrong one fails nowhere and leaves a secret readable.
+// TestEverySpanTheShapeRuleHandsOverIsUsable holds that each span is usable:
+// pkg/log drops an unusable one silently, leaving a secret readable.
 func TestEverySpanTheShapeRuleHandsOverIsUsable(t *testing.T) {
 	for _, value := range []string{
 		jwtToken, refreshToken, "otpauth://totp/x?secret=A", "?secret=a&code=b", "authn-sid=abc",
@@ -322,9 +312,8 @@ func TestEverySpanTheShapeRuleHandsOverIsUsable(t *testing.T) {
 	}
 }
 
-// TestTheKeyNamesAreEveryNameInEveryCaseTheDesignLists holds the key set: the
-// whole of the design's table, each name in the case it is written in, in lower
-// case and capitalised, since key matching is exact.
+// TestTheKeyNamesAreEveryNameInEveryCaseTheDesignLists holds that every key name
+// is registered in lower case, upper case and capitalised.
 func TestTheKeyNamesAreEveryNameInEveryCaseTheDesignLists(t *testing.T) {
 	spellings := keySpellings(credentialKeyNames)
 	for _, name := range []string{

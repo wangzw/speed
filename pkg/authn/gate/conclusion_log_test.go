@@ -15,12 +15,9 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// recorder is a slog handler that keeps every record written to it, so that a
-// case can read the level and the attributes a conclusion was logged with.
-//
-// Attributes bound to a logger made from it, with With or through log.WithAttrs,
-// are on the records that logger writes, as they are with any handler: a case
-// about what a layer bound on the request's logger reads them there.
+// recorder is a slog handler that keeps every record written to it, including
+// attributes bound with With or log.WithAttrs, so a case can read the level and
+// attributes a conclusion was logged with.
 type recorder struct {
 	mu      sync.Mutex
 	records []slog.Record
@@ -150,8 +147,7 @@ func TestEachConclusionIsLoggedAtTheLevelItsCauseDeserves(t *testing.T) {
 }
 
 // TestEveryConclusionNamesTheEndpointTheStatusTheBucketAndWhoItIsChargedTo holds
-// the four attributes every conclusion carries, which are what an operator reads
-// a 401 or a 503 from since the response body says nothing of why.
+// the four attributes every conclusion carries.
 func TestEveryConclusionNamesTheEndpointTheStatusTheBucketAndWhoItIsChargedTo(t *testing.T) {
 	deny := basicBackend("static", "static.")
 	deny.verify = func(context.Context, authn.Credential) authn.Verdict {
@@ -179,9 +175,8 @@ func TestEveryConclusionNamesTheEndpointTheStatusTheBucketAndWhoItIsChargedTo(t 
 	}
 }
 
-// TestAGatewayRefusalIsLoggedAsOrdinaryTraffic holds the other end: a request
-// that brought no usable credential is what a public endpoint sees all day, and
-// writing it any louder would bury the lines that matter.
+// TestAGatewayRefusalIsLoggedAsOrdinaryTraffic holds that a refusal with no
+// usable credential is logged at Info.
 func TestAGatewayRefusalIsLoggedAsOrdinaryTraffic(t *testing.T) {
 	g := testGateway(t, []string{"public"}, passes(basicBackend("static", "static.")))
 	sealed(t, g, routerWith("public"))
@@ -195,9 +190,8 @@ func TestAGatewayRefusalIsLoggedAsOrdinaryTraffic(t *testing.T) {
 	}
 }
 
-// TestAnAnonymousPassIsLoggedAsOrdinaryTraffic holds that a request that passed
-// on an optional route with no credential writes one line, at Info, and counts
-// the anonymous bucket named in it.
+// TestAnAnonymousPassIsLoggedAsOrdinaryTraffic holds that an anonymous pass
+// writes one line at Info, counted in the anonymous bucket.
 func TestAnAnonymousPassIsLoggedAsOrdinaryTraffic(t *testing.T) {
 	g := testGateway(t, []string{"public"}, passes(basicBackend("static", "static.")))
 	g.Optional("public", "GET", "/catalog")
@@ -219,9 +213,8 @@ func TestAnAnonymousPassIsLoggedAsOrdinaryTraffic(t *testing.T) {
 	}
 }
 
-// TestARequestOnAnExemptRouteWritesNoRecordAndCountsNothing holds the silence of
-// a route that was opened on purpose: it is not a conclusion about a credential,
-// so it is neither logged nor counted.
+// TestARequestOnAnExemptRouteWritesNoRecordAndCountsNothing holds that an exempt
+// route is neither logged nor counted.
 func TestARequestOnAnExemptRouteWritesNoRecordAndCountsNothing(t *testing.T) {
 	g := testGateway(t, []string{"public"}, passes(basicBackend("static", "static.")))
 	g.Exempt("public", "GET", "/status")
@@ -268,10 +261,8 @@ func TestAPassOutsideTheNamespaceIsLoggedAsTheDefectItIs(t *testing.T) {
 	}
 }
 
-// TestAnImpersonationOutOfScopeIsLoggedAtInfoWithItsCause holds the record of the
-// one refusal that is the gateway's judgement of a well-formed pass: it is
-// ordinary traffic, written at Info, charged to the backend whose pass it
-// declines, and says impersonation-scope as the cause.
+// TestAnImpersonationOutOfScopeIsLoggedAtInfoWithItsCause holds that an
+// out-of-scope impersonation is logged at Info, charged to the declining backend.
 func TestAnImpersonationOutOfScopeIsLoggedAtInfoWithItsCause(t *testing.T) {
 	imp := &fakeVerifier{name: "imp", accepts: authn.Accepts{Schemes: []string{"bearer"}, Impersonation: true}}
 	imp.verify = func(context.Context, authn.Credential) authn.Verdict {
@@ -300,9 +291,8 @@ func TestAnImpersonationOutOfScopeIsLoggedAtInfoWithItsCause(t *testing.T) {
 	}
 }
 
-// TestTheGatewaysOwnPanicCarriesItsStack holds the record of this module's own
-// defect: it is already written at Error, and without the stack it names the
-// endpoint and the value and nothing that finds the line.
+// TestTheGatewaysOwnPanicCarriesItsStack holds that the gateway's own panic is
+// logged at Error with a stack.
 func TestTheGatewaysOwnPanicCarriesItsStack(t *testing.T) {
 	g := testGateway(t, []string{"public"}, passes(basicBackend("static", "static.")))
 	sealed(t, g, routerWith("public"))

@@ -55,20 +55,16 @@ type meters struct {
 	auditFailures metric.Int64Counter
 }
 
-// refreshStore reads and writes the authn_refresh_tokens table. handle is the
-// database handle, dialect the engine behind it, and now the clock every time
-// written to a row is read from. It never touches the table before the
-// migrations have been applied.
+// refreshStore reads and writes the authn_refresh_tokens table; it never touches
+// the table before the migrations have been applied.
 type refreshStore struct {
 	handle  *gorm.DB
 	dialect db.Dialect
 	now     clock.Source
 }
 
-// product is this module's instance. One value satisfies every interface the
-// module delivers. The fields hold the configuration, the loaded key set, the
-// required capabilities, the optional ones taken up in Init, and the shared
-// working state the pieces of the module build on.
+// product is this module's instance; one value satisfies every interface the
+// module delivers.
 type product struct {
 	cfg  resolved
 	keys *keySet
@@ -205,11 +201,9 @@ func (p *product) takeMeter(reg *core.Registry) error {
 	return nil
 }
 
-// recordAuditFailure counts one best-effort audit write that failed on the
-// module's meter. None of this module's audit rows is mandatory, so the
-// attribute is always false; it is carried so this counter joins the one the
-// other modules report their audit failures under. When the assembly carries no
-// meter provider the counter is nil and nothing is recorded.
+// recordAuditFailure counts one best-effort audit write that failed; the
+// mandatory attribute is always false, carried so this counter joins the other
+// modules' audit-failure counter.
 func (p *product) recordAuditFailure(ctx context.Context) {
 	if p.meters.auditFailures == nil {
 		return

@@ -126,9 +126,8 @@ func TestParseAccountIDEveryByte(t *testing.T) {
 	}
 }
 
-// The numeric values are what the token's acr claim and the factor table's
-// status column carry, and the texts are what the tables' CHECK constraints and
-// the client see.
+// TestWireValuesAreFrozen holds the numeric and text values the acr claim, the
+// tables' CHECK constraints and the client rely on.
 func TestWireValuesAreFrozen(t *testing.T) {
 	if strconv.Itoa(int(AssuranceSingle)) != "1" || strconv.Itoa(int(AssuranceMulti)) != "2" {
 		t.Errorf("assurance levels read %d and %d, want 1 and 2 (the acr claim's text)", AssuranceSingle, AssuranceMulti)

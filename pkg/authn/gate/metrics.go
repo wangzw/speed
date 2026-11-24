@@ -13,10 +13,8 @@ import (
 	"github.com/vislake/speed/pkg/observability"
 )
 
-// conclusionsInstrument is the counter the buckets are reported through, and
-// outcomeAttribute the attribute that tells the buckets apart. A dashboard or an
-// alert rule written against them stops matching when either changes, so they
-// are fixed here the way the bucket names are.
+// conclusionsInstrument and outcomeAttribute are frozen: a dashboard or an alert
+// rule written against them stops matching when either changes.
 const (
 	conclusionsInstrument = ModuleName + ".conclusions"
 	outcomeAttribute      = "outcome"
@@ -27,13 +25,9 @@ const (
 // this module's: the instrument's own name already says which module counts.
 const meterName = "authn"
 
-// The buckets a conclusion lands in. The first four are the outcomes of a
-// verdict, indexed by verdict.Outcome, and the last is a request that carried no
-// credential and passed on an optional route. The set is exhaustive and the
-// buckets exclude each other: every conclusion about a credential or about the
-// absence of one lands in exactly one. A request on an exempt route and one on
-// an endpoint this gateway does not guard are not conclusions and land in none.
-// The names are frozen, a name can be added and none is renamed.
+// The buckets a conclusion lands in, indexed by verdict.Outcome with the last one
+// for a credential-less request that passed on an optional route; the set is
+// exhaustive and exclusive, and a bucket name is never renamed.
 const (
 	bucketAnonymous = int(verdict.Unavailable) + 1
 	bucketCount     = bucketAnonymous + 1
@@ -46,21 +40,9 @@ func bucketName(bucket int) string {
 	return verdict.Outcome(bucket).String()
 }
 
-// takeMeter reports the conclusion counts through the metric capability, when
-// the assembly carries one.
-//
-// The metric capability is not a dependency of this module, on the terms the
-// logging capability is not: it is taken up in Init, where every instance
-// exists, and reporting the counts changes no authentication behaviour, so its
-// absence changes none either. Absent, the counts stay in the process and the
-// log lines are the only record of each conclusion. Any other failure to take
-// it up, or to register the instrument, is carried out and stops the startup
-// rather than leaving the counts unreported without a word.
-//
-// The counter is observable: the buckets are the gateway's own atomics, read
-// when a collection asks for them, so a request pays nothing for being counted
-// here. Every bucket is observed on every collection, the empty ones included,
-// which is what gives a series a first point before its first conclusion.
+// takeMeter reports the conclusion counts through the metric capability when the
+// assembly carries one; absent, the counts stay in the process. Any other failure
+// to take it up or register the instrument stops the startup.
 func (g *gateway) takeMeter(reg *core.Registry) error {
 	provider, err := core.Resolve[observability.MeterProvider](reg)
 	if err != nil {
@@ -97,11 +79,8 @@ func (g *gateway) takeMeter(reg *core.Registry) error {
 	return nil
 }
 
-// dropMeter withdraws the counter's callback, so that a meter provider outliving
-// this gateway stops reading a product that has been closed. It runs in Close.
-// Whether the metric capability's own final collection lands before it follows
-// from the construction order, which this module does not declare; a
-// collection that lands after it finds the counter gone and reports the rest.
+// dropMeter withdraws the counter's callback, so a meter provider that outlives
+// the gateway stops reading a closed product. It runs in Close.
 func (g *gateway) dropMeter() error {
 	if g.metrics == nil {
 		return nil

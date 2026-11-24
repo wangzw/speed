@@ -39,9 +39,8 @@ func wait(t *testing.T, th *Throttle, key string) time.Duration {
 	return d
 }
 
-// TestTheFreeAttemptsAreFreeAndTheNextOneEngagesTheBackoff holds the start of
-// the back-off at its boundary: the fifth failure still leaves the key free, the
-// sixth makes it wait two seconds and is the one that reports having engaged.
+// TestTheFreeAttemptsAreFreeAndTheNextOneEngagesTheBackoff checks the sixth
+// failure engages a 2s wait while the fifth does not.
 func TestTheFreeAttemptsAreFreeAndTheNextOneEngagesTheBackoff(t *testing.T) {
 	clock := newClock()
 	th := throttleAt(clock, DefaultThrottleParams())
@@ -92,9 +91,8 @@ func TestTheBackoffDoublesAndEnds(t *testing.T) {
 	}
 }
 
-// TestTheDelayDoesNotOverflow holds the curve at an absurd number of failures:
-// the wait stays at the cap and does not wrap negative or to zero, which would
-// free a key the more it failed.
+// TestTheDelayDoesNotOverflow checks the wait stays at the cap instead of
+// wrapping negative or to zero.
 func TestTheDelayDoesNotOverflow(t *testing.T) {
 	clock := newClock()
 	p := ThrottleParams{FreeAttempts: 1, Window: 24 * time.Hour, MaxBackoff: 24 * time.Hour}
@@ -111,9 +109,8 @@ func TestTheDelayDoesNotOverflow(t *testing.T) {
 	}
 }
 
-// TestTheCountReturnsToZeroAfterTheWindow holds the decay at its edge: a key
-// left alone for the window starts again from nothing, and the failure that
-// comes after is the first of a new count.
+// TestTheCountReturnsToZeroAfterTheWindow checks the count resets at the
+// window's edge and the next failure starts fresh.
 func TestTheCountReturnsToZeroAfterTheWindow(t *testing.T) {
 	params := ThrottleParams{FreeAttempts: 1, Window: time.Minute, MaxBackoff: time.Hour}
 
@@ -151,9 +148,8 @@ func TestTheCountReturnsToZeroAfterTheWindow(t *testing.T) {
 	})
 }
 
-// TestAWaitLongerThanTheWindowIsServedInFull holds that the window forgets a
-// count only once nothing is being waited out: a max-backoff above the fail
-// window is a longer wait, not a wait the window cuts short.
+// TestAWaitLongerThanTheWindowIsServedInFull checks a max-backoff above the
+// window is served out, not cut short.
 func TestAWaitLongerThanTheWindowIsServedInFull(t *testing.T) {
 	clock := newClock()
 	th := throttleAt(clock, ThrottleParams{FreeAttempts: 1, Window: time.Minute, MaxBackoff: time.Hour})
@@ -204,9 +200,8 @@ func TestASuccessClearsTheKeyAndNoOtherKey(t *testing.T) {
 	}
 }
 
-// TestKeysOfDifferentScopesNeverMeet holds the key space: the same string under
-// two scopes is two keys, and a scope that ends in the byte the table joins on
-// cannot be made to read as another's.
+// TestKeysOfDifferentScopesNeverMeet checks the same string under two scopes is
+// two keys.
 func TestKeysOfDifferentScopesNeverMeet(t *testing.T) {
 	th := throttleAt(newClock(), DefaultThrottleParams())
 	for range 8 {
@@ -233,9 +228,8 @@ func TestKeysOfDifferentScopesNeverMeet(t *testing.T) {
 	}
 }
 
-// TestParametersAreReadWhenTheyAreUsed holds that a setting changed at run time
-// applies to the next call, and that a value outside its domain reads as the
-// default, which is the strict side.
+// TestParametersAreReadWhenTheyAreUsed checks a changed setting applies to the
+// next call and a value outside its domain reads as the default.
 func TestParametersAreReadWhenTheyAreUsed(t *testing.T) {
 	clock := newClock()
 	p := ThrottleParams{FreeAttempts: 1, Window: time.Hour, MaxBackoff: time.Hour}
@@ -276,9 +270,8 @@ func TestParametersAreReadWhenTheyAreUsed(t *testing.T) {
 	}
 }
 
-// TestTheTableDoesNotGrowPastItsBound holds the bound on what a caller who can
-// present any number of names makes the back-off remember, and what is
-// forgotten when it is full: the key quiet longest, and not one touched lately.
+// TestTheTableDoesNotGrowPastItsBound checks a full table forgets the key quiet
+// longest, not one touched lately.
 func TestTheTableDoesNotGrowPastItsBound(t *testing.T) {
 	th := throttleAt(newClock(), ThrottleParams{FreeAttempts: 1, Window: time.Hour, MaxBackoff: time.Hour})
 
@@ -305,9 +298,8 @@ func TestTheTableDoesNotGrowPastItsBound(t *testing.T) {
 	}
 }
 
-// TestConcurrentFailuresAreAllCounted holds the count under concurrency: every
-// failure of one key is counted once, and exactly one of them is the failure
-// that engages the back-off.
+// TestConcurrentFailuresAreAllCounted checks every concurrent failure counts
+// once and exactly one engages the back-off.
 func TestConcurrentFailuresAreAllCounted(t *testing.T) {
 	th := throttleAt(newClock(), ThrottleParams{FreeAttempts: 5, Window: time.Hour, MaxBackoff: time.Hour})
 	const callers = 64
@@ -337,10 +329,8 @@ func TestConcurrentFailuresAreAllCounted(t *testing.T) {
 	}
 }
 
-// TestAFixedKeyIsNotPushedOutBySprayedNames holds the property the fixed keys
-// are for: a caller who presents far more names than the table holds does not
-// make a name the backend is the authority for free of its back-off, and the
-// table stays within its bound plus the fixed keys.
+// TestAFixedKeyIsNotPushedOutBySprayedNames checks a spray of names cannot free a
+// fixed key or grow the table past its bound plus the fixed keys.
 func TestAFixedKeyIsNotPushedOutBySprayedNames(t *testing.T) {
 	p := ThrottleParams{FreeAttempts: 1, Window: time.Hour, MaxBackoff: time.Hour}
 	fixed := Key{Scope: authn.ScopeIdentifier, Key: ThrottleKey("alice")}
@@ -370,10 +360,8 @@ func TestAFixedKeyIsNotPushedOutBySprayedNames(t *testing.T) {
 	}
 }
 
-// TestAFixedKeyBehavesLikeAnyOtherKey holds that holding a key fixed changes
-// what is remembered and not how the back-off runs: the same failures give the
-// same waits for a fixed key and for one the table has never been told of, and a
-// success clears a fixed key without removing it.
+// TestAFixedKeyBehavesLikeAnyOtherKey checks a fixed key takes the same waits
+// and a success clears it without removing it.
 func TestAFixedKeyBehavesLikeAnyOtherKey(t *testing.T) {
 	p := ThrottleParams{FreeAttempts: 2, Window: time.Hour, MaxBackoff: time.Minute}
 	clk := newClock()
@@ -407,10 +395,8 @@ func TestAFixedKeyBehavesLikeAnyOtherKey(t *testing.T) {
 	}
 }
 
-// TestKeysThatHaveGoneAWholeWindowAreSwept holds the sweep: a key that is not
-// fixed is forgotten once its window has passed without a failure, so a flood of
-// names is reclaimed by time and not only by the bound, and a key still inside
-// its window is not.
+// TestKeysThatHaveGoneAWholeWindowAreSwept checks an unfixed key past its window
+// is swept and one inside it is not.
 func TestKeysThatHaveGoneAWholeWindowAreSwept(t *testing.T) {
 	p := ThrottleParams{FreeAttempts: 1, Window: 10 * time.Minute, MaxBackoff: time.Hour}
 	clk := newClock()
@@ -436,9 +422,8 @@ func TestKeysThatHaveGoneAWholeWindowAreSwept(t *testing.T) {
 	}
 }
 
-// TestSpellingsThatDifferInCaseAndSpaceShareAKey holds the normalisation of the
-// key: the same name in another case, or with white space around or inside it,
-// is the same key, and a different name is not.
+// TestSpellingsThatDifferInCaseAndSpaceShareAKey checks case and white-space
+// variants share one key and other names do not.
 func TestSpellingsThatDifferInCaseAndSpaceShareAKey(t *testing.T) {
 	want := ThrottleKey("alice")
 	for _, spelling := range []string{"Alice", "ALICE", " alice", "alice\t", "a l i c e", " Alice\n"} {

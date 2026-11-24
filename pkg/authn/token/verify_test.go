@@ -23,9 +23,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/verdict"
 )
 
-// The fixture's fixed names and instant. The instant is the clock every case
-// runs at, so a token's times are built around it and the outcome is
-// deterministic.
+// The fixture's fixed names and instant, around which every case builds its times.
 var (
 	vfyNow      = time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
 	vfyAlice    = authn.AccountID("acct-alice")
@@ -36,8 +34,7 @@ var (
 	vfyAudience = "https://api.example.com"
 )
 
-// A Verifier and a Challenger, held at compile time: the module's Providing them
-// is only worth anything if the product is both.
+// The product satisfies both interfaces, held at compile time.
 var (
 	_ authn.Verifier   = (*product)(nil)
 	_ authn.Challenger = (*product)(nil)
@@ -55,8 +52,8 @@ func (c *vfyClock) Now() time.Time {
 	return c.at
 }
 
-// vfyAccounts is the account snapshot store: the accounts a case seeds, or one
-// error for the whole store to stand for a database that cannot be reached.
+// vfyAccounts is the account snapshot store; err stands for an unreachable
+// database.
 type vfyAccounts struct {
 	authn.Accounts
 	accounts map[authn.AccountID]authn.Account
@@ -74,8 +71,7 @@ func (s *vfyAccounts) Get(_ context.Context, id authn.AccountID) (authn.Account,
 	return a, nil
 }
 
-// vfySessions is the session store: one status for every identifier, or one
-// error for a database that cannot be reached.
+// vfySessions is the session store; err stands for an unreachable database.
 type vfySessions struct {
 	authn.Sessions
 	status   authn.SessionStatus
@@ -191,9 +187,7 @@ func vfyClaims() map[string]any {
 }
 
 // vfyJWS signs a compact JWS over hdr and claims with key, in the key's own
-// algorithm. It is the test-side signer: the package's own signing path is the
-// issuing one, and a case needs control over the header a token carries, which
-// that path does not give.
+// algorithm, so a case controls the header a token carries.
 func vfyJWS(t *testing.T, key crypto.Signer, hdr, claims map[string]any) string {
 	t.Helper()
 	hb, err := json.Marshal(hdr)
@@ -249,8 +243,8 @@ func requireDenied(t *testing.T, v authn.Verdict) {
 	}
 }
 
-// TestTheBackendDeclaresWhatTheDesignFixesForIt checks that the backend
-// declares what the design fixes for it.
+// TestTheBackendDeclaresWhatTheDesignFixesForIt checks the backend's name and
+// accepted credential shapes.
 func TestTheBackendDeclaresWhatTheDesignFixesForIt(t *testing.T) {
 	v := newVfy(t)
 	if got := v.p.Name(); got != "token" {
@@ -271,8 +265,8 @@ func TestTheBackendDeclaresWhatTheDesignFixesForIt(t *testing.T) {
 	}
 }
 
-// TestTheChallengeNamesTheTokenOnARefusal checks that the challenge names the
-// token on a refusal.
+// TestTheChallengeNamesTheTokenOnARefusal names the token in
+// error="invalid_token" on a refusal.
 func TestTheChallengeNamesTheTokenOnARefusal(t *testing.T) {
 	v := newVfy(t)
 	got := v.p.Challenge("app", true)
@@ -285,8 +279,8 @@ func TestTheChallengeNamesTheTokenOnARefusal(t *testing.T) {
 	}
 }
 
-// TestAGoodTokenAuthenticatesWithTheSessionFacts checks that a good token
-// authenticates with the session facts.
+// TestAGoodTokenAuthenticatesWithTheSessionFacts authenticates a good token with
+// the account's and the session's facts.
 func TestAGoodTokenAuthenticatesWithTheSessionFacts(t *testing.T) {
 	v := newVfy(t)
 	v.sess.status.Methods = []authn.Method{authn.MethodPassword, authn.MethodTOTP}
@@ -311,8 +305,7 @@ func TestAGoodTokenAuthenticatesWithTheSessionFacts(t *testing.T) {
 	}
 }
 
-// TestATokenThatFailsAStepIsRefused checks that a token that fails a step is
-// refused.
+// TestATokenThatFailsAStepIsRefused refuses a token that fails any verifying step.
 func TestATokenThatFailsAStepIsRefused(t *testing.T) {
 	cases := []struct {
 		name string
@@ -344,9 +337,8 @@ func TestATokenThatFailsAStepIsRefused(t *testing.T) {
 		}},
 		{"a critical header extension", func(v *vfy) string {
 			h := v.header()
-			// "b64" is a critical name go-jose understands, so the library's own
-			// verification lets it through and this backend's refusal of any crit
-			// is the one that must catch it.
+			// "b64" is a critical name go-jose understands, so the library lets it
+			// through and this backend's refusal of any crit is what catches it.
 			h["crit"] = []string{"b64"}
 			return v.sign(vfyClaims(), h)
 		}},
@@ -434,9 +426,8 @@ func TestATokenThatFailsAStepIsRefused(t *testing.T) {
 	}
 }
 
-// TestATokenSignedWithThePublicKeyAsAMACIsRefused is the algorithm-confusion
-// vector: only RS256 is configured, and the token declares RS256 but signs
-// the input with HMAC-SHA256 keyed on the RSA public key's bytes.
+// TestATokenSignedWithThePublicKeyAsAMACIsRefused refuses an HS256 token keyed on
+// the RSA public key's bytes and labelled RS256.
 func TestATokenSignedWithThePublicKeyAsAMACIsRefused(t *testing.T) {
 	v := newVfyWithSet(t, loadedSet(t, algRS256))
 	pub := v.set.signing.pub.(*rsa.PublicKey)
@@ -456,8 +447,8 @@ func TestATokenSignedWithThePublicKeyAsAMACIsRefused(t *testing.T) {
 	requireDenied(t, v.verify(raw))
 }
 
-// TestTheClockSkewWithinTheLeewayIsTolerated checks that the clock skew
-// within the leeway is tolerated.
+// TestTheClockSkewWithinTheLeewayIsTolerated authenticates a token whose times
+// sit within the leeway.
 func TestTheClockSkewWithinTheLeewayIsTolerated(t *testing.T) {
 	v := newVfy(t)
 	c := vfyClaims()
@@ -468,8 +459,8 @@ func TestTheClockSkewWithinTheLeewayIsTolerated(t *testing.T) {
 	}
 }
 
-// TestAnAudienceSetMatchesOnAnyMember checks that an audience set matches on
-// any member.
+// TestAnAudienceSetMatchesOnAnyMember authenticates a token meeting any one of
+// the configured audiences.
 func TestAnAudienceSetMatchesOnAnyMember(t *testing.T) {
 	v := newVfy(t)
 	v.p.cfg.audience = []string{"https://one.example.com", vfyAudience}
@@ -478,8 +469,8 @@ func TestAnAudienceSetMatchesOnAnyMember(t *testing.T) {
 	}
 }
 
-// TestALifetimeOfExactlyOneHourIsAccepted checks that a lifetime of exactly
-// one hour is accepted.
+// TestALifetimeOfExactlyOneHourIsAccepted accepts a token whose lifetime is
+// exactly one hour.
 func TestALifetimeOfExactlyOneHourIsAccepted(t *testing.T) {
 	v := newVfy(t)
 	c := vfyClaims()
@@ -489,8 +480,8 @@ func TestALifetimeOfExactlyOneHourIsAccepted(t *testing.T) {
 	}
 }
 
-// TestTheAccountSnapshotRefusesADisabledAccountOrAnOlderToken checks that the
-// account snapshot refuses a disabled account or an older token.
+// TestTheAccountSnapshotRefusesADisabledAccountOrAnOlderToken refuses a disabled
+// account, a token older than valid_after, and an unknown account.
 func TestTheAccountSnapshotRefusesADisabledAccountOrAnOlderToken(t *testing.T) {
 	v := newVfy(t)
 	a := v.acct.accounts[vfyAlice]
@@ -508,8 +499,8 @@ func TestTheAccountSnapshotRefusesADisabledAccountOrAnOlderToken(t *testing.T) {
 	requireDenied(t, v.verify(v.sign(withSub(vfyClaims(), "acct-ghost"), v.header())))
 }
 
-// TestTheSessionStepRefusesAnInvalidOrMisownedSession checks that the session
-// step refuses an invalid or misowned session.
+// TestTheSessionStepRefusesAnInvalidOrMisownedSession refuses an inactive,
+// misowned or missing session.
 func TestTheSessionStepRefusesAnInvalidOrMisownedSession(t *testing.T) {
 	v := newVfy(t)
 	v.sess.status.Active = false
@@ -524,8 +515,8 @@ func TestTheSessionStepRefusesAnInvalidOrMisownedSession(t *testing.T) {
 	requireDenied(t, v.verify(v.good()))
 }
 
-// TestAServiceTokenMustNameAServiceSession checks that a service token must
-// name a service session.
+// TestAServiceTokenMustNameAServiceSession refuses a client-secret token on a
+// session of any other kind.
 func TestAServiceTokenMustNameAServiceSession(t *testing.T) {
 	v := newVfy(t)
 	c := vfyClaims()
@@ -561,8 +552,8 @@ func (v *vfy) impersonationToken() string {
 	return v.sign(c, v.header())
 }
 
-// TestAnImpersonationTokenAuthenticatesAsTheTarget checks that an
-// impersonation token authenticates as the target.
+// TestAnImpersonationTokenAuthenticatesAsTheTarget authenticates as the target
+// under the operator session's facts.
 func TestAnImpersonationTokenAuthenticatesAsTheTarget(t *testing.T) {
 	v := newVfy(t)
 	v.sess.status.Assurance = authn.AssuranceMulti
@@ -580,8 +571,8 @@ func TestAnImpersonationTokenAuthenticatesAsTheTarget(t *testing.T) {
 	}
 }
 
-// TestAnImpersonationTokenThatDoesNotMatchItsRecordIsRefused checks that an
-// impersonation token that does not match its record is refused.
+// TestAnImpersonationTokenThatDoesNotMatchItsRecordIsRefused refuses a token whose
+// actor, target, record or session disagrees with its grant.
 func TestAnImpersonationTokenThatDoesNotMatchItsRecordIsRefused(t *testing.T) {
 	v := newVfy(t)
 	tok := v.impersonationToken()
@@ -604,8 +595,8 @@ func TestAnImpersonationTokenThatDoesNotMatchItsRecordIsRefused(t *testing.T) {
 	requireDenied(t, v.verify(tok))
 }
 
-// TestAnImpersonationTokenWithoutTheCapabilityIsRefused checks that an
-// impersonation token without the capability is refused.
+// TestAnImpersonationTokenWithoutTheCapabilityIsRefused refuses an impersonation
+// token when the product has no impersonation store.
 func TestAnImpersonationTokenWithoutTheCapabilityIsRefused(t *testing.T) {
 	v := newVfy(t)
 	tok := v.impersonationToken()
@@ -613,8 +604,8 @@ func TestAnImpersonationTokenWithoutTheCapabilityIsRefused(t *testing.T) {
 	requireDenied(t, v.verify(tok))
 }
 
-// TestTheStatelessModeOnlyDropsTheSessionCheck checks that the stateless mode
-// only drops the session check.
+// TestTheStatelessModeOnlyDropsTheSessionCheck drops the session check alone; the
+// impersonation and account checks still run.
 func TestTheStatelessModeOnlyDropsTheSessionCheck(t *testing.T) {
 	v := newVfy(t)
 	v.st.setBool(checkSessionPath, false)
@@ -628,9 +619,6 @@ func TestTheStatelessModeOnlyDropsTheSessionCheck(t *testing.T) {
 		t.Errorf("the methods are %v, want those of the token's amr", got.Methods)
 	}
 
-	// The impersonation check is not part of what the switch drops: a valid
-	// impersonation token still authenticates, and a record that has already
-	// ended still refuses it.
 	v = newVfy(t)
 	v.st.setBool(checkSessionPath, false)
 	if got := outcomeOf(v.verify(v.impersonationToken())); got != verdict.Authenticated {
@@ -651,9 +639,8 @@ func TestTheStatelessModeOnlyDropsTheSessionCheck(t *testing.T) {
 	requireDenied(t, v.verify(v.good()))
 }
 
-// TestTheAccountSnapshotIsServedFromItsCacheWithinCheckTTL holds the bounded
-// relaxation the design names for the account step: an account read once is
-// believed for check-ttl, so a change to it is not seen until the entry lapses.
+// TestTheAccountSnapshotIsServedFromItsCacheWithinCheckTTL serves a cached account
+// for check-ttl before a change to it is seen.
 func TestTheAccountSnapshotIsServedFromItsCacheWithinCheckTTL(t *testing.T) {
 	v := newVfy(t)
 	if got := outcomeOf(v.verify(v.good())); got != verdict.Authenticated {
@@ -669,8 +656,8 @@ func TestTheAccountSnapshotIsServedFromItsCacheWithinCheckTTL(t *testing.T) {
 	requireDenied(t, v.verify(v.good()))
 }
 
-// TestTheImpersonationRecordIsServedFromItsCacheWithinCheckTTL holds the same
-// bounded relaxation for the impersonation step.
+// TestTheImpersonationRecordIsServedFromItsCacheWithinCheckTTL serves a cached
+// impersonation record for check-ttl.
 func TestTheImpersonationRecordIsServedFromItsCacheWithinCheckTTL(t *testing.T) {
 	v := newVfy(t)
 	tok := v.impersonationToken()
@@ -685,9 +672,8 @@ func TestTheImpersonationRecordIsServedFromItsCacheWithinCheckTTL(t *testing.T) 
 	requireDenied(t, v.verify(tok))
 }
 
-// TestACachedIdentitySurvivesAnUnreachableStore is the failure direction the
-// design fixes: with the db down a cache hit still serves, and a cold read is
-// Unavailable, never a pass.
+// TestACachedIdentitySurvivesAnUnreachableStore authenticates a cache hit across a
+// db outage and answers Unavailable on a cold read.
 func TestACachedIdentitySurvivesAnUnreachableStore(t *testing.T) {
 	v := newVfy(t)
 	if got := outcomeOf(v.verify(v.good())); got != verdict.Authenticated {
@@ -705,8 +691,8 @@ func TestACachedIdentitySurvivesAnUnreachableStore(t *testing.T) {
 	}
 }
 
-// TestAnUnreachableStoreIsUnavailableNeverADenial checks that an unreachable
-// store is unavailable never a denial.
+// TestAnUnreachableStoreIsUnavailableNeverADenial answers Unavailable on an
+// unreachable account, session or impersonation store.
 func TestAnUnreachableStoreIsUnavailableNeverADenial(t *testing.T) {
 	v := newVfy(t)
 	v.acct.err = errors.New("the database is not reachable")
@@ -733,17 +719,12 @@ func withSub(c map[string]any, sub string) map[string]any {
 	return c
 }
 
-// sizedToken builds a token that passes every verifying step and whose compact
-// form is exactly size bytes. The claims and the header each carry an ignored
-// padding field; base64 grows by one or two bytes per added byte, so the two
-// fields together reach any size the minimal token does not already exceed.
+// sizedToken builds a well-formed token whose compact form is exactly size bytes,
+// padding the header and claims.
 func sizedToken(t *testing.T, v *vfy, size int) string {
 	t.Helper()
-	// The signature segment's compact length is fixed for the fixture's key, so
-	// measure it once off a sample token. The claims and header JSON each grow by
-	// one byte per padding byte, so the compact length is arithmetic on the base
-	// sizes and the raw-base64 length function; only the token that lands on the
-	// target is actually signed.
+	// The signature length is fixed, so the compact length is arithmetic on the
+	// raw-base64 sizes of the header and claims.
 	sample := v.sign(vfyClaims(), v.header())
 	sigLen := len(sample) - strings.LastIndex(sample, ".") - 1
 	baseLen := func(fields map[string]any) int {
@@ -792,9 +773,8 @@ func rawB64Len(n int) int {
 	}
 }
 
-// TestTheTokenLengthGuardIsExercisedOnAWellFormedToken isolates the byte
-// limit from the segment check: a valid three-segment token of exactly
-// maxTokenLen is accepted and one byte longer is refused.
+// TestTheTokenLengthGuardIsExercisedOnAWellFormedToken accepts exactly maxTokenLen
+// bytes and refuses one more.
 func TestTheTokenLengthGuardIsExercisedOnAWellFormedToken(t *testing.T) {
 	v := newVfy(t)
 	atLimit := sizedToken(t, v, maxTokenLen)
@@ -805,9 +785,8 @@ func TestTheTokenLengthGuardIsExercisedOnAWellFormedToken(t *testing.T) {
 	requireDenied(t, v.verify(over))
 }
 
-// TestEveryAccessTokenTypeSpellingIsAccepted holds the closed set the design
-// fixes for typ and its case-insensitive comparison: both RFC 9068 spellings are
-// taken in any case.
+// TestEveryAccessTokenTypeSpellingIsAccepted takes both RFC 9068 typ spellings in
+// any case.
 func TestEveryAccessTokenTypeSpellingIsAccepted(t *testing.T) {
 	for _, typ := range []string{
 		accessTokenType, accessTokenTypeAlt, "AT+JWT", "Application/At+Jwt",
@@ -823,8 +802,7 @@ func TestEveryAccessTokenTypeSpellingIsAccepted(t *testing.T) {
 	}
 }
 
-// TestAMultiSignatureTokenIsRefused holds the shape the guard at parseSigned
-// stands for: a JWS that carries more than one signature is refused.
+// TestAMultiSignatureTokenIsRefused refuses a JWS carrying more than one signature.
 func TestAMultiSignatureTokenIsRefused(t *testing.T) {
 	payload := base64.RawURLEncoding.EncodeToString([]byte(`{}`))
 	protected := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"ES256","typ":"at+jwt"}`))
@@ -839,9 +817,8 @@ func TestAMultiSignatureTokenIsRefused(t *testing.T) {
 	requireDenied(t, v.verify(raw))
 }
 
-// TestTheMalformedInputsOfTheDisclosedPanicAreRefusedNotCrashed holds the ADR's
-// condition on the go-jose malformed-input panic: a malformed token reaches
-// Denied at the entry point and never crashes the process.
+// TestTheMalformedInputsOfTheDisclosedPanicAreRefusedNotCrashed answers Denied,
+// never a panic, on malformed input of the kind that makes go-jose panic.
 func TestTheMalformedInputsOfTheDisclosedPanicAreRefusedNotCrashed(t *testing.T) {
 	inputs := []string{
 		"..",
@@ -866,9 +843,8 @@ func TestTheMalformedInputsOfTheDisclosedPanicAreRefusedNotCrashed(t *testing.T)
 	}
 }
 
-// TestATokenIssuedAtTheValidAfterInstantIsAccepted holds the account-revocation
-// comparison's boundary: a token whose iat equals valid_after is not "before"
-// it.
+// TestATokenIssuedAtTheValidAfterInstantIsAccepted accepts a token whose iat equals
+// the account's valid_after.
 func TestATokenIssuedAtTheValidAfterInstantIsAccepted(t *testing.T) {
 	v := newVfy(t)
 	a := v.acct.accounts[vfyAlice]
@@ -879,9 +855,8 @@ func TestATokenIssuedAtTheValidAfterInstantIsAccepted(t *testing.T) {
 	}
 }
 
-// TestAnImpersonationTokenTakesTheOperatorsLevel holds that the impersonation
-// does not cap the authentication facts: the level, the IdP declaration and the
-// provider are the operator session's own.
+// TestAnImpersonationTokenTakesTheOperatorsLevel takes the assurance, IdP
+// declaration and provider from the operator session.
 func TestAnImpersonationTokenTakesTheOperatorsLevel(t *testing.T) {
 	v := newVfy(t)
 	tok := v.impersonationToken()
@@ -895,9 +870,8 @@ func TestAnImpersonationTokenTakesTheOperatorsLevel(t *testing.T) {
 	}
 }
 
-// TestAStatelessImpersonationTokenReadsItsLevelFromTheToken holds the
-// check-session-off branch: the level comes from the token's acr, and the facts
-// the token does not carry are false and empty.
+// TestAStatelessImpersonationTokenReadsItsLevelFromTheToken reads the level from
+// the token's acr, and the facts it does not carry as false and empty.
 func TestAStatelessImpersonationTokenReadsItsLevelFromTheToken(t *testing.T) {
 	v := newVfy(t)
 	v.st.setBool(checkSessionPath, false)
@@ -919,8 +893,8 @@ func TestAStatelessImpersonationTokenReadsItsLevelFromTheToken(t *testing.T) {
 	}
 }
 
-// TestAnImpersonationTakesItsMethodsFromTheSession holds that the impersonation
-// branch reads the method set off the session, not the token's amr.
+// TestAnImpersonationTakesItsMethodsFromTheSession reads the method set off the
+// session, not off the token's amr.
 func TestAnImpersonationTakesItsMethodsFromTheSession(t *testing.T) {
 	v := newVfy(t)
 	v.sess.status.Methods = []authn.Method{authn.MethodTOTP}
@@ -930,9 +904,8 @@ func TestAnImpersonationTakesItsMethodsFromTheSession(t *testing.T) {
 	}
 }
 
-// TestATokenWithNoAuthenticationMethodIsRefused holds the fail-closed rule: a
-// principal that would carry no method is never handed over, whether the method
-// set would come from the token's amr or from an empty session.
+// TestATokenWithNoAuthenticationMethodIsRefused refuses a principal that would
+// carry no method, whether the set would come from the token or a session.
 func TestATokenWithNoAuthenticationMethodIsRefused(t *testing.T) {
 	v := newVfy(t)
 	v.st.setBool(checkSessionPath, false)
@@ -945,9 +918,8 @@ func TestATokenWithNoAuthenticationMethodIsRefused(t *testing.T) {
 	requireDenied(t, v.verify(v.good()))
 }
 
-// TestTheStatelessModeReadsTheAssuranceFromTheToken holds the acr branch of
-// assuranceOf: a token carrying acr "2" reads as multi, one carrying "1" as
-// single, when the session check is off.
+// TestTheStatelessModeReadsTheAssuranceFromTheToken reads acr "2" as multi and "1"
+// as single when the session check is off.
 func TestTheStatelessModeReadsTheAssuranceFromTheToken(t *testing.T) {
 	v := newVfy(t)
 	v.st.setBool(checkSessionPath, false)
@@ -962,9 +934,8 @@ func TestTheStatelessModeReadsTheAssuranceFromTheToken(t *testing.T) {
 	}
 }
 
-// TestAZeroAssuranceReachesThePrincipalAsSingle holds the normalisation: a
-// session whose assurance is the zero value is handed over as a single factor,
-// never as the unstated zero.
+// TestAZeroAssuranceReachesThePrincipalAsSingle hands a zero assurance over as
+// single.
 func TestAZeroAssuranceReachesThePrincipalAsSingle(t *testing.T) {
 	v := newVfy(t)
 	v.sess.status.Assurance = authn.AssuranceNone
@@ -974,8 +945,8 @@ func TestAZeroAssuranceReachesThePrincipalAsSingle(t *testing.T) {
 	}
 }
 
-// TestTheSessionProviderAndIDPLevelReachThePrincipal holds that the session's
-// provider name and IdP level are carried onto the principal.
+// TestTheSessionProviderAndIDPLevelReachThePrincipal carries the session's
+// provider and IdP level onto the principal.
 func TestTheSessionProviderAndIDPLevelReachThePrincipal(t *testing.T) {
 	v := newVfy(t)
 	v.sess.status.Provider = "oidc-x"
@@ -987,9 +958,8 @@ func TestTheSessionProviderAndIDPLevelReachThePrincipal(t *testing.T) {
 	}
 }
 
-// TestReservedAccountAttributesDoNotReachThePrincipal holds the reserved-prefix
-// filter: an account attribute under idp.* or authn.* is dropped, a normal one
-// is kept.
+// TestReservedAccountAttributesDoNotReachThePrincipal drops an account attribute
+// under idp.* or authn.* and keeps an ordinary one.
 func TestReservedAccountAttributesDoNotReachThePrincipal(t *testing.T) {
 	v := newVfy(t)
 	v.acct.accounts[vfyAlice] = authn.Account{
@@ -1008,8 +978,8 @@ func TestReservedAccountAttributesDoNotReachThePrincipal(t *testing.T) {
 	}
 }
 
-// TestAPrincipalWithNoAttributesCarriesNil holds that an identity with nothing
-// attributed carries a nil set, not an empty one.
+// TestAPrincipalWithNoAttributesCarriesNil carries a nil attribute set, not an
+// empty one.
 func TestAPrincipalWithNoAttributesCarriesNil(t *testing.T) {
 	v := newVfy(t)
 	if got := principalOf(v.verify(v.good())); got.Attributes != nil {
@@ -1017,9 +987,8 @@ func TestAPrincipalWithNoAttributesCarriesNil(t *testing.T) {
 	}
 }
 
-// TestAMalformedSubjectIsRefusedBeforeAnyLookup holds that the well-formedness
-// rule runs before the account store: a malformed sub is refused even though an
-// account exists under that very identifier.
+// TestAMalformedSubjectIsRefusedBeforeAnyLookup refuses a malformed sub even when
+// an account exists under that very identifier.
 func TestAMalformedSubjectIsRefusedBeforeAnyLookup(t *testing.T) {
 	v := newVfy(t)
 	bad := authn.AccountID("not a valid id")
@@ -1030,8 +999,8 @@ func TestAMalformedSubjectIsRefusedBeforeAnyLookup(t *testing.T) {
 	requireDenied(t, v.verify(v.sign(c, v.header())))
 }
 
-// TestAServiceTokenCarriesItsIssueInstantAsAuthTime holds that a service
-// token's auth time is the token's iat, not the verify instant.
+// TestAServiceTokenCarriesItsIssueInstantAsAuthTime carries the token's iat, not
+// the verify instant, as auth time.
 func TestAServiceTokenCarriesItsIssueInstantAsAuthTime(t *testing.T) {
 	v := newVfy(t)
 	v.sess.status.Kind = authn.SessionService
@@ -1046,9 +1015,8 @@ func TestAServiceTokenCarriesItsIssueInstantAsAuthTime(t *testing.T) {
 	}
 }
 
-// TestATokenWhoseKeysRegisteredAlgorithmDiffersIsRefused holds the defence in
-// depth the ADR asks a test to keep: a token whose header algorithm is not
-// the one its selected key carries is refused.
+// TestATokenWhoseKeysRegisteredAlgorithmDiffersIsRefused refuses a token whose
+// header algorithm differs from the one its selected key carries.
 func TestATokenWhoseKeysRegisteredAlgorithmDiffersIsRefused(t *testing.T) {
 	v := newVfy(t)
 	for i := range v.set.entries {
@@ -1059,9 +1027,8 @@ func TestATokenWhoseKeysRegisteredAlgorithmDiffersIsRefused(t *testing.T) {
 	requireDenied(t, v.verify(v.good()))
 }
 
-// TestTheLeewaySettingIsRead holds that the token's times are compared with the
-// configured leeway, not the declared default: a token outside the default
-// tolerance and inside the configured one is accepted.
+// TestTheLeewaySettingIsRead compares the token's times with the configured
+// leeway, not the declared default.
 func TestTheLeewaySettingIsRead(t *testing.T) {
 	v := newVfy(t)
 	store := newFakeSettings()

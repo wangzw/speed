@@ -77,15 +77,9 @@ func (a Account) Clone() Account {
 	return a
 }
 
-// The ways an identifier's ownership was established, as Verification.Via and
-// Identifier.VerifiedVia write them. SMS-code, email-code and idp:<provider> are
-// proofs: the phone received a code, the address received and presented a code,
-// the provider declared the address verified. Invite, admin, import-unverified
-// and self only record a fact: an invitation's link was delivered and presented
-// (which grants a membership but does not prove the invited address), an
-// administrator asserted the value, an import carried it unproven, or the
-// account's own holder asserted it. None of those four is a proof, and none is
-// grounds for automatic linking or an enterprise merge.
+// The ways an identifier's ownership was established, as Verification.Via writes
+// them: sms-code, email-code and idp:<provider> are proofs, while invite, admin,
+// import-unverified and self only record a fact and are no grounds for linking.
 const (
 	VerifiedViaSMSCode          = "sms-code"
 	VerifiedViaEmailCode        = "email-code"
@@ -120,10 +114,9 @@ func (v Verification) Valid() bool {
 	return err == nil
 }
 
-// Proves reports whether the verification is a proof of ownership, which is
-// sms-code, email-code and idp:<provider>. Invite, admin, import-unverified and
-// self, and a value that is not valid at all, read false: holding an invitation
-// token grants a membership and says nothing about who owns the invited address.
+// Proves reports whether the verification is a proof of ownership: sms-code,
+// email-code and idp:<provider>. Invite, admin, import-unverified and self, and
+// any invalid value, read false.
 func (v Verification) Proves() bool {
 	return v.Valid() && v.Via != VerifiedViaInvite && v.Via != VerifiedViaAdmin &&
 		v.Via != VerifiedViaImportUnverified && v.Via != VerifiedViaSelf
@@ -144,12 +137,9 @@ const (
 // Valid reports whether s is one of the constants above.
 func (s SignupState) Valid() bool { return s <= SignupVerified }
 
-// SignupStatus is the email-verification state as a request reads it. State is
-// None, Pending or Verified; Email is the address of that state — the proved
-// one that was verified first for Verified, the unproved one that was written
-// first for Pending, and empty when there is no email address at all; Since is
-// when the account first reached Verified, the zero time while it never did,
-// and the zero time for None.
+// SignupStatus is the email-verification state as a request reads it: State is
+// None, Pending or Verified, Email is the address of that state and Since is when
+// the account first reached Verified, the zero time while it never did.
 type SignupStatus struct {
 	// State is how far verification has got.
 	State SignupState
@@ -174,9 +164,8 @@ type RegisterAccount struct {
 }
 
 // IdentifierFlags is the two axes of an email address or a phone number: whether
-// it may sign in and whether it is a contact. A registered address is always a
-// contact, so Contact is true for one this module writes; SignIn is the axis a
-// holder chooses, and neither rewrites the other.
+// it is a contact, which a registered address always is, and whether it may sign
+// in, which the holder chooses; neither rewrites the other.
 type IdentifierFlags struct {
 	// Contact says the handle is a contact of the account.
 	Contact bool
@@ -276,12 +265,9 @@ type Page struct {
 // otherwise.
 func (p Page) EffectiveLimit() int { return pageLimit(p.Limit) }
 
-// MemberQuery selects one page of a tenant's members, optionally narrowed to the
-// accounts whose display name or login identifiers begin with Query. The display
-// name is matched as a byte prefix of the stored value; an identifier is matched
-// after the query is lower-cased, because usernames and email addresses are
-// stored lower-cased and phone numbers are digits either way. An empty Query is
-// no filter.
+// MemberQuery selects one page of a tenant's members, optionally narrowed to
+// accounts whose display name or login identifiers begin with Query. An empty
+// Query is no filter; the query is lower-cased before matching identifiers.
 type MemberQuery struct {
 	Page
 	// Query narrows the listing to display names and login identifiers beginning with it.
@@ -289,9 +275,8 @@ type MemberQuery struct {
 }
 
 // ExternalBinding is one external identity bound to an account, as the account
-// module keeps it. A listing and an unbinding use its ID. It is not External,
-// which is the input a login method hands the engine, and it carries the subject
-// only as the key it is stored under.
+// module keeps it: a listing and an unbinding use its ID, and the subject is
+// carried only as the key it is stored under. It is not External, a login input.
 type ExternalBinding struct {
 	// ID is the binding row identifier.
 	ID string
@@ -321,10 +306,9 @@ type ServiceSecretInfo struct {
 	LastUsedAt time.Time // the zero time: never
 }
 
-// Membership is the fact that an account belongs to a tenant. The tenant is the
-// string form of a tenant identifier; the capability never imports the tenant
-// module. The zero value, with Active false, is suspended and reads as not a
-// member, as does a membership that is not there.
+// Membership is the fact that an account belongs to a tenant, whose identifier is
+// its string form. The zero value, with Active false, is suspended and reads as
+// not a member, as does a membership that is not there.
 type Membership struct {
 	// Account is the member.
 	Account AccountID

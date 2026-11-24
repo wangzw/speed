@@ -1,19 +1,8 @@
 package authn
 
-// The event types this capability publishes. The set is closed, and a type is
-// named by function and not by IdP, login method or tenant: what varies is a
-// payload field. A type's payload is the struct beside its constant, which a
-// subscriber decodes to with event.DecodePayload.
-//
-// An event is a hint and never the authority: account state, memberships,
-// sessions and revocation live in the database, and a subscriber may use an event
-// to drop a local cache and to start a cleanup but not as its only ground.
-// Delivery differs by transport, so a subscriber deduplicates by Event.ID and
-// relies on neither order nor count. Where an event is staged through the outbox
-// it is published after the commit, at least once, under one Event.ID.
-//
-// There is no event for a failed login: a failure goes to the audit row, the log
-// and a counter, and only the start of a back-off is an event.
+// Each constant names a payload struct beside it, decoded with event.DecodePayload.
+// An event is a hint, never the authority: an outbox one publishes after the commit,
+// at least once, and a subscriber dedupes by Event.ID, relying on neither order nor count.
 const (
 	EventAccountCreated       = "authn.account.created"
 	EventAccountStatusChanged = "authn.account.status-changed" // staged through the outbox
@@ -34,18 +23,9 @@ const (
 	EventIDPChanged           = "authn.idp.changed"           // the tenant is in the envelope
 )
 
-// The payloads share one shape. Every field is a top-level scalar under a
-// lower-case, underscore-separated JSON name, and a field holds an identifier, an
-// enumeration or an instant and nothing else: no secret, no free text such as a
-// reason or a display name, no email address, no phone number and no login
-// identifier. The test is that every top-level field becomes a span attribute and
-// an audit detail, so what it holds must be harmless in both places. An instant is
-// an RFC 3339 string, because a number that crossed a transport comes back as a
-// json.Number and loses digits beyond 2^53. The tenant of an event is in
-// Event.TenantID, never in a payload.
-//
-// The closed sets a field takes are listed with it. They only grow, and a
-// subscriber has to tolerate a value or a field it does not know.
+// Every field is a top-level scalar under a lower-case JSON name and holds an
+// identifier, an enumeration or an RFC 3339 instant, never a secret or free
+// text; the tenant is in Event.TenantID. Subscribers tolerate unknown values.
 
 // AccountCreated is the payload of EventAccountCreated.
 type AccountCreated struct {
@@ -180,10 +160,9 @@ type IDPChanged struct {
 	Change string `json:"change"` // created, updated, enabled, disabled, deleted, domain-verified, domain-unverified or domain-removed
 }
 
-// The classes of reason a state change or a revocation carries. The set is
-// closed and a reason handed to SetStatus, Delete, Sessions.Revoke or
-// Sessions.RevokeAccount is one of these, as is the reason an acceptance's
-// system revocation records, so that a reason is never free text.
+// The closed set of reason classes a state change or revocation carries: a
+// reason passed to SetStatus, Delete, Sessions.Revoke or Sessions.RevokeAccount
+// is one of these, never free text.
 const (
 	ReasonAdmin           = "admin"            // an administrator started the change or revoked
 	ReasonSelf            = "self"             // the account holder: logging out, or revoking the other sessions after a change of their own

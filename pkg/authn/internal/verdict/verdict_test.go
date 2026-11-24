@@ -86,10 +86,8 @@ func TestOnlyAnAuthenticatedVerdictCarriesAPrincipal(t *testing.T) {
 	}
 }
 
-// TestWhatARefusalCarriesDoesNotChangeThatItIsARefusal holds the one thing a
-// backend must not be able to do with the cause it hands over: a backend that
-// returns the gateway's own timeout as the cause of a refusal must not turn a
-// wrong password into an outage.
+// TestWhatARefusalCarriesDoesNotChangeThatItIsARefusal holds that the cause a
+// backend hands over cannot turn a refusal into an outage.
 func TestWhatARefusalCarriesDoesNotChangeThatItIsARefusal(t *testing.T) {
 	for _, cause := range []error{
 		errors.New("wrong password"),
@@ -117,8 +115,7 @@ func TestWhatARefusalCarriesDoesNotChangeThatItIsARefusal(t *testing.T) {
 }
 
 // TestTheBackendChangingItsPrincipalAfterwardsChangesNothing holds the
-// copy-on-construct: the backend keeps its own Principal after returning, and
-// the gateway must read what was handed over.
+// copy-on-construct.
 func TestTheBackendChangingItsPrincipalAfterwardsChangesNothing(t *testing.T) {
 	p := principal()
 	v := verdict.NewAuthenticated(p)

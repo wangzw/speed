@@ -25,9 +25,8 @@ func probeModule(name, namespace string) core.Module {
 	}
 }
 
-// TestConfigReaderServesTheLoadersValues holds that the reader is the real
-// loader's: a value in the body reaches a module that declared the item, and
-// a value the body leaves out reads as the declared default.
+// TestConfigReaderServesTheLoadersValues checks that the reader serves the real
+// loader's values: a value in the body reaches its module, an absent one the default.
 func TestConfigReaderServesTheLoadersValues(t *testing.T) {
 	reader := authntest.ConfigReader(t, probeModule("probe", "probe"), `{"probe": {"greeting": "hello"}}`)
 	var got probeConfig
@@ -48,8 +47,8 @@ func TestConfigReaderServesTheLoadersValues(t *testing.T) {
 	}
 }
 
-// TestConfigReaderAllServesEachModuleItsOwnSection holds the several-module
-// form: two modules read two sections of one body.
+// TestConfigReaderAllServesEachModuleItsOwnSection checks that two modules read
+// two sections of one body.
 func TestConfigReaderAllServesEachModuleItsOwnSection(t *testing.T) {
 	reader := authntest.ConfigReaderAll(t,
 		`{"one": {"greeting": "a"}, "two": {"greeting": "b"}}`,
@@ -65,9 +64,8 @@ func TestConfigReaderAllServesEachModuleItsOwnSection(t *testing.T) {
 	}
 }
 
-// loadFailure stands in for the handle a case gave ConfigReader, with the real
-// one underneath for the directory and the context, so that a body the loader
-// refuses can be observed as the failure ConfigReader reports.
+// loadFailure is a testing.TB whose Fatalf records the failure instead of
+// ending the test, so a refused body can be observed.
 type loadFailure struct {
 	testing.TB
 	failed bool
@@ -77,9 +75,8 @@ func (l *loadFailure) Helper() {}
 
 func (l *loadFailure) Fatalf(string, ...any) { l.failed = true }
 
-// TestConfigReaderFailsTheCaseOnABodyTheLoaderRefuses holds that a malformed
-// body is a failure of the case and not a reader that silently serves
-// defaults.
+// TestConfigReaderFailsTheCaseOnABodyTheLoaderRefuses checks that a malformed body
+// fails the case rather than silently serving defaults.
 func TestConfigReaderFailsTheCaseOnABodyTheLoaderRefuses(t *testing.T) {
 	l := &loadFailure{TB: t}
 	authntest.ConfigReader(l, probeModule("probe", "probe"), `{not json`)

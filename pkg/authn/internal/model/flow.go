@@ -32,10 +32,9 @@ type Start struct {
 	Client    ClientInfo        // for logs and audit; no ground for a judgement or a binding
 	SendsLeft int               // how many SMS sends the flow may still make
 	Locale    string            // zh-CN or en-US, the engine's mapping of the request's Accept-Language; empty reads zh-CN
-	// Proof is the human-verification proof the request that started or
-	// answered the flow presented. The engine passes it through unread; a
-	// method that sends a code hands it to the code engine, which checks and
-	// consumes it once.
+	// Proof is the human-verification proof the request presented. The engine
+	// passes it through unread; a method that sends a code hands it to the code
+	// engine, which checks and consumes it once.
 	Proof string
 }
 
@@ -59,15 +58,13 @@ type FlowState struct {
 	Private   []byte    // the method's own, opaque, at most 8 KiB, kept by the engine as it stands
 	SendsLeft int       // how many SMS sends the flow may still make
 	Locale    string    // as Start.Locale, kept in the flow record from the request that started it
-	// Source is the request's client address, filled by the engine where it
-	// starts a factor challenge. An empty source means the engine has no
-	// trustworthy origin for this call, and the code engine applies no source
-	// budget for it.
+	// Source is the request's client address, filled by the engine where it starts
+	// a factor challenge. Empty means no trustworthy origin, so the code engine
+	// applies no source budget.
 	Source string
-	// Proof is the human-verification proof the current request presented,
-	// filled by the engine where it starts a factor challenge and on a first
-	// factor's answer. The method hands it to the code engine, which checks and
-	// consumes it once; the engine itself never checks it.
+	// Proof is the human-verification proof the current request presented, filled
+	// by the engine at a factor challenge and on a first factor's answer. The
+	// method hands it to the code engine, which checks and consumes it once.
 	Proof string
 }
 

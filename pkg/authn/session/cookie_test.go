@@ -13,8 +13,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/gate"
 )
 
-// The session cookie's three names, written out so that the tests pin the
-// strings a browser sees.
 const (
 	hostCookieName   = "__Host-authn-sid"
 	secureCookieName = "__Secure-authn-sid"
@@ -87,10 +85,8 @@ func TestTheCookieNameFollowsThePublicAddressAndTheTwoItems(t *testing.T) {
 	}
 }
 
-// What cannot be run on is refused: none as a SameSite, an http address whose
-// host is not a loopback one, a Domain that is malformed or that a browser would
-// drop, and a Domain on an http address, since a cookie with a Domain needs the
-// __Secure- prefix and so Secure, which an http address leaves off.
+// What cannot be run on is refused: SameSite none, an http address that is not
+// loopback, a malformed or dropped Domain, and a Domain on an http address.
 func TestTheCookieConfigurationRefusesWhatCannotRunOn(t *testing.T) {
 	cases := map[string]struct {
 		cfg  moduleConfig
@@ -148,9 +144,8 @@ func TestTheCookieConfigurationRefusesWhatCannotRunOn(t *testing.T) {
 	}
 }
 
-// SetCookie writes the cookie with the attributes the design fixes on https: the
-// __Host- prefix, Secure, HttpOnly, Path=/, SameSite=Lax, no Domain, and a session
-// lifetime (no Max-Age and no Expires).
+// TestTheSetCookieHeaderCarriesTheFixedAttributes holds that SetCookie writes the
+// __Host- cookie with Secure, HttpOnly, Path=/, Lax and a session lifetime.
 func TestTheSetCookieHeaderCarriesTheFixedAttributes(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -194,9 +189,8 @@ func TestClearCookieDropsTheCookie(t *testing.T) {
 	}
 }
 
-// The startup diagnostics name the protection a configuration can give up: a
-// Domain gives up the __Host- guarantee, and the Warn names the setting that
-// carries it.
+// The startup diagnostics warn about each protection a configuration gives up, and
+// name the setting that carries it.
 func TestTheStartupDiagnosticsWarnAboutEachGivenUpProtection(t *testing.T) {
 	t.Run("a cookie domain", func(t *testing.T) {
 		f := newFixture(t, dialects[0], withCookie(cookieSpec{
@@ -255,9 +249,8 @@ func TestAPrivateAddressOverHttpIsNotTreatedAsSecure(t *testing.T) {
 	}
 }
 
-// Every Set-Cookie the module writes for the session cookie, on SetCookie, on
-// ClearCookie and on the clearing cookie a reply attaches, carries Secure
-// exactly when the public URL is https.
+// Every Set-Cookie the module writes for the session cookie carries Secure exactly
+// when the public URL is https.
 func TestTheSessionCookieIsSecureOnAnHTTPSAddressAlone(t *testing.T) {
 	for _, c := range []struct {
 		address, name string
@@ -307,11 +300,8 @@ func TestTheSessionCookieIsSecureOnAnHTTPSAddressAlone(t *testing.T) {
 	}
 }
 
-// The clearing cookie a reply attaches has to name the same cookie the
-// session was written as, or the browser keeps the session cookie and adds a
-// second one: every attribute that identifies the cookie or that a browser
-// checks before replacing it is the session cookie's, in each configuration
-// of the name, the Domain and the SameSite.
+// The clearing cookie a reply attaches names the same cookie the session was written
+// as, or the browser keeps both.
 func TestTheClearingCookieMatchesTheSessionCookie(t *testing.T) {
 	const https = "https://app.example.com"
 	for name, c := range map[string]struct {
@@ -365,9 +355,8 @@ func TestTheClearingCookieMatchesTheSessionCookie(t *testing.T) {
 	}
 }
 
-// The session is read under the one name the public URL gives: a live token sent
-// under another form of the name finds no session, while the same token under
-// the configured name does.
+// The session is read under the one name the public URL gives; a token under another
+// form of the name finds no session.
 func TestASessionUnderAnotherFormOfTheNameIsNotFound(t *testing.T) {
 	for _, c := range []struct {
 		publicURL, configured string

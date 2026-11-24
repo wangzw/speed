@@ -24,12 +24,9 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The cases built on this file hold what only the real entry point can decide:
-// which route a request is matched to, in which order the layers run, what an
-// unmatched request or a method the path does not allow is answered with, and
-// the shape of a refusal written through the entry point. The entry point is
-// the real module on a real loopback port, assembled by the real registry with
-// the real gateway in front of it; nothing here stands in for the router.
+// The cases built on this file run the real entry point on a loopback port,
+// assembled by the real registry with the real gateway in front of it; nothing
+// here stands in for the router.
 
 // listeningMsg is the record the entry point writes once an endpoint's address
 // is bound. It is the only place outside the process that says which port the
@@ -49,10 +46,9 @@ type liveRoute struct {
 	handler gin.HandlerFunc
 }
 
-// liveAssembly is one drive of the real registry to Serve: the entry point
-// module on a loopback port per endpoint, the gateway guarding those endpoints,
-// each backend registered as a module of its own, and a module that makes the
-// registrations a real registrant makes in its Init.
+// liveAssembly is one drive of the real registry to Serve: the entry point module
+// on a loopback port per endpoint, the gateway guarding those endpoints, each
+// backend a module of its own, and a registrant making the routes a real one makes.
 type liveAssembly struct {
 	// endpoints are the entry point's endpoints. It defaults to a single
 	// endpoint named "public".
@@ -85,10 +81,9 @@ type liveAssembly struct {
 	inFlight int
 }
 
-// whoReached is the handler a route gets when a case does not give it one. It
+// whoReached is the handler a route gets when a case does not give it one: it
 // answers with who the request was made out to be and the access level the
-// gateway recorded, so that a case reads from the body whether the request got
-// through, as whom, and under which registration.
+// gateway recorded, so a case reads what got through from the body.
 func whoReached(c *gin.Context) {
 	who := "nobody"
 	if id, ok := identity.From(c.Request.Context()); ok {
@@ -123,10 +118,8 @@ type live struct {
 	client    *nethttp.Client
 }
 
-// send issues one request against a bound endpoint. A failure to get any
-// response is reported and answered with the zero reply: the case runs inside
-// the drive, and ending the test goroutine from there would leave the
-// assembly serving.
+// send issues one request against a bound endpoint; a failure to get any response
+// is reported and answered with the zero reply, because the case runs inside the drive.
 func (l *live) send(endpoint, method, path string, edits ...func(*nethttp.Request)) reply {
 	l.t.Helper()
 	addr, ok := l.addresses[endpoint]
@@ -325,9 +318,8 @@ func (a liveAssembly) serve(t *testing.T, use func(l *live)) *recorder {
 				logs:      logs,
 				client: &nethttp.Client{
 					Timeout: waitBound(),
-					// A connection of its own per request, so that what
-					// the server does to one is seen by that request
-					// alone and no idle connection holds the drain.
+					// A connection of its own per request, so no idle
+					// connection holds the drain.
 					Transport: &nethttp.Transport{DisableKeepAlives: true},
 				},
 			})
@@ -378,14 +370,9 @@ type sighting struct {
 	carried atomic.Bool
 }
 
-// observer is a module that registers one layer of its own on the public
-// endpoint, with the placement it declares, and records what the layer saw.
-//
-// It requires the gateway's capability, which is an ordering and nothing else:
-// it puts this module's Init after the gateway's, so the gateway's layer is
-// registered first. A layer in an earlier stage than the gateway's then runs
-// outside it, and a layer in the gateway's own stage that declares itself inside
-// runs after.
+// observer is a module that registers one layer of its own on the public endpoint,
+// with the placement it declares, and records what the layer saw. It requires the
+// gate capability, so the gateway's layer is registered first.
 func observer(name string, seen *sighting, place func(*speedhttp.Middleware)) core.Module {
 	return core.Module{
 		Name: "stand-in." + name,
