@@ -8,10 +8,8 @@ import (
 	speedredis "github.com/vislake/speed/pkg/internal/redis"
 )
 
-// TestStanceFailsWithoutAServer pins the enablement rule at this backend's own
-// precondition: a module taken in at run level has to start, so an implementation
-// the host did not point at a server fails the startup naming the item. It is
-// not a stance that lets the run continue without an event bus.
+// TestStanceFailsWithoutAServer pins the enablement rule at this
+// backend's own precondition.
 func TestStanceFailsWithoutAServer(t *testing.T) {
 	cfg := Config{Config: speedredis.Defaults()}
 	_, err := stance(&cfg)
@@ -23,6 +21,8 @@ func TestStanceFailsWithoutAServer(t *testing.T) {
 	}
 }
 
+// TestStanceEnablesOnceAServerIsNamed checks that a named server states
+// StateEnabled.
 func TestStanceEnablesOnceAServerIsNamed(t *testing.T) {
 	cfg := Config{Config: speedredis.Defaults()}
 	cfg.Addr = "127.0.0.1:6379"

@@ -19,5 +19,4 @@ var postgresEngine = engine{
 	open:   func(t *testing.T, dsn string) db.Database { return dbtest.Postgres(t, dsn, nil) },
 }
 
-// The cases that run on every engine take this leg too.
 func init() { engines = append(engines, postgresEngine) }

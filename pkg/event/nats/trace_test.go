@@ -15,18 +15,12 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// recordedDelivery is one span the dispatch layer started for a subscriber: the
-// name it was recorded under, the parent it was handed and the attributes it
-// carried.
 type recordedDelivery struct {
 	name   string
 	parent trace.SpanContext
 	attrs  map[string]string
 }
 
-// recordingTracer keeps every span the dispatch layer starts, so a case can
-// hold a delivery's parent and attributes to what the design fixes without an
-// exporter.
 type recordingTracer struct {
 	mu    sync.Mutex
 	spans []recordedDelivery
@@ -43,7 +37,6 @@ type deliveredSpan struct{}
 
 func (deliveredSpan) End(error) {}
 
-// deliveriesOf lists every span started for the named subscriber.
 func (r *recordingTracer) deliveriesOf(name string) []recordedDelivery {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -56,18 +49,14 @@ func (r *recordingTracer) deliveriesOf(name string) []recordedDelivery {
 	return out
 }
 
-// spanContext is a valid span context with the given identifiers, so a case can
-// name the span a delivery is expected to be parented on.
 func spanContext(traceID trace.TraceID, spanID trace.SpanID) trace.SpanContext {
 	return trace.NewSpanContext(trace.SpanContextConfig{
 		TraceID: traceID, SpanID: spanID, TraceFlags: trace.FlagsSampled,
 	})
 }
 
-// TestTheTraceContextSurvivesTheWireEnvelope pins this backend's line format:
-// the tracing context a publish writes into the envelope comes back out of a
-// decode. It runs without a server, so the format is held to this wherever the
-// suite runs.
+// TestTheTraceContextSurvivesTheWireEnvelope pins this backend's line
+// format.
 func TestTheTraceContextSurvivesTheWireEnvelope(t *testing.T) {
 	carrier := map[string]string{"traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}
 	evt := event.Event{ID: "e1", Type: "t", TenantID: "acme", TraceContext: carrier}
@@ -82,23 +71,8 @@ func TestTheTraceContextSurvivesTheWireEnvelope(t *testing.T) {
 	}
 }
 
-// TestARedeliveryOfTheSameEntryCarriesTheTracingContext pins the design's clause
-// that a redelivery of a backend entry carries the same tracing context: the
-// context rides in the entry the stream holds, so the entry handed over a
-// second time — the durable's ack-wait redelivery, the one duplicate source
-// this backend has — recovers the same parent for the subscriber's span rather
-// than a trace of its own. The cross-replica cases do not cover it: they hold
-// one publish reaching each replica once, not one stored entry arriving twice.
-//
-// A real ack-wait redelivery needs the server's acknowledgement wait to elapse.
-// This implementation sets no AckWait on its durable, so it is JetStream's
-// default of thirty seconds, and a case that waited it out would be slow and
-// race the reader the suite leaves running. What is held here instead is the
-// same property without the wait: the bytes a publish stores are read back and
-// delivered twice, and both deliveries have to be parented on the publisher's
-// span. An implementation that recovered the context from anything but the
-// entry — a per-process record written at publish, the decoding of the first
-// arrival — loses it on the second.
+// TestEveryDeliveryOfOneStoredEntryCarriesTheTracingContext checks that every
+// delivery of a stored entry carries the same tracing context.
 func TestEveryDeliveryOfOneStoredEntryCarriesTheTracingContext(t *testing.T) {
 	const evtType = "redelivery"
 	traceID := trace.TraceID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
@@ -107,8 +81,6 @@ func TestEveryDeliveryOfOneStoredEntryCarriesTheTracingContext(t *testing.T) {
 	tracing.Propagator().Inject(
 		trace.ContextWithSpanContext(context.Background(), spanContext(traceID, spanID)), carrier)
 
-	// The bytes the stream holds: what a publish of this event writes, and what
-	// a redelivery hands the reader a second time.
 	entry, err := json.Marshal(envelopeFor(event.Event{
 		ID: "e1", Type: evtType, TraceContext: map[string]string(carrier),
 	}, []byte(`{"k":"v"}`)))

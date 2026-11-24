@@ -18,18 +18,12 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// recordedDelivery is one span the dispatch layer started for a subscriber: the
-// name it was recorded under, the parent it was handed and the attributes it
-// carried.
 type recordedDelivery struct {
 	name   string
 	parent trace.SpanContext
 	attrs  map[string]string
 }
 
-// recordingTracer keeps every span the dispatch layer starts, so a case can
-// hold a delivery's parent and attributes to what the design fixes without an
-// exporter.
 type recordingTracer struct {
 	mu    sync.Mutex
 	spans []recordedDelivery
@@ -46,7 +40,6 @@ type deliveredSpan struct{}
 
 func (deliveredSpan) End(error) {}
 
-// deliveriesOf lists every span started for the named subscriber.
 func (r *recordingTracer) deliveriesOf(name string) []recordedDelivery {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -59,16 +52,12 @@ func (r *recordingTracer) deliveriesOf(name string) []recordedDelivery {
 	return out
 }
 
-// spanContext is a valid span context with the given identifiers, so a case can
-// name the span a delivery is expected to be parented on.
 func spanContext(traceID trace.TraceID, spanID trace.SpanID) trace.SpanContext {
 	return trace.NewSpanContext(trace.SpanContextConfig{
 		TraceID: traceID, SpanID: spanID, TraceFlags: trace.FlagsSampled,
 	})
 }
 
-// openBusTracing builds a bus over the given server whose delivery spans are
-// recorded on tracer.
 func openBusTracing(t *testing.T, addr string, db int, tracer event.TracerProvider) *bus {
 	t.Helper()
 	proto := Config{Config: speedredis.Defaults()}
@@ -82,10 +71,8 @@ func openBusTracing(t *testing.T, addr string, db int, tracer event.TracerProvid
 	return local
 }
 
-// TestDeliveryContinuesThePublishersTrace is the cross-replica case for this
-// backend: an event published inside a span by one replica carries that span's
-// tracing context through the Redis stream, and the other replica's subscriber
-// records its span as a child of it — the same trace id, not a trace of its own.
+// TestDeliveryContinuesThePublishersTrace is the cross-replica case for
+// this backend.
 func TestDeliveryContinuesThePublishersTrace(t *testing.T) {
 	addr, db := redistest.Acquire(t)
 	rec := &recordingTracer{}

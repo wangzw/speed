@@ -12,11 +12,8 @@ import (
 	"github.com/vislake/speed/pkg/internal/natstest"
 )
 
-// TestAnEntryDeliveredWhileStoppingIsAcknowledged pins what the stop stage
-// leaves behind on this backend: nothing awaiting acknowledgement. An entry
-// this consumer was handed and never acknowledged goes back to the durable only
-// after the server's acknowledgement wait, and only a consumer of the same name
-// ever receives it again — which, for a process-unique name, is no one.
+// TestAnEntryDeliveredWhileStoppingIsAcknowledged pins what the stop
+// stage leaves behind on this backend: nothing awaiting acknowledgement.
 func TestAnEntryDeliveredWhileStoppingIsAcknowledged(t *testing.T) {
 	url := natstest.URL(t)
 	ctx := context.Background()

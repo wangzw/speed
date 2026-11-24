@@ -14,16 +14,12 @@ import (
 	"github.com/vislake/speed/pkg/event/internal/tracing"
 )
 
-// spanContext is a valid span context with the given identifiers, so a case can
-// name the span a delivery is expected to be parented on.
 func spanContext(traceID trace.TraceID, spanID trace.SpanID) trace.SpanContext {
 	return trace.NewSpanContext(trace.SpanContextConfig{
 		TraceID: traceID, SpanID: spanID, TraceFlags: trace.FlagsSampled,
 	})
 }
 
-// stageInSpan stages one event inside a transaction whose context carries the
-// given span, which is the span the write announcing it was made in.
 func stageInSpan(t *testing.T, ctx context.Context, database db.Database, r *relay, eventID string) {
 	t.Helper()
 	err := database.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -36,7 +32,6 @@ func stageInSpan(t *testing.T, ctx context.Context, database db.Database, r *rel
 	}
 }
 
-// traceContextOf reads the tracing context a staged row holds.
 func traceContextOf(t *testing.T, database db.Database, eventID string) string {
 	t.Helper()
 	var stored string
@@ -47,19 +42,14 @@ func traceContextOf(t *testing.T, database db.Database, eventID string) string {
 	return stored
 }
 
-// parentOf extracts the span a stored tracing context names, so a case holds the
-// staged value to the span the write was in.
 func parentOf(t *testing.T, stored string) trace.SpanContext {
 	t.Helper()
 	return trace.SpanContextFromContext(
 		tracing.Propagator().Extract(context.Background(), propagation.MapCarrier(dispatch.DecodeTraceContext(stored))))
 }
 
-// TestTheStagedRowCarriesTheSpanTheWriteWasIn pins the tracing context the relay
-// stores: it is fixed at staging, from the span the staging transaction was in,
-// so the relay later publishes an event whose subscriber span descends from that
-// write's span rather than from the relay's. It runs with the relay unstarted,
-// so the row stays staged and can be read.
+// TestTheStagedRowCarriesTheSpanTheWriteWasIn pins the tracing context
+// the relay stores.
 func TestTheStagedRowCarriesTheSpanTheWriteWasIn(t *testing.T) {
 	onEachEngine(t, func(t *testing.T, e engine, dsn string) {
 		database := migrated(t, e, dsn)
@@ -78,14 +68,8 @@ func TestTheStagedRowCarriesTheSpanTheWriteWasIn(t *testing.T) {
 	})
 }
 
-// TestAStagedEventThatAlreadyCarriesTracingContextKeepsIt pins the "carried as
-// it is" half of what Stage writes into an event's tracing context: an event the
-// caller already gave one keeps it, whatever span the staging transaction is in.
-// A caller that fixed it — a relay restaging an event whose trace began where the
-// fact was produced — must not have it overwritten with the span this write is
-// in, or the trace that reaches the subscriber is this write's rather than the
-// one the fact belongs to. It runs with the relay unstarted, so the row stays
-// staged and can be read.
+// TestAStagedEventThatAlreadyCarriesTracingContextKeepsIt pins that Stage
+// leaves an event's existing tracing context as it is.
 func TestAStagedEventThatAlreadyCarriesTracingContextKeepsIt(t *testing.T) {
 	onEachEngine(t, func(t *testing.T, e engine, dsn string) {
 		database := migrated(t, e, dsn)
@@ -123,10 +107,8 @@ func TestAStagedEventThatAlreadyCarriesTracingContextKeepsIt(t *testing.T) {
 	})
 }
 
-// TestThePublishedEventContinuesTheSpansTrace is the case for the whole outbox
-// path: an event staged inside a span is published with that span's tracing
-// context, so a subscriber's span continues the trace the write began rather
-// than starting one of its own.
+// TestThePublishedEventContinuesTheSpansTrace is the case for the whole
+// outbox path.
 func TestThePublishedEventContinuesTheSpansTrace(t *testing.T) {
 	onEachEngine(t, func(t *testing.T, e engine, dsn string) {
 		database := migrated(t, e, dsn)
@@ -152,20 +134,13 @@ func TestThePublishedEventContinuesTheSpansTrace(t *testing.T) {
 	})
 }
 
-// TestAStagedEventWithNoTracingContextIsPublishedWithoutOne pins the empty case:
-// a row written before the tracing column existed holds the empty value, and the
-// relay publishes its event with no tracing context rather than failing. What the
-// published event carries is the relay's whole responsibility here; the parentage
-// a delivery then takes from it — an event with no tracing context leaving the
-// delivery's span a root, whatever context the delivery runs under — is the
-// dispatch layer's, and is pinned where deliveries actually run.
+// TestAStagedEventWithNoTracingContextIsPublishedWithoutOne pins the
+// empty case.
 func TestAStagedEventWithNoTracingContextIsPublishedWithoutOne(t *testing.T) {
 	onEachEngine(t, func(t *testing.T, e engine, dsn string) {
 		database := migrated(t, e, dsn)
 		l := &ledger{}
 		r := newQuick(t, database, newRecordingBus("only", l), quick)
-		// A row as it was before the tracing column: written without it, so it
-		// holds the column's empty default.
 		if err := database.DB().Exec(
 			`INSERT INTO ` + tableName + ` (event_id, type, tenant_id, payload, staged_at, available_at) ` +
 				`VALUES ('old', 't', 'acme', '{}', 0, 0)`).Error; err != nil {
@@ -186,9 +161,8 @@ func TestAStagedEventWithNoTracingContextIsPublishedWithoutOne(t *testing.T) {
 	})
 }
 
-// TestTheMigrationAddsTheTraceContextColumn holds both dialects' migrations to
-// the column the relay reads and writes: a zero-row read of it fails when it is
-// not there.
+// TestTheMigrationAddsTheTraceContextColumn holds both dialects'
+// migrations to the column the relay reads and writes.
 func TestTheMigrationAddsTheTraceContextColumn(t *testing.T) {
 	onEachEngine(t, func(t *testing.T, e engine, dsn string) {
 		database := migrated(t, e, dsn)

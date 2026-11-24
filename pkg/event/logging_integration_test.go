@@ -13,8 +13,6 @@ import (
 	"github.com/vislake/speed/pkg/internal/redis/redistest"
 )
 
-// The three implementations that carry their events through a server join the
-// rule here, each pointed at a server of the case's own.
 func init() {
 	loggingBackends = append(loggingBackends,
 		loggingBackend{eventredis.ModuleName, func(t *testing.T) pointedAt {

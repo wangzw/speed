@@ -7,9 +7,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// TestANamespaceASubjectCannotCarryIsRefused covers the other half: a namespace
-// that would silently widen or move the subject space fails at open rather than
-// later, when an assembly is receiving strangers' events.
+// TestANamespaceASubjectCannotCarryIsRefused covers the other half.
 func TestANamespaceASubjectCannotCarryIsRefused(t *testing.T) {
 	for _, bad := range []string{"has.dot", "has space", "has*wildcard", "has>wildcard", "has\ttab"} {
 		if err := checkNamespace(bad); err == nil {
@@ -24,10 +22,8 @@ func TestANamespaceASubjectCannotCarryIsRefused(t *testing.T) {
 	}
 }
 
-// TestStanceFailsWithoutAServer pins the enablement rule at this backend's own
-// precondition: a module taken in at run level has to start, so an implementation
-// the host did not point at a server fails the startup naming the item. It is not
-// a stance that lets the run continue without an event bus.
+// TestStanceFailsWithoutAServer pins the enablement rule at this
+// backend's own precondition.
 func TestStanceFailsWithoutAServer(t *testing.T) {
 	_, err := stance(&Config{})
 	if err == nil {
@@ -38,10 +34,8 @@ func TestStanceFailsWithoutAServer(t *testing.T) {
 	}
 }
 
-// TestStanceTreatsABlankServerAsNone covers the case an equality check on the
-// raw setting misses: a URL that is only whitespace is not a server, and the
-// stance is what turns it into a startup failure naming the input rather than a
-// connect refusal at the first publish.
+// TestStanceTreatsABlankServerAsNone covers the case an equality check on
+// the raw setting misses.
 func TestStanceTreatsABlankServerAsNone(t *testing.T) {
 	for _, url := range []string{"", " ", "\t", "\n"} {
 		_, err := stance(&Config{URL: url})
@@ -55,6 +49,8 @@ func TestStanceTreatsABlankServerAsNone(t *testing.T) {
 	}
 }
 
+// TestStanceEnablesOnceAServerIsNamed checks that a named server states
+// StateEnabled.
 func TestStanceEnablesOnceAServerIsNamed(t *testing.T) {
 	got, err := stance(&Config{URL: "nats://127.0.0.1:4222"})
 	if err != nil {

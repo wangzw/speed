@@ -14,11 +14,7 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// TestTheConnectionNeverStopsReconnecting pins the reconnect budget. The
-// library's default gives up after 60 attempts two seconds apart, and past
-// that the connection would be closed for good: a broker outage of a little
-// over two minutes would leave every publish and every fetch failing until the
-// process restarted, with the broker long back.
+// TestTheConnectionNeverStopsReconnecting pins the reconnect budget.
 func TestTheConnectionNeverStopsReconnecting(t *testing.T) {
 	b := openBus(t, natstest.URL(t), "")
 	if limit := b.nc.Opts.MaxReconnect; limit >= 0 {
@@ -27,10 +23,7 @@ func TestTheConnectionNeverStopsReconnecting(t *testing.T) {
 	}
 }
 
-// TestTheTimeoutBoundsEveryOperation pins what the timeout item bounds: every
-// request to the server made on a context with no deadline of its own — a
-// publish on a request's context, the stream and consumer management —
-// besides the connect.
+// TestTheTimeoutBoundsEveryOperation pins what the timeout item bounds.
 func TestTheTimeoutBoundsEveryOperation(t *testing.T) {
 	const timeout = 1234 * time.Millisecond
 	opened, err := open(context.Background(), &Config{URL: natstest.URL(t), Timeout: timeout}, log.Default(), tracing.Noop())
@@ -47,9 +40,7 @@ func TestTheTimeoutBoundsEveryOperation(t *testing.T) {
 	}
 }
 
-// TestATimeoutThatIsNotPositiveTakesTheDefault covers a typo in the item: the
-// library reads zero on the connect as no bound at all and refuses it for a
-// request, so either way the configured bound would be gone.
+// TestATimeoutThatIsNotPositiveTakesTheDefault covers a typo in the item.
 func TestATimeoutThatIsNotPositiveTakesTheDefault(t *testing.T) {
 	for _, configured := range []time.Duration{0, -time.Second} {
 		opened, err := open(context.Background(), &Config{URL: natstest.URL(t), Timeout: configured}, log.Default(), tracing.Noop())
@@ -66,10 +57,7 @@ func TestATimeoutThatIsNotPositiveTakesTheDefault(t *testing.T) {
 }
 
 // TestAConsumerNameTheServerRefusesIsRefusedNamingTheItem pins where a
-// durable name JetStream cannot carry is caught. The server refuses it when
-// the durable is created, at the start stage, with an error that names the
-// stream but not the input; every other premise of this backend is judged
-// before that and names its item.
+// durable name JetStream cannot carry is caught.
 func TestAConsumerNameTheServerRefusesIsRefusedNamingTheItem(t *testing.T) {
 	url := natstest.URL(t)
 	for _, name := range []string{"crm.prod", "crm prod", "crm*", "crm>", "crm/prod", `crm\prod`, "crm\tprod"} {

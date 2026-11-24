@@ -9,16 +9,8 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// On PostgreSQL a claim neither takes nor waits for the rows another claim is
-// taking: while one claim's transaction still holds its rows, a second claim
-// answers at once, without them. SQLite has no row lock to skip over, so this
-// is the one case that runs on PostgreSQL alone.
-//
-// Two claims running at once is the case the claimed time cannot cover — both
-// read a row as due before either has written its claim — and it is the row
-// lock's to settle. A claim that took no lock would wait for the first claim
-// and then take its rows as well; one that waited on the lock rather than
-// skipping it would stall behind the slowest relay.
+// On PostgreSQL a claim neither takes nor waits for the rows another
+// claim is taking.
 func TestAClaimSkipsTheRowsAnotherClaimIsTaking(t *testing.T) {
 	e := postgresEngine
 	dsn := e.locate(t)

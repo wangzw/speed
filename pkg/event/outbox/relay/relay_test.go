@@ -14,13 +14,10 @@ import (
 	"github.com/vislake/speed/pkg/event/outbox"
 )
 
-// uuidV7 is the form Stage assigns an empty identifier in.
 var uuidV7 = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
-// An event staged in a transaction is not published while the transaction is
-// open, and is published once it commits: with the identifier it was staged
-// under, its type and tenant, and a payload whose integer past a float64 is
-// exact. Its row is gone once the bus has accepted it.
+// An event staged in a transaction is not published while the transaction
+// is open, and is published once it commits.
 func TestAnEventIsPublishedOnceTheWriteThatStagedItCommits(t *testing.T) {
 	onEachEngine(t, func(t *testing.T, e engine, dsn string) {
 		database := migrated(t, e, dsn)
@@ -50,11 +47,7 @@ func TestAnEventIsPublishedOnceTheWriteThatStagedItCommits(t *testing.T) {
 		<-staging
 		// The table is the source, but the open transaction's row is invisible to
 		// the relay, so its emptiness says nothing on its own: that state is
-		// observed before the relay need ever have read the table. A completed
-		// pass after the row was staged is what makes the observation mean
-		// something. Two are waited for, because the pass under way when the row
-		// was staged may have read before it existed, and the next one is
-		// entirely after it.
+		// observed before the relay need ever have read the table.
 		settled := r.passes.Load()
 		if !eventually(func() bool { return r.passes.Load() >= settled+2 }) {
 			t.Fatalf("the relay completed only %d passes after the row was staged, want two",
@@ -132,9 +125,7 @@ func TestAnEventStagedByAWriteThatRollsBackIsNeverPublished(t *testing.T) {
 			t.Fatalf("the committed order's event was never published")
 		}
 		// The table is the source: with no row left and none claimed, the relay
-		// has published everything the committed writes staged. A row the
-		// rollback failed to take would be published as part of that pass, not
-		// after an interval.
+		// has published everything the committed writes staged.
 		waitSettled(t, database, bus)
 		if got := idsOf(l.events()); len(got) != 1 || got[0] != kept {
 			t.Errorf("the bus accepted %v, want only the committed order's %s and never the rolled-back %s",
@@ -143,9 +134,7 @@ func TestAnEventStagedByAWriteThatRollsBackIsNeverPublished(t *testing.T) {
 	})
 }
 
-// A bus that refuses an event for a while delays it and loses nothing: the
-// row stays staged, carrying the refusals it met, and the event is published
-// once the bus takes it, once, under the identifier it was staged under.
+// A bus that refuses an event for a while delays it and loses nothing.
 func TestABusThatRefusesForAWhileDelaysTheEventButNeverLosesIt(t *testing.T) {
 	onEachEngine(t, func(t *testing.T, e engine, dsn string) {
 		database := migrated(t, e, dsn)
@@ -249,10 +238,8 @@ func TestARelayThatCannotReadItsTableKeepsTrying(t *testing.T) {
 	})
 }
 
-// A session Stage cannot write into is refused before anything is written: the
-// handle itself rather than the transaction on it, and a transaction on another
-// database's pool — a connection built with Open, or another assembly's handle
-// on the same database.
+// A session Stage cannot write into is refused before anything is
+// written.
 func TestStageRefusesASessionItCannotStageInto(t *testing.T) {
 	onEachEngine(t, func(t *testing.T, e engine, dsn string) {
 		database := migrated(t, e, dsn)

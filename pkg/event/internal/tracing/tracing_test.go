@@ -21,8 +21,6 @@ import (
 	"github.com/vislake/speed/pkg/observability"
 )
 
-// recordingProvider builds an adapter over a tracer provider whose spans are
-// kept in memory, and hands back both the adapter and the exporter holding them.
 func recordingProvider(t *testing.T) (provider, *tracetest.InMemoryExporter) {
 	t.Helper()
 	exp := tracetest.NewInMemoryExporter()
@@ -33,7 +31,6 @@ func recordingProvider(t *testing.T) (provider, *tracetest.InMemoryExporter) {
 	return provider{upstream: tp}, exp
 }
 
-// attrOf returns the string value a span carried under key.
 func attrOf(attrs []attribute.KeyValue, key string) (string, bool) {
 	for _, a := range attrs {
 		if string(a.Key) == key {
@@ -43,9 +40,8 @@ func attrOf(attrs []attribute.KeyValue, key string) (string, bool) {
 	return "", false
 }
 
-// TestStartCarriesTheSubscriberNameAndTheAttributes pins what the adapter does
-// with what the dispatch layer hands the narrow Start: the span is named after
-// the subscriber, and the map of attributes reaches the span as its attributes.
+// TestStartCarriesTheSubscriberNameAndTheAttributes pins what the adapter
+// does with what the dispatch layer hands the narrow Start.
 func TestStartCarriesTheSubscriberNameAndTheAttributes(t *testing.T) {
 	p, exp := recordingProvider(t)
 	_, span := p.Start(context.Background(), "audit.journal", map[string]string{
@@ -70,10 +66,8 @@ func TestStartCarriesTheSubscriberNameAndTheAttributes(t *testing.T) {
 	}
 }
 
-// TestEndMarksAFailedDeliveryWithTheErrorsType pins what a failed delivery's
-// span looks like: it is marked failed, and its error.type is the error's own
-// type rather than its text, so a subscriber's message — which can quote a
-// payload value — does not ride into the trace.
+// TestEndMarksAFailedDeliveryWithTheErrorsType pins what a failed
+// delivery's span looks like.
 func TestEndMarksAFailedDeliveryWithTheErrorsType(t *testing.T) {
 	p, exp := recordingProvider(t)
 	_, span := p.Start(context.Background(), "audit.journal", nil)
@@ -97,13 +91,8 @@ func TestEndMarksAFailedDeliveryWithTheErrorsType(t *testing.T) {
 	}
 }
 
-// TestProviderTakesUpTheTelemetryProviderTheAssemblyDelivers pins the branch an
-// assembly with telemetry reaches: Provider resolves the telemetry provider the
-// registry holds and hands back an adapter over it, so a delivery's span is
-// recorded on the assembly's own provider. The fallback to a provider that
-// exports nothing is only for an assembly that delivers none; a Provider that
-// answered it here would export no span in the real assembly while every case
-// that builds the adapter directly stayed green.
+// TestProviderTakesUpTheTelemetryProviderTheAssemblyDelivers pins the
+// branch an assembly with telemetry reaches.
 func TestProviderTakesUpTheTelemetryProviderTheAssemblyDelivers(t *testing.T) {
 	exp := tracetest.NewInMemoryExporter()
 	upstream := sdktrace.NewTracerProvider(
@@ -136,14 +125,7 @@ func TestProviderTakesUpTheTelemetryProviderTheAssemblyDelivers(t *testing.T) {
 }
 
 // TestProviderFallsBackToAUsableNoOpProvider pins the assembly with no
-// telemetry: resolving the provider out of an empty registry answers with a
-// usable provider that records nothing rather than failing, so the bus starts
-// and stops as it would and no span is exported.
-//
-// The no-op drops every span by construction, so there is no exporter to attach
-// and observe the absence of a signal from; what is held here is what a no-op
-// provider produces: the span it starts is not recording and carries no valid
-// span context, and starting and ending one does not panic.
+// telemetry.
 func TestProviderFallsBackToAUsableNoOpProvider(t *testing.T) {
 	p, err := Provider(core.New())
 	if err != nil {
@@ -164,9 +146,6 @@ func TestProviderFallsBackToAUsableNoOpProvider(t *testing.T) {
 	span.End(errors.New("ignored: no signal is exported"))
 }
 
-// deliveryTable builds a dispatch table whose delivery spans are recorded on a
-// real adapter over an in-memory exporter, so a case holds what the adapter
-// exports — status, attributes — to what the design fixes.
 func deliveryTable(t *testing.T) (*dispatch.Table, *tracetest.InMemoryExporter) {
 	t.Helper()
 	p, exp := recordingProvider(t)
@@ -181,17 +160,8 @@ type deliveryFailure struct{ reason string }
 
 func (e *deliveryFailure) Error() string { return e.reason }
 
-// TestAFailedDeliveryIsRecordedAsAnError drives deliveries through the dispatch
-// layer and holds the span it exports to the design: a subscriber that returns
-// an error, and one that panics, each leave a span marked failed, its error.type
-// the failure's own type rather than its text. A subscriber's message can quote
-// a payload value, and a trace carries its status far from the process that
-// wrote it, so the text must not ride along.
-//
-// Both paths are held to the same rule. The panicking one fails with the error
-// the dispatch layer builds around the recovered value — not the value's own
-// type and not its text — so the case names that wrapped error and checks the
-// span against it, rather than asking only that some error.type is present.
+// TestAFailedDeliveryIsRecordedAsAnError checks that a failed delivery's span
+// is exported as an error.
 func TestAFailedDeliveryIsRecordedAsAnError(t *testing.T) {
 	failure := &deliveryFailure{reason: "the payload carried a secret value"}
 	const panicText = "this handler panics on purpose"
@@ -237,15 +207,8 @@ func TestAFailedDeliveryIsRecordedAsAnError(t *testing.T) {
 	}
 }
 
-// TestTwoSubscribersOfOneEventTypeMayShareAName pins the design's rule for the
-// name a delivery's span is recorded under: it is the subscriber's own identity,
-// and two subscribers of one event type may carry the same one. Registering the
-// second is not an error — Subscribe neither panics nor refuses it — and a
-// publish starts a span for each, both under the shared name and both carrying
-// the event type as the attribute that is all that could tell them apart. The
-// design leaves the two indistinguishable when the type matches too; it does not
-// make a repeated name an assembly failure, and a case that asserted only the
-// first subscription would not show that.
+// TestTwoSubscribersOfOneEventTypeMayShareAName checks that two subscribers of
+// one event type may share the span name.
 func TestTwoSubscribersOfOneEventTypeMayShareAName(t *testing.T) {
 	tbl, exp := deliveryTable(t)
 	delivered := 0
@@ -278,12 +241,8 @@ func TestTwoSubscribersOfOneEventTypeMayShareAName(t *testing.T) {
 	}
 }
 
-// TestTheHandlerContextCarriesTheDeliverySpan pins what the context handed to a
-// subscriber carries: the very span the dispatch layer started for that
-// delivery, the one End is later called on. The design leaves the span out of
-// what an implementation gives — it is this module's own — so a subscriber that
-// starts work of its own under that context continues the delivery's part of the
-// trace rather than a trace of its own.
+// TestTheHandlerContextCarriesTheDeliverySpan pins what the context
+// handed to a subscriber carries.
 func TestTheHandlerContextCarriesTheDeliverySpan(t *testing.T) {
 	tbl, exp := deliveryTable(t)
 	seen := make(chan trace.SpanContext, 1)
@@ -309,17 +268,8 @@ func TestTheHandlerContextCarriesTheDeliverySpan(t *testing.T) {
 	}
 }
 
-// TestADeliverySpanCarriesNoSpanKindCategory pins the clause the narrow Start
-// leaves out: the face carries no span kind, so the adapter leaves the kind at
-// the SDK's default and a delivery's exported span is of the default category —
-// Internal — rather than a client or a server one. A delivery is a subscriber
-// running, not one end of a remote call, so a span that named itself a client
-// or a server would misdescribe it.
-//
-// The kind is not among what the other cases observe: they hold the name, the
-// attributes and the status, all of which stay correct if the adapter tags the
-// span Client or Server, so an adapter that added the kind would leave every
-// one of them green.
+// TestADeliverySpanCarriesNoSpanKindCategory pins the clause the narrow
+// Start leaves out.
 func TestADeliverySpanCarriesNoSpanKindCategory(t *testing.T) {
 	tbl, exp := deliveryTable(t)
 	tbl.Subscribe("t", "tracing.subscriber", func(context.Context, event.Event) error { return nil })
@@ -329,9 +279,7 @@ func TestADeliverySpanCarriesNoSpanKindCategory(t *testing.T) {
 	if len(spans) != 1 {
 		t.Fatalf("one delivery recorded %d spans, want 1", len(spans))
 	}
-	// The SDK records SpanKindInternal for a span started with no kind among
-	// its options: ValidateSpanKind maps the zero value to Internal, so this is
-	// the value a delivery's span carries exactly when the adapter marked none.
+	// The SDK maps an unset span kind to SpanKindInternal.
 	if got := spans[0].SpanKind; got != trace.SpanKindInternal {
 		t.Fatalf("a delivery's exported span is of kind %v, want SpanKindInternal: the narrow Start "+
 			"carries no span kind, so a delivery is neither a client nor a server span of a remote "+
@@ -339,18 +287,8 @@ func TestADeliverySpanCarriesNoSpanKindCategory(t *testing.T) {
 	}
 }
 
-// TestThePropagatorIsTheTelemetryModulesOne pins the single definition of the
-// propagation format: this module's Propagator hands back the telemetry
-// module's own propagator, not a second construction that happens to speak the
-// same format today. The two ends of a process boundary have to agree, and the
-// way they are kept in step is that there is one value rather than two.
-//
-// What is held is the value's identity with the telemetry module's — the same
-// dynamic type and the same value — which a self-made propagator of another
-// type fails however faithfully it carries W3C trace context. A second
-// construction of the very same type is the identical value and no assertion
-// could tell it apart, and there is no difference to tell: it is the one
-// format, built twice for no reason.
+// TestThePropagatorIsTheTelemetryModulesOne pins the single definition of
+// the propagation format.
 func TestThePropagatorIsTheTelemetryModulesOne(t *testing.T) {
 	got, want := Propagator(), observability.Propagator()
 	if got == nil {
@@ -361,24 +299,14 @@ func TestThePropagatorIsTheTelemetryModulesOne(t *testing.T) {
 		t.Fatalf("Propagator is a %T, want the telemetry module's %T: a propagator of another "+
 			"type is a second definition of the propagation format", got, want)
 	}
-	// Kept for the day the propagator stops being a zero-size value: with this
-	// type, equal dynamic type already means equal value, so this cannot fire
-	// today and the check above is the whole of what pins the identity.
 	if got != want {
 		t.Fatalf("Propagator is %v, want the telemetry module's own value %v: the format is defined "+
 			"once and taken up from there, not built again here", got, want)
 	}
 }
 
-// TestAFailedSubscriberLeavesTheOtherSubscribersSpansClean pins the clause that
-// a subscriber's failure is handled in isolation: an error (or panic) marks
-// that delivery's span failed, and the spans of the other subscribers of the
-// same event are untouched. The failure is one delivery's, not the event's.
-//
-// The other cases cannot show it: the multi-subscriber case's handlers all
-// return nil, and the failing-delivery case has a single subscriber, so an
-// implementation that carried one delivery's failure into the spans started
-// after it — the same event, the next subscriber — would leave both green.
+// TestAFailedSubscriberLeavesTheOtherSubscribersSpansClean pins the
+// clause that a subscriber's failure is handled in isolation.
 func TestAFailedSubscriberLeavesTheOtherSubscribersSpansClean(t *testing.T) {
 	tbl, exp := deliveryTable(t)
 	failure := &deliveryFailure{reason: "the payload carried a secret value"}

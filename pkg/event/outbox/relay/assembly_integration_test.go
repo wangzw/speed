@@ -17,23 +17,11 @@ import (
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
-// The bus's tables, as this package's cases read them. The bus keeps its own
-// outbox in the same database as the relay's staged table, so a case that
-// resolves the database can judge what the bus still owes its subscribers.
 const (
 	busOutbox    = "event_outbox"
 	busDelivered = "event_delivered"
 )
 
-// busSettled waits, within the settle bound, for the PostgreSQL bus sharing the
-// case's database to have delivered and marked every entry staged under
-// identifier. Publish writes the entry and returns; the bus's reader hands it
-// to the subscribers later, and records the delivery mark after doing so. A
-// count of what the subscriber received is therefore final only once the mark
-// is there: an entry the reader redelivers — because the mark of an earlier
-// attempt failed, say — is handed over and marked again, and this waits for
-// that last mark. Waiting on the relay's staged table alone would leave exactly
-// that delivery, and any redelivery, outside what the count is judged on.
 func busSettled(t *testing.T, handle *gorm.DB, identifier string) {
 	t.Helper()
 	settled := func() bool {
@@ -58,8 +46,6 @@ func busSettled(t *testing.T, handle *gorm.DB, identifier string) {
 	}
 }
 
-// postgresStack is the PostgreSQL engine and the bus whose outbox is a table in
-// the same database.
 func postgresStack(t *testing.T) (stack, string) {
 	dsn := pgtest.Acquire(t)
 	return stack{
@@ -72,10 +58,8 @@ func postgresStack(t *testing.T) (stack, string) {
 	}, dsn
 }
 
-// A won deal whose announcement the bus refuses while the deal is moved is
-// counted once the bus takes events again: the event stays staged through the
-// refusals and is published once. The bus here keeps its own outbox in the same
-// PostgreSQL database, and a constraint on that outbox is what refuses the type.
+// A won deal whose announcement the bus refuses while the deal is moved
+// is counted once the bus takes events again.
 func TestAWinWhoseAnnouncementTheBusRefusedIsPublishedOnceItAcceptsAgain(t *testing.T) {
 	s, _ := postgresStack(t)
 	orders := &ordersModule{}
@@ -122,11 +106,6 @@ func TestAWinWhoseAnnouncementTheBusRefusedIsPublishedOnceItAcceptsAgain(t *test
 			return errCaseFailed
 		}
 		// Both sources have to be quiet before the subscriber's count is final.
-		// The staged table says the relay published the announcement and will
-		// publish nothing more; the bus's delivery mark says its reader has
-		// handed the entry over and will not hand it over again. This bus's
-		// Publish returns before the delivery, so the mark is the only fact
-		// that makes the count below final.
 		waitSettled(t, database)
 		busSettled(t, handle, id)
 		if got := idsOf(orders.events()); len(got) != 1 || got[0] != id {

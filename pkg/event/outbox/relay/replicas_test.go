@@ -13,11 +13,6 @@ import (
 
 // Two replicas relaying one table publish every staged event once between
 // them, under the identifier it was staged under, and both take part.
-//
-// The replicas are two assemblies' pools on one database, each with a relay
-// and a bus of its own, and every publish takes a while, so a backlog keeps
-// both relays claiming at once. A relay that read the due rows without claiming
-// them would publish each row its peer was publishing too.
 func TestTwoRelaysOnOneTablePublishEachStagedEventOnce(t *testing.T) {
 	onEachEngine(t, func(t *testing.T, e engine, dsn string) {
 		first := migrated(t, e, dsn)
@@ -115,9 +110,8 @@ func TestARowHeldByARelayThatDiedIsPublishedOnceItsClaimRunsOut(t *testing.T) {
 	})
 }
 
-// A relay whose publishes are slow gives back the rows its claim no longer
-// covers rather than publishing them: once a publish could outlast the claim,
-// another relay may be taking the row over, and both would publish it.
+// A relay whose publishes are slow gives back the rows its claim no
+// longer covers rather than publishing them.
 func TestASlowRelayGivesBackTheRowsItsClaimNoLongerCovers(t *testing.T) {
 	onEachEngine(t, func(t *testing.T, e engine, dsn string) {
 		database := migrated(t, e, dsn)
@@ -160,7 +154,6 @@ func TestASlowRelayGivesBackTheRowsItsClaimNoLongerCovers(t *testing.T) {
 	})
 }
 
-// claimedBy counts the rows a relay token holds.
 func claimedBy(t *testing.T, database db.Database, token string) int64 {
 	t.Helper()
 	var n int64

@@ -6,18 +6,8 @@ import (
 	"testing"
 )
 
-// TestTheInterfacePackageCostsTheEventPackageAndGORMAlone is the executable
-// form of the boundary this package's documentation draws.
-//
-// A module that stages events imports this package, and what it reaches is
-// what that module compiles in. The package names a GORM session and an event,
-// so the event package and GORM are its cost, and a module staging events has
-// both already: it writes through the database capability and publishes on the
-// bus. What must not come in through here is the relay's side — a database
-// driver, a bus's client — which belongs to the implementation subpackage a host
-// registers.
-//
-// The observation is the package's own non-test dependency face.
+// TestTheInterfacePackageCostsTheEventPackageAndGORMAlone is the
+// executable form of the boundary this package's documentation draws.
 func TestTheInterfacePackageCostsTheEventPackageAndGORMAlone(t *testing.T) {
 	face := dependenciesOf(t, ".")
 	// The positive control. This package names *gorm.DB, so a listing without
@@ -43,7 +33,6 @@ func TestTheInterfacePackageCostsTheEventPackageAndGORMAlone(t *testing.T) {
 	}
 }
 
-// dependenciesOf lists the packages a `go list -deps` target reaches.
 func dependenciesOf(t *testing.T, target string) map[string]bool {
 	t.Helper()
 	out, err := exec.Command("go", "list", "-deps", target).CombinedOutput()

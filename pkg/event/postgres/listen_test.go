@@ -15,30 +15,14 @@ import (
 )
 
 // TestALostListeningConnectionIsTakenAgain pins the recovery of the
-// notification path. The listening session can be terminated or lose its
-// network path while the process lives on; waiting on the dead connection
-// again fails at once every round, and this replica would deliver only by
-// polling the table — every event up to a poll interval late, and an error
-// line every round — for the rest of the process's life.
-//
-// Each event is published while the replica is waiting for a notification,
-// so it arrives promptly only if a live session is listening: a replica left
-// polling picks it up a poll interval later. The case sets that interval to a
-// minute, far past the bound it allows: a wrong implementation needs up to a
-// minute for each event, while a notification takes milliseconds. The bound of
-// two seconds carries GATE_TIME_SCALE alone, and the wrong time is the poll
-// interval, stated to DeclaredAgainst from b.pollEvery rather than computed in
-// a comment. The poll interval does not scale with the race detector, so the
-// detector does not move the meeting point, where the scaled bound reaches the
-// poll interval; it only slows a correct notification's arrival, which the two
-// seconds leave room for.
+// notification path.
 func TestALostListeningConnectionIsTakenAgain(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := context.Background()
 	b := openBus(t, dsn)
-	// The wrong implementation this case detects is one that delivers by
-	// polling the table. Its poll interval is what its delivery costs, so it
-	// is widened here rather than compared against its production value.
+	// The wrong implementation this case detects delivers by polling, whose cost
+	// is this interval; widening it makes that implementation take the declared
+	// time.
 	b.pollEvery = time.Minute
 	publisher := openBus(t, dsn)
 	arrived := make(chan time.Time, 16)

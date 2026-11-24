@@ -11,13 +11,8 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// A steady stream of stagings on this replica brings the relay's reads of the
-// table forward and never puts one off: while the stagings keep arriving closer
-// together than the burst, the events they stage are published as they go,
-// not once the stream pauses.
-//
-// The relay's poll is an hour, so within the case nothing but a staging here
-// makes it read the table.
+// A steady stream of stagings on this replica brings the relay's reads of
+// the table forward and never puts one off.
 func TestASteadyStreamOfStagingsNeverStarvesTheRelay(t *testing.T) {
 	onEachEngine(t, func(t *testing.T, e engine, dsn string) {
 		database := migrated(t, e, dsn)
@@ -50,12 +45,8 @@ func TestASteadyStreamOfStagingsNeverStarvesTheRelay(t *testing.T) {
 	})
 }
 
-// streamPause is the gap between one staging of a stream and the next: a
-// small fraction of the burst the case runs the relay by.
 const streamPause = 20 * time.Millisecond
 
-// stream places orders one after another, each staging its announcement,
-// until it is ended.
 type stream struct {
 	ended chan struct{}
 	done  chan error
@@ -64,7 +55,6 @@ type stream struct {
 	ids []string
 }
 
-// startStream begins placing orders on database through r.
 func startStream(database db.Database, r *relay) *stream {
 	s := &stream{ended: make(chan struct{}), done: make(chan error, 1)}
 	go func() {
@@ -89,14 +79,12 @@ func startStream(database db.Database, r *relay) *stream {
 	return s
 }
 
-// staged lists the identifiers the stream has staged, in the order staged.
 func (s *stream) staged() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return slices.Clone(s.ids)
 }
 
-// end stops the stream and reports a staging that failed.
 func (s *stream) end(t *testing.T) {
 	t.Helper()
 	close(s.ended)

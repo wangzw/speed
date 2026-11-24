@@ -19,8 +19,6 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// noopTracer is a tracer provider that records nothing, so a case can build a
-// table without standing up telemetry. It starts a span that ends doing nothing.
 type noopTracer struct{}
 
 func (noopTracer) Start(ctx context.Context, _ string, _ map[string]string) (context.Context, event.Span) {
@@ -36,20 +34,8 @@ func newTable() *Table {
 		noopTracer{}, propagation.TraceContext{})
 }
 
-// TestAStopWhoseGraceRunsOutCancelsTheSubscribers pins the bound on the stop
-// stage. A subscriber still running when the grace runs out is handed a
-// cancelled context, and the stage reports that it cut something short rather
-// than returning as if the stop had been clean.
-//
-// The subscriber stays running after its cancellation, so the case holds the
-// stop stage to its own grace rather than to the subscriber finishing. A stop
-// stage that waited for the subscriber would wait as long as the case holds it.
-// A stop stage that used the package default grace instead of the configured
-// one is made to need an hour here: the default is widened before the table is
-// built, so that implementation's own time grows with nothing the bound
-// carries. That hour is the wrong time, stated to DeclaredAgainst from Grace;
-// the bound is the configured grace, the moment it gives a cancelled
-// subscriber and a second, through GATE_TIME_SCALE alone.
+// TestAStopWhoseGraceRunsOutCancelsTheSubscribers pins the bound on the
+// stop stage.
 func TestAStopWhoseGraceRunsOutCancelsTheSubscribers(t *testing.T) {
 	previousGrace := Grace
 	Grace = time.Hour
@@ -114,9 +100,8 @@ func TestAStopBeforeTheStartStageIsClean(t *testing.T) {
 	}
 }
 
-// TestNoReaderStartsAfterTheStopStage pins what keeps the wait for the readers
-// sound: a reader arriving once the stop stage began is not started, so none is
-// added while the stage waits.
+// TestNoReaderStartsAfterTheStopStage pins what keeps the wait for the
+// readers sound.
 func TestNoReaderStartsAfterTheStopStage(t *testing.T) {
 	tbl := newTable()
 	tbl.Freeze(context.Background())
@@ -131,10 +116,8 @@ func TestNoReaderStartsAfterTheStopStage(t *testing.T) {
 	}
 }
 
-// TestTheDrivesCancellationDoesNotReachTheBus pins where the contexts a bus
-// reads and handles under come from: the start stage's context, without its
-// cancellation. The drive's context is cancelled as soon as a host begins
-// shutting down, and the bus serves until its own stop stage.
+// TestTheDrivesCancellationDoesNotReachTheBus pins where the contexts a
+// bus reads and handles under come from.
 func TestTheDrivesCancellationDoesNotReachTheBus(t *testing.T) {
 	tbl := newTable()
 	type key struct{}
@@ -160,9 +143,7 @@ func TestTheDrivesCancellationDoesNotReachTheBus(t *testing.T) {
 	}
 }
 
-// TestPayloadKeepsEveryNumberAsItsText pins the transport-side decoding: a
-// number comes back as the decimal text the publisher's serialization wrote,
-// nested ones included, so an integer past 2^53 is not rounded on the way.
+// TestPayloadKeepsEveryNumberAsItsText pins the transport-side decoding.
 func TestPayloadKeepsEveryNumberAsItsText(t *testing.T) {
 	got, err := Payload([]byte(`{"id":9007199254740993,"deal":{"amount":9223372036854775807},"ratio":0.25}`))
 	if err != nil {
@@ -195,10 +176,6 @@ func TestPayloadRefusesDataAfterItsValue(t *testing.T) {
 	}
 }
 
-// nameRecordingTracer keeps the name every span the dispatch layer starts was
-// recorded under, in the order they were started, so a case can hold the
-// per-subscriber spans a delivery starts to the design without standing up an
-// exporter.
 type nameRecordingTracer struct {
 	mu    sync.Mutex
 	names []string
@@ -217,13 +194,8 @@ func (r *nameRecordingTracer) started() []string {
 	return slices.Clone(r.names)
 }
 
-// TestEverySubscriberOfOneEventGetsItsOwnNamedSpan pins the per-subscriber span
-// the design fixes at the dispatch layer: a delivery starts one span per
-// subscriber, each named after that subscriber, in subscription order — not one
-// span shared by the event type, and not the first subscriber's name reused for
-// the rest. The delivery is what tells "did this subscriber handle the event,
-// and did it succeed" apart per subscriber, so the count and the names are what
-// the signal carries.
+// TestEverySubscriberOfOneEventGetsItsOwnNamedSpan checks that a delivery
+// starts one named span per subscriber.
 func TestEverySubscriberOfOneEventGetsItsOwnNamedSpan(t *testing.T) {
 	rec := &nameRecordingTracer{}
 	tbl := New("event/test", "test", slog.New(slog.NewTextHandler(io.Discard, nil)), rec, propagation.TraceContext{})
@@ -246,13 +218,8 @@ func TestEverySubscriberOfOneEventGetsItsOwnNamedSpan(t *testing.T) {
 	}
 }
 
-// TestStampCarriesANonEmptyTracingContext pins the "carried as it is" half of
-// what the bus writes into an event's tracing context: an event that already
-// carries one keeps it, whatever span the publisher's own context happens to be
-// in. A publisher that sets it — a relay republishing an event it staged while
-// the fact was produced — must not have it overwritten with the span it publishes
-// from, or the trace that reaches the subscriber is the relay's, not the one the
-// fact belongs to.
+// TestStampCarriesANonEmptyTracingContext pins the "carried as it is"
+// half of what the bus writes into an event's tracing context.
 func TestStampCarriesANonEmptyTracingContext(t *testing.T) {
 	tbl := newTable()
 	publisher := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{

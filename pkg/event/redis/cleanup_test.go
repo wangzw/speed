@@ -12,8 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/internal/redis/redistest"
 )
 
-// inspect is a client of the case's own, for reading the server after the bus
-// has closed its clients.
 func inspect(t *testing.T, addr string, db int) *goredis.Client {
 	t.Helper()
 	c := goredis.NewClient(&goredis.Options{Addr: addr, DB: db})
@@ -21,7 +19,6 @@ func inspect(t *testing.T, addr string, db int) *goredis.Client {
 	return c
 }
 
-// groupNames lists the consumer groups a stream carries.
 func groupNames(t *testing.T, c *goredis.Client, stream string) map[string][]string {
 	t.Helper()
 	groups, err := c.XInfoGroups(context.Background(), stream).Result()
@@ -44,8 +41,6 @@ func groupNames(t *testing.T, c *goredis.Client, stream string) map[string][]str
 	return out
 }
 
-// startReading subscribes to one type, starts the bus, and publishes once, so
-// the reader has registered itself as a consumer of its group.
 func startReading(t *testing.T, b *bus, eventType string) {
 	t.Helper()
 	ctx := context.Background()
@@ -64,11 +59,7 @@ func startReading(t *testing.T, b *bus, eventType string) {
 }
 
 // TestClosingRemovesTheProcesssOwnGroup pins what a process leaves on the
-// server once it is gone. A group named after the process is read by that
-// process alone, so one left behind is never read again, and every start —
-// each replica of a rolling deploy, each command that takes the bus in — would
-// add one more to every stream it subscribes to, each showing a lag that only
-// grows.
+// server once it is gone.
 func TestClosingRemovesTheProcesssOwnGroup(t *testing.T) {
 	addr, db := redistest.Acquire(t)
 	b := openBus(t, addr, db, "")
@@ -85,9 +76,7 @@ func TestClosingRemovesTheProcesssOwnGroup(t *testing.T) {
 	}
 }
 
-// TestClosingKeepsAConfiguredGroup is the other side: a group the host named
-// is shared with the other replicas, or outlives this process on purpose, so
-// closing takes only this process's consumer out of it.
+// TestClosingKeepsAConfiguredGroup is the other side.
 func TestClosingKeepsAConfiguredGroup(t *testing.T) {
 	addr, db := redistest.Acquire(t)
 	const group = "configured-group"

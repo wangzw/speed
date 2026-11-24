@@ -11,12 +11,8 @@ import (
 	"github.com/vislake/speed/pkg/internal/redis/redistest"
 )
 
-// TestAnEntryDeliveredWhileStoppingIsAcknowledged pins what the stop stage
-// leaves behind on this backend: nothing pending. An entry a reader took is
-// this consumer's alone, and nothing here claims an entry back from a
-// consumer, so one left pending at shutdown is delivered by no one. A handler
-// still running when the drive's context is cancelled is the case that would
-// leave one, were its acknowledgement made on a context already done.
+// TestAnEntryDeliveredWhileStoppingIsAcknowledged pins what the stop
+// stage leaves behind on this backend: nothing pending.
 func TestAnEntryDeliveredWhileStoppingIsAcknowledged(t *testing.T) {
 	addr, db := redistest.Acquire(t)
 	ctx := context.Background()

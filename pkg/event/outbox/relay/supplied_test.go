@@ -50,15 +50,8 @@ func placeholder(name string, capability core.Token) core.Module {
 	return core.Module{Name: name, Provides: []core.Provision{{Token: capability}}}
 }
 
-// TestASuppliedOutboxIsLeftAloneByTheModuleCallbacks pins what the module does
-// with an instance the host supplied for it: nothing. The start, stop and close
-// callbacks act on a relay and on nothing else, so the supplied outbox is neither
-// started nor asked to stop or close, and a callback that took it for a relay
-// would panic at the start stage.
-//
-// The relay's two required capabilities are supplied for placeholder modules, so
-// the drive reaches the start stage without the database and the bus a real
-// assembly would build.
+// TestASuppliedOutboxIsLeftAloneByTheModuleCallbacks pins what the module
+// does with an instance the host supplied for it: nothing.
 func TestASuppliedOutboxIsLeftAloneByTheModuleCallbacks(t *testing.T) {
 	supplied := &hostOutbox{}
 	reg := core.New()
