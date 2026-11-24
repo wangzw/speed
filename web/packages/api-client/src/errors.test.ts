@@ -1,10 +1,3 @@
-/**
- * Contract tests for the ApiError envelope and the reserved client.*
- * vocabulary: constructor fields, auth flag, synthesized message
- * defaults, the client.http.* code helper, and the isApiError guard
- * (instanceof plus the structural shape hosts actually branch on).
- */
-
 import { describe, expect, it } from 'vitest'
 import {
   ApiError,
@@ -169,7 +162,6 @@ describe('isApiError', () => {
       attempts: 1,
     })
     if (isApiError(caught)) {
-      // Narrowed: the fields hosts branch on are readable and typed.
       expect(caught.code).toBe('notes.text_required')
       expect(caught.traceId).toBe('trace-9')
       expect(caught.auth).toBe(false)
@@ -181,11 +173,6 @@ describe('isApiError', () => {
 
 describe('isTransportFailure', () => {
   it('answers true exactly for the client-synthesized network and timeout failures (status 0)', () => {
-    // A genuine transport-layer failure is one this client synthesized
-    // because no HTTP response ever arrived -- status 0. The code must
-    // be the client's own network/timeout vocabulary: a status-0
-    // protocol refusal (an unsendable request body) is a caller-side
-    // contract violation, not a transport failure.
     const network = new ApiError({
       status: 0,
       code: ERROR_CODE_NETWORK,
@@ -214,13 +201,6 @@ describe('isTransportFailure', () => {
   })
 
   it('answers false for any error an HTTP response can carry, whatever code it claims', () => {
-    // An envelope can only arrive through an HTTP response, and a
-    // response always has a status -- so a code attached to a real
-    // status is a server-answered envelope, never this client's
-    // transport diagnosis (client.ts refuses such an envelope at parse
-    // time, so constructing one directly, as here, is the only way to
-    // reach this branch). This is the discriminator the
-    // reserved-namespace claim rests on: status 0 is not forgeable.
     const forgedTimeout = new ApiError({
       status: 401,
       code: ERROR_CODE_TIMEOUT,
@@ -248,9 +228,6 @@ describe('isTransportFailure', () => {
   })
 
   it('accepts structurally shaped transport errors, like isApiError does', () => {
-    // A second copy of the library (dev-time aliasing) throws ApiErrors
-    // this package's instanceof cannot see; the structural guard serves
-    // the same purpose here as in isApiError.
     const foreign = {
       name: 'ApiError',
       status: 0,

@@ -1,9 +1,3 @@
-/**
- * The event-stream opener: framing parse, seam headers, the bearer 401
- * refresh-and-retry, and the cancellation semantics (close() and an
- * aborted caller signal fire no callbacks).
- */
-
 import { describe, expect, it } from 'vitest'
 import { createClient } from './client.js'
 import type { ServerSentEvent } from './event-stream.js'
@@ -18,8 +12,6 @@ import {
 const BASE_URL = 'https://api.example.test'
 const encoder = new TextEncoder()
 
-/** A scripted SSE response whose body is the given chunks, closed once
- * they are consumed. */
 function sseResponse(chunks: readonly string[], status = 200): Response {
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -35,8 +27,6 @@ function sseResponse(chunks: readonly string[], status = 200): Response {
   })
 }
 
-/** An SSE response whose body stays open; `push` adds bytes and `end`
- * closes it, so a test can drive the reader across microtasks. */
 function openSseResponse(): {
   readonly response: Response
   push(chunk: string): void
@@ -58,7 +48,6 @@ function openSseResponse(): {
   }
 }
 
-/** Lets the opener's async loop advance. */
 async function tick(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0))
 }

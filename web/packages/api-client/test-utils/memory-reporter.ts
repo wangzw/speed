@@ -1,13 +1,5 @@
-/**
- * An in-memory Reporter for client tests: records every error/warn call
- * instead of writing to console, so tests can assert the constant
- * message and snake_case attributes the client reports (the
- * access-token-refresh-failed warning).
- */
-
 import type { Reporter } from '../src/index'
 
-/** One recorded report: the constant message plus its attributes. */
 export interface MemoryReport {
   readonly message: string
   readonly attrs: Readonly<Record<string, unknown>> | undefined
@@ -22,7 +14,6 @@ export interface MemoryReporter {
   readonly warns: readonly MemoryReport[]
 }
 
-/** Builds a recording reporter around two arrays. */
 export function createMemoryReporter(): MemoryReporter {
   const errors: MemoryReport[] = []
   const warns: MemoryReport[] = []

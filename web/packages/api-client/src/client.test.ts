@@ -1,16 +1,3 @@
-/**
- * Contract tests for the whole request lifecycle createClient wires:
- * bearer attachment, the tenant header (announced from the host's
- * tenantProvider, absent without one), the single-flight silent
- * 401 refresh (at most one refresh per request, one retry on any
- * method), transient retry only for idempotent methods with the pure
- * backoff maths pinned in retry.test.ts, caller cancellation passing
- * the raw AbortError through, and the full error-normalization table
- * (envelope codes win, everything else falls into the reserved
- * client.* vocabulary). Every request goes through a scripted fetch
- * stand-in -- the package never touches a real network.
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { restoreRealTimers } from '@speed/test-utils/timers'
 import {
@@ -41,14 +28,12 @@ import {
 
 const BASE_URL = 'https://api.example.test'
 
-/** A policy whose retries fire as fast as the event loop allows. */
 const zeroDelay = (maxAttempts: number): RetryPolicy => ({
   maxAttempts,
   initialDelayMs: 0,
   maxDelayMs: 0,
 })
 
-/** The stand-in call at `index`, or a loud test failure. */
 function recorded(standin: StandinFetch, index = 0): StandinCall {
   const call = standin.calls[index]
   if (call === undefined) {
@@ -60,7 +45,6 @@ function recorded(standin: StandinFetch, index = 0): StandinCall {
   return call
 }
 
-/** Awaits a rejection and returns it only when it is an ApiError. */
 async function expectApiError(promise: Promise<unknown>): Promise<ApiError> {
   let error: unknown
   try {
@@ -77,8 +61,6 @@ async function expectApiError(promise: Promise<unknown>): Promise<ApiError> {
   return error
 }
 
-/** Asserts the promise rejects with the raw AbortError -- caller
- * cancellation is never wrapped in an ApiError. */
 async function expectRawAbort(promise: Promise<unknown>): Promise<void> {
   let error: unknown
   try {
@@ -93,13 +75,6 @@ async function expectRawAbort(promise: Promise<unknown>): Promise<void> {
   expect(isApiError(error)).toBe(false)
 }
 
-/** Waits for `isSettled()` to turn true -- flushing the microtask
- * queue first, then polling on short real timers -- and fails the test
- * when the budget runs out with the thing still unsettled. The
- * never-settling shapes this guards (a refresh hook that never
- * resolves) are deterministic: without the budget such a request would
- * stay pending forever, so the bounded wait turns the hang into an
- * assertion failure, in both directions of the regression. */
 async function expectSettled(
   isSettled: () => boolean,
   budgetMs = 30_000,
@@ -114,9 +89,6 @@ async function expectSettled(
   expect(isSettled()).toBe(true)
 }
 
-/** Tracks settlement without awaiting it. The handler is attached so a
- * wrong implementation's pending promise neither keeps the case running
- * nor escapes as an unhandled rejection. */
 function settlementOf(promise: Promise<unknown>): { settled: boolean } {
   const state = { settled: false }
   void promise.then(
@@ -130,10 +102,6 @@ function settlementOf(promise: Promise<unknown>): { settled: boolean } {
   return state
 }
 
-/** Fails the moment the promise has not settled after the microtask chain
- * the case just advanced. A wrong implementation that leaves it pending
- * fails here, not a minute later at the case's shared budget; no timer is
- * waited on, so a correct one returns immediately. */
 async function expectSettledNow(isSettled: () => boolean): Promise<void> {
   for (let i = 0; i < 200 && !isSettled(); i += 1) {
     await Promise.resolve()
@@ -141,15 +109,6 @@ async function expectSettledNow(isSettled: () => boolean): Promise<void> {
   expect(isSettled()).toBe(true)
 }
 
-/** A body stream the test gates by hand: the response's text() stays
- * pending until release (success) or fail (error) is called. A
- * cancellation of the stream -- the client's connection-release path
- * when it discards an unread response body -- is recorded in
- * `cancelled`, and `pulling` records that a read has genuinely started
- * (the stream's pull has been requested), giving tests a deterministic
- * mid-read point. Both are getters, not value fields: the hooks mutate
- * the closure variables, and the caller must observe the live state
- * after the request ran. */
 function gatedBody(): {
   stream: ReadableStream<Uint8Array>
   release: (text: string) => void
@@ -191,8 +150,6 @@ function gatedBody(): {
   }
 }
 
-/** Flushes microtasks until the body read has genuinely started (its
- * pull has been requested) or the hop budget runs out. */
 async function waitForReadStart(body: {
   readonly pulling: boolean
 }): Promise<void> {
@@ -227,8 +184,6 @@ describe('construction validation', () => {
   })
 
   it('rejects malformed retry policies', () => {
-    // All shapes are structurally valid RetryPolicy values (the ranges
-    // are runtime constraints): each must fail construction validation.
     const badPolicies: RetryPolicy[] = [
       { maxAttempts: 0, initialDelayMs: 200, maxDelayMs: 4000 },
       { maxAttempts: 1.5, initialDelayMs: 200, maxDelayMs: 4000 },
@@ -281,10 +236,6 @@ describe('request shape', () => {
     expect(call.headers.get('authorization')).toBe('Bearer token-1')
     expect(call.headers.get('accept')).toBe('application/json')
     expect(call.headers.has('content-type')).toBe(false)
-    // Exactly the two documented headers go out -- a client with no
-    // tenantProvider announces no tenant, so nothing tenant-shaped may
-    // exist here. (A provider is what adds x-tenant; see the tenant
-    // tests below.)
     expect([...call.headers.keys()].sort()).toEqual([
       'accept',
       'authorization',
@@ -307,9 +258,6 @@ describe('request shape', () => {
   })
 
   it('honours omitAccessToken: the request goes out credential-less even when the store holds a token', async () => {
-    // A session's own refresh request is the canonical user: it must
-    // never present an access token, and saying so per request must
-    // not require clearing the store to make it true.
     const store = createMemoryAccessTokenStore()
     store.set('store-token')
     const standin = scriptedStandin(jsonResponse(200, { ok: true }))
@@ -324,9 +272,6 @@ describe('request shape', () => {
     })
     const call = recorded(standin)
     expect(call.headers.get('authorization')).toBeNull()
-    // The store is untouched: credential-less-ness was declared on the
-    // request, never manufactured by clearing the session's token --
-    // concurrent requests keep presenting the token they hold.
     expect(store.get()).toBe('store-token')
   })
 
@@ -348,10 +293,6 @@ describe('request shape', () => {
   })
 
   it('honours a caller-supplied accept: application/json is only the default when absent', async () => {
-    // accept and content-type are defaults, not overrides: each is set
-    // only when the caller did not already supply the header (mirroring
-    // the content-type guard), so a caller that knows the endpoint
-    // answers something other than JSON keeps its own Accept.
     const standin = scriptedStandin(
       jsonResponse(200, { ok: true }),
       jsonResponse(200, { ok: true }),
@@ -363,7 +304,6 @@ describe('request shape', () => {
     const call = recorded(standin)
     expect(call.headers.get('x-request-id')).toBe('req-1')
     expect(call.headers.get('accept')).toBe('text/plain')
-    // The default still applies to a request that sends no accept.
     await api<{ ok: boolean }>('/other')
     expect(recorded(standin, 1).headers.get('accept')).toBe('application/json')
   })
@@ -392,7 +332,6 @@ describe('request shape', () => {
     await api<{ ok: boolean }>('/notes')
     expect(recorded(standin, 2).headers.has('accept-language')).toBe(false)
 
-    // No provider at all: nothing to announce, no header.
     const bare = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
     await bare<{ ok: boolean }>('/notes')
     expect(recorded(standin, 3).headers.has('accept-language')).toBe(false)
@@ -423,9 +362,6 @@ describe('request shape', () => {
       retryPolicy: zeroDelay(2),
       languageProvider: () => language,
     })
-    // The switch lands between the first attempt and its retry: the retry
-    // must announce the language the user is looking at NOW, not the one
-    // the request started with.
     const pending = api<{ ok: boolean }>('/notes')
     language = 'en-US'
     await expect(pending).resolves.toEqual({ ok: true })
@@ -457,7 +393,6 @@ describe('request shape', () => {
     await api<{ ok: boolean }>('/objects')
     expect(recorded(standin, 2).headers.has('x-tenant')).toBe(false)
 
-    // No provider at all: nothing to announce, no header.
     const bare = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
     await bare<{ ok: boolean }>('/objects')
     expect(recorded(standin, 3).headers.has('x-tenant')).toBe(false)
@@ -487,13 +422,10 @@ describe('request shape', () => {
     await api<{ ok: boolean }>('/objects')
     const call = recorded(standin)
     expect(call.headers.get('x-workspace')).toBe('acme')
-    // The default name is not announced as well.
     expect(call.headers.has('x-tenant')).toBe(false)
   })
 
   it('falls back to the default name when the configured header is empty', async () => {
-    // An empty name cannot be set on a Headers object at all, so the
-    // option must normalise it to the default rather than pass it through.
     const standin = scriptedStandin(jsonResponse(200, { ok: true }))
     const api = createClient({
       baseUrl: BASE_URL,
@@ -533,9 +465,6 @@ describe('request shape', () => {
       retryPolicy: zeroDelay(2),
       tenantProvider: () => tenant,
     })
-    // The switch lands between the first attempt and its retry: the retry
-    // must announce the tenant the user is acting in NOW, not the one the
-    // request started with.
     const pending = api<{ ok: boolean }>('/objects')
     tenant = 'globex'
     await expect(pending).resolves.toEqual({ ok: true })
@@ -586,10 +515,6 @@ describe('request shape', () => {
   })
 
   it('rejects a body that cannot be JSON-serialized as a coded client.protocol ApiError', async () => {
-    // A circular body can never be sent: it must reject through the
-    // package's one error type with the reserved client.* vocabulary,
-    // not as a bare TypeError out of JSON.stringify. Nothing was ever
-    // put on the wire, so attempts is 0.
     const circular: Record<string, unknown> = {}
     circular.self = circular
     const standin = scriptedStandin(jsonResponse(201, { id: 'n-1' }))
@@ -605,13 +530,6 @@ describe('request shape', () => {
   })
 
   it('refuses a body JSON.stringify cannot serialize, instead of sending the request silently bodyless', async () => {
-    // Symmetric with the circular guard: a body that serializes to
-    // nothing -- JSON.stringify yields undefined (the value) for a
-    // top-level function or symbol -- is a request the client can
-    // never send as JSON, and must refuse as client.protocol before
-    // anything goes on the wire. (Sent bodyless -- no body, no
-    // content-type -- it would earn a "created" answer for a request
-    // the caller believed carried data.)
     for (const body of [
       (): Record<string, string> => ({ title: 'T' }),
       Symbol('no-json'),
@@ -630,11 +548,6 @@ describe('request shape', () => {
   })
 
   it('sends a binary (Blob) body verbatim, never JSON-serialized', async () => {
-    // A byte-moving operation (objectstore's content upload) hands the
-    // transport a Blob. It must travel as the raw bytes -- not through
-    // JSON.stringify, which would turn a Blob into the literal "{}" and
-    // send two bytes where the caller meant a file. The caller's own
-    // content type is honoured unchanged.
     const standin = scriptedStandin(jsonResponse(204))
     const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
     const bytes = new Blob(['raw-bytes'], { type: 'application/octet-stream' })
@@ -656,8 +569,6 @@ describe('request shape', () => {
     const buffer = new Uint8Array([1, 2, 3]).buffer
     await api('/objects/o-1/content', { method: 'PUT', body: buffer })
     const call = recorded(standin)
-    // The JSON path would have serialized an ArrayBuffer to "{}"; the
-    // binary path leaves bodyText unset.
     expect(call.bodyText).toBeUndefined()
     expect(call.bodyBlob).toBeNull()
   })
@@ -675,8 +586,6 @@ describe('request shape', () => {
   })
 
   it('still parses a JSON error envelope for a blob-declaring request', async () => {
-    // The blob flag governs a 2xx body only: a refusal still reads its
-    // JSON envelope, so the failure carries the envelope's code.
     const standin = scriptedStandin(jsonResponse(409, { code: 'objectstore.conflict' }))
     const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
     const error = await expectApiError(
@@ -687,11 +596,6 @@ describe('request shape', () => {
   })
 
   it('encodes an array query value as repeated parameters, never comma-joined', async () => {
-    // An array is the form/explode convention: tag=['a','b c',3] must
-    // reach the backend as three repeated parameters -- the shape a Go
-    // r.URL.Query() handler parses as a multi-valued key. (An array
-    // String()-ed whole would fold into one comma-joined ?tag=a,b c,3
-    // the backend would read as a single literal value.)
     const standin = scriptedStandin(jsonResponse(200, []))
     const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
     await api('/notes', {
@@ -703,13 +607,6 @@ describe('request shape', () => {
   })
 
   it('omitAccessToken skips only the store token: a caller-supplied authorization header survives untouched', async () => {
-    // omitAccessToken's contract is "never read the token store", not
-    // "strip every Authorization header": the request's headers are the
-    // caller's, so a caller-supplied authorization survives while the
-    // store token (which would have overwritten it) is never attached.
-    // (Probe: store null + caller header; and the store-token case
-    // below, where the store holds one and the caller header still
-    // wins, because the store is not consulted at all.)
     for (const probe of [
       { storeToken: null, callerHeader: 'Bearer CALLER' },
       { storeToken: 'store-token', callerHeader: 'Bearer CALLER' },
@@ -733,12 +630,6 @@ describe('request shape', () => {
   })
 
   it('refuses a query option on a path that already carries its own query string', async () => {
-    // buildUrl appends query parameters with '?': a path that already
-    // carries a query string would become a malformed double-? URL
-    // (?draft=1?tag=a) the server would misparse. Request paths are
-    // spec paths -- never query-bearing -- so the combination is a
-    // programmer error, refused before anything is put on the wire,
-    // with the fix named in the message.
     const standin = scriptedStandin(jsonResponse(200, { ok: true }))
     const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
     const promise = api<{ ok: boolean }>('/notes?draft=1', {
@@ -751,9 +642,6 @@ describe('request shape', () => {
   })
 
   it('sends a query-bearing path verbatim when no query option is given', async () => {
-    // The refusal above applies only to the ?-appending combination: a
-    // path that carries its own query string and no query option is a
-    // complete URL the caller wrote, sent exactly as given.
     const standin = scriptedStandin(jsonResponse(200, { ok: true }))
     const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
     await api<{ ok: boolean }>('/notes?draft=1')
@@ -789,9 +677,6 @@ describe('successful responses', () => {
   })
 
   it('refuses a 204 as a coded client.protocol error when the request declares requireJsonBody', async () => {
-    // The empty-success shape is a protocol violation for a request
-    // that declared it needs a JSON document: the caller must be able
-    // to tell "the endpoint sent nothing" from a real body.
     const standin = scriptedStandin(jsonResponse(204))
     const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
     const error = await expectApiError(
@@ -814,10 +699,6 @@ describe('successful responses', () => {
   })
 
   it('reports the requireJsonBody refusal with the real attempts and status of the exchange', async () => {
-    // The refusal is raised inside the exchange, so it carries the
-    // exchange's truth -- three HTTP attempts (two transient 503s,
-    // then an empty 200) -- not the hardcoded 1/0 a wrapper-level
-    // error would synthesize.
     const standin = scriptedStandin(
       textResponse(503, 'Service Unavailable'),
       textResponse(503, 'Service Unavailable'),
@@ -842,7 +723,6 @@ describe('successful responses', () => {
     const standin = createStandinFetch(() => {
       if (first) {
         first = false
-        // A response whose body stream is locked: text() rejects.
         const locked = new Response('{"ok":true}', {
           status: 200,
           headers: { 'content-type': 'application/json' },
@@ -894,14 +774,10 @@ describe('401 and the refresh hook', () => {
     expect(error.code).toBe('authn.session_expired')
     expect(error.traceId).toBe('trace-1')
     expect(error.attempts).toBe(1)
-    // 401 is never transient-retried: exactly one HTTP attempt.
     expect(standin.calls).toHaveLength(1)
   })
 
   it('engages the hook for a cookie-credentialed 401 with no bearer token', async () => {
-    // A cookie session attaches no bearer token, so the bearer-only rule
-    // alone would never run the hook. Declaring the credential mode to
-    // carry cookies makes a refused credentialed request eligible.
     let hookCalls = 0
     const standin = scriptedStandin(
       jsonResponse(401, { ...SESSION_EXPIRED }),
@@ -919,7 +795,6 @@ describe('401 and the refresh hook', () => {
     await expect(api<{ ok: boolean }>('/notes')).resolves.toEqual({ ok: true })
     expect(hookCalls).toBe(1)
     expect(standin.calls).toHaveLength(2)
-    // No bearer token was ever attached: the cookie is the credential.
     expect(recorded(standin, 0).headers.get('authorization')).toBeNull()
     expect(recorded(standin, 1).headers.get('authorization')).toBeNull()
   })
@@ -945,8 +820,6 @@ describe('401 and the refresh hook', () => {
   })
 
   it('leaves the hook bearer-only without a cookie credential mode', async () => {
-    // No store and no cookie mode: the request presents no credential,
-    // so a 401 surfaces untouched.
     let hookCalls = 0
     const standin = scriptedStandin(jsonResponse(401, { ...SESSION_EXPIRED }))
     const api = createClient({
@@ -1008,7 +881,6 @@ describe('401 and the refresh hook', () => {
     expect(recorded(standin, 0).headers.get('authorization')).toBe(
       'Bearer stale-token',
     )
-    // The retry re-read the token: the refreshed one is on the wire.
     expect(recorded(standin, 1).headers.get('authorization')).toBe(
       'Bearer fresh-token',
     )
@@ -1043,9 +915,6 @@ describe('401 and the refresh hook', () => {
 
   it('does not refresh twice when the retried request is refused again', async () => {
     let refreshCalls = 0
-    // The refused request presents a token (the bearer-only rule: a
-    // credential-less 401 never triggers a refresh), so the sequence
-    // under test is stale-token 401 -> refresh -> retry refused again.
     const store = createMemoryAccessTokenStore()
     store.set('stale-token')
     const standin = scriptedStandin(
@@ -1071,7 +940,6 @@ describe('401 and the refresh hook', () => {
 
   it('surfaces the 401 and reports the refresh failure with the envelope attrs', async () => {
     const memory = createMemoryReporter()
-    // A token must be presented for the refresh path to engage.
     const store = createMemoryAccessTokenStore()
     store.set('stale-token')
     const standin = scriptedStandin(jsonResponse(401, { ...SESSION_EXPIRED }))
@@ -1088,11 +956,6 @@ describe('401 and the refresh hook', () => {
     expect(error.traceId).toBe('trace-1')
     expect(error.attempts).toBe(1)
     expect(standin.calls).toHaveLength(1)
-    // The warning reuses the same 401 body as the ApiError: it carries
-    // the envelope's code and trace id so it can be correlated to
-    // server logs -- under the reporter's snake_case key (the
-    // envelope's wire field stays camelCase traceId on the ApiError;
-    // only the report attribute is trace_id).
     expect(memory.warns).toEqual([
       {
         message: 'access token refresh failed',
@@ -1127,10 +990,6 @@ describe('401 and the refresh hook', () => {
   })
 
   it('reports a traceId-less refresh-failure envelope with its real code', async () => {
-    // The 401 path of the same legacy `{code, params}` envelope
-    // regression: a code-only body must keep its real module code through
-    // the refresh-failure report, and the report's attrs must not carry an
-    // undefined-valued traceId key when the envelope had none.
     const memory = createMemoryReporter()
     const store = createMemoryAccessTokenStore()
     store.set('stale-token')
@@ -1194,10 +1053,6 @@ describe('401 and the refresh hook', () => {
     expect(error.auth).toBe(true)
     expect(error.code).toBe('authn.session_expired')
     expect(error.attempts).toBe(1)
-    // No token was presented, so no refresh was attempted: a 401 on a
-    // credential-less request means the endpoint demands
-    // authentication, which refreshing cannot provide -- and no false
-    // 'refresh failed' warning fires either.
     expect(refreshCalls).toBe(0)
     expect(memory.warns).toHaveLength(0)
     expect(standin.calls).toHaveLength(1)
@@ -1206,15 +1061,6 @@ describe('401 and the refresh hook', () => {
 
   it('does not recurse when the refresh request itself is refused', async () => {
     const memory = createMemoryReporter()
-    // The session wiring a host builds -- the refresh operation
-    // declared credential-less via omitAccessToken, travelling through
-    // this same client -- must not deadlock when the endpoint refuses
-    // the stale token. Without the bearer-only rule the refresh
-    // request's own 401 would re-enter the refresh path and await the
-    // in-flight refresh it was part of -- a request awaiting itself,
-    // forever. The declaration makes that impossibility structural: the
-    // refresh request is credential-less no matter what the store
-    // holds, so its 401 never engages the refresh path.
     const store = createMemoryAccessTokenStore()
     store.set('stale-token')
     let refreshCalls = 0
@@ -1222,18 +1068,12 @@ describe('401 and the refresh hook', () => {
       jsonResponse(401, { ...SESSION_EXPIRED }),
       jsonResponse(401, { ...SESSION_EXPIRED, traceId: 'trace-2' }),
     )
-    // The hook only ever runs after createClient has returned (it fires
-    // on a request's 401), so the const binding is initialized by the
-    // time the closure body executes.
     const api: RequestFn = createClient({
       baseUrl: BASE_URL,
       fetch: standin.fetch,
       accessTokenStore: store,
       refreshAccessToken: async () => {
         refreshCalls += 1
-        // A session's refresh travels credential-less by declaration --
-        // the refresh token rides in the body, never in an
-        // Authorization header, and the store is never cleared for it.
         try {
           await api('/api/v1/auth/token', {
             method: 'POST',
@@ -1250,7 +1090,6 @@ describe('401 and the refresh hook', () => {
     const error = await expectApiError(api<{ ok: boolean }>('/notes'))
     expect(error.auth).toBe(true)
     expect(error.code).toBe('authn.session_expired')
-    // The failed refresh is reported with the original 401's envelope.
     expect(memory.warns).toEqual([
       {
         message: 'access token refresh failed',
@@ -1261,34 +1100,14 @@ describe('401 and the refresh hook', () => {
         },
       },
     ])
-    // The original 401's own envelope is delivered (trace-1), not the
-    // refresh request's (trace-2).
     expect(error.traceId).toBe('trace-1')
-    // Exactly one refresh, two HTTP calls in total, no recursion.
     expect(refreshCalls).toBe(1)
     expect(standin.calls).toHaveLength(2)
-    // The refresh request itself carried no bearer token -- and the
-    // store was never cleared to make it so.
     expect(recorded(standin, 1).headers.get('authorization')).toBeNull()
     expect(store.get()).toBe('stale-token')
   })
 
   it('does not self-deadlock when the refresh operation forgets omitAccessToken on its own request', async () => {
-    // The host bug this guard backstops: the refresh operation travels
-    // through this same client WITHOUT the per-request credential-less
-    // declaration, so its request presents the stale token and the
-    // refresh endpoint refuses it with a token-bearing 401. Without
-    // the guard that 401 would re-enter the refresh path and join --
-    // and await -- the very flight it was part of: a request awaiting
-    // itself forever (the flight could only settle when its hook
-    // settled, and the hook awaited the request), refreshCalls frozen
-    // at 1 and nothing ever settling. The round's own request is
-    // refused the refresh path, exactly like the bearer-only rule
-    // refuses a credential-less 401: the inner 401 surfaces as the
-    // terminal auth error, the hook answers false, and the original
-    // request takes the ordinary failed-refresh path -- a finite,
-    // honest failure, never a self-deadlock and never a second
-    // concurrent refresh.
     const store = createMemoryAccessTokenStore()
     store.set('stale-token')
     let refreshCalls = 0
@@ -1297,9 +1116,6 @@ describe('401 and the refresh hook', () => {
       jsonResponse(401, { ...SESSION_EXPIRED }),
       jsonResponse(401, { ...SESSION_EXPIRED, traceId: 'trace-refresh' }),
     )
-    // The hook only ever runs after createClient has returned (it fires
-    // on a request's 401), so the const binding is initialized by the
-    // time the closure body executes.
     const api: RequestFn = createClient({
       baseUrl: BASE_URL,
       fetch: standin.fetch,
@@ -1310,7 +1126,6 @@ describe('401 and the refresh hook', () => {
           await api('/api/v1/auth/token', {
             method: 'POST',
             body: { refresh_token: 'stale' },
-            // omitAccessToken deliberately omitted: the host bug.
           })
           return true
         } catch {
@@ -1333,12 +1148,8 @@ describe('401 and the refresh hook', () => {
     if (isApiError(caught)) {
       expect(caught.auth).toBe(true)
       expect(caught.code).toBe('authn.session_expired')
-      // The original 401's own envelope is delivered (trace-1), not the
-      // refresh request's own refusal (trace-refresh).
       expect(caught.traceId).toBe('trace-1')
     }
-    // Exactly one refresh, two HTTP calls in total, no recursion -- and
-    // the failure was reported like any other failed refresh.
     expect(refreshCalls).toBe(1)
     expect(standin.calls).toHaveLength(2)
     expect(memory.warns).toEqual([
@@ -1355,15 +1166,6 @@ describe('401 and the refresh hook', () => {
   })
 
   it('ends a restore-shaped recovery hook within a bounded time when its profile read is refused', async () => {
-    // The cookie session wires the recovery hook to a restore() that
-    // reads GET /api/v1/auth/session (the cookie still names a session) and
-    // then GET /api/v1/auth/me. When that second read is refused while this
-    // hook is the round already in flight, a request that joined the
-    // round would await the hook, and the hook awaits the request -- a
-    // request awaiting itself, which never settles. The client hands
-    // the hook a round-scoped request function; requests issued through
-    // it are the round's own work, so the refusal surfaces to the hook
-    // (which reads a 401 as "nobody is signed in") and the round ends.
     const standin = scriptedStandin(
       jsonResponse(401, { ...SESSION_EXPIRED }),
       jsonResponse(200, { authenticated: true }),
@@ -1372,10 +1174,6 @@ describe('401 and the refresh hook', () => {
     const memory = createMemoryReporter()
     let roundSettled = false
     let roundOutcome: boolean | undefined
-    // The hook accepts the round-scoped issuer. Falling back to the
-    // client's own request function when none is supplied is exactly
-    // the host wiring this test guards against: against a client that
-    // supplies no issuer, the fallback reproduces the self-await.
     const restore = async (issueSession?: RequestFn): Promise<boolean> => {
       const call = issueSession ?? api
       const view = await call<{ authenticated: boolean }>('/api/v1/auth/session')
@@ -1392,9 +1190,6 @@ describe('401 and the refresh hook', () => {
         throw error
       }
     }
-    // The hook only ever runs after createClient has returned (it fires
-    // on a request's 401), so the const binding is initialized by the
-    // time the closure body executes.
     const api: RequestFn = createClient({
       baseUrl: BASE_URL,
       fetch: standin.fetch,
@@ -1416,29 +1211,16 @@ describe('401 and the refresh hook', () => {
     })
     const refused = expectApiError(api<{ ok: boolean }>('/notes'))
     await expectSettled(() => roundSettled)
-    // The profile refusal reads as "nobody is signed in", so the hook
-    // answers false rather than throwing.
     expect(roundOutcome).toBe(false)
-    // The refused outer request takes the ordinary failed-refresh path:
-    // the round answered false because the session is over.
     const error = await refused
     expect(error.auth).toBe(true)
     expect(error.code).toBe('authn.session_expired')
-    // Three exchanges: the refused request and the hook's two reads. The
-    // profile refusal was neither retried nor sent a second time.
     expect(standin.calls).toHaveLength(3)
     expect(recorded(standin, 1).url).toBe(`${BASE_URL}/api/v1/auth/session`)
     expect(recorded(standin, 2).url).toBe(`${BASE_URL}/api/v1/auth/me`)
   })
 
   it('keeps a declared credential-less 401 terminal even while the store holds a token', async () => {
-    // The refresh operation's own request is the canonical declared
-    // credential-less one: when the endpoint refuses a stale refresh
-    // token, that 401 must surface to the session -- it must not
-    // re-enter the refresh path just because the store happens to hold
-    // an access token (the stale one, never cleared). Before
-    // omitAccessToken existed this scenario was only reachable with an
-    // emptied store; the declaration pins it without the clearing.
     const store = createMemoryAccessTokenStore()
     store.set('stale-token')
     let refreshCalls = 0
@@ -1495,7 +1277,6 @@ describe('401 and the refresh hook', () => {
     expect(second).toEqual({ notes: ['two'] })
     expect(refreshCalls).toBe(1)
     expect(standin.calls).toHaveLength(4)
-    // Both retried requests carry the token the single refresh stored.
     expect(recorded(standin, 2).headers.get('authorization')).toBe(
       'Bearer fresh-token',
     )
@@ -1505,12 +1286,6 @@ describe('401 and the refresh hook', () => {
   })
 
   it('does not let the refresh round consume the transient-retry budget', async () => {
-    // maxAttempts 2 leaves a fresh request exactly one transient
-    // retry. A 401-refresh round in the middle performs no transient
-    // retry, so it must not eat that budget: the 503 that follows the
-    // refresh still gets its retry (a round that consumed an attempt
-    // would leave the retryable 503 delivered without ever being
-    // retried).
     const store = createMemoryAccessTokenStore()
     store.set('stale-token')
     let refreshCalls = 0
@@ -1536,11 +1311,6 @@ describe('401 and the refresh hook', () => {
   })
 
   it('releases the refused 401 body when the refresh succeeds and the request retries', async () => {
-    // The refresh-success path discards the 401 response: its body is
-    // cancelled so the connection is released deterministically
-    // instead of staying held by an unread response -- and a stalled
-    // error body must not delay or hang the refresh round, which never
-    // needs to read it.
     const store = createMemoryAccessTokenStore()
     store.set('stale-token')
     const body = gatedBody()
@@ -1563,15 +1333,6 @@ describe('401 and the refresh hook', () => {
   })
 
   it('keeps the real 401 envelope when a failed refresh outlives timeoutMs', async () => {
-    // The timeout/refresh cross case: a refresh hook configured WITH a
-    // timeoutMs, where the refresh round trip outlives the timeout and
-    // then fails. The timeout bounds one HTTP exchange -- never the
-    // refresh hook -- so the envelope read after the failed refresh
-    // must surface the real 401 envelope (authn.session_expired and
-    // its trace id), not a synthetic client.http.401. (An attempt
-    // timer that fired at timeoutMs into the refresh would resolve the
-    // envelope read -- through the already-settled abort trigger -- as
-    // a timeout, losing the envelope's code and trace id.)
     vi.useFakeTimers()
     try {
       const memory = createMemoryReporter()
@@ -1595,15 +1356,11 @@ describe('401 and the refresh hook', () => {
         reporter: memory.reporter,
       })
       const pending = api<{ ok: boolean }>('/notes')
-      // Flush until the 401 has started the refresh round.
       for (let i = 0; i < 32 && refreshCalls === 0; i += 1) {
         await Promise.resolve()
       }
       expect(refreshCalls).toBe(1)
-      // The refresh outlives the 50ms timeout by two orders of
-      // magnitude...
       await vi.advanceTimersByTimeAsync(5000)
-      // ...and then fails: the session is still gone.
       releaseRefresh(false)
       const error = await expectApiError(pending)
       expect(error.auth).toBe(true)
@@ -1611,7 +1368,6 @@ describe('401 and the refresh hook', () => {
       expect(error.traceId).toBe('trace-1')
       expect(error.attempts).toBe(1)
       expect(standin.calls).toHaveLength(1)
-      // The failed refresh is reported with the original 401's envelope.
       expect(memory.warns).toEqual([
         {
           message: 'access token refresh failed',
@@ -1628,13 +1384,6 @@ describe('401 and the refresh hook', () => {
   })
 
   it('keeps the attempt timeout live for a stalled 401 body after a failed refresh', async () => {
-    // The failure path's envelope read stays inside the attempt's
-    // abort scope: a 401 whose body stalls (headers arrived, body
-    // never comes) must still degrade to an envelope-less
-    // client.http.401 instead of hanging on the read. The timer is
-    // re-armed for the budget that was left at the pause once the
-    // failed refresh is out of the way -- if the pause were never
-    // resumed, this read would hang on the stalled stream.
     vi.useFakeTimers()
     try {
       const memory = createMemoryReporter()
@@ -1666,16 +1415,9 @@ describe('401 and the refresh hook', () => {
         await Promise.resolve()
       }
       expect(refreshCalls).toBe(1)
-      // The refresh fails fast -- no fake time passes -- and the
-      // envelope read then genuinely starts on the stalled body.
       releaseRefresh(false)
       await waitForReadStart(body)
-      // Attach the rejection handler before the re-armed timer fires,
-      // so the rejection inside advanceTimersByTimeAsync is never
-      // unhandled.
       const rejection = expectApiError(pending)
-      // The re-armed timer (the ~50ms that were left) fires into the
-      // stalled read: envelope-less degradation, never a hang.
       await vi.advanceTimersByTimeAsync(50)
       await expectSettledNow(() => settlement.settled)
       const error = await rejection
@@ -1683,8 +1425,6 @@ describe('401 and the refresh hook', () => {
       expect(error.code).toBe('client.http.401')
       expect(error.traceId).toBeUndefined()
       expect(standin.calls).toHaveLength(1)
-      // The stalled body yields no envelope, so the report carries the
-      // status alone.
       expect(memory.warns).toEqual([
         { message: 'access token refresh failed', attrs: { status: 401 } },
       ])
@@ -1791,7 +1531,6 @@ describe('transient retries (idempotent methods only)', () => {
         retryPolicy: DEFAULT_RETRY_POLICY,
       })
       const pending = api<{ ok: boolean }>('/limited')
-      // The header says one second: 999ms in, nothing has been retried.
       await vi.advanceTimersByTimeAsync(999)
       expect(standin.calls).toHaveLength(1)
       await vi.advanceTimersByTimeAsync(1)
@@ -1815,7 +1554,6 @@ describe('transient retries (idempotent methods only)', () => {
         retryPolicy: DEFAULT_RETRY_POLICY,
       })
       const pending = api<{ ok: boolean }>('/limited')
-      // 120s would exceed the 4000ms cap: 3999ms in, still waiting.
       await vi.advanceTimersByTimeAsync(3999)
       expect(standin.calls).toHaveLength(1)
       await vi.advanceTimersByTimeAsync(1)
@@ -1827,9 +1565,6 @@ describe('transient retries (idempotent methods only)', () => {
   })
 
   it('carries a 429 Retry-After wait onto the ApiError', async () => {
-    // A retry-ineligible method (registration is a POST) reaches the
-    // caller with the refusal itself; the header's ask must survive so
-    // the surface can hold its control instead of guessing.
     const standin = scriptedStandin(
       jsonResponse(
         429,
@@ -1850,8 +1585,6 @@ describe('transient retries (idempotent methods only)', () => {
   })
 
   it('leaves retryAfterMs undefined when the refusal states no wait', async () => {
-    // The same 429 without a header, and with no envelope either: the
-    // bare-HTTP fallback carries no invented wait.
     const standin = scriptedStandin(textResponse(429, 'rate limited'))
     const api = createClient({
       baseUrl: BASE_URL,
@@ -1866,10 +1599,6 @@ describe('transient retries (idempotent methods only)', () => {
   })
 
   it('releases the discarded response body before retrying a retryable status', async () => {
-    // A 429 (or any retryable status) whose body is not wanted is
-    // retried from the headers alone -- but the unread response must
-    // not keep holding its connection: the body is cancelled before
-    // the retry instead of being left for garbage collection.
     const body = gatedBody()
     const standin = scriptedStandin(
       new Response(body.stream, { status: 429 }),
@@ -1919,8 +1648,6 @@ describe('timeouts', () => {
       retryPolicy: zeroDelay(1),
     })
     const pending = api<{ ok: boolean }>('/slow')
-    // Attach the rejection handler before the fake timers fire, so the
-    // rejection inside advanceTimersByTimeAsync is never unhandled.
     const rejection = expectApiError(pending)
     await vi.advanceTimersByTimeAsync(50)
     const error = await rejection
@@ -1931,15 +1658,6 @@ describe('timeouts', () => {
   })
 
   it('times out a 2xx whose body stalls after the headers arrived', async () => {
-    // Real un-released-stream shape: the server answered headers and
-    // then never finishes the body. The per-attempt timeout keeps
-    // running through the body read, so the stall rejects as
-    // client.timeout instead of hanging forever on a half-open
-    // response. (A timer that stopped at header arrival would leave
-    // the read waiting on the stalled stream indefinitely.) The
-    // release is the controller abort (real fetch ties the response
-    // body to the fetch signal): the recorded request signal shows the
-    // attempt aborted mid-read.
     const body = gatedBody()
     const standin = scriptedStandin(new Response(body.stream, { status: 200 }))
     const api = createClient({
@@ -1950,10 +1668,7 @@ describe('timeouts', () => {
     })
     const pending = api<{ ok: boolean }>('/slow-body')
     const settlement = settlementOf(pending)
-    // Attach the rejection handler before the fake timers fire, so the
-    // rejection inside advanceTimersByTimeAsync is never unhandled.
     const rejection = expectApiError(pending)
-    // Let the headers arrive and the body read genuinely start.
     await vi.advanceTimersByTimeAsync(0)
     await waitForReadStart(body)
     await vi.advanceTimersByTimeAsync(50)
@@ -1968,9 +1683,6 @@ describe('timeouts', () => {
   })
 
   it('retries a 2xx whose body stalls mid-read, exactly like any other timeout', async () => {
-    // The stalled-body timeout is a transport-class failure of the
-    // attempt: an idempotent request with budget left retries it, and
-    // the retried attempt answers in full.
     const body = gatedBody()
     let first = true
     const standin = createStandinFetch(() => {
@@ -1991,9 +1703,6 @@ describe('timeouts', () => {
     await vi.advanceTimersByTimeAsync(0)
     await waitForReadStart(body)
     await vi.advanceTimersByTimeAsync(50)
-    // The retry's 0ms backoff timer is armed while that advancement is
-    // in progress (due at its target time); a further 1ms advancement
-    // carries the clock past it and lets attempt 2 proceed.
     await vi.advanceTimersByTimeAsync(1)
     await expectSettledNow(() => settlement.settled)
     await expect(pending).resolves.toEqual({ ok: true })
@@ -2044,18 +1753,14 @@ describe('caller cancellation', () => {
       expect(caught.name).toBe('AbortError')
     }
     expect(isApiError(caught)).toBe(false)
-    // The caller's signal reached the fetch call and was aborted...
     const call = recorded(standin)
     expect(call.signal?.aborted).toBe(true)
-    // ...and no retry followed the cancellation.
     expect(standin.calls).toHaveLength(1)
   })
 
   it('cancels a request aborted during the backoff, before any retry fires', async () => {
     vi.useFakeTimers()
     try {
-      // A deterministic 2s backoff (Retry-After honoured on 503), long
-      // enough to cancel in the middle of it.
       const standin = scriptedStandin(
         textResponse(503, 'Service Unavailable', { 'retry-after': '2' }),
       )
@@ -2068,10 +1773,8 @@ describe('caller cancellation', () => {
       const rejection = expectRawAbort(
         api<{ ok: boolean }>('/notes', { signal: controller.signal }),
       )
-      // Let the 503 arrive and the backoff timer arm.
       await vi.advanceTimersByTimeAsync(0)
       controller.abort()
-      // The backoff elapses; the retry must not fire after cancellation.
       await vi.advanceTimersByTimeAsync(2000)
       await rejection
       expect(standin.calls).toHaveLength(1)
@@ -2105,31 +1808,17 @@ describe('caller cancellation', () => {
     const rejection = expectRawAbort(
       api<{ ok: boolean }>('/notes', { signal: controller.signal }),
     )
-    // Each plain await advances the request chain by roughly one
-    // microtask hop, so flush until the 401 has started the refresh.
     for (let i = 0; i < 32 && refreshCalls === 0; i += 1) {
       await Promise.resolve()
     }
     expect(refreshCalls).toBe(1)
     controller.abort()
-    // The refresh completes successfully -- but the post-refresh retry
-    // must not fire for a caller that cancelled.
     releaseRefresh()
     await rejection
     expect(standin.calls).toHaveLength(1)
   })
 
   it('rejects raw when an abort lands while a never-settling refresh is in flight', async () => {
-    // A client WITH a timeoutMs suspends its attempt timer across the
-    // 401-refresh round (the pause), and a refresh hook that never
-    // settles leaves the wait with nothing to race: the attempt's
-    // fetch has already settled and its timer is suspended, so the
-    // caller-abort forwarding has no pending promise to reject -- the
-    // request promise would stay pending forever even though the
-    // caller cancelled (and at 50ms the suspended attempt timer cannot
-    // save it either). The refresh wait races the caller's signal
-    // exactly like the backoff sleeps do, so the abort rejects the
-    // request raw on the next microtask.
     const store = createMemoryAccessTokenStore()
     store.set('stale-token')
     let refreshCalls = 0
@@ -2140,7 +1829,6 @@ describe('caller cancellation', () => {
       accessTokenStore: store,
       refreshAccessToken: () => {
         refreshCalls += 1
-        // A refresh that never settles: no host wiring will end it.
         return new Promise<boolean>(() => {})
       },
       timeoutMs: 50,
@@ -2155,8 +1843,6 @@ describe('caller cancellation', () => {
         reason = caught
       },
     )
-    // Each plain await advances the request chain by roughly one
-    // microtask hop, so flush until the 401 has started the refresh.
     for (let i = 0; i < 32 && refreshCalls === 0; i += 1) {
       await Promise.resolve()
     }
@@ -2168,25 +1854,11 @@ describe('caller cancellation', () => {
       expect(reason.name).toBe('AbortError')
     }
     expect(isApiError(reason)).toBe(false)
-    // The abort ended the request: exactly the one refused attempt,
-    // no post-refresh retry.
     expect(standin.calls).toHaveLength(1)
     await observed
   })
 
   it('keeps the round alive when the starting request aborts: a later 401 joins it, never a second hook invocation', async () => {
-    // The round is shared, not owned by the request that started it:
-    // that request's abort detaches only itself (its own call-site
-    // race rejects it raw), while the flight settles only when the
-    // hook settles. A later, independent 401 arriving while the round
-    // is still in flight therefore joins it -- the hook is not invoked
-    // again (a fresh invocation would present the same refresh token a
-    // second time while the first round still holds it, which the
-    // authn server reads as theft) -- and the later request's own
-    // abort rejects it raw in turn: each waiter is bounded by its own
-    // signal. (If the starting request's abort settled the whole round
-    // as a failed refresh, the later 401 would start a fresh round and
-    // invoke the hook a second time.)
     const store = createMemoryAccessTokenStore()
     store.set('stale-token')
     let refreshCalls = 0
@@ -2200,7 +1872,6 @@ describe('caller cancellation', () => {
       accessTokenStore: store,
       refreshAccessToken: () => {
         refreshCalls += 1
-        // A refresh that never settles: no host wiring will end it.
         return new Promise<boolean>(() => {})
       },
     })
@@ -2218,8 +1889,6 @@ describe('caller cancellation', () => {
       await Promise.resolve()
     }
     expect(refreshCalls).toBe(1)
-    // The first caller gives up mid-refresh: the round is orphaned,
-    // not dead -- nothing settles it but the hook itself.
     firstController.abort()
     await expectSettled(() => firstReason !== undefined)
     expect(firstReason).toBeInstanceOf(DOMException)
@@ -2227,9 +1896,6 @@ describe('caller cancellation', () => {
       expect(firstReason.name).toBe('AbortError')
     }
     expect(isApiError(firstReason)).toBe(false)
-    // The second, independent request with its own controller: its 401
-    // joins the round still in flight -- the hook is never invoked a
-    // second time -- and its own abort rejects it raw.
     const secondController = new AbortController()
     let secondReason: unknown
     const second = api<{ ok: boolean }>('/notes', {
@@ -2243,10 +1909,6 @@ describe('caller cancellation', () => {
     for (let i = 0; i < 64 && standin.calls.length < 2; i += 1) {
       await Promise.resolve()
     }
-    // Flush well past the second request's own 401 branch: by the time
-    // it decides the round's fate -- join the in-flight flight, or
-    // start a sibling round that would invoke the hook again -- it
-    // must still be the one round.
     for (let i = 0; i < 200; i += 1) {
       await Promise.resolve()
     }
@@ -2258,25 +1920,12 @@ describe('caller cancellation', () => {
       expect(secondReason.name).toBe('AbortError')
     }
     expect(isApiError(secondReason)).toBe(false)
-    // Two refused attempts only: no retry fired for either cancelled
-    // request.
     expect(standin.calls).toHaveLength(2)
     await first
     await second
   })
 
   it('lets requests already joined onto the flight succeed when the initiator aborts and the refresh then succeeds', async () => {
-    // The conflation shape: binding the single-flight round to the
-    // initiating request's own signal would let that request's abort
-    // settle the WHOLE round as a failed refresh (the race rejection
-    // caught and turned into false), telling a request that had
-    // already joined "refresh failed" -- an auth:true ApiError, the
-    // host's basis for judging the session ended -- even while the
-    // hook goes on to succeed and write a fresh token into the store.
-    // The initiator's abort must detach only the initiator: the joined
-    // request is bounded by its own (live) signal, so it receives the
-    // hook's real outcome -- a retry with the fresh token, and
-    // success.
     const store = createMemoryAccessTokenStore()
     store.set('stale-token')
     let refreshCalls = 0
@@ -2304,33 +1953,21 @@ describe('caller cancellation', () => {
         signal: initiatorController.signal,
       }),
     )
-    // Flush until the initiator's 401 has started the refresh round.
     for (let i = 0; i < 32 && refreshCalls === 0; i += 1) {
       await Promise.resolve()
     }
     expect(refreshCalls).toBe(1)
-    // A second request 401s while the round is in flight and joins it.
     const joiner = api<{ notes: string[] }>('/notes')
     for (let i = 0; i < 64 && standin.calls.length < 2; i += 1) {
       await Promise.resolve()
     }
-    // Let the joiner's refused attempt reach the joined wait before
-    // the round's fate is decided.
     for (let i = 0; i < 64; i += 1) {
       await Promise.resolve()
     }
-    // The initiator gives up mid round -- and the hook then succeeds,
-    // storing the fresh token.
     initiatorController.abort()
     store.set('fresh-token')
     releaseRefresh(true)
     await initiator
-    // The already-joined request heard nothing of the initiator's
-    // abort: its own signal never fired, so it gets the hook's real
-    // outcome and its retry with the fresh token succeeds. (An
-    // initiator abort that settled the shared round as a failed
-    // refresh would tell the joiner the refresh failed and this would
-    // reject with an auth:true ApiError instead.)
     await expect(joiner).resolves.toEqual({ notes: ['two'] })
     expect(recorded(standin, 2).headers.get('authorization')).toBe(
       'Bearer fresh-token',
@@ -2340,14 +1977,6 @@ describe('caller cancellation', () => {
   })
 
   it('never delivers a 2xx for a caller that aborts mid-read -- even when the body never settles', async () => {
-    // Real un-released-stream shape: the body stream is never released
-    // and never fails. The rejection must arrive anyway -- the client
-    // refuses to wait on a body whose caller is gone -- so the
-    // cancelled caller gets the raw AbortError, never the 2xx result.
-    // The release is the controller abort itself (real fetch ties the
-    // response body to the fetch signal): the recorded request signal
-    // must show the attempt aborted even though the fetch itself had
-    // already resolved with its headers.
     const body = gatedBody()
     const standin = scriptedStandin(new Response(body.stream, { status: 200 }))
     const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
@@ -2357,17 +1986,7 @@ describe('caller cancellation', () => {
     })
     const rejection = expectRawAbort(pending)
     const settlement = settlementOf(pending)
-    // Let the request reach the point where it is genuinely reading
-    // the body (the stream's pull has been requested).
     await waitForReadStart(body)
-    // The first pull -- waitForReadStart's signal -- can fire while the
-    // request is still settling its fetch; an abort at that moment is
-    // answered by the ordinary fetch rejection. Flush the whole
-    // microtask chain so the request genuinely settles and suspends on
-    // the stalled body read: an abort then lands mid-read, where the
-    // body-read abort trigger is the only thing that answers it.
-    // (Without the trigger the read waits on the never-settling stream
-    // with no abort wiring and hangs.)
     for (let i = 0; i < 2000; i += 1) {
       await Promise.resolve()
     }
@@ -2379,9 +1998,6 @@ describe('caller cancellation', () => {
   })
 
   it('surfaces the raw abort, never a transient retry, when a cancelled caller abandons the body read', async () => {
-    // The same real un-released-stream shape under a retry policy with
-    // budget to spare: an abandoned body read is the cancellation, not
-    // a retryable network-class failure, so no retry may follow it.
     const body = gatedBody()
     const standin = scriptedStandin(new Response(body.stream, { status: 200 }))
     const api = createClient({
@@ -2395,17 +2011,7 @@ describe('caller cancellation', () => {
     })
     const rejection = expectRawAbort(pending)
     const settlement = settlementOf(pending)
-    // Let the request reach the point where it is genuinely reading
-    // the body (the stream's pull has been requested).
     await waitForReadStart(body)
-    // The first pull -- waitForReadStart's signal -- can fire while the
-    // request is still settling its fetch; an abort at that moment is
-    // answered by the ordinary fetch rejection. Flush the whole
-    // microtask chain so the request genuinely settles and suspends on
-    // the stalled body read: an abort then lands mid-read, where the
-    // body-read abort trigger is the only thing that answers it.
-    // (Without the trigger the read waits on the never-settling stream
-    // with no abort wiring and hangs.)
     for (let i = 0; i < 2000; i += 1) {
       await Promise.resolve()
     }
@@ -2417,12 +2023,6 @@ describe('caller cancellation', () => {
   })
 
   it('rejects a request aborted during the backoff promptly, without waiting out the delay', async () => {
-    // The backoff sleep races the caller's signal: an abort landing in
-    // the middle of a 2s Retry-After backoff rejects the request raw
-    // on the next microtask -- it never sits out the remaining delay,
-    // and no retry fires for the cancelled caller. (A sleep that
-    // ignored the signal would leave the promise still pending at the
-    // assertion point below, with the fake clock never advanced.)
     vi.useFakeTimers()
     try {
       const standin = scriptedStandin(
@@ -2447,12 +2047,8 @@ describe('caller cancellation', () => {
           reason = caught
         },
       )
-      // Let the 503 arrive and the 2000ms backoff arm.
       await vi.advanceTimersByTimeAsync(0)
       controller.abort()
-      // Flush microtasks only -- no timer advancement, so the 2000ms
-      // backoff is still pending. Only a sleep that aborts on the
-      // signal can have settled by now.
       for (let i = 0; i < 32; i += 1) {
         await Promise.resolve()
       }
@@ -2508,12 +2104,6 @@ describe('error normalization', () => {
   })
 
   it('parses a legacy {code, params} envelope: code and params, no traceId', async () => {
-    // The legacy envelope an earlier backend wrote: a {code, params} body
-    // with no traceId. parseEnvelope reads a body as an error envelope on
-    // the code it denotes -- its own `code` string, or the code derived
-    // from a `urn:speed:` problem `type` (what the current backend writes)
-    // -- so a traceId-less {code, params} body keeps its code rather than
-    // degrading into client.http.<status>.
     const standin = scriptedStandin(
       jsonResponse(400, {
         code: 'authn.password_too_short',
@@ -2530,11 +2120,6 @@ describe('error normalization', () => {
   })
 
   it('derives the module code from an RFC 9457 problem type', async () => {
-    // The shape pkg/http writes every module refusal with: an RFC 9457
-    // problem object whose machine-readable kind is its `type`,
-    // urn:speed:<module>:<code>, and which carries no `code` member. The
-    // client must derive the module code from the type, or the refusal
-    // (here a 404 from objectstore) degrades to the generic client.http.404.
     const standin = scriptedStandin(
       jsonResponse(404, {
         type: 'urn:speed:objectstore:not-found',
@@ -2550,9 +2135,6 @@ describe('error normalization', () => {
   })
 
   it('normalizes dashes in the derived problem-type code to underscores', async () => {
-    // The frontend error-code vocabulary is the backend code with each
-    // dash replaced by an underscore (settings' `invalid-value` becomes the
-    // `settings.invalid_value` the console resolvers whitelist).
     const standin = scriptedStandin(
       jsonResponse(422, {
         type: 'urn:speed:settings:invalid-value',
@@ -2578,8 +2160,6 @@ describe('error normalization', () => {
   })
 
   it('treats a problem type outside the urn:speed namespace as envelope-less', async () => {
-    // A vendor problem URI denotes no module code, so the failure keeps
-    // the bare client.http.<status> fallback.
     const standin = scriptedStandin(
       jsonResponse(500, {
         type: 'https://example.com/problems/out-of-credit',
@@ -2593,8 +2173,6 @@ describe('error normalization', () => {
   })
 
   it('refuses a urn:speed:client:* type into the reserved fallback', async () => {
-    // The reserved-namespace rule applies to a code derived from a type
-    // exactly as it does to a literal `code`.
     const standin = scriptedStandin(
       jsonResponse(400, { type: 'urn:speed:client:timeout', status: 400 }),
     )
@@ -2604,9 +2182,6 @@ describe('error normalization', () => {
   })
 
   it('keeps a traceId-bearing envelope correlated when params are absent', async () => {
-    // The optional-field counterpart: a body that does carry traceId
-    // still surfaces it on the ApiError, so user reports can be
-    // correlated to server logs even though no backend sends one yet.
     const standin = scriptedStandin(
       jsonResponse(500, {
         code: 'config.internal_error',
@@ -2646,7 +2221,6 @@ describe('error normalization', () => {
     expect(error.details).toEqual([
       { field: 'title', code: 'notes.text_required' },
       { field: 'price', code: 'billing.invalid_amount', params: { min: 0 } },
-      // A valid entry keeps its place even when junk params are dropped.
       { field: 'p', code: 'notes.ok' },
     ])
   })
@@ -2701,11 +2275,6 @@ describe('error normalization', () => {
   })
 
   it('refuses a 2xx HTML document with the client.html code', async () => {
-    // A deployment that serves the front end from the API's own endpoint
-    // answers a path no API route claims with the entry document: HTTP 200
-    // and text/html. The operation declares JSON, so the document is a
-    // failure of its own kind -- decidable from the content type alone,
-    // before any parse -- and not a JSON contract violation.
     for (const contentType of [
       'text/html; charset=utf-8',
       'TEXT/HTML',
@@ -2745,9 +2314,6 @@ describe('error normalization', () => {
   })
 
   it('names what the 2xx-primitive refusal actually refuses', async () => {
-    // The branch refuses JSON that is not an object or an array -- a
-    // JSON string or number *is* a JSON value, so the refusal must say
-    // what it means and not misname the branch as rejecting non-JSON.
     const standin = scriptedStandin(jsonResponse(200, 'just a string'))
     const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
     const error = await expectApiError(api<{ ok: boolean }>('/notes'))
@@ -2760,17 +2326,6 @@ describe('error normalization', () => {
   })
 
   it('refuses an envelope whose code borrows the reserved client.* namespace', async () => {
-    // An envelope can only arrive through an HTTP response, and server
-    // codes are module-scoped (authn.*, notes.* -- per the error-code
-    // contract);
-    // `client` is no module's domain. A backend or intermediary that
-    // answers with an envelope carrying a client.*-shaped code is
-    // borrowing this client's reserved vocabulary -- accepted, it
-    // would let a session error read as a transport failure in
-    // consumer surfaces. The envelope is refused at parse time and the
-    // failure lands on the honest client.http.<status> code with the
-    // real status, never on a code that claims a diagnosis the client
-    // did not make.
     const standin = scriptedStandin(
       jsonResponse(400, { code: 'client.timeout', traceId: 'forged-1' }),
     )
@@ -2785,10 +2340,6 @@ describe('error normalization', () => {
   })
 
   it('never presents a forged client.* envelope as a transport failure', async () => {
-    // The concrete harm behind the reserved-namespace rule: a 401
-    // whose envelope says client.network is still an auth answer --
-    // isTransportFailure must answer false for it, so a login surface
-    // cannot render "the request never completed" for a session error.
     const standin = scriptedStandin(jsonResponse(401, { code: 'client.network' }))
     const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
     const error = await expectApiError(api<{ ok: boolean }>('/notes'))
