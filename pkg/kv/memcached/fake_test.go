@@ -12,13 +12,8 @@ import (
 	"time"
 )
 
-// replyDelay is how long the fake server takes to answer one command.
 const replyDelay = 2 * time.Millisecond
 
-// fakeServer speaks just enough of Memcached's text protocol for the cases
-// that need to watch connections rather than data: every read misses, every
-// write is stored and forgotten, and the server counts the connections it
-// accepted and the ones the client closed.
 type fakeServer struct {
 	listener net.Listener
 	accepted atomic.Int32
@@ -43,8 +38,6 @@ func startFakeServer(t *testing.T) *fakeServer {
 	return s
 }
 
-// stop closes the listener and whatever connections the client left open,
-// so that a client which never hangs up cannot hold the case open.
 func (s *fakeServer) stop() {
 	_ = s.listener.Close()
 	s.mu.Lock()
@@ -95,7 +88,6 @@ func (s *fakeServer) handle(conn net.Conn) {
 	for {
 		line, err := r.ReadString('\n')
 		if err != nil {
-			// A read ending before the server stops is the client hanging up.
 			s.mu.Lock()
 			if !s.stopping {
 				s.closed.Add(1)
@@ -107,8 +99,6 @@ func (s *fakeServer) handle(conn net.Conn) {
 		if len(fields) == 0 {
 			continue
 		}
-		// A round trip on loopback is too short for operations to overlap;
-		// a network's is not.
 		time.Sleep(replyDelay)
 		switch fields[0] {
 		case "version":
@@ -116,8 +106,6 @@ func (s *fakeServer) handle(conn net.Conn) {
 		case "get", "gets":
 			_, _ = io.WriteString(conn, "END\r\n")
 		case "set", "add", "cas":
-			// The data block follows the command line: its length is the
-			// fifth field, then the terminating CRLF.
 			if len(fields) < 5 {
 				return
 			}

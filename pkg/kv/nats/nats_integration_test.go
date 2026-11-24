@@ -23,12 +23,6 @@ import (
 	"github.com/vislake/speed/pkg/kv/internal/kvsuite"
 )
 
-// bucketName returns a name no earlier run can have used.
-//
-// A counter is not enough: the server keeps a bucket between runs, and make
-// check runs the tests twice, so the second leg would start with the first
-// leg's entries still in the bucket of the same name — which shows up as a
-// counter that is already at its expected value.
 func bucketName() string {
 	var raw [8]byte
 	if _, err := rand.Read(raw[:]); err != nil {
@@ -51,20 +45,14 @@ func newStore(t *testing.T) *store {
 }
 
 // TestConforms runs the shared contract against a real server.
-//
-// Each subtest gets a bucket of its own rather than a flushed server: JetStream
-// has no logical databases and emptying a bucket is a delete per key, so a
-// fresh bucket is both the simplest and the exact expression of "a store with no
-// relation to the ones before it".
 func TestConforms(t *testing.T) {
 	kvsuite.AssertConforms(t, func(t *testing.T) kv.KV {
 		return newStore(t)
 	})
 }
 
-// TestTheExpiryTravelsInsideTheValue pins the design this backend forced: a
-// bucket's time-to-live is one setting for the whole bucket, so the expiry is
-// kept in the value and this package is what decides a key has aged out.
+// TestTheExpiryTravelsInsideTheValue checks that the expiry is encoded in the stored value, the key
+// reads absent past it, and the entry is still in the bucket.
 func TestTheExpiryTravelsInsideTheValue(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
@@ -86,9 +74,6 @@ func TestTheExpiryTravelsInsideTheValue(t *testing.T) {
 	if string(value) != "v" {
 		t.Fatalf("the value behind the header is %q, want %q", value, "v")
 	}
-	// Just past the expiry, the entry is still in the bucket — the server
-	// removes it only a margin later: it is this package that reports the key
-	// as absent, which is what makes a per-key expiry possible at all.
 	time.Sleep(ttl + 100*time.Millisecond)
 	if _, present, err := s.Get(ctx, "k"); err != nil || present {
 		t.Fatalf("Get past the ttl: present=%v err=%v", present, err)
@@ -98,13 +83,8 @@ func TestTheExpiryTravelsInsideTheValue(t *testing.T) {
 	}
 }
 
-// TestALongKeyLeavesTheConnectionUsable covers a failure a long key can cause
-// that reaches far past the key itself. A key's spelling is part of the subject
-// every request carries, and a subject past the server's control line limit
-// makes the server drop the client: the connection closes for good, and every
-// later operation on every key fails until the process restarts. The case
-// writes a key well past that limit and then uses a short one on the same
-// connection.
+// TestALongKeyLeavesTheConnectionUsable covers a failure a long key can cause that reaches far
+// past the key itself.
 func TestALongKeyLeavesTheConnectionUsable(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
@@ -120,16 +100,8 @@ func TestALongKeyLeavesTheConnectionUsable(t *testing.T) {
 	}
 }
 
-// TestTheConnectionKeepsReconnectingThroughAnOutage covers a server that is
-// away longer than the client's reconnect budget. Past that budget — sixty
-// attempts two seconds apart, by the client library's default — the client
-// closes the connection for good, and every operation fails until the process
-// restarts, although the server came back long ago. The other remote backends
-// recover on their own once their server answers again, and so must this one:
-// the connection has to keep trying for as long as the store is open.
-//
-// The case reads the budget the connection was built with rather than waiting
-// out an outage of minutes.
+// TestTheConnectionKeepsReconnectingThroughAnOutage covers a server that is away longer than the
+// client's reconnect budget.
 func TestTheConnectionKeepsReconnectingThroughAnOutage(t *testing.T) {
 	s := newStore(t)
 	if got := s.nc.Opts.MaxReconnect; got >= 0 {
@@ -138,12 +110,8 @@ func TestTheConnectionKeepsReconnectingThroughAnOutage(t *testing.T) {
 	}
 }
 
-// TestAnExistingBucketKeepsItsConfiguration covers a bucket an operator
-// provisioned: its history, its size limits, its description, and on a cluster
-// its replica count. Opening binds to it as it is. Creating or updating it to a
-// configuration naming only the bucket would put every one of those back to
-// the default, on every replica's every start — dropping the high availability
-// the operator configured, with no sign anywhere that it had.
+// TestAnExistingBucketKeepsItsConfiguration covers a bucket an operator provisioned: its history,
+// its size limits, its description, and on a cluster its replica count.
 func TestAnExistingBucketKeepsItsConfiguration(t *testing.T) {
 	url := natstest.URL(t)
 	ctx := context.Background()
@@ -191,12 +159,8 @@ func TestAnExistingBucketKeepsItsConfiguration(t *testing.T) {
 	}
 }
 
-// TestABucketWithoutMessageTTLTakesExpiringWrites covers a bucket this
-// implementation finds rather than creates — provisioned by an operator, or
-// created with nothing but its name. Its stream refuses a message carrying a
-// time-to-live, and every write with an expiry gives its message one so the
-// server can remove the entry once it has expired; opening has to switch the
-// setting on, or every such write would fail.
+// TestABucketWithoutMessageTTLTakesExpiringWrites covers a bucket this implementation finds rather
+// than creates — provisioned by an operator, or created with nothing but its name.
 func TestABucketWithoutMessageTTLTakesExpiringWrites(t *testing.T) {
 	url := natstest.URL(t)
 	ctx := context.Background()
@@ -231,11 +195,8 @@ func TestABucketWithoutMessageTTLTakesExpiringWrites(t *testing.T) {
 	}
 }
 
-// TestTheTimeoutBoundsAnOperation pins what the timeout item says it does: it
-// bounds connecting and one operation. An operation whose context carries no
-// deadline of its own is bounded by it, so a server that stops answering fails
-// the operation after the configured time, not after the client library's own
-// default of five seconds.
+// TestTheTimeoutBoundsAnOperation pins what the timeout item says it does: it bounds connecting
+// and one operation.
 func TestTheTimeoutBoundsAnOperation(t *testing.T) {
 	proxy := startStallingProxy(t, hostPort(natstest.URL(t)))
 	const timeout = 500 * time.Millisecond
@@ -259,18 +220,8 @@ func TestTheTimeoutBoundsAnOperation(t *testing.T) {
 	}
 }
 
-// TestExpiredAndDeletedEntriesLeaveTheBucket covers the storage a long-running
-// deployment accumulates. The expiry this package keeps in front of a value
-// hides an expired entry from every read, but the entry itself stays in the
-// bucket's stream until something writes its key again — and a rate limiter's
-// window keys, an idempotency guard's request keys and a cache's entries are
-// never written again once they expire. A delete leaves a marker in the stream
-// in the same way. A bucket that kept either would grow with every key ever
-// written.
-//
-// The case writes entries with a moment to live through both writes that
-// carry an expiry and deletes a third, then reads the bucket's stream below the
-// key-value layer.
+// TestExpiredAndDeletedEntriesLeaveTheBucket covers the storage a long-running deployment
+// accumulates.
 func TestExpiredAndDeletedEntriesLeaveTheBucket(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
@@ -297,8 +248,6 @@ func TestExpiredAndDeletedEntriesLeaveTheBucket(t *testing.T) {
 	}
 	subject := func(key string) string { return "$KV." + s.bucket.Bucket() + "." + encodeKey(key) }
 
-	// The delete's marker is what stays in the stream for a deleted key, so it
-	// has to carry an expiry of its own.
 	marker, err := stream.GetLastMsgForSubject(ctx, subject("deleted"))
 	if err != nil {
 		t.Fatalf("reading the deleted key's last message: %v", err)
@@ -308,8 +257,6 @@ func TestExpiredAndDeletedEntriesLeaveTheBucket(t *testing.T) {
 			marker.Header)
 	}
 
-	// The expired entries leave the stream; a marker the server puts in their
-	// place is not an entry, and ages out itself.
 	deadline := time.Now().Add(5 * time.Second)
 	for _, key := range []string{"cached", "window"} {
 		for {
@@ -371,18 +318,13 @@ func TestTwoStoresOnOneBucketShareTheSameEntries(t *testing.T) {
 	}
 }
 
-// TestCompareAndSwapOnAnExpiredKeyUnderContention pins the expired path's
-// sentinel handling: two swaps that both read the same expired revision are not
-// a failure for the one that loses. It is a swap that did not happen — the same
-// reading the live path already gives a contended key — and a caller that got
-// an error here could not tell it from the store being broken.
+// TestCompareAndSwapOnAnExpiredKeyUnderContention pins the expired path's sentinel handling: two
+// swaps that both read the same expired revision are not a failure for the one that loses.
 func TestCompareAndSwapOnAnExpiredKeyUnderContention(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
 	const key = "contested"
 
-	// An entry whose time has passed but which is still in the bucket: this
-	// backend decides expiry itself, so the row is there to be contended.
 	if err := s.Set(ctx, key, []byte("v"), 50*time.Millisecond); err != nil {
 		t.Fatalf("Set: %v", err)
 	}

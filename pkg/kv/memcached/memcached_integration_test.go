@@ -15,15 +15,11 @@ import (
 	"github.com/vislake/speed/pkg/kv/internal/memcachetest"
 )
 
-// newStore opens a store on the shared server, in a key space of the case's
-// own. It is what every case here that writes to the server works in, the
-// contract's subtests included.
 func newStore(t *testing.T) *store {
 	t.Helper()
 	return openOn(t, memcachetest.Addr(t), memcachetest.Space(t))
 }
 
-// openOn opens a store over the server at addr, in the key space given.
 func openOn(t *testing.T, addr, space string) *store {
 	t.Helper()
 	opened, err := open(context.Background(), &Config{Servers: []string{addr}, Timeout: 5 * time.Second})
@@ -37,12 +33,6 @@ func openOn(t *testing.T, addr, space string) *store {
 }
 
 // TestConforms runs the shared contract against a real server.
-//
-// Memcached has no logical databases, so every subtest gets a store in a key
-// space of its own rather than a server. No entry such a store can read was
-// written by anyone else, which is the whole of what the contract's promise of
-// an empty store means here; the server itself is never emptied, because other
-// test binaries on the machine are using it at the same moment.
 func TestConforms(t *testing.T) {
 	kvsuite.AssertConforms(t, func(t *testing.T) kv.KV {
 		t.Helper()
@@ -50,15 +40,7 @@ func TestConforms(t *testing.T) {
 	})
 }
 
-// TestCasesSharingTheServerNeverMeet pins the isolation the shared server
-// needs. One server serves every test binary on the machine, this checkout's
-// and every other's, so a case that emptied it, or wrote under the names
-// another case writes under, would change entries out from under a case
-// running elsewhere at that moment — which fails there as a key that vanished
-// or holds a value nothing in that case wrote.
-//
-// The entry written straight through a client stands for another run's data,
-// and the two stores are what two cases get.
+// TestCasesSharingTheServerNeverMeet pins the isolation the shared server needs.
 func TestCasesSharingTheServerNeverMeet(t *testing.T) {
 	addr := memcachetest.Addr(t)
 	ctx := context.Background()
@@ -91,17 +73,7 @@ func TestCasesSharingTheServerNeverMeet(t *testing.T) {
 	}
 }
 
-// TestAPaddedServerEntryStillReachesTheClient is the half a stance cannot hold
-// on its own. The guard judges an entry by its trimmed text, so an entry
-// written with surrounding whitespace passes it — and gomemcache then resolves
-// every address it is given and discards the whole list when one fails to
-// resolve, which is what a padded address does. Handing the client the text as
-// written would leave it holding no server at all: the process runs, every
-// operation fails with "no servers configured or available", and nothing names
-// the input.
-//
-// The case pads the address of a real server: the open's check reaches it, and
-// an operation afterwards is served.
+// TestAPaddedServerEntryStillReachesTheClient is the half a stance cannot hold on its own.
 func TestAPaddedServerEntryStillReachesTheClient(t *testing.T) {
 	addr := memcachetest.Addr(t)
 	opened, err := open(context.Background(), &Config{
@@ -119,13 +91,8 @@ func TestAPaddedServerEntryStillReachesTheClient(t *testing.T) {
 	}
 }
 
-// TestTheExpiryTravelsInsideTheValue pins the design this backend forced: a
-// compare-and-swap write cannot carry the old expiry forward, so the expiry is
-// not in Memcached's expiration field at all and this package is what decides a
-// key has aged out.
-//
-// The case asserts on the header directly rather than through Get, because Get
-// would pass whether the expiry worked or the key had simply been deleted.
+// The case asserts on the header directly rather than through Get, because Get would pass whether
+// the expiry worked or the key had simply been deleted.
 func TestTheExpiryTravelsInsideTheValue(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
@@ -146,22 +113,14 @@ func TestTheExpiryTravelsInsideTheValue(t *testing.T) {
 	if expires.IsZero() {
 		t.Fatal("the expiry is not in the value, so nothing here can keep it across a swap")
 	}
-	// And the entry is not relying on Memcached's own expiration, which would
-	// have dropped it without this package ever seeing it.
 	if item.Expiration != 0 {
 		t.Fatalf("the entry carries Memcached expiration %d, and this implementation keeps the "+
 			"expiry itself", item.Expiration)
 	}
 }
 
-// TestCompareAndSwapSurvivesTheKeyVanishingUnderIt pins the sentinel handling
-// for an entry deleted or evicted between the read and the write: Memcached
-// reports the vanished key as a cache miss, and a miss is contention — the swap
-// did not happen — not a failure.
-//
-// The race is driven rather than forced: a delete-and-rewrite loop runs against
-// the key while the swaps run, and every outcome has to be one of the two
-// documented answers.
+// TestCompareAndSwapSurvivesTheKeyVanishingUnderIt checks that CompareAndSwap returns no error
+// across two seconds of the key being deleted and rewritten concurrently.
 func TestCompareAndSwapSurvivesTheKeyVanishingUnderIt(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
@@ -177,9 +136,6 @@ func TestCompareAndSwapSurvivesTheKeyVanishingUnderIt(t *testing.T) {
 				return
 			default:
 			}
-			// Kept in a matching state so the swaps stay on the path that
-			// reads, compares and writes back — the path whose write the
-			// vanishing races.
 			_ = s.Set(ctx, key, []byte("v"), 0)
 			_ = s.Delete(ctx, key)
 		}
@@ -197,10 +153,8 @@ func TestCompareAndSwapSurvivesTheKeyVanishingUnderIt(t *testing.T) {
 	<-done
 }
 
-// TestIncrementSurvivesTheKeyVanishingUnderIt is the increment's half of the
-// same pin: the capability says a missing key counts from zero, and a key that
-// vanishes between the read and the write is exactly that — the retry reads it
-// again and finds nothing to count from but zero.
+// TestIncrementSurvivesTheKeyVanishingUnderIt checks that IncrByFloat returns no error across two
+// seconds of the key being deleted and rewritten concurrently.
 func TestIncrementSurvivesTheKeyVanishingUnderIt(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()

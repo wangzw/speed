@@ -10,11 +10,8 @@ import (
 	"github.com/vislake/speed/pkg/kv"
 )
 
-// TestStanceFailsTheStartupWithoutAServer pins the rule that a module named in
-// the command tree has to start: this one reaches Redis at a server, so being
-// named without one stops the startup and names the input it stopped on. A
-// stand-down in its place would bring the process up with the capability
-// silently missing.
+// TestStanceFailsTheStartupWithoutAServer checks that naming the implementation with no address
+// fails, naming the addr key.
 func TestStanceFailsTheStartupWithoutAServer(t *testing.T) {
 	cfg := speedredis.Defaults()
 	_, err := stance(&cfg)
@@ -26,6 +23,7 @@ func TestStanceFailsTheStartupWithoutAServer(t *testing.T) {
 	}
 }
 
+// TestStanceEnablesOnceAServerIsNamed checks that an address makes the stance StateEnabled.
 func TestStanceEnablesOnceAServerIsNamed(t *testing.T) {
 	cfg := speedredis.Defaults()
 	cfg.Addr = "127.0.0.1:6379"
@@ -39,14 +37,8 @@ func TestStanceEnablesOnceAServerIsNamed(t *testing.T) {
 	}
 }
 
-// TestOnlyTheServersNonNumericWordingBecomesTheSentinel covers the one mapping
-// this backend has to make.
-//
-// It is drawn this narrowly on purpose. The server reports a value that is not
-// a number as a generic error with fixed wording, and nothing about it is
-// structural, so the match is on that wording — and everything else has to pass
-// through untouched, or a caller would read a connection failure as a bad
-// value and stop retrying.
+// TestOnlyTheServersNonNumericWordingBecomesTheSentinel covers the one mapping this backend has to
+// make.
 func TestOnlyTheServersNonNumericWordingBecomesTheSentinel(t *testing.T) {
 	if got := asNotNumeric(nil); got != nil {
 		t.Fatalf("asNotNumeric(nil) = %v, want nil", got)

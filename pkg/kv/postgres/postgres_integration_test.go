@@ -33,11 +33,6 @@ func newStore(t *testing.T) *store {
 }
 
 // TestConforms runs the shared contract against a real server.
-//
-// The table is emptied between subtests rather than the database being replaced:
-// the contract's factory promises a store with no relation to the ones before
-// it, and that is the whole of what "no relation" means for a backend whose
-// state is one table.
 func TestConforms(t *testing.T) {
 	s := newStore(t)
 	kvsuite.AssertConforms(t, func(t *testing.T) kv.KV {
@@ -49,12 +44,7 @@ func TestConforms(t *testing.T) {
 	})
 }
 
-// TestAPaddedConnectionStringStillReachesTheServer is the half the stance
-// cannot hold on its own. The stance reads a trimmed connection string, so one
-// written with surrounding whitespace passes it; the pool is built from that
-// same value and the server answers. Handing the parser the text as written
-// would refuse a string the stance had just accepted, and the failure would
-// land in New rather than in Prepare.
+// TestAPaddedConnectionStringStillReachesTheServer is the half the stance cannot hold on its own.
 func TestAPaddedConnectionStringStillReachesTheServer(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	opened, err := open(context.Background(), &pgpool.Config{DSN: " " + dsn + " ", MaxConns: 4})
@@ -68,15 +58,8 @@ func TestAPaddedConnectionStringStillReachesTheServer(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close(context.Background()) })
 }
 
-// TestReplicasOpeningAFreshDatabaseTogetherAllStart covers the first rollout of
-// several replicas against an empty database. Each one creates the table as it
-// opens, and PostgreSQL's CREATE TABLE IF NOT EXISTS is not safe against a
-// concurrent copy of itself: two sessions can both find the table missing, and
-// the one that commits second fails on the catalog's unique index for the
-// table's row type — which here is a replica that fails its startup.
-//
-// The race is probabilistic, so the case gives it several fresh databases and
-// several simultaneous opens on each.
+// TestReplicasOpeningAFreshDatabaseTogetherAllStart covers the first rollout of several replicas
+// against an empty database.
 func TestReplicasOpeningAFreshDatabaseTogetherAllStart(t *testing.T) {
 	const rounds, replicas = 4, 6
 	ctx := context.Background()
@@ -107,18 +90,8 @@ func TestReplicasOpeningAFreshDatabaseTogetherAllStart(t *testing.T) {
 	}
 }
 
-// TestARoleThatMayOnlyWriteRowsStartsOnAPreparedDatabase pins the deployment
-// that splits the credentials: the table created once by a role that may create
-// it, the service run by one that may only read and write rows. Every start
-// prepares the table, and with the table already there that preparation has
-// nothing to change — so it must not need a privilege that changes anything.
-// PostgreSQL checks CREATE on the schema before it looks for the table an
-// IF NOT EXISTS names, so a start that issues the statement regardless fails on
-// the role that has everything it will use.
-//
-// The role is then held to every statement the store runs, the sweep's
-// included, so a start that succeeds is not followed by a first request that
-// fails on a grant the deployment could not have known it needed.
+// TestARoleThatMayOnlyWriteRowsStartsOnAPreparedDatabase checks that a role with only row privileges
+// starts on an already-prepared table and can run every operation and the sweep.
 func TestARoleThatMayOnlyWriteRowsStartsOnAPreparedDatabase(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := context.Background()
@@ -160,11 +133,8 @@ func TestARoleThatMayOnlyWriteRowsStartsOnAPreparedDatabase(t *testing.T) {
 	}
 }
 
-// TestARoleThatMayOnlyWriteRowsIsToldWhatIsMissing is the other side of the
-// same deployment: a database whose table was never created. The start has to
-// create it, cannot, and fails saying it was creating the table and carrying
-// the server's refusal, so the failure says what the owning role has to create
-// and that a privilege is what stopped it.
+// TestARoleThatMayOnlyWriteRowsIsToldWhatIsMissing is the other side of the same deployment: a
+// database whose table was never created.
 func TestARoleThatMayOnlyWriteRowsIsToldWhatIsMissing(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	roleDSN := pgtest.DMLRole(t, dsn)
@@ -182,16 +152,10 @@ func TestARoleThatMayOnlyWriteRowsIsToldWhatIsMissing(t *testing.T) {
 	}
 }
 
-// insufficientPrivilege is the SQLSTATE the server refuses a statement with
-// when the role lacks a privilege it needs.
 const insufficientPrivilege = "42501"
 
-// TestATableWithTextKeysIsConvertedInPlace covers a database that already holds
-// the table in the shape it had when its key column was text. Opening converts
-// the column rather than leaving it — every statement here compares bytes, and
-// against text they would all fail at the first request — and the entries
-// already there stay readable under the keys they were written with, the long
-// one included, whose spelling changes.
+// TestATableWithTextKeysIsConvertedInPlace covers a database that already holds the table in the
+// shape it had when its key column was text.
 func TestATableWithTextKeysIsConvertedInPlace(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := context.Background()
@@ -229,17 +193,8 @@ func TestATableWithTextKeysIsConvertedInPlace(t *testing.T) {
 	}
 }
 
-// TestAnExpiryIsJudgedByTheClockThatSetIt covers replicas whose clocks do not
-// agree with the database's. The statements judge a row's expiry against the
-// database's now(), so the instant a row expires has to come from the same
-// clock: stamped from the writing replica's clock instead, a replica running
-// ahead of the database writes keys that live too long, and one running behind
-// writes keys that are expired the moment they land.
-//
-// The case skews the database's clock rather than the replica's, which is the
-// same disagreement seen from the other side: a now() of its own, earlier on
-// the search path than the catalog's, shadows the server's for every statement
-// the store runs.
+// TestAnExpiryIsJudgedByTheClockThatSetIt covers replicas whose clocks do not agree with the
+// database's.
 func TestAnExpiryIsJudgedByTheClockThatSetIt(t *testing.T) {
 	for name, skew := range map[string]string{
 		"a database clock ahead of the replica": "+ interval '1 hour'",
@@ -271,9 +226,6 @@ func TestAnExpiryIsJudgedByTheClockThatSetIt(t *testing.T) {
 			s := opened.(*store)
 			t.Cleanup(func() { _ = s.Close(ctx) })
 
-			// A key with half an hour to live is there now, and a key with a
-			// moment to live is gone a little later — whichever way the clocks
-			// disagree.
 			if setErr := s.Set(ctx, "long", []byte("v"), 30*time.Minute); setErr != nil {
 				t.Fatalf("Set: %v", setErr)
 			}
@@ -296,13 +248,8 @@ func TestAnExpiryIsJudgedByTheClockThatSetIt(t *testing.T) {
 	}
 }
 
-// TestExpiredRowsAreReclaimedWithoutBeingReadAgain covers the storage a
-// long-running deployment accumulates. A rate limiter writes one key per
-// identity per window, an idempotency guard one per request, a cache one per
-// entry, and none of them reads a key again once it has expired: a table that
-// only hid expired rows would grow with every key ever written. The case writes
-// keys that expire at once through both writes that carry an expiry, keeps
-// writing as a live deployment does, and waits for the expired rows to go.
+// TestExpiredRowsAreReclaimedWithoutBeingReadAgain covers the storage a long-running deployment
+// accumulates.
 func TestExpiredRowsAreReclaimedWithoutBeingReadAgain(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
@@ -335,7 +282,6 @@ func TestExpiredRowsAreReclaimedWithoutBeingReadAgain(t *testing.T) {
 	}
 }
 
-// withSearchPath adds a search_path run-time parameter to a connection URL.
 func withSearchPath(dsn, path string) string {
 	separator := "?"
 	if strings.Contains(dsn, "?") {
@@ -344,10 +290,8 @@ func withSearchPath(dsn, path string) string {
 	return dsn + separator + "search_path=" + url.QueryEscape(path)
 }
 
-// TestTwoStoresOnOneDatabaseShareTheSameEntries is what this backend is for: an
-// assembly of several replicas pointed at one PostgreSQL reads and writes one
-// set of entries, and the increment is arbitrated by the server rather than by
-// either process.
+// TestTwoStoresOnOneDatabaseShareTheSameEntries checks that two stores on one database read each
+// other's value and count one shared counter to 12.
 func TestTwoStoresOnOneDatabaseShareTheSameEntries(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := context.Background()

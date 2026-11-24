@@ -13,15 +13,10 @@ import (
 	"github.com/vislake/speed/pkg/kv/redis"
 )
 
-// noConfig is the reading face for an assembly whose configuration declares
-// nothing. Every implementation then reads the defaults its prototype carries.
 type noConfig struct{}
 
 func (noConfig) Decode(string, any) error { return nil }
 
-// enabledProvider stands in for a backend a host pointed at: a second provider
-// of the capability that states StateEnabled. Its constructor is never reached
-// at the depth these cases drive to.
 type enabledProvider struct{ name string }
 
 func (p enabledProvider) Module() core.Module {
@@ -39,10 +34,6 @@ func (p enabledProvider) Module() core.Module {
 	})
 }
 
-// suppliedProvider stands in for a backend whose instance the host supplies. The
-// instance takes the place of what its stance would state and its constructor
-// would build, so both fail on purpose: a drive that took the stance or ran the
-// constructor stops on that failure.
 type suppliedProvider struct{ name string }
 
 func (p suppliedProvider) Module() core.Module {
@@ -60,13 +51,8 @@ func (p suppliedProvider) Module() core.Module {
 	})
 }
 
-// stubKV is the instance a host supplies for a backend's module. It embeds the
-// interface to deliver the capability without implementing an operation: no case
-// here calls one. It has no Close, so it holds nothing this package can release.
 type stubKV struct{ kv.KV }
 
-// closingKV is a supplied instance with a Close. It counts each Close it is asked
-// for into closed, which is how a case sees the shutdown release it.
 type closingKV struct {
 	kv.KV
 	closed *int
@@ -77,7 +63,6 @@ func (c closingKV) Close(context.Context) error {
 	return nil
 }
 
-// prepare drives a fresh assembly to its stances and hands the registry back.
 func prepare(t *testing.T, participants ...string) (*core.Registry, error) {
 	t.Helper()
 	reg := core.New()
@@ -91,10 +76,8 @@ func prepare(t *testing.T, participants ...string) (*core.Registry, error) {
 	})
 }
 
-// TestTheInMemoryImplementationStandsAloneWhenNothingElseRuns pins the half of
-// its stance that makes it a usable default: StateAuto is enabled unless
-// something contests it, so a host that imports it and configures nothing gets
-// a working capability.
+// TestTheInMemoryImplementationStandsAloneWhenNothingElseRuns checks that the in-memory
+// implementation is enabled when it is the only provider.
 func TestTheInMemoryImplementationStandsAloneWhenNothingElseRuns(t *testing.T) {
 	reg, err := prepare(t, "kv.memory")
 	if err != nil {
@@ -109,14 +92,7 @@ func TestTheInMemoryImplementationStandsAloneWhenNothingElseRuns(t *testing.T) {
 	}
 }
 
-// TestTheInMemoryImplementationStandsDownForAConfiguredBackend pins the other
-// half. This is the whole reason it claims the capability exclusively while
-// stating StateAuto: a host that imports it as a fallback and then configures a
-// real backend must get that backend, not a startup failure. Naming that
-// backend in the command tree is part of the premise rather than a detail of
-// the case: an exclusive provider the command tree leaves out, with no instance
-// supplied for it, enters no participant set, so this case would have nothing to
-// stand down for.
+// TestTheInMemoryImplementationStandsDownForAConfiguredBackend pins the other half.
 func TestTheInMemoryImplementationStandsDownForAConfiguredBackend(t *testing.T) {
 	reg, err := prepare(t, "kv.memory", "kv.other-backend")
 	if err != nil {
@@ -135,16 +111,8 @@ func TestTheInMemoryImplementationStandsDownForAConfiguredBackend(t *testing.T) 
 	}
 }
 
-// TestTheInMemoryImplementationStandsDownForASuppliedBackend pins the other way
-// a backend gets into the assembly: the host supplies its instance instead of
-// pointing the command at it. The command tree names only the in-memory
-// implementation, and the supplied backend takes part all the same with its
-// stance fixed at StateEnabled, so the in-memory implementation yields to it
-// exactly as it does to a named one.
-//
-// The supplied backend's own stance and constructor both fail, and the drive goes
-// as far as construction: one that took the stance, or ran the constructor
-// instead of using the supplied instance, stops on that error.
+// TestTheInMemoryImplementationStandsDownForASuppliedBackend pins the other way a backend gets
+// into the assembly: the host supplies its instance instead of pointing the command at it.
 func TestTheInMemoryImplementationStandsDownForASuppliedBackend(t *testing.T) {
 	const supplied = "kv.supplied-backend"
 	reg := core.New()
@@ -177,16 +145,8 @@ func TestTheInMemoryImplementationStandsDownForASuppliedBackend(t *testing.T) {
 	}
 }
 
-// TestASuppliedBackendIsClosedWhenItHasSomethingToClose pins what the shutdown
-// does with the instance a host supplied for an implementation: the module's
-// Close runs on it as it does on one the constructor built, and closes it. It
-// runs at two depths. A drive to Prepare constructs nothing, so the shutdown
-// releases the instance as though it had been built last; a drive to New reaches
-// the module in construction order and releases it there.
-//
-// No reading face is supplied and none is needed: a supplied backend runs
-// neither the Prepare nor the New that read configuration, so a drive that
-// reached either would stop on the missing reader.
+// TestASuppliedBackendIsClosedWhenItHasSomethingToClose checks that a supplied backend implementing
+// Close is closed exactly once, whether the drive stops at Prepare or at New.
 func TestASuppliedBackendIsClosedWhenItHasSomethingToClose(t *testing.T) {
 	for _, depth := range []core.Stage{core.StagePrepare, core.StageNew} {
 		t.Run(depth.String(), func(t *testing.T) {
@@ -205,10 +165,7 @@ func TestASuppliedBackendIsClosedWhenItHasSomethingToClose(t *testing.T) {
 	}
 }
 
-// TestASuppliedBackendWithNothingToCloseIsLeftAlone pins the other shape of a
-// supplied instance. One without a Close(ctx) holds nothing this package can
-// release, so the shutdown reports no error for it: what it holds is the
-// supplying host's to release.
+// TestASuppliedBackendWithNothingToCloseIsLeftAlone pins the other shape of a supplied instance.
 func TestASuppliedBackendWithNothingToCloseIsLeftAlone(t *testing.T) {
 	for _, depth := range []core.Stage{core.StagePrepare, core.StageNew} {
 		t.Run(depth.String(), func(t *testing.T) {
@@ -222,16 +179,8 @@ func TestASuppliedBackendWithNothingToCloseIsLeftAlone(t *testing.T) {
 	}
 }
 
-// TestAnImplementationWithoutItsInputFailsTheStartup pins the rule a module
-// named in the command tree lives under: the name is a commitment to run it, so
-// one that was pointed at nothing stops the startup and says which input was
-// missing, rather than standing itself down and leaving the process up with the
-// capability silently absent.
-//
-// It drives a real implementation rather than a test double, because what is
-// being pinned is that an implementation of this capability carries the rule
-// through: the constructor an implementation hands this package is where its
-// stance is read, and the error has to survive that wiring.
+// TestAnImplementationWithoutItsInputFailsTheStartup checks that a named implementation with no
+// configuration fails the startup, naming its addr key.
 func TestAnImplementationWithoutItsInputFailsTheStartup(t *testing.T) {
 	reg := core.New()
 	reg.Register(config.Module())
@@ -250,10 +199,8 @@ func TestAnImplementationWithoutItsInputFailsTheStartup(t *testing.T) {
 	}
 }
 
-// TestTwoConfiguredBackendsFailTheStartup pins that the capability is delivered
-// exclusively: two backends a host pointed at once cannot be resolved to one,
-// and discovering that at the first write would be too late to tell the host
-// that half its data went somewhere it did not name.
+// TestTwoConfiguredBackendsFailTheStartup checks that two explicitly enabled providers fail as
+// ErrExclusiveViolated.
 func TestTwoConfiguredBackendsFailTheStartup(t *testing.T) {
 	reg := core.New()
 	reg.Register(config.Module())

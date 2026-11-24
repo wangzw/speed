@@ -8,11 +8,8 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// TestStanceFailsTheStartupWithoutAServer pins the rule that a module named in
-// the command tree has to start: this one reaches NATS at a server, so being
-// named without one stops the startup and names the input it stopped on. A
-// stand-down in its place would bring the process up with the capability
-// silently missing.
+// TestStanceFailsTheStartupWithoutAServer checks that an empty URL fails the startup, naming the url
+// key.
 func TestStanceFailsTheStartupWithoutAServer(t *testing.T) {
 	_, err := stance(&Config{})
 	if err == nil {
@@ -23,10 +20,8 @@ func TestStanceFailsTheStartupWithoutAServer(t *testing.T) {
 	}
 }
 
-// TestStanceTreatsABlankServerAsNone covers the case an equality check on the
-// raw setting misses: a URL that is only whitespace is not a server, and the
-// stance is what turns it into a startup failure naming the input rather than a
-// connect refusal at the first operation.
+// TestStanceTreatsABlankServerAsNone checks that a URL of only whitespace fails like an empty one,
+// naming the url key.
 func TestStanceTreatsABlankServerAsNone(t *testing.T) {
 	for _, url := range []string{"", " ", "\t", "\n"} {
 		_, err := stance(&Config{URL: url})
@@ -40,10 +35,7 @@ func TestStanceTreatsABlankServerAsNone(t *testing.T) {
 	}
 }
 
-// TestTheServerURLIsSensitive covers the credentials a NATS URL carries. The
-// client reads a user and password or a token from it (nats://user:secret@host),
-// and an item not marked sensitive is printed by the help output and the
-// diagnostics as it was given.
+// TestTheServerURLIsSensitive covers the credentials a NATS URL carries.
 func TestTheServerURLIsSensitive(t *testing.T) {
 	var schema config.Schema
 	for _, resource := range Module().Resources {
@@ -61,6 +53,7 @@ func TestTheServerURLIsSensitive(t *testing.T) {
 	}
 }
 
+// TestStanceEnablesOnceAServerIsNamed checks that a URL makes the stance StateEnabled.
 func TestStanceEnablesOnceAServerIsNamed(t *testing.T) {
 	got, err := stance(&Config{URL: "nats://127.0.0.1:4222"})
 	if err != nil {

@@ -9,15 +9,8 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// TestTheModuleRequiresTheLogCapabilityOptionally holds the descriptor the
-// factory builds to one optional requirement, the log capability.
-//
-// Optional, because a backend has to work in an assembly that never took logging
-// in; declared at all, because an assembly that did has to have it constructed
-// first, so that New can register the backend's credentials as literal redaction
-// rules before any logger binds an attribute. A different capability, or a
-// requirement that is not optional, are the other two ways the declaration goes
-// wrong.
+// TestTheModuleRequiresTheLogCapabilityOptionally holds the descriptor the factory builds to one
+// optional requirement, the log capability.
 func TestTheModuleRequiresTheLogCapabilityOptionally(t *testing.T) {
 	cfg := struct{}{}
 	m := kv.NewModule(kv.Spec[struct{}]{

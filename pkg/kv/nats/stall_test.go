@@ -12,9 +12,6 @@ import (
 	"time"
 )
 
-// stallingProxy forwards connections to a server and can stop passing the
-// server's bytes back, which is what a server that has stopped answering looks
-// like to the client: its requests go out, and nothing comes back.
 type stallingProxy struct {
 	listener net.Listener
 	upstream string
@@ -38,7 +35,6 @@ func startStallingProxy(t *testing.T, upstream string) *stallingProxy {
 	return p
 }
 
-// url is the proxy's address in the form the client takes.
 func (p *stallingProxy) url() string { return "nats://" + p.listener.Addr().String() }
 
 func (p *stallingProxy) stop() {
@@ -98,5 +94,4 @@ func (p *stallingProxy) serve() {
 	}
 }
 
-// hostPort strips the scheme from a server URL.
 func hostPort(url string) string { return strings.TrimPrefix(url, "nats://") }

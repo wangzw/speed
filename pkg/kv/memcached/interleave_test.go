@@ -17,22 +17,6 @@ import (
 	"github.com/vislake/speed/pkg/kv/internal/memcachetest"
 )
 
-// The cases in this file drive one interleaving of two writers claiming a key
-// that has expired but is still held by the server, rather than racing them
-// and hoping for it.
-//
-// This implementation decides expiry itself, so to the server an expired key is
-// an entry like any other, and every write that replaces one has to be
-// conditional on the entry it read: two writers that both read the expired
-// entry must not both be told they wrote. The interleaving that separates a
-// conditional replacement from anything weaker is the one where both writers
-// read the entry, one of them then carries out its whole write, and only after
-// that does the other write. A proxy in front of the second writer's client
-// holds its first command after a read until the first writer has returned, so
-// that interleaving happens on every run.
-
-// holdingProxy forwards a client's connections to a server and, once armed,
-// holds the first command a client sends after its first read until released.
 type holdingProxy struct {
 	listener net.Listener
 	upstream string
@@ -68,10 +52,8 @@ func startHoldingProxy(t *testing.T, upstream string) *holdingProxy {
 
 func (p *holdingProxy) addr() string { return p.listener.Addr().String() }
 
-// arm makes the proxy hold what follows the next read.
 func (p *holdingProxy) arm() { p.armed.Store(true) }
 
-// awaitHeld waits until a command is being held.
 func (p *holdingProxy) awaitHeld(t *testing.T) {
 	t.Helper()
 	select {
@@ -82,7 +64,6 @@ func (p *holdingProxy) awaitHeld(t *testing.T) {
 	}
 }
 
-// letGo releases the held command and everything after it.
 func (p *holdingProxy) letGo() { close(p.release) }
 
 func (p *holdingProxy) stop() {
@@ -134,9 +115,6 @@ func (p *holdingProxy) serve() {
 	}
 }
 
-// forward copies one connection's commands to the server, a command and its
-// data block at a time, holding the first command after the first read once
-// the proxy is armed.
 func (p *holdingProxy) forward(client, server net.Conn) {
 	r := bufio.NewReader(client)
 	for {
@@ -161,8 +139,6 @@ func (p *holdingProxy) forward(client, server net.Conn) {
 				p.read.Store(true)
 			}
 		case "set", "add", "replace", "append", "prepend", "cas":
-			// The data block follows the command line: its length is the
-			// fifth field, then the terminating CRLF.
 			if len(fields) < 5 {
 				return
 			}
@@ -177,10 +153,6 @@ func (p *holdingProxy) forward(client, server net.Conn) {
 	}
 }
 
-// interleave writes key in space with a value that has already expired, then
-// runs second's claim up to the write that follows its read, runs first's claim
-// to completion, and lets second's claim finish. It reports what each claim
-// returned, first's before second's.
 func interleave[T any](t *testing.T, space, key string, claim func(s *store, mine string) (T, error)) (T, T) {
 	t.Helper()
 	addr := memcachetest.Addr(t)
@@ -217,12 +189,8 @@ func interleave[T any](t *testing.T, space, key string, claim func(s *store, min
 	return firstGot, secondOutcome.got
 }
 
-// TestAnExpiredKeyHasOneClaimantWhenTheClaimsInterleave holds the two
-// conditional writes to one winner over an expired entry, whichever of them
-// the claim is: the second writer read the same expired entry as the first,
-// and the first wrote in between, so the second's write has to be refused and
-// judged again against what the first left — a live value, which it does not
-// get to replace.
+// TestAnExpiredKeyHasOneClaimantWhenTheClaimsInterleave checks that of two interleaved claims on an
+// expired key, CompareAndSwap and SetIfAbsent each let only the first win and keep its value.
 func TestAnExpiredKeyHasOneClaimantWhenTheClaimsInterleave(t *testing.T) {
 	for name, claim := range map[string]func(s *store, key, mine string) (bool, error){
 		"CompareAndSwap": func(s *store, key, mine string) (bool, error) {
@@ -253,10 +221,8 @@ func TestAnExpiredKeyHasOneClaimantWhenTheClaimsInterleave(t *testing.T) {
 	}
 }
 
-// TestAnExpiredCounterCountsEveryIncrementWhenTheyInterleave is the increment's
-// half: both increments read the expired counter, the first creates it again
-// at 1, and the second's write has to be refused and counted again from the 1
-// the first left rather than from the zero it read.
+// TestAnExpiredCounterCountsEveryIncrementWhenTheyInterleave checks that two interleaved increments
+// of an expired counter return 1 and 2 with none lost.
 func TestAnExpiredCounterCountsEveryIncrementWhenTheyInterleave(t *testing.T) {
 	space, key := memcachetest.Space(t), "counter"
 	firstGot, secondGot := interleave(t, space, key, func(s *store, _ string) (float64, error) {
