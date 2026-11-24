@@ -23,6 +23,7 @@
 import { StrictMode } from 'react'
 import { flushSync } from 'react-dom'
 import { describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@speed/test-utils/timers'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SocialCallbackHandler } from './SocialCallbackHandler.js'
@@ -685,7 +686,7 @@ describe('SocialCallbackHandler', () => {
         screen.getByRole('button', { name: zhCN.socialCallback.retry }),
       ).toBeInTheDocument()
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
@@ -750,7 +751,7 @@ describe('SocialCallbackHandler', () => {
       )
       expect(screen.getByRole('alert')).toBe(alert)
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 

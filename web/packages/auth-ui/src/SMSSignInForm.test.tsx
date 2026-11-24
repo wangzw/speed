@@ -19,6 +19,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@speed/test-utils/timers'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ApiError } from '@speed/api-client'
@@ -1043,7 +1044,7 @@ describe('SMSSignInForm', () => {
       expect(resend).not.toHaveAttribute('aria-describedby')
       expect(screen.queryByRole('alert')).toBeNull()
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
@@ -1181,7 +1182,7 @@ describe('SMSSignInForm', () => {
       expect(document.getElementById('sms-sign-in-resend-note')).toBeNull()
       expect(held).not.toHaveAttribute('aria-describedby')
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
@@ -1245,7 +1246,7 @@ describe('SMSSignInForm', () => {
       expect(send).not.toHaveAttribute('aria-describedby')
       expect(send).toHaveFocus()
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 

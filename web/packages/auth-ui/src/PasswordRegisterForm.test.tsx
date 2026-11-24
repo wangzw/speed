@@ -25,6 +25,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@speed/test-utils/timers'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ApiError } from '@speed/api-client'
@@ -919,7 +920,7 @@ describe('PasswordRegisterForm', () => {
       expect(screen.getByRole('alert')).toBe(alert)
       expect(harness.calls).toHaveLength(1)
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
