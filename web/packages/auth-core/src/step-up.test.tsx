@@ -11,6 +11,7 @@
 import { StrictMode } from 'react'
 import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@speed/test-utils/timers'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { ApiError } from '@speed/api-client'
 import {
@@ -562,7 +563,7 @@ describe('useStepUp', () => {
       expect(result.current.step?.kind).toBe('factor')
       expect(onElevated).not.toHaveBeenCalled()
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
@@ -622,7 +623,7 @@ describe('useStepUp', () => {
         rendered.filter((value) => value !== null).every((value) => value > 0),
       ).toBe(true)
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 

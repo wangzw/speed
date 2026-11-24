@@ -33,7 +33,8 @@
       "@speed/api-sdk": ["../api-sdk/src/index.ts"],
       "@speed/api-client": ["../api-client/src/index.ts"],
       "@speed/auth-core": ["./src/index.ts"],
-      "@speed/test-utils/session-harness": ["../../test-utils/src/session-harness.ts"]
+      "@speed/test-utils/session-harness": ["../../test-utils/src/session-harness.ts"],
+      "@speed/test-utils/timers": ["../../test-utils/src/timers.ts"]
     }
   }
 }
