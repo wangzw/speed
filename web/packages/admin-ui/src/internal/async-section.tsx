@@ -1,56 +1,6 @@
 /**
- * AdminAsyncSection: the console's binding of ui-kit's AsyncSection that
- * separates a permission refusal from every other failure.
- *
- * A console read is answered 403 when the caller lacks the platform
- * permission the surface is held to, and that refusal is not a load
- * failure: the surface did answer, it refused. Rendering it as the same
- * retryable "the surface could not complete this request" placeholder both
- * and offers a retry that can only ever be refused again. This component
- * branches the error state on the failure: a 403 renders ui-kit's
- * no-permission EmptyState with this package's forbidden copy and no
- * action, replacing whatever content was on screen -- a refusal makes the
- * older data meaningless, so it never becomes a stale marker. Every other
- * failure over an already settled payload is a failed refresh: the content
- * stays and AsyncSection's `staleState` announces that it may be out of
- * date, with the section's own retry label and callback. The caller passes
- * `refreshing` while the retry is in flight, withdrawing the marker; a
- * retry that fails again re-supplies it, so the alert mounts anew and
- * announces again. Without a settled payload the same non-403 failure
- * falls through to AsyncSection's retryable error placeholder. A by-id read
- * that is answered 404 renders its own `notFoundState` placeholder instead,
- * still with a retry -- the server's bare 404 does not distinguish a deleted
- * record from a replica that does not know it -- and replaces any content on
- * screen, as a failure of meaning rather than a stale refresh. A page whose
- * route answers another status for a path identifier it cannot parse (a 400
- * on a malformed id) names that status in `notFoundStatuses`, because no
- * record can carry an identifier the route cannot read. The pending, empty
- * and content branches are AsyncSection's own.
- *
- * The refusal is detected from the answer, not from a route-level
- * permission read: the server writes the 403, and the console renders the
- * answer (the route-level guard is the host's composition). The check is
- * structural -- the answer's HTTP status is 403, or a bare non-2xx with no
- * readable envelope surfaced as the client.http.403 code -- so it reads a
- * plain object and never imports the transport.
- *
- * A read on a tenant-addressed surface can also meet the tenant admission
- * layer's `401 authn.sso_required` refusal, which no retry can clear: the
- * same request is refused again while the session is a local one. A caller
- * that offers a sign-in exit passes `ssoRelogin`; the section then names
- * the refusal through the console's resolver and offers that exit in place
- * of the retryable placeholder. The layer's `401
- * authn.insufficient_user_authentication` refusal is the same shape of
- * answer for a tenant that requires multi-factor authentication: no retry
- * raises the session's strength, and a fresh sign-in does. A caller that
- * offers the sign-in exit passes `mfaRelogin`. The exit itself splits on
- * the account's own factors (internal/mfa-refusal reads
- * GET /api/v1/auth/factors): with an enabled factor the section keeps the
- * sign-in exit, because a new sign-in completes the second factor; with
- * none it names the missing two-step verification and points at the
- * enrollment surface through the host's account-settings destination
- * instead, because a sign-in cannot add a factor. Every other failure, and
- * a caller that passes no exit, keeps the branches above.
+ * AdminAsyncSection: splits a 403 (no retry), the tenant-admission sign-in exits,
+ * a by-id 404 and every other failure into their own branches.
  */
 
 import type { ReactNode } from 'react'
@@ -69,35 +19,16 @@ import { useNoMfaFactor } from './mfa-refusal.js'
 import { AdminLink } from './navigation.js'
 import { useAdminUiTranslation } from './translation.js'
 
-/**
- * Whether a read's failure carries the given HTTP status. The structural
- * reading lives in @speed/ui-kit's `httpStatusOf`: the answer's `status`,
- * or the bare-HTTP code the transport synthesizes when the response
- * carried no readable envelope. A transport failure, a bug-shaped throw
- * and any other status are not this answer.
- */
 function carriesStatus(error: unknown, status: number): boolean {
   return httpStatusOf(error) === status
 }
 
-/**
- * Whether a read's failure is a permission refusal: the answer carried HTTP
- * 403, or a bare 403 surfaced as the client.http.403 code. Any other value
- * -- undefined, a transport failure, a bug-shaped throw -- is not a
- * refusal, so the caller renders the retryable error instead.
- */
+/** Whether a read's failure is a permission refusal (HTTP 403). */
 export function isForbidden(error: unknown): boolean {
   return carriesStatus(error, 403)
 }
 
-/**
- * Whether a read's failure is "no such record": the answer carried HTTP 404,
- * or a bare 404 surfaced as the client.http.404 code. A by-id detail page
- * renders its not-found placeholder for this failure -- the server's "no such
- * record" is an untyped bare 404, indistinguishable from a replica that does
- * not know the record, so the placeholder still offers a retry. Every other
- * value is not this failure.
- */
+/** Whether a read's failure is "no such record" (HTTP 404). */
 export function isNotFound(error: unknown): boolean {
   return carriesStatus(error, 404)
 }
@@ -116,19 +47,15 @@ export interface AdminAsyncSectionProps<Payload> {
   /** The retryable error placeholder, for every non-refusal failure. */
   readonly errorState: AsyncSectionErrorState
   /**
-   * The placeholder a by-id read answered 404 renders: "the record does not
-   * exist or is temporarily unavailable", still with its retry, because the
-   * server's bare 404 cannot be told apart from a replica that does not know
-   * the record. Absent leaves every failure on `errorState`.
+   * The placeholder a by-id read answered 404 renders, still with its retry
+   * because a bare 404 cannot be told apart from a replica that lacks the
+   * record. Absent leaves every failure on `errorState`.
    */
   readonly notFoundState?: AsyncSectionErrorState
   /**
-   * Extra HTTP statuses this read's not-found branch also covers. A by-id
-   * route that answers 400 for an identifier it cannot parse (the path does
-   * not shape an id, so no record can carry it) means the same thing to the
-   * reader as a 404, and a page that knows its own route's refusal shape
-   * names it here. Only consulted when `notFoundState` is set; the 404
-   * answer is always covered and needs no entry.
+   * Extra HTTP statuses the not-found branch also covers, such as a 400 on a
+   * path identifier the route cannot parse. Only consulted when
+   * `notFoundState` is set; 404 is always covered.
    */
   readonly notFoundStatuses?: readonly number[]
   /** The empty placeholder. */
@@ -136,32 +63,22 @@ export interface AdminAsyncSectionProps<Payload> {
   /** The heading element the placeholders' titles render as; defaults to 'h2'. */
   readonly headingLevel?: EmptyStateHeadingLevel
   /**
-   * Whether a read is in flight over content already on screen (a refetch).
-   * A failed refresh keeps the content and marks it stale; the marker is
-   * withdrawn while the retry is in flight, so every caller passes its
-   * read's fetching state here. Required: a section whose caller dropped it
-   * would keep the marker standing over a read it is already re-reading.
+   * Whether a read is in flight over content already on screen. Required: the
+   * stale marker withdraws while the retry runs, so a caller must pass its
+   * read's fetching state.
    */
   readonly refreshing: boolean
   /** The settled content, built from the narrowed payload. */
   readonly children: (payload: Payload) => ReactNode
   /**
-   * The re-login exit for the tenant admission layer's SSO refusal. When
-   * the read settles `authn.sso_required`, the section names the refusal
-   * and renders this action instead of the retryable placeholder; every
-   * other failure, and a caller that omits it, keeps the branches above.
+   * The re-login exit for the tenant admission layer's SSO refusal; any other
+   * failure, or no exit, keeps the branches above.
    */
   readonly ssoRelogin?: () => void
   /**
-   * The sign-in exit for the tenant admission layer's multi-factor
-   * refusal. When the read settles
-   * `authn.insufficient_user_authentication`, the section reads the
-   * caller's own factors and replaces the retryable placeholder: with an
-   * enabled factor it renders this sign-in action, because a fresh sign-in
-   * completes the second factor; with none it names the missing two-step
-   * verification and points at the host's account settings instead, because
-   * a sign-in cannot add a factor. Every other failure, and a caller that
-   * omits it, keeps the branches above.
+   * The sign-in exit for the multi-factor refusal: with an enabled factor it
+   * renders this action; with none it names the missing two-step verification
+   * and points at the host's account settings.
    */
   readonly mfaRelogin?: () => void
 }
@@ -180,23 +97,19 @@ export function AdminAsyncSection<Payload>({
 }: AdminAsyncSectionProps<Payload>) {
   const { t } = useAdminUiTranslation()
   const resolve = useAdminUiErrorText()
-  // The host's account settings page, where an operator registers
-  // two-step verification. The package holds no host path, so the no-factor
-  // state is text-only when the host supplies none.
+  // No host path is held here, so the no-factor state is text-only when the
+  // host supplies no account settings page.
   const accountHref = useAdminAccountHref()
   const failureCode = errorCodeOf(error)
-  // The multi-factor refusal branch, and the account's ability to clear it
-  // by signing in again, are read before the early returns (hooks run on
-  // every render): only the surface that offers the exit takes the branch,
-  // and only while it is the settled answer.
+  // Hooks run on every render, so the mfa branch is read before the early
+  // returns; only a surface that offers the exit takes it.
   const mfaRefused =
     !rest.pending &&
     mfaRelogin !== undefined &&
     stepUpReasonOf(failureCode) === 'mfa'
   const noMfaFactor = useNoMfaFactor(mfaRefused)
-  // A refusal replaces the content whatever the payload is: the older data
-  // no longer means anything, so it is never marked stale and no retry is
-  // offered. A first load still pending renders the loading announcement.
+  // A refusal makes the older data meaningless, so it is never marked stale
+  // and no retry is offered.
   if (!rest.pending && isForbidden(error)) {
     return (
       <EmptyState
@@ -207,9 +120,8 @@ export function AdminAsyncSection<Payload>({
       />
     )
   }
-  // The tenant admission layer's SSO refusal is answered the same way while
-  // the session stays a local one: no retry can change it. Only a surface
-  // that offers the sign-in exit takes this branch.
+  // No retry can clear the SSO refusal while the session stays local; only a
+  // surface that offers the sign-in exit takes this branch.
   if (
     !rest.pending &&
     ssoRelogin !== undefined &&
@@ -227,13 +139,9 @@ export function AdminAsyncSection<Payload>({
       />
     )
   }
-  // The tenant admission layer's multi-factor refusal is answered the same
-  // way: no retry of the same request raises the session's strength, while
-  // a new sign-in does -- but only for an account that has a factor to
-  // prove. An account with none must register one first, so the branch
-  // names the missing two-step verification and points at the enrollment
-  // surface instead of offering a sign-in that would land in the same
-  // refusal. Only a surface that offers the exit takes this branch.
+  // A sign-in clears the multi-factor refusal only for an account with a
+  // factor; an account with none must register one first, so the branch
+  // names the missing verification and points at enrollment.
   if (mfaRefused) {
     return (
       <EmptyState
@@ -259,11 +167,8 @@ export function AdminAsyncSection<Payload>({
       />
     )
   }
-  // A by-id read answered 404 (or another status the page names as the same
-  // answer) renders its own placeholder in place of the content -- a
-  // refresh that answers so replaces what was on screen -- and keeps the
-  // retry: the answer does not distinguish a deleted record from a replica
-  // that does not know it yet.
+  // A by-id 404 replaces the content and keeps the retry: a bare 404 does
+  // not distinguish a deleted record from a replica that does not know it.
   const notFound =
     isNotFound(error) ||
     (notFoundStatuses ?? []).some((status) => carriesStatus(error, status))
@@ -278,10 +183,8 @@ export function AdminAsyncSection<Payload>({
       />
     )
   }
-  // Every other failure over an already settled payload is a failed
-  // refresh: the content stays on screen with the stale marker above it.
-  // `refreshing` withdraws the marker while the retry runs; a retry that
-  // fails again re-supplies it, and the remounted alert announces again.
+  // Every other failure over settled content is a failed refresh: the content
+  // stays with the stale marker, which `refreshing` withdraws while a retry runs.
   const staleState =
     !refreshing &&
     rest.payload !== undefined &&

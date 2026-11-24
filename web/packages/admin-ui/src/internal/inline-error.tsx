@@ -1,16 +1,6 @@
 /**
- * InlineError: the code-level failure banner of the console surface.
- *
- * Every failure path of the console resolves its failure to one error
- * code and renders it through this banner instead of laying out per-field
- * error text (frontend standards: field errors belong to the fields,
- * whole-attempt failures belong to one alert). The banner itself -- the
- * alert shell and the failure classifier -- is ui-kit's shared
- * InlineError / errorCodeOf; this module is the surface's binding of it
- * to the admin-ui namespace's error-text resolver, so call sites keep
- * passing a bare code and the resolved text can only ever come from this
- * namespace (whitelisted codes have their own errors-section key,
- * anything else renders the errors.unknown fallback).
+ * InlineError: the console's whole-attempt failure banner, bound to the
+ * admin-ui namespace's error-text resolver.
  */
 
 import Typography from '@mui/material/Typography'
@@ -23,19 +13,15 @@ export interface InlineErrorProps {
   /** The code to render, or null for no error (renders nothing). */
   readonly code: string | null
   /**
-   * The wait a throttled answer stated, in whole seconds. Given, the banner
-   * renders the code's static sentence and, outside the live region, a
-   * countdown line that changes with the wait.
+   * The wait a throttled answer stated, in whole seconds; rendered as a
+   * non-live countdown line below the alert.
    */
   readonly retryAfterSeconds?: number
 }
 
-/** The surface's whole-attempt failure banner, one role="alert" per error.
- *
- * The alert carries only the code's static sentence. A throttled answer's
- * remaining wait changes every tick, so it renders below the alert in a
- * non-live line: announcing it would make the screen reader repeat the whole
- * banner once per second.
+/**
+ * The whole-attempt failure banner: the code's static sentence, with a throttled
+ * answer's countdown below it in a non-live line.
  */
 export function InlineError({ code, retryAfterSeconds }: InlineErrorProps) {
   const resolve = useAdminUiErrorText()

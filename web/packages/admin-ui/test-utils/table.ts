@@ -1,11 +1,4 @@
-/**
- * Table-cell addressing for the admin-ui page suites.
- *
- * A row is found by the value it renders, but the assertions about it
- * usually name a column instead of repeating a value. `cellOf` resolves
- * the cell by the table's own column headers, so a test reads a row's
- * column by its translated header the same way an operator would.
- */
+/** Table-cell addressing for the page suites: a row's cell resolved by its translated column header. */
 
 import { within } from '@testing-library/react'
 

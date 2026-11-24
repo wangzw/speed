@@ -1,33 +1,3 @@
-/**
- * Structural guard: the three flow-step renderer copies carry the same
- * step-rendering contract.
- *
- * `src/internal/flow-step.tsx` exists once in `auth-ui`, `account-ui` and
- * `admin-ui`. The copies are deliberate -- each package owns its step
- * vocabulary and its props -- but they share one rendering contract: the
- * set of step kinds they render, the answer properties they report
- * upward, the render primitives they build a step from, and the WebAuthn
- * seam they drive. A change to how a step renders has to land in all
- * three in the same change (web/AGENTS.md, each package's AGENTS.md).
- *
- * This suite reads the three source files rather than mounting them: the
- * props and the wording differ by design, so a behavioural comparison
- * would flag intended differences. The extracted contract is compared
- * across the copies, and a failure names the copy that drifted and the
- * value it carries.
- *
- * The same suite also holds each copy to the shared TOTP pieces: every
- * copy imports the enrolment panel from `@speed/ui-kit` and the otpauth
- * parser from `@speed/auth-core/otpauth`. The workspace is scanned as well,
- * so the parser and the QR renderer keep one home -- a local parser, a
- * second direct import of the QR encoder, or the encoder declared outside
- * the ui-kit manifest fails with the file and the reason named.
- *
- * The host is `admin-ui` because it is one of the three copies and its
- * suite already reads files through node:fs and has the Node types.
- * Nothing here renders, so the case does not depend on the DOM.
- */
-
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -42,35 +12,19 @@ const packagesDir = join(
 
 const webDir = join(packagesDir, '..')
 
-/** One copy of the renderer and the one kind it renders without a literal. */
 interface Copy {
   readonly name: string
   readonly source: string
-  /**
-   * The kind the copy renders in its fallthrough arm rather than behind an
-   * explicit `case`/`===` literal: `auth-ui`'s `step.next.kind` switch
-   * renders a redirect step in `default`, while `account-ui` and
-   * `admin-ui` render a challenge step in the branch that follows their
-   * explicit `if`s. The parser cannot see an arm that names no literal, so
-   * the table states it instead of letting the sets diverge by syntax.
-   */
   readonly fallthroughKind: string
 }
 
-/** What a copy renders and reports, read from its source. */
 interface Contract {
-  /** The `next.kind`/`kind` values the copy has a branch for. */
   readonly kinds: readonly string[]
-  /** The answer properties the copy reports upward (`factor`, `kind`, ...). */
   readonly answerFields: readonly string[]
-  /** The `@mui/material` primitives a rendered step is built from, apart
-   * from the button primitive the shared ActionButton replaces. */
   readonly primitives: readonly string[]
-  /** The `@speed/auth-core/webauthn` helpers the passkey arm drives. */
   readonly webauthnHelpers: readonly string[]
 }
 
-/** The contract fields the copies must agree on. */
 type Field = 'kinds' | 'answerFields' | 'primitives' | 'webauthnHelpers'
 
 const COPIES: readonly Copy[] = [
@@ -86,14 +40,12 @@ function readSource(name: string): string {
   )
 }
 
-/** A shared TOTP piece and the package that owns it. */
 interface SharedPiece {
   readonly module: string
   readonly name: string
   readonly description: string
 }
 
-/** The pieces every flow-step copy must consume from their owner. */
 const SHARED_TOTP_PIECES: readonly SharedPiece[] = [
   {
     module: '@speed/ui-kit',
@@ -112,8 +64,6 @@ const SHARED_TOTP_PIECES: readonly SharedPiece[] = [
   },
 ]
 
-/** The value names a file imports from `module` in a named import clause.
- * Type-only entries are skipped: a type import consumes no implementation. */
 function importedNames(source: string, module: string): string[] {
   const escaped = module.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const pattern = new RegExp(
@@ -136,7 +86,6 @@ function importedNames(source: string, module: string): string[] {
   return names
 }
 
-/** A source file read for the workspace-wide ownership scan. */
 interface ScannedFile {
   readonly path: string
   readonly source: string
@@ -153,8 +102,6 @@ const SCANNED_EXTENSIONS = [
   '.cjs',
 ] as const
 
-/** Every implementation file under `web/packages`, skipping `node_modules`,
- * `dist` and declaration-only files. */
 function packageSourceFiles(): ScannedFile[] {
   const files: ScannedFile[] = []
   const walk = (dir: string): void => {
@@ -180,7 +127,6 @@ function packageSourceFiles(): ScannedFile[] {
   return files
 }
 
-/** The one file allowed to implement the otpauth parser and secret display. */
 const OTPAUTH_IMPLEMENTATION = join(
   packagesDir,
   'auth-core',
@@ -188,7 +134,6 @@ const OTPAUTH_IMPLEMENTATION = join(
   'otpauth.ts',
 )
 
-/** The one file allowed to render a QR symbol from the encoder. */
 const QR_COMPONENT = join(
   packagesDir,
   'ui-kit',
@@ -197,18 +142,14 @@ const QR_COMPONENT = join(
   'TotpQrCode.tsx',
 )
 
-/** The shared otpauth functions the ownership scan looks for. */
 const OTPAUTH_FUNCTIONS = ['parseOtpauth', 'formatSecretForDisplay'] as const
 
-/** `source` without comments, so prose about a function is not read as its
- * declaration. */
 function withoutComments(source: string): string {
   return source
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/\/\/[^\n]*/g, '')
 }
 
-/** The shared otpauth functions a file declares locally. */
 function localOtpauthFunctions(source: string): string[] {
   const code = withoutComments(source)
   return OTPAUTH_FUNCTIONS.filter(
@@ -222,7 +163,6 @@ function localOtpauthFunctions(source: string): string[] {
   )
 }
 
-/** Whether a file imports the QR encoder directly. */
 function importsQrEncoder(source: string): boolean {
   const code = withoutComments(source)
   return (
@@ -232,7 +172,6 @@ function importsQrEncoder(source: string): boolean {
   )
 }
 
-/** The dependency fields a manifest can declare a package in. */
 const DEPENDENCY_FIELDS = [
   'dependencies',
   'devDependencies',
@@ -240,13 +179,10 @@ const DEPENDENCY_FIELDS = [
   'optionalDependencies',
 ] as const
 
-/** A path under the repository, named the way a reader would type it. */
 function repoRelative(path: string): string {
   return `web/${relative(webDir, path)}`.replace('web/../', '')
 }
 
-/** Every package manifest in the frontend workspace: each package under
- * `web/packages`, the workspace root, and the demo host that assembles them. */
 function packageManifests(): string[] {
   const manifests = readdirSync(packagesDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
@@ -263,8 +199,6 @@ function packageManifests(): string[] {
   return manifests
 }
 
-/** Case labels of the switch that discriminates `step.next.kind`, stopping at
- * the switch's closing brace so a later switch's labels are not read. */
 function switchKinds(source: string): string[] {
   const lines = source.split('\n')
   const start = lines.findIndex((line) =>
@@ -290,7 +224,6 @@ function switchKinds(source: string): string[] {
   return kinds
 }
 
-/** The step kinds a copy has a branch for (see Copy.fallthroughKind). */
 function kindsOf(source: string, fallthroughKind: string): string[] {
   const kinds = new Set<string>(switchKinds(source))
   for (const match of source.matchAll(/step(?:\.next)?\.kind === '([a-z]+)'/g)) {
@@ -303,7 +236,6 @@ function kindsOf(source: string, fallthroughKind: string): string[] {
   return [...kinds].sort()
 }
 
-/** The property names a copy puts in the answer it reports upward. */
 function answerFieldsOf(source: string): string[] {
   const fields = new Set<string>()
   for (const match of source.matchAll(/\{\s*(factor|kind|code|credential)\s*[:},]/g)) {
@@ -315,14 +247,8 @@ function answerFieldsOf(source: string): string[] {
   return [...fields].sort()
 }
 
-/** The button primitive a step's button-shaped actions render through. It
- * is not part of the shared contract: those actions use the ui-kit
- * ActionButton, which lives outside `@mui/material`, and each copy moves
- * to it in its own change, so one copy still importing it says nothing
- * about the others. */
 const ACTION_PRIMITIVE = 'Button'
 
-/** The `@mui/material` components a copy renders a step with. */
 function primitivesOf(source: string): string[] {
   const primitives = new Set<string>()
   for (const match of source.matchAll(/import \w+ from '@mui\/material\/(\w+)'/g)) {
@@ -334,7 +260,6 @@ function primitivesOf(source: string): string[] {
   return [...primitives].sort()
 }
 
-/** The WebAuthn helpers a copy imports from the ceremony seam. */
 function webauthnHelpersOf(source: string): string[] {
   const imported = /import \{([^}]*)\} from '@speed\/auth-core\/webauthn'/.exec(source)?.[1]
   if (imported === undefined) {
@@ -356,7 +281,6 @@ function contractOf(copy: Copy): Contract {
   }
 }
 
-/** A message naming the copy that differs, or `''` when all copies agree. */
 function driftMessage(field: Field): string {
   const groups = new Map<string, string[]>()
   for (const copy of COPIES) {

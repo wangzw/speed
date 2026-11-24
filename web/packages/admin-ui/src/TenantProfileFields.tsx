@@ -1,23 +1,6 @@
 /**
- * The organization profile's four descriptive fields, shared by the two
- * surfaces that read and write them.
- *
- * The organization surface's profile page and the platform console's tenant
- * detail both edit the same four values, so the shape, the wire conversion
- * and the client-side bounds live here once. The identity (identifier,
- * name, state, creation time) is not part of this shape: it is read-only on
- * both surfaces, and the name is the fallback a surface shows when the
- * display name is empty.
- *
- * The bounds mirror the root module's profile rules (display name 100 runes,
- * description 500 runes, contact email 254 bytes, website 2048 bytes with a
- * host and no userinfo), but the server stays the authority: these checks
- * only let the form name the offending field before a request that would be
- * refused anyway. A value outside them on the wire is still answered 400 by
- * the server and resolved through the console's error text.
- *
- * `displayNameOf` is the one fallback rule: a display name a surface can
- * show, or the name when the profile names none.
+ * The organization profile's four descriptive fields shared by both surfaces;
+ * the client bounds mirror the server, which stays the authority.
  */
 
 /** The four descriptive fields in the spelling the views carry. */
@@ -83,35 +66,28 @@ export function profileWriteOf(fields: TenantProfileFields): TenantProfileWriteB
   }
 }
 
-/** The name a surface shows for an organization: its display name, or the
- * name when the profile names none. */
+/** The name a surface shows for an organization: its display name, or the name. */
 export function displayNameOf(displayName: string, name: string): string {
   return displayName.trim() === '' ? name : displayName
 }
 
-/** A string's length in Unicode code points, the unit the server's rune
- * limits count. */
+/** A string's length in Unicode code points, the unit the server's rune limits count. */
 function runeLength(value: string): number {
   return Array.from(value).length
 }
 
-/** A string's length in UTF-8 bytes, the unit the server's byte limits
- * count. */
+/** A string's length in UTF-8 bytes, the unit the server's byte limits count. */
 function byteLength(value: string): number {
   return new TextEncoder().encode(value).length
 }
 
-/** Whether a string is one bare email address: a local part, `@`, and a
- * domain with a dot. Spaces, angle brackets and a second `@` are refused. */
 function looksLikeEmail(value: string): boolean {
   return /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(value)
 }
 
 /**
- * Whether a string is an absolute http or https address with a host and no
- * userinfo, which is what the website field accepts. The value is judged as
- * a URL rather than by a pattern: a scheme the server refuses, a missing
- * host and a userinfo pair are all visible in the parsed form.
+ * Whether a string is an absolute http(s) address with a host and no userinfo.
+ * Judged as a URL, so a bad scheme, a missing host and userinfo are all visible.
  */
 function looksLikeWebsite(value: string): boolean {
   try {
@@ -127,11 +103,7 @@ function looksLikeWebsite(value: string): boolean {
   }
 }
 
-/**
- * The fields the form refuses locally. Empty fields are always accepted --
- * every one of the four may be cleared, and the display name falling back to
- * the name is the documented behaviour, not a mistake.
- */
+/** The fields the form refuses locally; empty fields are always accepted. */
 export function validateTenantProfileFields(
   fields: TenantProfileFields,
 ): TenantProfileFieldErrors {

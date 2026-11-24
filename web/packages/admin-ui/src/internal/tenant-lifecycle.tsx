@@ -1,64 +1,6 @@
 /**
- * The organization lifecycle controls the platform surface adds to the
- * tenant roster and the tenant detail: ask another account to take the
- * organization's ownership, or write its tombstone.
- *
- * Both entries are platform operations over the roster
- * (`POST /api/v1/system/tenants/{tenant}/owner/requests`,
- * `DELETE /api/v1/system/tenants/{tenant}`), judged in the platform domain
- * with `tenant.manage`. The server is the authority; the entries are a UX
- * affordance for a control group that can only ever fail otherwise, so
- * they render only for a caller whose attached platform permission set
- * holds `tenant.manage`. An unknown or absent set fails closed. A personal
- * organization (`kind === 'personal'`) is the account's own domain and
- * carries no transfer or delete entry, and a tombstone is terminal, so
- * neither does a deleted row.
- *
- * **A transfer is a request until the target confirms.** The dialog asks
- * which active member should take ownership; the answer records a pending
- * request and leaves the owner column untouched. The control group reads
- * that pending request back and renders it (target, deadline) with a
- * cancel action, and holds the request button while one is pending.
- *
- * **Transfer target: two paths, chosen by what the caller may read.** The
- * endpoint itself validates only that the target account is an active
- * member of the organization and that its account is active; it answers
- * 409 for anything else. The dialog therefore offers:
- *
- *  - the organization's member selector when the caller's tenant
- *    permission set holds `authn.membership.manage`, because that is the
- *    permission the member read (`GET /api/v1/tenants/:tenant/members`)
- *    requires; it lists only active members, so a suspended or unknown
- *    account is not offered; and
- *  - the platform account selector otherwise. That path names any account,
- *    and the server still refuses a non-member with 409. The dialog never
- *    claims an account is a member and never filters the server's check
- *    out of the request.
- *
- * Either path is followed by the shared danger confirmation with the
- * two-step guard: the transfer dialog gathers the target, the confirmation
- * names it, and only the confirming click writes.
- *
- * **The visible title names the organization; the controls and the write
- * use the name.** A dialog heading is read by a person, so it says the
- * display name (falling back to the name). A control's accessible name and
- * every request use the name, the tenant's fixed URL name.
- *
- * **Delete is terminal.** It asks through the shared danger confirmation
- * with the two-step guard and a typed-name guard: the confirming button
- * stays unavailable, stating the mismatch as its reason, until the operator
- * types the organization's name, and its copy states the impact:
- * memberships, bindings, roles and grants are removed, and the name can
- * never be reused.
- *
- * **Failure text is the dialog's own.** Both the transfer endpoint and the
- * delete endpoint answer 409 for several distinct refusals under the same
- * `urn:speed:tenant:*` problem type, so the generic resolver's
- * registration-oriented conflict leaf would misdescribe them. A 404, 403
- * and 409 are rendered as the lifecycle copy the operator can act on; any
- * other code goes through the admin-ui resolver. The transfer's 409 copy
- * names the membership requirement inline; the delete's 409 copy says the
- * organization is already a tombstone.
+ * The organization lifecycle controls: request an ownership transfer or delete the
+ * organization, both judged with `tenant.manage`, with local 403/404/409 text.
  */
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
@@ -95,19 +37,15 @@ import type {
   AdminTenant,
 } from '../operations.js'
 
-/** The admin-ui namespace's translate function, as the helpers below take it. */
 type Translate = ReturnType<typeof useAdminUiTranslation>['t']
 
-/** How many rows one member search asks the page for. */
 const MEMBER_SEARCH_LIMIT = 20
 
-/** The pause between the last keystroke and the member read it triggers. */
 const MEMBER_SEARCH_DEBOUNCE_MS = 250
 
 /** The platform permission that admits both lifecycle writes. */
 const TENANT_MANAGE = 'tenant.manage'
 
-/** The tenant permission the member list read requires. */
 const MEMBERSHIP_MANAGE = 'authn.membership.manage'
 
 /** Whether the tenant's kind names an account's own personal organization. */
@@ -115,11 +53,6 @@ export function isPersonalTenant(kind: string): boolean {
   return kind === 'personal'
 }
 
-/**
- * The option text: the member's display name with the login username beside
- * it, either alone, or the neutral copy when the member record carries
- * neither. The account id never becomes the option text.
- */
 function memberOptionLabel(
   t: Translate,
   member: AdminMember,
@@ -130,7 +63,6 @@ function memberOptionLabel(
   )
 }
 
-/** The option text of a platform account. */
 function accountOptionLabel(
   t: Translate,
   account: AdminAccount,
@@ -144,12 +76,8 @@ function accountOptionLabel(
 }
 
 /**
- * The transfer's failure text. A 404 means the organization is gone, a 409
- * is the endpoint's membership/state refusal (the account is not an active
- * member, the account itself is inactive, or the organization is a
- * tombstone). Every other answer -- including a bare 403 and the
- * registration-verification gate's refusal -- resolves through the
- * console's whitelist.
+ * The transfer's failure text: a 404 is a gone organization and a 409 the
+ * membership/state refusal; every other answer resolves through the whitelist.
  */
 function transferFailureText(
   error: unknown,
@@ -167,10 +95,8 @@ function transferFailureText(
 }
 
 /**
- * The delete's failure text. A 409 is terminal (the organization is
- * already a tombstone); a 404 means it no longer exists; every
- * other answer resolves through the console's whitelist, where
- * `tenant.protected` and a bare 403 both read as actionable refusals.
+ * The delete's failure text: a 409 is already a tombstone and a 404 means gone;
+ * every other answer resolves through the whitelist.
  */
 function deleteFailureText(
   error: unknown,
@@ -188,22 +114,8 @@ function deleteFailureText(
 }
 
 /**
- * The organization's member selector: an autocomplete over the tenant's
- * active members, searched by display name or login identifier prefix.
- *
- * The read is the same tenant-scoped membership read the invitations and
- * members page uses; a suspended membership is not an eligible owner, so
- * only active rows become options. A failed read is stated with a retry
- * rather than shown as "no members", and a read that left a next page
- * unread asks the operator to narrow the text instead of presenting the
- * first page as the whole membership.
- *
- * The field is a form input of the transfer dialog, not a context selector:
- * while the dialog's write is in flight it is `readOnly` rather than
- * natively disabled, so a focused field keeps its focus and its value. The
- * member read itself never locks the field -- the read follows the typing,
- * MUI shows its own loading state, and a native disable here would drop the
- * focus of the field being typed into.
+ * The member selector over the tenant's active members; it takes `readOnly`, not
+ * disabled, while the dialog's write runs, so a focused field keeps its focus.
  */
 function TenantMemberSelector({
   tenant,
@@ -239,10 +151,8 @@ function TenantMemberSelector({
   )
   const truncated =
     members.data !== undefined && members.data.next_cursor !== ''
-  // A retry begins as a fresh fetch of a query that has no data, which puts
-  // it back into the pending state; the failure below would unmount with
-  // it and the retry would lose the button its re-read is reported on. The
-  // failure therefore stands until a read succeeds.
+  // A retry begins as a fresh fetch with no data, so the failure stands until
+  // a read succeeds; otherwise the retry button would unmount with it.
   const [readFailed, setReadFailed] = useState(false)
   useEffect(() => {
     if (members.isError) {
@@ -255,10 +165,8 @@ function TenantMemberSelector({
 
   return (
     <Box>
-      {/* The member read follows the typing and never disables this field:
-          a native disable would drop the focus of the operator typing into
-          it. Only the dialog's write locks it, and it takes readOnly so a
-          focused field keeps its focus too. */}
+      {/* The member read never disables this field (a native disable would drop
+          the typing focus); only the dialog's write locks it, via readOnly. */}
       <Autocomplete<AdminMember>
         size="small"
         value={value}
@@ -345,7 +253,6 @@ function TenantMemberSelector({
   )
 }
 
-/** One lifecycle result the control group reports under its own buttons. */
 type LifecycleOutcome =
   | { readonly kind: 'success'; readonly message: string }
   | { readonly kind: 'failure'; readonly message: string }
@@ -354,25 +261,20 @@ export interface TenantLifecycleActionsProps {
   /** The organization the actions address. */
   readonly tenant: AdminTenant
   /**
-   * Reports a landed write's confirmation to the page. Passed, the page
-   * owns the success region (its row may leave the table after a delete);
-   * omitted, the component renders its own.
+   * Reports a landed write's confirmation to the page; omitted, the component
+   * renders its own.
    */
   readonly onSuccess?: (message: string) => void
   /**
-   * Reports a landed deletion to the host. The deletion withdraws this
-   * control group entirely (the roster row becomes a tombstone, the detail
-   * page loses its lifecycle card), so the host owns the focus landing for
-   * the control that started it.
+   * Reports a landed deletion to the host, which owns the focus landing since
+   * the deletion withdraws this control group.
    */
   readonly onDeleted?: (name: string) => void
 }
 
 /**
- * The transfer-request dialog: target selection followed by the shared
- * danger confirmation. It stays open on a refusal so the failure stands
- * beside the target that was chosen, and closes once the request is
- * recorded.
+ * The transfer-request dialog: target selection followed by the shared danger
+ * confirmation; it stays open on a refusal and closes once the request lands.
  */
 function TransferOwnerDialog({
   open,
@@ -398,12 +300,10 @@ function TransferOwnerDialog({
   const [confirming, setConfirming] = useState(false)
   const [pending, setPending] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
-  // The dialog's heading names the organization the way its profile does;
-  // the request and its controls use the name.
+  // The heading names the organization as its profile does; the request uses the name.
   const name = displayNameOf(tenant.display_name, tenant.name)
 
-  // The dialog belongs to one tenant and one target path. A close, a
-  // tenant change or a path change withdraws the draft and its result.
+  // A close, tenant change or path change withdraws the draft and its result.
   useEffect(() => {
     setMember(null)
     setAccount(null)
@@ -542,12 +442,8 @@ function TransferOwnerDialog({
 }
 
 /**
- * The delete dialog: type the organization's name, then confirm twice.
- * Deletion is terminal and has no restore route, so the exact name and the
- * double confirmation are both required. The typed value is local to the
- * dialog, which the page mounts only while it is open, so every opening
- * starts from an empty field. The visible title names the organization by
- * its display name; the hint and the request use the name.
+ * The delete dialog: type the organization's name, then confirm twice. The
+ * typed value is local, so every opening starts empty.
  */
 function DeleteTenantDialog({
   name,
@@ -594,13 +490,8 @@ function DeleteTenantDialog({
 }
 
 /**
- * The lifecycle control group: two entries, the transfer dialog and the
- * typed delete confirmation, each with its own result area.
- *
- * The entries render only for a caller whose platform permission set holds
- * `tenant.manage`, on a live (non-tombstone) organization that is not a
- * personal domain. That is a visibility affordance, not the authorization:
- * both writes are still judged by the server.
+ * The lifecycle control group: the two entries and their dialogs, each with its
+ * own result area; the entries render only for a `tenant.manage` caller.
  */
 export function TenantLifecycleActions({
   tenant,
@@ -620,33 +511,28 @@ export function TenantLifecycleActions({
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [outcome, setOutcome] = useState<LifecycleOutcome | null>(null)
   const pendingTitleId = useId()
-  // The group's own container: the landing target when a cancelled request
-  // takes its panel -- and the cancel control inside it -- out of the
-  // document.
+  // The group's container: the landing target when a cancelled request takes
+  // its panel -- and the cancel control inside it -- out of the document.
   const groupRef = useRef<HTMLDivElement | null>(null)
-  // Whether the last landed write was a cancel, so the pending panel's
-  // withdrawal hands focus on exactly once.
+  // Whether the last landed write was a cancel, so focus hands on exactly once.
   const cancelLanded = useRef(false)
 
   const deleted = tenant.status === 'deleted'
   const personal = isPersonalTenant(tenant.kind)
   const organizationName = displayNameOf(tenant.display_name, tenant.name)
-  // The pending read is the lifecycle surface's; a caller the controls are
-  // hidden from never issues it.
+  // The pending read exists only where the controls render.
   const pendingRead = operations.usePendingTenantOwner(
     tenant.name,
     canManage && !deleted && !personal,
   )
   const pending = pendingRead.data ?? null
-  // A result describes the organization as it stood when the write landed;
-  // a different tenant in the same slot drops it.
+  // A result describes one organization; a different tenant drops it.
   useEffect(() => {
     setOutcome(null)
   }, [tenant.name])
 
-  // A settled cancel withdraws the pending panel, taking the cancel control
-  // that started the write with it. Focus lands on the group container that
-  // stays; a reader who moved focus elsewhere keeps it.
+  // A settled cancel withdraws the pending panel and its cancel control; focus
+  // lands on the group container that stays, unless the reader moved elsewhere.
   useEffect(() => {
     if (!cancelLanded.current) {
       return

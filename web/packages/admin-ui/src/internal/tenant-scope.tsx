@@ -1,36 +1,6 @@
 /**
- * TenantScope: the tenant selector the tenant-addressed administration
- * pages carry.
- *
- * Some administration surfaces address a tenant as a route segment
- * (/api/v1/system/tenants/:tenant/..., the invitation and membership
- * routes, the SSO provider routes). Those pages are still platform
- * surfaces -- the operator is platform staff -- but each request names
- * the tenant it acts on, and the tenant is an argument of the request,
- * not the session's current tenant (the console has none; switching the
- * current tenant is tenancy-ui's, a different shell).
- *
- * The selector lists the platform roster (GET /api/v1/system/tenants, the
- * same read the roster page owns) so the operator picks a registered
- * tenant by the label its profile shows (its display name, or its name when
- * the profile names none). The value it reports is the chosen tenant name,
- * or '' for none chosen yet; a page holds it in its own state and disables
- * its tenant-scoped reads while it is empty.
- *
- * A tenant-addressed page also opens on a tenant named by the `tenant`
- * query parameter, so a link can carry the tenant across pages (the
- * tenant detail page's related-page links do). The parameter seeds the
- * page's initial state only; the selector remains the way to change it
- * afterwards.
- *
- * The roster read behind the selector has three states beside its content,
- * told apart in the field's helper text: while it loads the selector is
- * disabled and says so; a 403 says the viewer may not list tenants and
- * offers no retry (retrying can only be refused again); any other failure
- * says the roster could not complete this request and offers a retry; an
- * empty roster says no tenant is registered. A tenant seeded from the URL
- * stays shown in every one of those states, so a carried link never
- * blanks its selection.
+ * TenantScope: the tenant selector for tenant-addressed pages; its value is a
+ * request argument, seeded by the `tenant` query parameter.
  */
 
 import type { ReactNode } from 'react'
@@ -65,19 +35,12 @@ export interface TenantScopeProps {
   /** Reports the chosen tenant name ('' clears the selection). */
   readonly onSelect: (tenant: string) => void
   /**
-   * Whether the selector is disabled. This is a selection-shaped context
-   * control, so it stays natively disabled while a write into any scope the
-   * chosen tenant addresses is in flight: a change would reset those scopes
-   * and leave a settling attempt describing the tenant left behind. The
-   * write is started from another control, so focus is not on the selector
-   * while it is disabled.
+   * Whether the selector is disabled. It stays natively disabled while a
+   * write into any scope the chosen tenant addresses is in flight; the
+   * write starts from another control, so focus is not on the selector.
    */
   readonly disabled?: boolean
-  /**
-   * A control rendered in the selector's own row, to its right. The page
-   * whose body is addressed by this selector puts its refresh here, next
-   * to what the refresh re-reads.
-   */
+  /** A control rendered in the selector's own row, to its right (the refresh). */
   readonly trailing?: ReactNode
 }
 
@@ -93,9 +56,7 @@ export function TenantScope({
   const tenants = operations.useTenants()
   const options = tenants.data ?? []
   // A value seeded from the query string shows before the roster read
-  // settles (and stays shown if the roster does not list it), so the
-  // selector never blanks a tenant a link carried in; once the roster
-  // answers, the name and its listed row are the same entry.
+  // settles (and stays shown if the roster does not list it).
   const listed = options.some((tenant) => tenant.name === value)
 
   const loading = tenants.isPending

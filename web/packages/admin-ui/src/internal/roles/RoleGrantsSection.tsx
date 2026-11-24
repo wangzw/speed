@@ -1,15 +1,6 @@
 /**
- * RoleGrantsSection: the selected role's permissions.
- *
- * The grant table presents each permission by the catalog's readable
- * description with the code beneath it, and a visible high-risk badge when
- * the catalog marks it dangerous. The grant picker offers only the
- * permissions the caller may grant, grouped the way the catalog groups
- * them. A grant whose server-reported permission is empty is a pair this
- * process no longer translates: its row keeps the raw pair, and revoke stays
- * disabled with the reason beside it because the route names a permission by
- * its code. A readonly role (builtin, host-protected or `can_manage=false`)
- * lists its grants without the actions column at all.
+ * RoleGrantsSection: the selected role's permissions and grant picker; a grant
+ * with no reported code keeps its raw pair and disables revoke.
  */
 
 import { useMemo, useState } from 'react'
@@ -72,9 +63,7 @@ export interface RoleGrantsSectionProps {
   readonly outcome: WriteOutcome | null
   /** The grants region's scroll handle. */
   readonly regionRef: RefObject<HTMLDivElement | null>
-  /**
-   * The ref of one grant's revoke control, for the removal focus record.
-   */
+  /** The ref of one grant's revoke control, for the removal focus record. */
   readonly revokeControlRef: (key: string) => Ref<HTMLButtonElement>
   /** Grants one permission; the page runs the write. */
   readonly onGrant: (entry: AdminTenantPermission) => void
@@ -145,8 +134,7 @@ export function RoleGrantsSection({
       const label = unmappable
         ? `${grant.resource}/${grant.action}`
         : grant.permission
-      // A pair the catalog cannot map has its reason standing beside the
-      // row; the button points at it instead of repeating the text.
+      // A pair the catalog cannot map has its reason beside the row.
       const explanation: ActionButtonUnavailableExplanation = unmappable
         ? { unavailableDescribedBy: unmappableId }
         : {}
@@ -197,8 +185,7 @@ export function RoleGrantsSection({
     },
   }
 
-  // A readonly role lists its grants and the reason it is read-only; no
-  // grant or revoke control renders, per the design's read-only tier.
+  // A readonly role lists its grants and the reason; no grant or revoke control.
   const columns: DataTableColumn<AdminTenantGrant>[] = [
     {
       id: 'permission',
@@ -258,9 +245,8 @@ export function RoleGrantsSection({
                   sx={{ minWidth: 280 }}
                   slotProps={{
                     select: {
-                      // The options carry the readable name above the code;
-                      // the closed control keeps the single-line code so the
-                      // field's height does not jump.
+                      // The options carry the readable name above the code; the
+                      // closed control keeps the single-line code to avoid a height jump.
                       renderValue: (value) => value as string,
                     },
                   }}

@@ -1,17 +1,7 @@
 /**
- * The organization profile's edit form, shared by the organization surface's
- * profile page and the platform console's tenant detail.
- *
- * It is a controlled form: the page owns the draft so a refused save keeps
- * exactly what the operator typed, and a settled re-read replaces it. The
- * form itself owns only the local field refusals, so an out-of-bounds value
- * is named on the field it belongs to and the request is not sent.
- *
- * The four fields may all be cleared. The display name is the one with a
- * fallback: leaving it empty makes every surface show the name, and the
- * field's placeholder is that name so the operator can see what will be
- * shown. Below `sm` the fields stack in one column; from `sm` the short ones
- * pair up and the description spans the width.
+ * The organization profile's edit form, shared by both surfaces. The page owns
+ * the draft so a refused save keeps the typed values; the form owns only the
+ * local field refusals.
  */
 
 import { useState } from 'react'
@@ -27,26 +17,20 @@ import {
   type TenantProfileFields,
 } from './TenantProfileFields.js'
 
+/** The props of the organization profile form. */
 export interface TenantProfileFormProps {
   /** The draft the form renders; the page owns it. */
   readonly value: TenantProfileFields
   /** Reports each keystroke's result; the page keeps the draft. */
   readonly onChange: (fields: TenantProfileFields) => void
-  /**
-   * Writes the validated fields. Called only when every field passes the
-   * local bounds; a server refusal is the page's feedback scope to report.
-   */
+  /** Writes the validated fields; a server refusal is the page's to report. */
   readonly onSubmit: (fields: TenantProfileFields) => void
   /** Whether a write is in flight: the save control stays focusable and busy. */
   readonly saving: boolean
-  /**
-   * The name the organization is addressed by, shown as the display name's
-   * placeholder so an empty field says what will be shown instead.
-   */
+  /** The name shown as the display name's placeholder when that field is empty. */
   readonly name?: string
 }
 
-/** The label a local field refusal renders. */
 function fieldErrorText(
   error: NonNullable<TenantProfileFieldErrors['displayName']>,
   field: keyof TenantProfileFieldErrors,
@@ -77,8 +61,7 @@ export function TenantProfileForm({
 
   const update = (field: keyof TenantProfileFields, next: string): void => {
     onChange({ ...value, [field]: next })
-    // A field the operator is editing no longer carries the previous
-    // refusal; re-validating on save can bring it back if it still holds.
+    // A field being edited drops its previous refusal; save can bring it back.
     if (errors[field] !== undefined) {
       setErrors((previous) => {
         const left = { ...previous }

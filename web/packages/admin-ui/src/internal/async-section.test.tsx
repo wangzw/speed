@@ -1,17 +1,3 @@
-/**
- * AdminAsyncSection: the console's failure-branch split.
- *
- * A refused read is detected from the answer -- its HTTP status is 403,
- * or a bare 403 surfaced as the client.http.403 code -- and every other
- * failure (a 5xx, a transport error) falls through to the retryable error
- * placeholder. Both branches are exercised here: the status check that
- * catches a module refusal whose code is the module's own (not
- * client.http.403), and the fall-through that keeps a 5xx or a transport
- * failure retryable. The page suites script every 403 with the bare
- * client.http.403 code, so neither the status branch nor the fall-through
- * would be missed by them alone.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 import { screen, waitFor } from '@testing-library/react'
@@ -23,10 +9,8 @@ import { renderWithProviders } from '../../test-utils/render.js'
 import { bindAdminRequest } from '../../test-utils/request-rig.js'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 
-/** A caller-supplied retry label fixture; the section renders what it is given. */
 const RETRY = 'Retry'
 
-/** One active factor as the caller's own factor read answers it. */
 const ACTIVE_FACTOR = {
   id: 'factor-1',
   kind: 'totp',
@@ -35,7 +19,7 @@ const ACTIVE_FACTOR = {
   created_at: '2026-01-01T00:00:00Z',
 }
 
-/** Binds the refusal exit's factor read; any other request leg is a defect. */
+/** Binds the caller's factor read for the refusal-exit cases. */
 function bindFactors(factors: readonly unknown[]): void {
   bindAdminRequest((call) => {
     if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
@@ -45,7 +29,6 @@ function bindFactors(factors: readonly unknown[]): void {
   })
 }
 
-/** Waits until the refusal exit's factor read has settled. */
 async function awaitFactorRead(
   queryClient: ReturnType<typeof renderWithProviders>['queryClient'],
 ): Promise<void> {
@@ -58,9 +41,6 @@ async function awaitFactorRead(
 
 describe('isForbidden', () => {
   it('reads a module refusal carried by the HTTP status alone', () => {
-    // A module refuses with RFC 9457 problem details; its code is the
-    // module's own (authz.forbidden), not the transport's client.http.403,
-    // so the 403 status is the only signal the answer carries.
     expect(isForbidden({ status: 403, code: 'authz.forbidden' })).toBe(true)
   })
 
@@ -83,7 +63,6 @@ describe('isForbidden', () => {
   })
 })
 
-/** A probe mounting AdminAsyncSection with a settled failed read. */
 function Probe({
   error,
   notFoundStatuses,
@@ -157,16 +136,11 @@ describe('AdminAsyncSection', () => {
         mfaRelogin={mfaRelogin}
       />,
     )
-    // The organization's requirement is named through the console resolver,
-    // and with a factor registered a fresh sign-in clears it: retrying the
-    // same request cannot.
     expect(
       await screen.findByText(
         zhCN.errors.authn.insufficient_user_authentication,
       ),
     ).toBeInTheDocument()
-    // The factor read settles with an active factor: the sign-in exit
-    // stays, not the enrollment guidance.
     await awaitFactorRead(queryClient)
     expect(screen.queryByText(zhCN.stepUp.mfaEnrollRequired)).toBeNull()
     expect(screen.queryByRole('button', { name: RETRY })).toBeNull()
@@ -189,9 +163,6 @@ describe('AdminAsyncSection', () => {
         />
       </AdminAccountHrefProvider>,
     )
-    // Signing in again cannot add a factor, so the section names the
-    // missing two-step verification and points at the host's account
-    // settings; it offers no sign-in button and no retry.
     expect(
       await screen.findByText(zhCN.stepUp.mfaEnrollRequired),
     ).toBeInTheDocument()
@@ -216,7 +187,6 @@ describe('AdminAsyncSection', () => {
     expect(
       await screen.findByText(zhCN.stepUp.mfaEnrollRequired),
     ).toBeInTheDocument()
-    // The package holds no host path of its own.
     expect(screen.queryAllByRole('link')).toHaveLength(0)
   })
 
@@ -248,8 +218,6 @@ describe('AdminAsyncSection', () => {
   })
 
   it('renders the not-found placeholder for a status the page names as the same answer', () => {
-    // A route that answers 400 for an id it cannot parse names that status;
-    // the 404 answer renders it without being listed.
     renderWithProviders(
       <Probe
         error={{ status: 400, code: 'audit.bad-request' }}
@@ -271,7 +239,6 @@ describe('AdminAsyncSection', () => {
   })
 })
 
-/** A settled section: the caller decides payload, failure and refresh state. */
 function SettledProbe({
   payload,
   error,
@@ -303,11 +270,6 @@ function SettledProbe({
   )
 }
 
-/**
- * A settled section whose refresh retry is scripted: the retry withdraws
- * the marker (a read is in flight) and a later control re-supplies it,
- * standing in for a retry that failed again.
- */
 function FlakyRefreshHost() {
   const [refreshing, setRefreshing] = useState(false)
   return (
@@ -343,8 +305,6 @@ describe('AdminAsyncSection refresh state', () => {
         error={{ status: 403, code: 'authz.forbidden' }}
       />,
     )
-    // A refusal makes the older data meaningless: the placeholder takes
-    // the content's place, with no retry and no stale marker.
     expect(screen.getByText(zhCN.forbidden.title)).toBeInTheDocument()
     expect(screen.queryByText('content alpha')).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
@@ -388,14 +348,10 @@ describe('AdminAsyncSection refresh state', () => {
     const firstAlert = screen.getByRole('alert')
     expect(firstAlert).toHaveTextContent(zhCN.stale.description)
 
-    // The retry is issued: the read is in flight and the marker unmounts
-    // while the content stays on screen.
     await userEvent.click(screen.getByRole('button', { name: RETRY }))
     expect(screen.queryByRole('alert')).toBeNull()
     expect(view.getByText('content alpha')).toBeInTheDocument()
 
-    // The retry failed again: the marker mounts anew, so its alert
-    // announcement fires again.
     await userEvent.click(screen.getByRole('button', { name: 'retry failed' }))
     const secondAlert = screen.getByRole('alert')
     expect(secondAlert).toHaveTextContent(zhCN.stale.description)

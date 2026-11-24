@@ -1,37 +1,6 @@
 /**
- * The organization administration surface's operations bundle: the
- * tenant-scoped reads and writes the organization pages run through.
- *
- * Every member here addresses `/api/v1/tenants/{tenant}/...`; the tenant is
- * an argument the caller supplies from the current tenant the host handed
- * the organization provider. The bundle holds no platform member and never
- * addresses `/api/v1/system`, so an organization page cannot reach a platform
- * asset even by mistake.
- *
- * The invitation, membership and SSO members overlap with the console
- * bundle's generated bindings: the same generated operations, re-bound
- * here over the tenant-scoped key convention. Their generated keys name
- * the tenant only inside the path string, so forwarding them verbatim
- * would put the reads outside the tenant subtree the host evicts on a
- * switch; the bundle wraps every read's key in `tenantQueryKey` and points
- * every write's invalidation at the same tenant-prefixed factory. The
- * settings and role members are the tenant management surface's own
- * generated operations (`settings.tenantadmin` and `authz.tenantadmin`),
- * which the console bundle does not carry: their paths are
- * tenant-addressed, so they belong to this surface alone.
- *
- * The reads' query keys follow the tenant-scoped convention
- * (docs/adr/adr-web-tenant-query-key.md): auth-core's `tenantQueryKey`
- * prepends the tenant id as the key's outermost segment over the generated
- * bare key, so one tenant's reads share a prefix, a switch to another
- * tenant builds another key, and the host's `evictTenantQueries` removes
- * the departing tenant's whole subtree. The writes invalidate through the
- * same factory, so a write refreshes only the tenant it names.
- *
- * `OrganizationAdminProvider` publishes the bundle through
- * `OrganizationAdminOperationsProvider`; a host that mounts its own bundle at
- * the provider substitutes the wiring, and with none mounted the shipped
- * `organizationAdminOperations` answers.
+ * The organization surface's operations: tenant-scoped reads and writes keyed by
+ * `tenantQueryKey`; no member addresses `/api/v1/system`.
  */
 
 import { createContext, useContext } from 'react'
@@ -129,48 +98,34 @@ import { INVITATION_TERMINAL_CODE, useResendInvitationMutation } from './operati
 import { profileWriteOf } from './TenantProfileFields.js'
 import type { TenantProfileFields } from './TenantProfileFields.js'
 
-/** The tenant settings surface's read answer: the declared items it
- * exposes and whether this tenant's settings may be written at all. */
+/** The tenant settings read's answer: the exposed items and whether they may be written. */
 export type AdminTenantSettings = SettingsTenantAdminSettings
 
-/** One declared setting as the tenant layer reports it -- the generated
- * row of GET /api/v1/tenants/{tenant}/settings, carrying the platform
- * value, the tenant value, their OR and the layer the effective value
- * points at. */
+/** One declared setting as the tenant layer reports it, with both layers' values. */
 export type AdminTenantSetting = SettingsTenantAdminSetting
 
-/** The layer the tenant read reports a value came from: the tenant layer,
- * the global layer, or the declared default. The server decides it; the
- * page renders the reported value and never infers it. */
+/** The layer a reported value came from, as the server reports it. */
 export type AdminTenantSettingSource = SettingsTenantAdminSettingSource
 
-/** One tenant's organization profile (GET
- * /api/v1/tenants/{tenant}/profile): the read-only identity, the four
- * descriptive fields and the owner account. */
+/** One tenant's organization profile: identity, four descriptive fields and owner. */
 export type AdminTenantProfile = TenantProfileView
 
-/** The profile write's target and draft. The route carries the tenant and
- * the body carries all four fields. */
+/** The profile write's target and draft. */
 export interface AdminTenantProfileWriteInput {
   readonly tenant: string
   readonly fields: TenantProfileFields
 }
 
-/** One owner-transfer request as the organization's own surface reports it
- * (GET .../owner/requests/pending). Only the target's display name and
- * username are carried, never its account identifier. */
+/** One owner-transfer request, carrying the target's names but never its id. */
 export type AdminTenantTransfer = TenantTransferView
 
-/** POST /api/v1/tenants/{tenant}/owner/requests body: the active member the
- * current owner asks to take ownership. Ownership does not change until the
- * target confirms. */
+/** POST .../owner/requests body: the active member asked to take ownership. */
 export interface AdminTenantOwnerRequestInput {
   readonly tenant: string
   readonly account: string
 }
 
-/** DELETE .../owner/requests/{request} target: the pending request the
- * current owner cancels. */
+/** DELETE .../owner/requests/{request} target. */
 export interface AdminTenantOwnerRequestRef {
   readonly tenant: string
   readonly request: string
@@ -181,8 +136,7 @@ export interface AdminTenantRef {
   readonly tenant: string
 }
 
-/** One tenant role (GET .../tenants/{tenant}/roles), structurally the
- * console's role row. */
+/** One tenant role, structurally the console's role row. */
 export type AdminTenantRole = AuthzTenantAdminRoleView
 
 /** One governed permission (GET .../tenants/{tenant}/permissions). */
@@ -194,21 +148,17 @@ export type AdminTenantGrant = AuthzTenantAdminGrantView
 /** One role binding within a tenant (GET .../tenants/{tenant}/bindings). */
 export type AdminTenantBinding = AuthzTenantAdminBindingView
 
-/** One account holding a role, as the role-usage read reports it: the
- * account, the display name the host's identity reader resolved, whether
- * the membership is active (unknown when no reader answered) and when the
- * binding was written. */
+/** One account holding a role, with its resolved identity and membership state. */
 export type AdminTenantRoleBinding = AuthzTenantAdminRoleBindingView
 
-/** One page of a role's holders together with the cursor of the next page. */
+/** One page of a role's holders together with the next-page cursor. */
 export type AdminTenantRoleBindingPage = AuthzTenantadminRolesBindingsList200
 
 /** The role-usage read's cursor parameters. */
 export type AdminTenantRoleBindingsQuery =
   AuthzTenantadminRolesBindingsListParams
 
-/** PUT .../tenants/{tenant}/settings/{namespace}/{key} body: the item to
- * write on the tenant layer. */
+/** PUT .../tenants/{tenant}/settings/{namespace}/{key} body. */
 export interface AdminTenantSetSettingInput {
   readonly tenant: string
   readonly namespace: string
@@ -224,10 +174,8 @@ export interface AdminTenantRemoveSettingInput {
 }
 
 /**
- * PUT .../tenants/{tenant}/roles/{role} body: a role's declared shape. The
- * role name is the key a binding holds and is never renamed, so a write
- * names an existing role or creates one; `description` is the operator's
- * free text.
+ * The write-role body. The role name is the key bindings hold and is never
+ * renamed, so a write names an existing role or creates one.
  */
 export interface AdminTenantWriteRoleInput {
   readonly tenant: string
@@ -257,8 +205,7 @@ export interface AdminTenantBindingRef {
 
 /**
  * The tenant-scoped operations the organization pages read and write through:
- * invitations and membership, SSO providers, the tenant settings layer and
- * the tenant roles, permissions, grants and bindings.
+ * invitations and membership, SSO, tenant settings and tenant authorization.
  */
 export interface OrganizationAdminOperations
   extends Pick<
@@ -282,56 +229,42 @@ export interface OrganizationAdminOperations
     | 'useUpdateSsoProvider'
     | 'useClaimSsoDomain'
   > {
-  // --- Tenant profile (/api/v1/tenants/{tenant}/profile) ----------------
-
   /** GET .../tenants/{tenant}/profile -- the organization's profile. */
   readonly useTenantProfile: (
     tenant: string,
   ) => UseQueryResult<AdminTenantProfile, unknown>
-  /** PATCH .../tenants/{tenant}/profile -- write the four descriptive
-   * fields; the identity is not writable. */
+  /** PATCH .../tenants/{tenant}/profile -- write the four descriptive fields. */
   readonly useTenantProfileWrite: () => UseMutationResult<
     void,
     unknown,
     AdminTenantProfileWriteInput
   >
 
-  // --- Owner transfer and organization deletion (/api/v1/tenants/{tenant}) ---
-
-  /** GET .../tenants/{tenant}/owner/requests/pending -- the organization's
-   * pending transfer request, or null when it has none. `enabled` holds the
-   * owner-only read back for a caller who is not the owner. */
+  /** GET .../owner/requests/pending -- the pending request or null; `enabled` holds it for a non-owner. */
   readonly useTenantOwnerPending: (
     tenant: string,
     enabled?: boolean,
   ) => UseQueryResult<AdminTenantTransfer | null, unknown>
-  /** POST .../tenants/{tenant}/owner/requests -- ask an active member to
-   * take ownership. Ownership is unchanged until the target confirms. */
+  /** POST .../owner/requests -- ask an active member to take ownership (unchanged until confirmed). */
   readonly useTenantOwnerRequest: () => UseMutationResult<
     AdminTenantTransfer,
     unknown,
     AdminTenantOwnerRequestInput
   >
-  /** DELETE .../tenants/{tenant}/owner/requests/{request} -- cancel the
-   * pending request. Ownership is unchanged. */
+  /** DELETE .../owner/requests/{request} -- cancel the pending request. */
   readonly useTenantOwnerCancel: () => UseMutationResult<
     void,
     unknown,
     AdminTenantOwnerRequestRef
   >
-  /** DELETE .../tenants/{tenant} -- tombstone the organization and clear its
-   * core relations. Terminal: there is no restore route. */
+  /** DELETE .../tenants/{tenant} -- tombstone the organization; terminal, with no restore route. */
   readonly useTenantOwnerDelete: () => UseMutationResult<
     void,
     unknown,
     AdminTenantRef
   >
 
-  // --- Tenant settings (/api/v1/tenants/{tenant}/settings) --------------
-
-  /** GET .../tenants/{tenant}/settings -- every item the declarations
-   * expose to a tenant, the platform and tenant values beside the
-   * effective one, and whether the host would accept a write at all. */
+  /** GET .../tenants/{tenant}/settings -- every exposed item and whether a write is accepted. */
   readonly useTenantSettingsList: (
     tenant: string,
   ) => UseQueryResult<AdminTenantSettings, unknown>
@@ -348,26 +281,20 @@ export interface OrganizationAdminOperations
     AdminTenantRemoveSettingInput
   >
 
-  // --- Tenant authorization (/api/v1/tenants/{tenant}) ------------------
-
   /** GET .../tenants/{tenant}/roles -- a tenant's roles. */
   readonly useTenantRoles: (
     tenant: string,
   ) => UseQueryResult<readonly AdminTenantRole[], unknown>
-  /** GET .../tenants/{tenant}/permissions -- the governed permission set a
-   * tenant administrator may hold and grant. */
+  /** GET .../tenants/{tenant}/permissions -- the governed permission set. */
   readonly useTenantPermissions: (
     tenant: string,
   ) => UseQueryResult<readonly AdminTenantPermission[], unknown>
-  /** GET .../tenants/{tenant}/roles/{role}/grants -- a role's grants
-   * (disabled while no role is chosen). */
+  /** GET .../roles/{role}/grants -- a role's grants (disabled while no role is chosen). */
   readonly useTenantGrants: (
     tenant: string,
     role: string | undefined,
   ) => UseQueryResult<readonly AdminTenantGrant[], unknown>
-  /** GET .../tenants/{tenant}/roles/{role}/bindings -- one page of the
-   * accounts holding the role, with the cursor of the next page (disabled
-   * while no role is chosen). */
+  /** GET .../roles/{role}/bindings -- one page of holders (disabled while no role is chosen). */
   readonly useTenantRoleBindings: (
     tenant: string,
     role: string | undefined,
@@ -377,8 +304,7 @@ export interface OrganizationAdminOperations
   readonly useTenantBindings: (
     tenant: string,
   ) => UseQueryResult<readonly AdminTenantBinding[], unknown>
-  /** GET .../tenants/{tenant}/bindings/{account} -- the bindings an
-   * account holds within the tenant (disabled while no account is chosen). */
+  /** GET .../bindings/{account} -- an account's bindings (disabled while no account is chosen). */
   readonly useTenantAccountBindings: (
     tenant: string,
     account: string | undefined,
@@ -389,8 +315,7 @@ export interface OrganizationAdminOperations
     unknown,
     AdminTenantWriteRoleInput
   >
-  /** DELETE .../tenants/{tenant}/roles/{role} -- remove a role and its
-   * grants and bindings with it. */
+  /** DELETE .../roles/{role} -- remove a role and its grants and bindings with it. */
   readonly useTenantRemoveRole: () => UseMutationResult<
     void,
     unknown,
@@ -423,15 +348,10 @@ export interface OrganizationAdminOperations
 }
 
 /**
- * The shipped organization bundle: the invitation, membership and SSO
- * operations re-bound over the tenant-scoped key convention, plus the
- * tenant management surface's own generated operations. A host that needs a
- * different wiring mounts its own bundle on `OrganizationAdminProvider`'s
- * `operations` prop instead.
+ * The shipped organization bundle: the shared operations re-bound over the
+ * tenant-scoped key convention, plus the tenant management surface's own.
  */
 export const organizationAdminOperations: OrganizationAdminOperations = {
-  // --- Invitation surface (tenant-scoped) -------------------------------
-
   useInvitations: (tenant, params) => {
     const options = getAuthnInviteListQueryOptions(tenant, params)
     return useQuery({
@@ -469,9 +389,8 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
       onSuccess: (_answer, input) => {
         invalidateTenantInvitations(queryClient, input.tenant)
       },
-      // A row another operator already moved answers 409 invitation-terminal.
-      // The list has not been re-read, so it still shows the old state;
-      // invalidating lets the server's judgement reach the row.
+      // A row another operator already moved answers 409 invitation-terminal;
+      // invalidate so the server's judgement reaches the row.
       onError: (error, input) => {
         if (errorCodeOf(error) === INVITATION_TERMINAL_CODE) {
           invalidateTenantInvitations(queryClient, input.tenant)
@@ -483,17 +402,13 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
   useResendInvitation: () =>
     useResendInvitationMutation(invalidateTenantInvitations),
 
-  // --- Membership surface (tenant-scoped) -------------------------------
-
   useMembers: (tenant, params) => {
     const options = getAuthnAdminMembersListQueryOptions(tenant, params)
     return useQuery({
       ...options,
       queryKey: tenantQueryKey(tenant, ...options.queryKey),
-      // The page envelope carries the cursor of the page that follows; the
-      // rows alone cannot tell a full last page from one with more behind it.
-      // The previous page stays on screen while a search or page change is in
-      // flight, so the table does not collapse under the operator.
+      // The envelope carries the next cursor; the previous page stays on screen
+      // while a search or page change runs, so the table does not collapse.
       placeholderData: keepPreviousData,
       enabled: tenant !== '',
     })
@@ -535,8 +450,6 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
       },
     })
   },
-
-  // --- SSO surface (/api/v1/tenants/:tenant/sso) ------------------------
 
   useSsoProviders: (tenant) => {
     const options = getAuthnAdminSsoProvidersListQueryOptions(tenant)
@@ -673,8 +586,6 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
     })
   },
 
-  // --- Tenant profile (/api/v1/tenants/{tenant}/profile) ----------------
-
   useTenantProfile: (tenant) => {
     const options = getTenantProfileGetQueryOptions(tenant)
     return useQuery({
@@ -698,8 +609,6 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
     })
   },
 
-  // --- Owner transfer and organization deletion -------------------------
-
   useTenantOwnerPending: (tenant, enabled = true) => {
     const options = getTenantAdminOwnerPendingTransferQueryOptions(tenant)
     return useQuery({
@@ -718,9 +627,8 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
           account: input.account,
         }).then((answer) => answer.request),
       onSuccess: (_answer, input) => {
-        // The request is recorded but ownership has not changed. The pending
-        // read is what the card renders now; the member rows are re-read so
-        // the dialog's target list sees the current roster.
+        // The request is recorded but ownership has not changed; the pending
+        // read and the dialog's target list are re-read.
         invalidateTenantOwnerPending(queryClient, input.tenant)
         invalidateTenantMembers(queryClient, input.tenant)
       },
@@ -733,8 +641,7 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
       mutationFn: (input: AdminTenantOwnerRequestRef) =>
         tenantAdminOwnerCancelTransfer(input.tenant, input.request),
       onSuccess: (_answer, input) => {
-        // A cancelled request leaves ownership untouched; the card's pending
-        // state and the profile it sits under are re-read.
+        // A cancelled request leaves ownership untouched; re-read pending and profile.
         invalidateTenantOwnerPending(queryClient, input.tenant)
         invalidateTenantProfile(queryClient, input.tenant)
       },
@@ -747,12 +654,8 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
       mutationFn: (input: AdminTenantRef) =>
         tenantAdminOwnerDelete(input.tenant),
       onSuccess: (_answer, input) => {
-        // The organization is a tombstone and the caller is no longer a
-        // member: its reads can only be refused (404). The terminal state is
-        // reflected into the cached profile; the host's departure action
-        // leaves the organization. The deletion also settles any pending
-        // transfer request, so its cached read is dropped rather than
-        // re-read.
+        // The caller has left: its reads can only be refused, so the tombstone
+        // is written over the cached profile and the settled pending read is dropped.
         reflectTenantProfile(queryClient, input.tenant, (profile) => ({
           ...profile,
           status: 'deleted',
@@ -766,8 +669,6 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
       },
     })
   },
-
-  // --- Tenant settings (/api/v1/tenants/{tenant}/settings) --------------
 
   useTenantSettingsList: (tenant) => {
     const options = getSettingsTenantadminSettingsListQueryOptions(tenant)
@@ -897,8 +798,8 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
       mutationFn: (input: AdminTenantRoleRef) =>
         authzTenantadminRolesDelete(input.tenant, input.role),
       onSuccess: (_answer, input) => {
-        // Removing a role revokes its grants and bindings with it, so the
-        // tenant's binding reads and the role's grants are stale too.
+        // Removing a role revokes its grants and bindings, so those reads and
+        // the tenant's bindings are stale too.
         invalidateTenantRoles(queryClient, input.tenant)
         void queryClient.invalidateQueries({
           queryKey: tenantQueryKey(
@@ -915,9 +816,8 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
             ),
           ),
         })
-        // The role's holder list is part of the role's usage; removing the
-        // role leaves it meaningless. The bare path is the prefix of every
-        // page of that read (the page's cursor is the key's trailing part).
+        // The role's holder list is meaningless after removal; the bare path is
+        // the prefix of every page of that read (the cursor is the key's tail).
         void queryClient.invalidateQueries({
           queryKey: tenantQueryKey(
             input.tenant,
@@ -985,9 +885,8 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
         authzTenantadminBindingsPut(input.tenant, input.account, input.role),
       onSuccess: (_answer, input) => {
         invalidateTenantBindings(queryClient, input.tenant, input.account)
-        // The member read carries each account's role names, so a binding
-        // change leaves the rows stale even though the membership itself did
-        // not change.
+        // The member read carries each account's role names, so a binding change
+        // leaves the rows stale even though the membership did not change.
         invalidateTenantMembers(queryClient, input.tenant)
       },
     })
@@ -1004,19 +903,13 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
         ),
       onSuccess: (_answer, input) => {
         invalidateTenantBindings(queryClient, input.tenant, input.account)
-        // The role column is derived from these bindings; refresh it with the
-        // binding reads so the panel and the row never disagree.
+        // The role column derives from these bindings; refresh it with them.
         invalidateTenantMembers(queryClient, input.tenant)
       },
     })
   },
 }
 
-/**
- * Invalidates a tenant's invitation list. The generated bare key is wrapped
- * in the tenant prefix the read uses, so the invalidation cannot drift from
- * it and a write touches only the tenant it names.
- */
 function invalidateTenantInvitations(
   queryClient: ReturnType<typeof useQueryClient>,
   tenant: string,
@@ -1026,7 +919,6 @@ function invalidateTenantInvitations(
   })
 }
 
-/** Invalidates a tenant's whole membership list. */
 function invalidateTenantMembers(
   queryClient: ReturnType<typeof useQueryClient>,
   tenant: string,
@@ -1039,7 +931,6 @@ function invalidateTenantMembers(
   })
 }
 
-/** Invalidates a tenant's whole SSO provider list. */
 function invalidateTenantSsoProviderList(
   queryClient: ReturnType<typeof useQueryClient>,
   tenant: string,
@@ -1052,8 +943,6 @@ function invalidateTenantSsoProviderList(
   })
 }
 
-/** Invalidates a provider's detail read and its tenant's provider list: an
- * SSO write changes the provider's own row and its list entry together. */
 function invalidateTenantSsoProvider(
   queryClient: ReturnType<typeof useQueryClient>,
   tenant: string,
@@ -1068,11 +957,6 @@ function invalidateTenantSsoProvider(
   invalidateTenantSsoProviderList(queryClient, tenant)
 }
 
-/**
- * Invalidates the tenant profile read a profile save leaves stale. The
- * generated bare key is wrapped in the tenant prefix the read uses, so the
- * invalidation cannot drift from it.
- */
 function invalidateTenantProfile(
   queryClient: ReturnType<typeof useQueryClient>,
   tenant: string,
@@ -1085,7 +969,6 @@ function invalidateTenantProfile(
   })
 }
 
-/** Invalidates the organization's pending owner-transfer read. */
 function invalidateTenantOwnerPending(
   queryClient: ReturnType<typeof useQueryClient>,
   tenant: string,
@@ -1099,11 +982,8 @@ function invalidateTenantOwnerPending(
 }
 
 /**
- * Reflects a confirmed deletion into the cached profile of a tenant the
- * caller has just left. The read cannot be refreshed -- the server now
- * refuses it -- so the fact the write established is written over the cached
- * answer; a page that stays (a host with no departure action) renders it, and
- * the host's tenant switch discards the departed tenant's whole subtree.
+ * Writes a confirmed deletion over the cached profile of a tenant the caller has
+ * left: the read would now be refused, so the established fact replaces it.
  */
 function reflectTenantProfile(
   queryClient: ReturnType<typeof useQueryClient>,
@@ -1136,7 +1016,6 @@ function invalidateTenantSettings(
   })
 }
 
-/** Invalidates a tenant's whole role list. */
 function invalidateTenantRoles(
   queryClient: ReturnType<typeof useQueryClient>,
   tenant: string,
@@ -1149,8 +1028,7 @@ function invalidateTenantRoles(
   })
 }
 
-/** Invalidates both binding readers a tenant binding write leaves stale:
- * the tenant's whole list and the written account's own held bindings. */
+/** Invalidates both binding readers a write leaves stale. */
 function invalidateTenantBindings(
   queryClient: ReturnType<typeof useQueryClient>,
   tenant: string,
@@ -1170,9 +1048,7 @@ function invalidateTenantBindings(
   })
 }
 
-/** Invalidates every account-binding read under one tenant: a role removal
- * names no account, so the reads are matched by the tenant's generated
- * path rather than by account. */
+/** Invalidates every account-binding read under a tenant, matched by path. */
 function invalidateTenantAccountBindings(
   queryClient: ReturnType<typeof useQueryClient>,
   tenant: string,
@@ -1189,18 +1065,14 @@ function invalidateTenantAccountBindings(
 const OrganizationAdminOperationsContext =
   createContext<OrganizationAdminOperations | null>(null)
 
+/** The props of the organization operations provider. */
 export interface OrganizationAdminOperationsProviderProps {
-  /** The operations bundle every organization page under this provider reads
-   * through. */
+  /** The operations bundle every organization page under this provider reads through. */
   readonly operations: OrganizationAdminOperations
   readonly children: ReactNode
 }
 
-/**
- * Publishes the organization operations bundle to the pages below it. The
- * organization provider mounts one around its children; a host composing the
- * organization pages without the full provider mounts its own.
- */
+/** Publishes the organization operations bundle to the pages below it. */
 export function OrganizationAdminOperationsProvider({
   operations,
   children,
@@ -1212,11 +1084,7 @@ export function OrganizationAdminOperationsProvider({
   )
 }
 
-/**
- * The organization operations bundle the pages read through: the enclosing
- * provider's when one is mounted, the shipped `organizationAdminOperations`
- * otherwise.
- */
+/** The bundle: the provider's when mounted, `organizationAdminOperations` otherwise. */
 export function useOrganizationAdminOperations(): OrganizationAdminOperations {
   return useContext(OrganizationAdminOperationsContext) ?? organizationAdminOperations
 }

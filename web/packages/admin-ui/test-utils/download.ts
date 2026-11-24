@@ -1,12 +1,7 @@
 /**
- * download.ts -- the browser download plumbing stubbed for the suites.
- *
- * jsdom implements neither URL.createObjectURL/revokeObjectURL nor the
- * navigation an anchor click starting a download would perform, so a
- * suite that exercises a file handoff would fail on the missing API.
- * This helper replaces the two object-URL entry points and records the
- * anchor clicks the code under test dispatched, so a test can assert the
- * file name, the URL and the bytes without a browser.
+ * The browser download plumbing stubbed for the suites: jsdom implements neither
+ * object URLs nor a downloading anchor click, so this replaces the object-URL
+ * entry points and records the anchor clicks.
  */
 
 import { vi } from 'vitest'
@@ -31,10 +26,8 @@ export interface DownloadCapture {
 }
 
 /**
- * Installs the capture for one test and returns what it observed. Call
- * restore() when the test ends; a revoke scheduled by the code under test
- * keeps pointing at the capture, so it stays safe after the globals are
- * back.
+ * Installs the capture for one test and returns what it observed; call
+ * `restore()` when the test ends.
  */
 export function captureDownloads(): DownloadCapture {
   const blobs: Blob[] = []

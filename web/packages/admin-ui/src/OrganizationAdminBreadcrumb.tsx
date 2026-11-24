@@ -1,33 +1,18 @@
 /**
- * The organization administration surface's breadcrumb context.
- *
- * The organization pages reuse the platform console's page components, whose
- * page header renders the console's own trail ("admin" down to the page).
- * Inside the organization surface that trail is wrong: the page hangs off the
- * organization, not the platform console. A host therefore publishes the
- * organization trail through this provider, and `AdminPageHeader` -- the
- * binding every page in this package renders its header through -- uses it
- * in preference to the page's own trail when it is present. Nothing leaks
- * either way -- a page outside the provider keeps its platform trail, and an
- * organization page never shows one. The organization trail starts at the
- * organization's name as plain text: the surface has no root page, so the
- * first step is not a link.
- *
- * `OrganizationAdminProvider` mounts this provider itself when its
- * `breadcrumbs` prop is supplied. A host that renders the pages without the
- * full provider (its own frame, its own dialogs) mounts it directly, the
- * way a host composing console pages mounts `AdminSessionProvider`.
+ * The organization surface's breadcrumb context. `AdminPageHeader` prefers the
+ * published trail over a page's own platform trail; the organization trail
+ * starts at the organization name as plain text because the surface has no root.
  */
 
 import { createContext, useContext } from 'react'
 import type { ReactNode } from 'react'
 import type { PageHeaderBreadcrumb } from '@speed/ui-kit'
 
-/** The breadcrumbs the organization surface publishes to the pages below. */
 const OrganizationAdminBreadcrumbContext = createContext<
   readonly PageHeaderBreadcrumb[] | undefined
 >(undefined)
 
+/** The props of the organization breadcrumb provider. */
 export interface OrganizationAdminBreadcrumbProviderProps {
   /** The trail from the organization down to the page. */
   readonly breadcrumbs: readonly PageHeaderBreadcrumb[]
@@ -46,12 +31,7 @@ export function OrganizationAdminBreadcrumbProvider({
   )
 }
 
-/**
- * The organization trail, or `undefined` when no provider is mounted (the
- * platform console's own trail then applies). The value is the array the
- * provider was given, so a host can memoize it without this hook copying
- * it on every render.
- */
+/** The organization trail, or `undefined` when no provider is mounted; never copies it. */
 export function useOrganizationAdminBreadcrumbs():
   | readonly PageHeaderBreadcrumb[]
   | undefined {

@@ -1,10 +1,7 @@
 /**
- * RowActionMenu: a table row's controls gathered behind one trigger.
- *
- * A row with several writes used to lay them out side by side, which widened
- * the actions column with every added control. The trigger carries the row's
- * accessible name and opens a menu; each item keeps its own label, so a
- * keyboard user reaches every write through one stop in the row.
+ * RowActionMenu: a table row's controls gathered behind one trigger. The
+ * trigger carries the row's accessible name; each menu item keeps its own
+ * label.
  */
 
 import { useState, type MouseEvent, type ReactElement } from 'react'
@@ -25,7 +22,7 @@ export interface RowActionMenuProps {
   /** Accessible name of the trigger, naming the row it belongs to. */
   readonly label: string
   readonly actions: readonly RowAction[]
-  /** Whether the whole menu is unavailable, such as while a write is in flight. The trigger stays focusable and activating it opens nothing. */
+  /** Whether the whole menu is unavailable, such as while a write is in flight; the trigger stays focusable and opens nothing. */
   readonly disabled?: boolean
   /** Marks the trigger when one of its actions was refused. */
   readonly invalid?: boolean

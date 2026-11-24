@@ -1,13 +1,7 @@
 /**
- * RoleDescriptionPanel: the side panel that edits one role's free-text
- * description.
- *
- * A role is never renamed -- its name is the key bindings hold -- so the
- * panel shows the name read-only and edits the description alone. The
- * field carries the 500-character contract the server enforces and shows
- * the remaining length as a character count; an over-long draft cannot be
- * submitted. The panel stays open while the page's write is in flight and
- * closes only when the page reports the save landed.
+ * RoleDescriptionPanel: edits one role's description. A role is never renamed,
+ * so the name is read-only; the field enforces the server's limit and an
+ * over-long draft cannot be submitted.
  */
 
 import { useEffect, useId, useState } from 'react'
@@ -52,8 +46,7 @@ export function RoleDescriptionPanel({
   const [draft, setDraft] = useState(role?.description ?? '')
   const lengthHintId = useId()
 
-  // A new role or a re-opened panel starts from the role's current
-  // description, never from the previous role's draft.
+  // A new role or a re-opened panel starts from that role's description.
   useEffect(() => {
     if (open) {
       setDraft(role?.description ?? '')
@@ -64,7 +57,7 @@ export function RoleDescriptionPanel({
   const tooLong = length > ROLE_DESCRIPTION_MAX
 
   // An over-long draft cannot be saved; the button points at the field's
-  // standing length text for its reason.
+  // standing length text.
   const saveExplanation: ActionButtonUnavailableExplanation = tooLong
     ? { unavailableDescribedBy: lengthHintId }
     : {}

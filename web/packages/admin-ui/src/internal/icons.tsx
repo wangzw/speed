@@ -1,12 +1,7 @@
 /**
- * Hand-authored geometric icons for the console's navigation entries.
- *
- * Drawn as 24px-grid strokes in currentColor so they follow whatever the
- * surrounding theme paints -- no icon-font dependency, no MUI icons
- * package (following ui-kit's and layout-kit's internal/icons.tsx
- * convention). Every icon is decorative by contract: the navigation
- * entry's label is its accessible name, so each icon renders aria-hidden
- * and focusable=false.
+ * Hand-authored 24px stroke icons for the console's navigation entries. Each
+ * is decorative: it renders aria-hidden and the entry's label is the
+ * accessible name.
  */
 
 interface IconProps {
@@ -14,7 +9,6 @@ interface IconProps {
   readonly size?: number
 }
 
-/** The console dashboard: four tiles, the overview's grid of panels. */
 export function DashboardIcon({ size = 24 }: IconProps) {
   return (
     <svg
@@ -37,7 +31,6 @@ export function DashboardIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** The tenant roster: an office building, the tenant as an organisation. */
 export function TenantsIcon({ size = 24 }: IconProps) {
   return (
     <svg
@@ -59,7 +52,6 @@ export function TenantsIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** An account: a person, the identity the account pages administer. */
 export function AccountsIcon({ size = 24 }: IconProps) {
   return (
     <svg
@@ -80,7 +72,6 @@ export function AccountsIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** A session: a screen, the device a session is bound to. */
 export function SessionsIcon({ size = 24 }: IconProps) {
   return (
     <svg
@@ -101,7 +92,6 @@ export function SessionsIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** An impersonation: two people, an operator acting as another account. */
 export function ImpersonationsIcon({ size = 24 }: IconProps) {
   return (
     <svg
@@ -124,7 +114,6 @@ export function ImpersonationsIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** A permission: a shield, the authorization surface's guard. */
 export function PermissionsIcon({ size = 24 }: IconProps) {
   return (
     <svg
@@ -145,7 +134,6 @@ export function PermissionsIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** An invitation: an envelope, the invitation the page issues. */
 export function InvitationsIcon({ size = 24 }: IconProps) {
   return (
     <svg
@@ -166,7 +154,6 @@ export function InvitationsIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** An SSO provider: a key, the federated identity the page configures. */
 export function SsoIcon({ size = 24 }: IconProps) {
   return (
     <svg
@@ -188,7 +175,6 @@ export function SsoIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** Platform settings: a gear, the configuration the page edits. */
 export function SettingsIcon({ size = 24 }: IconProps) {
   return (
     <svg
@@ -210,7 +196,6 @@ export function SettingsIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** An SMS template: a message bubble, the channel the page administers. */
 export function SmsIcon({ size = 24 }: IconProps) {
   return (
     <svg
@@ -231,7 +216,6 @@ export function SmsIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** The audit trail: a record sheet, the log the page queries. */
 export function AuditIcon({ size = 24 }: IconProps) {
   return (
     <svg
@@ -252,8 +236,6 @@ export function AuditIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** The organization profile: an identity card with its owner and its
- * descriptive lines, the page that reads and edits them. */
 export function ProfileIcon({ size = 24 }: IconProps) {
   return (
     <svg

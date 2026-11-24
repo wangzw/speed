@@ -1,12 +1,3 @@
-/**
- * FlowStep's action rows in a real browser: a step's single primary action
- * closes the row at the right edge, whether it belongs to the complete
- * branch, the challenge form or the TOTP enrolment panel. Before the rows
- * moved to the shared primitive a lone primary kept the step's left
- * alignment; jsdom lays nothing out, so only this tier can see where the
- * button lands.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -19,11 +10,9 @@ import { FlowStep } from './flow-step.js'
 
 const OTPAUTH_URI = 'otpauth://totp/speed:ada?issuer=speed'
 
-/** A URI carrying a secret, so the panel offers the manual disclosure. */
 const TOTP_URI =
   'otpauth://totp/Example%20Co:alice%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example%20Co'
 
-/** The row an action belongs to, found by the row's own marker. */
 function actionRowOf(action: Element): HTMLElement {
   const row = action.closest<HTMLElement>('[data-action-row]')
   if (row === null) {
@@ -32,7 +21,6 @@ function actionRowOf(action: Element): HTMLElement {
   return row
 }
 
-/** The row's right content edge (the row may carry its own padding). */
 function contentRightOf(row: HTMLElement): number {
   const rowBox = row.getBoundingClientRect()
   return rowBox.right - Number.parseFloat(getComputedStyle(row).paddingRight)
@@ -107,10 +95,8 @@ describe('FlowStep action rows in Chromium', () => {
 })
 
 describe('FlowStep Label in Name in Chromium', () => {
+  // axe's Label in Name measures visible text through canvas, which jsdom answers with null.
   it('settles Label in Name with the FlowStep manual disclosure open', async () => {
-    // axe's Label in Name rule measures visible text through the canvas API,
-    // which jsdom answers with null; this case is the verdict the unit
-    // suite's scan cannot reach (see @speed/test-utils/axe).
     const user = userEvent.setup()
     renderWithProviders(
       <>
@@ -136,11 +122,6 @@ describe('FlowStep Label in Name in Chromium', () => {
 
 describe('FlowStep waiting announcement in Chromium', () => {
   it('inserts the waiting region empty and fills it a frame later', async () => {
-    // The waiting phase's region and its cancellation row mount in one
-    // commit. A MutationObserver records the region's text in every batch
-    // after it appears, so the empty birth frame and the later fill are
-    // observed facts rather than one snapshot taken when the case chose to
-    // look.
     const get = vi.fn().mockReturnValue(new Promise(() => {}))
     const original = Object.getOwnPropertyDescriptor(
       window.navigator,
@@ -176,15 +157,12 @@ describe('FlowStep waiting announcement in Chromium', () => {
       )
 
       await waitFor(() => expect(snapshots.length).toBeGreaterThan(0))
-      // The batch that reported the region's insertion read it empty.
       expect(snapshots[0]).toBe('')
       await waitFor(() =>
         expect(screen.getByRole('status')).toHaveTextContent(
           enUS.stepUp.passkeyWaiting,
         ),
       )
-      // Some later batch carried the text, so the change reached an
-      // already-inserted region rather than being born with it.
       expect(snapshots).toContain(enUS.stepUp.passkeyWaiting)
     } finally {
       observer.disconnect()

@@ -1,16 +1,7 @@
 /**
- * The shared status tag: one chip, optionally with a caption line under it.
- *
- * Both the member table's active/suspended state and the invitation table's
- * four-value state render through this component, so the two surfaces use
- * the same shape and tone vocabulary. A caption carries the instant a
- * terminal state was reached; it is the caller's translated text.
- *
- * The tone vocabulary is the three the management surfaces use: the neutral
- * default, success for a good end, and info for a state still in progress.
- * The invitation lifecycle maps pending to info, accepted to success, and
- * expired and revoked to the neutral default -- a terminal invitation is
- * history, so it never takes the warning or error tone.
+ * The shared status tag: one chip with an optional caption line. The tone
+ * vocabulary is neutral default, success for a good end, and info for a
+ * state still in progress.
  */
 
 import Box from '@mui/material/Box'

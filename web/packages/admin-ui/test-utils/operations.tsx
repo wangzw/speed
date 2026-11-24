@@ -1,29 +1,7 @@
 /**
- * A scripted console operations bundle for the admin-ui suites.
- *
- * The console pages read and write through the AdminOperations bundle
- * the host mounts (see src/operations.tsx). In production the host binds
- * the generated @speed/api-sdk operations; here the suite binds real
- * react-query hooks over a scripted backend, so the pages exercise
- * genuine react-query states -- the first-load pending branch, a settled
- * empty answer, a failed read, and a write whose success invalidates the
- * list it belongs to -- without an HTTP transport.
- *
- * The query keys live here, in test code, because the production keys
- * live inside the generated hooks; the scripted backend is the seam's
- * only stand-in. The impersonation record read is the exception: it builds
- * the generated factory's key, because the page drops that entry from the
- * cache and must name the key production's read builds. A backend
- * function a test scripts to reject drives the corresponding failure
- * branch.
- *
- * The backend is grouped by administration surface, mirroring the bundle:
- * the tenant roster and settings (platform-side, tenant-free), the audit
- * query, the tenant-scoped authorization surface, the account, session
- * and impersonation surfaces, the tenant-scoped invitation and membership
- * surfaces, the SSO surface and the SMS template surface. Every default
- * settles successfully (empty reads, resolved writes); a test overrides
- * the member it exercises.
+ * A scripted operations bundle for the admin-ui suites: real react-query hooks
+ * over an in-memory backend, so pages exercise genuine query states without an
+ * HTTP transport. The backend is grouped by surface and every default settles.
  */
 
 import {
@@ -127,7 +105,6 @@ import { tenantQueryKey } from '@speed/auth-core'
 
 /** The scripted backend the operations bundle calls, grouped by surface. */
 export interface AdminBackend {
-  // Tenant roster + settings + audit (the platform-side three).
   listTenants: () => Promise<readonly AdminTenant[]>
   getTenant: (query: AdminTenantQuery) => Promise<AdminTenant>
   createTenant: (input: AdminCreateTenantInput) => Promise<AdminTenant>
@@ -152,7 +129,6 @@ export interface AdminBackend {
   getRecord: (query: AdminAuditRecordQuery) => Promise<AdminAuditRecord>
   exportRecords: (params?: AuditAdminRecordsExportParams) => Promise<Blob>
 
-  // Authorization surface (tenant-scoped).
   listPermissions: () => Promise<readonly AdminPermission[]>
   listRoles: (tenant: string) => Promise<readonly AdminRole[]>
   writeRole: (input: AdminWriteRoleInput) => Promise<void>
@@ -167,7 +143,6 @@ export interface AdminBackend {
   bindRole: (input: AdminBindingRef) => Promise<void>
   unbindRole: (input: AdminBindingRef) => Promise<void>
 
-  // Account surface.
   listAccounts: (
     params?: Parameters<AdminOperations['useAccounts']>[0],
   ) => Promise<AdminAccountPage>
@@ -191,16 +166,12 @@ export interface AdminBackend {
     input: AdminCreateSecretInput,
   ) => Promise<AdminAccountSecretCreated>
 
-  // Impersonation surface.
   listImpersonations: (
     params: Parameters<AdminOperations['useImpersonations']>[0],
   ) => Promise<readonly AdminImpersonation[]>
   revokeImpersonation: (input: AdminImpersonationRef) => Promise<void>
 
-  // Invitation + membership surfaces (tenant-scoped). The invitation read
-  // takes the same page parameters production's bundle forwards (limit,
-  // after, status); a test that only cares about the bare list may omit the
-  // second argument, and the page still sees a settled first page.
+  // The invitation read forwards the same page parameters production's bundle does.
   listInvitations: (
     tenant: string,
     params?: Parameters<AdminOperations['useInvitations']>[1],
@@ -213,9 +184,8 @@ export interface AdminBackend {
     input: AdminInvitationRef,
   ) => Promise<AdminIssuedInvitation>
   /**
-   * A test may answer with the server's page envelope (to exercise the next
-   * cursor) or with the bare rows this fixture used before paging existed;
-   * the hook normalizes both to the envelope the production read returns.
+   * A test may answer with the server's page envelope (to exercise the cursor) or
+   * with bare rows; the hook normalizes both.
    */
   listMembers: (
     tenant: string,
@@ -225,7 +195,6 @@ export interface AdminBackend {
   writeMember: (input: AdminWriteMemberInput) => Promise<void>
   setMemberSsoExempt: (input: AdminSetMemberSSOExemptInput) => Promise<void>
 
-  // SSO surface.
   listSsoProviders: (tenant: string) => Promise<readonly AdminSsoProvider[]>
   getSsoProvider: (query: AdminSsoProviderQuery) => Promise<AdminSsoProvider>
   deleteSsoProvider: (input: AdminSsoProviderRef) => Promise<void>
@@ -237,7 +206,6 @@ export interface AdminBackend {
   updateSsoProvider: (input: AdminWriteSsoProviderInput) => Promise<AdminSsoProvider>
   claimSsoDomain: (input: AdminClaimSsoDomainInput) => Promise<AdminSsoVerifyToken>
 
-  // Tenant management surfaces (the organization bundle's own members).
   getTenantProfile: (tenant: string) => Promise<AdminTenantProfile>
   updateTenantProfile: (input: AdminTenantProfileWriteInput) => Promise<void>
   requestOrganizationOwner: (
@@ -278,7 +246,6 @@ export interface AdminBackend {
   bindTenantRole: (input: AdminTenantBindingRef) => Promise<void>
   unbindTenantRole: (input: AdminTenantBindingRef) => Promise<void>
 
-  // SMS template surface.
   listSmsTemplates: () => Promise<AdminSmsTemplatePage>
   registerSmsTemplate: (input: AdminRegisterSmsTemplateInput) => Promise<void>
   offerSmsTemplate: (input: AdminOfferSmsTemplateInput) => Promise<void>
@@ -287,10 +254,8 @@ export interface AdminBackend {
 }
 
 /**
- * A working in-memory backend for the common case, with the named
- * behaviour overridden per test. Everything defaults to a settled
- * successful answer (empty reads and resolved writes); a test that wants
- * a failure passes a rejecting function for the member it exercises.
+ * A working in-memory backend with the named behaviour overridden per test;
+ * everything defaults to a settled successful answer.
  */
 export function makeAdminBackend(
   overrides: Partial<AdminBackend> = {},
@@ -536,9 +501,10 @@ export function providerFixture(
   }
 }
 
-/** The issued invitation an issue answers with: the pending row plus the
- * one-time token. The default delivery is `not_configured`, the outcome that
- * still hands the token over; a `sent` answer carries none. */
+/**
+ * The issued invitation: the pending row plus the one-time token. A `sent`
+ * delivery carries no token.
+ */
 export function issuedInvitationFixture(
   overrides: Partial<AdminIssuedInvitation> = {},
 ): AdminIssuedInvitation {
@@ -563,8 +529,7 @@ export function issuedInvitationFixture(
     email_delivery: 'not_configured',
     ...overrides,
   }
-  // A sent notice carries no token. Unless the case names a token itself, the
-  // fixture follows the contract so a `sent` answer cannot look copyable.
+  // Unless the case names a token, a `sent` answer carries none.
   if (fixture.email_delivery === 'sent' && !('token' in overrides)) {
     const sent: AdminIssuedInvitation = { ...fixture }
     delete sent.token
@@ -624,9 +589,6 @@ function ssoProviderKey(id: string) {
 }
 const SMS_TEMPLATES_KEY = ['console-test', 'sms-templates'] as const
 
-/** The organization bundle's tenant-scoped keys: auth-core's tenant prefix
- * over the surface's own name, so a switch cannot reuse another tenant's
- * rows. */
 function tenantSettingsKey(tenant: string) {
   return tenantQueryKey(tenant, 'console-test', 'tenant-settings')
 }
@@ -652,16 +614,7 @@ function tenantAccountBindingsKey(tenant: string, account: string) {
   return tenantQueryKey(tenant, 'console-test', 'tenant-bindings', account)
 }
 
-/**
- * Builds a AdminOperations whose hooks run real react-query queries and
- * mutations over the given backend. Call it in the test body and pass the
- * result to renderWithProviders; keep the returned object stable across a
- * render (a module-level const or a value captured before render).
- *
- * The result also carries the organization bundle's tenant-scoped settings and
- * role members, so it is assignable to `OrganizationAdminOperations` and a
- * organization page test gets those surfaces from the same scripted backend.
- */
+/** Builds an AdminOperations over the backend; keep the result stable across renders. */
 export function createAdminOperations(
   backend: AdminBackend,
 ): AdminOperations & OrganizationAdminOperations {
@@ -1050,9 +1003,8 @@ export function createAdminOperations(
 
     useImpersonations: (params, options) =>
       useQuery({
-        // The generated key factory, because the page acts on this read's
-        // cache directly: the entry it drops on ending an impersonation
-        // must be the one production's read builds.
+        // The generated key factory, because the page drops this entry directly:
+        // it must be the key production's read builds.
         queryKey: getAuthnAdminImpersonationsListQueryKey(params.tenant, { limit: params.limit, after: params.after }),
         queryFn: () => backend.listImpersonations(params),
         enabled: params.tenant !== '' && (options?.enabled ?? true),
@@ -1072,10 +1024,8 @@ export function createAdminOperations(
 
     useInvitations: (tenant: string, params) =>
       useQuery({
-        // A caller that passes page parameters (the organization members
-        // page's status filter and cursor) keys by them too, so a filter
-        // change is a new read rather than a reused first page. A caller
-        // that passes none keeps the bare key the platform page always used.
+        // Page parameters key the read too, so a filter change is a new read; a
+        // caller that passes none keeps the bare key the platform page uses.
         queryKey:
           params === undefined
             ? invitationsKey(tenant)
@@ -1299,9 +1249,8 @@ export function createAdminOperations(
         mutationFn: (input: AdminTenantOwnerRequestInput) =>
           backend.requestOrganizationOwner(input),
         onSuccess: (_answer, input) => {
-          // Mirror the shipped bundle: the request is recorded but ownership
-          // has not changed, so only the pending read and the member rows
-          // (which the dialog searches) are re-read.
+          // Mirror the shipped bundle: only the pending read and the member rows
+          // the dialog searches are re-read.
           void client.invalidateQueries({
             queryKey: tenantQueryKey(
               input.tenant,
@@ -1339,8 +1288,8 @@ export function createAdminOperations(
       return useMutation({
         mutationFn: (input: AdminTenantRef) => backend.deleteOrganization(input),
         onSuccess: (_answer, input) => {
-          // Mirror the shipped bundle: the terminal state is reflected into
-          // the cached profile instead of a re-read the server would refuse.
+          // Mirror the shipped bundle: reflect the terminal state into the cached
+          // profile instead of a re-read the server would refuse.
           client.setQueryData<AdminTenantProfile>(
             tenantProfileKey(input.tenant),
             (profile) =>

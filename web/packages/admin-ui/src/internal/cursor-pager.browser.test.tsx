@@ -1,14 +1,3 @@
-/**
- * CursorPager in a real browser: the direction that starts a page read
- * keeps the focus the activation gave it.
- *
- * jsdom cannot tell a natively disabled button from an `aria-disabled` one,
- * so a case that merely reads `document.activeElement` there passes even
- * when the control was taken out of the Tab order. Chromium applies the
- * real focusability rules, so the direction is proven to still hold focus
- * when the read settles into the last page.
- */
-
 import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'

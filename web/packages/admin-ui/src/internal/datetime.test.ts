@@ -1,9 +1,3 @@
-/**
- * The absent-instant sentinel: the views' "never" value is `null`, and an
- * absent field reads the same way. Timestamp formatting lives in
- * @speed/i18n and is tested there.
- */
-
 import { describe, expect, it } from 'vitest'
 import { isNullInstant } from './datetime.js'
 

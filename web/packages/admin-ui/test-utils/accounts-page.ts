@@ -14,7 +14,6 @@ import {
 } from './operations.js'
 import zhCN from '../src/locales/zh-CN.json' with { type: 'json' }
 
-/** Fills an i18n template's `{{name}}` slots with the given values. */
 export function fill(
   template: string,
   values: Readonly<Record<string, string>>,
@@ -25,17 +24,14 @@ export function fill(
   )
 }
 
-/** The account reference a notice inserts for a resolved display name. */
 export function byName(name: string): string {
   return fill(zhCN.common.accountReference.name, { name })
 }
 
-/** The account reference a notice inserts for an identifier alone. */
 export function byIdentifier(identifier: string): string {
   return fill(zhCN.common.accountReference.identifier, { identifier })
 }
 
-/** The account reference a notice inserts when both resolve. */
 export function byNameAndIdentifier(name: string, identifier: string): string {
   return fill(zhCN.common.accountReference.nameWithIdentifier, {
     name,
@@ -43,7 +39,6 @@ export function byNameAndIdentifier(name: string, identifier: string): string {
   })
 }
 
-/** The pagination action labels MUI's zh-CN locale gives its own controls. */
 export const NEXT_PAGE_LABEL =
   muiZhCN.components?.MuiTablePagination?.defaultProps.getItemAriaLabel?.(
     'next',
@@ -53,83 +48,66 @@ export const PREVIOUS_PAGE_LABEL =
     'previous',
   ) ?? ''
 
-/** The fixture account the suite administers. */
 export const ACCOUNT_ID = 'acc-1'
 
-/** The detail panel's accessible name: the account's display name, since the
- * default detail fixture carries no username. */
+/** The detail panel's accessible name (the fixture display name). */
 export const DETAIL_PANEL_NAME = 'Operator'
 
-/** The row control that opens the fixture account's detail panel. */
 export const MANAGE_ACCOUNT_NAME = fill(zhCN.accounts.manageAria, {
   name: 'Ada Lovelace',
 })
 
-/** The row control that deletes the fixture account. */
 export const DELETE_ACCOUNT_NAME = fill(zhCN.accounts.deleteAria, {
   name: 'Ada Lovelace',
 })
 
-/** A secret's own revoke control, named by its label. */
 export const REVOKE_SECRET_CI_NAME = fill(zhCN.accounts.secrets.revokeAria, {
   label: 'ci',
 })
 
-/** A session's own revoke control, named by its id. */
 export const REVOKE_SESSION_SESS_1_NAME = fill(zhCN.accounts.sessions.revokeAria, {
   id: 'sess-1',
 })
 
-/** The succeeded-create notice for the fixture display name. */
 export const CREATED_GRACE = fill(zhCN.accounts.created, { account: byName('Grace') })
 
-/** The succeeded-delete notice for the fixture account. */
 export const DELETED_ACC_1 = fill(zhCN.accounts.deleted, {
   account: byName('Ada Lovelace'),
 })
 
-/** A revoked secret's confirmation, named by label. */
 export const SECRET_REVOKED_CI = fill(zhCN.accounts.secretRevoked, {
   account: byName('Operator'),
   label: 'ci',
 })
 
-/** A created secret's confirmation, named by label. */
 export const SECRET_CREATED_CI = fill(zhCN.accounts.secretCreated, {
   account: byName('Operator'),
   label: 'ci',
 })
 
-/** The bulk revocation's confirmation. */
 export const SESSIONS_REVOKED = fill(zhCN.accounts.sessionsRevoked, {
   account: byName('Operator'),
 })
 
-/** The MFA requirement's saved confirmation. */
 export const MFA_SAVED = fill(zhCN.accounts.mfaSaved, {
   account: byName('Operator'),
 })
 
-/** The status write's saved confirmation. */
 export const STATUS_SAVED = fill(zhCN.accounts.statusSaved, {
   account: byName('Operator'),
 })
 
-/** The one-time secret display for the fixture label and secret value. */
 export const HANDED_OVER_CI = fill(zhCN.accounts.createSecret.handedOver, {
   label: 'ci',
   secret: 'one-time-value',
 })
 
-/** The detail's display-name line for the fixture account. */
 export const DISPLAY_NAME_OPERATOR = fill(zhCN.accounts.detail.displayNameLine, {
   value: 'Operator',
 })
 
-/** The create-secret panel's discard confirmation title. */
 export const DISCARD_SECRET_TITLE = zhCN.accounts.createSecret.discardTitle
 
-/** The ui-kit data table's zh-CN copy-control label template. */
 export const COPY_VALUE_TEMPLATE = (
   uiKitResources['zh-CN'] as unknown as {
     readonly dataTable: { readonly copyValue: string }
@@ -151,7 +129,6 @@ export function withAccounts(
   )
 }
 
-/** A session row as the fixture read answers it. */
 export function sessionFixture(id: string): AdminAccountSession {
   return {
     id,
@@ -166,17 +143,14 @@ export function sessionFixture(id: string): AdminAccountSession {
   }
 }
 
-/** The revoke control a session row carries, named by its id. */
 export function revokeSessionName(id: string): string {
   return fill(zhCN.accounts.sessions.revokeAria, { id })
 }
 
-/** The revoke control a secret row carries, named by its label. */
 export function revokeSecretName(label: string): string {
   return fill(zhCN.accounts.secrets.revokeAria, { label })
 }
 
-/** A session read over the fixture rows minus the ones already revoked. */
 export function sessionsWithoutRevoked(
   rows: readonly AdminAccountSession[],
   revoked: readonly string[],
@@ -198,10 +172,7 @@ export async function openDetail(user: ReturnType<typeof userEvent.setup>): Prom
   await user.click(screen.getByRole('button', { name: MANAGE_ACCOUNT_NAME }))
 }
 
-/**
- * Opens and confirms the fixture account's two-step delete, then waits for
- * the dialog to close so the page's own region is reachable.
- */
+/** Opens and confirms the fixture account's two-step delete and waits for the dialog to close. */
 export async function deleteThroughConfirm(
   user: ReturnType<typeof userEvent.setup>,
 ): Promise<void> {
@@ -219,10 +190,7 @@ export async function deleteThroughConfirm(
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 }
 
-/**
- * Confirms one named row's two-step delete through the dialog, then waits for
- * the dialog to leave the tree so the page's own region is reachable.
- */
+/** Confirms one named row's two-step delete and waits for the dialog to leave. */
 export async function deleteRowThroughConfirm(
   user: ReturnType<typeof userEvent.setup>,
   name: string,
@@ -245,45 +213,33 @@ export async function deleteRowThroughConfirm(
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 }
 
-/** The zh-CN label the confirm button shows once the two-step guard arms. */
 export const CONFIRM_AGAIN_LABEL = (
   uiKitResources['zh-CN'] as unknown as {
     readonly confirmDialog: { readonly confirmAgainLabel: string }
   }
 ).confirmDialog.confirmAgainLabel
 
-/** The zh-CN label of the side panel's built-in close control. */
 export const PANEL_CLOSE_LABEL = (
   uiKitResources['zh-CN'] as unknown as {
     readonly sidePanel: { readonly closeLabel: string }
   }
 ).sidePanel.closeLabel
 
-/** The ui-kit footer's template for a page whose total is unknown. */
 export const UNKNOWN_TOTAL_LABEL = (
   uiKitResources['zh-CN'] as unknown as {
     readonly dataTable: { readonly displayedRowsUnknown: string }
   }
 ).dataTable.displayedRowsUnknown
 
-/** The page's confirm label on a write's confirmation dialog. */
 export const CONFIRM_LABEL = zhCN.common.confirm
 
-/** The create panel's heading, which is also its accessible name. */
 export const CREATE_PANEL_NAME = zhCN.accounts.create.title
 
-/** The discard confirmation's heading. */
 export const DISCARD_DIALOG_NAME = zhCN.accounts.create.discardTitle
 
-/**
- * The accessible name an in-page collapse control would carry on the fixture
- * account. The detail moved into a modal side panel and the control's own
- * key went with it, so this guard rebuilds the words the removed key held
- * from the shipped resources rather than dropping the check.
- */
+/** The accessible name an in-page collapse control would carry on the fixture account. */
 export const COLLAPSE_ACCOUNT_NAME = `${zhCN.accountSelector.close}${zhCN.accounts.title} ${ACCOUNT_ID}`
 
-/** Opens the create panel from the page header and returns its dialog. */
 export async function openCreate(
   user: ReturnType<typeof userEvent.setup>,
 ): Promise<HTMLElement> {
@@ -291,12 +247,7 @@ export async function openCreate(
   return screen.findByRole('dialog', { name: CREATE_PANEL_NAME })
 }
 
-/**
- * The body of the `@container (min-width:600px)` rule emotion emitted for
- * `element`'s own class, or undefined when the element carries no such
- * rule. Scoping to the element's class keeps the assertion proof for this
- * form rather than for any earlier render whose styles are still injected.
- */
+/** The body of the `@container (min-width:600px)` rule for `element`'s own class. */
 export function elementContainerRule(
   css: string,
   element: Element,
@@ -313,7 +264,6 @@ export function elementContainerRule(
   ).exec(css)?.[1]
 }
 
-/** The `width` `element` declares inside `@media (min-width:<minWidth>px)`. */
 export function elementWidthAt(
   css: string,
   element: Element,
@@ -332,11 +282,7 @@ export function elementWidthAt(
   return rule === undefined ? undefined : /(?:^|;)width:([^;]+)/.exec(rule)?.[1]
 }
 
-/**
- * Every declaration block emotion emitted for `element`'s own class, base
- * rule and breakpoint/container overrides alike, so a caller can find a
- * declaration without pinning which rule carries it.
- */
+/** Every declaration block emotion emitted for `element`'s own class. */
 export function elementDeclarations(css: string, element: Element): string {
   const emotionClass = Array.from(element.classList).find((name) =>
     name.startsWith('css-'),
@@ -349,9 +295,7 @@ export function elementDeclarations(css: string, element: Element): string {
   return Array.from(matches, (match) => match[1] ?? '').join('\n')
 }
 
-/** Confirms the open danger dialog (the confirm button carrying the common
- * confirm label), then waits for it to leave the tree so the next interaction
- * is not blocked by the modal's aria-hidden background. */
+/** Confirms the open danger dialog, then waits for it to leave the tree. */
 export async function confirmDialog(user: ReturnType<typeof userEvent.setup>): Promise<void> {
   // The page may carry an open side panel (itself a dialog), so the
   // confirmation is picked out by its own confirm button rather than by
@@ -374,9 +318,7 @@ export async function confirmDialog(user: ReturnType<typeof userEvent.setup>): P
   })
 }
 
-/** A 401 ApiError as the api-client delivers it: the authn step-up refusal
- * carries no readable envelope, so the client synthesizes client.http.401,
- * and the session discriminates it from a session end by the live snapshot. */
+/** A 401 step-up refusal as the api-client delivers it (`client.http.401`). */
 export function stepUpRefusal(): {
   readonly status: number
   readonly code: string
@@ -386,8 +328,7 @@ export function stepUpRefusal(): {
   return { status: 401, code: 'client.http.401', message: 'refused', auth: true }
 }
 
-/** A 401 ApiError carrying the tenant admission layer's SSO step-up code. A
- * local factor cannot satisfy it, so the dialog must offer the sign-in exit. */
+/** A 401 SSO step-up refusal: the dialog must offer the sign-in exit. */
 export const SSO_REFUSAL = {
   status: 401,
   code: 'authn.sso_required',
@@ -395,8 +336,7 @@ export const SSO_REFUSAL = {
   auth: true,
 }
 
-/** A 403 ApiError carrying a code the console's error text lists, so the
- * failure banner has a stable line to assert on. */
+/** A 403 ApiError the error-text whitelist lists. */
 export const FORBIDDEN = {
   status: 403,
   code: 'authn.forbidden',
@@ -405,8 +345,7 @@ export const FORBIDDEN = {
 
 export const FORBIDDEN_TEXT = zhCN.errors.authn.forbidden
 
-/** A 409 refusal whose email address another account reserved, so the
- * create form's failure copy must name the address and say what to do. */
+/** A 409 refusal: the email address is already taken. */
 export const EMAIL_TAKEN = {
   status: 409,
   code: 'authn.email_taken',
@@ -415,7 +354,6 @@ export const EMAIL_TAKEN = {
 
 export const EMAIL_TAKEN_TEXT = zhCN.errors.authn.email_taken
 
-/** A 409 refusal whose login name another account holds. */
 export const USERNAME_TAKEN = {
   status: 409,
   code: 'authn.username_taken',
@@ -424,7 +362,6 @@ export const USERNAME_TAKEN = {
 
 export const USERNAME_TAKEN_TEXT = zhCN.accounts.create.usernameTaken
 
-/** A 400 refusal of a login name the system keeps for itself. */
 export const USERNAME_RESERVED = {
   status: 400,
   code: 'authn.username_reserved',
@@ -433,7 +370,6 @@ export const USERNAME_RESERVED = {
 
 export const USERNAME_RESERVED_TEXT = zhCN.accounts.create.usernameReserved
 
-/** A 400 refusal of a login name that does not fit the server's rule. */
 export const USERNAME_INVALID = {
   status: 400,
   code: 'authn.username_invalid',
@@ -442,7 +378,6 @@ export const USERNAME_INVALID = {
 
 export const USERNAME_INVALID_TEXT = zhCN.accounts.create.usernameInvalid
 
-/** A 400 refusal of another value of the form (here the password policy). */
 export const BAD_REQUEST = {
   status: 400,
   code: 'authn.bad_request',
@@ -451,9 +386,7 @@ export const BAD_REQUEST = {
 
 export const BAD_REQUEST_TEXT = zhCN.errors.authn.bad_request
 
-/** A 409 refusal of a username removal: the name is permanent. The console
- * never renders a username's remove action, so this refusal can only answer a
- * request issued outside the surface. */
+/** A 409 refusal of a username removal (the name is permanent). */
 export const USERNAME_IMMUTABLE = {
   status: 409,
   code: 'authn.username_immutable',
@@ -481,8 +414,7 @@ export const SESSION_ROW = {
   current: false,
 }
 
-/** Every element matching `selector` outside the panel: the page-level
- * feedback regions live there, behind the open panel's aria-hidden. */
+/** Every element matching `selector` outside the panel. */
 export function outsideOf(panel: HTMLElement, selector: string): Element[] {
   return Array.from(document.querySelectorAll(selector)).filter(
     (element) => !panel.contains(element),
@@ -494,9 +426,7 @@ export type WriteDriver = (
   panel: HTMLElement,
 ) => Promise<void>
 
-/** The five detail writes whose feedback moved into the panel: each case
- * builds the operations for a failing or a succeeding run, and knows how to
- * drive the write from inside the open detail panel. */
+/** The five detail writes whose feedback lives in the panel. */
 export const DETAIL_WRITES: readonly {
   readonly label: string
   readonly success: string
@@ -592,9 +522,7 @@ export const DETAIL_WRITES: readonly {
   },
 ]
 
-/** The six field-level writes of the detail's account-level section: each is
- * its own control group and its own feedback scope, with the region directly
- * under the group. */
+/** The six field-level writes of the detail's account-level section. */
 export const FIELD_WRITES: readonly {
   readonly label: string
   readonly success: string
@@ -728,5 +656,4 @@ export const FIELD_WRITES: readonly {
   },
 ]
 
-/** Both tables drive one write per control group through the panel. */
 export const ALL_DETAIL_WRITES = [...DETAIL_WRITES, ...FIELD_WRITES]

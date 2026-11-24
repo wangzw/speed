@@ -1,13 +1,7 @@
 /**
- * Reads a table column's responsive visibility out of the CSS emotion
- * injected for the current render. jsdom evaluates neither real layout
- * nor container queries, so the proof is the declarations the cell
- * carries: `display: none` at the container's 0px baseline and
- * `display: table-cell` from a named minimum width up. The width is the
- * table container's own minimum (DataTable's root box declares
- * `container-type: inline-size`; every priority rule resolves against
- * it), never the viewport's -- a 1184px container therefore shows a
- * column with a 600px or 900px restore and hides one restored at 1200px.
+ * Reads a table column's responsive visibility from the injected emotion CSS:
+ * `display: none` at the container's 0px baseline and `display: table-cell` from
+ * a named minimum width up. The width is the table container's, never the viewport's.
  */
 
 import {
@@ -28,10 +22,7 @@ function escape(className: string): string {
   return className.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-/**
- * The visibility pair a priority column carries, or null for a column
- * with no priority (no visibility rule at all, so it never hides).
- */
+/** The visibility pair a priority column carries, or null for an unprioritized column. */
 export function columnVisibility(element: Element): ColumnVisibility | null {
   const css = emittedStyleText()
   const classes = Array.from(element.classList).filter((name) =>

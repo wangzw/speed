@@ -1,19 +1,6 @@
 /**
- * admin-ui test configuration: jsdom DOM environment with the shared
- * jest-dom matcher setup, plus the workspace source aliases. Timeout and
- * coverage come from the workspace preset (web/vitest.shared.ts).
- *
- * The page cases drive userEvent through MUI menus, dialogs, debounced
- * search reads and data tables; the shared budget covers them under the
- * parallel workspace run. The budget is the wait, not the work: a genuine
- * hang still fails, a minute later.
- *
- * The aliases come from the workspace's single package map
- * (web/scripts/speed-aliases.mjs): every @speed/* specifier -- subpaths
- * included -- resolves onto its sibling's live src entry, because a
- * sibling's dist/ is never committed and not guaranteed to exist when
- * tests run. The map is the one place a specifier is added or moved, so
- * this list cannot drift from what src/ and test-utils/ import.
+ * admin-ui test configuration: jsdom with the shared jest-dom setup and the
+ * workspace source aliases. Timeout and coverage come from the workspace preset.
  */
 import { defineConfig } from 'vitest/config'
 import { speedAliases } from '../../scripts/speed-aliases.mjs'
@@ -26,9 +13,7 @@ export default defineConfig({
   test: sharedTestOptions({
     environment: 'jsdom',
     setupFiles: ['./test-utils/setup.ts'],
-    // The cases that render in a non-browser display zone need a browser
-    // zone that differs from the zone they pass; see
-    // TEST_BROWSER_TIME_ZONE.
+    // A browser zone that differs from the zone the cases pass; see TEST_BROWSER_TIME_ZONE.
     env: { TZ: TEST_BROWSER_TIME_ZONE },
   }),
 })

@@ -1,16 +1,6 @@
 /**
- * RoleUsageSection: who holds the selected role, read-only.
- *
- * The summary reports the role's active-member count; an assembly with no
- * account-identity reader answers no count at all, and the section says
- * the member state is unavailable rather than presenting the binding
- * count as a stand-in. The holder table pages by the server's account
- * cursor and shows the display name, the recorded account, the membership
- * state and when the binding was written.
- *
- * The optional "open in the members page" entry appears only when the
- * caller may manage memberships; it is an addition to the read-only list,
- * never a replacement for it.
+ * RoleUsageSection: the selected role's holders, read-only; with no identity
+ * reader it says the member state is unavailable rather than substituting the count.
  */
 
 import Box from '@mui/material/Box'
@@ -78,9 +68,8 @@ export function RoleUsageSection({
       id: 'member',
       header: t('permissions.usage.column.name'),
       cellWrap: 'wrap',
-      // The member is named by display name and login username, either
-      // alone, or the neutral copy when neither resolves. The account id is
-      // the row key, never visible text or a copy value.
+      // The member is named by display name and login username; the account id
+      // is the row key, never visible text or a copy value.
       cellFullValue: (binding) =>
         identityLabel(binding.display_name, binding.username),
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,

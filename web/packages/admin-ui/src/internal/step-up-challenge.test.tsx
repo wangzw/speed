@@ -1,29 +1,3 @@
-/**
- * StepUpChallenge: the re-authentication dialog of the step-up-gated
- * admin writes.
- *
- * The dialog drives the session's step-up flow (auth-core's useStepUp)
- * and forwards each answer; the assertion here is the one wire detail the
- * backend requires and a naive renderer misses: the second factor's code
- * challenge is answered under the `factor` step with the chosen factor's
- * identifier resent alongside the code (pkg/authn/login's applyFactor
- * re-reads the factor from the answer). A ready state's `complete` step is
- * answered on its own once per sequence, and the step's own confirmation
- * button takes over when that automatic answer is refused.
- *
- * The failure cases pin the two different reasons a challenge cannot be
- * completed. An account with no active factor is recognised from its own
- * factor read: the dialog names the missing second factor and never starts a
- * flow it knows cannot come; the host's account-settings destination is a
- * link when the shell supplies one and text only when it does not, so the
- * dialog itself holds no host path. A start the server refuses with 401
- * while the account does have factors (none of them may strengthen this
- * session) is the deployment's own refusal, and the dialog offers the
- * re-login instead. Any other start failure -- a 400 included -- is an
- * ordinary error rendered as its code, never folded into either of those
- * two explanations.
- */
-
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { restoreRealTimers } from '@speed/test-utils/timers'
@@ -51,8 +25,6 @@ import {
   type StepUpTestSession,
 } from '../../test-utils/session.js'
 
-/** A session whose step-up flow offers one factor, then asks for its code,
- * then settles elevated; it records every answer's input. */
 function flowSession(): {
   readonly session: AuthSession
   readonly answers: Array<Readonly<Record<string, string>> | undefined>
@@ -120,9 +92,6 @@ function flowSession(): {
   return { session, answers }
 }
 
-/** A session whose step-up flow starts at the password because every factor
- * was registered during the session, then offers the factor once the password
- * is proved. It records every answer's step and input. */
 function firstFactorSession(): {
   readonly session: AuthSession
   readonly answers: Array<{
@@ -157,11 +126,6 @@ function firstFactorSession(): {
   return { session, answers }
 }
 
-/** A session whose step-up flow offers one factor, asks for its code, parks
- * on the ready state's `complete` step, and settles the elevation when that
- * step is answered. It records every answer's step and input, so a suite can
- * tell the automatic completion from a second click. `completeAnswer`
- * scripts that answer; the default elevates. */
 function readySession(
   completeAnswer: () => Promise<AuthnFlowState> = () =>
     Promise.resolve<AuthnFlowState>({
@@ -206,7 +170,6 @@ function readySession(
   return { session, answers }
 }
 
-/** One active factor as the caller's own factor read answers it. */
 const ACTIVE_FACTOR = {
   id: 'factor-1',
   kind: 'totp',
@@ -215,9 +178,6 @@ const ACTIVE_FACTOR = {
   created_at: '2026-01-01T00:00:00Z',
 }
 
-/** Binds a scripted request function that answers the caller's own factor
- * read with `factors`, and records every request. Any other leg is a
- * defect of the case. */
 function bindFactors(factors: readonly unknown[]): ReturnType<typeof bindAdminRequest> {
   return bindAdminRequest((call) => {
     if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
@@ -227,8 +187,6 @@ function bindFactors(factors: readonly unknown[]): ReturnType<typeof bindAdminRe
   })
 }
 
-/** A session whose flow release is recorded, so a suite can assert whether
- * the dialog sent any abandon request. */
 function withRecordedAbandon(session: AuthSession): {
   readonly session: AuthSession
   readonly abandon: ReturnType<typeof vi.fn>
@@ -237,8 +195,6 @@ function withRecordedAbandon(session: AuthSession): {
   return { session: { ...session, abandonFlow: abandon }, abandon }
 }
 
-/** A session whose step-up start is refused by `refusal`. Its shortfall
- * classifier is auth-core's own: a 401 on an established session. */
 function refusingStartSession(
   refusal: unknown,
   logout: () => Promise<void> = () => Promise.resolve(),
@@ -252,9 +208,6 @@ function refusingStartSession(
 
 describe('StepUpChallenge', () => {
   it('stacks the dialog body with one theme spacing gap', async () => {
-    // The account and admin dialogs read the same: the body's direct
-    // children sit theme.spacing(2) apart, so the failure alert has the
-    // same gap above and below. The default token unit is 8.
     bindFactors([ACTIVE_FACTOR])
     renderWithProviders(
       <StepUpChallenge
@@ -274,8 +227,6 @@ describe('StepUpChallenge', () => {
   })
 
   it('sends the host’s path as the flow’s return_to', async () => {
-    // A redirect method's round trip lands back on the admin page that
-    // opened the dialog, so that page reads the refusal.
     const starts: Array<Parameters<AuthSession['startAuthenticatedFlow']>[0]> =
       []
     const base = flowSession().session
@@ -372,17 +323,12 @@ describe('StepUpChallenge', () => {
         />,
       )
       const user = userEvent.setup()
-      // The block is not on screen before anything asks for a send: the
-      // factor choice is what asks for the proof.
       const sms = await screen.findByRole('button', {
         name: zhCN.stepUp.factorKind.sms,
       })
       expect(fake.widgets).toHaveLength(0)
       await user.click(sms)
 
-      // Asking for the SMS answer renders the block above the factor choice,
-      // and the control that asked gives way while the proof is outstanding:
-      // no request leaves until the widget yields its single-use token.
       await waitFor(() => expect(fake.widgets).toHaveLength(1))
       expect(fake.widgets[0]?.siteKey).toBe('site-1')
       expect(
@@ -416,7 +362,6 @@ describe('StepUpChallenge', () => {
         onCancel={() => undefined}
       />,
     )
-    // The flow offers the factor; choosing it starts the code challenge.
     await user.click(
       await screen.findByRole('button', { name: zhCN.stepUp.factorKind.totp }),
     )
@@ -425,16 +370,10 @@ describe('StepUpChallenge', () => {
     await waitForCondition(() => {
       expect(onSuccess).toHaveBeenCalledTimes(1)
     })
-    // The factor-choice answer carries the id; the code answer carries the
-    // same id again beside the code.
     expect(answers).toEqual([{ factor: 'f1' }, { code: '123456', factor: 'f1' }])
   })
 
   it('answers a first-factor password under the answer step when the account already holds factors', async () => {
-    // A factor registered during the session does not put the flow at the
-    // factor step: the server proves the password again first. The dialog
-    // did not ask for a first-factor re-proof, yet this challenge is the
-    // first factor, so its answer travels under `answer`.
     bindFactors([ACTIVE_FACTOR])
     const user = userEvent.setup()
     const { session, answers } = firstFactorSession()
@@ -471,9 +410,6 @@ describe('StepUpChallenge', () => {
       />,
     )
 
-    // The factor proof parks the flow on its ready `complete` step, a bare
-    // confirmation that collects nothing. The dialog submits it on its own:
-    // the elevation lands without a second click on the same control.
     await user.click(
       await screen.findByRole('button', { name: zhCN.stepUp.factorKind.totp }),
     )
@@ -522,8 +458,6 @@ describe('StepUpChallenge', () => {
     await user.type(await screen.findByLabelText(/code/), '123456')
     await user.click(screen.getByRole('button', { name: zhCN.stepUp.submit }))
 
-    // The automatic completion is refused: its code renders and the step's
-    // own confirmation button comes back for a manual retry.
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.login_failed)
     expect(onSuccess).not.toHaveBeenCalled()
@@ -536,10 +470,6 @@ describe('StepUpChallenge', () => {
   })
 
   it('holds the submit for the wait a throttled answer stated', async () => {
-    // A throttled answer arrives as the ratelimit layer's 429 with a
-    // Retry-After. The dialog names the wait, keeps the step form but
-    // disables its submit until the interval elapses, then clears the
-    // failure and makes the step answerable again.
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       bindFactors([ACTIVE_FACTOR])
@@ -591,8 +521,6 @@ describe('StepUpChallenge', () => {
       )
 
       const alert = await screen.findByRole('alert')
-      // The live region carries only the code's static sentence, so a wait
-      // that ticks does not re-announce the whole banner.
       expect(alert).toHaveTextContent(zhCN.errors.ratelimit.throttled)
       // The countdown is a separate line, outside the alert and aria-live off.
       const countdown = screen.getByText(
@@ -601,8 +529,6 @@ describe('StepUpChallenge', () => {
       expect(countdown.closest('[role="alert"]')).toBeNull()
       expect(countdown.getAttribute('aria-live')).toBe('off')
 
-      // One tick later the announced text is unchanged; only the countdown
-      // line has moved.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1_000)
       })
@@ -617,8 +543,6 @@ describe('StepUpChallenge', () => {
         name: zhCN.stepUp.submit,
       })
       expect(submit).toHaveAttribute('aria-disabled', 'true')
-      // The held control points at the countdown text already on the page
-      // instead of repeating the reason.
       expect(submit).toHaveAccessibleDescription(
         new RegExp(
           zhCN.throttle.countdown.replace('{{seconds}}', '29'),
@@ -635,8 +559,6 @@ describe('StepUpChallenge', () => {
           }),
         ).not.toHaveAttribute('aria-disabled', 'true')
       })
-      // The wait is spent, so the non-live countdown is gone and the banner
-      // stays the code's static sentence.
       expect(
         screen.queryByText(zhCN.throttle.countdown.replace('{{seconds}}', '1')),
       ).toBeNull()
@@ -649,9 +571,6 @@ describe('StepUpChallenge', () => {
   })
 
   it('describes the restart control with the wait a throttled start stated', async () => {
-    // A throttled start leaves no step to retry, so the restart is the whole
-    // surface; it is held for the wait and names the countdown already on
-    // the page as its reason.
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       bindFactors([ACTIVE_FACTOR])
@@ -733,9 +652,6 @@ describe('StepUpChallenge', () => {
           onCancel={() => undefined}
         />,
       )
-      // The assertion step starts its ceremony on arrival -- choosing the
-      // passkey factor was the only click -- and its answer travels under
-      // the second factor's step (`factor`), not the enrollment one.
       await waitForCondition(() => expect(onSuccess).toHaveBeenCalledTimes(1))
     } finally {
       if (original === undefined) {
@@ -764,16 +680,11 @@ describe('StepUpChallenge', () => {
       />,
     )
 
-    // The caller's own factor read says the account has no active factor:
-    // the dialog names that, rather than offering a re-login that can only
-    // produce the same single-factor session. With no accountHref from the
-    // host it renders no link at all -- the package holds no host path.
     expect(await screen.findByText(zhCN.stepUp.noFactor)).toBeInTheDocument()
     expect(screen.queryAllByRole('link')).toHaveLength(0)
     expect(
       screen.queryByRole('button', { name: zhCN.stepUp.relogin }),
     ).toBeNull()
-    // Nothing is left to verify, so the flow is never started.
     expect(startFlow).not.toHaveBeenCalled()
     expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
       'GET /api/v1/auth/factors',
@@ -796,8 +707,6 @@ describe('StepUpChallenge', () => {
       </AdminAccountHrefProvider>,
     )
 
-    // The destination is the host's, carried through the shell's context;
-    // the dialog only renders it.
     expect(
       await screen.findByRole('link', { name: zhCN.stepUp.goToAccount }),
     ).toHaveAttribute('href', '/host/security')
@@ -819,15 +728,10 @@ describe('StepUpChallenge', () => {
       />,
     )
 
-    // A 400 is not, by itself, "the account has no factor": it is an
-    // ordinary refusal and the dialog shows its code, not either of the
-    // two explanations that would excuse the failure.
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.bad_request)
     expect(screen.queryByText(zhCN.stepUp.cannotElevate)).toBeNull()
     expect(screen.queryByText(zhCN.stepUp.noFactor)).toBeNull()
-    // A 400 answered to a still-established session is the start request
-    // itself being unusable; a restart would repeat it, so none is offered.
     expect(screen.queryByRole('button', { name: zhCN.stepUp.restart })).toBeNull()
   })
 
@@ -859,14 +763,10 @@ describe('StepUpChallenge', () => {
     const onSuccess = vi.fn()
     renderWithProviders(<Harness onSuccess={onSuccess} />)
 
-    // The start is in flight when the operator cancels: the dialog closes
-    // and its driver unmounts.
     await waitForCondition(() => expect(start).toHaveBeenCalledTimes(1))
     await user.click(screen.getByRole('button', { name: zhCN.common.cancel }))
     await waitForCondition(() => expect(screen.queryByRole('dialog')).toBeNull())
 
-    // The start then settles elevated. The host must not replay the write
-    // the operator cancelled, so the elevation is dropped.
     settleStart({
       state: 'authenticated',
       session: { id: 'sess-1', expires_at: '2026-10-17T00:00:00Z' },
@@ -901,8 +801,6 @@ describe('StepUpChallenge', () => {
     }
     renderWithProviders(<Harness />)
 
-    // The start was refused, so the server created no flow: closing the
-    // dialog must not invent a binding to release.
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.authn.bad_request,
     )
@@ -935,8 +833,6 @@ describe('StepUpChallenge', () => {
     }
     renderWithProviders(<Harness />)
 
-    // The flow settles the elevation and the host closes the dialog, as it
-    // does after a won challenge.
     await user.click(
       await screen.findByRole('button', { name: zhCN.stepUp.factorKind.totp }),
     )
@@ -944,8 +840,6 @@ describe('StepUpChallenge', () => {
     await user.click(screen.getByRole('button', { name: zhCN.stepUp.submit }))
     await waitForCondition(() => expect(onSuccess).toHaveBeenCalledTimes(1))
 
-    // The server consumed the settled flow: the closed dialog has no
-    // binding to release.
     await waitForCondition(() => expect(screen.queryByRole('dialog')).toBeNull())
     await act(async () => {
       await Promise.resolve()
@@ -982,9 +876,6 @@ describe('StepUpChallenge', () => {
     }
     renderWithProviders(<Harness />)
 
-    // The flow is parked on its step when the operator closes the dialog:
-    // the binding is live, so it is released exactly once -- not once per
-    // layer that happens to unmount.
     await screen.findByLabelText(/code/)
     await user.click(screen.getByRole('button', { name: zhCN.common.cancel }))
     await waitForCondition(() => expect(screen.queryByRole('dialog')).toBeNull())
@@ -1029,9 +920,6 @@ describe('StepUpChallenge', () => {
       />,
     )
 
-    // The answer says the flow is gone, which offers a restart. Nothing is
-    // left to release for it: an abandon here would delete whatever flow
-    // the cookie names by then, which is the fresh one the restart opens.
     await user.type(await screen.findByLabelText(/code/), '123456')
     await user.click(screen.getByRole('button', { name: zhCN.stepUp.submit }))
     await screen.findByRole('button', { name: zhCN.stepUp.restart })
@@ -1068,9 +956,6 @@ describe('StepUpChallenge', () => {
       />,
     )
 
-    // A failed start leaves no step to answer: the code's banner, a
-    // restart and a cancel are the whole surface -- not the description
-    // of a verification that never came.
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.unavailable)
     expect(screen.queryByText(zhCN.stepUp.description)).toBeNull()
@@ -1080,8 +965,6 @@ describe('StepUpChallenge', () => {
     ).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: zhCN.stepUp.restart }))
-    // The restart drives a fresh flow locally; the second start settles
-    // the elevation and the refused write is replayed.
     await waitForCondition(() => expect(onSuccess).toHaveBeenCalledTimes(1))
     expect(start).toHaveBeenCalledTimes(2)
 
@@ -1128,9 +1011,6 @@ describe('StepUpChallenge', () => {
     await user.type(await screen.findByLabelText(/code/), '123456')
     await user.click(screen.getByRole('button', { name: zhCN.stepUp.submit }))
 
-    // The flow is gone (expired, consumed, nothing left to answer): the
-    // step form is replaced by the code's banner and a restart, because
-    // answering the same step again cannot succeed.
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.flow_invalid)
     expect(screen.queryByText(zhCN.stepUp.description)).toBeNull()
@@ -1202,14 +1082,10 @@ describe('StepUpChallenge', () => {
         />,
       )
 
-      // The arrival ceremony produces a credential and the server refuses
-      // it: the server banner stands alone.
       const serverAlert = await screen.findByRole('alert')
       expect(serverAlert).toHaveTextContent(zhCN.errors.authn.login_failed)
       expect(screen.queryByText(zhCN.stepUp.passkeyCancelled)).toBeNull()
 
-      // The next ceremony is dismissed: the newer failure replaces the
-      // server banner, so the two are never on screen together.
       await user.click(screen.getByRole('button', { name: zhCN.stepUp.submit }))
       await waitForCondition(() => {
         expect(screen.getAllByRole('alert')).toHaveLength(1)
@@ -1274,9 +1150,6 @@ describe('StepUpChallenge', () => {
       />,
     )
 
-    // Factors exist but none of them may strengthen this session: the
-    // deployment declines the step-up, and a fresh sign-in is the way to a
-    // session whose authentication time lets those factors count.
     expect(
       await screen.findByText(zhCN.stepUp.cannotElevate),
     ).toBeInTheDocument()

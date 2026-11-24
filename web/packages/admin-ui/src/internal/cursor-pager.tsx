@@ -1,21 +1,8 @@
 /**
  * CursorPager: the shared previous/next control for cursor-paged lists.
  *
- * Both the member list and the invitation list page by an opaque cursor the
- * server returns as `next_cursor`: there is no total page count to show, so
- * the control names the page number the operator is on and offers the two
- * directions. The page index is zero-based in state and one-based in the
- * label. The control renders nothing on a single-page list, so a caller may
- * place it unconditionally below the table.
- *
- * Both directions stay focusable in every state. A write in flight makes
- * both unavailable, because a page change would read a cursor that is not
- * the settled page's. A page read in flight makes the direction that started
- * it busy and the other unavailable, so the operator keeps focus on the
- * direction they activated. A list boundary makes that direction unavailable.
- *
- * The labels come from the admin-ui namespace's shared pager keys, so the
- * two lists page with one wording and the host overrides it once.
+ * A direction stays focusable while its own read runs; a write in flight
+ * makes both unavailable, because a page change would read an unsettled cursor.
  */
 
 import { useEffect, useState } from 'react'
@@ -31,10 +18,7 @@ export interface CursorPagerProps {
   readonly hasNext: boolean
   /** Whether a write is in flight; both directions are then unavailable. */
   readonly busy?: boolean
-  /**
-   * Whether a page read is in flight; the direction that started it reports
-   * busy while the other direction is unavailable.
-   */
+  /** Whether a page read is in flight; its direction reports busy, the other is unavailable. */
   readonly reading?: boolean
   /** Moves to the page before the current one. */
   readonly onPrevious: () => void
@@ -44,7 +28,6 @@ export interface CursorPagerProps {
 
 interface StartedRead {
   readonly direction: 'previous' | 'next'
-  /** The page the activated direction moves to. */
   readonly page: number
 }
 

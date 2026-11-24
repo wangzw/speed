@@ -1,20 +1,6 @@
 /**
- * OrganizationAdminProvider: the organization administration surface's contexts,
- * without a frame of its own.
- *
- * The host has already rendered @speed/product-shell's `AppShell` around
- * the tenant area, so the organization surface must not render a second one.
- * This provider installs only what the shared page components need: the
- * current tenant, the tenant-scoped operations bundle, the session, the
- * feature answer, the narrowed organization route table, the in-place
- * navigation callback, the organization breadcrumb, the invitation-link
- * builder and the protected role names. It renders no DOM, imports neither
- * `@speed/product-shell` nor
- * `@speed/tenancy-ui`, and never derives or switches the current tenant:
- * `tenant` is the host's fact, handed in as a required prop.
- *
- * The platform console's `AdminProvider` is the other seam and stays the
- * platform staff's; neither provider hosts the other surface's pages.
+ * OrganizationAdminProvider: the organization surface's contexts without a frame;
+ * it never derives or switches the current tenant.
  */
 
 import { createContext, useContext } from 'react'
@@ -38,23 +24,14 @@ import type { OrganizationAdminOperations } from './organization-operations.js'
 export interface OrganizationAdminContextValue {
   /** The current tenant the host resolved; every request names it. */
   readonly tenant: string
-  /**
-   * The role names the host seeded into this tenant and that the tenant
-   * role page must render as read-only. Empty when the host names none.
-   */
+  /** The role names the host seeded and the role page renders as read-only. */
   readonly protectedRoles: readonly string[]
-  /**
-   * The host's action after a profile save lands: reload the caller tenant
-   * list the account menu and the breadcrumb read. Absent, the profile page
-   * only re-reads its own read.
-   */
+  /** The host's action after a profile save lands; absent, the page re-reads its own read. */
   readonly onTenantUpdated?: () => void | Promise<unknown>
   /**
-   * The host's action after a deletion ends the caller's membership in the
-   * current organization: leave the organization, reload the caller tenant
-   * list the account menu and the breadcrumb read, and show the message on
-   * the destination. Absent, the profile page falls back to
-   * `onTenantUpdated`. A transfer changes ownership only and never departs.
+   * The host's action after a deletion ends the caller's membership: leave,
+   * reload the caller tenant list, show the message there. Absent, the profile
+   * page falls back to `onTenantUpdated`.
    */
   readonly onOrganizationLeft?: (message: string) => void | Promise<unknown>
 }
@@ -63,12 +40,7 @@ const OrganizationAdminContext = createContext<OrganizationAdminContextValue | n
   null,
 )
 
-/**
- * The organization context. Throws outside the provider: a wrapper page
- * mounted without a tenant would have no request to address, and failing
- * loudly at composition beats issuing a request with an empty path
- * segment.
- */
+/** The organization context. Throws outside the provider, since a page would have no tenant. */
 export function useOrganizationAdminContext(): OrganizationAdminContextValue {
   const value = useContext(OrganizationAdminContext)
   if (value === null) {
@@ -96,60 +68,44 @@ export function useOrganizationAdminOnTenantUpdated():
   return useOrganizationAdminContext().onTenantUpdated
 }
 
-/** The host's action after a deletion ends the caller's membership, when the
- * host supplied one. */
+/** The host's action after a deletion ends the caller's membership, when supplied. */
 export function useOrganizationAdminOnOrganizationLeft():
   | ((message: string) => void | Promise<unknown>)
   | undefined {
   return useOrganizationAdminContext().onOrganizationLeft
 }
 
+/** The props of OrganizationAdminProvider. */
 export interface OrganizationAdminProviderProps {
-  /** The current tenant the host resolved. Required: the package never
-   * derives it from the session or the URL and never switches it. */
+  /** The current tenant the host resolved; never derived or switched here. */
   readonly tenant: string
   /** The tenant-scoped operations bundle the organization pages run through. */
   readonly operations: OrganizationAdminOperations
-  /** The host's synchronous feature answer. Required, as on the console
-   * shell: a provider that guessed would render controls the deployment
-   * does not serve. */
+  /** The host's synchronous feature answer; required, as on the console shell. */
   readonly hasFeature: (name: FeatureName) => boolean
-  /** The assembled session, published so a step-up-gated write can raise it. */
+  /** The session a step-up-gated write may raise. */
   readonly session?: AuthSession
-  /** The organization declarations the host's feature predicate left in force.
-   * The wrappers resolve sibling links against them by stable `id`. */
+  /** The organization declarations the host's feature predicate left in force. */
   readonly routes?: readonly AdminRoute[]
-  /** The host's in-place navigation callback. Supplying it routes a plain
-   * click on an organization link through the host's router. */
+  /** The host's in-place navigation callback. */
   readonly onNavigate?: (href: string) => void
-  /** The trail from the organization home to the page. Supplying it mounts the
-   * organization breadcrumb provider around the children. */
+  /** The trail from the organization home to the page; mounts the breadcrumb provider. */
   readonly breadcrumbs?: readonly PageHeaderBreadcrumb[]
-  /**
-   * Builds the acceptance link for an issued invitation's token, the same
-   * seam the platform console's `AdminProvider` carries. Absent, the
-   * invitation page shows the bare token instead.
-   */
+  /** Builds the acceptance link for an issued token; absent, the page shows the bare token. */
   readonly invitationLink?: (token: string) => string
-  /** Role names the tenant role page renders as read-only. Absent, no row
-   * is treated as protected. */
+  /** Role names the role page renders as read-only; absent, none is protected. */
   readonly protectedRoles?: readonly string[]
-  /** The host's action after a profile save lands: reload the caller tenant
-   * list the account menu and the breadcrumb read. Absent, the profile page
-   * only re-reads its own read. */
+  /** The host's action after a profile save lands. */
   readonly onTenantUpdated?: () => void | Promise<unknown>
-  /** The host's action after a deletion ends the caller's membership: leave
-   * the organization, reload the caller tenant list and show the message on
-   * the destination. Absent, the profile page falls back to
-   * `onTenantUpdated`. A transfer changes ownership only and never departs. */
+  /**
+   * The host's action after a deletion ends the caller's membership; absent, the
+   * profile page falls back to `onTenantUpdated`.
+   */
   readonly onOrganizationLeft?: (message: string) => void | Promise<unknown>
   readonly children: ReactNode
 }
 
-/**
- * The frameless organization surface: installs its contexts around the
- * children and renders nothing else.
- */
+/** The frameless organization surface: installs its contexts and renders nothing else. */
 export function OrganizationAdminProvider({
   tenant,
   operations,
@@ -164,14 +120,9 @@ export function OrganizationAdminProvider({
   onOrganizationLeft,
   children,
 }: OrganizationAdminProviderProps) {
-  // The operations context is declared in the console bundle's type, but
-  // the organization bundle is deliberately narrower in the platform members
-  // and wider in the tenant ones: the shared pages under this provider
-  // call only members the organization bundle carries, and the tenant-mode
-  // settings and permissions pages read the organization operations context
-  // instead. The cast is the one place the two shapes meet; it is not a
-  // promise that a platform page can render here (the package README
-  // states it cannot).
+  // The organization bundle is wider in the tenant members and narrower in the
+  // platform ones than AdminOperations. The shared pages under this provider
+  // call only members it carries; the cast is the one place the two shapes meet.
   const scopedOperations = operations as unknown as AdminOperations
   const content = (
     <OrganizationAdminContext.Provider

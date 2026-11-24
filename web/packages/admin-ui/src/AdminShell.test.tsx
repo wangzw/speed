@@ -1,22 +1,3 @@
-/**
- * AdminShell: the platform frame.
- *
- * It renders the three landmarks (a banner, a nav and a main) through the
- * shared @speed/layout-kit AppShell frame, derives the platform navigation
- * from the labelled declarations only, links each entry to its
- * declaration's path, and moves focus to main in place from the skip link.
- * It does no path matching and marks no entry selected.
- *
- * The two frame-shape guarantees the console shares with the tenant shell
- * are asserted here, each against the structural marker that produces it
- * (jsdom renders no real layout or scroll, so a computed-style assertion
- * could not see either): on the desktop the navigation lives inside the
- * permanent Drawer -- a fixed sidebar that does not scroll away with the
- * content, the bug the shared frame fixes over a stacked in-flow column --
- * and below md it lives inside a temporary (modal) Drawer behind a
- * hamburger toggle, never as a block stacked above the content.
- */
-
 import { useCallback, useState } from 'react'
 import type { ReactElement } from 'react'
 import { describe, expect, it, vi } from 'vitest'
@@ -45,24 +26,15 @@ import {
 } from '../test-utils/operations.js'
 import { expectNoAxeViolationsForPage } from '../test-utils/axe.js'
 
-/** The feature answer these shell-shape cases use: everything present. */
 function hasFeature(): boolean {
   return true
 }
 
-/** AdminShell with the required feature answer filled in. */
 function Shell(props: Omit<AdminShellProps, 'hasFeature'>): ReactElement {
   return <AdminShell {...props} hasFeature={hasFeature} />
 }
 
-/**
- * Dispatches a click and cancels its default action at the document, after
- * React's delegated handler has run. jsdom implements no navigation, so an
- * uncancelled link click logs "Not implemented"; cancelling here keeps the
- * output clean without changing what the component saw -- the document
- * listener runs after React's root listener, so the handler's own
- * judgement was already made.
- */
+/** Clicks with the default cancelled at the document: jsdom navigates nothing, so an uncancelled link click logs "Not implemented". */
 function clickWithoutNavigating(
   element: HTMLElement,
   init: MouseEventInit,
@@ -94,13 +66,9 @@ const routes: readonly AdminRoute[] = [
     label: 'Settings',
     icon: <svg aria-hidden="true" data-testid="icon-settings" />,
   },
-  // No label: reachable but not listed in the navigation.
   { path: '/audit/:id', view: () => null },
 ]
 
-// The controlled-collapse host: the collapse state lives here, AdminShell
-// reports every flip through onSidebarCollapsedChange, and nothing else writes
-// it -- the shape a real controlled consumer renders.
 function ControlledCollapseAdmin({
   onCollapseChange,
 }: {
@@ -168,8 +136,6 @@ describe('AdminShell', () => {
       </Shell>,
       { operations },
     )
-    // The banner does not scroll away with the page: AppShell pins the
-    // one head container and keeps the AppBar in normal flow inside it.
     const banner = screen.getByRole('banner')
     const head = banner.parentElement
     expect(head).not.toBeNull()
@@ -184,10 +150,6 @@ describe('AdminShell', () => {
       </Shell>,
       { operations },
     )
-    // The frame is in its sidebar form: no AppBar banner landmark, and
-    // the brand (the console title) renders outside the navigation
-    // landmark, ahead of it in document order (the drawer paper's top
-    // row).
     expect(screen.queryByRole('banner')).not.toBeInTheDocument()
     const nav = screen.getByRole('navigation')
     const brand = screen.getByText('Admin')
@@ -226,9 +188,6 @@ describe('AdminShell', () => {
   })
 
   it('carries the host account settings destination to the step-up dialog', async () => {
-    // The step-up dialog's no-factor state links to the host's account
-    // settings page; the shell is the one place the host supplies that
-    // destination, so the dialog rendered inside it must receive it.
     bindAdminRequest((call) => {
       if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
         return { factors: [] }
@@ -258,10 +217,6 @@ describe('AdminShell', () => {
       </Shell>,
       { operations },
     )
-    // The page content sits inside the content region's padded container,
-    // clear of the sidebar and the banner -- the same inset the tenant
-    // shell's content region applies. Without it the heading's parent is
-    // the bare main landmark and the page hugs the sidebar's right edge.
     const main = screen.getByRole('main')
     const heading = screen.getByRole('heading', { level: 1, name: 'Home' })
     expect(heading.parentElement).not.toBe(main)
@@ -298,7 +253,6 @@ describe('AdminShell', () => {
     )
     const nav = screen.getByRole('navigation')
     await user.click(within(nav).getByRole('link', { name: 'Settings' }))
-    // The entry stays a link, but its click is the host's to route.
     expect(onNavigate).toHaveBeenCalledWith('/settings')
   })
 
@@ -313,13 +267,10 @@ describe('AdminShell', () => {
     const settings = within(screen.getByRole('navigation')).getByRole('link', {
       name: 'Settings',
     })
-    // A Ctrl/Command click asks the browser for a new tab, and a middle
-    // click is the browser's own: neither is the host's to route in place.
     clickWithoutNavigating(settings, { ctrlKey: true })
     clickWithoutNavigating(settings, { metaKey: true })
     clickWithoutNavigating(settings, { button: 1 })
     expect(onNavigate).not.toHaveBeenCalled()
-    // The entry is still a real link either way.
     expect(settings).toHaveAttribute('href', '/settings')
   })
 
@@ -390,7 +341,6 @@ describe('AdminShell', () => {
       </Shell>,
       { operations },
     )
-    // The host's nav label names the landmark instead of the package default.
     expect(
       screen.getByRole('navigation', { name: 'Platform navigation' }),
     ).toBeInTheDocument()
@@ -451,12 +401,6 @@ describe('AdminShell', () => {
 
   describe('desktop frame: a fixed sidebar', () => {
     it('renders the navigation inside the permanent Drawer, not as an in-flow column beside the content', () => {
-      // The fixed sidebar is what keeps the nav from scrolling away with the
-      // content on a long page (the audit and permissions pages run past a
-      // viewport). jsdom renders no real scroll, so the assertion is on the
-      // structural marker that produces the fixed behaviour: MUI's permanent
-      // Drawer (the `MuiDrawer-docked` container, whose paper is fixed)
-      // wraps the nav, and the nav is not a descendant of main.
       mockMatchMedia(true)
       renderWithProviders(
         <Shell routes={routes} title="Admin">
@@ -467,11 +411,9 @@ describe('AdminShell', () => {
       const nav = screen.getByRole('navigation', {
         name: adminUiZhCN.shell.navLabel,
       })
+      // jsdom renders no layout, so the fixed sidebar is proven by the drawer's structural marker.
       expect(nav.closest(`.${drawerClasses.docked}`)).not.toBeNull()
-      // The permanent variant is the docked drawer, never the temporary one.
       expect(nav.closest(`.${drawerClasses.modal}`)).toBeNull()
-      // The sidebar is chrome beside the content, not part of the scrolling
-      // content column itself.
       expect(screen.getByRole('main').contains(nav)).toBe(false)
     })
 
@@ -498,9 +440,6 @@ describe('AdminShell', () => {
         </Shell>,
         { operations },
       )
-      // Without the host's collapse callback the frame renders no toggle and
-      // keeps the always-open permanent drawer -- the same opt-in contract the
-      // tenant frame carries.
       expect(
         screen.queryByRole('button', { name: layoutKitZhCN.appShell.collapseNav }),
       ).not.toBeInTheDocument()
@@ -520,17 +459,11 @@ describe('AdminShell', () => {
         <ControlledCollapseAdmin onCollapseChange={onCollapseChange} />,
         { operations },
       )
-      // The console passes the collapse pair straight through to the frame, so
-      // the desktop toggle is present and starts offering to collapse.
       const toggle = screen.getByRole('button', {
         name: layoutKitZhCN.appShell.collapseNav,
       })
       expect(toggle).toHaveAttribute('aria-expanded', 'true')
       await user.click(toggle)
-      // The flip is the host's to hold: the shell reports it and the
-      // permanent drawer narrows to the icon-only rail -- it stays mounted,
-      // so the nav landmark remains -- leaving the toggle offering to
-      // expand.
       expect(onCollapseChange).toHaveBeenCalledWith(true)
       expect(
         screen.getByRole('navigation', { name: adminUiZhCN.shell.navLabel }),
@@ -542,12 +475,6 @@ describe('AdminShell', () => {
   })
 
   describe('navigation groups', () => {
-    // Labelled declarations that name groups, plus one ungrouped entry. The
-    // group table orders the groups differently from the declaration order, so
-    // the grouped output cannot accidentally match the flat one. Every group
-    // holds two entries: a group with one visible entry renders ungrouped, so
-    // these cases are about the grouped form itself (see the single-entry
-    // cases below).
     const groupedRoutes: readonly AdminRoute[] = [
       { path: '/', view: () => null, label: 'Overview', group: 'overview' },
       { path: '/activity', view: () => null, label: 'Activity', group: 'overview' },
@@ -576,14 +503,11 @@ describe('AdminShell', () => {
         { operations },
       )
       const nav = screen.getByRole('navigation')
-      // Group headings are the disclosure controls, in the table's order.
       expect(
         within(nav)
           .getAllByRole('button')
           .map((button) => button.textContent),
       ).toEqual(['Identity & access', 'Platform', 'Overview'])
-      // The ungrouped entry sits above the groups; each group's entries keep
-      // their declaration order.
       expect(
         within(nav)
           .getAllByRole('link')
@@ -626,8 +550,6 @@ describe('AdminShell', () => {
         { operations },
       )
       const nav = screen.getByRole('navigation')
-      // Backward compatibility: the labelled declarations in declaration
-      // order, no group headings, no disclosure controls.
       expect(within(nav).queryAllByRole('button')).toHaveLength(0)
       expect(
         within(nav)
@@ -658,10 +580,6 @@ describe('AdminShell', () => {
   })
 
   describe('single-entry groups', () => {
-    // The demo's baseline serves every feature the console's pages require
-    // except sms.admin: the binary imports that module for the API contract,
-    // but no command names it for a run. Narrowing the declarations by that
-    // answer is what the demo's host hands the shell.
     const demoRoutes = adminRoutes.filter((route) =>
       (route.requires ?? []).every((name) => name !== 'sms.admin'),
     )
@@ -675,16 +593,11 @@ describe('AdminShell', () => {
         { operations },
       )
       const nav = screen.getByRole('navigation')
-      // Identity & access is the one group with more than one visible item;
-      // overview, tenants, platform and audit hold a lone entry each and
-      // render no heading over it.
       expect(
         within(nav)
           .getAllByRole('button')
           .map((button) => button.textContent),
       ).toEqual([adminUiZhCN.nav.groups.identity])
-      // The lone entries stand where their groups would have, in the group
-      // table's order, with identity & access's six items between them.
       expect(
         within(nav)
           .getAllByRole('link')
@@ -705,8 +618,6 @@ describe('AdminShell', () => {
 
     it('renders the heading again, with both items inside, when a second item is visible', () => {
       mockMatchMedia(true)
-      // Every feature present: sms.admin is in force, so platform config
-      // holds settings and the SMS templates.
       renderWithProviders(
         <Shell
           routes={adminRoutes}
@@ -718,8 +629,6 @@ describe('AdminShell', () => {
         { operations },
       )
       const nav = screen.getByRole('navigation')
-      // The same code now renders the platform heading; identity & access
-      // keeps its own.
       expect(
         within(nav)
           .getAllByRole('button')
@@ -745,15 +654,11 @@ describe('AdminShell', () => {
         adminUiZhCN.sms.title,
         adminUiZhCN.audit.title,
       ])
-      // The organization roles page belongs to the organization surface; its
-      // label is not a platform navigation entry of this shell.
       expect(
         within(nav).queryByRole('link', {
           name: adminUiZhCN.organization.nav.roles,
         }),
       ).toBeNull()
-      // Both platform pages sit inside the heading's controlled content,
-      // not beside it as lone top-level items.
       const heading = within(nav).getByRole('button', {
         name: adminUiZhCN.nav.groups.platform,
       })
@@ -770,7 +675,6 @@ describe('AdminShell', () => {
   })
 
   describe('navigation icons', () => {
-    /** The ListItemText root holding an entry's label. */
     const labelRootOf = (element: HTMLElement): Element | null =>
       element.closest(`.${listItemTextClasses.root}`)
 
@@ -783,8 +687,6 @@ describe('AdminShell', () => {
         { operations },
       )
       const tenants = screen.getByRole('link', { name: 'Tenants' })
-      // Icon and text coexist, and the icon is decorative: the accessible
-      // name is still exactly the label.
       expect(within(tenants).getByTestId('icon-tenants')).toBeInTheDocument()
       expect(within(tenants).getByText('Tenants')).toBeInTheDocument()
       expect(labelRootOf(screen.getByText('Tenants'))).not.toHaveStyle({
@@ -811,16 +713,11 @@ describe('AdminShell', () => {
         '/settings',
       ])
       for (const link of links) {
-        // The rail is icon-led: each entry renders its icon ...
         expect(link.querySelector('svg')).not.toBeNull()
-        // ... and the label taking the clipped accessible-only hiding
-        // recipe, rather than the icon-less fallback that keeps the text
-        // visible.
         expect(link.querySelector(`.${listItemTextClasses.root}`)).toHaveStyle({
           position: 'absolute',
         })
       }
-      // The clipped label still names each entry.
       expect(
         within(nav).getByRole('link', { name: 'Tenants' }),
       ).toBeInTheDocument()
@@ -831,8 +728,6 @@ describe('AdminShell', () => {
 
     it('collapses the group heading to its group icon', () => {
       mockMatchMedia(true)
-      // Two entries: a group holding one renders as an ungrouped item, with
-      // no heading left to collapse.
       const groupedRoutes: readonly AdminRoute[] = [
         {
           path: '/accounts',
@@ -870,8 +765,6 @@ describe('AdminShell', () => {
       const groupButton = screen.getByRole('button', {
         name: 'Identity & access',
       })
-      // The group icon replaces the clipped heading in the rail; the label
-      // stays as the button's accessible name.
       expect(within(groupButton).getByTestId('group-icon')).toBeInTheDocument()
       expect(
         labelRootOf(within(groupButton).getByText('Identity & access')),
@@ -881,10 +774,6 @@ describe('AdminShell', () => {
 
   describe('narrow-viewport frame: a hamburger drawer, not a stacked block', () => {
     it('renders a temporary (modal) drawer behind a hamburger toggle instead of stacking the nav above the content', () => {
-      // Below md the whole navigation must not be laid out above the
-      // content (which forces a swipe past a full screen of nav before
-      // reaching the page). It lives inside MUI's temporary Drawer -- the
-      // overlay variant -- and is reachable through the hamburger toggle.
       mockMatchMedia(false)
       renderWithProviders(
         <Shell routes={routes} title="Admin">
@@ -892,19 +781,14 @@ describe('AdminShell', () => {
         </Shell>,
         { operations },
       )
-      // The toggle is the hamburger; it starts closed.
       const toggle = screen.getByRole('button', {
         name: layoutKitZhCN.appShell.openNav,
       })
       expect(toggle).toHaveAttribute('aria-expanded', 'false')
 
-      // The nav is mounted inside the temporary (modal) drawer, not in the
-      // content flow. A closed MUI modal keeps its subtree aria-hidden, so
-      // look past that to find the drawer's own nav landmark.
       const nav = screen.getByRole('navigation', { hidden: true })
       expect(nav.closest(`.${drawerClasses.modal}`)).not.toBeNull()
       expect(nav.closest(`.${drawerClasses.docked}`)).toBeNull()
-      // The nav is never stacked into the content column.
       expect(screen.getByRole('main').contains(nav)).toBe(false)
     })
 
@@ -920,8 +804,6 @@ describe('AdminShell', () => {
       await user.click(
         screen.getByRole('button', { name: layoutKitZhCN.appShell.openNav }),
       )
-      // Open: the drawer is a real modal and its nav is now in the
-      // accessibility tree with the platform navigation.
       const nav = screen.getByRole('navigation', {
         name: adminUiZhCN.shell.navLabel,
       })
@@ -932,9 +814,6 @@ describe('AdminShell', () => {
           .map((link) => link.textContent),
       ).toEqual(['Tenants', 'Settings'])
 
-      // Close through the drawer's own toggle; the closed state is the
-      // established aria-expanded marker (the background's aria-hidden
-      // lifts only once the drawer's exit transition finishes).
       await user.click(
         screen.getByRole('button', {
           name: layoutKitZhCN.appShell.closeNav,

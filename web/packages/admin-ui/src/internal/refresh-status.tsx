@@ -1,17 +1,7 @@
 /**
- * RefreshStatus: the update time and the completion announcement the audit
- * query page and the dashboard render in their refresh action group.
- *
- * The update time is static text before the refresh control: the oldest
- * successful settle time among the page's body reads, formatted in the
- * active language and the resolved display zone with seconds and the zone
- * name. It renders nothing until a read has settled.
- *
- * The announcement is one visually hidden `role="status"` region mounted
- * with the page. It is emptied when the refresh action is clicked and
- * filled once every re-read read settles successfully, so repeating the
- * same text still reaches assistive technology. The clip recipe keeps the
- * region live: `display: none` would remove it from the accessibility tree.
+ * RefreshStatus: the update time and the completion announcement beside a
+ * page's refresh control. The announcement region stays clipped rather than
+ * `display: none`, which would remove it from the accessibility tree.
  */
 
 import Box from '@mui/material/Box'

@@ -1,14 +1,3 @@
-/**
- * Account identity display across the console.
- *
- * The account id is the internal key: it may be a path parameter or a row
- * key, never visible text, a copy target, an accessible name or a page
- * title. Accounts render as the display name with the login username, the
- * username alone, the display name alone, or the neutral
- * "account unavailable" copy. These cases pin that rule on the shared unit
- * and on every surface that previously fell back to the raw id.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -38,10 +27,8 @@ import type { AdminAccount, AdminAuditRecord } from './operations.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
 const TENANT = 'acme'
-/** An account id has the shape of a UUID; the value is opaque beyond that. */
 const UUID = '019a2d4f-1c3e-7b52-9f00-6d7a1b2c3d4e'
 
-/** One username identifier row, in the shape the account read carries. */
 function usernameIdentifier(value: string): AdminAccount['identifiers'][number] {
   return {
     kind: 'username',
@@ -53,7 +40,6 @@ function usernameIdentifier(value: string): AdminAccount['identifiers'][number] 
   }
 }
 
-/** One email identifier row, which must never stand in for the username. */
 function emailIdentifier(value: string): AdminAccount['identifiers'][number] {
   return {
     kind: 'email',
@@ -139,7 +125,6 @@ describe('AccountIdentity', () => {
     const { container } = renderWithProviders(<AccountIdentity account="" />, {
       operations,
     })
-    // No actor is a system row, not an account that failed to resolve.
     expect(container).toHaveTextContent('')
     expect(screen.queryByText(zhCN.common.accountUnavailable)).toBeNull()
     expect(getAccount).not.toHaveBeenCalled()
@@ -231,8 +216,6 @@ describe('OrganizationMembersPage', () => {
 
   it('shows the username beside the display name and copies it, never the id', async () => {
     renderMembers()
-    // The name column carries the display name; the column beside it shows
-    // the member record's login username as it is.
     expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
     const username = await screen.findByText('ada', { exact: true })
     const row = username.closest('tr')
@@ -256,8 +239,6 @@ describe('OrganizationMembersPage', () => {
 
   it('shows the neutral copy, not the display name again, when the username is empty', async () => {
     renderMembers('')
-    // The name column keeps the display name; the username column beside it
-    // must not repeat it, and it never falls back to the account id.
     await waitFor(() =>
       expect(screen.getAllByText('Ada Lovelace')).toHaveLength(1),
     )
@@ -319,7 +300,6 @@ describe('InvitationsPage', () => {
       })
       const invitedByCell =
         row!.children[(invitedByHeader as HTMLTableCellElement).cellIndex]!
-      // No inviter name is a blank cell, as on the organization page.
       expect(invitedByCell.textContent?.trim()).toBe('')
       expect(screen.queryByText('ghost-1')).toBeNull()
       expect(
@@ -351,14 +331,11 @@ describe('AccountsPage', () => {
     await user.click(screen.getByRole('button', { name: zhCN.accounts.search }))
     const identity = await screen.findByText('Ada Lovelace (ada)')
     expect(identity).toBeInTheDocument()
-    // The column header names the identity the cell shows, not one of its
-    // parts: the cell composes the display name with the login username.
     expect(
       screen.getByRole('columnheader', {
         name: zhCN.accounts.column.identity,
       }),
     ).toBeInTheDocument()
-    // The identity column is the row handle; open the detail from it.
     const rowElement = identity.closest('tr') as HTMLElement
     await user.click(
       within(rowElement).getByRole('button', {
@@ -387,10 +364,6 @@ describe('AccountsPage', () => {
       target: { value: 'ada' },
     })
     await user.click(screen.getByRole('button', { name: zhCN.accounts.search }))
-    // The account has a username but no display name, so the row reads the
-    // username alone. Its detail panel must not claim the account is
-    // unavailable: the missing display name is an empty field, not a failed
-    // resolution.
     const identity = await screen.findByText('ada')
     const rowElement = identity.closest('tr') as HTMLElement
     await user.click(
@@ -520,7 +493,6 @@ describe('AuditPage', () => {
     )
     renderWithProviders(<AuditPage />, { operations })
     expect(await screen.findByText('role:reader')).toBeInTheDocument()
-    // The actor still resolves; only the object stays as recorded.
     expect(await screen.findByText('Ada Lovelace (ada)')).toBeInTheDocument()
     expect(screen.queryByText(UUID)).toBeNull()
   })
@@ -549,16 +521,12 @@ describe('AuditPage', () => {
       )
       renderWithProviders(<AuditPage />, { operations })
 
-      // The actor and the object both resolve to the account's identity.
-      // findAllByText resolves on the first match, so wait for the count.
       await waitFor(() =>
         expect(
           screen.getAllByText('Ada Lovelace (ada)').length,
         ).toBeGreaterThanOrEqual(2),
       )
       const identities = screen.getAllByText('Ada Lovelace (ada)')
-      // The id is neither rendered nor handed over as a title or a copy
-      // value by either cell.
       expect(screen.queryByText(UUID)).toBeNull()
       expect(screen.queryByTitle(UUID)).toBeNull()
       expect(
@@ -579,9 +547,6 @@ describe('AuditPage', () => {
     )
     const operations = createAdminOperations(
       makeAdminBackend({
-        // The same action names an account on one row and a session on the
-        // next. Only the marked object is an account; the session id has the
-        // same opaque shape but no marker, so it renders as recorded.
         getAccount,
         listRecords: () =>
           Promise.resolve({
@@ -607,7 +572,6 @@ describe('AuditPage', () => {
         screen.getAllByText('Ada Lovelace (ada)').length,
       ).toBeGreaterThanOrEqual(2),
     )
-    // The session id was never handed to the account read.
     expect(getAccount.mock.calls.some(([query]) => query.id === sessionId)).toBe(
       false,
     )
@@ -630,13 +594,10 @@ describe('AuditPage', () => {
     )
     renderWithProviders(<AuditPage />, { operations })
 
-    // The marker says the object names an account, so a deleted one renders
-    // the neutral label with the deleted note -- never the recorded id.
     expect(
       await screen.findByTitle(zhCN.common.accountMissing),
     ).toHaveTextContent(zhCN.common.accountUnavailable)
     expect(screen.queryByText(deleted)).toBeNull()
-    // The actor still resolves to its identity.
     expect(await screen.findByText('Ada Lovelace (ada)')).toBeInTheDocument()
   })
 
@@ -654,8 +615,6 @@ describe('AuditPage', () => {
 
     const object = await screen.findByText('settings.set')
     expect(screen.queryByText(UUID)).toBeNull()
-    // No actor means no identity, not an unresolved account: the neutral copy
-    // never appears for the row.
     expect(screen.queryByText(zhCN.common.accountUnavailable)).toBeNull()
     const actorHeader = screen.getByRole('columnheader', {
       name: zhCN.audit.column.actor,
@@ -685,7 +644,6 @@ describe('AuditPage', () => {
 
     expect(await screen.findByText('static.operator')).toBeInTheDocument()
     expect(screen.queryByText(zhCN.common.accountUnavailable)).toBeNull()
-    // A configured static subject is not an account the library holds.
     expect(getAccount).not.toHaveBeenCalled()
   })
 
@@ -702,9 +660,7 @@ describe('AuditPage', () => {
       hasFeature: (name) => name !== 'authn.admin',
     })
 
-    // No read is issued without the feature, so neither the actor nor the
-    // object can resolve; the value may still name an account, so both cells
-    // keep the neutral copy and never the recorded identifier.
+    // findAllByText resolves on the first match, so wait for the count.
     await screen.findAllByText(zhCN.common.accountUnavailable)
     expect(screen.queryByText(UUID)).toBeNull()
   })
@@ -727,11 +683,7 @@ describe('AuditDetailPage detail identities', () => {
     )
     renderWithProviders(<AuditDetailPage id="rec-1" />, { operations: factorOperations })
 
-    // `self` is the actor class of the factor event, not an account id: it
-    // must render as recorded rather than as the neutral identity.
     expect(await screen.findByText('self')).toBeInTheDocument()
-    // Wait for the actor and the object to resolve before the absence of the
-    // neutral copy means anything: a pending read shows that copy.
     await waitFor(() => {
       expect(
         screen.getAllByText('Ada Lovelace (ada)').length,
@@ -759,8 +711,7 @@ describe('AuditDetailPage detail identities', () => {
       operations: impersonationOperations,
     })
 
-    // On a revoke the `by` value is the account that ended the grant, so it
-    // resolves like `on_behalf_of`; the object and the actor resolve too.
+    // Wait for actor and object to resolve before asserting the neutral copy is absent.
     await waitFor(() =>
       expect(
         screen.getAllByText('Ada Lovelace (ada)').length,
@@ -786,15 +737,12 @@ describe('AuditDetailPage detail identities', () => {
     )
     renderWithProviders(<AuditDetailPage id="rec-1" />, { operations })
 
-    // The detail key `account` is a keyed account field carrying a bare
-    // identifier: it resolves like the actor, and the uuid never renders.
     await waitFor(() => {
       expect(
         screen.getAllByText('Ada Lovelace (ada)').length,
       ).toBeGreaterThanOrEqual(2)
     })
     expect(screen.queryByText(UUID)).toBeNull()
-    // The object names a role, not an account, and stays as recorded.
     expect(screen.getByText('role:reader')).toBeInTheDocument()
   })
 })
@@ -811,8 +759,6 @@ describe('AuditObjectIdentity', () => {
     expect(screen.queryByText(`account:${UUID}`)).toBeNull()
     unmount()
     renderWithProviders(<AuditObjectIdentity object={UUID} />, { operations })
-    // A bare identifier of the same shape is not an account: it renders as
-    // recorded, marker or not.
     expect(screen.getByText(UUID)).toBeInTheDocument()
   })
 })

@@ -1,13 +1,3 @@
-/**
- * CursorPager: the shared previous/next control for cursor-paged lists.
- *
- * A page change starts a read while the control itself holds focus, so the
- * unavailable state must not take focus away from the direction the operator
- * activated. The direction that started the read reports it as busy; the
- * other direction, a write in flight, and a list boundary make a direction
- * unavailable without a reason.
- */
-
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'

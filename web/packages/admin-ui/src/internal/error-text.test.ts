@@ -1,13 +1,3 @@
-/**
- * The admin-ui error-text whitelist's pairing with the bundle.
- *
- * Every code the resolver whitelists must carry its own errors-section
- * leaf in both languages (a code added to the whitelist without its two
- * bundle keys -- or a bundle key without its whitelisted code -- fails
- * here), and a code outside the whitelist must resolve to the shared
- * unknown fallback so the bundle can never render a raw key.
- */
-
 import { describe, expect, it } from 'vitest'
 import { createElement, type ReactNode } from 'react'
 import { renderHook } from '@testing-library/react'
@@ -16,7 +6,6 @@ import { adminUiResources } from '../resources.js'
 import { createAdminUiI18n } from '../../test-utils/render.js'
 import { ERROR_TEXT_CODES, useAdminUiErrorText } from './error-text.js'
 
-/** The flat 'errors.*' dotted keys of one language bundle. */
 function errorKeys(language: string): ReadonlySet<string> {
   const bundle = adminUiResources[language] as {
     readonly errors: Record<string, unknown>
@@ -53,9 +42,6 @@ describe('admin-ui error text', () => {
     const whitelisted = new Set<string>([
       ...ERROR_TEXT_CODES.map((code) => `errors.${code}`),
       'errors.unknown',
-      // The bare-HTTP family's parameterized leaf and the two refusal leaves
-      // the resolver maps a client.http.<status> code onto (see the http-family
-      // test below), so none of them has a single whitelisted code.
       'errors.client.http',
       'errors.client.httpForbidden',
       'errors.client.httpUnauthorized',
@@ -94,16 +80,11 @@ describe('admin-ui error text', () => {
         client: { httpForbidden: string; httpUnauthorized: string }
       }
     }
-    // A write refused with no readable envelope tells the operator what to
-    // do: the permission copy for a 403, the ended-session copy for a 401 --
-    // neither restates the status.
     expect(forbidden).toBe(bundle.errors.client.httpForbidden)
     expect(unauthorized).toBe(bundle.errors.client.httpUnauthorized)
     expect(forbidden).not.toContain('403')
     expect(unauthorized).not.toContain('401')
     expect(new Set([forbidden, unauthorized]).size).toBe(2)
-    // Every other status keeps its own parameterized line, never the raw
-    // code or the unknown fallback.
     expect(notAllowed).toContain('405')
     expect(serverError).toContain('500')
     expect(notAllowed).not.toContain('client.http.405')
@@ -111,12 +92,6 @@ describe('admin-ui error text', () => {
   })
 
   it('renders a throttled answer with no stated wait as a complete sentence', () => {
-    // A refusal that stated no Retry-After reaches the resolver without a
-    // wait, so it resolves through the code's own errors leaf. That leaf
-    // must read as a sentence: the seconds form lives in throttle.retryAfter
-    // and is used only when a wait is known, so a placeholder left in the
-    // leaf would render literally (the bundle escapes nothing by default)
-    // instead of naming a time.
     for (const language of ['zh-CN', 'en-US']) {
       const i18n = createAdminUiI18n(language)
       const { result } = renderHook(() => useAdminUiErrorText(), {
@@ -134,9 +109,6 @@ describe('admin-ui error text', () => {
   })
 
   it('names the wait a throttled ratelimit answer stated', () => {
-    // The step-up flow's start and answers can be refused by the ratelimit
-    // layer with a Retry-After; the sentence names how long the operator
-    // must wait instead of collapsing onto the unknown fallback.
     const i18n = createAdminUiI18n('en-US')
     const { result } = renderHook(() => useAdminUiErrorText(), {
       wrapper: ({ children }: { readonly children: ReactNode }) =>
@@ -156,10 +128,6 @@ describe('admin-ui error text', () => {
   })
 
   it('renders the protected settings refusal with its own copy', () => {
-    // The tenant settings write seam refuses a protected item with a 403
-    // settings.protected. Without its own leaf the organization settings page
-    // falls back to the generic failure copy, which says nothing about the
-    // deployment having protected the item.
     for (const language of ['zh-CN', 'en-US']) {
       const i18n = createAdminUiI18n(language)
       const { result } = renderHook(() => useAdminUiErrorText(), {
@@ -177,11 +145,6 @@ describe('admin-ui error text', () => {
   })
 
   it('resolves every module refusal a write can be answered with to its own text', () => {
-    // The api-client derives a module code from a refusal's RFC 9457
-    // problem `type` (urn:speed:<module>:<code>), so a console write the
-    // server refuses arrives as one of these codes; each must render its
-    // own leaf rather than collapse into the generic fallback the surface
-    // showed while no module code reached it.
     const i18n = createAdminUiI18n('en-US')
     const { result } = renderHook(() => useAdminUiErrorText(), {
       wrapper: ({ children }: { readonly children: ReactNode }) =>

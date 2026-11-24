@@ -1,10 +1,3 @@
-/**
- * The lifecycle controls in a real browser: the transfer dialog and the
- * delete confirmation at the desktop viewport, in the light and dark
- * themes. The invariant is containment -- the page and the dialog's paper
- * stay inside the viewport -- which only a browser resolves (theme
- * surfaces, the dialog's max width and real font metrics all take part).
- */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -28,14 +21,12 @@ import { chooseAccount } from '../test-utils/account-selector.js'
 import { expectNoHorizontalOverflow } from '../test-utils/browser-overflow.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
-/** The zh-CN label the shared confirm shows once its two-step guard arms. */
 const CONFIRM_AGAIN_LABEL = (
   uiKitResources['zh-CN'] as unknown as {
     readonly confirmDialog: { readonly confirmAgainLabel: string }
   }
 ).confirmDialog.confirmAgainLabel
 
-/** One pixel of tolerance for subpixel layout rounding. */
 const TOLERANCE = 1
 
 function ThemeProbe() {
@@ -49,7 +40,6 @@ function ThemeProbe() {
   )
 }
 
-/** Fills a locale template's `{{name}}` placeholders. */
 function text(
   template: string,
   values: Record<string, string>,
@@ -59,8 +49,6 @@ function text(
   )
 }
 
-/** A promise the case settles by hand, so one request can be held in
- * flight across frames. */
 function deferred<T>(): {
   readonly promise: Promise<T>
   readonly resolve: (value: T) => void
@@ -75,15 +63,12 @@ function deferred<T>(): {
   return { promise, resolve, reject }
 }
 
-/** One animation frame: the component's updated state has reached the DOM
- * and the browser has had its chance to react to it. */
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => {
     requestAnimationFrame(() => resolve())
   })
 }
 
-/** What currently holds focus, for a failure message. */
 function describeActiveElement(): string {
   const active = document.activeElement
   if (active === null) {
@@ -179,9 +164,6 @@ describe('tenant lifecycle geometry in Chromium', () => {
         ).toBeLessThan(128)
       }
 
-      // The transfer dialog: the paper stays inside the viewport, the page
-      // keeps its horizontal containment with the modal open, and the
-      // member selector settles inside the paper.
       await user.click(
         screen.getByRole('button', {
           name: text(zhCN.tenantLifecycle.transferAria, { name: 'acme' }),
@@ -198,7 +180,6 @@ describe('tenant lifecycle geometry in Chromium', () => {
       )
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 
-      // The delete confirmation: same containment, on the danger dialog.
       await user.click(
         screen.getByRole('button', {
           name: text(zhCN.tenantLifecycle.deleteAria, { name: 'acme' }),
@@ -270,9 +251,6 @@ describe('tenant lifecycle write focus in Chromium', () => {
     await user.click(submit)
     await confirmTwice(user, zhCN.tenantLifecycle.transfer.confirmLabel)
 
-    // The confirmation closed and the request runs. The button that started
-    // the flow keeps its focus through the dialog's focus restoration, and
-    // reports the write as busy rather than dropping out of the Tab order.
     await waitFor(() => expect(submit).toHaveAttribute('aria-busy', 'true'))
     await nextFrame()
     expect(
@@ -371,8 +349,6 @@ describe('tenant lifecycle write focus in Chromium', () => {
         screen.queryByText(zhCN.tenantLifecycle.transfer.pendingTitle),
       ).toBeNull(),
     )
-    // The confirmation is still exiting while the page behind it stays
-    // aria-hidden; wait for it to leave before reading the control group.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     const group = await screen.findByRole('group', {
       name: zhCN.tenantLifecycle.sectionTitle,
@@ -382,7 +358,6 @@ describe('tenant lifecycle write focus in Chromium', () => {
   })
 })
 
-/** The dialog's paper lies inside the viewport horizontally and vertically. */
 function expectInsideViewport(dialog: HTMLElement): void {
   const rect = dialog.getBoundingClientRect()
   expect(rect.left).toBeGreaterThanOrEqual(-TOLERANCE)

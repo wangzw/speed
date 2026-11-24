@@ -1,18 +1,4 @@
-/**
- * The console's in-page navigation seam.
- *
- * AdminShell already hands each navigation entry's activation to the
- * host's router through its `onNavigate` prop; a page that links to
- * another console page (a roster row to a tenant's detail, an audit row to
- * a record's detail) must reach the same seam so a click routes in place
- * instead of reloading the page. The shell publishes its `onNavigate` to
- * its routed content through this context; AdminLink reads it.
- *
- * With no provider (a page rendered on its own, as a unit test renders
- * one) the context is absent and AdminLink is a plain link: it keeps its
- * href and navigates the browser, the behavior the shell itself has for a
- * host that never supplies `onNavigate`.
- */
+/** The console's in-page navigation seam. */
 
 import { createContext, useContext } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
@@ -55,11 +41,9 @@ export interface AdminLinkProps {
 }
 
 /**
- * A console page link: a real link to `href`, whose plain click is handed
- * to the host's router when the shell published one (so the session is not
- * lost to a reload) and left alone otherwise. A click with a modifier, a
- * non-primary button or one another handler claimed keeps the browser's
- * own behavior.
+ * A console page link: a real link to `href` whose plain click goes to the
+ * host's router when one is published; a modifier, non-primary or claimed
+ * click keeps the browser's behavior.
  */
 export function AdminLink({ href, children, sx }: AdminLinkProps) {
   const navigate = useAdminNavigate()

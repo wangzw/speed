@@ -1,18 +1,7 @@
 /**
- * The console's published route table.
- *
- * A page that links to a sibling console page cannot build that sibling's
- * path from its own matched path without guessing: the console is mounted
- * under whatever prefix the host chose, and the sibling's declaration is
- * the authority on where it lives. The shell (or the frameless provider)
- * therefore publishes the route table the host handed it -- already
- * narrowed by the host's feature presence predicate -- and a page resolves
- * a sibling declaration by its stable `id` before building a link.
- *
- * The table is exactly what the host supplied: this package does not
- * filter it, add to it or derive from it. With no provider (a page
- * rendered on its own) the table is empty, so a sibling link that depends
- * on a declaration is simply not rendered.
+ * The console's published route table: the shell publishes the host's narrowed
+ * table so a page resolves a sibling declaration by its stable `id`. With no
+ * provider the table is empty and a sibling link is not rendered.
  */
 
 import { createContext, useContext } from 'react'

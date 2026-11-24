@@ -1,10 +1,6 @@
 /**
- * RoleCreateForm: the role catalog's create control.
- *
- * The role name is the key bindings hold, so a name the catalog already
- * carries cannot be created again: the submit control stays focusable but
- * unavailable and the form says the role exists and points at the
- * description editor. The role is created with its free-text description in
+ * RoleCreateForm: the role catalog's create control. A role name is the key
+ * bindings hold, so a duplicate is refused and the description is created in
  * the same request.
  */
 
@@ -31,8 +27,7 @@ export interface RoleCreateFormProps {
   readonly busy: boolean
   /** Whether another write in the role scope is in flight. */
   readonly scopePending?: boolean
-  /** Creates the role; resolves true when the write landed, so the form
-   * keeps a refused draft for the operator to correct. */
+  /** Creates the role; resolves true when the write landed, so a refusal keeps its draft. */
   readonly onCreate: (draft: RoleCreateDraft) => Promise<boolean>
 }
 
@@ -51,8 +46,8 @@ export function RoleCreateForm({
   const duplicate = roles.some((existing) => existing.role === trimmed)
   const tooLong = [...description].length > ROLE_DESCRIPTION_MAX
   const precondition = roleMissing || duplicate || tooLong
-  // A write elsewhere in the role scope keeps this control out of reach
-  // without naming a reason of its own; an unmet precondition does name one.
+  // A write elsewhere in the role scope keeps this control out of reach without
+  // a reason of its own; an unmet precondition does name one.
   const unavailable = precondition || (scopePending && !busy)
 
   const submit = useActivationGuard(
@@ -68,9 +63,8 @@ export function RoleCreateForm({
     { busy, unavailable },
   )
 
-  // The duplicate hint is already on the page and the button points at it.
-  // An empty or over-long draft has no standing text, so the button carries
-  // its own reason instead.
+  // The duplicate hint is already on the page and the button points at it; an
+  // empty or over-long draft carries its own reason.
   const explanation: ActionButtonUnavailableExplanation = duplicate
     ? { unavailableDescribedBy: duplicateHintId }
     : tooLong

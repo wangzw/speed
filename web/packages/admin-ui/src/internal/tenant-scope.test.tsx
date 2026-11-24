@@ -1,13 +1,3 @@
-/**
- * TenantScope: the tenant selector the tenant-addressed pages carry.
- *
- * The roster read behind it has four presentation states beside its
- * content: loading (disabled, said in the helper text), a 403 (said, no
- * retry), any other failure (said, with a retry that re-reads), and an
- * empty roster (an explanatory line). A tenant seeded from the URL stays
- * shown through every one of them.
- */
-
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { waitForCondition } from '@speed/test-utils/wait'
@@ -26,7 +16,6 @@ import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 const TENANT: AdminTenant = tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' })
 const TENANT_LABEL = zhCN.common.tenant
 
-/** A host holding the selection, as the pages do. */
 function Scope({ initial = '' }: { readonly initial?: string }) {
   const [tenant, setTenant] = useState(initial)
   return <TenantScope value={tenant} onSelect={setTenant} />
@@ -40,8 +29,6 @@ describe('TenantScope', () => {
       }),
     )
     renderWithProviders(<Scope />, { operations })
-    // MUI marks the select's combobox aria-disabled rather than natively
-    // disabling a form control.
     expect(screen.getByLabelText(TENANT_LABEL)).toHaveAttribute('aria-disabled', 'true')
     expect(screen.getByText(zhCN.common.tenantLoading)).toBeInTheDocument()
   })
