@@ -1155,13 +1155,8 @@ export async function writeDeployConfig(
     `address: ${quoted(opsAddress)}`,
     'operations listener',
   )
-  // The template names the public origin in five places: the API's CORS
-  // origins, the operations document's server list, the authentication gate's
-  // public URL, a comment naming the registered callback addresses, and the
-  // WebAuthn origins. The entrypoint replaces every line, comments included;
-  // all five follow the browser's origin.
   const replacements: ReadonlyArray<readonly [string, string, number]> = [
-    ['__PUBLIC_ORIGIN__', origin, 5],
+    ['__PUBLIC_ORIGIN__', origin, 4],
     // The public domain appears twice: the WebAuthn relying party id and the
     // hostname the human-verification widget must have run on.
     ['__PUBLIC_DOMAIN__', deployValues.publicDomain, 2],
