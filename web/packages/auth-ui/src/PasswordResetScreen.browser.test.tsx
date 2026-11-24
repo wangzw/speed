@@ -10,8 +10,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { page } from 'vitest/browser'
+import { page, userEvent as browserUserEvent } from 'vitest/browser'
 import { makeHarness } from '@speed/test-utils/session-harness'
+import { installFakeTurnstile } from '@speed/test-utils/turnstile'
 import { renderWithProviders } from '../test-utils/render.js'
 import { PasswordResetScreen } from './PasswordResetScreen.js'
 import type {
@@ -19,6 +20,7 @@ import type {
   PasswordResetSent,
 } from './PasswordResetScreen.js'
 import enUS from './locales/en-US.json' with { type: 'json' }
+import uiKitEnUS from '../../ui-kit/src/locales/en-US.json' with { type: 'json' }
 
 /** The one spacing token an action row puts between adjacent controls. */
 const ACTION_GAP = 8
@@ -190,6 +192,66 @@ describe('PasswordResetScreen action row in Chromium', () => {
     // The request surface's fields were replaced, but the back entry the
     // operator chose is still mounted: the switch must not take it back.
     expect(document.activeElement).toBe(back)
+  })
+
+  it('keeps the resend focused and busy while its proof is outstanding', async () => {
+    // The resend that asked keeps its focus while the block stands above
+    // it: an unmount or a native disable would drop it to the body. The
+    // focus half is a guardrail rather than a reproduction -- it already
+    // held before this change -- and it must keep holding.
+    const fake = installFakeTurnstile()
+    try {
+      const user = userEvent.setup()
+      renderWithProviders(
+        <PasswordResetScreen
+          session={makeHarness({}).session}
+          channels={['email']}
+          operations={{
+            ...OPERATIONS,
+            requestReset: () =>
+              Promise.resolve({ ...SENT, resendAfter: 0 }),
+          }}
+          humanGate={{
+            phone: { required: false, provider: 'off' },
+            other: { required: true, provider: 'turnstile', site_key: 'site-1' },
+          }}
+        />,
+        { language: 'en-US' },
+      )
+      await user.type(
+        screen.getByLabelText(enUS.passwordReset.emailLabel),
+        'alice@example.com',
+      )
+      await user.click(
+        screen.getByRole('button', { name: enUS.passwordReset.send }),
+      )
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      act(() => {
+        fake.token('proof-1')
+      })
+      await screen.findByText(enUS.passwordReset.sentNotice)
+      const resend = screen.getByRole('button', {
+        name: enUS.passwordReset.resend,
+      })
+      resend.focus()
+      expect(document.activeElement).toBe(resend)
+      await browserUserEvent.keyboard('{Enter}')
+      await waitFor(() => expect(fake.widgets).toHaveLength(2))
+      await waitFor(() => expect(resend).toHaveAttribute('aria-busy', 'true'))
+      // The block appeared while the control that asked for it stayed
+      // mounted and kept its focus.
+      expect(
+        screen.getByRole('group', {
+          name: uiKitEnUS.humanVerification.groupLabel,
+        }),
+      ).toBeInTheDocument()
+      expect(resend).toHaveFocus()
+      // Mounted, not natively disabled: it keeps its place in the tab order
+      // and the focus it had.
+      expect(resend).not.toHaveAttribute('disabled')
+    } finally {
+      fake.restore()
+    }
   })
 
   it('groups back, resend and submit one token apart, as one right-aligned row', async () => {

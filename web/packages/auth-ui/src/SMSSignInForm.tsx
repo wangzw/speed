@@ -57,7 +57,9 @@
  * never the answer the dead flow refused.
  * Busy states: the send control reports the request's flight as its own
  * busy state, and the code step's submit does the same while the answer
- * is in flight. A control held by a resend interval
+ * is in flight. A send waiting on its human proof reports that wait as
+ * busy on the control that asked, which stays mounted and keeps the focus
+ * it had. A control held by a resend interval
  * reports unavailable and explains the wait; all of them stay focusable,
  * so an activation never drops the focus it holds, and a control that did
  * not start the write in flight reports the context as unavailable
@@ -92,11 +94,14 @@
  * send control, and on the two SMS steps it appears only once a send has
  * been asked for: entering the phone step or waiting for a code shows no
  * challenge, and the send the viewer asked for leaves by itself when the
- * proof arrives. The control that asked gives way to the block while the
- * proof is outstanding, so one action is on screen at a time. A send consumes the single-use proof, so the block
- * obtains a fresh one for the next attempt. A host that already read the
- * discovery document passes the gate as `humanGate`; otherwise the form
- * reads it.
+ * proof arrives. The control that asked stays mounted and reports the
+ * wait as busy while the proof is outstanding, so it keeps the focus it
+ * had and one action is still what the screen offers; the code step stays
+ * on screen behind a held resend, and its submit stays usable because the
+ * viewer may already hold a code. A send consumes the single-use proof, so
+ * the block obtains a fresh one for the next attempt. A host that already
+ * read the discovery document passes the gate as `humanGate`; otherwise
+ * the form reads it.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -223,6 +228,11 @@ export function SMSSignInForm({
   // One send at a time: the resend control's direct path and the deferred
   // path that waits for a proof can both reach the send in the same tick.
   const sendingRef = useRef(false)
+  // The resend control a cancelled wait hands focus back to: the cancel
+  // control that dropped the wait unmounts with it, while the resend -- the
+  // control that asked -- stays in its row.
+  const resendRef = useRef<HTMLButtonElement | null>(null)
+  const focusResendAfterCancel = useRef(false)
   // Which of this surface's own actions is in flight. The driver's busy flag
   // covers a send and a code answer alike, so the controls need the owner:
   // only it reports busy, while its sibling reports the context as
@@ -544,11 +554,9 @@ export function SMSSignInForm({
       askToSend(phone)
       return
     }
-    if (pendingSend !== null) {
-      // A resend still waiting on its proof owns the step: the code entry
-      // is not on screen, so a stray submit answers nothing.
-      return
-    }
+    // A resend waiting on its proof is not a write in flight: the code
+    // entry stays on screen and the viewer may already hold a code, so this
+    // submit answers it.
     resetScope()
     if (values.code !== '' && values.code === spentCode) {
       // The very code a superseded answer proved spent is being submitted
@@ -558,6 +566,9 @@ export function SMSSignInForm({
       setLocalNotice('used')
       return
     }
+    // Using the code in hand abandons a resend that is still waiting on its
+    // proof: the next code would invalidate the one being submitted.
+    setPendingSend(null)
     lastCodeRef.current = values.code
     answeringCodeRef.current = true
     answeredSignupRef.current = false
@@ -588,7 +599,10 @@ export function SMSSignInForm({
   // invokes the handler, so a guard on that flag would swallow the very
   // submit that starts the write.
   const guardedSubmit = useActivationGuard(onSubmit, {
-    busy: driver.busy,
+    // A held phone-step send is this form's own action in waiting: the form
+    // must not start a second one. The code step's submit stays open behind
+    // a held resend, which is not a write in flight.
+    busy: driver.busy || (!onCodeStep && pendingSend !== null),
     unavailable: !onCodeStep && remainingSeconds > 0,
   })
   // A held control explains itself with the note beside it when one stands.
@@ -655,6 +669,9 @@ export function SMSSignInForm({
   // known and the proof it wants is in hand: the viewer's one request is
   // not turned into a click followed by a second one. A gate still being
   // read keeps the send waiting; a gate that wants nothing sends at once.
+  // The write-in-flight guard below is defensive and currently unreachable:
+  // the code submit abandons a held resend (setPendingSend(null)) before it
+  // answers, so no held send survives into an in-flight answer.
   useEffect(() => {
     if (pendingSend === null || human.pending || gateDocument === null) {
       return
@@ -662,10 +679,36 @@ export function SMSSignInForm({
     if (needsProof && human.proof === null) {
       return
     }
+    if (driver.busy) {
+      return
+    }
     const phone = pendingSend
     setPendingSend(null)
     void requestCodeRef.current(phone)
-  }, [pendingSend, human.pending, gateDocument, needsProof, human.proof])
+  }, [
+    pendingSend,
+    human.pending,
+    gateDocument,
+    needsProof,
+    human.proof,
+    driver.busy,
+  ])
+
+  // A cancelled resend hands focus back to the control that asked. The
+  // cancel control unmounts with the wait, so the transfer happens after the
+  // commit that dropped it: the resend is still in its row, mounted.
+  useEffect(() => {
+    if (pendingSend !== null || !focusResendAfterCancel.current) {
+      return
+    }
+    focusResendAfterCancel.current = false
+    resendRef.current?.focus()
+  }, [pendingSend])
+
+  const cancelResend = (): void => {
+    focusResendAfterCancel.current = true
+    setPendingSend(null)
+  }
 
   // The surface this form renders now: the phone step and the code step
   // are its own, anything else is a parked step. A switch to another
@@ -747,21 +790,6 @@ export function SMSSignInForm({
     )
   }
 
-  // The resend's proof comes before the new code: the code step gives way
-  // to that one task, with a way back to the code the viewer already holds.
-  if (onCodeStep && pendingSend !== null) {
-    return (
-      <FormLayout ref={surfaceRef} form={form} onSubmit={guardedSubmit}>
-        {humanBlock}
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button size="small" onClick={() => setPendingSend(null)}>
-            {t('smsSignIn.cancelResend')}
-          </Button>
-        </Box>
-      </FormLayout>
-    )
-  }
-
   return (
     <FormLayout
       ref={surfaceRef}
@@ -773,15 +801,20 @@ export function SMSSignInForm({
             type="submit"
             emphasis="primary"
             busy={answerInFlight}
+            // A held resend is not a write in flight, and the viewer may
+            // already hold a code: this submit stays usable. Only the
+            // resend's own request, once it leaves, holds it.
             unavailable={sendInFlight}
           >
             {t('smsSignIn.submit')}
           </ActionButton>
-        ) : pendingSend === null ? (
+        ) : (
           <ActionButton
             type="submit"
             emphasis="primary"
-            busy={sendInFlight}
+            // The control that asked reports the wait on its own proof as
+            // busy; it stays mounted, so it keeps the focus it had.
+            busy={sendInFlight || pendingSend !== null}
             // Changing the phone while the code answer is in flight returns
             // to this step with that answer still running: the send did not
             // start it, so it reports the context as unavailable without a
@@ -798,7 +831,7 @@ export function SMSSignInForm({
           >
             {t('smsSignIn.sendCode')}
           </ActionButton>
-        ) : undefined
+        )
       }
     >
       {/* The form's one status region: the sent notice on the code step,
@@ -872,11 +905,27 @@ export function SMSSignInForm({
               {t('smsSignIn.loginFailed')}
             </Alert>
           ) : null}
+          {/* A resend's proof comes before the new code: the block and its
+              way out stand above the controls, while the code step -- and
+              the code the viewer already holds -- stay on screen. The
+              resend is the control that asked, so it reports the wait as
+              busy and keeps the focus it had. */}
+          {pendingSend !== null ? (
+            <>
+              {humanBlock}
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button size="small" onClick={cancelResend}>
+                  {t('smsSignIn.cancelResend')}
+                </Button>
+              </Box>
+            </>
+          ) : null}
           <Box sx={{ display: 'flex', gap: 1 }}>
             <ActionButton
+              ref={resendRef}
               size="small"
               onClick={() => askToSend(sentToRef.current)}
-              busy={sendInFlight}
+              busy={sendInFlight || pendingSend !== null}
               unavailable={answerInFlight || remainingSeconds > 0}
               {...resendHoldExplanation}
             >

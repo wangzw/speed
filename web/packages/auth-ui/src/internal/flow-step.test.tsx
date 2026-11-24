@@ -1642,13 +1642,15 @@ describe('HumanGatedFlowStep held answer', () => {
       expect(fake.widgets).toHaveLength(1)
       expect(onAnswer).not.toHaveBeenCalled()
 
-      // The cancel control drops the wait even when the proof never comes.
+      // The cancel control drops the wait even when the proof never comes,
+      // and hands focus back to the answer control that asked.
       await user.click(
         screen.getByRole('button', { name: zhCN.signInFlow.passkeyCancel }),
       )
       await waitFor(() =>
         expect(smsChoice).not.toHaveAttribute('aria-disabled', 'true'),
       )
+      expect(smsChoice).toHaveFocus()
       expect(
         screen.queryByRole('button', { name: zhCN.signInFlow.passkeyCancel }),
       ).toBeNull()

@@ -90,7 +90,9 @@
  * callback anyway. A cancel control beside the proof block drops the held
  * answer, so a mechanism that cannot produce a proof leaves the viewer a
  * way back instead of permanently held controls; the step returns to its
- * normal state and can be answered again.
+ * normal state and can be answered again, and focus returns to the answer
+ * control that started the wait (or to the step's first control when it
+ * left with the step).
  */
 
 import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react'
@@ -123,6 +125,7 @@ import {
 import { WebauthnError, runWebauthn, webauthnStepOf } from '@speed/auth-core/webauthn'
 import type { OpenFlowState } from './flow.js'
 import { answerSends, stepMaySend } from './flow.js'
+import { firstControl } from './step-focus.js'
 
 /** The factor/enroll kinds the family has wording for. */
 const FACTOR_KINDS = ['totp', 'sms', 'webauthn'] as const
@@ -372,6 +375,13 @@ export function HumanGatedFlowStep({
   // answer to the callback the latest render supplied.
   const onAnswerRef = useRef(onAnswer)
   onAnswerRef.current = onAnswer
+  // The control that started a held answer, and whether the cancel just
+  // dropped it: the cancel control unmounts with the wait, so focus goes
+  // back to the answer control (or, when it is gone, the step's first
+  // control) after the commit that dropped the wait.
+  const answerOriginRef = useRef<HTMLElement | null>(null)
+  const focusAfterCancel = useRef(false)
+  const stepContainerRef = useRef<HTMLDivElement | null>(null)
 
   const answer = (input: Record<string, string>): void => {
     if (pending !== null) {
@@ -385,6 +395,8 @@ export function HumanGatedFlowStep({
     if (sending && (!gateKnown || (needsProof && human.proof === null))) {
       // A send whose gate is unread, or whose proof this step does not hold
       // yet, waits by itself; an answer that sends nothing never waits.
+      const active = document.activeElement
+      answerOriginRef.current = active instanceof HTMLElement ? active : null
       setPending(input)
       return
     }
@@ -397,12 +409,19 @@ export function HumanGatedFlowStep({
 
   // A held answer leaves by itself once the gate is settled and the proof
   // it requires is in hand: the viewer's one choice is not turned into a
-  // click followed by a second one.
+  // click followed by a second one. The write-in-flight guard below is
+  // defensive and currently unreachable: while an answer is held this
+  // step's own controls are held too (FlowStepFields receives
+  // `busy || pending !== null`) and its host renders this surface alone for
+  // a parked step, so the driver cannot start a write beside the held one.
   useEffect(() => {
     if (pending === null || human.pending || gateDocument === null) {
       return
     }
     if (needsProof && human.proof === null) {
+      return
+    }
+    if (busy) {
       return
     }
     const input = pending
@@ -420,10 +439,42 @@ export function HumanGatedFlowStep({
     gateDocument,
     needsProof,
     step,
+    busy,
   ])
 
+  // A cancelled answer hands focus back to the control that asked. The
+  // cancel control unmounts with the wait, so the transfer happens after
+  // the commit that dropped it; an answer control that left with the step
+  // gives way to the step's first control.
+  useEffect(() => {
+    if (pending !== null || !focusAfterCancel.current) {
+      return
+    }
+    focusAfterCancel.current = false
+    const origin = answerOriginRef.current
+    answerOriginRef.current = null
+    const originFocusable =
+      origin !== null &&
+      origin.isConnected &&
+      !origin.hasAttribute('disabled') &&
+      origin.getAttribute('aria-hidden') !== 'true' &&
+      origin.closest('[inert]') === null
+    const target =
+      originFocusable && origin !== null
+        ? origin
+        : stepContainerRef.current === null
+          ? null
+          : firstControl(stepContainerRef.current)
+    target?.focus()
+  }, [pending])
+
+  const cancelHeld = (): void => {
+    focusAfterCancel.current = true
+    setPending(null)
+  }
+
   return (
-    <>
+    <Box ref={stepContainerRef} sx={{ display: 'contents' }}>
       {pending !== null ? (
         <>
           <HumanVerificationBlock
@@ -444,7 +495,7 @@ export function HumanGatedFlowStep({
               it re-enables the step, and a new answer opens the block
               again. */}
           <ActionRow>
-            <ActionButton type="button" onClick={() => setPending(null)}>
+            <ActionButton type="button" onClick={cancelHeld}>
               {t('signInFlow.passkeyCancel')}
             </ActionButton>
           </ActionRow>
@@ -460,7 +511,7 @@ export function HumanGatedFlowStep({
         onClientFailure={onClientFailure}
         failure={failure}
       />
-    </>
+    </Box>
   )
 }
 

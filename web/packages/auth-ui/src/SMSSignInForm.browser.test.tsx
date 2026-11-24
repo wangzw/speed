@@ -421,6 +421,42 @@ describe('SMSSignInForm captcha gate in Chromium', () => {
 })
 
 describe('SMSSignInForm focus in Chromium', () => {
+  it('keeps the send control focused and busy while its captcha proof is outstanding', async () => {
+    // The control that asked is the one that keeps focus: a native disable
+    // or an unmount would drop it to the body. Activation goes through the
+    // keyboard, the path this defect belongs to.
+    const harness = makeHarness({
+      [LOGIN_METHODS]: () =>
+        methodList(['sms'], {
+          humanPhoneProvider: 'captcha',
+          humanPhoneRequired: true,
+          humanOtherProvider: 'off',
+          humanOtherRequired: false,
+        }),
+      [CAPTCHA_CHALLENGE]: () => captchaChallenge(),
+      [LOGIN_START]: () => codeChallenge(),
+    })
+    renderWithProviders(
+      <PhoneCountryDefaultProvider country="CN">
+        <SMSSignInForm session={harness.session} />
+      </PhoneCountryDefaultProvider>,
+    )
+    const send = await fillPhone()
+    send.focus()
+    expect(document.activeElement).toBe(send)
+    await browserUserEvent.keyboard('{Enter}')
+    await screen.findByLabelText(CAPTCHA_COPY.answerLabel)
+    expect(document.activeElement).toBe(send)
+    await waitFor(() => {
+      expect(send).toHaveAttribute('aria-busy', 'true')
+      expect(send).toHaveAttribute('aria-disabled', 'true')
+    })
+    // Held, not natively disabled: the control keeps its place in the tab
+    // order and the focus it had.
+    expect(send).not.toHaveAttribute('disabled')
+    expect(sends(harness)).toHaveLength(0)
+  })
+
   it('keeps the send control focused while the code request is in flight', async () => {
     let releaseStart: (value: unknown) => void = () => {}
     const harness = makeHarness({
@@ -483,6 +519,7 @@ describe('SMSSignInForm focus in Chromium', () => {
     await waitFor(() =>
       expect(resend).toHaveAttribute('aria-disabled', 'true'),
     )
+    expect(resend).not.toHaveAttribute('disabled')
     expect(resend).not.toHaveAttribute('aria-busy')
     expect(resend).toHaveAccessibleDescription(
       zhCN.smsSignIn.resendIn.replace('{{seconds}}', '60'),
@@ -493,10 +530,11 @@ describe('SMSSignInForm focus in Chromium', () => {
     expect(resend).toHaveFocus()
   })
 
-  it('keeps a held resend’s way out focusable and returns to the code step when it is activated', async () => {
-    // The resend waiting on its proof is not a write in flight, so the way
-    // out stays in the tab order and activating it by keyboard drops the
-    // wait. The block is the only thing the viewer must act on meanwhile.
+  it('keeps a held resend in place and focused, and returns focus to it when the wait is cancelled', async () => {
+    // The resend waiting on its proof is not a write in flight: it stays
+    // mounted, focused and busy, the code step behind it stays on screen,
+    // and the way out is the cancel control. Activating that control by
+    // keyboard drops the wait and hands focus back to the resend.
     const fake = installFakeTurnstile()
     try {
       const harness = makeHarness({
@@ -527,10 +565,35 @@ describe('SMSSignInForm focus in Chromium', () => {
       })
       await waitFor(() => expect(sends(harness)).toHaveLength(1))
       await screen.findByLabelText(zhCN.smsSignIn.codeLabel)
-      await user.click(
-        screen.getByRole('button', { name: zhCN.smsSignIn.resendCode }),
-      )
+      const resend = screen.getByRole('button', {
+        name: zhCN.smsSignIn.resendCode,
+      })
+      resend.focus()
+      expect(document.activeElement).toBe(resend)
+      await browserUserEvent.keyboard('{Enter}')
       await waitFor(() => expect(fake.widgets).toHaveLength(2))
+      // The block appeared while the control that asked for it stayed
+      // mounted and kept its focus.
+      expect(
+        screen.getByRole('group', {
+          name: uiKitZhCN.humanVerification.groupLabel,
+        }),
+      ).toBeInTheDocument()
+      expect(resend).toHaveFocus()
+      await waitFor(() => expect(resend).toHaveAttribute('aria-busy', 'true'))
+      // The held control is mounted, not natively disabled: it keeps its
+      // place in the tab order and the focus it had.
+      expect(resend).not.toHaveAttribute('disabled')
+      const codeInput = screen.getByLabelText(zhCN.smsSignIn.codeLabel)
+      expect(codeInput).toBeInTheDocument()
+      expect(codeInput).not.toHaveAttribute('disabled')
+      // A resend waiting on its proof is not a write in flight: the code
+      // the viewer already holds stays answerable.
+      const submit = screen.getByRole('button', {
+        name: zhCN.smsSignIn.submit,
+      })
+      expect(submit).not.toHaveAttribute('aria-disabled')
+      expect(submit).not.toHaveAttribute('disabled')
       const cancel = screen.getByRole('button', {
         name: zhCN.smsSignIn.cancelResend,
       })
@@ -538,17 +601,16 @@ describe('SMSSignInForm focus in Chromium', () => {
       expect(cancel).toHaveFocus()
       expect(cancel).not.toHaveAttribute('aria-disabled')
       expect(cancel).not.toHaveAttribute('aria-busy')
-      await user.keyboard('{Enter}')
-      await waitFor(() =>
-        expect(
-          screen.getByLabelText(zhCN.smsSignIn.codeLabel),
-        ).toBeInTheDocument(),
-      )
+      await browserUserEvent.keyboard('{Enter}')
+      await waitFor(() => expect(document.activeElement).toBe(resend))
       expect(sends(harness)).toHaveLength(1)
       // The way out unmounts with the wait: the code step is what is left.
       expect(
         screen.queryByRole('button', { name: zhCN.smsSignIn.cancelResend }),
       ).toBeNull()
+      expect(
+        screen.getByLabelText(zhCN.smsSignIn.codeLabel),
+      ).toBeInTheDocument()
     } finally {
       fake.restore()
     }

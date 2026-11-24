@@ -618,6 +618,9 @@ export function PasswordResetScreen({
   // A send asked for while the gate held it leaves as soon as the gate is
   // known and the proof it wants is in hand: the viewer's one request is
   // not turned into a click followed by a second one.
+  // The write-in-flight guard below is defensive and currently unreachable:
+  // the code submit abandons a held resend (setPendingSend(null)) before it
+  // starts its own write, so no held send survives into an in-flight write.
   useEffect(() => {
     if (pendingSend === null || human.pending || gateDocument === null) {
       return
@@ -625,10 +628,20 @@ export function PasswordResetScreen({
     if (needsProof && human.proof === null) {
       return
     }
+    if (busy) {
+      return
+    }
     const { channel, identifier, origin } = pendingSend
     setPendingSend(null)
     void sendRef.current(channel, identifier, origin)
-  }, [pendingSend, human.pending, gateDocument, needsProof, human.proof])
+  }, [
+    pendingSend,
+    human.pending,
+    gateDocument,
+    needsProof,
+    human.proof,
+    busy,
+  ])
 
   const writePassword = async (newPassword: string): Promise<void> => {
     setBusy(true)

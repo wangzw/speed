@@ -11,13 +11,15 @@ import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { page } from 'vitest/browser'
-import type { AuthnField, AuthnStep } from '@speed/auth-core'
+import { page, userEvent as browserUserEvent } from 'vitest/browser'
+import { makeHarness } from '@speed/test-utils/session-harness'
+import { installFakeTurnstile } from '@speed/test-utils/turnstile'
+import type { AuthnField, AuthnHumanGate, AuthnStep } from '@speed/auth-core'
 import enUS from '../locales/en-US.json' with { type: 'json' }
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 import { expectNoAxeViolations } from '../../test-utils/axe.js'
 import { renderWithProviders } from '../../test-utils/render.js'
-import { FlowStepFields } from './flow-step.js'
+import { FlowStepFields, HumanGatedFlowStep } from './flow-step.js'
 import type { OpenFlowState } from './flow.js'
 
 const TOTP_URI =
@@ -457,6 +459,70 @@ describe('FlowStepFields focus retention in Chromium', () => {
       ).toHaveFocus()
     } finally {
       restore()
+    }
+  })
+})
+
+/** A gate whose phone surface runs Turnstile: choosing the SMS factor is a
+ * send that needs a proof. */
+const PHONE_TURNSTILE: AuthnHumanGate = {
+  phone: { required: true, provider: 'turnstile', site_key: 'site-1' },
+  other: { required: false, provider: 'off' },
+}
+
+describe('HumanGatedFlowStep held-answer focus in Chromium', () => {
+  it('returns focus to the answer control when the held answer is cancelled', async () => {
+    // The cancel control that dropped the wait unmounts with it; the answer
+    // control the viewer activated is still in the step and takes focus
+    // back. Activation goes through the keyboard, the path this defect
+    // belongs to.
+    const fake = installFakeTurnstile()
+    try {
+      const onAnswer = vi.fn()
+      const harness = makeHarness({})
+      const factorStep: OpenFlowState = {
+        seq: 2,
+        state: 'second',
+        next: {
+          kind: 'factor',
+          factors: [{ id: 'mfa-1', kind: 'sms' }],
+        },
+      }
+      renderWithProviders(
+        <>
+          <h1>Two-factor sign-in</h1>
+          <HumanGatedFlowStep
+            session={harness.session}
+            humanGate={PHONE_TURNSTILE}
+            step={factorStep}
+            busy={false}
+            onAnswer={onAnswer}
+            onUnsupported={vi.fn()}
+          />
+        </>,
+      )
+      const smsChoice = screen.getByRole('button', {
+        name: zhCN.signInFlow.factorKind.sms,
+      })
+      smsChoice.focus()
+      expect(document.activeElement).toBe(smsChoice)
+      await browserUserEvent.keyboard('{Enter}')
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      expect(onAnswer).not.toHaveBeenCalled()
+
+      const cancel = screen.getByRole('button', {
+        name: zhCN.signInFlow.passkeyCancel,
+      })
+      cancel.focus()
+      expect(document.activeElement).toBe(cancel)
+      await browserUserEvent.keyboard('{Enter}')
+      await waitFor(() => expect(document.activeElement).toBe(smsChoice))
+      expect(onAnswer).not.toHaveBeenCalled()
+      expect(
+        screen.queryByRole('button', { name: zhCN.signInFlow.passkeyCancel }),
+      ).toBeNull()
+    } finally {
+      fake.restore()
     }
   })
 })

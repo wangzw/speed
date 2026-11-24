@@ -14,6 +14,7 @@
 import { describe, expect, it } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { userEvent as browserUserEvent } from 'vitest/browser'
 import {
   LOGIN_START,
   SSO_DISCOVER,
@@ -113,6 +114,59 @@ describe('DescriptorSignInForm first-step human verification in Chromium', () =>
         method: METHOD,
         input: { identifier: 'alice' },
         human_proof: 'token-1',
+      })
+    } finally {
+      fake.restore()
+    }
+  })
+
+  it('keeps the descriptor submit focused and busy while its proof is outstanding', async () => {
+    // The Turnstile control lives in a third-party frame the block does not
+    // focus; the submit that asked keeps the focus it had. Activation goes
+    // through the keyboard, the path this defect belongs to.
+    const fake = installFakeTurnstile()
+    try {
+      // The start stays in flight after the proof arrives, so the form
+      // surface -- and the control that asked -- stays on screen.
+      let releaseStart: ((reply: ReturnType<typeof openFlow>) => void) | null =
+        null
+      const harness = makeHarness({
+        [LOGIN_START]: () =>
+          new Promise((resolve) => {
+            releaseStart = resolve
+          }),
+      })
+      renderWithProviders(
+        <DescriptorSignInForm
+          session={harness.session}
+          method={METHOD}
+          fields={FIELDS}
+          humanGate={{
+            phone: { required: true, provider: 'turnstile', site_key: 'site-1' },
+            other: { required: true, provider: 'turnstile', site_key: 'site-1' },
+          }}
+        />,
+        { language: 'en-US' },
+      )
+      await fillFirstStep()
+      const submit = screen.getByRole('button', {
+        name: enUS.signInFlow.submit,
+      })
+      submit.focus()
+      expect(document.activeElement).toBe(submit)
+      await browserUserEvent.keyboard('{Enter}')
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      await waitFor(() => expect(submit).toHaveAttribute('aria-busy', 'true'))
+      expect(document.activeElement).toBe(submit)
+      act(() => {
+        fake.token('token-1')
+      })
+      await waitFor(() => expect(starts(harness)).toHaveLength(1))
+      // The held start left and its request is in flight; the control that
+      // asked still holds focus.
+      expect(document.activeElement).toBe(submit)
+      act(() => {
+        releaseStart?.(openFlow())
       })
     } finally {
       fake.restore()
