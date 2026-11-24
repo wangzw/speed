@@ -8,9 +8,18 @@
  * covered elements, which attribute values are reported, and which
  * component name a report carries. The fixture snippets are code for the
  * rule under test, not code from any package. The shape cases hold the
- * two exported constants to their stated form.
+ * two exported constants to their stated form. The final suite scans every
+ * runtime TSX file under web/packages/<name>/src and the demo host's src --
+ * the scopes the two lint configs give the rule -- and holds
+ * NATIVE_DISABLED_EXEMPTIONS exactly equal to the components whose covered
+ * controls a non-literal expression disables, rejects any covered control
+ * still using the `loading` prop, and rejects every inline `eslint-disable`
+ * comment that names this rule. The scan runs with `noInlineConfig`, so no
+ * inline directive takes effect.
  */
 
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Linter, RuleTester } from 'eslint'
 import tseslint from 'typescript-eslint'
@@ -732,7 +741,7 @@ describe('no-native-disabled-control exemptions', () => {
     ])
   })
 
-  it('reports the HumanVerification sites that stay unregistered', () => {
+  it('reports every unregistered component in a file with no exemption', () => {
     runRule([], [
       {
         filename: HUMAN_VERIFICATION_FILE,
@@ -835,5 +844,267 @@ describe('no-native-disabled-control exports', () => {
     for (const exportNames of Object.values(NATIVE_DISABLED_ELEMENTS)) {
       expect(Object.isFrozen(exportNames)).toBe(true)
     }
+  })
+})
+
+/** Every TSX file under one source root; the two lint configs apply the
+ * rule to each package's src and to the demo host's src, excluding test
+ * files, browser cases and `test-utils/`, so the scan skips the same
+ * entries. */
+function runtimeTsxFiles(directory, found = []) {
+  for (const entry of readdirSync(directory)) {
+    if (
+      entry === 'node_modules' ||
+      entry === 'dist' ||
+      entry === 'test-utils'
+    ) {
+      continue
+    }
+    const full = join(directory, entry)
+    if (statSync(full).isDirectory()) {
+      runtimeTsxFiles(full, found)
+      continue
+    }
+    if (
+      entry.endsWith('.tsx') &&
+      !entry.endsWith('.test.tsx') &&
+      !entry.endsWith('.spec.tsx')
+    ) {
+      found.push(full)
+    }
+  }
+  return found
+}
+
+function parseProgram(file) {
+  const { ast } = tseslint.parser.parseForESLint(readFileSync(file, 'utf8'), {
+    filePath: file,
+    sourceType: 'module',
+    ecmaFeatures: { jsx: true },
+    range: true,
+    loc: true,
+  })
+  return ast
+}
+
+/** The workspace scan asks the rule about every runtime TSX file in the two
+ * lint configs' scopes. Each file is linted under a filename no exemption
+ * names, because an exemption suppresses the report and the scan needs the
+ * full hit set to compare against the list in both directions: a hit
+ * without a registration and a registration whose control no longer hits.
+ * The path a report would display is rebuilt from the file's scope instead. */
+describe('no-native-disabled-control workspace scan', () => {
+  const webRoot = fileURLToPath(new URL('..', import.meta.url))
+  const repoRoot = join(webRoot, '..')
+  const packagesRoot = join(webRoot, 'packages')
+  const hostSrcRoot = join(repoRoot, 'starters/demo/web/src')
+
+  const linter = new Linter({ configType: 'flat', cwd: repoRoot })
+  const lintConfig = [
+    {
+      files: ['**/*.tsx'],
+      linterOptions: { noInlineConfig: true },
+      languageOptions: {
+        parser: tseslint.parser,
+        parserOptions: {
+          ecmaFeatures: { jsx: true },
+          sourceType: 'module',
+        },
+      },
+      plugins: {
+        speed: {
+          rules: { 'no-native-disabled-control': noNativeDisabledControlRule },
+        },
+      },
+      rules: { 'speed/no-native-disabled-control': 'error' },
+    },
+  ]
+
+  /** The `src` directory of every workspace package. */
+  function packageSrcDirs() {
+    return readdirSync(packagesRoot).map((name) =>
+      join(packagesRoot, name, 'src'),
+    )
+  }
+
+  /** Every runtime source root the two lint configs give the rule, grouped
+   * by config scope. Each root carries the prefix its exemption entries use:
+   * a package keys from `web/`, the demo host from the repository root. */
+  function sourceScopes() {
+    return [
+      packageSrcDirs().map((dir) => ({
+        root: dir,
+        prefix: `packages/${relative(packagesRoot, dir).split('\\').join('/')}/`,
+      })),
+      [{ root: hostSrcRoot, prefix: 'starters/demo/web/src/' }],
+    ]
+  }
+
+  /** The runtime TSX files under one source root. A root the configs give
+   * the rule but that is absent fails the scan rather than shrinking it. */
+  function filesUnder(scope) {
+    if (!existsSync(scope.root) || !statSync(scope.root).isDirectory()) {
+      expect.fail(`source root ${scope.root} does not exist`)
+    }
+    return runtimeTsxFiles(scope.root)
+  }
+
+  function displayPath(scope, file) {
+    return `${scope.prefix}${relative(scope.root, file).split('\\').join('/')}`
+  }
+
+  /** The declaring component a report names, read from the message the
+   * rule formats out of its `component` data. */
+  function componentNamedBy(message, tail) {
+    const marker = ' in component '
+    const start = message.indexOf(marker) + marker.length
+    return message.slice(start, message.indexOf(tail, start))
+  }
+
+  let cachedScan
+
+  function scanWorkspace() {
+    if (cachedScan !== undefined) {
+      return cachedScan
+    }
+    const disabled = []
+    const loading = []
+    const unparsed = []
+    for (const roots of sourceScopes()) {
+      let scanned = 0
+      for (const scope of roots) {
+        const files = filesUnder(scope)
+        scanned += files.length
+        for (const file of files) {
+          const display = displayPath(scope, file)
+          const messages = linter.verify(
+            readFileSync(file, 'utf8'),
+            lintConfig,
+            'scan.tsx',
+          )
+          for (const message of messages) {
+            if (message.fatal === true) {
+              unparsed.push(`${display}:${message.line} ${message.message}`)
+              continue
+            }
+            if (message.messageId === 'nonLiteralDisabled') {
+              disabled.push({
+                file: display,
+                component: componentNamedBy(
+                  message.message,
+                  ' is disabled by a non-literal expression.',
+                ),
+              })
+              continue
+            }
+            if (message.messageId === 'loadingProp') {
+              loading.push({
+                file: display,
+                component: componentNamedBy(
+                  message.message,
+                  " uses MUI's loading prop.",
+                ),
+                line: message.line,
+              })
+            }
+          }
+        }
+      }
+      expect(
+        scanned,
+        'runtime TSX files the scan covered in one config scope',
+      ).toBeGreaterThan(0)
+    }
+    cachedScan = { disabled, loading, unparsed }
+    return cachedScan
+  }
+
+  it('registers exactly the components the tree disables without a literal', () => {
+    const { disabled, unparsed } = scanWorkspace()
+    expect(unparsed, 'files the rule could not parse').toEqual([])
+    const observed = new Set(
+      disabled.map((entry) => `${entry.file}::${entry.component}`),
+    )
+    const declared = new Set(
+      NATIVE_DISABLED_EXEMPTIONS.map(
+        (entry) => `${entry.file}::${entry.component}`,
+      ),
+    )
+    const unregistered = [...observed].filter((key) => !declared.has(key)).sort()
+    const stale = [...declared].filter((key) => !observed.has(key)).sort()
+    expect(
+      unregistered,
+      'components disabling a covered control without an exemption',
+    ).toEqual([])
+    expect(stale, 'exemptions no component needs any more').toEqual([])
+  }, 60_000)
+
+  it('reports no covered control using the loading prop', () => {
+    const { loading } = scanWorkspace()
+    expect(
+      loading
+        .map((entry) => `${entry.file}:${entry.line} (${entry.component})`)
+        .sort(),
+      'covered controls still natively disabled through the loading prop',
+    ).toEqual([])
+  }, 60_000)
+
+  it('accepts no inline eslint-disable that names this rule', () => {
+    const found = []
+    for (const roots of sourceScopes()) {
+      let scanned = 0
+      for (const scope of roots) {
+        const files = filesUnder(scope)
+        scanned += files.length
+        for (const file of files) {
+          const display = displayPath(scope, file)
+          for (const comment of parseProgram(file).comments ?? []) {
+            if (
+              /\beslint-disable(?:-next-line|-line)?\b/.test(comment.value) &&
+              comment.value.includes('no-native-disabled-control')
+            ) {
+              found.push(`${display}:${comment.loc.start.line}`)
+            }
+          }
+        }
+      }
+      expect(
+        scanned,
+        'runtime TSX files the scan covered in one config scope',
+      ).toBeGreaterThan(0)
+    }
+    expect(found.sort(), 'inline eslint-disable comments naming this rule').toEqual(
+      [],
+    )
+  }, 60_000)
+
+  it('reports hits an unnamed inline disable would hide', () => {
+    const snippets = {
+      'next-line': [
+        "import Button from '@mui/material/Button'",
+        'export function NextLine({ busy }) {',
+        '  // eslint-disable-next-line',
+        '  return <Button disabled={busy}>Save</Button>',
+        '}',
+      ].join('\n'),
+      'file-level': [
+        '/* eslint-disable */',
+        "import Button from '@mui/material/Button'",
+        'export function WholeFile({ busy }) {',
+        '  return <Button disabled={busy}>Save</Button>',
+        '}',
+      ].join('\n'),
+    }
+    const reportedLines = {}
+    for (const [label, code] of Object.entries(snippets)) {
+      reportedLines[label] = linter
+        .verify(code, lintConfig, 'scan.tsx')
+        .filter((message) => message.messageId === 'nonLiteralDisabled')
+        .map((message) => message.line)
+    }
+    expect(
+      reportedLines,
+      'hits an unnamed inline disable would hide from the scan',
+    ).toEqual({ 'next-line': [4], 'file-level': [4] })
   })
 })
