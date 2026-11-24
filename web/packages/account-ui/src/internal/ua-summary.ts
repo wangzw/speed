@@ -1,7 +1,6 @@
 /**
- * User-agent summarization for the session rows of the account surface. The
- * extractor answers only a mapped label, never a fragment of the input, so no
- * piece of the raw string can leak into a row.
+ * User-agent summarization for the session rows: the extractor answers only a
+ * mapped label, never a fragment of the input.
  */
 
 const SEPARATOR = ' · '
@@ -34,9 +33,8 @@ const OS_MARKERS: ReadonlyArray<readonly [RegExp, string]> = [
 ]
 
 /**
- * Summarises a raw User-Agent string into the label a session row shows.
- * Answers null when nothing is recognised; the raw string is never a
- * fallback.
+ * Summarises a raw User-Agent into the label a session row shows. Answers null
+ * when nothing is recognised; the raw string is never a fallback.
  */
 export function summarizeUserAgent(ua: string): string | null {
   const parts: string[] = []

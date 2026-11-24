@@ -28,8 +28,8 @@ import { useAccountUiTranslation } from './internal/translation.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { ACCOUNT_UI_NAMESPACE } from './resources.js'
 
-/** Sorted, or [] when the engine cannot produce one: the select then offers
- * "not chosen" plus the stored value, never a fabricated list. */
+// [] when the engine cannot produce a list; the select then offers "not
+// chosen" plus the stored value, never a fabricated list.
 function supportedTimeZones(): readonly string[] {
   try {
     const values = Intl.supportedValuesOf('timeZone')
@@ -62,8 +62,8 @@ export function PreferencesSection() {
   const storedLocale = data?.locale ?? ''
   const storedTimezone = data?.time_zone ?? ''
 
-  // A select whose value matches no option displays the wrong one, so a
-  // stored zone the engine's list omits is added as its own option.
+  // A select whose value matches no option displays the wrong one, so a stored
+  // zone the engine omits is added as its own option.
   const timeZoneChoices = useMemo(() => {
     if (storedTimezone !== '' && !timeZoneOptions.includes(storedTimezone)) {
       return [storedTimezone, ...timeZoneOptions]
@@ -71,20 +71,16 @@ export function PreferencesSection() {
     return timeZoneOptions
   }, [storedTimezone, timeZoneOptions])
 
-  /** The server answers before anything local moves, so a refusal needs no
-   * revert. */
   function saveLocale(locale: string): Promise<void> {
     return languageFeedback.run(async () => {
       await patchProfile.mutateAsync({ data: { locale } })
-      // The empty string is the clearing value, not a language: only a real
-      // choice is switched to, and a clear leaves the device as it is.
+      // The empty string is the clearing value, not a language.
       if (locale !== '') {
         await switchLanguage(i18n, locale)
       }
       await queryClient.invalidateQueries({
         queryKey: getAuthnProfileGetQueryKey(),
       })
-      // Translated in the language the write just chose.
       const target = locale === '' ? i18n.language : locale
       const translate = i18n.getFixedT(target, ACCOUNT_UI_NAMESPACE)
       if (locale === '') {
@@ -151,7 +147,7 @@ export function PreferencesSection() {
                 slotProps={{
                   input: { readOnly: saving },
                   // displayEmpty: without it the empty-string "not chosen"
-                  // value renders blank instead of the option's own label.
+                  // value renders blank instead of the option's label.
                   select: {
                     displayEmpty: true,
                     slotProps: {

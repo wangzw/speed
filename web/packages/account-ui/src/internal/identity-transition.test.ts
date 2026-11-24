@@ -1,15 +1,11 @@
 /**
- * runIdentityTransition checks that the window is released exactly once on
- * every exit. A window left open by a refused write would discard every
- * genuine anonymous answer that follows.
+ * runIdentityTransition checks that the window is released exactly once on every exit.
  */
 
 import { describe, expect, it } from 'vitest'
 import type { AuthSession } from '@speed/auth-core'
 import { runIdentityTransition } from './identity-transition.js'
 
-/** A session stand-in that records the window; a repeated release is a
- * no-op, as the session's contract says. */
 function fakeSession() {
   let begins = 0
   let releaseCalls = 0
@@ -101,7 +97,6 @@ describe('runIdentityTransition', () => {
     )
     const release = fake.lastRelease()
     expect(release).not.toBeNull()
-    // A second caller holding the same release neither over-closes nor reopens.
     release?.()
     release?.()
     expect(fake.begins()).toBe(1)

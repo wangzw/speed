@@ -1,6 +1,5 @@
 /**
- * The real-client network rig for account-ui's component suites: a real
- * api-client over a scripted fetch answering genuine Response objects.
+ * The real-client network rig for account-ui's component suites.
  */
 
 import { createClient, createMemoryAccessTokenStore } from '@speed/api-client'
@@ -23,17 +22,12 @@ export {
 
 export interface RealCall {
   readonly method: string
-  /** The request path without the base URL. */
   readonly path: string
-  /** The raw query string, '' when the request sent none. */
   readonly query: string
-  /** Null for a credential-less request (the refresh leg rides none). */
   readonly authorization: string | null
-  /** The JSON-decoded body, or null when none or unparseable. */
   readonly body: unknown
 }
 
-/** One scripted endpoint; a deferred promise holds an exchange open. */
 export type RealResponder = (
   call: RealCall,
 ) => Response | Promise<Response>
@@ -58,8 +52,6 @@ function projectCall(request: ObservedRequest): RealCall {
 
 const METHODS_PATH = '/api/v1/auth/methods'
 
-/** The sections read discovery before a send, so an unscripted methods path
- * would otherwise settle as a failed read outside the case's assertions. */
 function withDefaultMethods(respond: RealResponder): RealResponder {
   const fallback = (call: RealCall): Response | undefined =>
     call.method === 'GET' && call.path === METHODS_PATH
@@ -88,16 +80,11 @@ export function makeRealClientRig(respond: RealResponder) {
   return { session, store, calls }
 }
 
-/** No session layer, so a scripted 401 surfaces directly; the test plants
- * the bearer token the reads ride. */
 export function makeRealClientRigWithoutSession(respond: RealResponder) {
   const { store, calls } = makeRig(respond, projectCall, { refresh: false })
   return { store, calls }
 }
 
-/** Cookie credentials with the session's own restore() as the 401 leg: the
- * composition a browser host builds. The token rig above cannot exercise
- * what a silent 401 does to the snapshot. */
 export function makeCookieSessionRig(respond: RealResponder): {
   readonly session: AuthSession
   readonly calls: RealCall[]

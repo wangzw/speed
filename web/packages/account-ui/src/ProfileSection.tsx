@@ -26,13 +26,12 @@ import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 
 interface ProfileSectionProps {
-  /** Renders the name as a rule-less field that saves itself on blur and
-   * Enter, with no button and an accessible-only label. */
+  /** Renders a rule-less field that saves on blur and Enter, with no button
+   * and an accessible-only label. */
   readonly inline?: boolean
   /**
-   * Called after a save settles successfully and the profile query is
-   * invalidated, with the display name the server stored (read from the PATCH
-   * response). Omitting it changes nothing.
+   * Called after a save settles and the profile read is invalidated, with the
+   * display name the server stored (read from the PATCH response).
    */
   readonly onDisplayNameSaved?: (name: string) => void
 }
@@ -62,10 +61,8 @@ export function ProfileSection({
   const feedback = useWriteFeedback()
 
   const pending = isPending && data === undefined
-  // In flight through the whole attempt, including the refetch that follows.
   const busy = patchProfile.isPending || feedback.pending
   const name = editedName ?? data?.display_name ?? ''
-  // A save with nothing changed would fire a no-op PATCH.
   const unchanged = name === (data?.display_name ?? '')
 
   function invalidateProfile(): Promise<void> {
@@ -81,14 +78,12 @@ export function ProfileSection({
       })
       setEditedName(null)
       await invalidateProfile()
-      // Report only the name the server settled on, after the refetch.
+      // Report only the name the server settled on.
       onDisplayNameSaved?.(saved.display_name)
       return t('profile.saved')
     })
   }
 
-  /** A save with nothing changed would fire a no-op PATCH; the inline field
-   * and the submit button share this rule. */
   function commit(nextName: string): void {
     if (busy || nextName === (data?.display_name ?? '')) {
       return
@@ -96,8 +91,6 @@ export function ProfileSection({
     void save(nextName)
   }
 
-  // Guard the form's own submission too, so a programmatic submit or a
-  // synthetic Enter cannot fire a second PATCH.
   const guardedSubmit = useActivationGuard(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
@@ -165,8 +158,7 @@ export function ProfileSection({
                 <ActionButton
                   type="submit"
                   emphasis="primary"
-                  // Neither is native disabled: the button keeps focus and
-                  // states why it cannot run.
+                  // Not natively disabled: the button keeps focus and states why.
                   busy={busy}
                   unavailable={!busy && unchanged}
                   unavailableReason={

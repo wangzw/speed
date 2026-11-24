@@ -1,6 +1,5 @@
 /**
- * ColorModeSection in a real browser: the in-flight select stays focused and
- * read-only rather than natively disabled, which jsdom cannot tell apart.
+ * ColorModeSection in a real browser: the in-flight select stays focusable and read-only.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
@@ -29,7 +28,6 @@ function deferred<T>(): {
   return { promise, resolve }
 }
 
-/** What currently holds focus, for a failure message. */
 function describeActiveElement(): string {
   const active = document.activeElement
   if (active === null) {
@@ -85,8 +83,6 @@ describe('ColorModeSection write focus in Chromium', () => {
       ),
     )
 
-    // The operator opens the select and picks a mode; MUI hands focus back
-    // to the select when the menu closes, and the change starts the write.
     select.focus()
     await userEvent.click(select)
     await userEvent.click(
@@ -100,21 +96,15 @@ describe('ColorModeSection write focus in Chromium', () => {
         rig.calls.filter((call) => call.method === 'PATCH'),
       ).toHaveLength(1),
     )
-    // The menu closes and MUI hands focus back to the select; keep waiting
-    // for it, because the closing transition finishes after the write is
-    // already on the wire.
     await waitFor(() => {
       expect(
         select,
         `focus while the color-mode write is in flight; document.activeElement is ${describeActiveElement()}`,
       ).toHaveFocus()
     })
-    // Focusable but unchangeable: readOnly, not natively disabled.
     expect(select).toHaveAttribute('aria-readonly', 'true')
-    // The chosen value stays the stored one until the server accepts it.
     expect(select).toHaveTextContent(zhCN.appearance.colorMode.options.light)
 
-    // A second activation cannot open the menu or start another write.
     await userEvent.click(select)
     expect(screen.queryByRole('option')).toBeNull()
     expect(
@@ -125,7 +115,6 @@ describe('ColorModeSection write focus in Chromium', () => {
 
     await waitFor(() => expect(onApplied).toHaveBeenCalledTimes(1))
     expect(onApplied).toHaveBeenCalledWith('dark')
-    // Settled: the control reads the stored value and is writable again.
     await waitFor(() =>
       expect(select).toHaveTextContent(
         zhCN.appearance.colorMode.options.dark,

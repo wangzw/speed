@@ -9,7 +9,6 @@ import {
 } from '@speed/i18n'
 import { useAccountUiTranslation } from './translation.js'
 
-/** Every code with a dedicated errors-section text. */
 export const ERROR_TEXT_CODES = [
   'authn.bad_request',
   'authn.unsupported_region',

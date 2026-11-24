@@ -1,6 +1,6 @@
 /**
- * MfaSection: the two-step-verification surface of the account page, listing
- * the account's factors and the deployment's enrollment entries.
+ * MfaSection: the two-step-verification surface, the account's factors and the
+ * deployment's enrollment entries.
  */
 
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -49,10 +49,7 @@ import { summarizeUserAgent } from './internal/ua-summary.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 
-/**
- * The host supplies the session and return path; the section reads the
- * enrolled factors and enrolls or removes them through step-up dialogs.
- */
+/** The host supplies the session and return path. */
 export interface MfaSectionProps {
   /** The session that drives the enroll flow and the step-up dialog. */
   readonly session: AuthSession
@@ -61,7 +58,6 @@ export interface MfaSectionProps {
   readonly returnPath?: string
 }
 
-/** A value outside the list renders the generic "other" label, never raw. */
 const KNOWN_FACTOR_KINDS = new Set<string>(['totp', 'webauthn', 'sms'])
 
 type GatedAction =
@@ -76,7 +72,6 @@ type GatedAction =
       readonly reason: StepUpReason
     }
 
-/** The step is null while the flow starts. */
 interface EnrollPanel {
   readonly kind: string
   readonly label: string
@@ -89,7 +84,6 @@ interface RenameDraft {
   readonly label: string
 }
 
-/** A refused removal's row stays, so the same action is the way back. */
 interface RemovedLanding {
   readonly id: string
   readonly kind: string
@@ -109,11 +103,8 @@ interface EnrollLanding {
   readonly kind: string
 }
 
-/**
- * Whether focus was lost when the control that started a write left. Focus
- * inside one of this section's own dialogs counts as lost; any other
- * role="dialog" is the host shell's and never counts.
- */
+// Focus inside this section's own dialogs counts as lost; any other dialog is
+// the host shell's.
 function focusFellWith(
   control: HTMLElement | null,
   ownDialogs: readonly (HTMLElement | null)[],
@@ -142,8 +133,7 @@ type AdvanceOutcome =
       readonly failure: unknown
     }
 
-/** Only a passkey suggests the browser summary; an SMS factor's name
- * describes the account's phone, not this device. */
+// Only a passkey suggests the browser summary; an SMS factor names the account's phone.
 function suggestedFactorName(): string {
   if (typeof navigator === 'undefined') {
     return ''
@@ -151,7 +141,6 @@ function suggestedFactorName(): string {
   return summarizeUserAgent(navigator.userAgent) ?? ''
 }
 
-/** Null for an absent or malformed value, so a bad row never reaches Intl. */
 function parseDate(iso: string | undefined): Date | null {
   if (iso === undefined) {
     return null
@@ -190,8 +179,6 @@ function enrollNoteKey(kind: string): string {
   return ENROLL_NOTE_KEYS[kind] ?? 'mfa.enroll.note.other'
 }
 
-/** Rename then remove; a disabled factor offers removal alone. Only the row
- * whose removal is in flight reports busy. */
 function FactorActions({
   canRename,
   removeBusy,
@@ -210,7 +197,7 @@ function FactorActions({
   readonly removeRef: (element: HTMLButtonElement | null) => void
 }) {
   const { t } = useAccountUiTranslation()
-  // A busy button already reports itself unavailable; it gives no reason.
+  // A busy button already reports unavailable; it gives no reason.
   const removeUnavailable = !removeBusy && unavailable
   if (!canRename) {
     return (
@@ -244,7 +231,7 @@ function FactorActions({
   )
 }
 
-/** The field stays focusable and read-only while a write is in flight. */
+// Read-only, not disabled: the field stays focusable while a write runs.
 function FactorRenameForm({
   label,
   busy,
@@ -305,8 +292,6 @@ function FactorRenameForm({
   )
 }
 
-/** A refused start or answer is correctable beside the controls that produced
- * it, so it renders inside the panel. */
 function EnrollmentFeedback({
   outcome,
 }: {
@@ -317,23 +302,21 @@ function EnrollmentFeedback({
 
 /**
  * The two-step-verification surface: enrolls and removes factors through
- * step-up dialogs, reporting each write's outcome beside its controls.
+ * step-up dialogs, each write reporting beside its controls.
  */
 export function MfaSection({ session, returnPath }: MfaSectionProps) {
   const { t, i18n } = useAccountUiTranslation()
-  // On a plain surface the host's block already names this area, so the
-  // region's accessible name must differ from the block's.
+  // A plain surface's accessible name must differ from the host block's.
   const surface = useContext(SectionSurfaceContext)
   const queryClient = useQueryClient()
   const { data, isPending, isFetching, error, refetch } = useFactorsQuery()
-  // The SMS factor sends to the account's proved phone, read from the profile.
   const { data: profile } = useProfileQuery()
   const provenPhone =
     profile?.identifiers?.find(
       (identifier) =>
         identifier.kind === 'phone' && identifier.proven === true,
     )?.value ?? null
-  // An absent collection is not read as "no phone": the server still judges.
+  // An absent collection is not read as "no phone"; the server still judges.
   const phoneMissing =
     profile?.identifiers !== undefined && provenPhone === null
   const removeMutation = useAuthnMfaRemoveFactor()
@@ -341,17 +324,13 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
 
   const [gate, setGate] = useState<GatedAction | null>(null)
   const [panel, setPanel] = useState<EnrollPanel | null>(null)
-  // An SMS add entry with no proved phone answers with this notice instead.
   const [notice, setNotice] = useState<string | null>(null)
   const [enrolling, setEnrolling] = useState(false)
   const [removeTarget, setRemoveTarget] = useState<string | null>(null)
   const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null)
   const [pendingRenameId, setPendingRenameId] = useState<string | null>(null)
-  // The add entry leaves with the panel, so only a retry can show progress.
   const [startOrigin, setStartOrigin] = useState<'add' | 'retry' | null>(null)
   const [renameDraft, setRenameDraft] = useState<RenameDraft | null>(null)
-  // Each records the landing before its control goes; the effect below hands
-  // focus over only if focus fell with that control.
   const removedLanding = useRef<RemovedLanding | null>(null)
   const renameLanding = useRef<RenameLanding | null>(null)
   const enrollLanding = useRef<EnrollLanding | null>(null)
@@ -367,38 +346,28 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
   const addRefs = useRef(
     new Map<string, (element: HTMLButtonElement | null) => void>(),
   )
-  // The fallback landing when no row's action is left to take focus.
   const groupSections = useRef(new Map<string, HTMLElement>())
   const groupRefs = useRef(
     new Map<string, (element: HTMLElement | null) => void>(),
   )
   const groupsContainer = useRef<HTMLDivElement | null>(null)
-  // A refused removal's landing waits for this dialog to leave: while it is
-  // still exiting, focus sits on its confirm control.
   const confirmDialog = useRef<HTMLDivElement | null>(null)
   const stepUpDialog = useRef<HTMLDivElement | null>(null)
   const feedback = useWriteFeedback()
   const panelFeedback = useWriteFeedback()
-  // null is unresolved; the enroll entries are then withheld.
   const [enrollableKinds, setEnrollableKinds] = useState<
     readonly string[] | null
   >(null)
 
-  // Each panel instance releases at most once.
   const flowOpenRef = useRef(false)
-  // The unmount release is deferred one microtask, so a StrictMode remount
-  // cancels it and keeps the same flow.
+  // Deferred one microtask, so a StrictMode remount cancels the release.
   const releasePendingRef = useRef(false)
   const sessionRef = useRef(session)
   sessionRef.current = session
-  // A start or answer under a stale token belongs to a panel the reader left.
   const panelTokenRef = useRef(0)
   const mountedRef = useRef(true)
-  // The row the enrollment added is the one beyond this set in the refetched
-  // list, which is how a typed name finds its row.
   const knownIdsRef = useRef<ReadonlySet<string>>(new Set())
 
-  /** At most once per panel instance; a failure is ignored. */
   function releaseEnrollFlow(): void {
     if (!flowOpenRef.current) {
       return
@@ -407,7 +376,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     void session.abandonFlow().catch(() => undefined)
   }
 
-  // Unmounting releases an unsettled flow, like the panel's cancel does.
   useEffect(() => {
     mountedRef.current = true
     releasePendingRef.current = false
@@ -432,7 +400,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
   const formatTime = (value: string | number | Date): string =>
     formatInstant(value, i18n.language, { timeZone })
 
-  // Read the deployment's factors once per session.
   useEffect(() => {
     let active = true
     setEnrollableKinds(null)
@@ -443,8 +410,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
           setEnrollableKinds(methods.mfa.factors)
         }
       } catch {
-        // Fail closed: the surface never offers a factor the deployment may
-        // not carry.
+        // Fail closed: never offer a factor the deployment may not carry.
         if (active) {
           setEnrollableKinds([])
         }
@@ -455,7 +421,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     }
   }, [session])
 
-  // Once a phone appears, the notice has said its piece and clears itself.
   useEffect(() => {
     if (provenPhone !== null) {
       setNotice(null)
@@ -464,14 +429,12 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
 
   const factors = data?.factors
   const pending = isPending && data === undefined
-  // One write attempt at a time; only the control that started it is busy.
   const writeInFlight =
     enrolling ||
     feedback.pending ||
     pendingRemoveId !== null ||
     pendingRenameId !== null
 
-  /** A stable ref callback, so a landing can read the element mounted now. */
   function actionRefFor(
     key: string,
     buttons: Map<string, HTMLButtonElement>,
@@ -529,7 +492,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     ;(group ?? groupsContainer.current)?.focus()
   }
 
-  /** The rendered rows of one kind; a pending row is not rendered. */
   function siblingIdsOf(kind: string): readonly string[] {
     return (factors ?? []).flatMap((factor) =>
       factor.status !== 'pending' &&
@@ -540,8 +502,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     )
   }
 
-  /** The next row in the recorded order, else the previous, else the group.
-   * Only connected controls are candidates. */
   function landOnNeighbour(
     id: string,
     order: readonly string[],
@@ -566,12 +526,8 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     focusKindGroup(kind)
   }
 
-  // Focus lands in the same commit, only when focus fell with the control
-  // that left; a record cleared on a settled row keeps a later read from
-  // handing focus over for a write that removed nothing.
   useLayoutEffect(() => {
     let observer: MutationObserver | null = null
-    // A focus inside either is this write's own dialog exiting.
     const ownDialogs = [confirmDialog.current, stepUpDialog.current]
     const removal = removedLanding.current
     if (removal !== null) {
@@ -581,9 +537,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
       if (remaining) {
         if (pendingRemoveId === null && gate === null) {
           if (removal.outcome === 'refused') {
-            // The row's own remove action takes focus back once the
-            // confirmation leaves; until then the challenge restores focus to
-            // its confirm control, so the landing waits for that node to go.
             const dialog = confirmDialog.current
             const land = (): void => {
               if (removedLanding.current !== removal) {
@@ -661,8 +614,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     }
   }, [factors, renameDraft, panel, gate, pendingRemoveId, pendingRenameId])
 
-  /** The account keeps a single authenticator entry; other kinds may be held
-   * more than once and are told apart by name. */
   function takesName(kind: string): boolean {
     return kind !== 'totp'
   }
@@ -678,7 +629,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
       interpolation: { escapeValue: false },
     })
   }
-  /** An SMS panel with a proved phone names that destination. */
   function enrollNote(kind: string): string {
     if (kind === 'sms' && provenPhone !== null) {
       return t('mfa.enroll.note.smsTo', {
@@ -688,7 +638,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     }
     return t(enrollNoteKey(kind))
   }
-  // An unknown kind still starts that kind's flow.
   const enrollEntries = enrollableKinds ?? []
 
   function invalidateFactors(): Promise<void> {
@@ -697,9 +646,9 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     })
   }
 
-  /** A bare `complete` step carries no input, so it is submitted on the
-   * reader's one confirm. A seq is submitted at most once; a refusal parks
-   * the step with its own confirm for a manual retry. */
+  // A bare `complete` step carries no input, so it is submitted on the
+  // reader's one confirm. A seq is submitted at most once; a refusal parks the
+  // step with its own confirm for a manual retry.
   async function advanceFlow(state: AuthnFlowState): Promise<AdvanceOutcome> {
     let current = state
     const completed = new Set<number>()
@@ -720,7 +669,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     return { kind: 'state', state: current }
   }
 
-  /** The active row of the kind that the list did not carry before. */
   function addedFactorId(kind: string): string | null {
     const list = asFactorList(
       queryClient.getQueryData(getAuthnMfaFactorsQueryKey()),
@@ -735,8 +683,8 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     return added?.id ?? null
   }
 
-  /** The flow's first input carried no label, so the typed name is written to
-   * the row the enrollment added. */
+  // The flow's first input carried no label, so the typed name is written to
+  // the row the enrollment added.
   async function finishEnrollment(
     kind: string,
     label: string,
@@ -756,8 +704,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     })
   }
 
-  /** Starts the flow at once so the method's body is on the same panel as the
-   * name field. An SMS factor with no proved phone answers with a notice. */
   function openEnroll(factorKind: string): void {
     releaseEnrollFlow()
     knownIdsRef.current = new Set(
@@ -768,7 +714,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     feedback.reset()
     panelFeedback.reset()
     if (factorKind === 'sms' && phoneMissing) {
-      // A start still in flight belongs to the panel being replaced.
       panelTokenRef.current += 1
       setPanel(null)
       setNotice(factorKind)
@@ -782,7 +727,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     void startEnrollFlow(factorKind, token, label, 'add')
   }
 
-  /** Parks the first step on the open panel; only a retry shows progress. */
   async function startEnrollFlow(
     factorKind: string,
     token: number,
@@ -799,7 +743,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
         input: { kind: factorKind, label: '' },
         ...(returnPath === undefined ? {} : { return_to: returnPath }),
       })
-      // A start answering after the reader left is released, not carried on.
       if (token !== panelTokenRef.current || !mountedRef.current) {
         if ('next' in started) {
           void sessionRef.current.abandonFlow().catch(() => undefined)
@@ -837,7 +780,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
       // A settled flow has spent its state, so there is nothing to release.
       flowOpenRef.current = false
       if (state.state === 'enrolled') {
-        // The panel closes and takes its confirm with it.
         enrollLanding.current = { kind: factorKind }
       }
       setPanel(null)
@@ -849,7 +791,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
         }
         return
       }
-      // A settled state other than 'enrolled' is not an enroll outcome.
       feedback.fail({ code: 'client.unknown' })
     } catch (failure) {
       if (token !== panelTokenRef.current || !mountedRef.current) {
@@ -857,7 +798,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
       }
       const reason = stepUpReasonOf(errorCodeOf(failure))
       if (reason !== null) {
-        // The panel closes and the flow restarts after a won challenge.
         setPanel(null)
         setGate({ kind: 'enroll', factorKind, reason })
         return
@@ -871,7 +811,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     }
   }
 
-  /** The typed name is written once the enrollment lands. */
   async function answerEnroll(
     current: EnrollPanel,
     answer: FlowStepAnswer,
@@ -896,11 +835,9 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
         if (token !== panelTokenRef.current || !mountedRef.current) {
           return
         }
-        // A refused answer is correctable in the panel that asked for it.
         panelFeedback.fail(failure)
         return
       }
-      // A reader who left gets no automatic completion.
       if (token !== panelTokenRef.current || !mountedRef.current) {
         if ('next' in answered) {
           void sessionRef.current.abandonFlow().catch(() => undefined)
@@ -938,7 +875,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
       // A settled flow has spent its state, so there is nothing to release.
       flowOpenRef.current = false
       if (state.state === 'enrolled') {
-        // The panel closes and takes its confirm with it.
         enrollLanding.current = { kind }
       }
       setPanel(null)
@@ -959,7 +895,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     }
   }
 
-  /** A start still in flight releases its flow under the stale token. */
   function cancelEnroll(): void {
     panelTokenRef.current += 1
     releaseEnrollFlow()
@@ -971,7 +906,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     panelFeedback.reset()
   }
 
-  /** Its deletion must not be proved by itself. */
+  // Its deletion must not be proved by itself.
   function isLastActiveFactor(factorId: string): boolean {
     const active = (factors ?? []).filter(
       (factor) => factor.status === 'active',
@@ -979,15 +914,11 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     return active.length === 1 && active[0]?.id === factorId
   }
 
-  /** The two read as one code so neither says the row exists. */
   function factorIsGone(error: unknown): boolean {
     return errorCodeOf(error) === 'authn.factor_not_found'
   }
 
-  /** Remove one factor. */
   function removeFactor(factorId: string): Promise<void> {
-    // Captured before the write: the refetched list drops the row. The label
-    // tells two factors of one kind apart.
     const removed = factors?.find((factor) => factor.id === factorId)
     const removedLabel =
       removed === undefined
@@ -996,8 +927,8 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
           ? removed.label
           : factorKindLabel(removed.kind ?? '')
     // Only an active factor rotates the credential; a name the list no longer
-    // carries stays on the rotating side. A non-rotating removal runs bare,
-    // so a genuine anonymous answer still ends the session.
+    // carries stays on the rotating side. A non-rotating removal runs bare so a
+    // genuine anonymous answer still ends the session.
     const rotates = removed === undefined || removed.status === 'active'
     const lastActive = rotates && isLastActiveFactor(factorId)
     const kind = removed?.kind ?? ''
@@ -1027,7 +958,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
           await write()
           return await settle()
         } catch (error) {
-          // The row stays, so there is no landing.
           removedLanding.current = null
           setRemoveTarget(null)
           const code = errorCodeOf(error)
@@ -1042,8 +972,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
       .finally(() => setPendingRemoveId(null))
   }
 
-  /** The label is metadata, so no step-up gates this write. A factor that is
-   * gone closes the editor and rereads the list once. */
+  // The label is metadata, so no step-up gates this write.
   function renameFactor(factorId: string, label: string): Promise<void> {
     const kind =
       factors?.find((factor) => factor.id === factorId)?.kind ?? ''
@@ -1056,7 +985,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
             data: { label },
           })
           const updatedKind = updated.kind ?? kind
-          // Focus returns to the row's rename action, which stays in place.
           renameLanding.current = {
             id: factorId,
             kind: updatedKind,
@@ -1065,7 +993,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
           }
           setRenameDraft(null)
           await invalidateFactors()
-          // An empty name means the row reads as its kind.
           const name =
             updated.label !== ''
               ? updated.label
@@ -1076,7 +1003,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
           })
         } catch (error) {
           if (factorIsGone(error)) {
-            // Focus follows the removal order to a neighbour's rename action.
             renameLanding.current = {
               id: factorId,
               kind,
@@ -1092,7 +1018,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
       .finally(() => setPendingRenameId(null))
   }
 
-  /** Focus returns to the row's rename action that opened the editor. */
   function cancelRename(): void {
     if (renameDraft === null) {
       return
@@ -1140,12 +1065,9 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
         }}
       >
         {(settledFactors) => {
-          // A pending or disabled factor is not a fallback the account can
-          // use to sign in.
           const enabledFactorCount = settledFactors.filter(
             (factor) => factor.status === 'active',
           ).length
-          // A pending row is the panel's intermediate state.
           const visibleFactors = settledFactors.filter(
             (factor) => factor.status !== 'pending',
           )
@@ -1155,8 +1077,8 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
           const allKinds = Array.from(
             new Set([...enrollEntries, ...factorKinds]),
           ).filter((kind) => kind !== '')
-          // Fixed by strength, never by which group is enabled. Unknown kinds
-          // share the last rank in the order they entered `allKinds`.
+          // Fixed by strength, never by which group is enabled; unknown kinds
+          // share the last rank in entry order.
           const STRENGTH_ORDER = ['webauthn', 'totp', 'sms']
           const rank = (kind: string): number => {
             const position = STRENGTH_ORDER.indexOf(kind)
@@ -1186,8 +1108,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                 }}
               >
                 {orderedKinds.length === 0 ? (
-                  // Keeps the same focusable container for a removal that
-                  // empties the section.
+                  // Keeps the same focusable container when a removal empties the section.
                   <Typography
                     variant="body2"
                     color="text.secondary"
@@ -1209,7 +1130,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                       panel !== null && panel.kind === kind ? panel : null
                     const headingText =
                       open === null ? kindLabel : enrollTitle(kind)
-                    // The single authenticator entry is replaced, not added to.
                     const replace =
                       kind === 'totp' &&
                       kindFactors.some((factor) => factor.status === 'active')
@@ -1246,8 +1166,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                               size="small"
                               unavailable={writeInFlight}
                               data-testid={`mfa-add-${kind}`}
-                              // Contains the visible label (WCAG 2.5.3) while
-                              // naming the method.
+                              // Contains the visible label (WCAG 2.5.3) while naming the method.
                               aria-label={
                                 replace
                                   ? t('mfa.replaceAria')
@@ -1291,8 +1210,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                 sx={{ mt: 2 }}
                               />
                             ) : null}
-                            {/* States what confirming does; an SMS step also
-                                names the phone. */}
                             <Typography
                               variant="body2"
                               color="text.secondary"
@@ -1376,8 +1293,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                               </Typography>
                             )}
                             {notice === kind && phoneMissing ? (
-                              // No phone to send to: a statement, no panel,
-                              // no action and no close control.
                               <Alert
                                 severity="info"
                                 role="note"
@@ -1404,8 +1319,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                   const id = factor.id ?? null
                                   const disabled =
                                     factor.status === 'disabled'
-                                  // A kind held several times reads as its
-                                  // holder's name, or the kind when unnamed.
                                   const displayName =
                                     takesName(kind) &&
                                     factor.label != null &&
@@ -1562,11 +1475,9 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
         session={session}
         onSuccess={handleStepUpSuccess}
         onCancel={() => {
-          // A cancelled challenge returns focus to the entry or row action.
           if (gate?.kind === 'enroll') {
             enrollLanding.current = { kind: gate.factorKind }
           } else if (gate?.kind === 'remove') {
-            // The refused removal left its row; its own action is the way back.
             const removed = factors?.find(
               (factor) => factor.id === gate.factorId,
             )

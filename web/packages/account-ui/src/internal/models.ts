@@ -28,17 +28,14 @@ export type AccountFactor = AuthnMfaFactor
 
 export type FactorList = AuthnMfaFactorList
 
-/** Narrows a profile read to its shape; an absent body reads as empty. */
 export function asProfile(raw: unknown): AccountProfile {
   return (typeof raw === 'object' && raw !== null ? raw : {}) as AccountProfile
 }
 
-/** Narrows a sessions read to its shape; an absent body reads as empty. */
 export function asSessionList(raw: unknown): SessionList {
   return (typeof raw === 'object' && raw !== null ? raw : {}) as SessionList
 }
 
-/** Narrows a factors read to its shape; an absent body reads as empty. */
 export function asFactorList(raw: unknown): FactorList {
   return (typeof raw === 'object' && raw !== null ? raw : {}) as FactorList
 }

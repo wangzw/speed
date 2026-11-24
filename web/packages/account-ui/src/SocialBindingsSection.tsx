@@ -1,6 +1,5 @@
 /**
- * SocialBindingsSection: the social-account bindings surface of the account
- * page, listing bound identities and the channels a deployment offers.
+ * SocialBindingsSection: the social-account bindings surface of the account page.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -37,9 +36,7 @@ import { useAccountUiTranslation } from './internal/translation.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 
 /**
- * The host supplies the session, the callback route and the navigation
- * action; the section reads the offered providers and starts or removes a
- * binding.
+ * The host supplies the session, the callback route and the navigation action.
  */
 export interface SocialBindingsSectionProps {
   /** The session that reads the deployment's methods and starts the
@@ -68,8 +65,6 @@ type BindingAction =
   | ({ readonly kind: 'unbind' } & UnbindAction)
   | { readonly kind: 'authorize'; readonly method: AuthnMethodDescriptor }
 
-/** Both operations a re-login can resume are pure requests, so a JSON-safe
- * descriptor carries them. */
 type ResumeOperation =
   | { readonly kind: 'authorize'; readonly method: string }
   | { readonly kind: 'unbind'; readonly id: string; readonly label: string }
@@ -97,8 +92,6 @@ function isResumeOperation(value: unknown): value is ResumeOperation {
   return false
 }
 
-/** The provider values with their own bundle key; anything else renders the
- * OIDC family label or the generic other label. */
 const KNOWN_PROVIDERS = new Set<string>([
   'google',
   'github',
@@ -107,8 +100,7 @@ const KNOWN_PROVIDERS = new Set<string>([
   'feishu',
 ])
 
-/** pkg/authn stores each tenant's connection as "oidc:<tenant>", so the set
- * is dynamic; the raw value is the row's reference line. */
+// pkg/authn stores each tenant's connection as "oidc:<tenant>", so the set is dynamic.
 const OIDC_PROVIDER_PREFIX = 'oidc:'
 
 const PROVIDER_LABEL_KEYS: Readonly<Record<string, string>> = {
@@ -119,15 +111,12 @@ const PROVIDER_LABEL_KEYS: Readonly<Record<string, string>> = {
   feishu: 'bindings.provider.feishu',
 }
 
-/** Every mode of a brand carries the same descriptor label, so this wording
- * outranks it and keeps the modes distinguishable. */
+// Every mode of a brand carries the same descriptor label; this wording outranks it.
 const METHOD_MODE_LABEL_KEYS: Readonly<Record<string, string>> = {
   'wechat.mp': 'bindings.provider.wechatOfficialAccount',
   'wechat.web': 'bindings.provider.wechatWeb',
 }
 
-/** A descriptor's own `binding_providers` (exact values or namespace
- * prefixes), or the method's name when it declares none. */
 function methodBindingProviders(
   method: AuthnMethodDescriptor,
 ): readonly string[] {
@@ -137,7 +126,7 @@ function methodBindingProviders(
     : [method.name]
 }
 
-/** An empty entry is skipped, because as a prefix it would claim every value. */
+// An empty entry is skipped, because as a prefix it would claim every value.
 function methodOwnsProvider(
   method: AuthnMethodDescriptor,
   provider: string,
@@ -167,8 +156,8 @@ interface UnbindLanding {
   readonly control: HTMLElement | null
 }
 
-/** Whether focus was lost when the row left. Focus still in a dialog counts
- * as lost: its exit would hand focus back to the removed control. */
+// Focus still in a dialog counts as lost: its exit would hand focus back to the
+// removed control.
 function focusFellWith(removed: HTMLElement | null): boolean {
   const active = document.activeElement
   if (active === null || active === document.body) {
@@ -213,7 +202,7 @@ function BindingListSkeleton({ label }: { readonly label: string }) {
 
 /**
  * The social-bindings surface: starts a provider's link flow and removes
- * existing bindings, reporting each write's outcome beside its controls.
+ * bindings, each write reporting beside its controls.
  */
 export function SocialBindingsSection({
   session,
@@ -234,16 +223,11 @@ export function SocialBindingsSection({
     readonly label: string
   } | null>(null)
   const [busyProvider, setBusyProvider] = useState<string | null>(null)
-  // Only the row whose unlink is in flight reports busy; the rest of the
-  // list's one write scope is unavailable without a reason.
   const [unbindRowId, setUnbindRowId] = useState<string | null>(null)
   const unbindButtons = useRef(new Map<string, HTMLButtonElement>())
   const unbindLanding = useRef<UnbindLanding | null>(null)
-  // The focus landing when no neighbour action remains.
   const bindingsRegion = useRef<HTMLDivElement | null>(null)
-  // One write scope for the whole list; the attempt that settles last wins.
   const feedback = useWriteFeedback()
-  // The challenge replays exactly the remembered action once.
   const gate = useStepUpGate<BindingAction>((action) => {
     if (action.kind === 'authorize') {
       void handleAuthorize(action.method)
@@ -257,7 +241,6 @@ export function SocialBindingsSection({
     readonly AuthnMethodDescriptor[] | null
   >(null)
 
-  // A failed read offers no channel: it is never assumed to carry any.
   useEffect(() => {
     let active = true
     setMethods(null)
@@ -278,8 +261,6 @@ export function SocialBindingsSection({
     }
   }, [session])
 
-  // The record is bound to the snapshot's account, so it never replays for a
-  // different account a later sign-in lands on.
   const rememberRelogin = useCallback(() => {
     if (returnPath === undefined) {
       return
@@ -300,8 +281,6 @@ export function SocialBindingsSection({
     )
   }, [returnPath, gate.peek, session])
 
-  // Waits for the methods so an authorize can resolve the recorded method; a
-  // record for another page is put back untouched.
   const resumed = useRef(false)
   useEffect(() => {
     if (resumed.current || methods === null || returnPath === undefined) {
@@ -339,13 +318,13 @@ export function SocialBindingsSection({
   }, [methods, returnPath, session])
 
   const links = data?.links
-  // isPending alone tracks "no answer yet" across the in-flight and the
-  // parked (offline) states, where isLoading is false.
+  // isPending alone tracks "no answer yet" across the in-flight and parked
+  // (offline) states, where isLoading is false.
   const pending = isPending && data === undefined
   const rows = !pending && links !== undefined ? links : undefined
 
-  /** Never a raw bundle key: falls from the mode wording to the claiming
-   * method's label, to the closed-set wording, to the generic other label. */
+  // Never a raw bundle key: falls from the mode wording to the claiming method's
+  // label, to the closed-set wording, to the generic other label.
   function providerLabel(provider: string | null): string {
     if (provider === null) {
       return t('bindings.provider.other')
@@ -385,13 +364,11 @@ export function SocialBindingsSection({
       ),
   )
   const hasAddArea = rows !== undefined && available.length > 0
-  // Headerless: the placeholder is a status, not a section.
   const showEmptyState = rows !== undefined && rows.length === 0 && !hasAddArea
   const showHeader =
     pending || (rows !== undefined && (rows.length > 0 || hasAddArea))
 
   function handleUnbind(linkId: string, providerLabel: string): Promise<void> {
-    // The order and control captured here name the focus neighbour.
     setUnbindRowId(linkId)
     unbindLanding.current = {
       id: linkId,
@@ -419,10 +396,7 @@ export function SocialBindingsSection({
           )
         } catch (error) {
           setUnbindTarget(null)
-          // The row stays, so there is no removal to land from; a replay
-          // captures its own landing.
           unbindLanding.current = null
-          // A step-up shortfall opens the challenge with this row remembered.
           if (
             gate.intercept(error, {
               kind: 'unbind',
@@ -438,9 +412,8 @@ export function SocialBindingsSection({
       .finally(() => setUnbindRowId(null))
   }
 
-  // A passive effect, not a layout one: the confirmation or challenge may be
-  // closing in the same commit, and its focus trap refuses focus until its
-  // own passive cleanup has run.
+  // A passive effect, not a layout one: a closing dialog's focus trap refuses
+  // focus until its own passive cleanup has run.
   useEffect(() => {
     const target = unbindLanding.current
     if (target === null) {
@@ -456,7 +429,6 @@ export function SocialBindingsSection({
         .filter((id): id is string => id != null),
     )
     if (remaining.has(target.id)) {
-      // Settled without removing the row: there is nothing to land from.
       if (unbindRowId === null) {
         unbindLanding.current = null
       }
@@ -488,7 +460,6 @@ export function SocialBindingsSection({
   }, [rows, unbindRowId])
 
   function handleAuthorize(method: AuthnMethodDescriptor): Promise<void> {
-    // One attempt at a time across every provider and row action.
     if (busyProvider !== null || unbindRowId !== null) {
       return Promise.resolve()
     }
@@ -504,7 +475,6 @@ export function SocialBindingsSection({
           onAuthorizeUrl?.(state.next.url)
         }
       } catch (error) {
-        // A step-up shortfall opens the challenge with this method remembered.
         if (gate.intercept(error, { kind: 'authorize', method })) {
           return null
         }
@@ -512,7 +482,6 @@ export function SocialBindingsSection({
       } finally {
         setBusyProvider(null)
       }
-      // Starting the flow is not a settled action; the callback reports it.
       return null
     })
   }

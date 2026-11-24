@@ -9,7 +9,6 @@ import type { WriteOutcome } from '@speed/ui-kit'
 import { useAccountUiErrorText } from './error-text.js'
 
 export interface WriteFeedbackRegionProps {
-  /** The scope's slot; `null` renders no visible feedback. */
   readonly outcome: WriteOutcome | null
   readonly sx?: SxProps<Theme>
 }

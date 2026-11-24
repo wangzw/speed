@@ -30,7 +30,6 @@ export function useSessionsQuery() {
   })
 }
 
-/** `enabled` holds the read back while the surface that needs it is closed. */
 export function useSessionViewQuery(enabled = true) {
   return useAuthnSessionGet<AuthnSessionView>({
     query: {
@@ -40,7 +39,6 @@ export function useSessionViewQuery(enabled = true) {
   })
 }
 
-/** `enabled` holds the read back while the surface that needs it is closed. */
 export function useFactorsQuery(enabled = true) {
   return useAuthnMfaFactors<FactorList>({
     query: {

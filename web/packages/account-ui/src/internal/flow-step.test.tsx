@@ -1,6 +1,5 @@
 /**
- * FlowStep checks the label vocabulary, the TOTP enrolment block and the
- * passkey ceremony's states.
+ * FlowStep checks the label vocabulary, the TOTP block and the passkey ceremony's states.
  */
 
 import { useState } from 'react'
@@ -168,7 +167,6 @@ describe('FlowStep labels', () => {
     try {
       render(ASSERT_STEP)
       const region = screen.getByRole('status')
-      // The waiting state's first commit inserts the region empty.
       expect(region.textContent).toBe('')
       await waitFor(() =>
         expect(region).toHaveTextContent(zhCN.flowStep.passkeyWaiting),
@@ -181,7 +179,6 @@ describe('FlowStep labels', () => {
   it('waits on the arrival ceremony, cancels into a retry, and retries the ceremony', async () => {
     const get = vi
       .fn()
-      // The cancelled attempt never settles; its late answer is irrelevant.
       .mockImplementationOnce(() => new Promise(() => {}))
       .mockImplementationOnce(() => Promise.resolve(ASSERTION_CREDENTIAL))
     const restore = installCredentials({ get, create: vi.fn() })
@@ -232,7 +229,6 @@ describe('FlowStep labels', () => {
 
   it('restarts the arrival ceremony when the server re-sends the same challenge', async () => {
     // The challenge string alone does not identify a ceremony; the sequence
-    // number does.
     const get = vi.fn().mockReturnValue(new Promise(() => {}))
     const restore = installCredentials({ get, create: vi.fn() })
     try {
@@ -433,7 +429,6 @@ describe('FlowStep labels', () => {
 
   it('reports a device that already holds this account as already registered', async () => {
     // An authenticator holding an excluded credential answers InvalidStateError;
-    // that names its own remedy.
     const create = vi
       .fn()
       .mockRejectedValue(
@@ -496,7 +491,6 @@ describe('FlowStep TOTP enrolment', () => {
     const path = image.querySelector('path')?.getAttribute('d')
     expect(path).toBeTruthy()
 
-    // A different URI must draw a different matrix.
     const other = render({
       kind: 'webauthn',
       options: {
@@ -603,7 +597,6 @@ const FACTOR_STEP: AuthnStep = {
 describe('FlowStep held actions', () => {
   it('keeps the submitted control focused while the answer is in flight', async () => {
     // A native disable would drop focus to the body, so the fields turn
-    // read-only instead.
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     function Harness() {

@@ -1,6 +1,5 @@
 /**
- * MfaSection checks the factors list, the deployment's enrollment entries,
- * the remove route and the enroll flow.
+ * MfaSection checks the factors list, the enrollment entries, the remove route and the enroll flow.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -42,8 +41,6 @@ const FLOW_CURRENT = '/api/v1/auth/flows/current'
 const OTPAUTH_URI =
   'otpauth://totp/speed:ada?secret=JBSWY3DPEHPK3PXP&issuer=speed'
 
-/** The GET /api/v1/auth/methods discovery document, carrying the deployment's
- * enrollable factor kinds. */
 function methodsDoc(factors: readonly string[]): Record<string, unknown> {
   return {
     methods: [],
@@ -56,7 +53,6 @@ function methodsDoc(factors: readonly string[]): Record<string, unknown> {
   }
 }
 
-/** One factor row, in the factor fragment's own shape. */
 function factor(overrides: Record<string, unknown>): Record<string, unknown> {
   return {
     id: 'factor-1',
@@ -68,13 +64,10 @@ function factor(overrides: Record<string, unknown>): Record<string, unknown> {
   }
 }
 
-/** One passkey row: the kind whose entries may be several, and the only one
- * whose rows carry a reader-chosen name. */
 function passkey(overrides: Record<string, unknown>): Record<string, unknown> {
   return factor({ kind: 'webauthn', ...overrides })
 }
 
-/** The accessible name of the authenticator group's replacement action. */
 const replaceName = (): string => zhCN.mfa.replaceAria
 
 function mount(
@@ -82,14 +75,9 @@ function mount(
   options: {
     readonly returnPath?: string
     readonly profile?: Record<string, unknown>
-    /** The zone the host's DisplayTimeZoneProvider supplies; absent
-     * leaves the harness's fixed TEST_TIME_ZONE in place. */
     readonly timeZone?: string
   } = {},
 ) {
-  // The host resolves the account's stored zone and supplies it through
-  // the display context; answer the profile read here so a case scripts
-  // only the calls it is about.
   const rig = makeRealClientRig((call: RealCall) => {
     if (call.method === 'GET' && call.path === PROFILE_PATH) {
       return jsonResponse(200, options.profile ?? profileBody())
@@ -112,8 +100,6 @@ function mount(
   return { rig, ...rendered }
 }
 
-/** Replaces the browser's user agent for one case; the returned function
- * restores whatever was there. */
 function stubUserAgent(ua: string): () => void {
   const original = Object.getOwnPropertyDescriptor(
     window.navigator,
@@ -132,15 +118,9 @@ function stubUserAgent(ua: string): () => void {
   }
 }
 
-/** The accessible name of a method's action: the visible action word leads,
- * followed by the method. */
 const addNameOf = (method: string): string =>
   zhCN.mfa.addAria.replace('{{method}}', method)
 
-/**
- * Open one method's enrollment panel. The flow starts with the panel, so the
- * method's body arrives without a separate name step.
- */
 async function openEnrollment(
   user: ReturnType<typeof userEvent.setup>,
   method: string,
@@ -150,7 +130,6 @@ async function openEnrollment(
   )
 }
 
-/** Submit the panel's one confirmation. */
 async function confirmEnrollment(
   user: ReturnType<typeof userEvent.setup>,
 ): Promise<void> {
@@ -159,23 +138,17 @@ async function confirmEnrollment(
   )
 }
 
-/** The enrollment panel's heading for one factor kind: the parameterized
- * title with the kind's own name in its method slot. */
 const enrollTitleOf = (method: string): string =>
   zhCN.mfa.enroll.title.replace('{{method}}', method)
 
-/** The DELETE requests a case sent to abandon the open flow. */
 const abandonCalls = (calls: readonly RealCall[]): RealCall[] =>
   calls.filter(
     (call) => call.method === 'DELETE' && call.path === FLOW_CURRENT,
   )
 
-/** The PATCH requests a case sent to rename a factor. */
 const renameCalls = (calls: readonly RealCall[]): RealCall[] =>
   calls.filter((call) => call.method === 'PATCH')
 
-/** The factor row that reads as `name`: a passkey or phone by its label, the
- * authenticator entry by its kind. */
 function factorRow(name: string): HTMLElement {
   const row = screen
     .getAllByRole('listitem')
@@ -186,29 +159,23 @@ function factorRow(name: string): HTMLElement {
   return row
 }
 
-/** The action buttons one factor row renders, in display order. */
 function rowActions(name: string): HTMLElement[] {
   return within(factorRow(name)).queryAllByRole('button')
 }
 
-/** The row's action button named `action`, or null. */
 function rowAction(name: string, action: string): HTMLElement | null {
   return within(factorRow(name)).queryByRole('button', { name: action })
 }
 
-/** Clicks one of a factor row's inline action buttons. */
 async function clickRowAction(
   user: ReturnType<typeof userEvent.setup>,
   name: string,
   action: string,
 ): Promise<void> {
-  // The rows arrive with the factors read; wait for one before choosing its
-  // action.
   await waitFor(() => expect(factorRow(name)).toBeTruthy())
   await user.click(within(factorRow(name)).getByRole('button', { name: action }))
 }
 
-/** Opens the danger confirm for one row from its inline remove action. */
 async function openRemoveConfirm(
   user: ReturnType<typeof userEvent.setup>,
   factor: string,
@@ -217,7 +184,6 @@ async function openRemoveConfirm(
   return screen.findByRole('dialog')
 }
 
-/** Opens one row's inline rename editor from its inline rename action. */
 async function openRenameEditor(
   user: ReturnType<typeof userEvent.setup>,
   factor: string,
@@ -226,8 +192,6 @@ async function openRenameEditor(
   return screen.findByLabelText(zhCN.mfa.renameLabel)
 }
 
-/** A promise the case settles by hand, so one request is held in flight
- * while the case asserts the pending and settled states. */
 function deferred<T>(): {
   readonly promise: Promise<T>
   readonly resolve: (value: T) => void
@@ -239,8 +203,6 @@ function deferred<T>(): {
   return { promise, resolve }
 }
 
-/** The enrollment panel's flow starting step, parked on a `webauthn` code
- * step, answered by the case's own responder. */
 function enrollCodeStep(): Record<string, unknown> {
   return {
     seq: 1,
@@ -275,25 +237,17 @@ describe('MfaSection', () => {
     expect(
       await screen.findByRole('heading', { name: zhCN.mfa.title }),
     ).toBeTruthy()
-    // The single authenticator entry reads as its kind, whatever name the
-    // list carries; the group heading carries the same text.
     expect(
       (await screen.findAllByText(zhCN.mfa.factor.kind.totp)).length,
     ).toBeGreaterThan(0)
-    // Every assembled kind is its own group, named by the kind.
     expect(
       screen.getByRole('region', { name: zhCN.mfa.factor.kind.totp }),
     ).toBeTruthy()
     expect(
       screen.getByRole('region', { name: zhCN.mfa.factor.kind.webauthn }),
     ).toBeTruthy()
-    // The pending passkey is the enrollment's intermediate state: it is not
-    // rendered as a row, and no row carries a status chip.
     expect(screen.queryByText(zhCN.mfa.factor.status.pending)).toBeNull()
     expect(screen.queryByText(zhCN.mfa.factor.status.active)).toBeNull()
-    // Both groups are enrollable. The authenticator group already holds its
-    // one entry, so its action offers a replacement; the passkey group holds
-    // none, so its action is a plain add.
     expect(
       await screen.findByRole('button', { name: replaceName() }),
     ).toBeTruthy()
@@ -318,9 +272,6 @@ describe('MfaSection', () => {
     }
     mount(respond)
 
-    // The passkey group has no enabled row and the authenticator app does;
-    // the position of a group is its strength, not its enabled state, so the
-    // reader does not see a group move after enabling it.
     const passkeyGroup = await screen.findByRole('region', {
       name: zhCN.mfa.factor.kind.webauthn,
     })
@@ -350,9 +301,6 @@ describe('MfaSection', () => {
     }
     mount(respond)
 
-    // The authenticator entry is single: with one active, its action offers
-    // to replace it. The passkey group may hold several, so its action is
-    // still a plain add.
     const replace = await screen.findByRole('button', {
       name: replaceName(),
     })
@@ -397,7 +345,6 @@ describe('MfaSection', () => {
       name: replaceName(),
     })
     expect(button.textContent).toBe(zhCN.mfa.action.replace)
-    // The passkey's plain add is not on this deployment.
     expect(
       screen.queryByRole('button', {
         name: addNameOf(zhCN.mfa.factor.kind.webauthn),
@@ -444,7 +391,6 @@ describe('MfaSection', () => {
     mount(respond)
 
     expect(await screen.findByText('Old app')).toBeTruthy()
-    // The disabled state is a muted word beside the name, not a chip.
     expect(screen.getByText(zhCN.mfa.factor.status.disabled)).toBeTruthy()
     expect(screen.queryByText(zhCN.mfa.factor.status.active)).toBeNull()
     expect(screen.queryByText(zhCN.mfa.factor.status.disabled, { selector: '.MuiChip-label' })).toBeNull()
@@ -472,7 +418,6 @@ describe('MfaSection', () => {
     mount(respond)
 
     await screen.findAllByText('Active row')
-    // An enabled row renders rename then removal inline, in one action row.
     const active = rowActions('Active row')
     expect(active.map((button) => button.textContent?.trim())).toEqual([
       zhCN.mfa.rename,
@@ -483,7 +428,6 @@ describe('MfaSection', () => {
     ).toBe(true)
     expect(screen.queryByRole('menuitem')).toBeNull()
 
-    // A disabled row offers removal alone: one plain button, no trigger.
     const disabled = rowActions('Disabled row')
     expect(disabled.map((button) => button.textContent?.trim())).toEqual([
       zhCN.mfa.remove,
@@ -496,9 +440,6 @@ describe('MfaSection', () => {
   })
 
   it('offers only the enrollment entries the deployment reports', async () => {
-    // This deployment took no passkey relying party: its discovery document
-    // lists totp alone, so the passkey entry is not offered -- the surface
-    // never offers a factor the deployment cannot complete.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
         return jsonResponse(200, methodsDoc(['totp']))
@@ -510,7 +451,6 @@ describe('MfaSection', () => {
     }
     mount(respond)
 
-    // The reported kind renders; the unreported one does not.
     expect(
       await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.totp) }),
     ).toBeTruthy()
@@ -520,9 +460,6 @@ describe('MfaSection', () => {
   })
 
   it('says so in place when exactly one factor is enabled', async () => {
-    // One enabled row, one pending: the pending row does not count as a
-    // usable second method, so the section says the account has only one and
-    // points at the enrollment entries below it.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
         return jsonResponse(200, methodsDoc(['totp', 'webauthn']))
@@ -540,8 +477,6 @@ describe('MfaSection', () => {
     mount(respond)
 
     expect(await screen.findByText(zhCN.mfa.singleFactor)).toBeTruthy()
-    // The note points at an add action that is actually on the page: the
-    // passkey group holds nothing yet, so its action is the plain add.
     expect(
       screen.getByRole('button', {
         name: addNameOf(zhCN.mfa.factor.kind.webauthn),
@@ -566,8 +501,6 @@ describe('MfaSection', () => {
     }
     mount(respond)
 
-    // The list has settled before the note's absence is asserted. The
-    // authenticator entry reads as its kind; the passkey keeps its name.
     await screen.findAllByText(zhCN.mfa.factor.kind.totp)
     expect(screen.getByText('Laptop key')).toBeTruthy()
     expect(screen.queryByText(zhCN.mfa.singleFactor)).toBeNull()
@@ -592,16 +525,11 @@ describe('MfaSection', () => {
         name: addNameOf(zhCN.mfa.factor.kind.totp),
       }),
     ).toBeTruthy()
-    // The only row is pending, so it is not rendered and counts for
-    // nothing; the note speaks for enabled rows alone.
     expect(screen.queryByText('My authenticator')).toBeNull()
     expect(screen.queryByText(zhCN.mfa.singleFactor)).toBeNull()
   })
 
   it('withholds the single-factor note when the deployment offers no enrollment entry', async () => {
-    // The note points at registering another method. A deployment that
-    // reports no enrollable kind offers nothing to point at, so the note is
-    // withheld rather than naming a control that is not there.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
         return jsonResponse(200, methodsDoc([]))
@@ -631,8 +559,6 @@ describe('MfaSection', () => {
     }
     mount(respond)
 
-    // The method is on the page ready to be set up; no "nothing set up"
-    // sentence competes with it.
     expect(await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.totp) })).toBeTruthy()
     expect(
       screen.getByRole('region', { name: zhCN.mfa.factor.kind.totp }),
@@ -667,9 +593,6 @@ describe('MfaSection', () => {
       }),
     )
 
-    // The removal confirms itself, naming the factor row removed -- its own
-    // label, not just its kind -- and says the account is left with a single
-    // verification method, because this was the only one.
     expect(zhCN.mfa.removedLast).toContain('{{factor}}')
     expect(
       await screen.findByText(
@@ -684,10 +607,6 @@ describe('MfaSection', () => {
   })
 
   it('treats a 204 removal of a row already gone as a landed write', async () => {
-    // A row another device removed while this list still showed it answers
-    // the same 204 a landed removal does: the route is idempotent and has no
-    // not-found answer on this path. The surface rereads the list once and
-    // confirms; it renders no error.
     let factorsRead = 0
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
@@ -717,36 +636,17 @@ describe('MfaSection', () => {
       }),
     )
 
-    // The removal confirms itself as a landed write, and the list converges
-    // on the reread.
     expect(
       await screen.findByText(
         zhCN.mfa.removedLast.replace('{{factor}}', 'My authenticator'),
       ),
     ).toBeTruthy()
     expect(screen.queryByText(zhCN.errors.authn.factor_not_found)).toBeNull()
-    // One reread after the initial read, and no loop from the answer.
     await waitFor(() => expect(factorsRead).toBe(2))
     expect(factorsRead).toBe(2)
   })
 
   it('holds the session through the credential rotation an active factor removal performs', async () => {
-    // Removing an active factor rotates the requesting session's cookie:
-    // the server answers the DELETE with Set-Cookie. A read issued under the
-    // outgoing cookie can then answer 401 before the new cookie is in
-    // effect, and the client's silent 401 leg -- here the session's own
-    // restore(), the leg a production host binds -- would read that
-    // anonymous answer as the end of the session.
-    //
-    // This suite reproduces the changeover: the refetch that follows the
-    // removal is answered 401, standing for a read that left under the old
-    // credential (an already-in-flight or background read; a read issued
-    // after the response would carry the new cookie). The surface opens an
-    // identity-transition window around the rotation, so the anonymous
-    // answer belongs to the credential being replaced and is discarded: the
-    // snapshot stays authenticated and no sign-out edge is observed. Without
-    // the window the same script ends the session -- the regression this
-    // case pins.
     const warn = captureRefreshWarning()
     let removed = false
     const respond: RealResponder = (call: RealCall) => {
@@ -790,9 +690,6 @@ describe('MfaSection', () => {
       }),
     )
 
-    // The stale-credential read settles through the silent leg: the factors
-    // refetch 401s, the restore the client runs in its place 401s too, and
-    // the client reports the failed refresh.
     await waitFor(() =>
       expect(warn).toHaveBeenCalledWith(
         'access token refresh failed',
@@ -805,20 +702,12 @@ describe('MfaSection', () => {
       ),
     ).toHaveLength(2)
     expect(rig.transitionBegins()).toBe(1)
-    // The anonymous answer speaks for the credential the removal replaced,
-    // so it neither ends the session nor evicts the cache.
     expect(rig.session.getSnapshot().state).toBe('authenticated')
     expect(rig.endedEdges()).toBe(0)
   })
 
   it('lets a real anonymous answer end the session when a disabled factor removal rotates nothing', async () => {
     captureRefreshWarning({ expected: true })
-    // Removing a disabled factor replaces no credential: the route settles
-    // the sessions only for a factor that was active. The removal therefore
-    // runs bare, without an identity-transition window, so a read that lands
-    // anonymous after it is the session genuinely ending -- the opposite of
-    // the active case above. Wrapping this removal would keep the stale
-    // snapshot and postpone the sign-out to the next read.
     let removed = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === SESSION_PATH) {
@@ -861,9 +750,6 @@ describe('MfaSection', () => {
       }),
     )
 
-    // The refetch that follows the write is the first read issued after the
-    // removal. No window stands between it and the silent leg, so its
-    // anonymous answer ends the session.
     await waitFor(() =>
       expect(rig.session.getSnapshot().state).toBe('anonymous'),
     )
@@ -873,12 +759,6 @@ describe('MfaSection', () => {
 
   it('releases the window a refused active-factor removal opened', async () => {
     captureRefreshWarning({ expected: true })
-    // A refused write must not leave its window open: the next genuine
-    // anonymous read has to end the session. The removal is refused 409 (the
-    // factor is the account's last one); after that failure the session read
-    // is answered 401, and the snapshot must turn anonymous with one
-    // sign-out edge. A window still open would discard that answer and leave
-    // the user signed in forever.
     let refused = false
     let gone = false
     const respond: RealResponder = (call: RealCall) => {
@@ -918,13 +798,10 @@ describe('MfaSection', () => {
       }),
     )
 
-    // The failure is on screen only after the write rejected and its window
-    // was released.
     expect(refused).toBe(true)
     await screen.findByText(zhCN.errors.authn.conflict)
     expect(rig.transitionBegins()).toBe(1)
 
-    // A fresh anonymous read now settles the true state.
     gone = true
     await rig.session.restore()
     expect(rig.session.getSnapshot().state).toBe('anonymous')
@@ -1017,12 +894,8 @@ describe('MfaSection', () => {
       }),
     )
 
-    // The 401 opens the step-up dialog, which states the consequence of the
-    // removal: this was the account's only verification method.
     await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp })
     expect(screen.getByText(zhCN.mfa.stepUpDeleteLastNote)).toBeTruthy()
-    // The flow is started with the factor being removed excluded: it must
-    // never be asked to prove its own removal.
     const start = rig.calls.find(
       (call) => call.method === 'POST' && call.path === FLOW_START,
     )
@@ -1036,7 +909,6 @@ describe('MfaSection', () => {
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
     )
 
-    // The won step-up re-runs the removal exactly once, which now lands.
     await waitFor(() =>
       expect(
         screen.getByText(
@@ -1050,7 +922,6 @@ describe('MfaSection', () => {
           call.method === 'DELETE' && call.path === '/api/v1/auth/factors/factor-1',
       ),
     ).toHaveLength(2)
-    // The step-up shortfall's 401 is the expected refresh-failure diagnostic.
     expect(warn).toHaveBeenCalledWith(
       'access token refresh failed',
       expect.objectContaining({
@@ -1059,25 +930,13 @@ describe('MfaSection', () => {
         trace_id: 'trace-1',
       }),
     )
-    // One shortfall, one refresh failure: a duplicated removal would warn
-    // again.
     expect(warn).toHaveBeenCalledTimes(1)
   })
 
   it('opens a fresh window for the removal a won step-up re-runs', async () => {
-    // The refused removal opens a window, releases it on the failure, and
-    // the re-run is a new write: it opens its own window before the rotating
-    // DELETE goes out. The refetch that follows the re-run is answered 401
-    // -- a read under the credential the re-run replaced -- and is
-    // discarded by that fresh window. The two begins count the shortfall's
-    // window and the re-run's.
     const warn = captureRefreshWarning()
     let elevated = false
     let rotated = false
-    // The shortfall's own silent leg answers anonymous: the server would
-    // read the outgoing cookie that way. The open window discards it, so the
-    // client does not retry the refused removal and the session stays
-    // established for the challenge.
     let signedOut = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === SESSION_PATH) {
@@ -1150,7 +1009,6 @@ describe('MfaSection', () => {
       }),
     )
 
-    // The 401 opens the step-up dialog.
     await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp })
     await user.click(screen.getByRole('button', { name: zhCN.mfa.factor.kind.totp }))
     await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
@@ -1158,8 +1016,6 @@ describe('MfaSection', () => {
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
     )
 
-    // The re-run's refetch lands 401 and is discarded by the re-run's own
-    // window: the snapshot stays authenticated and no sign-out is observed.
     await waitFor(() =>
       expect(warn).toHaveBeenCalledWith(
         'access token refresh failed',
@@ -1179,8 +1035,6 @@ describe('MfaSection', () => {
   })
 
   it('sends the host’s path as the enrollment flow’s return_to', async () => {
-    // An enrollment a redirect method finishes lands back on the page that
-    // started it, so that page reads the refusal.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
         return jsonResponse(200, methodsDoc(['totp']))
@@ -1250,14 +1104,12 @@ describe('MfaSection', () => {
     const user = userEvent.setup()
 
     await openEnrollment(user, zhCN.mfa.factor.kind.totp)
-    // The panel's heading names the factor kind it is enrolling.
     expect(
       screen.getByRole('heading', {
         name: enrollTitleOf(zhCN.mfa.factor.kind.totp),
       }),
     ).toBeTruthy()
 
-    // The flow starts with the panel, carrying the kind and an empty label.
     await waitFor(() => {
       const start = rig.calls.find(
         (call) => call.method === 'POST' && call.path === FLOW_START,
@@ -1268,21 +1120,16 @@ describe('MfaSection', () => {
       })
     })
 
-    // The panel states what confirming will do before its controls. The
-    // single authenticator entry takes no name, so no name field renders.
     expect(screen.getByText(zhCN.mfa.enroll.note.totp)).toBeVisible()
     expect(
       screen.queryByLabelText(zhCN.mfa.enroll.labelField),
     ).toBeNull()
 
-    // The step's otpauth URI is its own scannable symbol: the step's JSON is
-    // never rendered as a blob, and the URI never appears as text.
     expect(
       await screen.findByRole('img', { name: zhCN.flowStep.totpQrLabel }),
     ).toBeVisible()
     expect(screen.queryByText(/"otpauth_uri"/)).toBeNull()
     expect(screen.queryByText(/otpauth:\/\//)).toBeNull()
-    // The heading keeps naming the kind once the flow's own step renders.
     expect(
       screen.getByRole('heading', {
         name: enrollTitleOf(zhCN.mfa.factor.kind.totp),
@@ -1292,14 +1139,9 @@ describe('MfaSection', () => {
       screen.getByLabelText(zhCN.flowStep.codeLabel),
       '123456',
     )
-    // One confirmation takes the whole flow: the `complete` step that
-    // follows the code is submitted without another click.
     await confirmEnrollment(user)
 
-    // The row the enrollment added reads as its kind: it is the account's
-    // single authenticator entry.
     await screen.findAllByText(zhCN.mfa.factor.kind.totp)
-    // The completed enrollment confirms itself, naming the factor kind.
     expect(zhCN.mfa.enroll.enrolled).toContain('{{factor}}')
     expect(
       await screen.findByText(
@@ -1309,8 +1151,6 @@ describe('MfaSection', () => {
         ),
       ),
     ).toBeTruthy()
-    // The panel closed and the group's action now offers a replacement,
-    // because the account holds its one entry.
     expect(screen.queryByLabelText(zhCN.flowStep.codeLabel)).toBeNull()
     expect(
       screen.getByRole('button', { name: replaceName() }),
@@ -1352,7 +1192,6 @@ describe('MfaSection', () => {
     await openEnrollment(user, zhCN.mfa.factor.kind.totp)
     const code = await screen.findByLabelText(zhCN.flowStep.codeLabel)
     await user.type(code, '123456')
-    // Typing alone issues nothing: only the confirm control answers.
     expect(
       rig.calls.filter(
         (call) => call.method === 'POST' && call.path === FLOW_ANSWER,
@@ -1360,8 +1199,6 @@ describe('MfaSection', () => {
     ).toHaveLength(0)
     await confirmEnrollment(user)
 
-    // The refusal renders in the panel that asked for the code, and the
-    // panel stays open with the typed value.
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.authn.bad_request,
     )
@@ -1374,8 +1211,6 @@ describe('MfaSection', () => {
   })
 
   it('suggests the browser summary and names the added row with the typed name', async () => {
-    // The panel opens with the flow already started, so the name travels to
-    // the row the enrollment adds rather than to the flow's first input.
     const restore = stubUserAgent(
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     )
@@ -1434,9 +1269,6 @@ describe('MfaSection', () => {
 
       await openEnrollment(user, zhCN.mfa.factor.kind.webauthn)
       await screen.findByRole('img', { name: zhCN.flowStep.totpQrLabel })
-      // The name field suggests the browser/OS summary the session rows
-      // show; the neutral example stays as the placeholder a cleared field
-      // falls back to.
       const field = screen.getByLabelText(zhCN.mfa.enroll.labelField)
       const suggested = summarizeUserAgent(window.navigator.userAgent)
       expect(suggested).not.toBeNull()
@@ -1447,8 +1279,6 @@ describe('MfaSection', () => {
       )
       await expectNoAxeViolations()
 
-      // The flow's first input carries no label: it was sent before the name
-      // was typed.
       const start = rig.calls.find(
         (call) => call.method === 'POST' && call.path === FLOW_START,
       )
@@ -1473,7 +1303,6 @@ describe('MfaSection', () => {
         )
         expect(patch?.body).toEqual({ label: 'My phone' })
       })
-      // The list row the enrollment added now reads the typed name.
       expect(await screen.findByText('My phone')).toBeTruthy()
     } finally {
       restore()
@@ -1516,8 +1345,6 @@ describe('MfaSection', () => {
     const user = userEvent.setup()
 
     await openEnrollment(user, zhCN.mfa.factor.kind.webauthn)
-    // The suggested name is cleared: an empty name is the server's own
-    // empty label, so no rename follows.
     await user.clear(screen.getByLabelText(zhCN.mfa.enroll.labelField))
     await user.type(
       await screen.findByLabelText(zhCN.flowStep.codeLabel),
@@ -1525,7 +1352,6 @@ describe('MfaSection', () => {
     )
     await confirmEnrollment(user)
 
-    // An empty name is the server's own empty label: no rename follows.
     expect(
       await screen.findByText(
         zhCN.mfa.enroll.enrolled.replace(
@@ -1552,9 +1378,6 @@ describe('MfaSection', () => {
     const browserLastUsed = formatInstant('2026-02-01T00:00:00Z', 'zh-CN', {
       timeZone: browserZone,
     })
-    // The host's zone differs from the browser's, so the assertions below
-    // discriminate the provider's effect: an implementation that ignored
-    // it and fell back to the browser zone would render the other string.
     expect(lastUsed).not.toBe(browserLastUsed)
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
@@ -1592,10 +1415,7 @@ describe('MfaSection', () => {
         zhCN.mfa.factor.lastUsedAt.replace('{{time}}', browserLastUsed),
       ),
     ).toBeNull()
-    // The unnamed row reads as its kind; the group heading is the only
-    // other place that text appears.
     expect(screen.getAllByText(zhCN.mfa.factor.kind.webauthn)).toHaveLength(2)
-    // A factor that has never passed a verification says so.
     expect(screen.getAllByText(zhCN.mfa.factor.neverUsed)).toHaveLength(1)
   })
 
@@ -1646,7 +1466,6 @@ describe('MfaSection', () => {
         zhCN.mfa.renamed.replace('{{factor}}', 'New name'),
       ),
     ).toBeTruthy()
-    // The list converged on the server's answer.
     expect(await screen.findByText('New name')).toBeTruthy()
     expect(screen.queryByText('Old name')).toBeNull()
   })
@@ -1674,21 +1493,16 @@ describe('MfaSection', () => {
 
     const field = await openRenameEditor(user, 'Old name')
     await user.clear(field)
-    // Over the label's 64-character domain: the server refuses it.
     await user.type(field, 'x'.repeat(65))
     await user.click(screen.getByRole('button', { name: zhCN.mfa.renameSave }))
 
     expect(
       await screen.findByText(zhCN.errors.authn.bad_request),
     ).toBeTruthy()
-    // The editor stays open so the value can be corrected.
     expect(screen.getByLabelText(zhCN.mfa.renameLabel)).toBeVisible()
   })
 
   it('closes a rename whose factor is gone and rereads the list once', async () => {
-    // The reread keeps the row so that the editor's closing is observable:
-    // a missing `setRenameDraft(null)` would leave the field mounted even
-    // after the list settles.
     let factorsRead = 0
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
@@ -1719,17 +1533,12 @@ describe('MfaSection', () => {
     expect(
       await screen.findByText(zhCN.errors.authn.factor_not_found),
     ).toBeTruthy()
-    // The editor closed even though the reread still carries the row.
     expect(screen.queryByLabelText(zhCN.mfa.renameLabel)).toBeNull()
-    // Exactly one reread after the initial read: the first read, the
-    // answer's reread, and no loop from the answer's own rendering.
     await waitFor(() => expect(factorsRead).toBe(2))
     expect(factorsRead).toBe(2)
   })
 
   it('names the removed row when two factors share a kind', async () => {
-    // Two authenticator-app factors with different labels: the confirmation
-    // must say which row went, not just its kind.
     let removed = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
@@ -1754,8 +1563,6 @@ describe('MfaSection', () => {
     mount(respond)
     const user = userEvent.setup()
 
-    // Two factors of the same kind are told apart by their own names, not
-    // by the kind they share: each row carries its own remove action.
     await screen.findByText('Phone app')
     expect(rowAction('Phone app', zhCN.mfa.remove)).toBeTruthy()
     const dialog = await openRemoveConfirm(user, 'Tablet app')
@@ -1770,7 +1577,6 @@ describe('MfaSection', () => {
         zhCN.mfa.removed.replace('{{factor}}', 'Tablet app'),
       ),
     ).toBeTruthy()
-    // The surviving same-kind row and the bare kind are not what it names.
     expect(
       screen.queryByText(
         zhCN.mfa.removed.replace('{{factor}}', zhCN.mfa.factor.kind.webauthn),
@@ -1782,9 +1588,6 @@ describe('MfaSection', () => {
   })
 
   it('shows only the later removal result after an enrollment', async () => {
-    // Enrollment and removal report through the section's one result slot:
-    // the later removal replaces the enrollment's confirmation instead of
-    // the two standing beside each other.
     let enrolled = false
     let removed = false
     const respond: RealResponder = (call: RealCall) => {
@@ -1853,7 +1656,6 @@ describe('MfaSection', () => {
     )
     expect(await screen.findByText(enrollText)).toBeTruthy()
 
-    // Remove the pre-existing row.
     const dialog = await openRemoveConfirm(user, 'Old app')
     await user.click(
       within(dialog).getByRole('button', {
@@ -1863,8 +1665,6 @@ describe('MfaSection', () => {
 
     const removeText = zhCN.mfa.removed.replace('{{factor}}', 'Old app')
     expect(await screen.findByText(removeText)).toBeTruthy()
-    // The one slot holds the later result: the enrollment's confirmation is
-    // gone, not standing beside the removal's.
     await waitFor(() => expect(screen.queryByText(enrollText)).toBeNull())
   })
 
@@ -1893,8 +1693,6 @@ describe('MfaSection', () => {
         return new Response(null, { status: 204 })
       }
       if (call.method === 'POST' && call.path === FLOW_START) {
-        // The server excludes the factor being removed: only the other one
-        // is offered.
         return jsonResponse(200, {
           seq: 1,
           state: 'second',
@@ -1933,8 +1731,6 @@ describe('MfaSection', () => {
       }),
     )
 
-    // Another method remains: the dialog states no consequence and the flow
-    // excludes only the factor being removed.
     await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp })
     expect(screen.queryByText(zhCN.mfa.stepUpDeleteLastNote)).toBeNull()
     const start = rig.calls.find(
@@ -1950,7 +1746,6 @@ describe('MfaSection', () => {
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
     )
 
-    // The confirmation is the ordinary one: the account keeps another way.
     expect(
       await screen.findByText(
         zhCN.mfa.removed.replace('{{factor}}', 'My authenticator'),
@@ -1978,8 +1773,6 @@ describe('MfaSection', () => {
         return new Response(null, { status: 204 })
       }
       if (call.method === 'POST' && call.path === FLOW_START) {
-        // The last factor was excluded, so the server starts at the
-        // password and offers no factor step at all.
         return jsonResponse(200, {
           seq: 1,
           state: 'first',
@@ -2018,7 +1811,6 @@ describe('MfaSection', () => {
       }),
     )
 
-    // The dialog states the consequence and asks for the password alone.
     expect(await screen.findByText(zhCN.mfa.stepUpDeleteLastNote)).toBeTruthy()
     await user.type(
       await screen.findByLabelText(zhCN.flowStep.field.password),
@@ -2028,8 +1820,6 @@ describe('MfaSection', () => {
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
     )
 
-    // The won step-up re-runs the removal, which now lands with the
-    // single-factor confirmation.
     expect(
       await screen.findByText(
         zhCN.mfa.removedLast.replace('{{factor}}', 'My authenticator'),
@@ -2044,8 +1834,6 @@ describe('MfaSection', () => {
   })
 
   it('clears the previous result when a new attempt starts', async () => {
-    // The section's result slot is cleared when a new write attempt starts,
-    // even an attempt that opens an enrollment rather than a row action.
     let removed = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
@@ -2087,16 +1875,11 @@ describe('MfaSection', () => {
     )
     expect(await screen.findByText(removeText)).toBeTruthy()
 
-    // Opening an enrollment is a new attempt: the slot is reset before the
-    // flow goes out, so the removal's confirmation leaves the screen.
     await openEnrollment(user, zhCN.mfa.factor.kind.totp)
     await waitFor(() => expect(screen.queryByText(removeText)).toBeNull())
   })
 
   it('replaces a rename result with a later removal result', async () => {
-    // Rename and removal report through the section's one result slot: the
-    // result that settles last replaces the earlier one instead of standing
-    // beside it.
     let renamed = false
     let removed = false
     const respond: RealResponder = (call: RealCall) => {
@@ -2150,8 +1933,6 @@ describe('MfaSection', () => {
 
     const removedText = zhCN.mfa.removed.replace('{{factor}}', 'Beta')
     expect(await screen.findByText(removedText)).toBeTruthy()
-    // The row actions' one region shows one result: the rename's
-    // confirmation is gone, not standing beside the removal's.
     await waitFor(() => expect(screen.queryByText(renamedText)).toBeNull())
   })
 
@@ -2167,8 +1948,6 @@ describe('MfaSection', () => {
         return jsonResponse(200, {
           seq: 1,
           state: 'enroll',
-          // The key is there, so the step is the TOTP one, but it carries no
-          // usable URI. The code field still renders; the options do not.
           next: { kind: 'webauthn', options: { otpauth_uri: '' } },
         })
       }
@@ -2227,8 +2006,6 @@ describe('MfaSection', () => {
     }
     const { rig } = mount(respond)
     const user = userEvent.setup()
-    // The registration ceremony is the browser's own API: stub create() and
-    // hand back a credential shaped as it returns one.
     const create = vi.fn().mockResolvedValue({
       id: 'AQID',
       rawId: new Uint8Array([1, 2, 3]).buffer,
@@ -2248,19 +2025,14 @@ describe('MfaSection', () => {
     })
     try {
       await openEnrollment(user, zhCN.mfa.factor.kind.webauthn)
-      // A different kind gets its own name in the heading, from the same key.
       expect(
         screen.getByRole('heading', {
           name: enrollTitleOf(zhCN.mfa.factor.kind.webauthn),
         }),
       ).toBeTruthy()
-      // The passkey registration step states what confirming will do; its
-      // own prompt does not carry that sentence.
       expect(
         screen.getByText(zhCN.mfa.enroll.note.webauthn),
       ).toBeVisible()
-      // The one confirmation is also the user gesture the creation ceremony
-      // needs; the `complete` step that follows is taken automatically.
       await confirmEnrollment(user)
       await waitFor(() => expect(screen.getByText('My authenticator')).toBeTruthy())
     } finally {
@@ -2283,8 +2055,6 @@ describe('MfaSection', () => {
   it('offers one entry per reported kind, translating known kinds and starting an unknown one', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
-        // The deployment reports a text-message factor and a kind this
-        // package has no wording for.
         return jsonResponse(200, methodsDoc(['sms', 'magic']))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
@@ -2305,8 +2075,6 @@ describe('MfaSection', () => {
     const { rig } = mount(respond)
     const user = userEvent.setup()
 
-    // The known kind renders its translated name; the unknown one gets the
-    // generic label but is still offered.
     expect(
       await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.sms) }),
     ).toBeTruthy()
@@ -2314,15 +2082,11 @@ describe('MfaSection', () => {
     expect(unknown).toBeTruthy()
 
     await user.click(unknown)
-    // A kind this package has no wording for renders the panel's generic
-    // other name, still from the one parameterized title key.
     expect(
       screen.getByRole('heading', {
         name: enrollTitleOf(zhCN.mfa.factor.kind.other),
       }),
     ).toBeTruthy()
-    // The unknown kind's own flow starts with the panel; the generic label
-    // never hides the deployment's vocabulary from the request.
     await waitFor(() => {
       const start = rig.calls.find(
         (call) => call.method === 'POST' && call.path === FLOW_START,
@@ -2335,9 +2099,6 @@ describe('MfaSection', () => {
   })
 
   it('shows an informational notice instead of the SMS panel when no phone is proved', async () => {
-    // An SMS factor sends to the account's proved phone, and the flow has no
-    // phone field of its own. With no proved phone the add entry answers
-    // with an informational notice: no panel, no cancel, no flow start.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
         return jsonResponse(200, methodsDoc(['sms']))
@@ -2352,11 +2113,8 @@ describe('MfaSection', () => {
 
     await openEnrollment(user, zhCN.mfa.factor.kind.sms)
 
-    // The notice states the prerequisite where the panel would have opened.
     const notice = screen.getByText(zhCN.mfa.enroll.prerequisite.sms)
     expect(notice).toBeVisible()
-    // It is a notice, not a panel: no panel heading, no name field, no
-    // confirm, no cancel.
     expect(
       screen.queryByRole('heading', {
         name: enrollTitleOf(zhCN.mfa.factor.kind.sms),
@@ -2373,13 +2131,11 @@ describe('MfaSection', () => {
         name: zhCN.mfa.enroll.cancelLabel,
       }),
     ).toBeNull()
-    // The notice carries no action button and no close control.
     const alert = notice.closest('.MuiAlert-root') as HTMLElement | null
     expect(alert).not.toBeNull()
     expect(within(alert as HTMLElement).queryAllByRole('button')).toHaveLength(
       0,
     )
-    // No flow request went out, and the add control stays available.
     expect(
       rig.calls.filter(
         (call) => call.method === 'POST' && call.path === FLOW_START,
@@ -2394,9 +2150,6 @@ describe('MfaSection', () => {
   })
 
   it('keeps the SMS panel when the profile omits its identifiers collection', async () => {
-    // A partial profile answer is not evidence that the account has no
-    // phone: the notice would state a fact the read never claimed, so the
-    // add entry opens the normal panel and the server decides.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
         return jsonResponse(200, methodsDoc(['sms']))
@@ -2443,13 +2196,8 @@ describe('MfaSection', () => {
   })
 
   it('clears the SMS notice once the profile has a proved phone, and a later add starts the flow', async () => {
-    // The notice speaks for a missing phone. When the profile read gains a
-    // verified phone, the notice has said its piece and clears itself; the
-    // next add opens the panel and starts the flow.
     const phone = '+8613800138000'
     let proved = false
-    // The profile is scripted here rather than through mount's fixed answer,
-    // because this case changes it between clicks.
     const rig = makeRealClientRig((call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -2488,8 +2236,6 @@ describe('MfaSection', () => {
     await openEnrollment(user, zhCN.mfa.factor.kind.sms)
     expect(screen.getByText(zhCN.mfa.enroll.prerequisite.sms)).toBeVisible()
 
-    // The read now carries a verified phone: the notice clears without the
-    // reader doing anything to it.
     proved = true
     await act(async () => {
       await queryClient.refetchQueries({
@@ -2502,7 +2248,6 @@ describe('MfaSection', () => {
       ).toBeNull(),
     )
 
-    // A later add opens the panel, names the destination and starts the flow.
     await openEnrollment(user, zhCN.mfa.factor.kind.sms)
     expect(
       screen.getByText(
@@ -2550,14 +2295,11 @@ describe('MfaSection', () => {
 
     await openEnrollment(user, zhCN.mfa.factor.kind.sms)
 
-    // The note names the destination the code goes to.
     expect(
       screen.getByText(
         zhCN.mfa.enroll.note.smsTo.replace('{{phone}}', phone),
       ),
     ).toBeVisible()
-    // The name field stays (several SMS factors may be held), but it is not
-    // prefilled with this browser's summary.
     expect(screen.getByLabelText(zhCN.mfa.enroll.labelField)).toHaveValue('')
 
     await waitFor(() => {
@@ -2572,9 +2314,6 @@ describe('MfaSection', () => {
   })
 
   it('renders the phone-required refusal as its own sentence', async () => {
-    // The profile still showed a proved phone, but the server no longer has
-    // one (another tab removed it). The section resolves the code to the
-    // sentence that says what is missing, not the generic failure text.
     const phone = '+8613800138000'
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
@@ -2642,8 +2381,6 @@ describe('MfaSection', () => {
       await queryClient.invalidateQueries()
     })
 
-    // The failed refresh keeps the settled rows on screen under the stale
-    // notice rather than replacing them with the error placeholder.
     expect(screen.getByText('My authenticator')).toBeTruthy()
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.stale.description)
@@ -2671,14 +2408,10 @@ describe('MfaSection', () => {
     }
     mount(respond)
 
-    // The single authenticator entry reads as its kind, not as the name
-    // the list carries; the heading shows the same word.
     await waitFor(() =>
       expect(screen.getAllByText(zhCN.mfa.factor.kind.totp)).toHaveLength(2),
     )
     expect(screen.queryByText('My authenticator')).toBeNull()
-    // With one entry active, the group's action offers a replacement rather
-    // than a plain add.
     expect(
       screen.getByRole('button', { name: replaceName() }),
     ).toBeTruthy()
@@ -2688,8 +2421,6 @@ describe('MfaSection', () => {
       }),
     ).toBeNull()
 
-    // The authenticator row offers removal alone; the passkey's row offers
-    // rename then removal.
     expect(
       rowActions(zhCN.mfa.factor.kind.totp).map((button) =>
         button.textContent?.trim(),
@@ -2726,7 +2457,6 @@ describe('MfaSection', () => {
     mount(respond)
     const user = userEvent.setup()
 
-    // The passkey may be held several times, so its panel asks for a name.
     await openEnrollment(user, zhCN.mfa.factor.kind.webauthn)
     expect(screen.getByLabelText(zhCN.mfa.enroll.labelField)).toBeTruthy()
     await user.click(
@@ -2738,7 +2468,6 @@ describe('MfaSection', () => {
       ).toBeNull(),
     )
 
-    // The single authenticator entry takes none.
     await openEnrollment(user, zhCN.mfa.factor.kind.totp)
     expect(
       screen.queryByLabelText(zhCN.mfa.enroll.labelField),
@@ -2775,7 +2504,6 @@ describe('MfaSection', () => {
     )
 
     await waitFor(() => expect(abandonCalls(rig.calls)).toHaveLength(1))
-    // The panel closed onto the entries, and no second release follows.
     expect(
       await screen.findByRole('button', {
         name: addNameOf(zhCN.mfa.factor.kind.totp),
@@ -2852,7 +2580,6 @@ describe('MfaSection', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.authn.bad_request,
     )
-    // The step stays for a retry; giving up releases the flow exactly once.
     expect(abandonCalls(rig.calls)).toHaveLength(0)
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.enroll.cancelLabel }),
@@ -2886,8 +2613,6 @@ describe('MfaSection', () => {
     const user = userEvent.setup()
 
     await screen.findByText('Old key')
-    // A disabled row offers removal alone: one action, rendered as its own
-    // small button rather than behind an overflow trigger or in an action row.
     const actions = rowActions('Old key')
     expect(actions.map((button) => button.textContent?.trim())).toEqual([
       zhCN.mfa.remove,
@@ -2896,7 +2621,6 @@ describe('MfaSection', () => {
     expect(remove).not.toBeNull()
     expect(remove).toHaveClass('MuiButton-colorError')
     expect((remove as HTMLElement).closest('[data-action-row]')).toBeNull()
-    // Neither an overflow trigger nor a menu item remains.
     expect(
       actions.some((button) => button.hasAttribute('aria-haspopup')),
     ).toBe(false)
@@ -2963,10 +2687,6 @@ describe('MfaSection', () => {
       }),
     )
 
-    // The confirm closes on the answer, and the refetch it waits for is
-    // still held: the row stays in the document, its remove action keeps the
-    // progress state, and every other write control in the section is
-    // unavailable without a reason.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     const removeA = within(factorRow('Laptop key')).getByRole('button', {
       name: zhCN.mfa.remove,
@@ -2997,10 +2717,6 @@ describe('MfaSection', () => {
     expect(add).not.toHaveAttribute('disabled')
     expect(add).not.toHaveAccessibleDescription()
 
-    // The held siblings are focusable and keyboard-activatable, and the
-    // activation is refused: neither opens an editor nor a panel. Focus is
-    // asserted first, so a control the surface cannot actually reach -- a
-    // hidden control behind a modal -- cannot make the refusal look proven.
     renameB.focus()
     expect(renameB).toHaveFocus()
     await user.keyboard('{Enter}')
@@ -3072,7 +2788,6 @@ describe('MfaSection', () => {
     expect(cancel).not.toHaveAttribute('disabled')
     expect(cancel).not.toHaveAccessibleDescription()
 
-    // The field stays focusable and unchangeable through the write.
     expect(field).toHaveAttribute('readonly')
     expect(field).not.toHaveAttribute('disabled')
     field.focus()
@@ -3081,7 +2796,6 @@ describe('MfaSection', () => {
     await user.keyboard('9')
     expect((field as HTMLInputElement).value).toBe(before)
 
-    // Sibling rows and the add entry are held without a reason.
     const removeB = within(factorRow('Backup key')).getByRole('button', {
       name: zhCN.mfa.remove,
     })
@@ -3094,8 +2808,6 @@ describe('MfaSection', () => {
     expect(add).toHaveAttribute('aria-disabled', 'true')
     expect(add).not.toHaveAttribute('disabled')
 
-    // Activating a held sibling sends nothing: the remove action opens no
-    // confirmation and the add entry opens no panel, by click or by Enter.
     await user.click(removeB)
     expect(screen.queryByRole('dialog')).toBeNull()
     removeB.focus()
@@ -3107,9 +2819,6 @@ describe('MfaSection', () => {
     await user.keyboard('{Enter}')
     expect(screen.queryByLabelText(zhCN.mfa.enroll.labelField)).toBeNull()
 
-    // The form's own submit is guarded as well as its button: a submit event
-    // during the write reaches no second PATCH. The rename actions have left
-    // the document, so this submit can only come from the held form.
     const form = field.closest('form')
     expect(form).not.toBeNull()
     fireEvent.submit(form as HTMLFormElement)
@@ -3165,8 +2874,6 @@ describe('MfaSection', () => {
       expect(control).not.toHaveAccessibleDescription()
     }
 
-    // Neither a click nor Enter on a held control acts: the panel stays
-    // open and no second start reaches the server.
     const [cancelControl, retryControl] = heldControls as [
       HTMLElement,
       HTMLElement,
@@ -3187,7 +2894,6 @@ describe('MfaSection', () => {
     await act(async () => {
       held.resolve(jsonResponse(200, enrollCodeStep()))
     })
-    // The start settled: the cancel control answers again.
     await waitFor(() =>
       expect(
         screen.getByRole('button', { name: zhCN.mfa.enroll.cancelLabel }),
@@ -3295,10 +3001,6 @@ describe('MfaSection', () => {
     const { rig } = mount(respond)
     const user = userEvent.setup()
 
-    // The TOTP panel is open and parked on its code step when a sibling
-    // row's rename starts. The section has one write scope, so the panel's
-    // controls hold with the rest of it instead of answering into a second
-    // write.
     await openEnrollment(user, zhCN.mfa.factor.kind.totp)
     await screen.findByLabelText(zhCN.flowStep.codeLabel)
     const field = await openRenameEditor(user, 'Backup key')
@@ -3324,8 +3026,6 @@ describe('MfaSection', () => {
     expect(cancel).not.toHaveAttribute('aria-busy')
     expect(cancel).not.toHaveAccessibleDescription()
 
-    // Neither control answers while the sibling write runs: no flow answer
-    // reaches the server and the panel stays open.
     const answers = () =>
       rig.calls.filter(
         (call) => call.method === 'POST' && call.path === FLOW_ANSWER,
@@ -3371,7 +3071,6 @@ describe('MfaSection', () => {
         })
       }
       if (call.method === 'POST' && call.path === FLOW_START) {
-        // The start is refused, so the panel parks on its retry.
         return errorResponse(400, 'authn.bad_request')
       }
       if (
@@ -3395,7 +3094,6 @@ describe('MfaSection', () => {
       name: zhCN.mfa.enroll.cancelLabel,
     })
 
-    // A sibling row's rename starts while the panel's retry is on screen.
     const field = await openRenameEditor(user, 'Backup key')
     await user.clear(field)
     await user.type(field, 'New backup')
@@ -3416,7 +3114,6 @@ describe('MfaSection', () => {
     retry.focus()
     await user.keyboard('{Enter}')
     await user.click(cancel)
-    // The only start is the one the panel opened with.
     expect(starts()).toBe(1)
     expect(screen.getByRole('button', { name: zhCN.mfa.retry })).toBeTruthy()
 
@@ -3470,8 +3167,6 @@ describe('MfaSection', () => {
         name: zhCN.mfa.removeConfirm.confirmLabel,
       }),
     )
-    // The confirm closes on the answer; the refetch is still held, so the
-    // row is still in the document and focus returns to its remove action.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     const removeA = within(factorRow('Laptop key')).getByRole('button', {
       name: zhCN.mfa.remove,
@@ -3556,8 +3251,6 @@ describe('MfaSection', () => {
     let factorsRead = 0
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
-        // The deployment offers only the authenticator app, so the passkey
-        // group the one row lives in disappears with the row.
         return jsonResponse(200, methodsDoc(['totp']))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
@@ -3604,10 +3297,6 @@ describe('MfaSection', () => {
     let factorsRead = 0
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
-        // A second method's add entry is a control in this section that is
-        // not any row's landing: neither the removed row's remove action nor
-        // its neighbours' -- so staying on it proves the landing did not
-        // steal focus.
         return jsonResponse(200, methodsDoc(['webauthn', 'totp']))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
@@ -3666,12 +3355,6 @@ describe('MfaSection', () => {
   })
 
   it('keeps focus inside another role=dialog node while the removal lands', async () => {
-    // The host's shell can keep a dialog of its own mounted -- a drawer or a
-    // command palette -- and focusing it is a place the operator chose.
-    // Only this section's own dialogs (its danger confirmation and its
-    // step-up challenge) mean the write's exit took focus; a role=dialog
-    // match on any node in the document would read the shell's node as a
-    // lost focus and pull it away.
     const heldRefetch = deferred<Response>()
     let factorsRead = 0
     const respond: RealResponder = (call: RealCall) => {
@@ -3707,8 +3390,6 @@ describe('MfaSection', () => {
         name: zhCN.mfa.removeConfirm.confirmLabel,
       }),
     )
-    // The confirmation closes on the answer while the refetch is held: the
-    // row is still listed and the write is in flight.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 
     const shell = document.createElement('div')
@@ -3746,9 +3427,6 @@ describe('MfaSection', () => {
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         factorsRead += 1
-        // The first read and the read that follows the removal still list
-        // the row: the write settled with it there. A later read -- another
-        // surface's -- is the one that drops it.
         return jsonResponse(200, {
           factors:
             factorsRead <= 2
@@ -3782,18 +3460,13 @@ describe('MfaSection', () => {
       ),
     ).toBeTruthy()
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    // The write settled while the list still held the row.
     const removeA = within(factorRow('Laptop key')).getByRole('button', {
       name: zhCN.mfa.remove,
     })
     await waitFor(() => expect(removeA).not.toHaveAttribute('aria-busy'))
-    // Focus falls away from every row action before the later read.
     ;(document.activeElement as HTMLElement | null)?.blur()
     expect(document.activeElement).toBe(document.body)
 
-    // A read that drops the row must not resurrect the settled removal's
-    // landing: the record was cleared when the write landed with the row
-    // still there, so the body keeps the focus.
     await act(async () => {
       await queryClient.invalidateQueries({
         queryKey: getAuthnMfaFactorsQueryKey(),
@@ -3844,8 +3517,6 @@ describe('MfaSection', () => {
       ),
     ).toBeTruthy()
     expect(screen.queryByLabelText(zhCN.mfa.renameLabel)).toBeNull()
-    // The editor closes onto its own row, which stays: focus returns to the
-    // rename action that opened it, the same element throughout.
     expect(
       within(factorRow('New name')).getByRole('button', {
         name: zhCN.mfa.rename,
@@ -3919,8 +3590,6 @@ describe('MfaSection', () => {
       await screen.findByText(zhCN.errors.authn.factor_not_found),
     ).toBeTruthy()
     expect(screen.queryByLabelText(zhCN.mfa.renameLabel)).toBeNull()
-    // The row the editor belonged to is gone with it: focus follows the
-    // removal order to the next row's rename action.
     await waitFor(() =>
       expect(
         within(factorRow('Backup key')).getByRole('button', {
@@ -3935,8 +3604,6 @@ describe('MfaSection', () => {
     let renamed = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
-        // A second method's add entry is not the rename landing, so staying
-        // on it proves the landing did not steal focus.
         return jsonResponse(200, methodsDoc(['webauthn', 'totp']))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
@@ -4035,8 +3702,6 @@ describe('MfaSection', () => {
       ),
     ).toBeTruthy()
     expect(screen.queryByLabelText(zhCN.flowStep.codeLabel)).toBeNull()
-    // The panel closes onto its method's own entry: the add/replace action
-    // mounts again in the same commit, and focus returns to it.
     expect(
       screen.getByRole('button', { name: replaceName() }),
     ).toHaveFocus()
@@ -4087,8 +3752,6 @@ describe('MfaSection', () => {
       if (call.method === 'POST' && call.path === FLOW_START) {
         const body = call.body as { purpose: string }
         if (body.purpose === 'enroll') {
-          // The enrollment start refuses with the elevation requirement: the
-          // panel closes and the challenge opens in its place.
           return errorResponse(401, 'authn.insufficient_user_authentication')
         }
         return jsonResponse(200, {
@@ -4134,8 +3797,6 @@ describe('MfaSection', () => {
         call.method === 'DELETE' &&
         call.path === '/api/v1/auth/factors/factor-a'
       ) {
-        // The refused removal leaves its row in the list and opens the
-        // challenge in the confirmation's place.
         return errorResponse(401, 'authn.insufficient_user_authentication')
       }
       if (call.method === 'POST' && call.path === FLOW_START) {
@@ -4153,11 +3814,6 @@ describe('MfaSection', () => {
     mount(respond)
     const user = userEvent.setup()
 
-    // The row action is activated without taking focus: a pointer click
-    // need not focus a button (Safari does not), so focus stays on the
-    // body. The challenge then restores focus to the confirmation's own
-    // control, whose unmount drops it back to the body; the section's
-    // landing is what puts it on the row's remove action.
     await waitFor(() => expect(factorRow('Laptop key')).toBeTruthy())
     expect(document.activeElement).toBe(document.body)
     fireEvent.click(
@@ -4178,8 +3834,6 @@ describe('MfaSection', () => {
       }),
     )
 
-    // The row is still listed, so the removal never happened: the dialog's
-    // close hands focus back to the remove action that started the write.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     const remove = within(factorRow('Laptop key')).getByRole('button', {
       name: zhCN.mfa.remove,
@@ -4192,8 +3846,6 @@ describe('MfaSection', () => {
     let factorsRead = 0
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
-        // The deployment offers no add entry, so the empty branch is the one
-        // that must still own the focus landing.
         return jsonResponse(200, methodsDoc([]))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {

@@ -1,7 +1,5 @@
 /**
- * PreferencesSection checks the language and timezone selects over the
- * profile self-write surface, pinning each PATCH body (an empty string
- * clears).
+ * PreferencesSection checks the language and timezone selects and their PATCH bodies.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -26,12 +24,10 @@ import { PreferencesSection } from './PreferencesSection.js'
 
 const PROFILE_PATH = '/api/v1/auth/me'
 
-/** Through the same helper, so the assertion tracks the engine's naming. */
 function languageLabel(tag: string, ui: string): string {
   return languageDisplayName(tag, ui, ['zh-CN', 'en-US'])
 }
 
-/** An empty string clears; an absent field stays unchanged. */
 function makeProfileResponder(initial: { locale?: string; time_zone?: string }) {
   const stored: { locale?: string; time_zone?: string } = { ...initial }
   const respond: RealResponder = async (call: RealCall) => {
@@ -59,13 +55,11 @@ function makeProfileResponder(initial: { locale?: string; time_zone?: string }) 
   return { respond, stored }
 }
 
-/** mousedown opens the menu; the click on the rendered option commits. */
 function chooseOption(combobox: HTMLElement, optionName: string): void {
   fireEvent.mouseDown(combobox)
   fireEvent.click(screen.getByRole('option', { name: optionName }))
 }
 
-/** The field root plus its own feedback region beneath it. */
 function groupOf(combobox: HTMLElement): HTMLElement {
   const root = combobox.closest(`.${formControlClasses.root}`)
   if (root?.parentElement == null) {
@@ -123,7 +117,6 @@ describe('PreferencesSection', () => {
     const timezone = screen.getByRole('combobox', {
       name: zhCN.preferences.timezone.label,
     })
-    // 24rem = 384px, applied on the field root.
     for (const control of [language, timezone]) {
       const root = control.closest(`.${formControlClasses.root}`)
       expect(root).not.toBeNull()
@@ -132,7 +125,6 @@ describe('PreferencesSection', () => {
   })
 
   it('names each label-less select by its row title above the not-chosen placeholder', async () => {
-    // The row title names the control; no floating InputLabel is rendered.
     const { respond } = makeProfileResponder({})
     mountSection(respond)
 
@@ -181,7 +173,6 @@ describe('PreferencesSection', () => {
     expect(
       await screen.findByRole('heading', { name: enUS.preferences.title }),
     ).toBeTruthy()
-    // Translated after the instance switched.
     const currentLanguage = screen.getByRole('combobox', {
       name: enUS.preferences.language.label,
     })
@@ -273,7 +264,6 @@ describe('PreferencesSection', () => {
       ).toHaveLength(2),
     )
 
-    // A successful clear must not read as a failed save.
     expect(screen.queryByRole('alert')).toBeNull()
     expect(i18n.language).toBe('zh-CN')
     await waitFor(() =>
@@ -369,7 +359,6 @@ describe('PreferencesSection', () => {
       ).toHaveLength(1),
     )
 
-    // Read-only rather than native disabled, so focus and Tab order stay.
     expect(document.activeElement).toBe(timezone)
     expect(timezone).toHaveAttribute('aria-readonly', 'true')
     expect(timezone).toHaveAttribute('tabindex', '0')
@@ -382,7 +371,6 @@ describe('PreferencesSection', () => {
       rig.calls.filter((call) => call.method === 'PATCH'),
     ).toHaveLength(1)
 
-    // The sibling control is locked the same way, pointer and keyboard.
     const language = screen.getByRole('combobox', {
       name: zhCN.preferences.language.label,
     })
@@ -470,7 +458,6 @@ describe('PreferencesSection', () => {
   })
 
   it('adds a stored timezone the engine list omits as its own option', async () => {
-    // A stored value outside the engine's list must still be offered.
     const supportedValues = vi
       .spyOn(Intl, 'supportedValuesOf')
       .mockReturnValue(['UTC'])

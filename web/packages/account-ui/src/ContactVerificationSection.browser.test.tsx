@@ -1,6 +1,5 @@
 /**
- * ContactVerificationSection in a real browser: the action row's geometry
- * and the in-flight focus, neither of which jsdom can see.
+ * ContactVerificationSection in a real browser, where action-row geometry and focus are visible.
  */
 import { describe, expect, it } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
@@ -25,7 +24,6 @@ const ADD_PATH = '/api/v1/auth/identifiers'
 const CAPTCHA_PATH = '/api/v1/auth/human/captcha/challenge'
 const CAPTCHA_ANSWER = uiKitZhCN.humanVerification.captcha.answerLabel
 
-/** One answer held open, so a case can inspect the in-flight control. */
 function deferredResponse(): {
   readonly response: Promise<Response>
   readonly release: (response: Response) => void
@@ -39,8 +37,6 @@ function deferredResponse(): {
 
 describe('ContactVerificationSection verification actions in Chromium', () => {
   it('keeps the three actions on one row, with verify rightmost and disabled while empty', async () => {
-    // A desktop width keeps the row from wrapping, so the three boxes are
-    // measured on the one line the rule describes.
     await page.viewport(900, 900)
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -67,23 +63,18 @@ describe('ContactVerificationSection verification actions in Chromium', () => {
       name: zhCN.verification.verify,
     })
 
-    // The verify control is the primary action: no code, nothing to submit.
     expect(verify).toHaveAttribute('aria-disabled', 'true')
 
     const sendBox = send.getBoundingClientRect()
     const changeBox = change.getBoundingClientRect()
     const verifyBox = verify.getBoundingClientRect()
 
-    // One row: all three boxes share a top edge.
     expect(Math.abs(sendBox.top - changeBox.top)).toBeLessThanOrEqual(1)
     expect(Math.abs(verifyBox.top - sendBox.top)).toBeLessThanOrEqual(1)
 
-    // Same baseline: equal heights put the text on one line.
     expect(Math.abs(sendBox.bottom - changeBox.bottom)).toBeLessThanOrEqual(1)
     expect(Math.abs(verifyBox.bottom - sendBox.bottom)).toBeLessThanOrEqual(1)
 
-    // One adjacent group, one spacing token apart, not two ends: the
-    // secondary pair leads and the primary closes the row.
     expect(changeBox.left - sendBox.right).toBeCloseTo(8, 0)
     expect(verifyBox.left - changeBox.right).toBeCloseTo(8, 0)
     const row = verify.closest<HTMLElement>('[data-action-row]')
@@ -141,15 +132,11 @@ describe('ContactVerificationSection verification actions in Chromium', () => {
       ).toBe(true),
     )
 
-    // The control that started the write keeps the focus it had when it was
-    // activated, reports the busy state, and keeps its box.
     expect(verify).toHaveFocus()
     expect(verify).toHaveAttribute('aria-busy', 'true')
     const boxBusy = verify.getBoundingClientRect()
     expect(Math.abs(boxBusy.width - boxBefore.width)).toBeLessThanOrEqual(1)
 
-    // The landed verification replaces the code step: the control leaves
-    // the document, so focus lands on the section that stays.
     verified = true
     await act(async () => {
       held.release(jsonResponse(200, { state: 'verified' }))
@@ -165,7 +152,6 @@ describe('ContactVerificationSection verification actions in Chromium', () => {
     const held = deferredResponse()
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
-        // No address yet: the add form is the surface that carries a send.
         return jsonResponse(
           200,
           profileBody({
@@ -209,9 +195,6 @@ describe('ContactVerificationSection verification actions in Chromium', () => {
     await user.type(answer, '12345')
     await user.keyboard('{Enter}')
 
-    // The proof settled: the block disappears while the add it asked for is
-    // still in the air. Focus was in the block, so it comes back to the
-    // control that started the send rather than falling to the body.
     await waitFor(() =>
       expect(screen.queryByLabelText(CAPTCHA_ANSWER)).toBeNull(),
     )

@@ -1,7 +1,5 @@
 /**
- * The refresh-failure warning capture the account journeys share. Only
- * `access token refresh failed` is silenced; every other console.warn
- * still reaches the console.
+ * The refresh-failure warning capture the account journeys share.
  */
 
 import { expect, onTestFinished, vi } from 'vitest'
@@ -11,14 +9,9 @@ import { waitForCondition } from '@speed/test-utils/wait'
 const REFRESH_WARNING = 'access token refresh failed'
 
 export interface RefreshWarningOptions {
-  /** Assert on finish that the diagnostic was reported. */
   readonly expected?: boolean
 }
 
-/**
- * Captures the diagnostic for the current test. The spy is restored when the
- * test finishes.
- */
 export function captureRefreshWarning(
   options: RefreshWarningOptions = {},
 ): MockInstance {
@@ -28,13 +21,12 @@ export function captureRefreshWarning(
       original(message, attrs)
     }
   })
-  // Registered first so it runs last: onTestFinished runs callbacks in
-  // reverse, and restoring the spy clears its calls.
+  // Registered first so it runs last: onTestFinished runs callbacks in reverse.
   onTestFinished(() => {
     warn.mockRestore()
   })
   if (options.expected === true) {
-    // The diagnostic can land a tick after the body, so wait for it.
+  // The diagnostic can land a tick after the body, so wait for it.
     onTestFinished(async () => {
       await waitForCondition(() =>
         expect(warn).toHaveBeenCalledWith(

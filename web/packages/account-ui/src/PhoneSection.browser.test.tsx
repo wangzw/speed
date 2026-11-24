@@ -1,6 +1,5 @@
 /**
- * PhoneSection in a real browser: the in-flight focus a native disable would
- * lose, the verify's focus landing, and the captcha-held send's focus.
+ * PhoneSection in a real browser, where in-flight focus and focus landings are visible.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -26,7 +25,6 @@ const US_NATIONAL = '4155552671'
 const CAPTCHA_PATH = '/api/v1/auth/human/captcha/challenge'
 const CAPTCHA_ANSWER = uiKitZhCN.humanVerification.captcha.answerLabel
 
-/** The phone surface gated by a self-hosted captcha. */
 function captchaGate() {
   return {
     phone: { required: true, provider: 'captcha' },
@@ -34,8 +32,6 @@ function captchaGate() {
   }
 }
 
-/** A promise the case settles by hand, so one request is held in flight
- * across frames. */
 function deferred<T>(): {
   readonly promise: Promise<T>
   readonly resolve: (value: T) => void
@@ -83,17 +79,12 @@ describe('PhoneSection writes in Chromium', () => {
     const close = screen.getByRole('button', { name: zhCN.phone.close })
 
     await user.click(send)
-    // The control that started the write keeps focus through it. A native
-    // `disabled` would have moved it to the document body already.
     await waitFor(() => expect(send).toHaveFocus())
     expect(send).toHaveAttribute('aria-busy', 'true')
-    // Its sibling is held without a reason: the scope's write in flight is
-    // what makes it unavailable.
     expect(close).toHaveAttribute('aria-disabled', 'true')
     expect(close).not.toHaveAttribute('aria-busy')
     expect(close).not.toHaveAccessibleDescription()
 
-    // The number input is locked but stays focusable and unchangeable.
     expect(phone).toHaveAttribute('readonly')
     const before = (phone as HTMLInputElement).value
     phone.focus()
@@ -121,9 +112,6 @@ describe('PhoneSection writes in Chromium', () => {
     }
     const rig = makeRealClientRig(respond)
     rig.store.set('access-1')
-    // The host owns the form's visibility, so a landed verify keeps its
-    // confirmation and does not fall back to the number step: the verify
-    // control itself leaves the document.
     renderWithProviders(
       <PhoneCountryDefaultProvider country="US">
         <PhoneSection
@@ -152,7 +140,6 @@ describe('PhoneSection writes in Chromium', () => {
     const close = screen.getByRole('button', { name: zhCN.phone.close })
 
     await user.click(verify)
-    // The control that started the write keeps focus through it.
     await waitFor(() => expect(verify).toHaveFocus())
     expect(verify).toHaveAttribute('aria-busy', 'true')
     expect(close).toHaveAttribute('aria-disabled', 'true')
@@ -167,8 +154,6 @@ describe('PhoneSection writes in Chromium', () => {
       held.resolve(new Response(null, { status: 204 }))
     })
 
-    // The verify control leaves the document, so focus lands on the control
-    // group instead of the body.
     await waitFor(() => expect(verify).not.toBeInTheDocument())
     expect(document.activeElement).not.toBe(document.body)
     const group = screen.getByRole('form', { name: zhCN.phone.title })
@@ -177,8 +162,6 @@ describe('PhoneSection writes in Chromium', () => {
 })
 
 describe('PhoneSection while a captcha proof is outstanding', () => {
-  /** A responder whose captcha route issues one challenge and whose send
-   * is held until the case releases it. */
   function gatedRig(send: Promise<Response>) {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'POST' && call.path === CAPTCHA_PATH) {
@@ -213,14 +196,9 @@ describe('PhoneSection while a captcha proof is outstanding', () => {
       US_NATIONAL,
     )
     const send = screen.getByRole('button', { name: zhCN.phone.send })
-    // The keyboard is the path this defect belongs to: the pointer would
-    // have put focus on the button anyway.
     send.focus()
     await user.keyboard('{Enter}')
 
-    // The block collects the answer; the control that asked stays mounted,
-    // focused and reports the wait. A native `disabled` -- or removing the
-    // control for the block -- would have moved focus to the document body.
     await screen.findByLabelText(CAPTCHA_ANSWER)
     await waitFor(() => expect(send).toHaveFocus())
     expect(send).toHaveAttribute('aria-busy', 'true')
@@ -258,7 +236,6 @@ describe('PhoneSection while a captcha proof is outstanding', () => {
     await screen.findByLabelText(CAPTCHA_ANSWER)
     await waitFor(() => expect(send).toHaveFocus())
     expect(send).toHaveAttribute('aria-busy', 'true')
-    // Abandoning the wait is not a write in flight: the exit stays usable.
     expect(close).not.toHaveAttribute('aria-disabled', 'true')
     expect(close).not.toHaveAttribute('aria-busy')
   })
@@ -287,9 +264,6 @@ describe('PhoneSection while a captcha proof is outstanding', () => {
     await user.type(answer, '12345')
     await user.keyboard('{Enter}')
 
-    // The proof settled: the block disappears while the send it asked for
-    // is still in the air. Focus was in the block, so it comes back to the
-    // control that started the attempt rather than falling to the body.
     await waitFor(() =>
       expect(screen.queryByLabelText(CAPTCHA_ANSWER)).toBeNull(),
     )
@@ -298,7 +272,6 @@ describe('PhoneSection while a captcha proof is outstanding', () => {
     await act(async () => {
       held.resolve(jsonResponse(200, { expires_in: 300, resend_after: 60 }))
     })
-    // The code step replaces the number step and takes focus with it.
     const code = await screen.findByLabelText(zhCN.phone.code.label)
     await waitFor(() => expect(code).toHaveFocus())
   })

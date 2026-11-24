@@ -1,6 +1,6 @@
 /**
  * OwnerTransferRequestsPage: the account-level surface where a member
- * confirms or declines an organization's request to take its ownership.
+ * confirms or declines an organization's ownership request.
  */
 
 import { useLayoutEffect, useRef, useState } from 'react'
@@ -41,9 +41,8 @@ import { useAccountTimeZone } from './internal/time-zone.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 
 /**
- * The host addresses the request by path and supplies the routes and
- * actions for opening it; the page reads and acts through the account's
- * transfer endpoints.
+ * The host addresses the request by path and supplies the routes and actions
+ * for opening it.
  */
 export interface OwnerTransferRequestsPageProps {
   /** The request the detail view reads. Absent or empty renders the list. */
@@ -85,8 +84,6 @@ function statusLabel(
   }
 }
 
-/** A date-time as this account renders one, or the empty string when the
- * formatter cannot read the value. */
 function displayInstant(
   value: string,
   language: string,
@@ -99,7 +96,7 @@ function displayInstant(
 }
 
 /** The account-level surface where a member confirms or declines an
- * organization's request to take its ownership. */
+ * organization's ownership request. */
 export function OwnerTransferRequestsPage({
   request,
   requestHref,
@@ -296,30 +293,24 @@ function RequestDetail({
   const feedback = useWriteFeedback()
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [declineOpen, setDeclineOpen] = useState(false)
-  // Only the control that started the write reports busy.
   const [pendingAction, setPendingAction] = useState<
     'confirm' | 'decline' | null
   >(null)
-  // The card is the focus landing when a landed decision removes both
-  // controls; the group is captured when the write starts so the landing can
-  // tell a lost focus from one the operator moved elsewhere.
+  // The group is captured when the write starts, so the card landing tells a
+  // lost focus from one the operator moved elsewhere.
   const cardRegion = useRef<HTMLDivElement | null>(null)
   const actionGroup = useRef<HTMLDivElement | null>(null)
   const pendingLanding = useRef<{
     readonly group: HTMLElement | null
   } | null>(null)
 
-  // Focus moves to the card only when the group's removal is what took it; a
-  // connected control outside the group means the operator chose that place.
   useLayoutEffect(() => {
     const target = pendingLanding.current
     if (target === null || request === undefined) {
       return
     }
     if (request.status === 'pending') {
-      // Judged on the read's settled answer, not this render's, so a re-read
-      // that already reported a terminal state is not mistaken for one that
-      // still carries the request.
+      // Judged on the read's settled answer, not this render's.
       const reread = queryClient.getQueryData<{
         readonly request: MyTransferView
       }>(getTenantAdminMeTransferRequestQueryKey(request.id))
@@ -357,8 +348,8 @@ function RequestDetail({
     }
   }
 
-  /** Resolves on the detail read, keeping the write in flight until the
-   * decision is reported. */
+  // Resolves on the detail read, keeping the write in flight until the decision
+  // is reported.
   const invalidate = (tenant: string): Promise<void> => {
     void queryClient.invalidateQueries({
       queryKey: getTenantAdminMeTransferRequestsQueryKey(),
@@ -377,7 +368,6 @@ function RequestDetail({
     return reread
   }
 
-  /** The refusal as this page words it; a conflict re-reads the detail. */
   const requestFailure = async (
     error: unknown,
   ): Promise<Error & { readonly code: string }> => {
@@ -445,7 +435,7 @@ function RequestDetail({
       description={t('transferRequests.detailDescription')}
     >
       <Box
-        // Reachable by script without joining the Tab order.
+        // Focusable by script without joining the Tab order.
         ref={cardRegion}
         role="group"
         aria-label={request.tenant}

@@ -1,6 +1,5 @@
 /**
- * ColorModeSection: the color-mode surface of the account page, a select over
- * the fixed dark/light/follow-device set editing the account's `color_mode`.
+ * ColorModeSection: the color-mode select over the account's own `color_mode`.
  */
 
 import MenuItem from '@mui/material/MenuItem'
@@ -18,8 +17,7 @@ import { WriteFeedbackRegion } from './internal/write-feedback.js'
 
 /**
  * The host supplies the preference shown before the account has saved one
- * and receives the accepted mode; the section reads and patches the
- * account's own `color_mode`.
+ * and receives the accepted mode.
  */
 export interface ColorModeSectionProps {
   /** The preference currently in effect, shown while the account has
@@ -56,8 +54,7 @@ export function ColorModeSection({
   // readOnly, not disabled: the select that started the write keeps focus.
   const saving = patchProfile.isPending || feedback.pending
 
-  /** The server answers before anything local moves, so a refusal needs no
-   * revert. */
+  // Nothing local moves before the server answers, so a refusal needs no revert.
   function save(mode: AppThemeModePreference): Promise<void> {
     return feedback.run(async () => {
       await patchProfile.mutateAsync({ data: { color_mode: mode } })
@@ -82,8 +79,6 @@ export function ColorModeSection({
         fullWidth
         sx={{ maxWidth: '24rem' }}
         slotProps={{
-          // Rides the input slot to the combobox: the control stays
-          // focusable and unchangeable while a write is in flight.
           input: { readOnly: saving },
           select: {
             displayEmpty: true,

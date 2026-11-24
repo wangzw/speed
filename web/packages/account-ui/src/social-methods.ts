@@ -16,8 +16,8 @@ export interface SocialMethodsAvailability {
 
 /**
  * Reads the discovery document once per session and reports whether the
- * deployment serves a social (redirect) sign-in method. A failed read
- * reports no provider.
+ * deployment serves a social (redirect) sign-in method; a failed read reports
+ * no provider.
  */
 export function useSocialMethodsAvailable(
   session: AuthSession,

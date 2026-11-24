@@ -1,6 +1,5 @@
 /**
- * The step-up re-login resume record checks that only its own account's
- * record is taken, and that taking consumes it.
+ * The step-up resume record checks that only its own account's record is taken and consumed.
  */
 
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -57,7 +56,6 @@ describe('step-up resume', () => {
       kind: 'unbind',
       id: '1',
     })
-    // Another account's record is discarded so it never replays.
     expect(pendingStepUpResume('user-2')).toBeNull()
     expect(takeStepUpResume('user-2', 'surface')).toBeNull()
     expect(pendingStepUpResume('user-1')).toBeNull()
@@ -68,7 +66,6 @@ describe('step-up resume', () => {
       kind: 'unbind',
       id: '1',
     })
-    // With no account signed in, the record stays for the one that wrote it.
     expect(pendingStepUpResume('')).toBeNull()
     expect(takeStepUpResume('', 'surface')).toBeNull()
     expect(pendingStepUpResume('user-1')).not.toBeNull()
@@ -102,7 +99,6 @@ describe('step-up resume', () => {
       JSON.stringify({ path: '/account/security', operation: {} }),
     )
     expect(pendingStepUpResume('user-1')).toBeNull()
-    // The account is what binds a record to a sign-in.
     window.sessionStorage.setItem(
       'speed.step-up-resume',
       JSON.stringify({

@@ -1,7 +1,5 @@
 /**
- * IdentifiersSection in a real browser: the initiating control keeps focus, and
- * a landed write hands it to the neighbour. jsdom cannot tell this from a
- * native disable.
+ * IdentifiersSection in a real browser: the initiating control keeps focus and a landed write hands it on.
  */
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
@@ -41,7 +39,6 @@ function nextFrame(): Promise<void> {
   })
 }
 
-/** What currently holds focus, for a failure message. */
 function describeActiveElement(): string {
   const active = document.activeElement
   if (active === null) {
@@ -63,8 +60,6 @@ function describeActiveElement(): string {
   return parts.join(' ')
 }
 
-/** Two proved sign-in emails: switch, picker, radios and row actions all
- * render. */
 function twoEmailProfile(): Record<string, unknown> {
   return profileBody({
     password_set: false,
@@ -87,8 +82,6 @@ function twoEmailProfile(): Record<string, unknown> {
   })
 }
 
-/** The list row that shows `value`: a record can appear in the sign-in group
- * too, so the contact row's own `li` is what the row actions are read from. */
 function rowScope(value: string): HTMLElement {
   for (const text of screen.getAllByText(value)) {
     const row = text.closest('li')
@@ -231,8 +224,6 @@ describe('IdentifiersSection write focus in Chromium', () => {
     expect(submit).toHaveAccessibleDescription(
       zhCN.identifiers.add.emailEmpty,
     )
-    // The value field is where typing starts; after cancel, the next Tab
-    // reaches the send.
     screen.getByLabelText(zhCN.identifiers.add.value.labelEmail).focus()
     await userEvent.tab()
     await userEvent.tab()
@@ -488,8 +479,6 @@ describe('IdentifiersSection write focus in Chromium', () => {
       }),
     )
 
-    // The last row has no neighbour below: the choice lands on the row
-    // above.
     await waitFor(() =>
       expect(
         previous,
@@ -546,8 +535,6 @@ describe('IdentifiersSection write focus in Chromium', () => {
       }),
     )
 
-    // The username fills the last offered kind, so the re-read leaves no
-    // entry to hand focus to; the section's control group takes it.
     await screen.findByText('ada2')
     const region = screen.getByRole('group', {
       name: zhCN.identifiers.title,
@@ -597,9 +584,6 @@ describe('IdentifiersSection write focus in Chromium', () => {
     rig.store.set('access-1')
     renderWithProviders(<IdentifiersSection session={rig.session} />)
 
-    // A pending account offers the username kind alone, so the added
-    // username fills the last offered kind and the entry leaves with the
-    // refreshed list.
     await userEvent.click(
       await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
     )
@@ -671,9 +655,6 @@ describe('IdentifiersSection write focus in Chromium', () => {
     await userEvent.type(answer, '12345')
     await userEvent.keyboard('{Enter}')
 
-    // The proof settled: the block disappears while the add it asked for is
-    // still in the air. Focus was in the block, so it comes back to the
-    // control that started the send rather than falling to the body.
     await waitFor(() =>
       expect(screen.queryByLabelText(CAPTCHA_ANSWER)).toBeNull(),
     )

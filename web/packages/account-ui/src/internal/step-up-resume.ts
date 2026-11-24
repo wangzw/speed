@@ -1,6 +1,6 @@
 /**
- * The step-up re-login resume record. A record belongs to the account and the
- * surface that wrote it, and it never holds a credential.
+ * The step-up re-login resume record, bound to the account and surface that
+ * wrote it; it never holds a credential.
  */
 
 import { isSitePath } from './binding-return.js'
@@ -25,7 +25,6 @@ function storage(): Storage | null {
   }
 }
 
-/** A malformed record, or one missing a member, reads as none. */
 function storedRecord(): StepUpResume | null {
   try {
     const raw = storage()?.getItem(STORAGE_KEY)
@@ -64,10 +63,6 @@ function storedRecord(): StepUpResume | null {
   }
 }
 
-/**
- * Records the operation a re-login must resume. An empty account or scope, a
- * non-site path, or a tab that refuses storage records nothing.
- */
 export function rememberStepUpResume(
   account: string,
   scope: string,
@@ -87,11 +82,6 @@ export function rememberStepUpResume(
   }
 }
 
-/**
- * The pending record belonging to `account`, without consuming it. An empty
- * account, or another account's record, reads as none; `scope` narrows the
- * read to one surface.
- */
 export function pendingStepUpResume(
   account: string,
   scope?: string,
@@ -114,11 +104,6 @@ export function forgetStepUpResume(): void {
   }
 }
 
-/**
- * Takes and consumes the record belonging to `account` and `scope`, so the
- * operation is re-issued once. Another surface's record is left in place; a
- * record another account wrote is discarded.
- */
 export function takeStepUpResume(
   account: string,
   scope: string,

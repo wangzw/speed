@@ -91,34 +91,20 @@ export interface FlowStepAnswer {
 
 export interface FlowStepProps {
   readonly step: AuthnStep
-  /** The flow's step number (`seq`). The assertion ceremony keys on it with
-   * the challenge, so a re-sent challenge starts afresh and a re-render does
-   * not. */
+  /** The assertion ceremony keys on this with the challenge, so a re-sent
+   * challenge starts afresh and a re-render does not. */
   readonly sequence: number
-  /** True while the answer is in flight: fields turn read-only and other
-   * answer controls refuse activation. */
   readonly busy: boolean
-  /** True while a throttled answer's wait holds the primary action back: the
-   * fields stay editable and the held controls describe the wait through
-   * `submitUnavailableDescribedBy`. */
   readonly submitDisabled?: boolean
-  /** The id of the page text explaining what holds the step back. */
   readonly submitUnavailableDescribedBy?: string
-  /** The answer step the input travels under: `answer` in the first factor,
-   * `factor` in the second, `enroll` in a registration. */
+  /** `answer` in the first factor, `factor` in the second, `enroll` in a
+   * registration. */
   readonly answerStep: string
   readonly submitLabel: string
   readonly onSubmit: (answer: FlowStepAnswer) => void
-  /** Reports a `redirect` step's URL upward; the host navigates. */
   readonly onRedirect?: (url: string) => void
-  /** The id the challenge form carries when the host renders the submit
-   * control outside the step; the form then renders no button of its own. */
   readonly formId?: string
-  /** A secondary control rendered before the primary submit, or below a
-   * choice list. */
   readonly secondaryAction?: ReactNode
-  /** Challenge fields rendered read-only with their value; the answer carries
-   * that value. */
   readonly lockedFields?: Readonly<Record<string, string>>
 }
 
@@ -139,8 +125,6 @@ export function FlowStep({
   const { t } = useAccountUiTranslation()
   const [values, setValues] = useState<Record<string, string>>({})
   const [activated, setActivated] = useState<string | null>(null)
-  // Guard the form's own submit too: a field's implicit submission must be
-  // refused while the answer is in flight or the step is held.
   const handleSubmit = (event: FormEvent): void => {
     event.preventDefault()
     onSubmit({ step: answerStep, input: { ...values, ...lockedFields } })
@@ -346,12 +330,9 @@ interface TotpEnrollStepProps {
   readonly secondaryAction?: ReactNode
 }
 
-/**
- * The authenticator-app enrolment block, wrapping ui-kit's panel. The URI is
- * never rendered as text; one that does not parse renders neither the QR
- * symbol nor the manual-entry block, so the panel advertises no code it did
- * not draw.
- */
+// The URI is never rendered as text; one that does not parse renders neither the
+// QR symbol nor the manual-entry block, so the panel advertises no code it did
+// not draw.
 function TotpEnrollStep({
   uri,
   code,
@@ -430,7 +411,6 @@ function TotpEnrollStep({
 
 interface PasskeyPromptProps {
   readonly options: unknown
-  /** The flow's step number (`seq`); see the arrival effect. */
   readonly sequence: number
   readonly busy: boolean
   readonly unavailable: boolean
@@ -441,13 +421,9 @@ interface PasskeyPromptProps {
   readonly secondaryAction?: ReactNode
 }
 
-/**
- * The passkey ceremony step: drives the browser's WebAuthn ceremony and
- * reports the credential it returns. An assertion step starts on arrival with
- * no start control; a registration waits for a click because a creation
- * ceremony needs user activation. Cancel fails at once and only best-effort
- * aborts the ceremony; a late answer from an abandoned attempt is discarded.
- */
+// An assertion starts on arrival with no start control; a registration waits
+// for a click because a creation ceremony needs user activation. Cancel fails
+// at once and only best-effort aborts; a late answer is discarded.
 function PasskeyPrompt({
   options,
   sequence,
@@ -473,10 +449,8 @@ function PasskeyPrompt({
     controller: AbortController
   } | null>(null)
   const attemptRef = useRef(0)
-  // The latest `run`, read by the arrival effect.
   const runRef = useRef<() => Promise<void>>(async () => {})
 
-  // Abandon the ceremony with the surface.
   useEffect(
     () => () => {
       const pending = pendingRef.current
@@ -486,7 +460,6 @@ function PasskeyPrompt({
     [],
   )
 
-  // The control that had focus unmounted, so focus moves to cancel.
   useEffect(() => {
     if (working) {
       cancelRef.current?.focus()
@@ -600,8 +573,7 @@ function PasskeyPrompt({
   )
 }
 
-/** The identity of an assertion step's ceremony: the step number plus the
- * challenge. A registration step returns `null` because it starts on a click. */
+// Registration returns null because it starts on a click.
 function assertionKey(options: unknown, sequence: number): string | null {
   if (webauthnStepOf(options) !== 'assert') {
     return null
@@ -640,8 +612,7 @@ function webauthnErrorKey(failure: unknown, registering: boolean): PasskeyFailur
   return { key: 'flowStep.passkeyFailed', actionKey }
 }
 
-/** The `otpauth_uri` a step's options carry, or null. Only this one field of
- * the step's JSON is ever rendered. */
+// Only this one field of the step's JSON is ever rendered.
 function otpauthUriOf(options: unknown): string | null {
   if (typeof options !== 'object' || options === null) {
     return null

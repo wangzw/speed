@@ -1,6 +1,5 @@
 /**
- * AppearanceSection checks the controlled theme-preset choice. Preset labels
- * are host data, so the fixtures may carry English names.
+ * AppearanceSection checks the controlled theme-preset choice.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -60,7 +59,6 @@ describe('AppearanceSection', () => {
       'false',
     )
 
-    // Scan with the menu open: the state a chooser meets.
     await expectNoAxeViolations()
   })
 

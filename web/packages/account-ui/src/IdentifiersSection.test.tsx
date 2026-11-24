@@ -1,6 +1,5 @@
 /**
- * IdentifiersSection checks the identifiers, their sign-in and contact
- * grouping, the row actions, and the removal write.
+ * IdentifiersSection checks identifiers, their grouping, the row actions and the removal write.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -52,8 +51,6 @@ function mount(
 ) {
   const rig = makeRealClientRig(respond)
   rig.store.set('access-1')
-  // The section's send adds an email, so the other surface is the one it
-  // reads; the phone surface stays off.
   const humanGate =
     gate === undefined
       ? undefined
@@ -64,8 +61,6 @@ function mount(
   return { rig, ...rendered }
 }
 
-/** The list row or table row that shows `value`: the contact record's own
- * container, whichever view renders it. */
 function rowScope(value: string): HTMLElement {
   for (const text of screen.getAllByText(value)) {
     const row = text.closest('li, tr')
@@ -76,32 +71,25 @@ function rowScope(value: string): HTMLElement {
   throw new Error(`no row shows ${value}`)
 }
 
-/** The action buttons the row that shows `value` renders, in display order. */
 function rowActions(value: string): HTMLElement[] {
   return within(rowScope(value)).queryAllByRole('button')
 }
 
-/** The row's action button named `name`, or null. */
 function rowAction(value: string, name: string): HTMLElement | null {
   return within(rowScope(value)).queryByRole('button', { name })
 }
 
-/** Click one of the row's inline action buttons. */
 async function clickRowAction(
   user: ReturnType<typeof userEvent.setup>,
   value: string,
   name: string,
 ): Promise<void> {
-  // The row arrives with the profile read; wait for it before choosing one
-  // of its actions.
   await waitFor(() => expect(rowScope(value)).toBeTruthy())
   await user.click(
     within(rowScope(value)).getByRole('button', { name }),
   )
 }
 
-/** A response the case settles itself, so a write stays in flight while the
- * controls' state is asserted. */
 function deferred<T>(): {
   readonly promise: Promise<T>
   readonly resolve: (value: T) => void
@@ -113,8 +101,6 @@ function deferred<T>(): {
   return { promise, resolve }
 }
 
-/** The open verification form, scoped by its code field so the row's own
- * verify action (which shares the action word) is not matched. */
 function verificationForm(): HTMLElement {
   const field = screen.getByLabelText(zhCN.identifiers.add.code.label)
   const form = field.closest('form')
@@ -156,8 +142,6 @@ describe('IdentifiersSection', () => {
     expect(
       await screen.findByRole('heading', { name: zhCN.identifiers.title }),
     ).toBeTruthy()
-    // The email is a sign-in way, so it reads as the email group's chosen
-    // value and as a row in the contacts list; the phone is a contact only.
     await waitFor(() =>
       expect(screen.getAllByText('ada@x.test')).toHaveLength(2),
     )
@@ -170,7 +154,6 @@ describe('IdentifiersSection', () => {
   })
 
   describe('verification chip colors', () => {
-    /** The chip whose visible label is `text`. */
     function chipFor(text: string): HTMLElement {
       const label = screen.getByText(text, {
         selector: `.${chipClasses.label}`,
@@ -182,8 +165,6 @@ describe('IdentifiersSection', () => {
       return chip as HTMLElement
     }
 
-    // Both views that show a verification state: the merged view's contact
-    // list and the contact axis's address table.
     const views = [
       { name: 'the merged view', axis: undefined },
       { name: 'the contact table', axis: 'contact' as const },
@@ -191,10 +172,6 @@ describe('IdentifiersSection', () => {
 
     for (const view of views) {
       it(`colors a proved identifier success and an unproved one default in ${view.name}`, async () => {
-        // The chip's color states the same one-of-two answer as its label:
-        // proved ownership is a completed positive state (success), and an
-        // unproved address is neutral (default). Primary is reserved for the
-        // session the viewer is using, never for a status.
         const respond: RealResponder = (call: RealCall) => {
           if (call.method === 'GET' && call.path === PROFILE_PATH) {
             return jsonResponse(
@@ -242,10 +219,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('re-issues the recorded removal when the page mounts after the new sign-in', async () => {
-    // A no-password account's phone removal was refused for a fresh
-    // authentication the session could not supply, so the re-login exit
-    // recorded it. The surface mounts again on the recorded page and replays
-    // the removal once, then consumes the record.
     rememberStepUpResume('user-1', 'identifiers', '/account/profile', {
       step: 'remove',
       id: 'id-phone',
@@ -300,9 +273,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('renders every unproved address as Not verified, whatever established it', async () => {
-    // The chip answers one question -- has ownership been proved? An address
-    // an administrator asserted and an unverified import are both unproved,
-    // so they read Not verified like any other; there is no third state.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -331,14 +301,11 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    // The first address is the email group's chosen value; both addresses
-    // are contact rows.
     await waitFor(() =>
       expect(screen.getAllByText('operator@demo.test')).toHaveLength(2),
     )
     expect(screen.getAllByText(zhCN.identifiers.unverified)).toHaveLength(2)
     expect(screen.queryByText(zhCN.identifiers.verified)).toBeNull()
-    // The binary vocabulary has no channel labels left.
     expect(zhCN.identifiers).not.toHaveProperty('addedByAdmin')
     expect(zhCN.identifiers).not.toHaveProperty('importedUnverified')
   })
@@ -367,22 +334,14 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    // The unverified address is a contact; the picker displays the account's
-    // chosen address, so this one reads once.
     await waitFor(() =>
       expect(screen.getAllByText('second@x.test')).toHaveLength(1),
     )
-    // The account as a whole is verified, so the banner offers no entry for
-    // this row; the row itself must.
     expect(rowAction('second@x.test', zhCN.identifiers.verify)).toBeTruthy()
-    // A proved address has nothing to verify, so its row omits the action.
     expect(rowAction('ada@x.test', zhCN.identifiers.verify)).toBeNull()
   })
 
   it('keeps the verify action when the row is the only login name', async () => {
-    // The remove action is withheld on a password account's only login name;
-    // the verify action must still appear, or the unverified row would have
-    // no entry at all.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -408,8 +367,6 @@ describe('IdentifiersSection', () => {
     await waitFor(() =>
       expect(screen.getAllByText('only@x.test')).toHaveLength(2),
     )
-    // Removal is withheld, leaving verification as the row's one action: it
-    // renders as a plain button, not behind an overflow trigger.
     const actions = rowActions('only@x.test')
     expect(actions.map((button) => button.textContent?.trim())).toEqual([
       zhCN.identifiers.verify,
@@ -417,9 +374,7 @@ describe('IdentifiersSection', () => {
     const onlyVerify = rowAction('only@x.test', zhCN.identifiers.verify)
     expect(onlyVerify).toBeEnabled()
     expect(onlyVerify).not.toHaveAttribute('aria-disabled', 'true')
-    // The only login name withholds removal, not verification.
     expect(rowAction('only@x.test', zhCN.identifiers.remove)).toBeNull()
-    // The row carries no overflow trigger and no menu item.
     expect(
       actions.some((button) => button.hasAttribute('aria-haspopup')),
     ).toBe(false)
@@ -468,7 +423,6 @@ describe('IdentifiersSection', () => {
 
     await clickRowAction(user, 'second@x.test', zhCN.identifiers.verify)
 
-    // The flow shows the row's address and does not let it change.
     const valueField = screen.getByLabelText(
       zhCN.identifiers.add.value.labelEmail,
     )
@@ -504,13 +458,10 @@ describe('IdentifiersSection', () => {
     )
     expect(verifies).toHaveLength(1)
     expect(verifies[0]?.body).toEqual({ code: '123456' })
-    // The refetched profile flips the row's chip; both contact rows are
-    // proved now.
     await waitFor(() =>
       expect(screen.getAllByText(zhCN.identifiers.verified)).toHaveLength(2),
     )
     expect(screen.queryByText(zhCN.identifiers.unverified)).toBeNull()
-    // The row verification confirms itself, naming the address it proved.
     expect(
       await screen.findByText(
         zhCN.verification.verifiedDescription.replace(
@@ -524,10 +475,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('opens the host add signal through the section entry, closing the row flow and its result', async () => {
-    // The host opens the add face with `openAddSignal`; the component's own
-    // button opens the same face. Both entries must settle the section the
-    // same way: one code flow at a time, and no result from the closed flow
-    // standing under the new form.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -556,8 +503,6 @@ describe('IdentifiersSection', () => {
     }
     const rig = makeRealClientRig(respond)
     rig.store.set('access-1')
-    // The host's stand-in for the card header's add button: it bumps the
-    // counter, which is the only entry the section sees.
     function Host(): ReactElement {
       const [signal, setSignal] = useState(0)
       return (
@@ -577,7 +522,6 @@ describe('IdentifiersSection', () => {
     const user = userEvent.setup()
 
     await clickRowAction(user, 'second@x.test', zhCN.identifiers.verify)
-    // The row flow's send fails and settles the section's result slot.
     await user.click(
       screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
     )
@@ -587,8 +531,6 @@ describe('IdentifiersSection', () => {
 
     await user.click(screen.getByRole('button', { name: 'host-add' }))
 
-    // The add form owns the section now: one cancel action, one value field,
-    // and the row flow's failure is gone from the shared slot.
     expect(
       await screen.findByRole('heading', { name: zhCN.identifiers.add.title }),
     ).toBeTruthy()
@@ -600,7 +542,6 @@ describe('IdentifiersSection', () => {
     ).toHaveLength(1)
     expect(screen.queryByText(zhCN.errors.authn.unavailable)).toBeNull()
 
-    // Cancelling the add form leaves no row flow behind to reappear.
     await user.click(
       screen.getByRole('button', { name: zhCN.identifiers.add.cancel }),
     )
@@ -653,8 +594,6 @@ describe('IdentifiersSection', () => {
         <IdentifiersSection
           session={rig.session}
           axis={axis}
-          // This case is about the resend path and its countdown: a gate
-          // that wants nothing sends as soon as the viewer asks.
           humanGate={{
             phone: { required: false, provider: 'off' },
             other: { required: false, provider: 'off' },
@@ -663,7 +602,6 @@ describe('IdentifiersSection', () => {
       )
       const user = userEvent.setup()
 
-      // Both views open the flow from the row's inline verify action.
       await screen.findAllByText('ada@x.test')
       await clickRowAction(user, 'ada@x.test', zhCN.identifiers.verify)
 
@@ -671,8 +609,6 @@ describe('IdentifiersSection', () => {
         name: zhCN.identifiers.add.submitEmail,
       })
 
-      // The mount's reads settled on the real clock; the send and its
-      // countdown run on the fake one so the five seconds pass instantly.
       vi.useFakeTimers()
       try {
         await act(async () => {
@@ -689,9 +625,6 @@ describe('IdentifiersSection', () => {
         expect(form).not.toBeNull()
         const scoped = within(form as HTMLElement)
 
-        // Both views show the same controls in the same order: cancel on
-        // the left, the resend in the middle, the primary verify closing
-        // the row on the right.
         expect(
           scoped
             .getAllByRole('button')
@@ -706,15 +639,11 @@ describe('IdentifiersSection', () => {
           name: zhCN.verification.resend,
         })
         expect(resend).toHaveAttribute('aria-disabled', 'true')
-        // A successful send leaves no banner, so the row's own note states
-        // the wait, and the resend points at it.
         const note = scoped.getByText(
           zhCN.verification.resendIn.replace('{{seconds}}', '5'),
         )
         expect(resend).toHaveAttribute('aria-describedby', note.id)
 
-        // Once the wait expires the resend becomes usable and the note
-        // leaves with the hold it stated.
         act(() => {
           vi.advanceTimersByTime(5000)
         })
@@ -725,8 +654,6 @@ describe('IdentifiersSection', () => {
             zhCN.verification.resendIn.replace('{{seconds}}', '5'),
           ),
         ).toBeNull()
-        // The hold's note leaves with the hold, so nothing describes the
-        // ready control.
         expect(resend).not.toHaveAttribute('aria-describedby')
 
         await act(async () => {
@@ -747,12 +674,6 @@ describe('IdentifiersSection', () => {
           value: 'ada@x.test',
         })
       } finally {
-        // Drain the frames the announcement regions scheduled while the
-        // clock was fake. jsdom's animation loop is an interval under
-        // that clock: uninstalling the fake timers drops the interval
-        // without restarting the loop, and a callback left queued keeps
-        // the loop's internal id set, so every later
-        // requestAnimationFrame in this file would never run.
         try {
           vi.advanceTimersByTime(100)
         } finally {
@@ -763,9 +684,6 @@ describe('IdentifiersSection', () => {
   )
 
   it('names a throttled row resend in the banner and renders no row note', async () => {
-    // The first send lands with no interval, so the resend control exists and
-    // is usable; the resend it triggers is the throttled attempt. That
-    // failure's hold belongs to the banner, not to the row's note.
     let sends = 0
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -821,7 +739,6 @@ describe('IdentifiersSection', () => {
     renderWithProviders(
       <IdentifiersSection
         session={rig.session}
-        // A gate that wants nothing lets the send leave on the click.
         humanGate={{
           phone: { required: false, provider: 'off' },
           other: { required: false, provider: 'off' },
@@ -843,8 +760,6 @@ describe('IdentifiersSection', () => {
       }),
     )
 
-    // The 429's banner states the wait and counts it down; the row renders
-    // no second note and points its control at none.
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(
       zhCN.throttle.retryAfter.replace('{{seconds}}', '30'),
@@ -856,9 +771,6 @@ describe('IdentifiersSection', () => {
     const resend = scoped.getByRole('button', {
       name: zhCN.verification.resend,
     })
-    // The banner carries the countdown, so the row renders no note; the
-    // control names the waiting state itself instead of pointing at a
-    // sentence that is not on the page.
     expect(resend).toHaveAttribute('aria-disabled', 'true')
     const [before, after] = zhCN.verification.resendIn.split('{{seconds}}')
     expect(
@@ -870,9 +782,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('does not offer the row verify action while the account is pending', async () => {
-    // The pending state's one code record belongs to the verification
-    // section and the host's banner; a second concurrent request from a row
-    // would overwrite it.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -904,15 +813,11 @@ describe('IdentifiersSection', () => {
       expect(screen.getAllByText('pending@x.test')).toHaveLength(2),
     )
     expect(screen.getAllByText(zhCN.identifiers.unverified)).toHaveLength(1)
-    // The row still offers removal, but the verify action is absent while
-    // the account-wide flow owns the pending code.
     expect(rowAction('pending@x.test', zhCN.identifiers.verify)).toBeNull()
     expect(rowAction('pending@x.test', zhCN.identifiers.remove)).toBeTruthy()
   })
 
   it('renders no verification chip for a username', async () => {
-    // A username is a login name with no ownership to prove, so its row has
-    // no verified state at all -- not even one read off `proven`.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -964,8 +869,6 @@ describe('IdentifiersSection', () => {
     mount(respond)
 
     await waitFor(() => expect(screen.getAllByText('ada')).toHaveLength(1))
-    // A username is permanent: the group states the rule and carries no row
-    // action, whether or not the name is the only login name.
     expect(
       within(
         screen.getByRole('group', { name: zhCN.identifiers.kind.username }),
@@ -996,9 +899,6 @@ describe('IdentifiersSection', () => {
     await waitFor(() =>
       expect(screen.getAllByText('ada@x.test')).toHaveLength(2),
     )
-    // An email address is a login name for a password account too. Removal is
-    // withheld and the row has nothing to verify, so it carries no action at
-    // all.
     expect(rowActions('ada@x.test')).toHaveLength(0)
     expect(screen.getByText(zhCN.identifiers.lastLoginName)).toBeTruthy()
   })
@@ -1037,9 +937,6 @@ describe('IdentifiersSection', () => {
 
     await waitFor(() => expect(screen.getAllByText('ada')).toHaveLength(1))
     expect(screen.getByText('+14155550123')).toBeTruthy()
-    // The username is permanent, so its group carries no row action; the
-    // phone signs in through its own code route and stays removable from its
-    // own row.
     expect(
       within(
         screen.getByRole('group', { name: zhCN.identifiers.kind.username }),
@@ -1048,7 +945,6 @@ describe('IdentifiersSection', () => {
     const phoneRemove = rowAction('+14155550123', zhCN.identifiers.remove)
     expect(phoneRemove).toBeEnabled()
     expect(phoneRemove).not.toHaveAttribute('aria-disabled', 'true')
-    // The permanence note belongs to the username group, not to the phone row.
     expect(screen.getByText(zhCN.identifiers.usernamePermanent)).toBeTruthy()
   })
 
@@ -1083,9 +979,6 @@ describe('IdentifiersSection', () => {
     mount(respond)
 
     await waitFor(() => expect(screen.getAllByText('ada')).toHaveLength(1))
-    // Another login name does not make the username removable: the name is
-    // permanent, so its group keeps stating the rule and carries no row
-    // action.
     expect(
       within(
         screen.getByRole('group', { name: zhCN.identifiers.kind.username }),
@@ -1118,15 +1011,11 @@ describe('IdentifiersSection', () => {
     await waitFor(() =>
       expect(screen.getAllByText('ada@x.test')).toHaveLength(2),
     )
-    // With no password the address is not the withheld "last login name", so
-    // its row keeps the removal action.
     expect(rowAction('ada@x.test', zhCN.identifiers.remove)).toBeTruthy()
     expect(screen.queryByText(zhCN.identifiers.lastLoginName)).toBeNull()
   })
 
   it('does not offer the email kind while verification is pending', async () => {
-    // A pending registration carries one contact awaiting proof; the add face
-    // must not put a second pending address on the account.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -1188,7 +1077,6 @@ describe('IdentifiersSection', () => {
     await waitFor(() =>
       expect(screen.getByText(zhCN.identifiers.empty.title)).toBeTruthy(),
     )
-    // The silent removal now confirms itself, naming the identifier removed.
     expect(
       await screen.findByText(
         zhCN.identifiers.removed.replace('{{value}}', 'ada@example.test'),
@@ -1235,11 +1123,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('renders a username-immutable refusal as its code text', async () => {
-    // This surface renders no removal action for a username, so the normal
-    // path never asks to delete one. A request issued outside this surface is
-    // refused with authn.username_immutable, and any refused removal lands in
-    // this section's one failure slot: that slot must render the code's own
-    // sentence rather than the generic conflict text.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -1272,12 +1155,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('renders the last-login-name refusal when the guard read a stale profile', async () => {
-    // The client guard withholds the action only when the profile it read
-    // shows this row as the sole username/email. Another session can delete
-    // the other login name in between, so the server refuses with its own
-    // 409 and the section must render that code's text rather than the
-    // generic conflict sentence. The re-read then converges on the server's
-    // state: the remaining row is the only login name and loses its action.
     let profileReads = 0
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -1335,13 +1212,8 @@ describe('IdentifiersSection', () => {
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.login_identifier_required)
     expect(alert).not.toHaveTextContent(zhCN.errors.authn.conflict)
-    // The decisive re-read: the profile is fetched again and the remaining
-    // email becomes the only login name, so its removal gives way to the
-    // note.
     await waitFor(() => expect(profileReads).toBe(2))
     expect(screen.getByText(zhCN.identifiers.lastLoginName)).toBeTruthy()
-    // The row loses its actions: removal gives way to the note and the
-    // proved address has nothing to verify.
     expect(rowActions('ada@x.test')).toHaveLength(0)
   })
 
@@ -1419,7 +1291,6 @@ describe('IdentifiersSection', () => {
       }),
     )
 
-    // The 401 opens the step-up dialog; winning it re-runs the removal.
     await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp })
     await user.click(screen.getByRole('button', { name: zhCN.mfa.factor.kind.totp }))
     await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
@@ -1436,7 +1307,6 @@ describe('IdentifiersSection', () => {
           call.method === 'DELETE' && call.path === '/api/v1/auth/identifiers/id-email',
       ),
     ).toHaveLength(2)
-    // The step-up shortfall's 401 is the expected refresh-failure diagnostic.
     expect(warn).toHaveBeenCalledWith(
       'access token refresh failed',
       expect.objectContaining({
@@ -1445,8 +1315,6 @@ describe('IdentifiersSection', () => {
         trace_id: 'trace-1',
       }),
     )
-    // One shortfall, one refresh failure: a duplicated removal would warn
-    // again.
     expect(warn).toHaveBeenCalledTimes(1)
   })
 
@@ -1522,7 +1390,6 @@ describe('IdentifiersSection', () => {
     await waitFor(() =>
       expect(screen.getByText(zhCN.identifiers.add.added)).toBeTruthy(),
     )
-    // The confirmation names the changed kind (the sign-in identifier).
     expect(zhCN.identifiers.add.added).toContain(zhCN.identifiers.title)
     const posts = rig.calls.filter(
       (call) => call.method === 'POST' && call.path === '/api/v1/auth/identifiers',
@@ -1540,8 +1407,6 @@ describe('IdentifiersSection', () => {
         return jsonResponse(200, profileBody({ identifiers: [] }))
       }
       if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
-        // An existing username is the expected 409 of the one write the
-        // account page's add face exists for.
         return errorResponse(409, 'authn.username_taken')
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
@@ -1569,19 +1434,14 @@ describe('IdentifiersSection', () => {
     const field = screen.getByLabelText(zhCN.identifiers.add.value.labelUsername)
     await waitFor(() => expect(field).toHaveAttribute('aria-invalid', 'true'))
     expect(screen.getByText(zhCN.identifiers.add.usernameTaken)).toBeInTheDocument()
-    // The name is the value to change: the field carries it, focused, and
-    // the generic account-state sentence (refresh) never appears.
     expect(field).toHaveFocus()
     expect(field).toHaveValue('alice')
     expect(screen.queryByRole('alert')).toBeNull()
     expect(enUS.identifiers.add.usernameTaken).toMatch(/already taken/i)
-    // The form stays open so another name can be typed.
     expect(field).toBeTruthy()
   })
 
   it('names a taken username the identifier route answers as a conflict', async () => {
-    // The identifier route answers the same collision with its own conflict
-    // code; for this face both refusals mean the name is not available.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileBody({ identifiers: [] }))
@@ -1619,8 +1479,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('states a refused username in its field rather than the banner', async () => {
-    // A reserved name and a name the server cannot normalize are both the
-    // value this face can change, so the field carries the message.
     for (const [code, text] of [
       ['authn.username_reserved', zhCN.identifiers.add.usernameReserved],
       ['authn.username_invalid', zhCN.identifiers.add.usernameInvalid],
@@ -1654,7 +1512,6 @@ describe('IdentifiersSection', () => {
 
       expect(await screen.findByText(text)).toBeInTheDocument()
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-      // Editing the name clears the message for the next attempt.
       await user.type(field, '2')
       expect(screen.queryByText(text)).not.toBeInTheDocument()
       unmount()
@@ -1662,9 +1519,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('leaves a bad-request username add to the generic banner', async () => {
-    // authn.bad_request is not the username's shape answer (that is
-    // authn.username_invalid), so the field stays clean and the banner says
-    // what the route said.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileBody({ identifiers: [] }))
@@ -1720,16 +1574,9 @@ describe('IdentifiersSection', () => {
       screen.getByRole('option', { name: zhCN.identifiers.add.kind.username }),
     )
 
-    // The server's username shape begins with a letter or a digit
-    // (^[a-z0-9][a-z0-9._-]{2,63}$); a leading dot, dash or underscore is
-    // refused with the generic bad-request text. The helper is the setup
-    // page's only guidance for the username it exists to add, so it has to
-    // state that rule, in both languages.
     expect(
       await screen.findByText(zhCN.identifiers.add.value.helperUsername),
     ).toBeTruthy()
-    // The wording claim is pinned on the en-US leaf; the zh-CN leaf is
-    // pinned by the render assertion above.
     expect(enUS.identifiers.add.value.helperUsername).toMatch(
       /first character must be a letter or a digit/i,
     )
@@ -1775,15 +1622,11 @@ describe('IdentifiersSection', () => {
       screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
     )
 
-    // The pending answer moves the form to the code step.
     await screen.findByLabelText(zhCN.identifiers.add.code.label)
-    // The send announces the destination through its own status region and
-    // hands focus to the code field.
     const sentNotice = zhCN.identifiers.add.sent.replace(
       '{{value}}',
       'ada@x.test',
     )
-    // The region is inserted empty and fills on a later frame.
     const sentText = await screen.findByText(sentNotice)
     expect(sentText.closest('[role="status"]')).not.toBeNull()
     expect(screen.getByLabelText(zhCN.identifiers.add.code.label)).toHaveFocus()
@@ -1797,8 +1640,6 @@ describe('IdentifiersSection', () => {
 
     const added = await screen.findByText(zhCN.identifiers.add.added)
     expect(added).toBeTruthy()
-    // The result sits below the whole control group (the add face), not
-    // between the list and the add face.
     expect(
       screen
         .getByRole('button', { name: zhCN.identifiers.add.open })
@@ -1825,7 +1666,6 @@ describe('IdentifiersSection', () => {
     await user.click(
       await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
     )
-    // Two @ signs: the shape the server would answer with a bare 400.
     await user.type(
       screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
       'ada@example@com',
@@ -1846,7 +1686,6 @@ describe('IdentifiersSection', () => {
       ),
     ).toHaveLength(0)
 
-    // Cancelling clears the field error with the rest of the attempt.
     await user.click(
       screen.getByRole('button', { name: zhCN.identifiers.add.cancel }),
     )
@@ -1951,25 +1790,17 @@ describe('IdentifiersSection', () => {
       screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
     )
 
-    // The address's own failure: the field describes it, so the value the
-    // viewer can change carries the message.
     expect(
       await screen.findByText(zhCN.identifiers.add.emailTaken),
     ).toBeTruthy()
     expect(
       screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
     ).toHaveAttribute('aria-invalid', 'true')
-    // The code's generic account-state text and the shared banner stay out
-    // of it: the section's one failure slot renders no role="alert".
     expect(screen.queryByText(zhCN.errors.authn.email_taken)).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('returns a taken email from the verification step to the value field', async () => {
-    // The write is the authoritative refusal: the address can be taken
-    // between the code request and the code's submission, so the face
-    // returns to the value -- the thing to change -- with the field's
-    // message rather than asking for a code nothing can accept.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileBody({ identifiers: [] }))
@@ -2052,12 +1883,10 @@ describe('IdentifiersSection', () => {
       screen.getByRole('button', { name: zhCN.identifiers.add.cancel }),
     )
 
-    // The banner belonged to the attempt, not to the section.
     expect(screen.queryByRole('alert')).toBeNull()
     expect(
       screen.queryByText(zhCN.errors.authn.unavailable),
     ).toBeNull()
-    // The form is closed and an empty one opens on the next attempt.
     expect(
       screen.queryByLabelText(zhCN.identifiers.add.value.labelEmail),
     ).toBeNull()
@@ -2099,10 +1928,6 @@ describe('IdentifiersSection', () => {
 
   it('renders a step-up refusal of an email add as an ordinary failure, with no dialog', async () => {
     captureRefreshWarning({ expected: true })
-    // Registering a contact address is not a change of what proves the
-    // account; the route asks for no fresh authentication. A step-up refusal
-    // that reached the add face renders its code text instead of opening the
-    // dialog, and the refused attempt is not replayed.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileBody({ identifiers: [] }))
@@ -2140,11 +1965,6 @@ describe('IdentifiersSection', () => {
 
   it('re-proves an SMS first factor past the window and re-runs the username add', async () => {
     captureRefreshWarning({ expected: true })
-    // The registration journey: an account opened by SMS sign-up has no
-    // factor and no username. Past the five-minute window its identifier
-    // write is refused for a fresh first factor -- which enrolling a
-    // factor cannot satisfy either, so the dialog re-proves the SMS first
-    // factor itself and the refused add runs again.
     let elevated = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -2207,7 +2027,6 @@ describe('IdentifiersSection', () => {
       screen.getByRole('button', { name: zhCN.identifiers.add.submitUsername }),
     )
 
-    // The refusal opens the dialog on the SMS method's first step.
     await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
@@ -2219,7 +2038,6 @@ describe('IdentifiersSection', () => {
     const posts = rig.calls.filter(
       (call) => call.method === 'POST' && call.path === '/api/v1/auth/identifiers',
     )
-    // The refused add ran once more, with the same input.
     expect(posts).toHaveLength(2)
     expect(posts[0]?.body).toEqual({ kind: 'username', value: 'ada2' })
     expect(posts[1]?.body).toEqual({ kind: 'username', value: 'ada2' })
@@ -2239,16 +2057,12 @@ describe('IdentifiersSection', () => {
     await user.click(
       await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
     )
-    // The add face's kind selector starts on the email option.
     const combo = await screen.findByRole('combobox')
     expect(combo).toHaveTextContent(zhCN.identifiers.add.kind.email)
     expect(combo).not.toHaveTextContent(zhCN.identifiers.add.kind.username)
   })
 
   it('offers usernames only when the deployment serves no email identifier', async () => {
-    // The host reads the feature document and tells the section whether
-    // authn.identifiers.email is served; a deployment without it must not
-    // offer a write that would be refused.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileBody({ identifiers: [] }))
@@ -2269,8 +2083,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('does not offer the username kind when the host opts out', async () => {
-    // An email-only product passes offerUsername={false}: the add face
-    // keeps the email kind and never offers a username.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileBody({ identifiers: [] }))
@@ -2296,10 +2108,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('does not offer the username kind when the profile already lists one', async () => {
-    // An account holds at most one username, and the server answers a
-    // second one with the same 409 as a name someone else took. The add
-    // face never sends that write: once a username is listed, the kind
-    // leaves the selector.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -2316,7 +2124,6 @@ describe('IdentifiersSection', () => {
     mount(respond)
     const user = userEvent.setup()
 
-    // The listed username still reads in its group's sentence.
     await waitFor(() => expect(screen.getAllByText('ada')).toHaveLength(1))
     await user.click(
       screen.getByRole('button', { name: zhCN.identifiers.add.open }),
@@ -2339,8 +2146,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('renders no add face when a username exists and email is unavailable', async () => {
-    // With the username kind gone and no email channel there is nothing
-    // left to add, so the section does not offer the opening at all.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -2367,8 +2172,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('renders one failure banner while the add face is open', async () => {
-    // Removal, add and verification share one slot: a failure with a
-    // non-empty list and the open form is still exactly one alert.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -2405,8 +2208,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('raises the identifier actions to the 44px floor under a coarse pointer', async () => {
-    // The row's trailing actions button and the add-open control are compact
-    // actions; on a finger-driven device each one gates up to the 44x44 floor.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -2429,13 +2230,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('holds the session through the credential rotation a username add performs', async () => {
-    // The one-step username add rotates the requesting session's
-    // credential. The profile refetch that follows the write is answered
-    // 401, standing for a read that left under the outgoing credential. The
-    // surface opens an identity-transition window around that write, so the
-    // anonymous answer is discarded: the snapshot stays authenticated and no
-    // sign-out edge is observed. Without the window the same script ends the
-    // session.
     const warn = captureRefreshWarning()
     let rotated = false
     const respond: RealResponder = (call: RealCall) => {
@@ -2490,9 +2284,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('proves an added email without opening an identity-transition window', async () => {
-    // Registering and proving a contact address rotates no credential and
-    // revokes no other session, so the surface opens no window and the
-    // refetch that follows the verify stays authenticated.
     let proven = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === SESSION_PATH) {
@@ -2564,9 +2355,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('proves a row address without opening an identity-transition window', async () => {
-    // A row's verification proves the address exactly as the add-face
-    // verification does: no fresh authentication, no rotated credential and
-    // no revoked sibling session, so no window opens.
     let proven = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === SESSION_PATH) {
@@ -2645,11 +2433,6 @@ describe('IdentifiersSection', () => {
 
   it('releases the window a refused username add opened', async () => {
     captureRefreshWarning({ expected: true })
-    // A refused one-step username add must not leave its window open: the
-    // next genuine anonymous read has to end the session. The add is refused
-    // 409 (the name is taken), so no silent leg runs; once the failure is on
-    // screen the window is closed, and a fresh 401 read turns the snapshot
-    // anonymous with one sign-out edge.
     let gone = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === SESSION_PATH) {
@@ -2694,7 +2477,6 @@ describe('IdentifiersSection', () => {
     await screen.findByText(zhCN.identifiers.add.usernameTaken)
     expect(rig.transitionBegins()).toBe(1)
 
-    // A fresh 401 read now settles the true state.
     gone = true
     await rig.session.restore()
     expect(rig.session.getSnapshot().state).toBe('anonymous')
@@ -2734,7 +2516,6 @@ describe('IdentifiersSection', () => {
         screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
         'new@x.test',
       )
-      // The form shows no challenge until its send is asked for.
       expect(fake.widgets).toHaveLength(0)
       const submit = screen.getByRole('button', {
         name: zhCN.identifiers.add.submitEmail,
@@ -2743,15 +2524,11 @@ describe('IdentifiersSection', () => {
       expect(submit).not.toHaveAttribute('aria-disabled', 'true')
       await user.click(submit)
 
-      // The send waits on the proof: the block renders and the control that
-      // asked gives way.
       await waitFor(() => expect(fake.widgets).toHaveLength(1))
       expect(fake.widgets[0]?.siteKey).toBe('site-1')
       const waitingSend = screen.getByRole('button', {
         name: zhCN.identifiers.add.submitEmail,
       })
-      // The waiting send is still the same attempt's control: busy, not
-      // merely unavailable.
       expect(waitingSend).toHaveAttribute('aria-disabled', 'true')
       expect(waitingSend).toHaveAttribute('aria-busy', 'true')
       expect(
@@ -2762,7 +2539,6 @@ describe('IdentifiersSection', () => {
         ),
       ).toHaveLength(0)
 
-      // The proof arrives and the send leaves by itself.
       act(() => {
         fake.token('token-1')
       })
@@ -2853,7 +2629,6 @@ describe('IdentifiersSection', () => {
             call.path === '/api/v1/auth/identifiers',
         )
 
-      // The row's first send carries its proof and lands.
       await clickRowAction(user, 'second@x.test', zhCN.identifiers.verify)
       await user.click(
         screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
@@ -2864,7 +2639,6 @@ describe('IdentifiersSection', () => {
       })
       await waitFor(() => expect(sends()).toHaveLength(1))
 
-      // A resend waits on a fresh proof: the verify control is held with it.
       const codeField = await screen.findByLabelText(
         zhCN.identifiers.add.code.label,
       )
@@ -2882,8 +2656,6 @@ describe('IdentifiersSection', () => {
       const blockedVerify = within(form).getByRole('button', {
         name: zhCN.identifiers.add.verify,
       })
-      // A send waiting on its proof is not a write in flight: only the
-      // resend waits, and the code already in hand stays submittable.
       blockedVerify.focus()
       expect(blockedVerify).toHaveFocus()
       expect(blockedVerify).toBeEnabled()
@@ -2895,9 +2667,6 @@ describe('IdentifiersSection', () => {
       expect(cancel).toBeEnabled()
       expect(cancel).not.toHaveAttribute('aria-disabled', 'true')
 
-      // A verification can still begin while the wait is outstanding. It
-      // calls the wait off, so the late proof never sends and the code just
-      // proved is not invalidated by a second one.
       blockedVerify.focus()
       await user.keyboard('{Enter}')
       await waitFor(() =>
@@ -2922,12 +2691,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('holds a row resend whose proof arrives during another row’s sign-in write', async () => {
-    // The row resend waits on a fresh proof. While it waits, the viewer turns
-    // the email group’s sign-in off, and that write is still in flight when
-    // the proof arrives. The send belongs to the section’s one write scope,
-    // so it must wait for the write to settle instead of running beside it:
-    // otherwise the two attempts share the feedback scope and the switch’s
-    // result is not what the section ends on.
     const fake = installFakeTurnstile()
     try {
       let primarySignIn = true
@@ -2971,8 +2734,6 @@ describe('IdentifiersSection', () => {
           return jsonResponse(200, {
             state: 'pending',
             expires_in: 600,
-            // The first send leaves the resend usable; the held resend
-            // states its own wait, which is the result the case checks for.
             resend_after: sends === 1 ? 0 : 60,
           })
         }
@@ -2998,7 +2759,6 @@ describe('IdentifiersSection', () => {
             call.path === '/api/v1/auth/identifiers',
         )
 
-      // The row’s first send carries its proof and lands.
       await clickRowAction(user, 'second@x.test', zhCN.identifiers.verify)
       await user.click(
         screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
@@ -3009,7 +2769,6 @@ describe('IdentifiersSection', () => {
       })
       await waitFor(() => expect(posted()).toHaveLength(1))
 
-      // The resend waits on a fresh proof.
       const codeField = await screen.findByLabelText(
         zhCN.identifiers.add.code.label,
       )
@@ -3021,7 +2780,6 @@ describe('IdentifiersSection', () => {
       await user.click(resend)
       await waitFor(() => expect(fake.widgets).toHaveLength(2))
 
-      // Another row’s sign-in write starts and stays in flight.
       const signInRegion = screen.getByRole('region', {
         name: zhCN.identifiers.groups.signIn,
       })
@@ -3040,8 +2798,6 @@ describe('IdentifiersSection', () => {
         ).toHaveLength(1),
       )
 
-      // The proof arrives while that write is still in flight: the resend
-      // must not leave yet.
       act(() => {
         fake.token('token-2')
       })
@@ -3050,7 +2806,6 @@ describe('IdentifiersSection', () => {
       })
       expect(posted()).toHaveLength(1)
 
-      // Settling the write releases the resend, which presents its proof.
       act(() => {
         held.resolve(new Response(null, { status: 204 }))
       })
@@ -3061,8 +2816,6 @@ describe('IdentifiersSection', () => {
         human_proof: 'token-2',
       })
 
-      // Both results stay visible: the switch reads the write’s landed
-      // state, and the resend states the hold its answer gave it.
       await waitFor(() =>
         expect(
           within(signInRegion).getByRole('switch', {
@@ -3116,8 +2869,6 @@ describe('IdentifiersSection', () => {
       await queryClient.invalidateQueries()
     })
 
-    // The failed refresh keeps the settled rows on screen under the stale
-    // notice rather than replacing them with the error placeholder.
     expect(screen.getAllByText('ada@x.test')).toHaveLength(2)
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.stale.description)
@@ -3181,19 +2932,12 @@ describe('IdentifiersSection', () => {
     const contacts = screen.getByRole('region', {
       name: zhCN.identifiers.groups.contact,
     })
-    // A username and the address the profile marks sign_in are sign-in ways.
-    // The username reads in its group's sentence; the address reads as the
-    // email group's chosen value.
     expect(within(signIn).getAllByText('ada')).toHaveLength(1)
     expect(within(signIn).getAllByText('signin@x.test')).toHaveLength(1)
-    // Every registered address is a contact, whether or not it signs in and
-    // whatever the profile's own contact flag says.
     expect(within(contacts).getByText('signin@x.test')).toBeTruthy()
     expect(within(contacts).getByText('contact@x.test')).toBeTruthy()
     expect(within(contacts).getByText('+14155550123')).toBeTruthy()
-    // A username is not an address and never joins the contacts list.
     expect(within(contacts).queryByText('ada')).toBeNull()
-    // There is no third list to hold an address that is not a sign-in way.
     expect(zhCN.identifiers.groups).not.toHaveProperty('neither')
     expect(zhCN.identifiers.groups).not.toHaveProperty('neitherEmpty')
 
@@ -3229,9 +2973,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('lists every registered address as a contact, with no contact control', async () => {
-    // Registering an email address or phone number is what makes it a
-    // contact: the profile's own contact flag cannot keep it out of the list,
-    // and the section offers no control that would change the position.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -3269,9 +3010,6 @@ describe('IdentifiersSection', () => {
     })
     expect(within(contacts).getByText('contact@x.test')).toBeTruthy()
     expect(within(contacts).getByText('+14155550123')).toBeTruthy()
-    // The contacts list carries no sign-in control: whether an address signs
-    // in is the email group's decision, made in the sign-in group. There is
-    // also no control that would take an address out of the contact position.
     expect(within(contacts).queryAllByRole('switch')).toHaveLength(0)
     expect(zhCN.identifiers.axes).not.toHaveProperty('contact')
     expect(zhCN.identifiers.axes).not.toHaveProperty('contactAria')
@@ -3314,7 +3052,6 @@ describe('IdentifiersSection', () => {
     const signInRegion = await screen.findByRole('region', {
       name: zhCN.identifiers.groups.signIn,
     })
-    // The email group's one action states that no address signs in yet.
     expect(
       within(signInRegion).getByText(zhCN.identifiers.usage.emailNone),
     ).toBeTruthy()
@@ -3325,8 +3062,6 @@ describe('IdentifiersSection', () => {
     )
 
     await waitFor(() => expect(writes).toEqual([{ sign_in: true }]))
-    // The address joins the sign-in group as the picker's chosen value; the
-    // group renders no address row of its own.
     await waitFor(() =>
       expect(
         within(signInRegion).getByRole('combobox', {
@@ -3384,8 +3119,6 @@ describe('IdentifiersSection', () => {
     )
 
     await waitFor(() => expect(writes).toEqual([{ default_contact: true }]))
-    // The default contact is always a contact, so the row joins that list
-    // while its sign-in axis stays as it was.
     const contacts = await screen.findByRole('region', {
       name: zhCN.identifiers.groups.contact,
     })
@@ -3426,9 +3159,6 @@ describe('IdentifiersSection', () => {
     mount(respond)
     const user = userEvent.setup()
 
-    // The phone is a sign-in way and a contact, so it reads in the phone
-    // group's sentence and as a contact row; its sign-in choice is the phone
-    // group's one action, so the contact row offers no control for it.
     const signInRegion = await screen.findByRole('region', {
       name: zhCN.identifiers.groups.signIn,
     })
@@ -3444,10 +3174,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('arms the step-up dialog on a refused add-face verify and replays the same code', async () => {
-    // Proving an address carries no fresh authentication of its own, but a
-    // proof that makes the address the default contact or the account's only
-    // address changes how the account signs in and may answer a step-up
-    // refusal. The verify arms the dialog with the same code and replays it.
     captureRefreshWarning()
     let elevated = false
     const respond: RealResponder = (call: RealCall) => {
@@ -3554,9 +3280,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('arms the step-up dialog on a refused row verify and replays the same code', async () => {
-    // The row's verify proves the address the row shows; the consequence of
-    // the proof can answer a step-up refusal, which arms the dialog with the
-    // same code and replays it once a challenge is won.
     captureRefreshWarning()
     let elevated = false
     let proven = false
@@ -3662,7 +3385,6 @@ describe('IdentifiersSection', () => {
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
     )
 
-    // The refetched rows flip to proved; both contact rows are proved now.
     await waitFor(() =>
       expect(screen.getAllByText(zhCN.identifiers.verified)).toHaveLength(2),
     )
@@ -3677,9 +3399,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('shows the contact axis table without a contact switch', async () => {
-    // A host that shows the contact axis alone gets the address table with
-    // its row actions; the contact position itself is not a control, and the
-    // sign-in switch belongs to the sign-in axis.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -3707,7 +3426,6 @@ describe('IdentifiersSection', () => {
 
     expect(await screen.findByText('ada@x.test')).toBeTruthy()
     expect(screen.queryAllByRole('switch')).toHaveLength(0)
-    // The table row carries its actions inline.
     expect(rowAction('ada@x.test', zhCN.identifiers.remove)).toBeTruthy()
     expect(
       rowAction('ada@x.test', zhCN.identifiers.axes.defaultContact),
@@ -3758,8 +3476,6 @@ describe('IdentifiersSection', () => {
       screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
     )
 
-    // The refusal names how long to wait instead of the bare "try again
-    // later": the 429 carried Retry-After and the surface says so.
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(
       zhCN.throttle.retryAfter.replace('{{seconds}}', '90'),
@@ -3767,9 +3483,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('states that email sign-in is off when no address is chosen, with no select', async () => {
-    // No address is a sign-in way, so the group shows its off note instead of
-    // a picker that would display the first proved address as if the account
-    // had chosen it.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -3835,8 +3548,6 @@ describe('IdentifiersSection', () => {
       <IdentifiersSection session={rig.session} axis="signIn" />,
     )
 
-    // The empty username group reads its own copy; the phone group keeps its
-    // own, so exactly one phone-none sentence remains.
     expect(
       await screen.findByText(zhCN.identifiers.usage.usernameNone),
     ).toBeTruthy()
@@ -3844,8 +3555,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('states that a proved phone is not a sign-in way when its group offers to enable it', async () => {
-    // The group's button offers to enable this number, so the sentence beside
-    // it must say the number does not sign in rather than claim it does.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -3885,10 +3594,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('replays a whole sign-in email selection as one gate action', async () => {
-    // Choosing a different sign-in email turns the chosen address on and the
-    // previous one off. The first write meets the step-up refusal; the gate
-    // remembers the whole selection, so one challenge lands both rows rather
-    // than only the row that was refused.
     captureRefreshWarning()
     let elevated = false
     let aSignIn = true
@@ -3990,8 +3695,6 @@ describe('IdentifiersSection', () => {
     fireEvent.mouseDown(combo)
     await user.click(screen.getByRole('option', { name: 'b@x.test' }))
 
-    // The first write meets the refusal and arms the dialog with the whole
-    // selection; one challenge lands both rows.
     await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp })
     await user.click(screen.getByRole('button', { name: zhCN.mfa.factor.kind.totp }))
     await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
@@ -4011,8 +3714,6 @@ describe('IdentifiersSection', () => {
         call.method === 'PUT' &&
         call.path === '/api/v1/auth/identifiers/id-a',
     )
-    // B was attempted before and after the challenge; A was turned off only
-    // once, as part of the same selection.
     expect(bPuts).toHaveLength(2)
     expect(
       bPuts.every(
@@ -4029,9 +3730,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('offers no enable/disable action on the username group', async () => {
-    // A username is always a login name and the server refuses a sign-in flag
-    // change on it, so its group states the name and offers no switch; the
-    // email group keeps the section's one group action.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -4068,7 +3766,6 @@ describe('IdentifiersSection', () => {
     const usernameHeading = await screen.findByRole('heading', {
       name: zhCN.identifiers.kind.username,
     })
-    // The heading's own row is the whole username group: no action shares it.
     const usernameRow = usernameHeading.parentElement
     expect(usernameRow).not.toBeNull()
     expect(within(usernameRow as HTMLElement).queryByRole('button')).toBeNull()
@@ -4125,7 +3822,6 @@ describe('IdentifiersSection', () => {
     )
 
     await waitFor(() => expect(writes).toEqual([{ sign_in: false }]))
-    // The picker gives way to the off note; there is nothing left to choose.
     await waitFor(() =>
       expect(
         screen.queryByRole('combobox', {
@@ -4140,8 +3836,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('turns email sign-in back on with the address the same visit switched off', async () => {
-    // The default contact is b, but the viewer switched a off last, so the
-    // group restores the viewer's own last choice instead of the fallback.
     let aSignIn = true
     let bSignIn = false
     const writes: { readonly id: string; readonly body: unknown }[] = []
@@ -4225,9 +3919,6 @@ describe('IdentifiersSection', () => {
   })
 
   it('falls back to the default contact when the switched-off address is gone', async () => {
-    // The visit switched a off, and a is no longer on the account when the
-    // group is turned back on: the default contact b is restored, not the
-    // first proved address c.
     let includeA = true
     let aSignIn = true
     let bSignIn = false
@@ -4275,7 +3966,6 @@ describe('IdentifiersSection', () => {
       ) {
         writes.push({ id: 'id-a', body: call.body })
         aSignIn = (call.body as { sign_in?: boolean }).sign_in === true
-        // The account lost the address between the write and the re-read.
         includeA = false
         return new Response(null, { status: 204 })
       }
@@ -4351,9 +4041,6 @@ describe('IdentifiersSection', () => {
       <IdentifiersSection session={rig.session} axis="contact" />,
     )
     await screen.findAllByText('ada@x.test')
-    // The row's "Default contact" chip already states the position, so the
-    // row offers no set-default action at all; the removal stays, and it is
-    // the row's only action.
     expect(
       rowAction('ada@x.test', zhCN.identifiers.axes.defaultContact),
     ).toBeNull()
@@ -4419,8 +4106,6 @@ describe('IdentifiersSection', () => {
     )
     const user = userEvent.setup()
     await screen.findAllByText('ada@x.test')
-    // The contact table's actions render inline in their intended order:
-    // the default-contact choice first, the danger-toned removal last.
     const actions = rowActions('ada@x.test')
     expect(actions.map((button) => button.textContent?.trim())).toEqual([
       zhCN.identifiers.axes.defaultContact,
@@ -4473,8 +4158,6 @@ describe('IdentifiersSection', () => {
     const user = userEvent.setup()
 
     await screen.findAllByText('ada@example.test')
-    // The merged view's contact row renders both actions inline, verification
-    // before removal, inside one action row.
     const actions = rowActions('ada@example.test')
     expect(actions.map((button) => button.textContent?.trim())).toEqual([
       zhCN.identifiers.verify,
@@ -4491,8 +4174,6 @@ describe('IdentifiersSection', () => {
     expect(mergedRemove).toBeEnabled()
     expect(mergedRemove).not.toHaveAttribute('aria-disabled', 'true')
 
-    // The verify action opens the row's fixed-address flow, and the remove
-    // action still asks for confirmation before its write.
     await clickRowAction(user, 'ada@example.test', zhCN.identifiers.verify)
     expect(
       screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
@@ -4553,8 +4234,6 @@ describe('IdentifiersSection', () => {
     const user = userEvent.setup()
 
     await screen.findByText('+14155550123')
-    // A phone offers removal alone: one action, rendered as its own small
-    // button rather than behind an overflow trigger or in an action row.
     const actions = rowActions('+14155550123')
     expect(actions.map((button) => button.textContent?.trim())).toEqual([
       zhCN.identifiers.remove,
@@ -4563,7 +4242,6 @@ describe('IdentifiersSection', () => {
     expect(remove).not.toBeNull()
     expect(remove).toHaveClass('MuiButton-colorError')
     expect((remove as HTMLElement).closest('[data-action-row]')).toBeNull()
-    // Neither an overflow trigger nor a menu item remains.
     expect(
       actions.some((button) => button.hasAttribute('aria-haspopup')),
     ).toBe(false)
@@ -4592,8 +4270,6 @@ describe('IdentifiersSection', () => {
   })
 
   describe('focusable initiating controls', () => {
-    /** Two proved sign-in emails: the section's switch, picker, radios and
-     * row actions are all on screen. */
     function twoEmailProfile(
       overrides: Record<string, unknown> = {},
     ): Record<string, unknown> {
@@ -4671,9 +4347,6 @@ describe('IdentifiersSection', () => {
       await user.click(toggle)
       await waitFor(() => expect(writes).toHaveLength(1))
 
-      // The switch started the write: it keeps focus, reports the in-flight
-      // state instead of turning natively disabled, and swallows a second
-      // activation without moving its own value.
       expect(toggle).toHaveFocus()
       expect(toggle).toHaveAttribute('aria-disabled', 'true')
       expect(toggle).not.toHaveAttribute('aria-busy')
@@ -4684,8 +4357,6 @@ describe('IdentifiersSection', () => {
       expect(toggle).toHaveFocus()
       expect(writes).toHaveLength(1)
       expect(toggle).toBeChecked()
-      // A sibling row's remove action answers but cannot run: unavailable,
-      // no busy marker and no reason to give.
       const siblingRemove = rowAction('b@x.test', zhCN.identifiers.remove)
       expect(siblingRemove).not.toBeNull()
       ;(siblingRemove as HTMLElement).focus()
@@ -4693,16 +4364,12 @@ describe('IdentifiersSection', () => {
       expect(siblingRemove).toHaveAttribute('aria-disabled', 'true')
       expect(siblingRemove).not.toHaveAttribute('aria-busy')
       expect(siblingRemove).not.toHaveAccessibleDescription()
-      // A picker that saves on change is read-only rather than disabled:
-      // it keeps focus, and the write in flight does not close it.
       const picker = screen.getByRole('combobox', {
         name: zhCN.identifiers.kind.email,
       })
       picker.focus()
       expect(picker).toHaveFocus()
       expect(picker).toHaveAttribute('aria-readonly', 'true')
-      // A chose-on-change radio is held the same way as the sibling action,
-      // and its activation is swallowed with its value unchanged.
       const siblingDefault = screen.getByRole('radio', {
         name: zhCN.identifiers.axes.defaultAria.replace(
           '{{value}}',
@@ -4777,7 +4444,6 @@ describe('IdentifiersSection', () => {
         .getByLabelText(zhCN.identifiers.add.value.labelEmail)
         .closest('form') as HTMLFormElement
 
-      // The precondition is unmet: the control stays focusable and says why.
       submit.focus()
       expect(submit).toHaveFocus()
       expect(submit).toHaveAttribute('aria-disabled', 'true')
@@ -4786,19 +4452,13 @@ describe('IdentifiersSection', () => {
         zhCN.identifiers.add.emailEmpty,
       )
 
-      // An activation that reaches it is swallowed: no request, and no
-      // field error either (the guard owns the attempt).
       await user.keyboard('{Enter}')
       expect(sends()).toHaveLength(0)
       expect(screen.queryByText(zhCN.identifiers.add.invalidEmail)).toBeNull()
 
-      // A submit that bypasses the button, as Enter in an empty field or a
-      // programmatic request does, is held by the form's own guard.
       fireEvent.submit(form)
       expect(sends()).toHaveLength(0)
 
-      // A value makes the same control usable again, and the form's guard
-      // lets the programmatic submit through.
       await user.type(
         screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
         'new@x.test',
@@ -4888,9 +4548,6 @@ describe('IdentifiersSection', () => {
           'ada@x.test',
         ),
       })
-      // The address has no identifier record the write could address, so the
-      // choice is unavailable and states that cause, not merely that it
-      // cannot run now.
       choice.focus()
       expect(choice).toHaveFocus()
       expect(choice).toHaveAttribute('aria-disabled', 'true')
@@ -4967,12 +4624,9 @@ describe('IdentifiersSection', () => {
       )
       await screen.findByLabelText(zhCN.identifiers.add.code.label)
 
-      // A submit that bypasses the button is held by the form's own guard
-      // while the code is missing, with no request.
       fireEvent.submit(form)
       expect(verifies).toBe(0)
 
-      // The code in hand lets the same programmatic submit through.
       await user.type(
         screen.getByLabelText(zhCN.identifiers.add.code.label),
         '123456',
@@ -5076,7 +4730,6 @@ describe('IdentifiersSection', () => {
       await waitFor(() =>
         expect(screen.getByText(zhCN.identifiers.empty.title)).toBeTruthy(),
       )
-      // The confirmation's exit still hides the page from role queries.
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
       const container = screen.getByRole('group', {
         name: zhCN.identifiers.title,
@@ -5125,8 +4778,6 @@ describe('IdentifiersSection', () => {
           name: zhCN.identifiers.confirmLabel,
         }),
       )
-      // The confirmation leaves the page free while the write is in flight;
-      // the operator settles on a control of their own.
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
       const elsewhere = screen.getByRole('button', {
         name: zhCN.identifiers.add.open,
@@ -5201,8 +4852,6 @@ describe('IdentifiersSection', () => {
       })
       await user.click(verify)
 
-      // The form leaves with the control that sent the code: focus returns
-      // to the entry that reopens it, not to the document body.
       const entry = await screen.findByRole('button', {
         name: zhCN.identifiers.add.open,
       })
@@ -5210,9 +4859,6 @@ describe('IdentifiersSection', () => {
     })
 
     it('closes a landed add at once and lands on the entry when the re-read fails', async () => {
-      // The write landed; the profile re-read is a separate read. The form
-      // must close without waiting for it, or a failed read leaves the same
-      // add available for a second submit.
       const reRead = deferred<Response>()
       let added = false
       const respond: RealResponder = (call: RealCall) => {
@@ -5247,7 +4893,6 @@ describe('IdentifiersSection', () => {
         screen.getByRole('button', { name: zhCN.identifiers.add.submitUsername }),
       )
 
-      // The form is gone while the re-read is still in flight.
       await waitFor(() =>
         expect(
           screen.queryByLabelText(zhCN.identifiers.add.value.labelUsername),
@@ -5255,8 +4900,6 @@ describe('IdentifiersSection', () => {
       )
 
       reRead.resolve(errorResponse(500, 'authn.unavailable'))
-      // The failed re-read keeps the old list: the entry is still there and
-      // takes focus, with the stale notice stating the read failed.
       const entry = await screen.findByRole('button', {
         name: zhCN.identifiers.add.open,
       })
@@ -5319,8 +4962,6 @@ describe('IdentifiersSection', () => {
         rowAction('a@x.test', zhCN.identifiers.axes.defaultContact) as HTMLElement,
       )
 
-      // The landed choice takes this row's action out of the document;
-      // focus goes to the same action on the row below.
       await waitFor(() => expect(nextDefault).toHaveFocus())
     })
 
@@ -5392,8 +5033,6 @@ describe('IdentifiersSection', () => {
         }),
       )
 
-      // The landed verification drops the row's action with its form;
-      // focus goes to the next row's verify action.
       await waitFor(() => expect(nextVerify).toHaveFocus())
     })
 
@@ -5439,7 +5078,6 @@ describe('IdentifiersSection', () => {
         )
         await waitFor(() => expect(fake.widgets).toHaveLength(1))
 
-        // The send waits on its proof; the way out of the wait does not.
         const cancel = screen.getByRole('button', {
           name: zhCN.identifiers.add.cancel,
         })
@@ -5452,7 +5090,6 @@ describe('IdentifiersSection', () => {
             screen.queryByLabelText(zhCN.identifiers.add.value.labelEmail),
           ).toBeNull(),
         )
-        // A proof that arrives after the cancel has no send to carry.
         act(() => {
           fake.token('token-1')
         })
@@ -5551,7 +5188,6 @@ describe('IdentifiersSection', () => {
             screen.queryByLabelText(zhCN.identifiers.add.code.label),
           ).toBeNull(),
         )
-        // The cancelled wait must not send the code a late proof carries.
         act(() => {
           fake.token('token-2')
         })
@@ -5571,7 +5207,6 @@ describe('IdentifiersSection', () => {
       mount(respond)
       const user = userEvent.setup()
 
-      // The entry leaves the document as the form replaces it.
       await user.click(
         await screen.findByRole('button', {
           name: zhCN.identifiers.add.open,
@@ -5703,8 +5338,6 @@ describe('IdentifiersSection', () => {
         screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
       )
 
-      // The replay reaches the write without a click of its own, and its
-      // landed choice still names the neighbour.
       await waitFor(() => expect(nextDefault).toHaveFocus())
       expect(
         rig.calls.filter((call) => call.method === 'PUT'),
@@ -5775,8 +5408,6 @@ describe('IdentifiersSection', () => {
         ) as HTMLElement,
       )
 
-      // The last row has no neighbour below: the choice lands on the row
-      // above.
       await waitFor(() => expect(previousDefault).toHaveFocus())
     })
 

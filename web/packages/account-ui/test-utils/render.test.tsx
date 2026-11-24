@@ -1,7 +1,5 @@
 /**
- * The account-ui render harness keeps the provider tree, and the unit inside
- * it, mounted across a rerender. The probes read a speed-only theme field and
- * the query client, so a lost provider cannot pass.
+ * The account-ui render harness keeps the provider tree mounted across a rerender.
  */
 
 import { useState } from 'react'
@@ -50,7 +48,6 @@ function ThemeProbe({ label }: { readonly label: string }) {
   return <span data-testid="theme-probe">{label}</span>
 }
 
-/** A field only the speed factory fills; MUI's default theme has none. */
 const SPEED_MONO = createAppTheme().theme.typography.fontFamilyMono
 
 beforeEach(() => {

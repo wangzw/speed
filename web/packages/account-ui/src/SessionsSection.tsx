@@ -30,6 +30,7 @@ import { useAccountUiTranslation } from './internal/translation.js'
 import { summarizeUserAgent } from './internal/ua-summary.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 
+// An account can accumulate many live sessions, so the list is paged.
 const SESSIONS_PER_PAGE = 8
 
 function SignOutIcon({ size = 20 }: { readonly size?: number }) {
@@ -66,8 +67,6 @@ type PendingWrite =
   | { readonly kind: 'others' }
   | { readonly kind: 'row'; readonly id: string }
 
-/** Whether focus was lost when the initiating control's row left the
- * document; a connected control outside it means the operator moved focus. */
 function focusFellWith(removed: HTMLElement | null): boolean {
   const active = document.activeElement
   if (active === null || active === document.body) {
@@ -108,10 +107,7 @@ function SessionListSkeleton({ label }: { readonly label: string }) {
   )
 }
 
-/**
- * The host may replace the section's bulk action with its own; the section
- * reads the account's sessions and revokes them singly or all at once.
- */
+/** The host may replace the section's bulk action with its own. */
 export type SessionsSectionProps = {
   /** Renders the bulk action -- "sign out other devices" -- in place of the
    * section's own action row, called only while the action would render. */
@@ -131,12 +127,9 @@ export function SessionsSection({
   const [othersConfirmOpen, setOthersConfirmOpen] = useState(false)
   const feedback = useWriteFeedback()
   const [pendingWrite, setPendingWrite] = useState<PendingWrite | null>(null)
-  // Clamped against the page count below, so a shrinking list never leaves
-  // the view past the end.
+  // Clamped against the page count, so a shrinking list never leaves the view
+  // past the end.
   const [page, setPage] = useState(1)
-  // The focus landings when a landed write removes the control that started
-  // it. The confirmation's node is remembered too, so the bulk landing waits
-  // for this section's dialog rather than for the document to hold none.
   const revokeButtons = useRef(new Map<string, HTMLButtonElement>())
   const listRegion = useRef<HTMLElement | null>(null)
   const sectionRegion = useRef<HTMLElement | null>(null)
@@ -155,11 +148,10 @@ export function SessionsSection({
     formatInstant(value, i18n.language, { timeZone })
 
   const sessions = data?.sessions
-  // isPending alone tracks "no answer yet" across the in-flight and the
-  // parked (offline, fetchStatus 'paused') states, where isLoading is false.
+  // isPending alone tracks "no answer yet" across the in-flight and parked
+  // (offline) states, where isLoading is false.
   const pending = isPending && sessions === undefined
   const hasSessions = sessions !== undefined && sessions.length > 0
-  // Held for the whole attempt, including the refetch that follows.
   const scopePending = pendingWrite !== null
 
   const hasRevocableOther =
@@ -183,8 +175,8 @@ export function SessionsSection({
       return Promise.resolve()
     }
     const control = revokeButtons.current.get(sessionId) ?? null
-    // The whole read, not the page in view: a revoke at a page edge brings
-    // the neighbour up from the next page.
+    // The whole read, not the page in view: a page-edge revoke brings the
+    // neighbour up from the next page.
     const order = (sessions ?? [])
       .filter((entry) => entry.id != null && entry.current !== true)
       .map((entry) => entry.id as string)
@@ -215,7 +207,6 @@ export function SessionsSection({
 
   function handleRevokeOthers(): Promise<void> {
     bulkRemoval.current = bulkButton.current
-    // This section's own dialog, not any dialog the host's shell keeps mounted.
     bulkDialog.current = confirmDialog.current
     setPendingWrite({ kind: 'others' })
     return feedback.run(async () => {
@@ -242,9 +233,6 @@ export function SessionsSection({
     })
   }
 
-  // Focus goes to the same action on the row now in the vacated place, else
-  // after, else before, else to the list; candidates come from the re-read
-  // list at the original position, so a page-edge revoke slides over.
   useLayoutEffect(() => {
     const target = rowRemoval.current
     if (target === null) {
@@ -256,7 +244,6 @@ export function SessionsSection({
         .map((entry) => entry.id as string),
     )
     if (remaining.has(target.id)) {
-      // Settled without removing the row: there is nothing to land from.
       if (pendingWrite === null) {
         rowRemoval.current = null
       }
@@ -292,7 +279,6 @@ export function SessionsSection({
       return
     }
     if (trigger.isConnected) {
-      // Settled without removing the control: there is nothing to land from.
       if (pendingWrite === null) {
         bulkRemoval.current = null
         bulkDialog.current = null
@@ -311,8 +297,6 @@ export function SessionsSection({
       bulkRemoval.current = null
       bulkDialog.current = null
       observer?.disconnect()
-      // The confirmation was modal, so surviving focus outside it is a place
-      // the operator chose.
       const active = document.activeElement
       const activeSurvives =
         active instanceof HTMLElement &&
@@ -388,8 +372,8 @@ export function SessionsSection({
         {() => {
           return (
           <Box>
-            {/* role="list" keeps the semantics under WebKit, which strips
-                them from a list-style-none ul. */}
+            {/* role="list" keeps the semantics under WebKit, which strips them
+                from a list-style-none ul. */}
             <Box
               component="ul"
               role="list"
@@ -532,7 +516,6 @@ export function SessionsSection({
                   size="small"
                   unavailable={scopePending || currentPage <= 1}
                   onClick={() => {
-                    // The settled result would otherwise name another page's device.
                     feedback.reset()
                     setPage(currentPage - 1)
                   }}
@@ -561,8 +544,8 @@ export function SessionsSection({
           )
         }}
       </AccountAsyncSection>
-      {/* Outside the settled content, so it renders while the list is empty
-          or a load failed. */}
+      {/* Outside the settled content, so it renders while the list is empty or
+          a load failed. */}
       <WriteFeedbackRegion outcome={feedback.outcome} sx={{ mt: 2 }} />
         </Box>
       </SectionCard>
