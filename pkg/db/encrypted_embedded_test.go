@@ -13,9 +13,6 @@ type contactDetails struct {
 	Email string
 }
 
-// embeddingModel declares its sealed email beside an embedded struct that
-// carries an unsealed field on the same column. The model's own Email is on the
-// shorter path, so GORM binds the column to it and never writes Contact.Email.
 type embeddingModel struct {
 	ID      uint
 	Email   string         `gorm:"serializer:encrypted"`
@@ -34,7 +31,6 @@ type defaultedEmbeddingModel struct {
 	Contact defaultedDetails `gorm:"embedded"`
 }
 
-// TableName is the one table the embedding models write into.
 func (defaultedEmbeddingModel) TableName() string { return "embedding_models" }
 
 func createEmbeddingTable(t *testing.T, product *database) {
@@ -44,8 +40,7 @@ func createEmbeddingTable(t *testing.T, product *database) {
 	}
 }
 
-// embeddedEmail is what the email column of one embedding row holds, read
-// around the model: "absent" when there is no such row.
+// embeddedEmail is what the email column of one embedding row holds, read around the model: "absent" when there is no such row.
 func embeddedEmail(t *testing.T, product *database, id uint) string {
 	t.Helper()
 	var stored []sql.NullString
@@ -215,11 +210,6 @@ type sealedDetails struct {
 	Email string `gorm:"serializer:encrypted"`
 }
 
-// shadowingModel embeds sealedDetails and declares an unsealed Email of its
-// own, on the shorter path. GORM binds the email column to that field, so the
-// embedded field's serializer is never run: the model declares the column
-// sealed, and GORM writes and reads it in clear. Secret is a sealed column
-// GORM binds to its sealed field.
 type shadowingModel struct {
 	ID      uint
 	Email   string
@@ -228,7 +218,6 @@ type shadowingModel struct {
 	Contact sealedDetails `gorm:"embedded"`
 }
 
-// TableName is the one table the embedding models write into.
 func (shadowingModel) TableName() string { return "embedding_models" }
 
 // TestAStatementOverASealedColumnGORMBindsToAnUnsealedFieldIsRefused covers that model.

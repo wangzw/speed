@@ -38,11 +38,7 @@ type host struct {
 	chain string
 }
 
-// refusingGuardLayer is a stand-in for a layer that refuses a request, in the
-// same stage as the CORS layer and leaving its Order at the zero value, so the
-// ordering puts it inside CORS. It refuses every request it sees, which is what lets a case
-// show that a refusal carries the CORS headers and that a preflight never reaches
-// it.
+// refusingGuardLayer is a stand-in for a layer that refuses a request, in the same stage as the CORS layer and leaving Order at zero, so ordering puts it inside CORS. It refuses every request, which lets a case show a refusal carries the CORS headers and a preflight never reaches it.
 func refusingGuardLayer() speedhttp.Middleware {
 	return speedhttp.Middleware{
 		Name:  "stand-in.refuse",
@@ -359,8 +355,6 @@ func (standInLogger) Redaction() log.Redaction    { return noRedaction{} }
 
 var _ log.Logger = standInLogger{}
 
-// noRedaction takes registrations and masks nothing: what these cases observe of
-// the Logger capability is what the entry point reports of itself.
 type noRedaction struct{}
 
 func (noRedaction) AddKeys(...string)              {}

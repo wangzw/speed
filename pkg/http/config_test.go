@@ -378,8 +378,6 @@ func TestDrainTimeoutRefusesExplicitZero(t *testing.T) {
 		t.Fatalf("an explicit \"0s\" arrived as %v", *given)
 	}
 
-	// resolve is what Prepare runs the decoded section through, so its
-	// refusal is the startup failure.
 	_, _, err := got.resolve()
 	if err == nil {
 		t.Fatal("drain-timeout was switched off with 0")
@@ -871,9 +869,7 @@ func TestTwoEndpointsClaimingOnePrefixIsAClaimConflict(t *testing.T) {
 // itself a fix.
 func TestTheClaimConflictAdviceResolvesTheConflict(t *testing.T) {
 	cases := map[string]struct {
-		endpoints map[string]endpointConfig
-		// rootConflict marks the conflict on "/", the only one an omitted key
-		// can cause; its message must say so, and the other must not.
+		endpoints    map[string]endpointConfig
 		rootConflict bool
 	}{
 		"both omitted": {
@@ -918,10 +914,7 @@ func TestTheClaimConflictAdviceResolvesTheConflict(t *testing.T) {
 	}
 }
 
-// suggestedClaim reads the example the claim-conflict message writes for one
-// endpoint: the endpoint's name and the prefix list the message tells the host
-// to put there. It fails when the message carries no example, so rewording the
-// message cannot silently stop the example from being checked.
+// suggestedClaim reads the example the claim-conflict message writes for one endpoint: the endpoint's name and the prefix list the message tells the host to put there. It fails when the message carries no example, so rewording cannot silently stop the example from being checked.
 func suggestedClaim(t *testing.T, message string) (string, []string) {
 	t.Helper()
 	pattern := regexp.MustCompile(regexp.QuoteMeta(configNamespace+"."+endpointsItem+".") +

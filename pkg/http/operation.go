@@ -38,11 +38,7 @@ type OperationDescriptor struct {
 	SuccessStatus int
 	// SuccessBody is the success response's body type.
 	SuccessBody reflect.Type
-	// Simple is true for the simple form. Only its success response writes the
-	// declared headers: the handler cannot build the other answers, which are
-	// problem documents written without them. A reply operation sets it false,
-	// because its handler builds each declared answer and that answer's
-	// declared headers are written on whatever status it names.
+	// Simple is true for the simple form. Only its success response writes the declared headers: the handler cannot build the other answers, which are problem documents written without them. A reply operation sets it false, because its handler builds each declared answer with that answer's declared headers.
 	Simple bool
 	// Access is the level of caller identity the route admits.
 	Access Access
@@ -250,8 +246,6 @@ func outType[Out any]() reflect.Type {
 	return reflect.TypeOf(&zero).Elem()
 }
 
-// successStatus is the status of the single 2xx response, or 0 when the
-// declaration does not carry exactly one.
 func successStatus(responses []Response) int {
 	status := 0
 	for _, response := range responses {

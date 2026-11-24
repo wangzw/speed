@@ -58,10 +58,7 @@ func parseProductionFiles(t *testing.T) (*token.FileSet, []*ast.File) {
 	return fset, files
 }
 
-// spyWriter is a nethttp.ResponseWriter that records what was actually done to
-// it. A httptest.ResponseRecorder cannot tell "WriteHeader was never called"
-// from "WriteHeader(200) was called", and that is the distinction a test of what
-// the fallback wrote turns on.
+// spyWriter is a nethttp.ResponseWriter that records what was actually done to it. A httptest.ResponseRecorder cannot tell "WriteHeader was never called" from "WriteHeader(200) was called", and that is the distinction a test of what the fallback wrote turns on.
 type spyWriter struct {
 	header      nethttp.Header
 	status      int
@@ -137,8 +134,6 @@ func (h *recordingHandler) Handle(_ context.Context, r slog.Record) error {
 func (h *recordingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
 func (h *recordingHandler) WithGroup(string) slog.Handler      { return h }
 
-// at returns the records written at one level, rendered as message plus
-// attributes, which is what an assertion on the text reads.
 func (h *recordingHandler) at(level slog.Level) []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -299,11 +294,7 @@ func (noRedaction) AddPattern(string, log.Matcher) {}
 
 var _ log.Logger = stubLogger{}
 
-// capA and capB are capabilities a probe module really delivers, product and
-// declaration both. A middleware layer that names one of them in Provides is
-// then standing for something the assembly actually contains, which is the
-// state the constraints have to be exercised in: a layer pointing at a
-// capability nobody delivers is the other case, and it drops its constraint.
+// capA and capB are capabilities a probe module really delivers, product and declaration both. A layer naming one in Provides then stands for something the assembly contains, which is the state the constraints have to be exercised in: a layer pointing at a capability nobody delivers drops its constraint.
 type capA interface{ standsForA() }
 
 type capB interface{ standsForB() }
@@ -457,10 +448,7 @@ func (a *assembly) wait(t *testing.T) error {
 	}
 }
 
-// waitForOrEnd takes one value from ch, failing the test with what Run came back
-// with if Run ends first: a startup that failed would otherwise show only as a
-// wait that ran out its deadline, with nothing saying why. The result is kept as
-// wait keeps it.
+// waitForOrEnd takes one value from ch, failing the test with what Run came back with if Run ends first: a startup that failed would otherwise show only as a wait that ran out its deadline. The result is kept as wait keeps it.
 func (a *assembly) waitForOrEnd(t *testing.T, ch <-chan struct{}, what string) {
 	t.Helper()
 	limit := waitDeadline()
@@ -532,8 +520,6 @@ func getStatus(ctx context.Context, addr, path string) (int, error) {
 	return resp.status, nil
 }
 
-// answer is what a client got back over a socket: the status line, the headers
-// and the body read to its end.
 type answer struct {
 	status int
 	header nethttp.Header
@@ -543,11 +529,7 @@ type answer struct {
 	bodyErr error
 }
 
-// getResponse issues one GET against a bound endpoint over a connection of its
-// own, so that what a server does to its connection is seen by this request and
-// by no other. The client asks for no compression and decodes none, so the
-// headers and the body are what the server sent. An error is a request that got
-// no response at all.
+// getResponse issues one GET against a bound endpoint over a connection of its own, so what a server does to its connection is seen by this request alone. The client asks for no compression and decodes none, so the headers and body are what the server sent; an error means no response at all.
 func getResponse(ctx context.Context, addr, path string) (answer, error) {
 	req, err := nethttp.NewRequestWithContext(ctx, nethttp.MethodGet, "http://"+addr+path, nil)
 	if err != nil {

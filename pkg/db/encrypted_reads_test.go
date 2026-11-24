@@ -238,10 +238,7 @@ func TestARefusedRowTakesNoConnection(t *testing.T) {
 	writtenRow(t, product)
 
 	err := product.DB().Transaction(func(*gorm.DB) error {
-		// The deadline only bounds the wait for a wrong implementation: one
-		// that takes a connection before refusing waits for the one this
-		// transaction holds and answers the pool's deadline error instead of
-		// the refusal naming the field.
+		// The deadline bounds the wait for a wrong implementation that takes the connection this transaction holds before refusing.
 		waiting, cancel := context.WithTimeout(t.Context(), coretest.Scale(10*time.Second))
 		defer cancel()
 		var email string

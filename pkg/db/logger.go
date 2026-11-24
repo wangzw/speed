@@ -26,10 +26,7 @@ const scanFinisher = "gorm.io/gorm.(*DB).Scan"
 
 const withheldStatement = "statement withheld: GORM filled its values in before the logger saw it"
 
-// statementLogger is the GORM logger every handle this package opens carries:
-// it writes GORM's statements and messages as records of the slog logger it is
-// built over, leaving out a value the statement binds or reads and the text of
-// an error.
+// statementLogger is the GORM logger every handle this package opens carries: it writes GORM's statements and messages as records of the slog logger it is built over, leaving out a value the statement binds or reads and the text of an error.
 type statementLogger struct {
 	out   *slog.Logger
 	level logger.LogLevel

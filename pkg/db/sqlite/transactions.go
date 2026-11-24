@@ -28,13 +28,7 @@ func registeredDriver() driver.Driver {
 	return inner
 }
 
-// transactionDriver opens connections through the SQLite driver, beginning
-// transactions in the locator's mode.
-//
-// SQLite keeps a transaction open when it refuses to commit it, while
-// database/sql treats Commit as final and returns the connection to the pool
-// still inside it. A refused COMMIT is therefore rolled back on its own
-// connection before the connection is released.
+// transactionDriver opens connections through the SQLite driver, beginning transactions in the locator's mode. SQLite keeps a transaction open when it refuses to commit it, while database/sql treats Commit as final and returns the connection still inside one; a refused COMMIT is therefore rolled back on its own connection before the connection is released.
 type transactionDriver struct{ driver.Driver }
 
 func (d transactionDriver) Open(name string) (driver.Conn, error) {
@@ -54,8 +48,6 @@ func (d transactionDriver) Open(name string) (driver.Conn, error) {
 	return transactionConn{Conn: conn, execer: execer, locator: locator}, nil
 }
 
-// transactionConn is one SQLite connection whose transactions begin in the
-// locator's mode and end on a refused COMMIT.
 type transactionConn struct {
 	driver.Conn
 	execer  driver.ExecerContext

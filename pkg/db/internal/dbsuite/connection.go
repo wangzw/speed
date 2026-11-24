@@ -24,12 +24,7 @@ const (
 	answeredWithin = 3 * time.Second
 )
 
-// ConnectionWait holds Connection, on a handle whose pool is held to one
-// connection, to its bound: taken while the caller's transaction holds the
-// connection, it fails within its wait wrapping context.DeadlineExceeded and fn
-// does not run; taken once the connection is free, fn runs on it and the
-// connection goes back to the pool. It runs on its own goroutine so a call still
-// waiting well past the bound fails the case rather than the test binary.
+// ConnectionWait holds Connection on a one-connection pool to its bound: taken while the caller's transaction holds the connection, it fails within its wait wrapping context.DeadlineExceeded and fn does not run; taken once the connection is free, fn runs on it and the connection goes back. It runs on its own goroutine so a call still waiting past the bound fails the case.
 func ConnectionWait(t *testing.T, handle *gorm.DB, connect Connect) {
 	t.Helper()
 	var ran atomic.Bool
@@ -80,8 +75,6 @@ func ConnectionWait(t *testing.T, handle *gorm.DB, connect Connect) {
 	requireConnectionBack(t, handle)
 }
 
-// requireConnectionBack checks that a statement on the handle gets the pool's
-// one connection back.
 func requireConnectionBack(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	settled, cancel := context.WithTimeout(t.Context(), answeredWithin)
@@ -92,10 +85,7 @@ func requireConnectionBack(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// LockWait holds a statement run through Connection to the engine's own lock
-// wait: while another connection holds a lock, the statement fails once the
-// locator's lockWait has passed, and once the lock is given up the same
-// statement goes through. other is a second pool on the same database.
+// LockWait holds a statement run through Connection to the engine's own lock wait: while another connection holds a lock, it fails once the locator's lockWait has passed, and once the lock is given up the same statement goes through. other is a second pool on the same database.
 func LockWait(t *testing.T, handle, other *gorm.DB, lockWait time.Duration, connect Connect) {
 	t.Helper()
 	for _, statement := range []string{
@@ -188,10 +178,7 @@ func OnATransaction(t *testing.T, handle *gorm.DB, connect Connect) {
 
 var errPanicked = errors.New("fn panicked")
 
-// PanicReleasesTheConnection holds Connection to handing its connection back
-// when fn panics under a context that never ends, whatever fn left open: the
-// panic comes out, what the transaction wrote is rolled back, and the connection
-// is back in the pool. The handle's pool must be held to one connection.
+// PanicReleasesTheConnection holds Connection to handing its connection back when fn panics under a context that never ends: the panic comes out, what the transaction wrote is rolled back, and the connection is back in the pool. The handle's pool must be held to one connection.
 func PanicReleasesTheConnection(t *testing.T, handle *gorm.DB, connect Connect) {
 	t.Helper()
 	if err := handle.Exec("CREATE TABLE panic_rows (id INTEGER PRIMARY KEY)").Error; err != nil {
@@ -267,10 +254,7 @@ func PanicReleasesTheConnection(t *testing.T, handle *gorm.DB, connect Connect) 
 	}
 }
 
-// ReturnReleasesTheConnection holds Connection to handing its connection back
-// when fn returns normally under a context that never ends, whatever fn left
-// open: Connection comes back with fn's own answer, what the transaction wrote
-// is rolled back, and the connection is back in the pool.
+// ReturnReleasesTheConnection holds Connection to handing its connection back when fn returns normally under a context that never ends: Connection returns fn's own answer, what the transaction wrote is rolled back, and the connection is back in the pool.
 func ReturnReleasesTheConnection(t *testing.T, handle *gorm.DB, connect Connect) {
 	t.Helper()
 	if err := handle.Exec("CREATE TABLE return_rows (id INTEGER PRIMARY KEY)").Error; err != nil {
@@ -335,8 +319,6 @@ func SavepointRecovers(t *testing.T, handle *gorm.DB, connect Connect) {
 			}
 			nested := tx.Transaction(func(inner *gorm.DB) error {
 				failed := inner.Exec("INSERT INTO savepoint_rows (id) VALUES (1)").Error
-				// Time passes between the failure and the rollback, as it
-				// does in a caller that looks at the error.
 				time.Sleep(5 * time.Millisecond)
 				return failed
 			})

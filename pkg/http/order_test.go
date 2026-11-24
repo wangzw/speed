@@ -12,7 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// The capabilities the fixtures below order themselves against.
 type (
 	capRecovery interface{ recovery() }
 	capAuth     interface{ auth() }
@@ -20,8 +19,6 @@ type (
 	capQuota    interface{ quota() }
 )
 
-// passThrough is a layer body that hands the request on. The ordering never
-// calls it; a registration carries one, so the fixtures do too.
 func passThrough(c *gin.Context) { c.Next() }
 
 func registered(name string, stage Stage, order int, provides, after, before []core.Token) layer {
@@ -72,14 +69,10 @@ func hasCause(report []orderingRemark, layer string, cause remarkCause) bool {
 // boundary first, then the Order and the constraints within a stage.
 func TestStageOrdering(t *testing.T) {
 	tests := []struct {
-		name   string
-		layers []layer
-		want   []string
-		// conflict, when set, is the pair of layer names the ErrStageConflict
-		// text must carry, and the chain is not checked.
-		conflict []string
-		// satisfied, when set, is a layer whose cross-stage constraint the
-		// ordering must record as already given by the stage order.
+		name      string
+		layers    []layer
+		want      []string
+		conflict  []string
 		satisfied string
 	}{
 		{

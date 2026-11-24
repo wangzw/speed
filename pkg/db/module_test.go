@@ -20,10 +20,7 @@ import (
 	"github.com/vislake/speed/pkg/db/internal/dbsuite"
 )
 
-// probeNamespace is the namespace the cases below configure. It is a third one
-// rather than either shipped implementation's, so that a case about the
-// machinery this package owns does not read as a statement about which engine
-// is behind it.
+// probeNamespace is the namespace the cases below configure: a third one rather than either shipped implementation's, so a case about this package's machinery does not read as a statement about which engine is behind it.
 const probeNamespace = "db.probe"
 
 func probeSpec() Spec {
@@ -91,7 +88,6 @@ func TestPrepareCarriesTheReaderFailureOut(t *testing.T) {
 	}
 }
 
-// failingReader is a config.Reader whose section cannot be read.
 type failingReader struct{ err error }
 
 func (r *failingReader) Decode(string, any) error { return r.err }
@@ -227,8 +223,7 @@ type partialDatabase struct{ Database }
 
 func (partialDatabase) Dialect() Dialect { return SQLite }
 
-// panickingDatabase is an implementation of Database whose DB panics with a
-// value of its own, not with a runtime error.
+// panickingDatabase is an implementation of Database whose DB panics with a value of its own, not with a runtime error.
 type panickingDatabase struct{ partialDatabase }
 
 func (panickingDatabase) DB() *gorm.DB { panic("the stand-in has no handle to give") }
@@ -253,8 +248,6 @@ func TestCloseToleratesNilAndForeignInstance(t *testing.T) {
 		{"a typed nil of another kind", (*gorm.DB)(nil)},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			// A panic out of the callback is the failure under test, and it
-			// would otherwise abort the binary with the cases that follow.
 			defer func() {
 				if recovered := recover(); recovered != nil {
 					t.Errorf("closing %s panicked: %v", c.name, recovered)

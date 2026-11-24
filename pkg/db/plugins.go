@@ -15,14 +15,7 @@ type pluginInstall struct {
 	plugin gorm.Plugin
 }
 
-// collectPlugins takes the declared plugins out of the registry, in the order
-// they are installed: the declaring modules' dependency order, declaration
-// order within one module. Install order is callback order in GORM.
-//
-// A declaration from a module that does not run is dropped. This differs from
-// the migration collection beside it, which reads the declaring set: a plugin's
-// lifetime is this run, the database structure's is the binary. Neither filter
-// can be derived from the other.
+// collectPlugins takes the declared plugins out of the registry in install order: the declaring modules' dependency order, declaration order within one module; install order is callback order in GORM. A declaration from a module that does not run is dropped: a plugin's lifetime is this run, the database structure's is the binary.
 func collectPlugins(reg *core.Registry) ([]pluginInstall, error) {
 	rank := dependencyRank(reg)
 
@@ -57,10 +50,7 @@ func collectPlugins(reg *core.Registry) ([]pluginInstall, error) {
 	return plugins, nil
 }
 
-// installPlugins installs every declared plugin on one handle, in order, before
-// the handle is handed to anyone. The same call serves a handle built with Open,
-// which carries the same declared plugins as the delivered one. A plugin that
-// will not install fails the startup under ErrPluginFailed.
+// installPlugins installs every declared plugin on one handle, in order, before the handle is handed to anyone; the same call serves a handle built with Open. A plugin that will not install fails the startup under ErrPluginFailed.
 func installPlugins(session *gorm.DB, plugins []pluginInstall) error {
 	declaredBy := make(map[string]string, len(plugins))
 	for _, install := range plugins {
@@ -82,14 +72,7 @@ func installPlugins(session *gorm.DB, plugins []pluginInstall) error {
 	return nil
 }
 
-// OpenedFrom reports the handle this capability delivered, for a session on a
-// connection built from it with Open. The second result is false for a session
-// on the delivered handle itself and for one on a handle this module did not
-// build with Open.
-//
-// The answer travels with the connection's configuration, so it holds for every
-// session derived from it, and it is in place before any declared plugin is
-// installed.
+// OpenedFrom reports the handle this capability delivered, for a session on a connection built from it with Open; the second result is false for a session on the delivered handle and for one this module did not build with Open. The answer travels with the connection's configuration, so it holds for every session derived from it, and it is in place before any declared plugin is installed.
 func OpenedFrom(session *gorm.DB) (*gorm.DB, bool) {
 	if session == nil || session.Config == nil {
 		return nil, false

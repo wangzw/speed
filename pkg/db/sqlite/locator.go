@@ -33,8 +33,6 @@ func memdbShared(name string) bool {
 	return len(name) > 1 && (name[0] == '/' || name[0] == '\\')
 }
 
-// sqliteLocator is a locator as the driver hands it to SQLite and SQLite reads
-// it.
 type sqliteLocator struct {
 	// name is the database SQLite opens, with %HH escapes decoded on a file:
 	// URI; empty for a temporary database.
@@ -97,13 +95,7 @@ func readLocator(dsn string) (sqliteLocator, bool) {
 	return l, true
 }
 
-// beginStatement is the statement a transaction on a connection to the locator
-// begins with, and an error for a _txlock value the driver does not know.
-//
-// IMMEDIATE is the default so a transaction that reads before it writes waits
-// for a concurrent writer within the busy timeout instead of being refused at
-// once as SQLite's DEFERRED default would. The locator's _txlock names another
-// mode; a read-only locator or transaction begins DEFERRED.
+// beginStatement is the statement a transaction on a connection to the locator begins with, and an error for a _txlock value the driver does not know. IMMEDIATE is the default so a read-then-write transaction waits for a concurrent writer within the busy timeout instead of being refused at once; the locator's _txlock names another mode, and a read-only locator or transaction begins DEFERRED.
 func beginStatement(l sqliteLocator, readOnly bool) (string, error) {
 	mode := "IMMEDIATE"
 	if l.txlock != "" {
@@ -134,10 +126,7 @@ const (
 	inValue
 )
 
-// sqliteURI is SQLite's reading of a file: URI, as sqlite3ParseUri reads it: the
-// file name and each query parameter in order. It ends at the first number
-// sign, drops an empty or localhost authority, decodes %HH escapes, and skips a
-// parameter whose name is empty; an escaped NUL ends the part it is in.
+// sqliteURI is SQLite's reading of a file: URI, as sqlite3ParseUri reads it.
 func sqliteURI(uri string) (string, [][2]string, bool) {
 	at := len("file:")
 	if strings.HasPrefix(uri[at:], "//") {
@@ -150,8 +139,6 @@ func sqliteURI(uri string) (string, [][2]string, bool) {
 		}
 		at = end
 	}
-	// out is SQLite's buffer: the name, then each parameter's name and value,
-	// each one ended by a NUL.
 	state := inName
 	var out []byte
 	for at < len(uri) && uri[at] != '#' {

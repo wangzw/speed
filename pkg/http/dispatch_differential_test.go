@@ -22,8 +22,6 @@ func stubGateway(c *gin.Context) {
 	Fail(c, Problem{Status: nethttp.StatusUnauthorized})
 }
 
-// Topologies: one listener carrying a fallback endpoint that claims "/", and one
-// carrying no fallback at all.
 const (
 	topologyWithFallback    = "with a fallback"
 	topologyWithoutFallback = "without a fallback"

@@ -20,8 +20,6 @@ import (
 	"github.com/vislake/speed/pkg/db/postgres"
 )
 
-// connectBound is how long the cases below give a startup or an Open whose context
-// carries a deadline of connectDeadline.
 const (
 	connectDeadline = time.Second
 	connectBound    = 15 * time.Second

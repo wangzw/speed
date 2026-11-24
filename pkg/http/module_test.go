@@ -400,8 +400,6 @@ func TestBindFailureReleasesTheEndpointsAlreadyBound(t *testing.T) {
 		t.Error("the endpoint that did bind is not accepting, so the failure was reported on the wrong one")
 	}
 
-	// This is what core does after a startup failure, over every constructed
-	// instance whatever stage it reached.
 	if err := m.Stop(ctx, nil, product); err != nil {
 		t.Errorf("Stop during rollback: %v", err)
 	}

@@ -34,13 +34,7 @@ type constraintChild struct {
 
 func (constraintChild) TableName() string { return "constraint_children" }
 
-// ConstraintRefusals holds a handle an engine's module delivered to the contract
-// for a constraint refusal: a unique or primary key refusal reports an error
-// carrying gorm.ErrDuplicatedKey, a foreign key refusal one carrying
-// gorm.ErrForeignKeyViolated, and neither class appears on any other refusal.
-//
-// carriesDriverError reports whether an error still carries the engine's own
-// driver error. The handle must enforce foreign keys.
+// ConstraintRefusals holds a handle to the contract for a constraint refusal: a unique or primary key refusal carries gorm.ErrDuplicatedKey, a foreign key refusal carries gorm.ErrForeignKeyViolated, and neither class appears on any other refusal. carriesDriverError reports whether an error still carries the driver error; the handle must enforce foreign keys.
 func ConstraintRefusals(t *testing.T, handle *gorm.DB, carriesDriverError func(error) bool) {
 	t.Helper()
 	for _, statement := range constraintSchema {

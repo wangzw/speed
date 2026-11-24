@@ -17,40 +17,24 @@ import (
 type phase int
 
 const (
-	// phaseDeclared is the state the endpoints are constructed in.
 	phaseDeclared phase = iota
-	// phaseOpen is the window registrations are accepted in.
 	phaseOpen
-	// phaseSealed is everything after that window.
 	phaseSealed
 )
 
 type router struct {
-	mu        sync.Mutex
-	phase     phase
-	listeners map[string]*listener
-	endpoints map[string]*endpoint
-	// listenerNames is the listener names in configuration order, kept for the order the
-	// listeners are assembled, bound and stopped in.
+	mu            sync.Mutex
+	phase         phase
+	listeners     map[string]*listener
+	endpoints     map[string]*endpoint
 	listenerNames []string
-	// names is the endpoint names in configuration order, kept for the messages that list
-	// what does exist and for the order the endpoints are assembled in.
-	names []string
+	names         []string
 
-	// injected is the logger put into each request's context, nil when no module delivers
-	// the Logger capability.
-	injected *slog.Logger
-	// responder is what decides the shape of the error responses this module
-	// writes, nil when no module delivers the ErrorResponder capability.
+	injected  *slog.Logger
 	responder ErrorResponder
-	// localizer renders the text of the refusals this module writes itself, nil when no
-	// module delivers the Localizer capability.
 	localizer i18n.Localizer
-	// resolver names the language of the default problem shape, nil when no module
-	// delivers the Resolver capability.
-	resolver i18n.Resolver
-	// logger is where this module's own diagnostics go. Unlike injected it
-	// is never nil: with no Logger capability it is the process default.
+	resolver  i18n.Resolver
+	// logger is where this module's own diagnostics go. Unlike injected it is never nil: with no Logger capability it is the process default.
 	logger *slog.Logger
 }
 
@@ -88,8 +72,6 @@ func (r *router) Endpoint(name string) (Endpoint, error) {
 	return e, nil
 }
 
-// Endpoints returns the declared endpoint names in ascending order, in a slice built
-// for the call.
 func (r *router) Endpoints() []string {
 	return slices.Sorted(slices.Values(r.names))
 }
@@ -113,12 +95,7 @@ func (r *router) seal() {
 	r.phase = phaseSealed
 }
 
-// write performs one registration behind the gate.
-//
-// A registration outside the open window panics rather than returning an error,
-// for the reason the surface returns nothing at all: it is a wiring mistake at
-// the call site, and a silently dropped registration shows up as a route nobody
-// can reach, long after the call that caused it.
+// write performs one registration behind the gate. A registration outside the open window panics rather than returning an error, for the reason the surface returns nothing at all: it is a wiring mistake at the call site, and a silently dropped registration shows up as a route nobody can reach.
 func (r *router) write(endpoint, call string, record func()) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -146,27 +123,21 @@ type route struct {
 	handlers []gin.HandlerFunc
 }
 
-// String renders a route the way a diagnostic names it: the method and the path as they
-// were registered.
 func (r route) String() string { return r.method + " " + r.path }
 
 type endpoint struct {
 	settings endpointSettings
-	// gate is the module-wide registration gate.
-	gate *router
-	// listener is the socket this endpoint is served from.
+	gate     *router
 	listener *listener
 
 	routes []route
 	layers []layer
 
-	// handler is the assembled chain this endpoint serves requests with, set by Serve.
 	handler nethttp.Handler
 }
 
 var _ Endpoint = (*endpoint)(nil)
 
-// Route binds handlers to a method and a path on this endpoint.
 func (e *endpoint) Route(method, path string, handlers ...gin.HandlerFunc) {
 	if len(handlers) == 0 {
 		panic(fmt.Sprintf("http: endpoint %q: Route(%q, %q) has no handler to bind. "+
@@ -242,5 +213,4 @@ func registeredLayer(mw Middleware) layer {
 	return layer{mw: mw, provides: mw.Provides}
 }
 
-// Accepting reports whether this endpoint is still taking requests.
 func (e *endpoint) Accepting() bool { return e.listener.isAccepting() }

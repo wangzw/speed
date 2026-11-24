@@ -10,10 +10,7 @@ import (
 // enough that each meets another holding the database's write lock.
 const concurrentWriters = 16
 
-// ReadThenWriteCommits holds the handle an engine's module delivers to
-// committing every one of concurrent transactions that each read the table
-// before they write: each waits within the engine's own lock wait, and none is
-// refused for having read first.
+// ReadThenWriteCommits holds the delivered handle to committing every one of concurrent transactions that each read the table before they write: each waits within the engine's own lock wait, and none is refused for having read first.
 func ReadThenWriteCommits(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	if err := handle.Exec("CREATE TABLE read_write_rows (id INTEGER PRIMARY KEY, seen INTEGER)").Error; err != nil {

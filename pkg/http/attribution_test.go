@@ -128,11 +128,7 @@ func TestTheRefusalNoPairReproducesIsAMatterOfTheHandlerCount(t *testing.T) {
 	}
 }
 
-// assembleWithCounts assembles an endpoint with that many layers and one route of
-// that many handlers, and returns what assembling answered. A panic that gets out
-// of the assembly fails the test where it is raised: in Serve a panic skips the
-// registry's rollback and strands every endpoint already bound, so a chain gin
-// has no room for has to come back as an error.
+// assembleWithCounts assembles an endpoint with that many layers and one route of that many handlers, and returns what assembling answered. A panic out of the assembly fails the test where it is raised: in Serve a panic skips the registry's rollback, so a chain gin has no room for has to come back as an error.
 func assembleWithCounts(t *testing.T, layers, handlers int) error {
 	t.Helper()
 	defer func() {

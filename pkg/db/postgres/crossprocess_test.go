@@ -22,8 +22,6 @@ import (
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
-// The scenario a re-executed copy of this test binary runs instead of the suite, and
-// the inputs it takes.
 const (
 	scenarioEnv           = "DB_POSTGRES_SCENARIO"
 	scenarioDSNEnv        = "DB_POSTGRES_SCENARIO_DSN"
@@ -35,10 +33,7 @@ const (
 
 const (
 	scenarioReplicas = 2
-	// scenarioApplyDuration is how long the applying replica stays inside
-	// the migration's transaction. It is what gives the other replica time
-	// to reach its own acquisition while the first is still working, which
-	// is the whole of what this case needs to happen.
+	// scenarioApplyDuration is how long the applying replica stays inside the migration's transaction, which gives the other replica time to reach its own acquisition while the first is still working.
 	scenarioApplyDuration = 3 * time.Second
 	scenarioLockTimeout   = 60 * time.Second
 	// scenarioRendezvousTimeout bounds the wait for the other replica to
@@ -48,7 +43,6 @@ const (
 	scenarioRunTimeout        = 3 * time.Minute
 )
 
-// The migration the scenario applies, and the record table it is recorded in.
 const (
 	probeModule       = "probe"
 	probeFile         = "0001_widgets.sql"
@@ -63,7 +57,6 @@ const (
 	createWidgets = `CREATE TABLE widgets (id INTEGER PRIMARY KEY)`
 )
 
-// The markers a replica prints, each with the moment it reached that point.
 const (
 	markStart   = "start"
 	markLocked  = "locked"
@@ -159,7 +152,6 @@ func TestConcurrentFirstMigration(t *testing.T) {
 	})
 }
 
-// replicaRun is what one replica process did.
 type replicaRun struct {
 	role     string
 	exit     int
@@ -264,10 +256,7 @@ func firstMigration(dsn, rendezvous, role string) error {
 	return nil
 }
 
-// applyFirstMigration does what the migration engine does on a first start:
-// create the record table, read what it lists, and apply and record what it
-// does not. Every statement goes on the connection the mutex was taken on,
-// which is what keeps the mutex held for the length of the run.
+// applyFirstMigration does what the migration engine does on a first start: create the record table, read what it lists, and apply and record what it does not. Every statement goes on the connection the mutex was taken on, which keeps the mutex held for the length of the run.
 func applyFirstMigration(ctx context.Context, conn *sql.Conn) error {
 	if _, err := conn.ExecContext(ctx, createRecordTable); err != nil {
 		return fmt.Errorf("creating the migration record table: %w", err)
@@ -335,10 +324,7 @@ func meetOtherReplicas(rendezvous, role string) error {
 		scenarioReplicas, scenarioRendezvousTimeout)
 }
 
-// mark prints a marker and the moment this replica reached it. The timestamps
-// are what the overlap assertion reads: without them a run where one replica
-// arrived after the other had finished is indistinguishable from one where the
-// mutex did its work.
+// mark prints a marker and the moment this replica reached it. The timestamps are what the overlap assertion reads: without them a run where one replica arrived after the other had finished is indistinguishable from one where the mutex did its work.
 func mark(name string) {
 	fmt.Printf("%s\t%s\n", name, time.Now().UTC().Format(time.RFC3339Nano))
 }

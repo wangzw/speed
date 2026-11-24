@@ -17,11 +17,7 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// backendConfig is one listener named backend with the named endpoints hanging
-// on it, all on a loopback port the operating system picks. None of them writes
-// prefixes, so every one claims "/": this is the configuration two endpoints on
-// one listener cannot have, and the tests that want a claim conflict start from
-// it.
+// backendConfig is one listener named backend with the named endpoints hanging on it, all on a loopback port the operating system picks. None writes prefixes, so every one claims "/": this is the configuration two endpoints on one listener cannot have, and the claim-conflict tests start from it.
 func backendConfig(names ...string) moduleConfig {
 	cfg := moduleConfig{
 		Listeners: map[string]listenerConfig{"backend": {Address: "127.0.0.1:0"}},
@@ -447,10 +443,7 @@ func TestNestedClaimsPickTheLongestMatch(t *testing.T) {
 			inner.status, inner.body, "inner")
 	}
 
-	// The shorter claim answers the rest of its subtree. Its registered route
-	// answers normally; a path it claims but does not register gets the outer
-	// endpoint's own 404, not the inner endpoint's and not a fallback (there is
-	// none).
+	// The shorter claim answers the rest of its subtree: its registered route answers normally, and a path it claims but does not register gets the outer endpoint's own 404, not the inner endpoint's and not a fallback (there is none).
 	for _, tc := range []struct {
 		path   string
 		status int
@@ -852,10 +845,7 @@ func TestTheChainLineNamesTheClaims(t *testing.T) {
 	mustContain(t, line, "prefixes=[/x]", "the claims of the zero-route endpoint")
 }
 
-// exchange issues one request of the given method, with the given headers,
-// against a bound address and reports what the server answered. getResponse
-// covers the GET case; a method-not-allowed test needs the method and the
-// preflight headers a plain GET does not carry.
+// exchange issues one request of the given method, headers and path against a bound address and reports what the server answered. getResponse covers the GET case; a method-not-allowed test needs the method and preflight headers a plain GET does not carry.
 func exchange(ctx context.Context, method, addr, path string, header nethttp.Header) (answer, error) {
 	req, err := nethttp.NewRequestWithContext(ctx, method, "http://"+addr+path, nil)
 	if err != nil {

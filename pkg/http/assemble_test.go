@@ -356,9 +356,7 @@ func TestUnlandedConstraintIsReported(t *testing.T) {
 func TestOrderingRemarksAreWrittenAtTheirOwnLevels(t *testing.T) {
 	logger, records := newRecordingLogger()
 	_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
-		// A constraint that crosses stages in the direction the stages already
-		// give: throttle sits inside identify, so this After repeats the boundary
-		// rather than asking for a place the boundary does not already give.
+		// A constraint that crosses stages in the direction the stages already give: throttle sits inside identify, so this After repeats the boundary rather than asking for a place the boundary does not already give.
 		e.Use(Middleware{
 			Name:     "gate",
 			Stage:    StageIdentify,

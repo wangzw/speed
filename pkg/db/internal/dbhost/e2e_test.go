@@ -17,10 +17,7 @@ import (
 
 var hostBinary string
 
-// runLimit bounds one run of the host. It is generous: exceeding it means the
-// host hung — a pool of one connection with an extra connection somewhere in the
-// run, a mutex that is never acquired — and the case says so with both streams
-// attached.
+// runLimit bounds one run of the host. It is generous: exceeding it means the host hung, and the case says so with both streams attached.
 const runLimit = 90 * time.Second
 
 const buildLimit = 5 * time.Minute
@@ -68,15 +65,11 @@ type dbSection struct {
 	SQLite   *engineSection `json:"sqlite,omitempty"`
 }
 
-// engineSection is one implementation's section. The keys are flat inside it,
-// which is what an inlined carrier struct decodes from.
 type engineSection struct {
 	DSN           string `json:"dsn,omitempty"`
 	MaxOpenConns  int    `json:"max-open-conns,omitempty"`
 	EncryptionKey string `json:"encryption-key,omitempty"`
-	// MigrationLockTimeout is declared by an implementation that supplies a
-	// mutex, and setting it on one that does not is a startup failure. Only
-	// the PostgreSQL cases set it.
+	// MigrationLockTimeout is declared by an implementation that supplies a mutex, and setting it on one that does not is a startup failure; only the PostgreSQL cases set it.
 	MigrationLockTimeout string `json:"migration-lock-timeout,omitempty"`
 }
 
@@ -93,11 +86,7 @@ func writeConfig(t *testing.T, doc any) string {
 	return (&url.URL{Scheme: "file", Path: path}).String()
 }
 
-// runHost runs one scenario to completion.
-//
-// The environment is exactly what the case gives and never the ambient one: a
-// SPEED_DB_E2E_* or DBHOST_* variable on the machine running the tests would
-// otherwise change what a case observes.
+// runHost runs one scenario to completion. The environment is exactly what the case gives and never the ambient one: a SPEED_DB_E2E_* or DBHOST_* variable on the machine would otherwise change what a case observes.
 func runHost(t *testing.T, scenarioName string, args ...string) outcome {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), runLimit)
@@ -159,10 +148,7 @@ func TestSerializerIsRegisteredBeforeDelivery(t *testing.T) {
 	if n := countOccurrences(got.stdout, roundTripMarker); n != 1 {
 		t.Errorf("the encrypted field made the round trip %d times, want 1:\n%s", n, got.stdout)
 	}
-	// The mutation this case exists for reports itself as GORM refusing to
-	// resolve the serializer, so the text is asserted here as well: an
-	// implementation that registered it after delivering the handle would
-	// otherwise fail for a reason the case does not name.
+	// The mutation this case exists for reports itself as GORM refusing to resolve the serializer, so the text is asserted too: an implementation that registered it after delivering the handle would otherwise fail unnamed.
 	if strings.Contains(got.stderr, "invalid serializer type") {
 		t.Errorf("the serializer was not registered by the time the dependant was constructed:\n%s", got.stderr)
 	}
@@ -178,10 +164,7 @@ func TestBothImplementationsImportedOneConfigured(t *testing.T) {
 	requireSuccess(t, got)
 
 	requireNoMentionOf(t, got, "db.postgres")
-	// The other half: the configured engine has to be the one that ran. A run
-	// that named no engine would carry the same silence above and fail the
-	// dependant's requirement instead, so a clean exit is what says the command
-	// named the engine it configured.
+	// The configured engine has to be the one that ran: a clean exit is what says the command named the engine it configured, rather than meeting the dependant's requirement.
 	if countOccurrences(got.stderr, `module "db.sqlite"`) != 0 {
 		t.Errorf("the configured implementation is reported as not running:\n%s", got.stderr)
 	}
@@ -190,8 +173,7 @@ func TestBothImplementationsImportedOneConfigured(t *testing.T) {
 // TestBothConfiguredIsExclusiveViolated checks that configuring both engines fails the startup as
 // an exclusive violation naming both.
 func TestBothConfiguredIsExclusiveViolated(t *testing.T) {
-	// Neither locator has to name a reachable database: two enabled providers
-	// are settled during resolution, and no connection is opened before that.
+	// Neither locator has to name a reachable database: two enabled providers are settled during resolution, and no connection is opened before that.
 	locator := writeConfig(t, dbConfig{DB: dbSection{
 		Postgres: &engineSection{DSN: "postgres://dbhost.invalid:5432/none"},
 		SQLite:   &engineSection{DSN: filepath.Join(t.TempDir(), "unused.sqlite")},
@@ -230,10 +212,7 @@ func TestNoEngineNamedIsMissingProvider(t *testing.T) {
 		t.Errorf("the startup failed for another reason than an unmet requirement\nstdout:\n%s\nstderr:\n%s",
 			got.stdout, got.stderr)
 	}
-	// Neither engine is in the command, so neither takes a stance: the failure
-	// is the requirement with no provider, and the command tree is what says
-	// what is absent rather than a diagnostic line about an engine that was
-	// never asked to run.
+	// Neither engine is in the command, so neither takes a stance: the failure is the requirement with no provider, and the command tree rather than a diagnostic names what is absent.
 	requireNoMentionOf(t, got, "db.sqlite")
 	requireNoMentionOf(t, got, "db.postgres")
 }

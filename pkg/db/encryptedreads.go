@@ -24,28 +24,17 @@ var (
 	timeType    = reflect.TypeFor[time.Time]()
 )
 
-// destination is what a query scans its columns into, as far as the serializer
-// is concerned.
 type destination int
 
 const (
-	// intoModel is the model itself, scanned through each field's serializer.
 	intoModel destination = iota
-	// intoStruct is another struct, scanned through its own fields' serializers.
 	intoStruct
-	// intoMap is a map, or a slice of them, keyed by column name.
 	intoMap
-	// intoText can hold what the column stores: a string, a byte slice, an
-	// interface, a scanner.
 	intoText
-	// intoOther cannot hold text: a number, a boolean, a time.
 	intoOther
 )
 
-// guardReads refuses a query that would scan an encrypted column into a
-// destination the serializer never reaches, where the ciphertext arrives as if
-// it were the value. What a query reads is taken from its Select, Omit and the
-// column a Pluck names; a selection around the sealed column goes through.
+// guardReads refuses a query that would scan an encrypted column into a destination the serializer never reaches, where the ciphertext arrives as the value. What a query reads is taken from its Select, Omit and the column a Pluck names; a selection around the sealed column goes through.
 func guardReads(tx *gorm.DB) {
 	st := tx.Statement
 	if tx.Error != nil || st.Schema == nil || st.Dest == nil {
@@ -60,15 +49,7 @@ func guardReads(tx *gorm.DB) {
 	}
 }
 
-// guardRowReads refuses a Row, Rows or Scan over the model that reads an
-// encrypted column. Those finishers run after the last callback, so the
-// destination is never on the statement; the one judgement left is over what
-// the statement reads. A Scan or Rows over the model into the model itself is
-// refused with the rest: use Find, First, Take or FindInBatches. A statement
-// naming no model is not judged, as this package does not parse SQL.
-//
-// A refused Row hands back a row that reports the refusal through Scan and Err
-// (see refusedRow), because a failed row step leaves the statement rowless.
+// guardRowReads refuses a Row, Rows or Scan over the model that reads an encrypted column, since those finishers run after the last callback and the destination is never on the statement. A Scan or Rows over the model into the model itself is refused too; use Find, First, Take or FindInBatches. A statement naming no model is not judged, and a refused Row hands back a row that reports the refusal through Scan and Err.
 func guardRowReads(tx *gorm.DB) {
 	st := tx.Statement
 	if tx.Error != nil || st.Schema == nil || st.SQL.Len() > 0 {
@@ -95,9 +76,7 @@ func guardRowReads(tx *gorm.DB) {
 	}
 }
 
-// refusedRow is a row whose Scan and Err report err. Only database/sql makes a
-// *sql.Row that carries an error, so one is asked of a pool whose connector
-// refuses every connection with err.
+// refusedRow is a row whose Scan and Err report err, asked of a pool whose connector refuses every connection with err.
 func refusedRow(err error) *sql.Row {
 	pool := sql.OpenDB(refusingConnector{err: err})
 	defer func() { _ = pool.Close() }()
@@ -153,10 +132,7 @@ func refuseUnsealedRead(st *gorm.Statement, sealed []*schema.Field) error {
 	return nil
 }
 
-// refuseRenamedRead refuses a read into a struct that takes an encrypted
-// column, or a value computed from it, under a name other than the column's
-// own: GORM fills that field without the serializer, so the ciphertext arrives
-// as its value. A field that cannot hold text is left to receive what it can.
+// refuseRenamedRead refuses a read into a struct that takes an encrypted column, or a value computed from it, under another name: GORM fills that field without the serializer, so the ciphertext arrives as its value. A field that cannot hold text is left alone.
 func refuseRenamedRead(st *gorm.Statement, dest *schema.Schema, sealed []*schema.Field) error {
 	items, known := selection(st)
 	if !known {
@@ -264,8 +240,7 @@ func classify(typ reflect.Type) (destination, reflect.Type) {
 	}
 }
 
-// reads reports whether the statement reads a field's column. unknownReads is
-// the answer when the statement carries no readable selection.
+// reads reports whether the statement reads a field's column. unknownReads is the answer when the statement carries no readable selection.
 func reads(st *gorm.Statement, field *schema.Field, unknownReads bool) bool {
 	items, known := selection(st)
 	if !known {
@@ -287,17 +262,13 @@ func reads(st *gorm.Statement, field *schema.Field, unknownReads bool) bool {
 	return false
 }
 
-// selected is one item of a statement's selection, as written, its result
-// column's name if set apart, and the item as GORM writes it into the statement.
 type selected struct {
 	text  string
 	alias string
 	sql   string
 }
 
-// selection collects a statement's selection items and reports whether it
-// carries one that can be read. A text naming several items is cut at its
-// top-level commas; native SQL carries none, as this package does not parse it.
+// selection collects a statement's selection items and reports whether it carries one that can be read. A text naming several items is cut at its top-level commas; native SQL carries none, as this package does not parse it.
 func selection(st *gorm.Statement) ([]selected, bool) {
 	if st.SQL.Len() > 0 {
 		return nil, false
@@ -333,10 +304,7 @@ func selection(st *gorm.Statement) ([]selected, bool) {
 	return items, len(items) > 0
 }
 
-// mentions reports whether a selection item reads a field's column. The
-// expression test is lexical, not a parse: it finds `email` in `lower(email)`
-// but not in `email_index`, and errs towards reading, which refuses rather than
-// leaks.
+// mentions reports whether a selection item reads a field's column. The expression test is lexical, not a parse: it finds `email` in `lower(email)` but not in `email_index`, and errs towards reading, which refuses rather than leaks.
 func mentions(st *gorm.Statement, item selected, field *schema.Field) bool {
 	text := strings.TrimSpace(item.sql)
 	if text == "*" || strings.HasSuffix(text, ".*") {

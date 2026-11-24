@@ -8,8 +8,6 @@ import (
 	"testing"
 )
 
-// registryReport is what testdata/rootimport reports about the process it runs
-// in.
 type registryReport struct {
 	Modules   []string `json:"modules"`
 	Routers   []string `json:"routers"`

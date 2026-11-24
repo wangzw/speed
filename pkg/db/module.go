@@ -17,11 +17,7 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// Spec is what an implementation subpackage hands this package to become a
-// module: its name, engine, configuration namespace, driver binding, how its
-// driver reports a constraint refusal, which locators name a database private
-// to one connection, and a cross-process migration mutex when its engine
-// appears in multi-replica deployments.
+// Spec is what an implementation subpackage hands this package to become a module: its name, engine, configuration namespace, driver binding, constraint-refusal classification, connection-scoped locators, and a cross-process migration mutex when its engine appears in multi-replica deployments.
 type Spec struct {
 	// ModuleName is this implementation's name in the registry, its identity in
 	// startup diagnostics and enablement lookups. A product carries the name of
@@ -36,17 +32,9 @@ type Spec struct {
 	Dialect Dialect
 	// Dialector binds this engine's driver to a connection locator.
 	Dialector func(dsn string) gorm.Dialector
-	// ConstraintViolation returns gorm.ErrDuplicatedKey when a unique
-	// constraint refused the statement, gorm.ErrForeignKeyViolated when a
-	// foreign key did, and nil for anything else, looking through wrapping as
-	// errors.As does. It is mandatory.
+	// ConstraintViolation returns gorm.ErrDuplicatedKey when a unique constraint refused the statement, gorm.ErrForeignKeyViolated when a foreign key did, and nil for anything else, looking through wrapping as errors.As does. It is mandatory.
 	ConstraintViolation func(err error) error
-	// ConnectionScoped reports whether a locator names a database that belongs
-	// to the one connection opening it, such as SQLite's in-memory and
-	// temporary databases. Every handle opened on such a locator is held to a
-	// single connection that is never replaced. The locator handed in is the
-	// trimmed one the driver receives. An engine with no such locator leaves it
-	// nil.
+	// ConnectionScoped reports whether a locator names a database that belongs to the one connection opening it, such as SQLite's in-memory and temporary databases: every handle opened on it is held to a single connection that is never replaced. The locator is the trimmed one the driver receives; an engine with no such locator leaves it nil.
 	ConnectionScoped func(dsn string) bool
 	// NewMigrationLock builds the cross-process mutex the migration run is held
 	// under, bounded by the configured timeout. Leaving it nil runs without a
@@ -241,11 +229,7 @@ func closeInstance(instance any) error {
 	return Close(handle)
 }
 
-// deliveredHandle takes the handle out of an instance of the capability, or
-// reports nothing to release. The nil test is by reflection because a typed nil
-// pointer in an interface is not the nil interface. The host's DB may panic, and
-// a panic out of this cleanup would take the rollback's own error with it, so
-// it is guarded here.
+// deliveredHandle takes the handle out of an instance of the capability, or reports nothing to release. The nil test is by reflection because a typed nil pointer in an interface is not the nil interface. The host's DB may panic, and a panic out of this cleanup would take the rollback's own error with it, so it is guarded here.
 func deliveredHandle(instance any) (handle *gorm.DB, ok bool) {
 	product, isDatabase := instance.(Database)
 	if !isDatabase {

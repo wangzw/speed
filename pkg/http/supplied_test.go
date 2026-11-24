@@ -10,11 +10,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// The tests in this file are about an instance a host supplies for this module
-// itself, to stand where the router its New builds would stand. Prepare and New
-// do not run for it, and every callback from Migrate to Close is handed it. The
-// callbacks recognise only the router this module builds, so what these tests
-// observe is what an instance of any other type is left to.
+// The tests in this file are about an instance a host supplies for this module, standing where the router its New builds would stand: Prepare and New do not run for it, every callback from Migrate to Close is handed it, and the callbacks recognise only the router this module builds.
 
 type foreignRouter struct{ label string }
 
@@ -22,8 +18,6 @@ func (f *foreignRouter) Endpoint(name string) (Endpoint, error) {
 	return nil, fmt.Errorf("%w: %q (%s)", ErrUnknownEndpoint, name, f.label)
 }
 
-// Endpoints reports no names, which is what a router that hands out no endpoint
-// declares.
 func (f *foreignRouter) Endpoints() []string { return nil }
 
 var _ Router = (*foreignRouter)(nil)

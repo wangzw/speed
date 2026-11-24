@@ -1,10 +1,4 @@
-// Package db provides database access: the capability modules take up, the
-// resource types they declare migrations and plugins through, and the
-// connection, plugin, encryption and migration logic the implementation
-// subpackages share.
-//
-// The calling surface is GORM's *gorm.DB: this package wraps GORM rather than
-// abstracting it.
+// Package db provides database access: the capability modules take up, the resource types they declare migrations and plugins through, and the logic the implementation subpackages share. The calling surface is GORM's *gorm.DB, which this package wraps rather than abstracts.
 package db
 
 import (
@@ -14,12 +8,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// Dialect names a database engine. The set is closed: each implementation
-// subpackage fixes one value, and a new engine adds a value here alongside its
-// subpackage.
-//
-// A value is also the name of the subdirectory a migration set keeps that
-// engine's files in, so it has to stay a single path element.
+// Dialect names a database engine. The set is closed: each implementation subpackage fixes one value, and a new engine adds a value here beside its subpackage. A value is also the name of a migration set's subdirectory for that engine.
 type Dialect string
 
 const (
@@ -40,27 +29,9 @@ type Database interface {
 	// native SQL branch on it, because placeholder syntax and function names
 	// differ between engines.
 	Dialect() Dialect
-	// BlindIndex returns the deterministic digest of a plaintext, for a
-	// column an equality query can match: a field encrypted with the
-	// encrypted serializer cannot be matched by equality, so a model found by
-	// such a field carries a second column holding this digest.
-	//
-	// The digest is computed over the plaintext as given, with no
-	// normalisation, and the caller fills the column: a row written without it
-	// is still written, but an equality query against that column finds
-	// nothing instead of failing.
-	//
-	// It panics when the instance holds no encryption key.
+	// BlindIndex returns the deterministic digest of a plaintext, for the column an equality query matches. It is computed over the plaintext as given, with no normalisation, and the caller fills the column: a row written without it is still written, but an equality query against it finds nothing rather than failing. It panics when the instance holds no encryption key.
 	BlindIndex(plaintext string) string
-	// Open establishes an additional connection to another database,
-	// assembled like the delivered handle: same dialect, declared plugins,
-	// encryption serializer and logger, and the same connection pool
-	// parameters, except that a locator naming a database private to one
-	// connection, such as SQLite's :memory:, gets a pool of one.
-	//
-	// It carries no migrations and this module does not hold it: the caller
-	// closes it with Close in its own Close stage. A blank locator is refused
-	// with ErrConnectFailed. The connection attempt is bound to ctx.
+	// Open establishes an additional connection to another database, assembled like the delivered handle but carrying no migrations; the caller closes it with Close in its own Close stage. A locator naming a database private to one connection gets a pool of one. A blank locator is refused with ErrConnectFailed, and the attempt is bound to ctx.
 	Open(ctx context.Context, dsn string) (*gorm.DB, error)
 }
 

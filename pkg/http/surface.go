@@ -127,10 +127,7 @@ type Middleware struct {
 
 // Spec is the resource type a module declares its own OpenAPI fragment as.
 type Spec struct {
-	// Endpoint names the listening endpoint whose API this fragment
-	// describes. A name that was never declared is not an error: a resource
-	// is a static declaration, and this module does not interpret what it
-	// describes.
+	// Endpoint names the listening endpoint whose API this fragment describes. A name that was never declared is not an error: a resource is a static declaration, and this module does not interpret what it describes.
 	Endpoint string
 	// Prefix is the path the endpoint serves its API under, written as bare segments:
 	// "api", or "internal/api" for a nested prefix.

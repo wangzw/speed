@@ -112,8 +112,6 @@ func TestARawColumnThisModuleCannotReadIsRefused(t *testing.T) {
 	}
 }
 
-// titledModel has a column whose name is also a field name, which is what lets
-// GORM resolve another struct's field onto it by that field's name.
 type titledModel struct {
 	ID    uint
 	Title string `gorm:"column:Title"`
@@ -164,12 +162,9 @@ type spelledLastModel struct {
 	Shadow string `gorm:"column:EMAIL"`
 }
 
-// TableName is the one table the spelled models write into.
 func (spelledLastModel) TableName() string { return "spelled_models" }
 
-// createSpelledTable brings up the table both spelled models write into: the
-// one email column their two fields reach. AutoMigrate cannot build it, since
-// SQLite refuses a table whose column names differ only in letter case.
+// createSpelledTable brings up the table both spelled models write into: AutoMigrate cannot build it, since SQLite refuses a table whose column names differ only in letter case.
 func createSpelledTable(t *testing.T, product *database) {
 	t.Helper()
 	if err := product.DB().Exec("CREATE TABLE spelled_models (id INTEGER PRIMARY KEY, email TEXT)").Error; err != nil {
@@ -177,8 +172,7 @@ func createSpelledTable(t *testing.T, product *database) {
 	}
 }
 
-// storedEmail is what the email column of one spelled row holds, read around
-// the model: "absent" when there is no such row.
+// storedEmail is what the email column of one spelled row holds, read around the model: "absent" when there is no such row.
 func storedEmail(t *testing.T, product *database, id uint) string {
 	t.Helper()
 	var stored []sql.NullString

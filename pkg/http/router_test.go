@@ -37,8 +37,6 @@ func endpointOf(t *testing.T, r *router, name string) Endpoint {
 	return e
 }
 
-// mustContain fails with the whole text when a fragment the message has to
-// carry is missing.
 func mustContain(t *testing.T, text, fragment, why string) {
 	t.Helper()
 	if !strings.Contains(text, fragment) {
@@ -57,10 +55,7 @@ func TestRouteBeforeGateOpensPanics(t *testing.T) {
 	mustContain(t, text, "public", "the endpoint the call was made on")
 	mustContain(t, text, "before the registration gate opened", "which side of the window the call fell on")
 	mustContain(t, text, "this module's Migrate callback", "where the window that accepts writes opens")
-	// The last two fragments are read as a pair. The action phrase is the same
-	// on both sides of the gate, so on its own it places the call on neither;
-	// the sentence naming what the open window frames is what ties it to this
-	// side.
+	// The last two fragments are read as a pair: the action phrase is the same on both sides of the gate, so on its own it places the call on neither, and the sentence naming what the open window frames ties it to this side.
 	mustContain(t, text, "contains the whole Init stage", "what the surface's open window frames")
 	mustContain(t, text, "Move the call into the module's Init callback", "the fixing action")
 }

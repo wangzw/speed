@@ -321,10 +321,7 @@ type longNamedContact struct {
 	Secret string `gorm:"column:a_sealed_column_whose_name_runs_on_past_what_this_engine_keeps_of_it;serializer:encrypted"`
 }
 
-// longNamedView declares the sealed column under the name this engine keeps of
-// it, which is the name this engine gives the column in a result: GORM cannot
-// scan the column back into longNamedContact, whose field carries the whole
-// name, so a case reads the row through this struct.
+// longNamedView declares the sealed column under the name this engine keeps of it, which is the name the engine gives it in a result: GORM cannot scan the column back into longNamedContact, whose field carries the whole name.
 type longNamedView struct {
 	ID     uint
 	Secret string `gorm:"column:a_sealed_column_whose_name_runs_on_past_what_this_engine_keeps_;serializer:encrypted"`

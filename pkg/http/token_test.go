@@ -11,10 +11,7 @@ type probe interface{ Probe() }
 
 type concreteProbe struct{}
 
-// wantPanic runs fn and returns the panic text, failing when fn returns
-// normally. The text is handed back rather than asserted here: this module
-// panics where the mistake is a call-site one, and a refusal that says nothing
-// about which call was refused leaves the author exactly where they were.
+// wantPanic runs fn and returns the panic text, failing when fn returns normally. The text is handed back rather than asserted here: this module panics where the mistake is a call-site one, and a refusal that says nothing about which call was refused leaves the author where they were.
 func wantPanic(t *testing.T, what string, fn func()) string {
 	t.Helper()
 	var text string
