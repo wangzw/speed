@@ -1,21 +1,3 @@
-/**
- * AppShell in a real browser: the geometry and focus-order invariants
- * jsdom cannot answer.
- *
- * The unit suite proves the measured-spacer mechanism by feeding a
- * stubbed ResizeObserver a height. These cases measure the real thing in
- * Chromium: the fixed head's rendered height (app bar + banner), each
- * spacer placeholding exactly that height, the content immediately below
- * the head being hit by a point put there, and the skip link being the
- * first Tab stop. They run across the shell's three viewport classes --
- * narrow (temporary drawer), md (permanent drawer), lg -- and three
- * banner heights, because the head's height changes with both. A
- * collapsed sidebar case covers the narrow rail.
- *
- * Assertions are invariants with a one-pixel tolerance for subpixel
- * rounding, never pixel comparisons: the head height is rounded by the
- * component before it reaches the spacer.
- */
 import type { ReactElement } from 'react'
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
@@ -33,14 +15,12 @@ import { renderWithProviders } from '../../test-utils/render.js'
 import type { LayoutKitRenderOptions } from '../../test-utils/render.js'
 import enUS from '../locales/en-US.json' with { type: 'json' }
 
-/** The shipped en-US app-shell strings the cases assert on. */
 const SKIP_TO_CONTENT = enUS.appShell.skipToContent
 const OPEN_NAV = enUS.appShell.openNav
 const NAV_LABEL = enUS.appShell.navLabel
 
 const VIEWPORT_HEIGHT = 900
 
-/** AppShell's default sidebar width (private to the component). */
 const DEFAULT_SIDEBAR_WIDTH = 280
 
 const VIEWPORTS = [
@@ -55,8 +35,6 @@ const NAV_ITEMS: readonly AppShellNavItem[] = [
   { id: 'home', label: 'Home', href: '/home', selected: true },
 ]
 
-/** Render in en-US: the geometry stays Latin-only, so the pinned Arial /
- * Liberation Sans metrics are the only font participating. */
 function renderShell(
   ui: ReactElement,
   options: Omit<LayoutKitRenderOptions, 'language' | 'i18n'> = {},
@@ -64,8 +42,6 @@ function renderShell(
   return renderWithProviders(ui, { language: 'en-US', ...options })
 }
 
-/** The banner slot's host content, with an explicit height: the head's
- * height is exactly app bar + this node. */
 function Banner({ height }: { readonly height: number }) {
   return (
     <div data-testid="banner" style={{ height, backgroundColor: '#f0c040' }}>
@@ -74,8 +50,6 @@ function Banner({ height }: { readonly height: number }) {
   )
 }
 
-/** The fixed head container: the AppBar's parent, one element holding the
- * app bar first and the banner after it. */
 function fixedHead(): HTMLElement {
   const header = screen.getByRole('banner')
   const head = header.parentElement
@@ -85,8 +59,6 @@ function fixedHead(): HTMLElement {
   return head
 }
 
-/** The spacer inside `main`: the first Toolbar child of the content
- * landmark. */
 function mainSpacer(): HTMLElement {
   const main = screen.getByRole('main')
   const spacer = main.querySelector<HTMLElement>(
@@ -98,7 +70,6 @@ function mainSpacer(): HTMLElement {
   return spacer
 }
 
-/** The spacer inside the mounted drawer paper. */
 function drawerSpacer(): HTMLElement {
   const paper = document.querySelector<HTMLElement>(
     `.${drawerClasses.paper}`,
@@ -115,9 +86,6 @@ function drawerSpacer(): HTMLElement {
   return spacer
 }
 
-/** Wait for the ResizeObserver measurement to reach the spacer: the
- * inline height is the measured branch, so its presence is the event
- * these cases wait on. */
 async function waitForMeasuredSpacer(spacer: HTMLElement): Promise<void> {
   await waitFor(() => {
     expect(spacer.style.minHeight).not.toBe('')
@@ -151,24 +119,18 @@ describe('AppShell geometry in Chromium', () => {
         const bannerRect = banner.getBoundingClientRect()
         const spacerRect = spacer.getBoundingClientRect()
 
-        // The slot renders exactly the host height, and the head is the
-        // app bar plus the banner -- no padding or minimum height of its
-        // own.
         expect(bannerRect.height).toBeCloseTo(bannerHeight, 0)
         expect(headRect.height).toBeCloseTo(
           headerRect.height + bannerRect.height,
           0,
         )
 
-        // Every spacer placeholders the head's measured height.
         expect(spacerRect.height).toBeCloseTo(headRect.height, 0)
         expect(drawerSpacer().getBoundingClientRect().height).toBeCloseTo(
           headRect.height,
           0,
         )
 
-        // A point just below the head hits the content itself, not the
-        // fixed head overlaying it.
         const probe = screen.getByTestId('probe')
         const probeRect = probe.getBoundingClientRect()
         expect(probeRect.top).toBeGreaterThanOrEqual(headRect.bottom - 0.5)
@@ -179,8 +141,6 @@ describe('AppShell geometry in Chromium', () => {
         expect(hit).not.toBeNull()
         expect(probe.contains(hit as Node)).toBe(true)
 
-        // The viewport class selects the drawer variant: a menu button
-        // only where the temporary drawer is mounted.
         const menuButton = screen.queryByRole('button', { name: OPEN_NAV })
         if (viewport.desktop) {
           expect(menuButton).toBeNull()
@@ -191,7 +151,6 @@ describe('AppShell geometry in Chromium', () => {
           ).toBeCloseTo(DEFAULT_SIDEBAR_WIDTH, 0)
         } else {
           expect(menuButton).not.toBeNull()
-          // The temporary paper is capped to min(sidebarWidth, 85vw).
           const paperWidth =
             document.querySelector<HTMLElement>(`.${drawerClasses.paper}`)
               ?.getBoundingClientRect().width ?? 0
@@ -231,8 +190,6 @@ describe('AppShell geometry in Chromium', () => {
     `.${drawerClasses.paper}`,
   )
     expect(paper).not.toBeNull()
-    // The rail is the theme spacing base times seven (56px), never zero:
-    // the drawer stays a real nav landmark.
     expect(paper?.getBoundingClientRect().width).toBeGreaterThan(0)
     expect(paper?.getBoundingClientRect().width).toBeLessThan(
       DEFAULT_SIDEBAR_WIDTH,
@@ -276,9 +233,6 @@ describe('AppShell geometry in Chromium', () => {
   })
 
   it('keeps the temporary drawer focus trap holding on the mobile layout', async () => {
-    // The unit suite's open-drawer scan cannot press Tab, so its
-    // aria-hidden-focus result is indeterminate; this case exercises the real
-    // keyboard and decides it (see @speed/test-utils/axe).
     await page.viewport(400, VIEWPORT_HEIGHT)
     renderShell(
       <AppShell navItems={NAV_ITEMS}>
@@ -328,15 +282,11 @@ describe('AppShell drawer slots in Chromium', () => {
     const footerRect = footer.getBoundingClientRect()
     const paperRect = (paper as HTMLElement).getBoundingClientRect()
 
-    // Each slot renders exactly its host height, and the two are adjacent
-    // to the landmark -- no wrapper gap between them.
     expect(headerRect.height).toBeCloseTo(40, 0)
     expect(footerRect.height).toBeCloseTo(48, 0)
     expect(headerRect.bottom).toBeCloseTo(navRect.top, 0)
     expect(footerRect.top).toBeCloseTo(navRect.bottom, 0)
 
-    // Both live inside the drawer paper and inside its width, and neither
-    // is part of the landmark.
     for (const rect of [headerRect, navRect, footerRect]) {
       expect(rect.left).toBeGreaterThanOrEqual(paperRect.left - 0.5)
       expect(rect.right).toBeLessThanOrEqual(paperRect.right + 0.5)
@@ -379,7 +329,6 @@ describe('AppShell drawer slots in Chromium', () => {
     const nav = screen.getByRole('navigation', { name: NAV_LABEL })
     const header = screen.getByTestId('nav-header')
     const footer = screen.getByTestId('nav-footer')
-    // The temporary drawer is never the collapsed rail.
     expect(header.textContent).toBe('full')
     expect(header.getBoundingClientRect().bottom).toBeCloseTo(
       nav.getBoundingClientRect().top,
@@ -402,7 +351,6 @@ describe('AppShell drawer slots in Chromium', () => {
 describe('AppShell sidebar layout in Chromium', () => {
   const GLASS_FILTER = 'blur(18px) saturate(180%)'
 
-  /** Enough entries to overflow the nav's share of the drawer height. */
   const SCROLLING_NAV_ITEMS: readonly AppShellNavItem[] = Array.from(
     { length: 60 },
     (_, index) => ({
@@ -412,7 +360,6 @@ describe('AppShell sidebar layout in Chromium', () => {
     }),
   )
 
-  /** The mounted drawer paper (one per shell render). */
   function drawerPaper(): HTMLElement {
     const paper = document.querySelector<HTMLElement>(
       `.${drawerClasses.paper}`,
@@ -429,13 +376,7 @@ describe('AppShell sidebar layout in Chromium', () => {
     userMenu: <button type="button">Account</button>,
   } as const
 
-  /** Icon-sized actions for the rail: a host control wider than the rail is
-   * the host's own layout concern (the slot stacks vertically but AppShell
-   * does not resize it). */
   const RAIL_CHROME = {
-    // A role-bearing brand: the rail clips it visually, but a screen
-    // reader must still find it. `getByRole` filters hidden elements, so
-    // this fixture is what makes the visibility assertion discriminating.
     header: <a href="/home">Speed Admin</a>,
     headerActions: (
       <button
@@ -487,8 +428,6 @@ describe('AppShell sidebar layout in Chromium', () => {
     expect(icon).not.toBeNull()
     const box = (icon as SVGSVGElement).getBoundingClientRect()
     const drawn = (icon as SVGSVGElement).querySelector('path') as SVGPathElement
-    // The glyph is drawn inside its own box with a few pixels of inset, so the
-    // brand starts on the drawn edge rather than on the box's.
     expect(brand.left).toBeCloseTo(box.left + drawn.getBBox().x, 0)
   })
 
@@ -503,9 +442,6 @@ describe('AppShell sidebar layout in Chromium', () => {
     const brand = screen.getByText('Brand')
     const topRow = brand.parentElement?.parentElement as HTMLElement | null
     expect(topRow).not.toBeNull()
-    // The rule is the theme's own Divider -- the same component and recipe the
-    // account row uses at the paper's bottom -- so it carries that theme's
-    // border rather than a border drawn on the row itself.
     const divider = (topRow as HTMLElement).nextElementSibling as HTMLElement | null
     expect(divider).not.toBeNull()
     const style = getComputedStyle(divider as HTMLElement)
@@ -531,7 +467,6 @@ describe('AppShell sidebar layout in Chromium', () => {
       </AppShell>,
     )
 
-    // No fixed head, so neither main nor its content is pushed down.
     expect(screen.getByRole('main').getBoundingClientRect().top).toBeCloseTo(
       0,
       0,
@@ -550,8 +485,6 @@ describe('AppShell sidebar layout in Chromium', () => {
       expect(window.scrollY).toBeGreaterThan(0)
     })
 
-    // The paper is position: fixed, so the content scroll leaves it --
-    // and the brand inside it -- exactly where it was.
     const paperAfter = paper.getBoundingClientRect()
     expect(paperAfter.top).toBeCloseTo(paperBefore.top, 0)
     expect(paperAfter.left).toBeCloseTo(paperBefore.left, 0)
@@ -579,8 +512,6 @@ describe('AppShell sidebar layout in Chromium', () => {
       const mainSpacerElement = mainSpacer()
       await waitForMeasuredSpacer(mainSpacerElement)
 
-      // The head holds the banner alone; its measured height is the
-      // banner's height, and both spacers reserve exactly that.
       expect(bannerRect.top).toBeCloseTo(0, 0)
       expect(
         mainSpacerElement.getBoundingClientRect().height,
@@ -590,10 +521,6 @@ describe('AppShell sidebar layout in Chromium', () => {
         0,
       )
 
-      // Main's content starts exactly at the banner's bottom edge. The
-      // drawer's content starts there too, one pixel lower only because
-      // the drawer paper's own surface border sits inside its top edge --
-      // the spacer above the top row is exactly the head height.
       expect(
         screen.getByTestId('probe').getBoundingClientRect().top,
       ).toBeCloseTo(bannerRect.bottom, 0)
@@ -630,14 +557,10 @@ describe('AppShell sidebar layout in Chromium', () => {
     const bottomRow = account.parentElement as HTMLElement
     const bottomRowRect = bottomRow.getBoundingClientRect()
 
-    // The bottom row's edge is the paper's edge (the row, not the
-    // button: the row carries the padding).
     expect(Math.abs(bottomRowRect.bottom - paperRect.bottom)).toBeLessThanOrEqual(1)
     expect(Math.abs(bottomRowRect.left - paperRect.left)).toBeLessThanOrEqual(1)
     expect(Math.abs(bottomRowRect.right - paperRect.right)).toBeLessThanOrEqual(1)
 
-    // The nav fills everything between the top row and the bottom row,
-    // and its own overflow is what scrolls -- not the paper.
     const nav = screen.getByRole('navigation', { name: NAV_LABEL })
     expect(getComputedStyle(nav).overflowY).toBe('auto')
     expect(nav.scrollHeight).toBeGreaterThan(nav.clientHeight)
@@ -668,20 +591,12 @@ describe('AppShell sidebar layout in Chromium', () => {
 
     const paper = drawerPaper()
     const paperRect = paper.getBoundingClientRect()
-    // The rail is the theme's 56px (its 1px divider included), wide
-    // enough for a 40px control on either side of it.
     expect(paper.scrollWidth).toBeLessThanOrEqual(paper.clientWidth)
     expect(
       screen.getByRole('button', { name: enUS.appShell.expandNav }),
     ).toBeInTheDocument()
-    // The brand is clipped by `overflow: hidden`, not removed: it stays in
-    // the accessibility tree, so a screen-reader user can still identify
-    // the product from the rail. A display:none / visibility:hidden /
-    // aria-hidden implementation would drop it from `getByRole`.
     const brand = screen.getByRole('link', { name: 'Speed Admin' })
     expect(brand).toBeInTheDocument()
-    // Nothing of the brand paints in the rail: a box that only shrinks past
-    // its text leaves a clipped half-glyph at the paper's edge.
     expect(
       (brand.parentElement as HTMLElement).getBoundingClientRect().width,
     ).toBeCloseTo(0, 0)
@@ -697,11 +612,7 @@ describe('AppShell sidebar layout in Chromium', () => {
 
   it('keeps the collapsed rail wide enough for its controls and their focus ring under a dense spacing base', async () => {
     await page.viewport(1280, VIEWPORT_HEIGHT)
-    // The focus ring a control draws when focused: a 2px outline offset by
-    // 2px, so the rail has to clear that much on the sides the ring reaches.
     const RING_REACH = 4
-    // Two controls at the touch-target minimum, as siblings: the shell
-    // stacks them in the rail instead of laying them out in a row.
     const control = (label: string) => (
       <button
         type="button"
@@ -730,8 +641,6 @@ describe('AppShell sidebar layout in Chromium', () => {
             <h1>content</h1>
           </div>
       </AppShell>,
-      // A dense preset's spacing base: 7 x 6 = 42px, so the rail renders at
-      // its floor rather than at the derived width.
       { projectTokens: { spacing: { unit: 6 } } },
     )
 
@@ -753,8 +662,6 @@ describe('AppShell sidebar layout in Chromium', () => {
         RING_REACH - 0.5,
       )
     }
-    // Stacked, not side by side: a row of two would put the second control
-    // past the paper's right edge.
     expect(colour.top).toBeGreaterThanOrEqual(search.bottom - 0.5)
   })
 
@@ -770,8 +677,6 @@ describe('AppShell sidebar layout in Chromium', () => {
       </AppShell>,
     )
 
-    // The minimal top bar carries the brand; the temporary drawer has no
-    // top row, so the brand appears exactly once.
     expect(screen.getAllByText('Speed Admin')).toHaveLength(1)
 
     await userEvent.click(screen.getByRole('button', { name: OPEN_NAV }))
@@ -792,10 +697,6 @@ describe('AppShell sidebar layout in Chromium', () => {
   })
 
   it('keeps the sidebar minimal top bar on the theme gutter below md', async () => {
-    // The two-band header fix tightens the topbar shape's own spacing. The
-    // sidebar shape's minimal bar (the drawer trigger and the brand only)
-    // has no width pressure, so it keeps the theme's two-step gutter: the
-    // space after the trigger is a full spacing step, not the topbar's half.
     await page.viewport(400, VIEWPORT_HEIGHT)
     renderShell(
       <AppShell
@@ -811,17 +712,10 @@ describe('AppShell sidebar layout in Chromium', () => {
       .getByRole('button', { name: OPEN_NAV })
       .getBoundingClientRect()
     const brandRect = screen.getByText('Speed Admin').getBoundingClientRect()
-    // theme.spacing(2) with the default 8px base, allowing for subpixel
-    // rounding.
     expect(Math.abs(brandRect.left - toggleRect.right - 16)).toBeLessThanOrEqual(1)
   })
 
   it('anchors the fixed head, the drawer paper and a side panel under backdrop-filtered surfaces', async () => {
-    // The glass preset expresses its translucency through
-    // `surface.*.backdropFilter`; a backdrop filter makes its element a
-    // containing block for `position: fixed` descendants, so the shell's
-    // own fixed surfaces are measured here rather than assumed. The
-    // override writes the same token fields the preset does.
     await page.viewport(1280, VIEWPORT_HEIGHT)
     renderShell(
       <AppShell
@@ -850,8 +744,6 @@ describe('AppShell sidebar layout in Chromium', () => {
       },
     )
 
-    // The fixed head stays pinned to the viewport's top edge at full
-    // width -- the banner slot is its only child in this layout.
     const banner = screen.getByTestId('banner')
     const head = banner.parentElement?.parentElement as HTMLElement
     const headRect = head.getBoundingClientRect()
@@ -859,14 +751,10 @@ describe('AppShell sidebar layout in Chromium', () => {
     expect(headRect.left).toBeCloseTo(0, 0)
     expect(headRect.right).toBeCloseTo(window.innerWidth, 0)
 
-    // The shell's permanent drawer paper is still anchored to the left
-    // edge at its declared width.
     const paperRect = drawerPaper().getBoundingClientRect()
     expect(paperRect.left).toBeCloseTo(0, 0)
     expect(paperRect.width).toBeCloseTo(DEFAULT_SIDEBAR_WIDTH, 0)
 
-    // The side panel (a fixed, right-anchored overlay rendered inside
-    // main) still spans the viewport height and hugs the right edge.
     const panelPaper = document.querySelector<HTMLElement>(
       `.${drawerClasses.paper}[role="dialog"]`,
     )
@@ -883,14 +771,6 @@ describe('AppShell sidebar layout in Chromium', () => {
   })
 })
 
-/**
- * The narrow header: the brand and the six controls the tenant-facing
- * chrome puts in the app bar (notification bell, language switch, colour
- * mode, console entry, tenant switcher, account avatar), at their real
- * sizes. The labels are host content -- data in this fixture, not copy
- * AppShell renders -- so they stand in for the demo's own translated
- * strings, as the surrounding host-content fixtures do.
- */
 const NARROW_HEADER_LABELS = {
   brand: 'Speed demo',
   notifications: 'Notifications',
@@ -901,8 +781,6 @@ const NARROW_HEADER_LABELS = {
   account: 'Ada Lovelace',
 } as const
 
-/** One narrow-header control in its icon form: the glyph is decorative,
- * and the accessible name is what the shell has to keep reachable. */
 function GlyphButton({
   label,
   glyph,
@@ -917,7 +795,6 @@ function GlyphButton({
   )
 }
 
-/** The app bar the tenant-facing shell fills: brand plus the six controls. */
 function narrowHeaderShell(): ReactElement {
   return (
     <AppShell
@@ -959,18 +836,8 @@ function narrowHeaderShell(): ReactElement {
   )
 }
 
-/** The tolerance a pair of controls on one band may differ by. The
- * Toolbar centers its items, so every control on a row shares a vertical
- * center exactly; members of another row are a whole row height away. The
- * tolerance only absorbs subpixel rounding. */
 const ROW_CENTER_TOLERANCE_PX = 4
 
-/**
- * The number of vertical bands the header's content occupies: the brand
- * and every control, clustered by their vertical center. The brand is
- * counted because a brand alone on a band is still a band the header
- * takes, which is exactly the arrangement this invariant rules out.
- */
 function headerBands(): number {
   const header = screen.getByRole('banner')
   const toolbar = header.querySelector<HTMLElement>(`.${toolbarClasses.root}`)
@@ -1006,9 +873,6 @@ describe('AppShell narrow header rows in Chromium', () => {
 
       expect(headerBands(), `bands at ${width}`).toBeLessThanOrEqual(2)
 
-      // Every control stays in the accessibility tree with its name: the
-      // role queries skip hidden elements, so a control that was folded
-      // away, aria-hidden or made untabbable would fail here.
       for (const name of [
         NARROW_HEADER_LABELS.notifications,
         NARROW_HEADER_LABELS.language,
@@ -1041,8 +905,6 @@ describe('AppShell focus order in Chromium', () => {  it('makes the skip link th
       </AppShell>,
     )
 
-    // Start from the document, not from whatever the previous case left
-    // focused.
     ;(document.activeElement as HTMLElement | null)?.blur()
     document.body.focus()
 
@@ -1054,7 +916,6 @@ describe('AppShell focus order in Chromium', () => {  it('makes the skip link th
       'a',
     )
     expect(active?.textContent).toBe(SKIP_TO_CONTENT)
-    // The skip link precedes every control inside the fixed head.
     expect(active?.getAttribute('href')).toMatch(/^#/)
 
     await userEvent.keyboard('{Enter}')
@@ -1064,7 +925,6 @@ describe('AppShell focus order in Chromium', () => {  it('makes the skip link th
   })
 })
 
-/** A bottom-slot probe: the element the footer placement is measured on. */
 function FooterProbe() {
   return (
     <div
@@ -1076,7 +936,6 @@ function FooterProbe() {
   )
 }
 
-/** How far the footer's bottom edge sits above the drawer paper's bottom. */
 function footerGap(): number {
   const paper = document.querySelector<HTMLElement>(`.${drawerClasses.paper}`)
   const footer = screen.getByTestId('nav-footer')

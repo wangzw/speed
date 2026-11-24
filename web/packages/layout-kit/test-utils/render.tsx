@@ -1,42 +1,3 @@
-/**
- * Shared DOM-test harness for layout-kit packages' tests.
- *
- * renderWithProviders mounts a unit under the tree a real host builds:
- * I18nextProvider (both the layout-kit and ui-kit namespaces'
- * translations need it -- RouteGuard's default deniedFallback reuses
- * ui-kit's EmptyState) around ui-kit's own AppThemeProvider, the same
- * theme runtime every real host composes rather than a second,
- * hand-rolled one. AppShell only reads `theme.breakpoints` /
- * `theme.zIndex`, both MUI-identical to the speed token defaults, so
- * this is a faithful stand-in for what a real host renders even though
- * this package takes no *direct* dependency on @speed/tokens itself.
- *
- * The provider tree is passed as the RTL `wrapper` option, not wrapped
- * around `ui` by hand: RTL re-wraps a `rerender(ui)` call in the very
- * same wrapper it rendered with, so a rerendered unit stays inside the
- * providers and React reconciles it in place. A hand-wrapped tree
- * instead gets REPLACED by the bare rerendered `ui` (the wrapper was
- * applied outside RTL's knowledge), which unmounts the providers and
- * remounts the unit -- a fresh instance whose refs and state reset on
- * the first rerender. RouteGuard's transition tests depend on rerenders
- * that preserve the instance (its effect ref is what dedupes the
- * denied-transition firing), so the scaffold has to keep the tree shape
- * stable across rerenders.
- *
- * The i18n instance is created per call through the shared
- * createTestI18n (see @speed/test-utils/render's header), with both
- * namespaces registered.
- *
- * A test that really needs a fresh mount changes the unit's `key`: the
- * element type and position stay the same, so only the keyed unit
- * remounts, while the provider tree and its i18n instance both survive.
- * Unmounting the tree with the result's `unmount` and calling
- * renderWithProviders again is the other way to start over, and it does
- * start over: the new call builds a fresh i18n instance unless the test
- * passes its own. Pick the first when only the unit should reset, the
- * second when the whole provider stack should.
- */
-
 import { render } from '@testing-library/react'
 import type { ReactElement, ReactNode } from 'react'
 import { I18nextProvider, registerNamespace } from '@speed/i18n'
@@ -54,14 +15,7 @@ import { LAYOUT_KIT_NAMESPACE, layoutKitResources } from '../src/resources.js'
 
 export type { RenderWithProvidersOptions, RenderWithProvidersResult }
 
-/**
- * The layout-kit harness's options: the shared language/i18n pair plus
- * the project token layer, so a case can render the shell under a theme
- * whose spacing base or surfaces differ from the defaults (the rail's
- * width floor, the glass geometry case).
- */
 export interface LayoutKitRenderOptions extends RenderWithProvidersOptions {
-  /** Project-layer token overrides applied over the speed defaults. */
   readonly projectTokens?: AppThemeProviderProps['projectTokens']
 }
 

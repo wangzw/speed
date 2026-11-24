@@ -1,21 +1,3 @@
-/**
- * The README usage example, compiled and executed by the suite.
- *
- * The README's Quick start composes an AppShell around a
- * RouteGuard-wrapped content region, backed by a local `useState`
- * standing in for the authorization source a real host wires itself
- * (layout-kit depends on no auth package; the gate status is host
- * territory by contract). This file renders
- * that exact composition through the same host tree
- * (renderWithProviders) and asserts what it shows, so the documented
- * usage cannot drift from the API -- the package suite compiles and
- * runs it. Host-content strings (nav labels, the app title) are English
- * fixtures on purpose: they stand in for a host's own translations and
- * are data in a test file (exempt from the no-literal-text rule), not
- * rendered product text. Assertions derive every built-in string from
- * the locale bundles, never inline translations.
- */
-
 import { act, fireEvent } from '@testing-library/react'
 import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
@@ -34,25 +16,13 @@ const NAV_ITEMS = [
   { id: 'reports', label: 'Reports', href: '/reports' },
 ] as const
 
-/**
- * The README's example host page: it owns the authorization status
- * exactly the way it owns every other piece of state passed to these
- * components -- computed here, flowing down through props.
- */
 function AppContent({ initialStatus }: { readonly initialStatus: RouteGuardStatus }) {
   const [status] = useState<RouteGuardStatus>(initialStatus)
   return (
     <AppShell navItems={NAV_ITEMS} header="My App">
-      {/* The host page's h1 lives in the content inside AppShell's main
-          landmark: the shell is chrome and renders no page heading of
-          its own, and the composed axe scan needs the real page shape
-          (page-has-heading-one is determinate in jsdom -- see the axe
-          helper header). */}
+      {}
       <h1>Protected screen</h1>
-      {/* The gate guards a content region below the page's own h1, so
-          its default denied composition is forwarded the headingLevel
-          that continues the page's order -- h2 here (see RouteGuard's
-          headingLevel in the README). */}
+      {}
       <RouteGuard status={status} headingLevel="h2">
         <p>Protected screen content</p>
       </RouteGuard>
@@ -98,10 +68,6 @@ describe('README usage example', () => {
     mockMatchMedia(true)
     const utils = renderWithProviders(<AppContent initialStatus="denied" />)
     expect(utils.queryByText('Protected screen content')).not.toBeInTheDocument()
-    // The example host keeps its own page h1 while the gate's default
-    // denied composition continues the page's order at the forwarded
-    // h2 -- without the forwarding, the fallback's stock h6 would fall
-    // out of the page's h1.
     expect(
       utils.getByRole('heading', {
         level: 2,
@@ -116,10 +82,6 @@ describe('README usage example', () => {
     const utils = renderWithProviders(<AppContent initialStatus="allowed" />)
     const toggle = utils.getByRole('button', { name: zhCN.appShell.openNav })
     fireEvent.click(toggle)
-    // The now-open temporary drawer is a real modal: MUI aria-hides the
-    // rest of the page, this toggle button included, while it traps
-    // focus -- `hidden: true` looks past that, same as AppShell's own
-    // suite documents.
     expect(
       utils.getByRole('button', { name: zhCN.appShell.closeNav, hidden: true }),
     ).toBeInTheDocument()

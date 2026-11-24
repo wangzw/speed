@@ -1,21 +1,10 @@
-/**
- * Hand-authored geometric icons for AppShell's chrome.
- *
- * Drawn as 24px-grid strokes in currentColor so they follow whatever
- * text color the surrounding theme paints -- no icon-font dependency,
- * no MUI icons package (following ui-kit's internal/icons.tsx
- * convention). The icon is decorative by contract: the enclosing
- * IconButton carries the accessible name (from the layout-kit
- * namespace), so the icon itself renders aria-hidden and
- * focusable=false.
- */
+/** Hand-authored geometric icons for AppShell's chrome; decorative, aria-hidden, named by the enclosing control. */
 
 interface IconProps {
   /** Box length in px; stroke geometry is sized for the 24 grid. */
   readonly size?: number
 }
 
-/** The nav-toggle (hamburger) icon shown when the mobile drawer is closed. */
 export function MenuIcon({ size = 24 }: IconProps) {
   return (
     <svg
@@ -37,7 +26,6 @@ export function MenuIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** The close (X) icon shown when the mobile drawer is open, in the same slot as MenuIcon. */
 export function CloseIcon({ size = 24 }: IconProps) {
   return (
     <svg
@@ -58,7 +46,6 @@ export function CloseIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** The chevron pointing left: the desktop sidebar-collapse toggle glyph. */
 export function ChevronLeftIcon({ size = 24 }: IconProps) {
   return (
     <svg
@@ -78,7 +65,6 @@ export function ChevronLeftIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** The chevron pointing down: a collapsed navigation group's disclosure glyph. */
 export function ExpandMoreIcon({ size = 24 }: IconProps) {
   return (
     <svg
@@ -98,7 +84,6 @@ export function ExpandMoreIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** The chevron pointing right: the desktop sidebar-expand toggle glyph. */
 export function ChevronRightIcon({ size = 24 }: IconProps) {
   return (
     <svg
