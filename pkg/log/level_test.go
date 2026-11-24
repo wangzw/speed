@@ -8,21 +8,14 @@ import (
 	"testing"
 )
 
-// recordCount reports how many records reached a capturing handler.
 func recordCount(c *captureHandler) int {
 	c.state.mu.Lock()
 	defer c.state.mu.Unlock()
 	return len(c.state.records)
 }
 
-// TestLevelLayerStopsRecordConstruction pins that a filtered record never
-// reaches the downstream at all.
-//
-// slog asks Enabled before it builds the record, so a level layer that
-// answered from the downstream — or answered true and dropped the record in
-// Handle — would still produce the right output while paying for the record,
-// the call site lookup and the redaction pass on every debug call of a process
-// running at info.
+// TestLevelLayerStopsRecordConstruction pins that a filtered record never reaches the downstream
+// at all.
 func TestLevelLayerStopsRecordConstruction(t *testing.T) {
 	capture := newCapture()
 	lg := slog.New(newLevelHandler(slog.LevelInfo, capture))
@@ -41,12 +34,8 @@ func TestLevelLayerStopsRecordConstruction(t *testing.T) {
 	}
 }
 
-// TestLevelLayerReadsItsOwnLeveler pins that the threshold is read from the
-// Leveler the layer was built with, on every judgement rather than once.
-//
-// The bootstrap chain depends on it: its level is a LevelVar that Prepare sets
-// from configuration, long after the loggers writing through it were handed
-// out.
+// TestLevelLayerReadsItsOwnLeveler pins that the threshold is read from the Leveler the layer was
+// built with, on every judgement rather than once.
 func TestLevelLayerReadsItsOwnLeveler(t *testing.T) {
 	level := new(slog.LevelVar)
 	level.Set(slog.LevelWarn)
@@ -65,9 +54,8 @@ func TestLevelLayerReadsItsOwnLeveler(t *testing.T) {
 	}
 }
 
-// TestLevelLayerPassesAttrsAndGroupsDown pins that a derived logger keeps both
-// the binding and the threshold. A layer that dropped the derivation would
-// silently lose every attribute an injection point binds.
+// TestLevelLayerPassesAttrsAndGroupsDown pins that a derived logger keeps both the binding and the
+// threshold.
 func TestLevelLayerPassesAttrsAndGroupsDown(t *testing.T) {
 	var buf bytes.Buffer
 	encoder := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: allLevels})
@@ -85,8 +73,8 @@ func TestLevelLayerPassesAttrsAndGroupsDown(t *testing.T) {
 	}
 }
 
-// TestLevelLayerWithEmptyGroupReturnsReceiver pins the Handler contract: an
-// empty group name opens nothing, so the receiver is handed back as it is.
+// TestLevelLayerWithEmptyGroupReturnsReceiver pins the Handler contract: an empty group name opens
+// nothing, so the receiver is handed back as it is.
 func TestLevelLayerWithEmptyGroupReturnsReceiver(t *testing.T) {
 	layer := newLevelHandler(slog.LevelInfo, newCapture())
 	if got := layer.WithGroup(""); got != slog.Handler(layer) {

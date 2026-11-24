@@ -9,26 +9,16 @@ import (
 	"testing"
 )
 
-// TestFromContextWithoutLoggerReturnsDefault pins the fallback: the process
-// default logger itself, not a panic, not a logger that drops records, and not
-// a freshly built one.
+// TestFromContextWithoutLoggerReturnsDefault pins the fallback: the process default logger itself,
+// not a panic, not a logger that drops records, and not a freshly built one.
 func TestFromContextWithoutLoggerReturnsDefault(t *testing.T) {
 	if got := FromContext(context.Background()); got != Default() {
 		t.Errorf("FromContext on a bare context returned %p, want the default logger %p", got, Default())
 	}
 }
 
-// TestFallbackDoesNotReachTheConfiguredDestination pins where the fallback
-// writes, which is the half that is easy to get wrong.
-//
-// A fallback onto the assembled chain reads like the helpful thing to do, and
-// it is exactly what must not happen: a path that was never injected would
-// then be indistinguishable from one that was, and the missing injection would
-// never be noticed. The record has to stay off the configured file.
-//
-// The chain here is assembled by this module's own New, over a configuration
-// with no output to standard output at all, because that is the shape the
-// mistake takes: a product exists, and the fallback is tempted to use it.
+// TestFallbackDoesNotReachTheConfiguredDestination pins where the fallback writes, which is the
+// half that is easy to get wrong.
 func TestFallbackDoesNotReachTheConfiguredDestination(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "configured.log")
 	product := newTestLogger(t, fileConfig(path))
@@ -40,19 +30,14 @@ func TestFallbackDoesNotReachTheConfiguredDestination(t *testing.T) {
 	if out := read(t, path); strings.Contains(out, "orphan record") {
 		t.Errorf("the fallback wrote into the configured destination: %q", out)
 	}
-	// The chain is not idle by construction: a logger taken from the product
-	// does reach that file, so the assertion above is about where the
-	// fallback went, not about a chain that was never connected.
 	product.Named("http").Info("injected record")
 	if out := read(t, path); !strings.Contains(out, "injected record") {
 		t.Fatalf("the configured destination took nothing at all: %q", out)
 	}
 }
 
-// TestFallbackAppearsOnStandardOutput is the other half: the record is not
-// lost, it is on standard output. Together the two say where a missing
-// injection shows up, which is what makes it noticeable without a failure
-// signal.
+// TestFallbackAppearsOnStandardOutput is the other half: the record is not lost, it is on standard
+// output.
 func TestFallbackAppearsOnStandardOutput(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "configured.log")
 	newTestLogger(t, fileConfig(path))
@@ -66,9 +51,8 @@ func TestFallbackAppearsOnStandardOutput(t *testing.T) {
 	}
 }
 
-// TestInjectedLoggerReachesTheConfiguredDestination is the positive control
-// for the pair above: once the context carries the logger the product handed
-// out, the records of that path are in the configured file.
+// TestInjectedLoggerReachesTheConfiguredDestination checks that a logger injected into a context
+// writes to the configured file with the module name and the bound attribute.
 func TestInjectedLoggerReachesTheConfiguredDestination(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "configured.log")
 	product := newTestLogger(t, fileConfig(path))
@@ -85,9 +69,8 @@ func TestInjectedLoggerReachesTheConfiguredDestination(t *testing.T) {
 	}
 }
 
-// TestFromContextFallbackStillPassesThroughRedaction pins that the fallback is
-// not a way around the redaction layer: the bootstrap chain carries one, so a
-// record written from a path with no logger is judged by the same rules.
+// TestFromContextFallbackStillPassesThroughRedaction checks that the fallback logger masks a
+// registered credential on the bootstrap destination.
 func TestFromContextFallbackStillPassesThroughRedaction(t *testing.T) {
 	isolateRules(t)
 	const secret = "fallback-plaintext-credential"
@@ -105,8 +88,8 @@ func TestFromContextFallbackStillPassesThroughRedaction(t *testing.T) {
 	}
 }
 
-// TestWithLoggerRoundTrips pins that what was injected is what comes back, and
-// that the context it was derived from is untouched.
+// TestWithLoggerRoundTrips pins that what was injected is what comes back, and that the context it
+// was derived from is untouched.
 func TestWithLoggerRoundTrips(t *testing.T) {
 	injected := slog.New(newCapture())
 	bare := context.Background()
@@ -120,12 +103,8 @@ func TestWithLoggerRoundTrips(t *testing.T) {
 	}
 }
 
-// TestWithAttrsAccumulatesAlongTheContext pins the take, bind and put back:
-// each injection point adds its own fields and the ones bound upstream survive.
-//
-// The assertion is on the rendered record, because binding is what the
-// downstream handler preprocesses: an attribute that never reaches the encoder
-// is an attribute the destination does not carry.
+// TestWithAttrsAccumulatesAlongTheContext pins the take, bind and put back: each injection point
+// adds its own fields and the ones bound upstream survive.
 func TestWithAttrsAccumulatesAlongTheContext(t *testing.T) {
 	var buf bytes.Buffer
 	ctx := WithLogger(context.Background(),
@@ -143,9 +122,8 @@ func TestWithAttrsAccumulatesAlongTheContext(t *testing.T) {
 	}
 }
 
-// TestWithAttrsOnBareContextAccumulatesOnDefaultChain pins that the fallback
-// composes: attributes bound onto a context that never had a logger are kept,
-// the record is complete, and it is still on the bootstrap chain.
+// TestWithAttrsOnBareContextAccumulatesOnDefaultChain checks that attributes bound on a context
+// with no logger accumulate on the bootstrap chain.
 func TestWithAttrsOnBareContextAccumulatesOnDefaultChain(t *testing.T) {
 	ctx := WithAttrs(context.Background(), "trace_id", "t-9")
 	ctx = WithAttrs(ctx, "tenant_id", "n-9")
@@ -159,9 +137,8 @@ func TestWithAttrsOnBareContextAccumulatesOnDefaultChain(t *testing.T) {
 	}
 }
 
-// TestFromContextIgnoresAForeignValueUnderItsKey pins that the fallback holds
-// when a context carries something that is not a logger, rather than panicking
-// on the type assertion in the middle of a log call.
+// TestFromContextIgnoresAForeignValueUnderItsKey checks that a foreign value or a nil logger under
+// the context key falls back to the default logger.
 func TestFromContextIgnoresAForeignValueUnderItsKey(t *testing.T) {
 	//nolint:staticcheck // the point is a value stored under a key this
 	// package does not control, which is what a raw context.WithValue does.
@@ -176,9 +153,6 @@ func TestFromContextIgnoresAForeignValueUnderItsKey(t *testing.T) {
 	}
 }
 
-// jsonContext is a context carrying a logger that renders its records as JSON
-// into the buffer returned, which is how these cases see every attribute a
-// record carries, a repeated key included.
 func jsonContext(l func(slog.Handler) *slog.Logger) (context.Context, *bytes.Buffer) {
 	var buf bytes.Buffer
 	h := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: allLevels})
@@ -187,8 +161,6 @@ func jsonContext(l func(slog.Handler) *slog.Logger) (context.Context, *bytes.Buf
 
 func plainLogger(h slog.Handler) *slog.Logger { return slog.New(h) }
 
-// requireOnce asserts that the record carries the key exactly once, with this
-// value.
 func requireOnce(t *testing.T, out, key, value string) {
 	t.Helper()
 	if n := strings.Count(out, `"`+key+`":`); n != 1 {
@@ -199,7 +171,6 @@ func requireOnce(t *testing.T, out, key, value string) {
 	}
 }
 
-// requireAbsent asserts that the record does not carry the key.
 func requireAbsent(t *testing.T, out, key string) {
 	t.Helper()
 	if strings.Contains(out, `"`+key+`":`) {
@@ -207,9 +178,8 @@ func requireAbsent(t *testing.T, out, key string) {
 	}
 }
 
-// TestWithAttrsReplacesAKeyAlreadyBound pins that a field describes the context
-// it is bound on: a context that moved on to another value of the field has its
-// records carry that value once, not the old one beside it.
+// TestWithAttrsReplacesAKeyAlreadyBound checks that rebinding a key replaces its value in place and
+// leaves the other keys as they were.
 func TestWithAttrsReplacesAKeyAlreadyBound(t *testing.T) {
 	ctx, buf := jsonContext(plainLogger)
 	ctx = WithAttrs(ctx, "trace_id", "t-1", "tenant_id", "n-1")
@@ -225,8 +195,8 @@ func TestWithAttrsReplacesAKeyAlreadyBound(t *testing.T) {
 	}
 }
 
-// A key given twice in one call is the same binding said twice; the later one
-// stands, as it would across two calls.
+// A key given twice in one call is the same binding said twice; the later one stands, as it would
+// across two calls.
 func TestWithAttrsKeepsTheLaterOfAKeyGivenTwiceInOneCall(t *testing.T) {
 	ctx, buf := jsonContext(plainLogger)
 	ctx = WithAttrs(ctx, "tenant_id", "n-1", "tenant_id", "n-2")
@@ -234,8 +204,8 @@ func TestWithAttrsKeepsTheLaterOfAKeyGivenTwiceInOneCall(t *testing.T) {
 	requireOnce(t, buf.String(), "tenant_id", "n-2")
 }
 
-// The members of a group with an empty key are written in line, so they are
-// keyed by their own keys, and a later binding of one of them replaces it.
+// The members of a group with an empty key are written in line, so they are keyed by their own
+// keys, and a later binding of one of them replaces it.
 func TestWithAttrsKeysTheMembersOfAnInlineGroup(t *testing.T) {
 	ctx, buf := jsonContext(plainLogger)
 	ctx = WithAttrs(ctx, slog.Group("", slog.String("tenant_id", "n-1"), slog.String("job", "j-1")))
@@ -246,9 +216,8 @@ func TestWithAttrsKeysTheMembersOfAnInlineGroup(t *testing.T) {
 	requireOnce(t, out, "job", "j-1")
 }
 
-// TestWithoutAttrsTakesABoundKeyOff pins the other half: a producer takes its
-// own field off a context that stopped being what the field said, and what the
-// others bound stays.
+// TestWithoutAttrsTakesABoundKeyOff pins the other half: a producer takes its own field off a
+// context that stopped being what the field said, and what the others bound stays.
 func TestWithoutAttrsTakesABoundKeyOff(t *testing.T) {
 	ctx, buf := jsonContext(plainLogger)
 	ctx = WithAttrs(ctx, "trace_id", "t-1", "tenant_id", "n-1")
@@ -260,14 +229,12 @@ func TestWithoutAttrsTakesABoundKeyOff(t *testing.T) {
 	requireAbsent(t, out, "tenant_id")
 	requireOnce(t, out, "trace_id", "t-1")
 
-	// Binding the key again after it was taken off binds it once.
 	buf.Reset()
 	FromContext(WithAttrs(ctx, "tenant_id", "n-3")).Info("served")
 	requireOnce(t, buf.String(), "tenant_id", "n-3")
 }
 
-// Taking off a key nothing bound changes nothing, and hands the context back as
-// it was.
+// Taking off a key nothing bound changes nothing, and hands the context back as it was.
 func TestWithoutAttrsOfAKeyNothingBoundLeavesTheContext(t *testing.T) {
 	ctx, _ := jsonContext(plainLogger)
 	ctx = WithAttrs(ctx, "trace_id", "t-1")
@@ -280,8 +247,8 @@ func TestWithoutAttrsOfAKeyNothingBoundLeavesTheContext(t *testing.T) {
 	}
 }
 
-// A replacement or a removal derives a new context; the one it came from goes
-// on carrying what it carried.
+// A replacement or a removal derives a new context; the one it came from goes on carrying what it
+// carried.
 func TestReplacingAKeyLeavesTheContextItCameFromAlone(t *testing.T) {
 	parent, buf := jsonContext(plainLogger)
 	parent = WithAttrs(parent, "tenant_id", "n-1")
@@ -292,9 +259,8 @@ func TestReplacingAKeyLeavesTheContextItCameFromAlone(t *testing.T) {
 	requireOnce(t, buf.String(), "tenant_id", "n-1")
 }
 
-// The injected logger is taken as it stands: what it bound itself — the module
-// name Named binds, for one — survives a replacement or a removal of the keys
-// bound on top of it, and is not reached by either.
+// TestReplacingAKeyKeepsWhatTheInjectedLoggerBound checks that rebinding and removing context
+// attributes does not disturb what the injected logger bound.
 func TestReplacingAKeyKeepsWhatTheInjectedLoggerBound(t *testing.T) {
 	ctx, buf := jsonContext(func(h slog.Handler) *slog.Logger {
 		return slog.New(h).With(ModuleAttrKey, "http", "tenant_id", "injected")
@@ -311,9 +277,8 @@ func TestReplacingAKeyKeepsWhatTheInjectedLoggerBound(t *testing.T) {
 	requireOnce(t, out, "tenant_id", "injected")
 }
 
-// A replacement binds every attribute afresh, and the fresh binding passes the
-// redaction layer like the first one did: a credential bound earlier is not
-// written in the clear because another key was replaced after it.
+// TestAReplacementStillPassesRedaction checks that a rebound credential is masked and a removed key
+// is absent.
 func TestAReplacementStillPassesRedaction(t *testing.T) {
 	isolateRules(t)
 	const secret = "rebound-plaintext-credential"

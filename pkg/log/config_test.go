@@ -10,15 +10,9 @@ import (
 	"github.com/vislake/speed/pkg/config"
 )
 
-// ptr is the way a test writes an explicitly given optional parameter.
 func ptr(v int) *int { return &v }
 
-// TestOptionalParamsDistinguishAbsentFromZero pins the three states of an
-// optional file parameter. A value type could only express two of them: the
-// zero value would stand both for a key nobody wrote and for a key written as
-// 0, and 0 is how a host switches rotation or pruning off.
-//
-// This test does not compile against value-typed fields, which is the point.
+// TestOptionalParamsDistinguishAbsentFromZero pins the three states of an optional file parameter.
 func TestOptionalParamsDistinguishAbsentFromZero(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -37,8 +31,6 @@ func TestOptionalParamsDistinguishAbsentFromZero(t *testing.T) {
 		})
 	}
 
-	// The same three states through the whole of one output, so that a fill
-	// that is right in isolation but never reached still fails.
 	file := func(size, files, age *int) resolvedOutput {
 		t.Helper()
 		out, err := Output{
@@ -65,10 +57,8 @@ func TestOptionalParamsDistinguishAbsentFromZero(t *testing.T) {
 	}
 }
 
-// TestDefaultConfigPrototypeIsOneStdoutTextOutput pins what a host gets when
-// it writes no log section at all: one text output to stdout, at info. It is
-// the most common configuration there is, and the assembly has to reach it
-// without anybody writing it down.
+// TestDefaultConfigPrototypeIsOneStdoutTextOutput pins what a host gets when it writes no log
+// section at all: one text output to stdout, at info.
 func TestDefaultConfigPrototypeIsOneStdoutTextOutput(t *testing.T) {
 	if configDefaults.Level != "info" {
 		t.Errorf("the prototype's level is %q, want info", configDefaults.Level)
@@ -89,11 +79,8 @@ func TestDefaultConfigPrototypeIsOneStdoutTextOutput(t *testing.T) {
 	}
 }
 
-// TestSchemaDeclaresOutputsAsPrimaryOnly keeps the output list off the
-// environment and the command line. It is a list of structs, which has no flat
-// form those layers could give, and declaring either of them on such an item
-// is ErrInvalidSchema at load time. That failure is only reachable from a real
-// assembly, so the declaration is pinned here instead.
+// TestSchemaDeclaresOutputsAsPrimaryOnly keeps the output list off the environment and the command
+// line.
 func TestSchemaDeclaresOutputsAsPrimaryOnly(t *testing.T) {
 	s := schema()
 	outputs, ok := s.Items["outputs"]
@@ -117,9 +104,7 @@ func TestSchemaDeclaresOutputsAsPrimaryOnly(t *testing.T) {
 	}
 }
 
-// TestSchemaItemKeysMatchCarrierFields catches a misspelled Items key. config
-// refuses a key that reaches no field of the mounts, and that refusal is only
-// reachable from a real assembly.
+// TestSchemaItemKeysMatchCarrierFields catches a misspelled Items key.
 func TestSchemaItemKeysMatchCarrierFields(t *testing.T) {
 	fields := map[string]bool{}
 	ct := reflect.TypeOf(Config{})
@@ -137,8 +122,8 @@ func TestSchemaItemKeysMatchCarrierFields(t *testing.T) {
 	}
 }
 
-// TestResolveRejects walks the design's error table: every defect names its own
-// sentinel, so a host reading the failure knows which kind of edit to make.
+// TestResolveRejects checks that resolve returns the right sentinel for an unknown level,
+// destination or format, a missing path and a negative file parameter.
 func TestResolveRejects(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -190,9 +175,7 @@ func TestResolveRejects(t *testing.T) {
 	}
 }
 
-// TestUnknownNameErrorsListEveryLegalValue keeps the fixing action in the
-// message. The legal values are a closed set, so listing them is the whole of
-// what the host has to know.
+// TestUnknownNameErrorsListEveryLegalValue keeps the fixing action in the message.
 func TestUnknownNameErrorsListEveryLegalValue(t *testing.T) {
 	_, err := Config{Level: "info", Outputs: []Output{{To: "syslog", Format: formatText}}}.resolve()
 	for _, name := range []string{destStdout, destStderr, destFile} {
@@ -208,9 +191,8 @@ func TestUnknownNameErrorsListEveryLegalValue(t *testing.T) {
 	}
 }
 
-// TestNegativeFileParamIsItsOwnSentinel keeps a negative number apart from the
-// neighbouring failures: the host has to change a number here, not a name or a
-// path.
+// TestNegativeFileParamIsItsOwnSentinel keeps a negative number apart from the neighbouring
+// failures: the host has to change a number here, not a name or a path.
 func TestNegativeFileParamIsItsOwnSentinel(t *testing.T) {
 	_, err := Config{
 		Level:   "info",
@@ -232,9 +214,8 @@ func TestNegativeFileParamIsItsOwnSentinel(t *testing.T) {
 	}
 }
 
-// TestLevelNamesMapToSlogLevels pins the closed set of level names, and that
-// the comparison folds case: an environment variable written in capitals asks
-// for a level, not for a startup failure.
+// TestLevelNamesMapToSlogLevels pins the closed set of level names, and that the comparison folds
+// case: an environment variable written in capitals asks for a level, not for a startup failure.
 func TestLevelNamesMapToSlogLevels(t *testing.T) {
 	for name, want := range map[string]slog.Level{
 		"debug": slog.LevelDebug,
@@ -259,9 +240,8 @@ func TestLevelNamesMapToSlogLevels(t *testing.T) {
 	}
 }
 
-// TestResolveKeepsEveryOutputInOrder pins that resolution carries the whole
-// list through: a chain built from a truncated list would silently lose a
-// destination.
+// TestResolveKeepsEveryOutputInOrder pins that resolution carries the whole list through: a chain
+// built from a truncated list would silently lose a destination.
 func TestResolveKeepsEveryOutputInOrder(t *testing.T) {
 	cfg := Config{Level: "warn", Outputs: []Output{
 		{To: destStdout, Format: formatText},

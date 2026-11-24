@@ -6,9 +6,6 @@ import (
 	"testing"
 )
 
-// sentinels is the design's error table, by name. A caller tells the classes
-// apart with errors.Is, so two sentinels that matched each other would make a
-// startup failure unclassifiable.
 var sentinels = map[string]error{
 	"ErrInvalidLevel":       ErrInvalidLevel,
 	"ErrUnknownDestination": ErrUnknownDestination,
@@ -19,8 +16,8 @@ var sentinels = map[string]error{
 	"ErrOutputUnavailable":  ErrOutputUnavailable,
 }
 
-// TestSentinelsAreDistinct pins the set to the design's table and checks that
-// no two of them are interchangeable, wrapped or bare.
+// TestSentinelsAreDistinct checks that the seven sentinels are non-nil, have messages, and a
+// wrapped one matches only itself.
 func TestSentinelsAreDistinct(t *testing.T) {
 	if len(sentinels) != 7 {
 		t.Fatalf("the design table lists 7 sentinels, the test pins %d", len(sentinels))

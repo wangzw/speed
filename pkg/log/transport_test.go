@@ -12,10 +12,6 @@ import (
 	"testing"
 )
 
-// captureTransportLogs runs action with a buffer-backed logger in the context
-// and returns what the transport wrote. The query the requests carry holds
-// values a record must never repeat, so every case can assert on both what is
-// there and what is not.
 func captureTransportLogs(t *testing.T, action func(ctx context.Context)) string {
 	t.Helper()
 	var buf bytes.Buffer
@@ -24,16 +20,8 @@ func captureTransportLogs(t *testing.T, action func(ctx context.Context)) string
 	return buf.String()
 }
 
-// TestTransportRecordsAnAnsweredRequest holds the per-request record for the
-// statuses a request can end on: the outcome, the status, the endpoint and the
-// time. A 2xx is the success; an error status and a redirect are failures,
-// because the clients this repository assembles follow no redirect and a 3xx
-// therefore means the request did not end at the resource it named.
-//
-// The query carries a value shaped like an authorization code and one shaped
-// like a state. Neither may appear in the record: the query is where a code, a
-// token and a state travel, and the record is written to every destination the
-// logging chain fans out to.
+// TestTransportRecordsAnAnsweredRequest holds the per-request record for the statuses a request
+// can end on: the outcome, the status, the endpoint and the time.
 func TestTransportRecordsAnAnsweredRequest(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -99,13 +87,9 @@ func TestTransportRecordsAnAnsweredRequest(t *testing.T) {
 	}
 }
 
-// TestTransportRecordsANetworkFailure holds the other ending: a call that
-// produces no response at all. The record has to name the failure class, and it
-// must not carry the URL net/http attaches to the error it returns, because
-// that URL quotes the query.
+// TestTransportRecordsANetworkFailure holds the other ending: a call that produces no response at
+// all.
 func TestTransportRecordsANetworkFailure(t *testing.T) {
-	// A listener that is closed before the call gives a refused connection
-	// without depending on a name resolving or on a deadline expiring.
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("reserving an address: %v", err)

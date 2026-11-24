@@ -8,13 +8,6 @@ import (
 	"testing"
 )
 
-// captureBootstrapStdout collects what the bootstrap chain writes while fn
-// runs, by standing in for the sink of the standard output writer.
-//
-// The swap is at the sink rather than at os.Stdout on purpose: what the test
-// wants to know is that the records travelled through this writer — the one
-// object fd 1 is meant to have — and not merely that they appeared on the
-// stream.
 func captureBootstrapStdout(t *testing.T, fn func()) string {
 	t.Helper()
 	w := bootstrapStdoutWriter
@@ -37,13 +30,8 @@ func captureBootstrapStdout(t *testing.T, fn func()) string {
 	return strings.Join(collector.taken, "")
 }
 
-// TestDefaultWritesThroughTheBootstrapStdoutWriter pins where the process
-// default logger puts its bytes: the standard output writer the root package
-// registered, not a stream of its own.
-//
-// It is the same writer a configured stdout output joins, so fd 1 carries one
-// lock; a chain built over os.Stdout directly would pass an output assertion
-// and interleave with the configured output under load.
+// TestDefaultWritesThroughTheBootstrapStdoutWriter pins where the process default logger puts its
+// bytes: the standard output writer the root package registered, not a stream of its own.
 func TestDefaultWritesThroughTheBootstrapStdoutWriter(t *testing.T) {
 	out := captureBootstrapStdout(t, func() {
 		Default().Info("through the bootstrap writer")
@@ -56,11 +44,8 @@ func TestDefaultWritesThroughTheBootstrapStdoutWriter(t *testing.T) {
 	}
 }
 
-// TestBootstrapChainContainsRedactionLayer pins that the default logger is
-// covered by the registered rules. Default() is used for the whole life of the
-// process — before any module is constructed, and from every path that never
-// had a logger injected — so a bootstrap chain without the layer would be the
-// one place credentials still reach a destination in the clear.
+// TestBootstrapChainContainsRedactionLayer pins that the default logger is covered by the
+// registered rules.
 func TestBootstrapChainContainsRedactionLayer(t *testing.T) {
 	isolateRules(t)
 	const secret = "bootstrap-plaintext-credential"
@@ -78,9 +63,7 @@ func TestBootstrapChainContainsRedactionLayer(t *testing.T) {
 	}
 }
 
-// TestDefaultLevelIsInfoBeforeAnyPrepare pins the level the bootstrap chain
-// starts at. Records are written through it before any configuration has been
-// read, and info is what that window is filtered by.
+// TestDefaultLevelIsInfoBeforeAnyPrepare pins the level the bootstrap chain starts at.
 func TestDefaultLevelIsInfoBeforeAnyPrepare(t *testing.T) {
 	if got := bootstrapLevel.Level(); got != slog.LevelInfo {
 		t.Fatalf("the bootstrap level is %v, want info before any Prepare has set it", got)
@@ -94,13 +77,8 @@ func TestDefaultLevelIsInfoBeforeAnyPrepare(t *testing.T) {
 	}
 }
 
-// TestDefaultIsOneSingleton pins that every caller gets the same logger. The
-// fallback of FromContext is compared against it by identity, and a Default
-// that built a logger per call would make that comparison meaningless.
+// TestDefaultIsOneSingleton pins that every caller gets the same logger.
 func TestDefaultIsOneSingleton(t *testing.T) {
-	// The two calls are held in variables rather than compared in place: the
-	// comparison is the subject of the test, and an in-place one reads as the
-	// identical-operands mistake that it is the point of this test not to be.
 	first, second := Default(), Default()
 	if first != second {
 		t.Error("two calls to Default returned different loggers")
@@ -108,8 +86,6 @@ func TestDefaultIsOneSingleton(t *testing.T) {
 }
 
 // TestDefaultIsSafeForConcurrentUse pins the chain against the race detector.
-// Nothing on it changes after package initialisation except the level, and the
-// destination writer has the lock.
 func TestDefaultIsSafeForConcurrentUse(t *testing.T) {
 	const writers, each = 8, 50
 	out := captureBootstrapStdout(t, func() {

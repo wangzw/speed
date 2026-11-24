@@ -15,9 +15,6 @@ import (
 	"time"
 )
 
-// isolateRules gives a test the rule set to itself. Registrations are
-// append-only by contract, so a test that registers would otherwise leave its
-// keys behind for every test that runs after it.
 func isolateRules(t *testing.T) {
 	t.Helper()
 	previous := rules.Load()
@@ -25,15 +22,12 @@ func isolateRules(t *testing.T) {
 	t.Cleanup(func() { rules.Store(previous) })
 }
 
-// captureState is what a capturing handler and the handlers derived from it
-// share, so a test can read what reached the end of the chain.
 type captureState struct {
 	mu      sync.Mutex
 	records []slog.Record
 	enabled bool
 }
 
-// captureHandler is a downstream handler that keeps what it is given.
 type captureHandler struct {
 	state  *captureState
 	groups []string
@@ -70,23 +64,16 @@ func (s *captureState) last(t *testing.T) slog.Record {
 	return s.records[len(s.records)-1]
 }
 
-// valuerFunc is an attribute value that is only resolved when asked. The
-// standard library resolves one of these in the terminal handler, which is
-// downstream of redaction — so what this layer sees is the unresolved value
-// unless it resolves the value itself.
 type valuerFunc func() slog.Value
 
 func (f valuerFunc) LogValue() slog.Value { return f() }
 
-// textLogger builds the redaction layer over a text handler, which is how a
-// test reads the rendered output a destination would receive.
 func textLogger() (*slog.Logger, *bytes.Buffer) {
 	var buf bytes.Buffer
 	h := newRedactHandler(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	return slog.New(h), &buf
 }
 
-// jsonLogger is textLogger's counterpart for the assertions about structure.
 func jsonLogger(opts *slog.HandlerOptions) (*slog.Logger, *bytes.Buffer) {
 	var buf bytes.Buffer
 	h := newRedactHandler(slog.NewJSONHandler(&buf, opts))
@@ -110,10 +97,8 @@ func assertContains(t *testing.T, out, want string) {
 	}
 }
 
-// TestRedactResolvesLogValuerBeforeKeyMatch hides a credential behind a
-// deferred value that resolves to a group. A layer that does not resolve the
-// value itself sees the key path "creds" and a value of kind LogValuer: neither
-// rule matches, and the credential reaches the destination in the clear.
+// TestRedactResolvesLogValuerBeforeKeyMatch hides a credential behind a deferred value that
+// resolves to a group.
 func TestRedactResolvesLogValuerBeforeKeyMatch(t *testing.T) {
 	isolateRules(t)
 	const secret = "pw-behind-a-deferred-value"
@@ -131,10 +116,8 @@ func TestRedactResolvesLogValuerBeforeKeyMatch(t *testing.T) {
 	assertContains(t, out, "creds.password-under-valuer="+MaskedText)
 }
 
-// TestRedactResolvesLogValuerNestedInsideAResolvedGroup puts a second deferred
-// value inside the group the first one resolves to. Resolving once at the top
-// and then walking the group members leaves this one unresolved, so this case
-// is red while the previous one is green.
+// TestRedactResolvesLogValuerNestedInsideAResolvedGroup puts a second deferred value inside the
+// group the first one resolves to.
 func TestRedactResolvesLogValuerNestedInsideAResolvedGroup(t *testing.T) {
 	isolateRules(t)
 	const secret = "tok-two-layers-deep"
@@ -155,11 +138,8 @@ func TestRedactResolvesLogValuerNestedInsideAResolvedGroup(t *testing.T) {
 	assertContains(t, out, "creds.inner.token-nested-under-valuer="+MaskedText)
 }
 
-// TestRedactResolvesLogValuerBoundThroughWithAttrs runs the same fixture
-// through binding instead of through a record. The standard library resolves
-// and preformats a bound attribute at binding time, so a layer that only
-// resolves in Handle lets this one through in the clear; the two paths are
-// separate code and each needs its own case.
+// TestRedactResolvesLogValuerBoundThroughWithAttrs runs the same fixture through binding instead
+// of through a record.
 func TestRedactResolvesLogValuerBoundThroughWithAttrs(t *testing.T) {
 	isolateRules(t)
 	const secret = "tok-bound-two-layers-deep"
@@ -180,8 +160,8 @@ func TestRedactResolvesLogValuerBoundThroughWithAttrs(t *testing.T) {
 	assertContains(t, out, "creds.inner.token-bound-under-valuer="+MaskedText)
 }
 
-// TestRedactAppliesPatternToResolvedStringValue pins resolution ahead of the
-// value-shape judgement, not only ahead of the key-name one.
+// TestRedactAppliesPatternToResolvedStringValue pins resolution ahead of the value-shape
+// judgement, not only ahead of the key-name one.
 func TestRedactAppliesPatternToResolvedStringValue(t *testing.T) {
 	isolateRules(t)
 	const secret = "sk-live-resolved-string"
@@ -197,8 +177,8 @@ func TestRedactAppliesPatternToResolvedStringValue(t *testing.T) {
 	assertContains(t, out, "key "+MaskedText+" end")
 }
 
-// TestRedactAppliesPatternToErrorText pins the other half of the value-shape
-// rule's reach: the text of an error, not just a string value.
+// TestRedactAppliesPatternToErrorText pins the other half of the value-shape rule's reach: the
+// text of an error, not just a string value.
 func TestRedactAppliesPatternToErrorText(t *testing.T) {
 	isolateRules(t)
 	const secret = "sk-live-inside-an-error"
@@ -212,15 +192,13 @@ func TestRedactAppliesPatternToErrorText(t *testing.T) {
 	assertContains(t, out, "refused with "+MaskedText+" attached")
 }
 
-// TestSourceLocationSurvivesRedaction pins the call site through the rebuild. A
-// rebuilt record that drops the program counter makes the source location
-// vanish or point at this package instead of the call site.
+// TestSourceLocationSurvivesRedaction pins the call site through the rebuild.
 func TestSourceLocationSurvivesRedaction(t *testing.T) {
 	isolateRules(t)
 	lg, buf := jsonLogger(&slog.HandlerOptions{Level: slog.LevelDebug, AddSource: true})
 
 	_, wantFile, wantLine, ok := runtime.Caller(0)
-	lg.Info("located") // must stay on the line right after runtime.Caller
+	lg.Info("located") // must stay on the line right after runtime.Caller: the assertion wants wantLine+1
 	if !ok {
 		t.Fatal("the test cannot read its own call site")
 	}
@@ -242,9 +220,8 @@ func TestSourceLocationSurvivesRedaction(t *testing.T) {
 	}
 }
 
-// TestRedactedRecordKeepsAttrCountAndHasNoDuplicateKey pins the shape of the
-// rebuilt record: a layer that appends a masked copy alongside the original
-// leaves the plaintext in place and the key twice over.
+// TestRedactedRecordKeepsAttrCountAndHasNoDuplicateKey checks that the rebuilt record keeps its
+// three attributes, masks the secret, and repeats no key.
 func TestRedactedRecordKeepsAttrCountAndHasNoDuplicateKey(t *testing.T) {
 	isolateRules(t)
 	const secret = "pw-count-and-keys"
@@ -276,11 +253,8 @@ func TestRedactedRecordKeepsAttrCountAndHasNoDuplicateKey(t *testing.T) {
 	}
 }
 
-// TestRedactDoesNotAliasTheRecordItWasGiven pins that the record handed to this
-// layer is not written into. The copies of a record share a backing array once
-// the inline space is full, so the corruption only shows when both holders
-// append; the table exists so that at least one size is in the shape that
-// aliases.
+// TestRedactDoesNotAliasTheRecordItWasGiven pins that the record handed to this layer is not
+// written into.
 func TestRedactDoesNotAliasTheRecordItWasGiven(t *testing.T) {
 	isolateRules(t)
 
@@ -314,9 +288,6 @@ func TestRedactDoesNotAliasTheRecordItWasGiven(t *testing.T) {
 	}
 }
 
-// assertMarks checks that a record carries its own mark, not the other
-// holder's, and that the standard library did not have to report an aliased
-// append.
 func assertMarks(t *testing.T, what string, r slog.Record, own, foreign string) {
 	t.Helper()
 	keys := map[string]bool{}
@@ -335,11 +306,7 @@ func assertMarks(t *testing.T, what string, r slog.Record, own, foreign string) 
 	}
 }
 
-// TestRedactMatchesGroupNameOpenedByWithGroup is one of the two silent-failure
-// cases. The group name WithGroup opened lives in the handler's state, not in
-// the record: a layer that does not implement WithGroup, or implements it
-// without pushing the name onto its key path, receives the leaf key alone and a
-// rule registered against the group name quietly matches nothing.
+// TestRedactMatchesGroupNameOpenedByWithGroup is one of the two silent-failure cases.
 func TestRedactMatchesGroupNameOpenedByWithGroup(t *testing.T) {
 	isolateRules(t)
 	const secret = "tok-under-an-opened-group"
@@ -353,10 +320,8 @@ func TestRedactMatchesGroupNameOpenedByWithGroup(t *testing.T) {
 	assertContains(t, out, "credentials-opened-group.token="+MaskedText)
 }
 
-// TestRedactMatchesAttrBoundUnderWithGroup runs the same registration through
-// the binding path, which is WithAttrs rather than Handle. Both paths have to
-// read the same prefix; a layer that only pushes the prefix in Handle leaves
-// this one red.
+// TestRedactMatchesAttrBoundUnderWithGroup runs the same registration through the binding path,
+// which is WithAttrs rather than Handle.
 func TestRedactMatchesAttrBoundUnderWithGroup(t *testing.T) {
 	isolateRules(t)
 	const secret = "tok-bound-under-an-opened-group"
@@ -370,8 +335,8 @@ func TestRedactMatchesAttrBoundUnderWithGroup(t *testing.T) {
 	assertContains(t, out, "credentials-bound-group.token="+MaskedText)
 }
 
-// TestRedactMatchesNestedWithGroupPath pins that every segment of the prefix is
-// compared, not only the innermost one.
+// TestRedactMatchesNestedWithGroupPath pins that every segment of the prefix is compared, not only
+// the innermost one.
 func TestRedactMatchesNestedWithGroupPath(t *testing.T) {
 	for _, registered := range []string{"outer-nested-group", "inner-nested-group"} {
 		t.Run(registered, func(t *testing.T) {
@@ -389,8 +354,8 @@ func TestRedactMatchesNestedWithGroupPath(t *testing.T) {
 	}
 }
 
-// TestRedactMatchesInlineGroupName pins that a group carried by the record
-// itself contributes its name to the key path, just as an opened group does.
+// TestRedactMatchesInlineGroupName pins that a group carried by the record itself contributes its
+// name to the key path, just as an opened group does.
 func TestRedactMatchesInlineGroupName(t *testing.T) {
 	isolateRules(t)
 	const secret = "tok-under-an-inline-group"
@@ -404,9 +369,8 @@ func TestRedactMatchesInlineGroupName(t *testing.T) {
 	assertContains(t, out, "credentials-inline-group.token="+MaskedText)
 }
 
-// TestRedactWithEmptyGroupNameReturnsReceiver pins the standard library's
-// contract for an empty group name, and that no empty segment enters the key
-// path.
+// TestRedactWithEmptyGroupNameReturnsReceiver pins the standard library's contract for an empty
+// group name, and that no empty segment enters the key path.
 func TestRedactWithEmptyGroupNameReturnsReceiver(t *testing.T) {
 	isolateRules(t)
 	const secret = "tok-after-an-empty-group"
@@ -429,9 +393,8 @@ func TestRedactWithEmptyGroupNameReturnsReceiver(t *testing.T) {
 	}
 }
 
-// TestRedactWithGroupReachesDownstream pins the other half of WithGroup: a
-// layer that keeps the prefix for itself but does not open the group downstream
-// masks the right attribute and flattens the output.
+// TestRedactWithGroupReachesDownstream checks that a group on a redacting logger still nests its
+// attribute downstream in the text and JSON handlers.
 func TestRedactWithGroupReachesDownstream(t *testing.T) {
 	isolateRules(t)
 
@@ -455,10 +418,8 @@ func TestRedactWithGroupReachesDownstream(t *testing.T) {
 	}
 }
 
-// TestBoundAttrIsJudgedOnceAtBindTime pins the two moments a judgement happens:
-// a bound attribute is judged once, when it is bound, and a rule registered
-// after that binding does not reach it. This is the whole basis for the order a
-// module is asked to take things up in — register, then take a logger.
+// TestBoundAttrIsJudgedOnceAtBindTime pins the two moments a judgement happens: a bound attribute
+// is judged once, when it is bound, and a rule registered after that binding does not reach it.
 func TestBoundAttrIsJudgedOnceAtBindTime(t *testing.T) {
 	t.Run("matcher runs once per binding", func(t *testing.T) {
 		isolateRules(t)
@@ -494,8 +455,8 @@ func TestBoundAttrIsJudgedOnceAtBindTime(t *testing.T) {
 	})
 }
 
-// TestRedactEnabledDelegatesDownstream pins that this layer does not judge the
-// level: the level layer at the head of the chain does.
+// TestRedactEnabledDelegatesDownstream pins that this layer does not judge the level: the level
+// layer at the head of the chain does.
 func TestRedactEnabledDelegatesDownstream(t *testing.T) {
 	capture := newCapture()
 	handler := newRedactHandler(capture)
@@ -509,8 +470,6 @@ func TestRedactEnabledDelegatesDownstream(t *testing.T) {
 	}
 }
 
-// prefixMatcher reports the span running from a prefix to the next space, which
-// is the shape of an API key embedded in a longer text.
 func prefixMatcher(prefix string) Matcher {
 	return func(value string) []Span {
 		var spans []Span

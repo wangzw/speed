@@ -10,10 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// namingProduct stands in for the product this module builds, so a test can see
-// the name NamedFor asks for and read the record it hands back. Named returns a
-// logger over a buffer carrying the module attribute, the way the configured
-// product does.
 type namingProduct struct {
 	buf   bytes.Buffer
 	names []string
@@ -28,10 +24,8 @@ func (p *namingProduct) Redaction() Redaction { return processRedaction }
 
 var _ Logger = (*namingProduct)(nil)
 
-// TestNamedForNamesTheLoggerAfterTheModule pins the half that names, and pins it
-// on the record rather than on the call: the logger it hands back writes records
-// carrying the module name, and the name it asked the instance for is the one
-// it was given.
+// TestNamedForNamesTheLoggerAfterTheModule checks that NamedFor returns a logger named orders
+// through the supplied instance.
 func TestNamedForNamesTheLoggerAfterTheModule(t *testing.T) {
 	product := &namingProduct{}
 	reg := core.New()
@@ -58,11 +52,8 @@ func TestNamedForNamesTheLoggerAfterTheModule(t *testing.T) {
 	}
 }
 
-// TestNamedForReportsAMissingCapability pins the other half: with no module
-// delivering the logging capability, the error is the lookup's own and
-// errors.Is reaches core.ErrMissingProvider, so a caller reads the absence the
-// way every other optional dependency's absence is read. No logger comes back
-// with it.
+// TestNamedForReportsAMissingCapability checks that NamedFor with no provider returns
+// ErrMissingProvider and no logger.
 func TestNamedForReportsAMissingCapability(t *testing.T) {
 	reg := core.New()
 

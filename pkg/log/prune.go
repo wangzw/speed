@@ -10,31 +10,12 @@ import (
 	"time"
 )
 
-// Pruning has three occasions, and all three are needed.
-//
-// Opening the destination covers a process that was down for longer than the
-// retention period. A rotation covers the count limit, which would otherwise
-// only take effect at the next background pass. The background pass covers
-// everything else: a configuration with rotation switched off never rotates, so
-// hanging the pruning off rotation alone would never delete anything, and a
-// long-running process would otherwise wait for its next start to clear the
-// archives of this run.
-
-// archiveFile is one archive of a file destination, with the time its name
-// carries. The age is judged by that timestamp and not by the file system's
-// modification time: backup, copy and sync tools rewrite the modification time,
-// while the name was written by this module and matches what is inside.
 type archiveFile struct {
 	name  string
 	stamp time.Time
 	seq   int
 }
 
-// prune deletes the archives that are over either limit. The condition is an
-// or: what survives is both within the newest few and within the retention
-// period. The caller holds the destination's lock, which is also the lock the
-// writes and the rotation run under, so nothing is written into a file while it
-// is being deleted, and the active file is never a candidate.
 func (rf *rotatingFile) prune() {
 	if rf.maxFiles <= 0 && rf.maxAgeDays <= 0 {
 		return
@@ -54,7 +35,6 @@ func (rf *rotatingFile) prune() {
 			archives = append(archives, a)
 		}
 	}
-	// Newest first, so that the count limit is a prefix of the slice.
 	slices.SortFunc(archives, func(a, b archiveFile) int {
 		if !a.stamp.Equal(b.stamp) {
 			return b.stamp.Compare(a.stamp)
@@ -79,9 +59,6 @@ func (rf *rotatingFile) prune() {
 	}
 }
 
-// notePruneFailure reports the first failure of a run of them. A destination
-// whose directory has gone takes the same fault on every pass, and a line each
-// would flood standard error the way a repeated write failure would.
 func (rf *rotatingFile) notePruneFailure(format string, args ...any) {
 	if rf.pruneFailureReported {
 		return
@@ -90,9 +67,6 @@ func (rf *rotatingFile) notePruneFailure(format string, args ...any) {
 	report(format, args...)
 }
 
-// parseArchive reads an archive's name, and reports that a file is not one when
-// the name does not carry the shape this module writes. Nothing else in the
-// directory is touched: this module does not delete files it did not produce.
 func (rf *rotatingFile) parseArchive(base string) (archiveFile, bool) {
 	prefix := rf.prefix + "-"
 	if !strings.HasPrefix(base, prefix) || !strings.HasSuffix(base, rf.ext) {
@@ -116,12 +90,6 @@ func (rf *rotatingFile) parseArchive(base string) (archiveFile, bool) {
 	return archiveFile{name: filepath.Join(rf.dir, base), stamp: stamp, seq: seq}, true
 }
 
-// startBackground starts the periodic pruning, taking mu for each pass so that
-// it is mutually exclusive with the writes and the rotation.
-//
-// With both limits switched off there is nothing to delete, and no goroutine is
-// started at all: one that runs for the life of the process to find nothing on
-// every pass is a cost with no return.
 func (rf *rotatingFile) startBackground(mu sync.Locker) {
 	if rf.maxFiles <= 0 && rf.maxAgeDays <= 0 {
 		return
@@ -132,7 +100,6 @@ func (rf *rotatingFile) startBackground(mu sync.Locker) {
 	go rf.backgroundPrune()
 }
 
-// backgroundPrune prunes on every tick until the writer stops it.
 func (rf *rotatingFile) backgroundPrune() {
 	defer close(rf.done)
 
@@ -150,10 +117,6 @@ func (rf *rotatingFile) backgroundPrune() {
 	}
 }
 
-// stopBackground ends the periodic pruning and waits for the pass in flight to
-// return. Waiting is the point: a pass that outlived the writer would take the
-// lock of a closed destination and delete files after the process thought it
-// was done with them, and nothing on the shutdown path would be waiting for it.
 func (rf *rotatingFile) stopBackground() {
 	if rf.stop == nil {
 		return

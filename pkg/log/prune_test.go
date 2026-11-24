@@ -11,13 +11,8 @@ import (
 	"time"
 )
 
-// testArchiveStamp is the layout of the timestamp in an archive's name, written
-// out here rather than read from the product code: a test that took the layout
-// from the implementation would follow it wherever it went.
 const testArchiveStamp = "20060102-150405"
 
-// makeArchive writes an archive named the way this module names them, for a
-// destination whose base name is app and whose extension is .log.
 func makeArchive(t *testing.T, dir string, stamp time.Time, seq int, content string) string {
 	t.Helper()
 	name := "app-" + stamp.Format(testArchiveStamp)
@@ -32,14 +27,11 @@ func makeArchive(t *testing.T, dir string, stamp time.Time, seq int, content str
 	return path
 }
 
-// exists reports whether a path is still there.
 func exists(path string) bool {
 	_, err := os.Lstat(path)
 	return err == nil
 }
 
-// waitFor polls until the condition holds, and fails the test when it does not
-// inside the deadline.
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -52,9 +44,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Fatalf("timed out waiting for %s", what)
 }
 
-// TestPruneRunsOnOpen pins the first of the three occasions. A process that has
-// been down for longer than the retention period would otherwise carry its old
-// archives until something made it rotate.
+// TestPruneRunsOnOpen pins the first of the three occasions.
 func TestPruneRunsOnOpen(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()
@@ -71,9 +61,8 @@ func TestPruneRunsOnOpen(t *testing.T) {
 	}
 }
 
-// TestPruneRunsAfterEveryRotation pins the second occasion: the count limit
-// takes effect the moment an archive appears, rather than at the next
-// background pass an hour later.
+// TestPruneRunsAfterEveryRotation pins the second occasion: the count limit takes effect the
+// moment an archive appears, rather than at the next background pass an hour later.
 func TestPruneRunsAfterEveryRotation(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "app.log")
@@ -90,10 +79,8 @@ func TestPruneRunsAfterEveryRotation(t *testing.T) {
 	}
 }
 
-// TestBackgroundPruneRunsWhenRotationIsDisabled pins the third occasion, and it
-// is the one an implementation is most likely to be missing: with rotation
-// switched off nothing ever rotates, so pruning hung off rotation alone would
-// never run at all, and the over-age archives would stay until the next restart.
+// TestBackgroundPruneRunsWhenRotationIsDisabled checks that the background prune deletes an archive
+// once it is past the retention age even with rotation off.
 func TestBackgroundPruneRunsWhenRotationIsDisabled(t *testing.T) {
 	dir := t.TempDir()
 	base := time.Now()
@@ -120,8 +107,6 @@ func TestBackgroundPruneRunsWhenRotationIsDisabled(t *testing.T) {
 }
 
 // TestAgeIsJudgedByArchiveNameNotMtime pins which clock the retention reads.
-// Backup, copy and sync tools rewrite the modification time, while the name was
-// written by this module and matches the records inside.
 func TestAgeIsJudgedByArchiveNameNotMtime(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()
@@ -145,8 +130,7 @@ func TestAgeIsJudgedByArchiveNameNotMtime(t *testing.T) {
 	}
 }
 
-// TestPruneLeavesForeignFilesAlone pins that this module deletes only what it
-// produced. The directory a host points a log file at may hold anything else.
+// TestPruneLeavesForeignFilesAlone pins that this module deletes only what it produced.
 func TestPruneLeavesForeignFilesAlone(t *testing.T) {
 	dir := t.TempDir()
 	foreign := []string{
@@ -176,9 +160,8 @@ func TestPruneLeavesForeignFilesAlone(t *testing.T) {
 	}
 }
 
-// TestPruneNeverTouchesTheCurrentFile pins that the file being written to is
-// never a candidate: it is the configured path, it carries no timestamp, and it
-// falls outside the archive names.
+// TestPruneNeverTouchesTheCurrentFile pins that the file being written to is never a candidate: it
+// is the configured path, it carries no timestamp, and it falls outside the archive names.
 func TestPruneNeverTouchesTheCurrentFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "app.log")
@@ -199,10 +182,7 @@ func TestPruneNeverTouchesTheCurrentFile(t *testing.T) {
 	}
 }
 
-// TestCountLimitKeepsTheNewest pins the ordering the count limit uses. Archive
-// names do not sort chronologically — a sequenced name sorts ahead of the plain
-// one for the same second — so an implementation that sorted by name would
-// delete the newest of a busy second and keep an older one.
+// TestCountLimitKeepsTheNewest pins the ordering the count limit uses.
 func TestCountLimitKeepsTheNewest(t *testing.T) {
 	dir := t.TempDir()
 	stamp := time.Date(2026, 9, 13, 12, 0, 0, 0, time.Local)
@@ -210,9 +190,6 @@ func TestCountLimitKeepsTheNewest(t *testing.T) {
 	sequenced := makeArchive(t, dir, stamp, 1, "second of the second\n")
 	older := makeArchive(t, dir, stamp.Add(-time.Hour), 0, "an hour earlier\n")
 
-	// A count limit of one is what tells the two orderings apart: by name the
-	// sequenced archive sorts ahead of the plain one, by time it is the newer
-	// of the two.
 	newTestFile(t, filepath.Join(dir, "app.log"), 0, 1, 0, func() time.Time { return stamp })
 
 	if !exists(sequenced) {
@@ -226,14 +203,8 @@ func TestCountLimitKeepsTheNewest(t *testing.T) {
 	}
 }
 
-// TestCloseStopsAndAwaitsBackgroundPrune pins that closing the writer ends the
-// background pruning and waits for the pass in flight.
-//
-// A pass that outlived the writer would take the lock of a closed destination
-// and delete files after the process was done with them, and nothing on the
-// shutdown path would be waiting for it. The stop also has to happen before the
-// writer takes its own lock, which the pass holds while it runs: this test
-// deadlocks rather than fails if that order is the other way round.
+// TestCloseStopsAndAwaitsBackgroundPrune pins that closing the writer ends the background pruning
+// and waits for the pass in flight.
 func TestCloseStopsAndAwaitsBackgroundPrune(t *testing.T) {
 	dir := t.TempDir()
 	rf, err := newRotatingFile(filepath.Join(dir, "app.log"), 0, 0, 1, time.Now, time.Millisecond)
@@ -243,8 +214,6 @@ func TestCloseStopsAndAwaitsBackgroundPrune(t *testing.T) {
 	w := &destWriter{id: "file:" + filepath.Join(dir, "app.log"), sink: rf}
 	rf.startBackground(&w.mu)
 
-	// Let the background prune run a few passes before the close, so that
-	// the close has something to wait for.
 	stale := makeArchive(t, dir, time.Now().AddDate(0, 0, -40), 0, "stale\n")
 	waitFor(t, "the background prune to run once", func() bool { return !exists(stale) })
 
@@ -263,9 +232,8 @@ func TestCloseStopsAndAwaitsBackgroundPrune(t *testing.T) {
 	}
 }
 
-// TestBothLimitsOffStartsNoBackgroundPrune pins that a destination with nothing
-// to prune starts no goroutine. One that ran for the life of the process to
-// find nothing on every pass is a cost with no return.
+// TestBothLimitsOffStartsNoBackgroundPrune pins that a destination with nothing to prune starts no
+// goroutine.
 func TestBothLimitsOffStartsNoBackgroundPrune(t *testing.T) {
 	dir := t.TempDir()
 	rf := newTestFile(t, filepath.Join(dir, "app.log"), 1024, 0, 0, time.Now)
@@ -275,13 +243,11 @@ func TestBothLimitsOffStartsNoBackgroundPrune(t *testing.T) {
 	if rf.stop != nil || rf.done != nil {
 		t.Error("a destination with both pruning limits off started a background prune")
 	}
-	// Stopping one that was never started must not block either.
 	rf.stopBackground()
 }
 
-// TestPruneFailureIsReportedOnce pins that a prune which cannot even list the
-// directory says so, once. The same fault recurs on every pass, and a line each
-// would flood the stream an operator reads.
+// TestPruneFailureIsReportedOnce pins that a prune which cannot even list the directory says so,
+// once.
 func TestPruneFailureIsReportedOnce(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "logs")
 	if err := os.Mkdir(dir, 0o700); err != nil {
@@ -306,9 +272,6 @@ func TestPruneFailureIsReportedOnce(t *testing.T) {
 	requireOnePrefix(t, reported)
 }
 
-// requireOnePrefix asserts that a report line carries this module's prefix
-// once: every line to standard error is prefixed where it is written, so a
-// message that spells the prefix out itself reads "log: log:".
 func requireOnePrefix(t *testing.T, reported string) {
 	t.Helper()
 	if !strings.HasPrefix(reported, "log: ") || strings.Contains(reported, "log: log:") {
@@ -316,9 +279,8 @@ func requireOnePrefix(t *testing.T, reported string) {
 	}
 }
 
-// TestAnArchiveThatCannotBeDeletedIsReportedOnce is the other failure a prune
-// can meet: the directory lists, and an archive in it cannot be removed. It is
-// reported once, with the archive named and the prefix written once.
+// TestAnArchiveThatCannotBeDeletedIsReportedOnce is the other failure a prune can meet: the
+// directory lists, and an archive in it cannot be removed.
 func TestAnArchiveThatCannotBeDeletedIsReportedOnce(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("the superuser deletes from a directory without write permission")
@@ -328,8 +290,6 @@ func TestAnArchiveThatCannotBeDeletedIsReportedOnce(t *testing.T) {
 		t.Fatalf("creating the log directory failed: %v", err)
 	}
 	rf := newTestFile(t, filepath.Join(dir, "app.log"), 0, 0, 1, time.Now)
-	// An archive past the retention appears after the open, and the directory
-	// then refuses to have it removed.
 	archive := filepath.Join(dir, "app-20200101-000000.log")
 	if err := os.WriteFile(archive, []byte("old\n"), 0o600); err != nil {
 		t.Fatalf("creating the archive failed: %v", err)
