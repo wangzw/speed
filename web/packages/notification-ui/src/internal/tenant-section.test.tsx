@@ -15,8 +15,6 @@ const errorState: AsyncSectionErrorState = {
   onRetry: vi.fn(),
 }
 
-/** A host whose read runs again on demand, the way a surface wires
- * `refreshing` to its read's fetching state. */
 function InFlightHarness() {
   const [refreshing, setRefreshing] = useState(false)
   return (
@@ -39,8 +37,6 @@ function InFlightHarness() {
   )
 }
 
-/** A host whose read starts failing as a tenant refusal after the refresh
- * failure that left the content under a stale notice. */
 function RefusalHarness() {
   const [refused, setRefused] = useState(false)
   return (
@@ -67,8 +63,6 @@ function RefusalHarness() {
   )
 }
 
-/** The retry puts the read back in flight, withdrawing the notice while
- * its button holds focus. */
 function FocusHarness() {
   const [refreshing, setRefreshing] = useState(false)
   return (
@@ -86,8 +80,6 @@ function FocusHarness() {
   )
 }
 
-/** Exposed so a test can start an automatic re-read without moving focus
- * off the notice, as a background refetch does. */
 let startAutomaticRead: (() => void) | undefined
 
 function AutomaticReadHarness() {
@@ -135,8 +127,6 @@ describe('TenantAsyncSection', () => {
   })
 
   it('treats a bare 404 that carries no code at all as the admission refusal', () => {
-    // A host-created error or a test double may carry the status alone;
-    // auth-core's predicate classifies that shape as the refusal too.
     renderWithProviders(
       <TenantAsyncSection<unknown>
         pending={false}
@@ -241,10 +231,8 @@ describe('TenantAsyncSection', () => {
 
   it('withdraws the stale notice while the retry is in flight', async () => {
     renderWithProviders(<InFlightHarness />, { language: 'zh-CN' })
-    // The failed refresh over settled content supplies the notice ...
     expect(screen.getByRole('alert')).toHaveTextContent(zhCN.stale.description)
     await userEvent.click(screen.getByRole('button', { name: 'start read' }))
-    // ... and a read in flight withdraws it while the content stays.
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.getByText('content: ready')).toBeInTheDocument()
   })
@@ -258,8 +246,6 @@ describe('TenantAsyncSection', () => {
     await userEvent.keyboard('{Enter}')
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    // Removing the focused button must not drop a keyboard user on the
-    // document body, where they would tab in from the top again.
     expect(document.activeElement).not.toBe(document.body)
     expect(document.activeElement).toHaveTextContent('content: ready')
   })
@@ -303,14 +289,11 @@ describe('TenantAsyncSection', () => {
 
   it('replaces a stale notice and the content once admission refuses the tenant', async () => {
     renderWithProviders(<RefusalHarness />, { language: 'en-US' })
-    // The refresh failure left the old content under the stale notice ...
     expect(screen.getByRole('alert')).toHaveTextContent(enUS.stale.description)
     expect(screen.getByText('content: ready')).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'refuse' }))
 
-    // ... and a tenant refusal makes that content meaningless: the notice
-    // and the content give way to the refusal placeholder, with no retry.
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.getByText(enUS.tenantUnavailable.title)).toBeInTheDocument()
     expect(screen.queryByText('content: ready')).not.toBeInTheDocument()

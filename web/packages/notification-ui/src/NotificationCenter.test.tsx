@@ -1,12 +1,3 @@
-/**
- * NotificationCenter behaviour: the composed page renders the inbox, and
- * the preference half only when the presence provider says the feature is
- * served -- without a provider (or with `preferences` false) neither the
- * taxonomy nor the preference read is issued. The optional `inbox` and
- * `preferences` props pass through to the two surfaces, and the served
- * channels decide the matrix's optional columns.
- */
-
 import { describe, expect, it } from 'vitest'
 import type { ReactElement } from 'react'
 import { screen, waitFor } from '@testing-library/react'
@@ -70,7 +61,6 @@ function mount(ui: ReactElement) {
   return { rig, ...renderWithProviders(ui) }
 }
 
-/** The matrix's column labels, in rendered order. */
 function columnLabels(): string[] {
   return screen
     .getAllByRole('columnheader')
@@ -80,8 +70,6 @@ function columnLabels(): string[] {
 describe('NotificationCenter', () => {
   it('renders only the inbox and reads no preference data without a provider', async () => {
     const { rig } = mount(<NotificationCenter />)
-    // Fail closed: the inbox is there; the preference half and its two
-    // reads are not.
     expect(await screen.findByText(zhCN.inbox.empty.title)).toBeInTheDocument()
     expect(screen.queryByText(zhCN.preferences.title)).toBeNull()
     expect(rig.calls.some((call) => call.path === PREFERENCES_PATH)).toBe(false)

@@ -1,23 +1,6 @@
 /**
- * NotificationBell: the header bell with its unread-count badge.
- *
- * It reads the caller's unread count through the generated
- * GET /notifications/messages/unread-count operation (keyed under the
- * acting tenant, kept fresh by the live stream and by each read's own
- * staleness) and renders it as an icon-only button. The count is carried
- * on the button's accessible name (the standards' icon-only rule) and the
- * badge glyph is hidden from the accessibility tree, so assistive
- * technology reads "Notifications: 3 unread" once rather than a stray
- * "3". Above BADGE_MAX the badge prints "99+" and the name carries that
- * same text, so the visible badge stays inside the accessible name. At zero
- * unread the bell renders no badge at all: a hidden "0" would still be
- * visible text the accessible name does not carry (WCAG 2.5.3), and hiding
- * it with display:none only trades that for a badge nobody asked for.
- *
- * The button is controlled: `onClick` is the host's navigation to the
- * notification surface -- the bell carries no routing itself, so it sits
- * in any shell's header actions. A host may replace the default bell
- * glyph through `icon`.
+ * The header bell with its unread-count badge. The bell is controlled:
+ * `onClick` is the host's navigation and the bell carries no routing.
  */
 
 import type { MouseEvent, ReactNode } from 'react'
@@ -29,6 +12,8 @@ import {
   useNotificationUnread,
 } from './useNotificationUnread.js'
 
+/** The header bell's props: `onClick` is the host's navigation and `icon`
+ * replaces the built-in glyph. */
 export type NotificationBellProps = {
   /** Invoked when the bell is activated; the host navigates to the
    * notification surface. */
@@ -41,8 +26,6 @@ export type NotificationBellProps = {
 export function NotificationBell({ onClick, icon }: NotificationBellProps) {
   const { t } = useNotificationUiTranslation()
   const { badgeText, phrase } = useNotificationUnread()
-  // The badge's own text is carried on the button's accessible name too, so
-  // the visible count stays part of the name (WCAG 2.5.3).
   const label = phrase ?? t('bell.label')
   return (
     <IconButton
@@ -53,11 +36,8 @@ export function NotificationBell({ onClick, icon }: NotificationBellProps) {
       <Badge
         color="error"
         max={NOTIFICATION_BADGE_MAX}
-        // A pale `error.light` fill under the neutral-900 ink: the solid
-        // `error.main` fill reads as black in a preset whose semantic tones
-        // are deepened for a saturated canvas, and `error.dark` on a pale
-        // fill only clears contrast in such a preset. The neutral ink clears
-        // it in every preset, in both modes.
+        // error.light fill with grey.900 ink clears contrast in every preset
+        // and both modes.
         sx={{
           '& .MuiBadge-badge': { bgcolor: 'error.light', color: 'grey.900' },
         }}
@@ -73,7 +53,6 @@ export function NotificationBell({ onClick, icon }: NotificationBellProps) {
   )
 }
 
-/** A hand-drawn bell glyph (decorative). */
 function BellIcon() {
   return (
     <svg

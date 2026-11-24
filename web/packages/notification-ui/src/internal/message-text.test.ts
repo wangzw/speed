@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { resolveMessageText } from './message-text.js'
 
-/** A stand-in formatter that makes its input visible in the result. */
 const fmt = (value: string | number | Date): string =>
   `fmt:${value instanceof Date ? value.toISOString() : String(value)}`
 

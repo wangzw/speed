@@ -1,10 +1,3 @@
-/**
- * NotificationPreferences at the 375px floor in a real browser: the English
- * "In-app" column header must sit on one line rather than break at its
- * hyphen. jsdom lays nothing out, so only the browser can see the header's
- * line boxes; the case asks a Range over the header's text for its client
- * rects and requires them all to land in one vertical band.
- */
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import Box from '@mui/material/Box'
@@ -23,14 +16,12 @@ import { NotificationPresenceProvider } from './NotificationPresence.js'
 const PREFERENCES_PATH = '/api/v1/notifications/preferences'
 const TYPES_PATH = '/api/v1/notifications/types'
 
-/** One declared type the matrix lists, with every channel served. */
 const TYPE = {
   key: 'billing.invoice.due',
   group: 'billing',
   channels: ['in_app', 'email', 'sms'],
 }
 
-/** The matrix read: one type, every channel for that type. */
 const responder: RealResponder = (call: RealCall) => {
   if (call.path === TYPES_PATH && call.method === 'GET') {
     return jsonResponse(200, {
@@ -65,9 +56,6 @@ describe('NotificationPreferences column headers at 375 in Chromium', () => {
     await page.viewport(375, 900)
     const rig = makeRealClientRigWithoutSession(responder)
     rig.store.set('access-1')
-    // The tenant shell gives page content the theme's spacing-3 inset on
-    // each side; reproduce it so the matrix meets the content width the
-    // account page actually offers at this viewport.
     renderWithProviders(
       <Box sx={{ p: 3 }}>
         <NotificationPresenceProvider preferences channels={['email', 'sms']}>
@@ -82,9 +70,6 @@ describe('NotificationPreferences column headers at 375 in Chromium', () => {
     })
     await document.fonts.ready
 
-    // One rect per line box: a header that breaks at the hyphen answers
-    // with two rects on two different top edges, one that stays on one
-    // line with rects sharing a single band.
     const range = document.createRange()
     range.selectNodeContents(header)
     const tops = Array.from(range.getClientRects()).map((rect) =>
@@ -94,7 +79,6 @@ describe('NotificationPreferences column headers at 375 in Chromium', () => {
   })
 })
 
-/** A settle-by-hand gate so a write can be held in flight. */
 function deferredWrite(): {
   readonly promise: Promise<void>
   readonly resolve: () => void
@@ -106,15 +90,12 @@ function deferredWrite(): {
   return { promise, resolve }
 }
 
-/** One animation frame: the updated state has reached the DOM and the
- * browser has had its chance to react to it. */
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => {
     requestAnimationFrame(() => resolve())
   })
 }
 
-/** What currently holds focus, for a failure message. */
 function describeActiveElement(): string {
   const active = document.activeElement
   if (active === null) {
@@ -193,10 +174,6 @@ describe('NotificationPreferences write focus in Chromium', () => {
     await userEvent.click(checkbox)
     await nextFrame()
 
-    // The write is in flight: the cell keeps the focus the click gave it,
-    // reports busy, and the controlled value still shows the server's
-    // answer. Focus is asserted first so a control that dropped it is
-    // reported as the defect rather than as a missing attribute.
     expect(
       checkbox,
       `focus while the write is in flight; document.activeElement is ${describeActiveElement()}`,
@@ -209,8 +186,6 @@ describe('NotificationPreferences write focus in Chromium', () => {
     await waitFor(() =>
       expect(checkbox).not.toHaveAttribute('aria-disabled', 'true'),
     )
-    // The settled write keeps the cell where the operator left it, and the
-    // re-read turns it on.
     expect(
       checkbox,
       `focus after the write settled; document.activeElement is ${describeActiveElement()}`,

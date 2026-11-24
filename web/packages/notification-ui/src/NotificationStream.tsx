@@ -1,30 +1,7 @@
 /**
- * NotificationStreamProvider: the live-update subscription for the
- * notification surface.
- *
- * The backend pushes "the inbox just gained a row" over the
- * server-sent-event stream at GET /api/v1/notifications/stream (the
- * notification.stream module); this provider opens that stream through
- * the host-supplied opener (the @speed/api-client createClient's
- * openEventStream, wired from the assembly) and, on every `message`
- * frame, invalidates the acting tenant's unread count and message list so
- * the header bell and the inbox re-read. It carries no message content of
- * its own -- the frame names only a message id (see the stream design) --
- * so the re-read is the point, never a patched cache.
- *
- * Reconnect is the provider's policy, not the transport's: the opener
- * reports a dropped or ended connection once, and the provider re-opens
- * with capped exponential backoff, resetting the backoff whenever a
- * frame arrives. The page's own visibility gates it too -- a hidden tab
- * closes the connection (the backend sends nothing a background tab
- * needs, and a long-lived connection per hidden tab is waste) and a
- * visible tab reconnects at once, so a returned viewer sees the latest
- * state without waiting out a backoff.
- *
- * When the host mounts no opener (a deployment without the stream, or a
- * read-only surface), no connection is opened and the surfaces still
- * read their data on mount and when the tab becomes visible again --
- * real-time is an enhancement, never a prerequisite.
+ * The live-update subscription for the notification surface: opens the
+ * host-supplied stream and invalidates the acting tenant's reads on each
+ * `message` frame. Reconnect and hidden-tab pausing are its own policy.
  */
 
 import { createContext, useContext, useEffect } from 'react'
@@ -42,48 +19,34 @@ import {
   useCurrentTenant,
 } from '@speed/auth-core'
 
-/**
- * The stream path, taken from the generated contract's own query-key
- * constructor (the orval surface's first — and only — segment) rather
- * than hand-written, so the frontend names no endpoint path itself.
- */
 const NOTIFICATION_STREAM_PATH = getNotificationStreamSubscribeQueryKey()[0]
 
-/** Base delay before the first reconnect attempt. */
 const RECONNECT_BASE_MS = 1000
-/** Cap on the reconnect backoff. */
 const RECONNECT_MAX_MS = 30000
-/** Cap on the backoff exponent, so 2 ** n stays a sane number. */
 const RECONNECT_MAX_EXPONENT = 6
 
 const NotificationStreamContext = createContext<EventStreamOpener | null>(null)
 
+/** Props for the stream provider: the host's opener, the enabled gate, and
+ * the identity counter that reopens the connection. */
 export interface NotificationStreamProviderProps {
   /**
-   * The event-stream opener (the assembled client's `openEventStream`).
-   * Absent, no stream is opened and the subscription is inert.
+   * The event-stream opener. Absent, no stream is opened and the
+   * subscription is inert.
    */
   readonly openStream?: EventStreamOpener
   /**
-   * Whether to hold the connection open. Defaults to true. A host passes
-   * false when its own state says the surface should not be streaming yet
-   * -- before sign-in, say -- so the subscription opens only for a viewer
-   * who may read it (the stream is authenticated; connecting anonymously
-   * would only 401 and reconnect). The gate is the host's because it is
-   * the host that owns the session; this package reads no session state
-   * for it.
+   * Whether to hold the connection open; defaults to true. The host passes
+   * false while the surface should not stream yet.
    */
   readonly enabled?: boolean
   /**
-   * A counter the host bumps whenever the identity behind the connection
-   * changes -- starting or ending an impersonation, whose effective
-   * account swaps without the tenant necessarily changing. The
-   * subscription registers per (tenant, effective account), so a bump
-   * closes the current connection and opens a new one; children stay
-   * mounted, because the identity changed, not the page. Defaults to 0,
-   * which never triggers a rebuild.
+   * A counter the host bumps when the effective identity changes (for
+   * example at the start or end of an impersonation). A bump reopens the
+   * connection; children stay mounted. Defaults to 0.
    */
   readonly identityGeneration?: number
+  /** The subtree that stays mounted across reconnects. */
   readonly children: ReactNode
 }
 
@@ -98,9 +61,6 @@ export function NotificationStreamProvider({
   return (
     <NotificationStreamContext.Provider value={openStream ?? null}>
       {openStream !== undefined && enabled && (
-        // Keyed by the identity generation, not by the children: a bump
-        // tears the subscription down and re-registers it under the new
-        // effective account, while the surfaces below stay mounted.
         <NotificationStreamSubscriber
           key={identityGeneration}
           openStream={openStream}
@@ -117,8 +77,6 @@ export function useNotificationStreamOpener(): EventStreamOpener | null {
   return useContext(NotificationStreamContext)
 }
 
-/** Opens the stream for the acting tenant and re-reads on each frame;
- * renders nothing. */
 function NotificationStreamSubscriber({
   openStream,
 }: {
@@ -135,10 +93,6 @@ function NotificationStreamSubscriber({
     let closed = false
     let retries = 0
     let timer: ReturnType<typeof setTimeout> | undefined
-    // Whether the connection that just ended was refused by the admission
-    // layer. The transport reports a failure through onError and then the
-    // terminal state through onClose, so the two callbacks carry one
-    // connection's outcome.
     let refused = false
 
     const invalidate = (): void => {
@@ -177,24 +131,10 @@ function NotificationStreamSubscriber({
           retries = 0
           invalidate()
         },
-        // A failure and a clean server end both mean "reconnect": the
-        // transport neither retries nor reconnects (see event-stream.ts),
-        // so the policy lives here. Both terminal states surface through
-        // onClose -- the transport fires it for a failure too, right after
-        // onError -- so subscribing to onClose alone reconnects exactly
-        // once per drop. Subscribing to onError as well would schedule
-        // twice per failure, skipping the base delay and doubling the
-        // backoff step.
-        //
-        // The one failure that stops the loop is the admission layer's
-        // refusal: retrying cannot change it, and every attempt would
-        // refresh a console error. A tenant or identity change re-registers
-        // the subscription, and a hidden tab that becomes visible opens
-        // once, so both paths still recover.
+        // The transport fires onError then onClose for one connection's
+        // failure; only onClose schedules, or a failure would schedule twice
+        // and skip the base delay.
         onError: (error: unknown) => {
-          // The admission layer's refusal is classified by auth-core, so a
-          // stream failure that crossed the transport boundary reads the
-          // same way the surfaces read it.
           refused = isTenantAdmissionRefusal(error)
         },
         onClose: () => {

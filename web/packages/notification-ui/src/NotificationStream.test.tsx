@@ -1,12 +1,3 @@
-/**
- * NotificationStreamProvider behaviour: it opens the stream at the
- * generated stream path for the acting tenant, re-reads (invalidates) on
- * a `message` frame and ignores other frames, reconnects with backoff
- * after the connection ends, and closes the connection on unmount. The
- * opener is a stand-in; the transport's own framing is api-client's
- * event-stream suite.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import { restoreRealTimers } from '@speed/test-utils/timers'
 import { act, fireEvent, render, screen } from '@testing-library/react'
@@ -31,7 +22,6 @@ interface OpenedStream {
   closed: number
 }
 
-/** A stand-in opener recording every open and its handle's closes. */
 function fakeOpener(): {
   readonly opened: OpenedStream[]
   readonly opener: EventStreamOpener
@@ -106,8 +96,6 @@ describe('NotificationStreamProvider', () => {
     renderWithProviders(<Harness />)
     expect(opened).toHaveLength(1)
 
-    // The effective account changed: the old connection is closed and a
-    // new registration opens at the same path, under the new identity.
     await user.click(screen.getByRole('button', { name: 'bump' }))
     expect(opened).toHaveLength(2)
     expect(opened[0]?.closed).toBe(1)
@@ -147,12 +135,6 @@ describe('NotificationStreamProvider', () => {
         </NotificationStreamProvider>,
       )
       expect(opened).toHaveLength(1)
-      // The transport reports a failure through onError and then always
-      // through onClose (event-stream.ts settle()): both fire for one
-      // dropped connection. The single drop must schedule one reconnect at
-      // the base delay -- a provider that subscribes to onError too would
-      // schedule twice, landing the first retry at 2s (the doubled step)
-      // and skipping the 1s base.
       act(() => {
         opened[0]?.options.onError?.(
           new ApiError({ status: 0, code: 'client.network', attempts: 1 }),
@@ -214,9 +196,6 @@ describe('NotificationStreamProvider', () => {
         </NotificationStreamProvider>,
       )
       expect(opened).toHaveLength(1)
-      // The transport's terminal pair for one refusal: onError with the bare
-      // status, then onClose. Retrying cannot change the answer, so no timer
-      // may be left behind.
       act(() => {
         opened[0]?.options.onError?.(
           new ApiError({ status: 404, code: 'client.http.404', attempts: 1 }),
@@ -241,8 +220,6 @@ describe('NotificationStreamProvider', () => {
           <div>content</div>
         </NotificationStreamProvider>,
       )
-      // A stream failure the transport surfaced as a plain object: the
-      // status is the fact, so the refusal is still recognised.
       act(() => {
         opened[0]?.options.onError?.({
           status: 404,
@@ -349,8 +326,6 @@ describe('NotificationStreamProvider', () => {
   })
 })
 
-/** Overrides jsdom's visibility state for the visibility cases; the caller
- * removes the own property afterwards so the prototype's getter is back. */
 function setDocumentVisibility(state: 'visible' | 'hidden'): void {
   Object.defineProperty(document, 'visibilityState', {
     configurable: true,

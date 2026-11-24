@@ -1,18 +1,3 @@
-/**
- * NotificationInbox behaviour over the generated inbox operations: the
- * caller's messages render (title, body, unread chip), an unread row's
- * "mark as read" POSTs that message's read route, confirms the message it
- * changed and the list re-reads with it marked, the header action POSTs
- * read-all and reports the answer's count, both actions share one feedback
- * slot and interlock while one is in flight, a message carrying a link
- * activates the host's `onOpen` after marking it read, a page size pages
- * through the response's total, the embedded variant renders its own
- * heading, a
- * per-row detail renderer appends content, an empty answer renders the
- * empty placeholder, a failed read renders the retryable error
- * placeholder, and the whole surface passes axe.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 import type { ReactElement } from 'react'
@@ -56,16 +41,11 @@ function message(row: Row): Record<string, unknown> {
     body: row.body,
     params: row.params ?? null,
     link: row.link ?? '',
-    // The server's own shape: an unread message carries read_at as JSON
-    // null (its view's *time.Time has no omitempty), a read one as an
-    // instant string.
     read_at: row.read ? '2026-08-01T02:00:00.000Z' : null,
     created_at: row.createdAt ?? '2026-08-01T01:00:00.000Z',
   }
 }
 
-/** A stateful inbox the responder reads and mutates, honouring the
- * listing's limit and offset. */
 function inboxResponder(rows: Row[]): RealResponder {
   const unread = () => rows.filter((row) => !row.read).length
   return (call: RealCall) => {
@@ -110,7 +90,6 @@ function mount(rows: Row[], ui: ReactElement = <NotificationInbox />) {
   return { rig, ...renderWithProviders(ui) }
 }
 
-/** A response the test settles by hand, so a write can be held in flight. */
 function deferredResponse(): {
   readonly promise: Promise<Response>
   readonly resolve: (response: Response) => void
@@ -122,8 +101,6 @@ function deferredResponse(): {
   return { promise, resolve }
 }
 
-/** A host that changes the list context the inbox renders with: both a
- * group filter and a page size change are new lists. */
 function ContextHarness({ pageSize }: { readonly pageSize: number }) {
   const [group, setGroup] = useState('')
   const [size, setSize] = useState(pageSize)
@@ -148,7 +125,6 @@ describe('NotificationInbox', () => {
     ])
     expect(await screen.findByText('Build finished')).toBeInTheDocument()
     expect(screen.getByText('The build succeeded.')).toBeInTheDocument()
-    // The unread row offers the action; the read row does not.
     const markRead = screen.getByRole('button', {
       name: zhCN.inbox.markReadAria.replace('{{title}}', 'Build finished'),
     })
@@ -165,7 +141,6 @@ describe('NotificationInbox', () => {
         ),
       ).toBe(true),
     )
-    // The list re-read: the unread chip is gone from the first row.
     await waitFor(() => expect(screen.queryAllByText(zhCN.inbox.unread)).toHaveLength(0))
     await expectNoAxeViolations()
   })
@@ -186,9 +161,6 @@ describe('NotificationInbox', () => {
       const markRead = await screen.findByRole('button', {
         name: locale.inbox.markReadAria.replace('{{title}}', 'Build finished'),
       })
-      // WCAG 2.5.3: the control's visible text is part of its accessible
-      // name, so the name may not put other words between the words of the
-      // visible phrase.
       expect(markRead.textContent).toBe(locale.inbox.markRead)
       expect(markRead.getAttribute('aria-label')).toContain(
         locale.inbox.markRead,
@@ -202,9 +174,6 @@ describe('NotificationInbox', () => {
       { id: 'm2', title: 'Two', body: '', read: false },
     ])
     await screen.findByText('One')
-    // The confirmation is one standing status region: it is already in the
-    // tree, empty, before the write -- so the count lands as a change a
-    // screen reader announces, not a region born together with its text.
     const notice = screen.getByRole('status')
     expect(notice.textContent).toBe('')
     await userEvent.click(
@@ -212,7 +181,6 @@ describe('NotificationInbox', () => {
     )
     const done = zhCN.inbox.markAllReadDone.replace('{{n}}', '2')
     expect(await screen.findByText(done)).toBeInTheDocument()
-    // Still the same region (never a second born with its text), now filled.
     expect(screen.getByRole('status')).toBe(notice)
     expect(notice).toHaveTextContent(done)
     expect(
@@ -225,8 +193,6 @@ describe('NotificationInbox', () => {
       { id: 'm1', title: 'Build finished', body: '', read: false },
     ])
     await screen.findByText('Build finished')
-    // The scope's success region stands in the tree empty before the write,
-    // so the confirmation lands as a change a screen reader announces.
     const notice = screen.getByRole('status')
     expect(notice).toHaveTextContent('')
 
@@ -235,8 +201,6 @@ describe('NotificationInbox', () => {
         name: zhCN.inbox.markReadAria.replace('{{title}}', 'Build finished'),
       }),
     )
-    // The single-message write confirms too, naming the message it marked;
-    // the flipped row state alone is not the acknowledgement.
     await waitFor(() => expect(notice).toHaveTextContent('Build finished'))
   })
 
@@ -255,7 +219,6 @@ describe('NotificationInbox', () => {
     renderWithProviders(<NotificationInbox />)
     await screen.findByText('Build finished')
 
-    // The row write fails: its code stands in the scope's region.
     await userEvent.click(
       screen.getByRole('button', {
         name: zhCN.inbox.markReadAria.replace('{{title}}', 'Build finished'),
@@ -263,8 +226,6 @@ describe('NotificationInbox', () => {
     )
     expect(await screen.findByRole('alert')).toBeInTheDocument()
 
-    // The header write then lands. One scope holds one result, so the
-    // success replaces the failure rather than standing beside it.
     await userEvent.click(
       screen.getByRole('button', { name: zhCN.inbox.markAllRead }),
     )
@@ -302,15 +263,11 @@ describe('NotificationInbox', () => {
     markAll.focus()
     await userEvent.click(markAll)
 
-    // Only the control that started the write reports busy, and focus stays
-    // on it for the attempt.
     await waitFor(() => expect(markAll).toHaveAttribute('aria-busy', 'true'))
     expect(markAll).toHaveAttribute('aria-disabled', 'true')
     expect(within(markAll).getByRole('progressbar')).toBeInTheDocument()
     expect(document.activeElement).toBe(markAll)
 
-    // The scope's other write controls are unavailable without a reason: no
-    // busy report, no progress indicator, nothing to describe them.
     for (const control of [rowAction, sibling]) {
       expect(control).toHaveAttribute('aria-disabled', 'true')
       expect(control).not.toHaveAttribute('aria-busy', 'true')
@@ -318,7 +275,6 @@ describe('NotificationInbox', () => {
       expect(control).not.toHaveAccessibleDescription()
     }
 
-    // A sibling activation is swallowed by pointer and keyboard alike.
     const rowWrites = () =>
       rig.calls.filter(
         (call) => call.method === 'POST' && call.path.endsWith('/read'),
@@ -338,8 +294,6 @@ describe('NotificationInbox', () => {
       ),
     ).toBeInTheDocument()
 
-    // Nothing is unread now: the action's precondition is unmet. It stays
-    // unavailable with its reason, is no longer busy, and never lost focus.
     await waitFor(() =>
       expect(markAll).toHaveAccessibleDescription(
         zhCN.inbox.markAllReadUnavailable,
@@ -382,8 +336,6 @@ describe('NotificationInbox', () => {
     expect(within(first).getByRole('progressbar')).toBeInTheDocument()
     expect(document.activeElement).toBe(first)
 
-    // The header action and the other row's action are siblings in the same
-    // scope: unavailable, no busy report, no reason.
     for (const control of [second, markAll]) {
       expect(control).toHaveAttribute('aria-disabled', 'true')
       expect(control).not.toHaveAttribute('aria-busy', 'true')
@@ -398,9 +350,6 @@ describe('NotificationInbox', () => {
 
     first.focus()
     gate.resolve(new Response(null, { status: 204 }))
-    // The row's own action leaves with the row once it turns read. Focus
-    // moves in the same commit to the same control on the next unread row,
-    // never to the document body.
     await waitFor(() =>
       expect(
         screen.queryByRole('button', {
@@ -444,8 +393,6 @@ describe('NotificationInbox', () => {
       ).toBeNull(),
     )
 
-    // No unread row's action remains, so the named list takes focus: a
-    // stable element the write did not remove, programmatically focusable.
     const list = screen.getByRole('list', { name: zhCN.inbox.title })
     await waitFor(() => expect(document.activeElement).toBe(list))
   })
@@ -474,10 +421,6 @@ describe('NotificationInbox', () => {
     await userEvent.click(first)
     await waitFor(() => expect(first).toHaveAttribute('aria-busy', 'true'))
 
-    // The operator moves focus outside the list while the write runs. The
-    // landing place -- the next unread row's action -- is deliberately not
-    // where the operator went, so a guard that moved focus unconditionally
-    // would take it from the control the operator chose.
     markAll.focus()
     expect(document.activeElement).toBe(markAll)
 
@@ -489,8 +432,6 @@ describe('NotificationInbox', () => {
         }),
       ).toBeNull(),
     )
-    // The landing place belongs only to focus the removal dropped; the
-    // operator's own choice is not taken back.
     expect(document.activeElement).toBe(markAll)
   })
 
@@ -530,8 +471,6 @@ describe('NotificationInbox', () => {
       ).toBeNull(),
     )
 
-    // The row that follows is already read, so the criterion falls back to
-    // the same action on the previous unread row.
     await waitFor(() => expect(document.activeElement).toBe(previous))
   })
 
@@ -560,16 +499,10 @@ describe('NotificationInbox', () => {
     const markAll = screen.getByRole('button', { name: zhCN.inbox.markAllRead })
 
     await userEvent.click(title)
-    // Focus stays on the initiating title for the whole attempt; the
-    // assertions below name that first, so a control that dropped focus is
-    // reported as the defect rather than as a missing attribute.
     expect(document.activeElement).toBe(title)
     await waitFor(() => expect(title).toHaveAttribute('aria-busy', 'true'))
     expect(title).toHaveAttribute('aria-disabled', 'true')
 
-    // The title is the one control that started the write: its row's action,
-    // the sibling row's action and the header action are unavailable
-    // siblings, without a busy report or a reason of their own.
     for (const control of [rowAction, sibling, markAll]) {
       expect(control).toHaveAttribute('aria-disabled', 'true')
       expect(control).not.toHaveAttribute('aria-busy', 'true')
@@ -577,8 +510,6 @@ describe('NotificationInbox', () => {
     }
 
     gate.resolve(new Response(null, { status: 204 }))
-    // A title stays in the document when its row turns read, so the landed
-    // write hands the message to the host with focus still on the title.
     await waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(title).not.toHaveAttribute('aria-busy', 'true'))
     expect(document.activeElement).toBe(title)
@@ -608,9 +539,6 @@ describe('NotificationInbox', () => {
     await userEvent.click(other)
     await waitFor(() => expect(other).toHaveAttribute('aria-busy', 'true'))
 
-    // The title opens a message and, for an unread one, writes its read
-    // first; it is a write control of the same scope. It stays focusable and
-    // unavailable without a reason, and its activation is swallowed.
     expect(title).toHaveAttribute('aria-disabled', 'true')
     expect(title).not.toHaveAttribute('aria-busy', 'true')
     expect(title).not.toHaveAccessibleDescription()
@@ -656,7 +584,6 @@ describe('NotificationInbox', () => {
       await screen.findByRole('button', { name: 'Open me' }),
     )
     await waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1))
-    // The read lands first: a row is handed over already marked.
     expect(order).toEqual(['read', 'open:/objects/1'])
   })
 
@@ -702,7 +629,6 @@ describe('NotificationInbox', () => {
     expect(
       screen.getByRole('button', { name: zhCN.inbox.previous }),
     ).not.toHaveAttribute('aria-disabled', 'true')
-    // The next page is the second window of the list.
     expect(
       rig.calls.some(
         (call) =>
@@ -716,17 +642,12 @@ describe('NotificationInbox', () => {
       screen.getByRole('button', { name: zhCN.inbox.next }),
     ).not.toHaveAttribute('aria-disabled', 'true')
 
-    // The last page: five rows at a page size of two leave one row in the
-    // third window, and no fourth window exists to read. The pager must
-    // stop there rather than point past the total.
     const nextToEnd = screen.getByRole('button', { name: zhCN.inbox.next })
     nextToEnd.focus()
     await userEvent.click(nextToEnd)
     expect(await screen.findByText('Five')).toBeInTheDocument()
     expect(screen.queryByText('Three')).toBeNull()
     const nextAtEnd = screen.getByRole('button', { name: zhCN.inbox.next })
-    // The action that moved to the last page stays focusable and keeps the
-    // focus it had; its precondition is unmet with no reason to state.
     expect(nextAtEnd).toHaveAttribute('aria-disabled', 'true')
     expect(nextAtEnd).not.toHaveAccessibleDescription()
     expect(nextAtEnd).toHaveFocus()
@@ -763,8 +684,6 @@ describe('NotificationInbox', () => {
     await screen.findByText('One')
 
     await userEvent.click(screen.getByRole('button', { name: zhCN.inbox.next }))
-    // Page two holds only read rows, but the inbox still has two unread
-    // messages on page one: the whole-inbox action stays available.
     await screen.findByText('Three')
     const markAll = screen.getByRole('button', { name: zhCN.inbox.markAllRead })
     expect(markAll).not.toHaveAttribute('aria-disabled', 'true')
@@ -798,8 +717,6 @@ describe('NotificationInbox', () => {
     renderWithProviders(<NotificationInbox pageSize={2} />)
     await screen.findByText('One')
 
-    // A failed write belongs to the same feedback scope: the page it was
-    // raised on owns it, so the move clears the alert.
     await userEvent.click(
       screen.getByRole('button', { name: zhCN.inbox.markAllRead }),
     )
@@ -809,7 +726,6 @@ describe('NotificationInbox', () => {
     expect(await screen.findByText('Three')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
 
-    // Read-all covers the whole inbox, not just the visible page.
     await userEvent.click(
       screen.getByRole('button', { name: zhCN.inbox.markAllRead }),
     )
@@ -820,8 +736,6 @@ describe('NotificationInbox', () => {
       screen.getByRole('button', { name: zhCN.inbox.previous }),
     )
     expect(await screen.findByText('One')).toBeInTheDocument()
-    // The confirmation described the previous page's context, so it goes
-    // with it.
     expect(screen.queryByText(done)).toBeNull()
   })
 
@@ -839,8 +753,6 @@ describe('NotificationInbox', () => {
     await userEvent.click(screen.getByRole('button', { name: zhCN.inbox.next }))
     await screen.findByText('Three')
 
-    // Inspect only the list reads issued after the context change: the
-    // previous page's offset must never be one of them.
     rig.calls.length = 0
     await userEvent.click(screen.getByRole('button', { name: 'change group' }))
     await waitFor(() =>
@@ -886,8 +798,6 @@ describe('NotificationInbox', () => {
     await userEvent.click(
       screen.getByRole('button', { name: 'change page size' }),
     )
-    // The failure described the previous list; a new page size is a new
-    // context, so the banner goes with it.
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
   })
 
@@ -899,8 +809,6 @@ describe('NotificationInbox', () => {
     expect(
       await screen.findByRole('heading', { level: 3, name: zhCN.inbox.title }),
     ).toBeInTheDocument()
-    // The page-level h1 of the page variant is gone; the header's action
-    // still rides beside the heading.
     expect(
       screen.queryByRole('heading', { level: 1, name: zhCN.inbox.title }),
     ).toBeNull()
@@ -955,10 +863,6 @@ describe('NotificationInbox', () => {
 
   it('renders a server time marker in the viewer display zone and follows a zone change', async () => {
     const instant = '2026-11-20T09:30:00.000Z'
-    // The server writes a time segment in the body as a marker carrying the
-    // parameter name; the moment is not formatted on the server. The
-    // viewer's display zone decides the rendered instant, so the same
-    // message reads differently after the provider changes.
     const rows: Row[] = [
       {
         id: 'm1',
@@ -1018,8 +922,6 @@ describe('NotificationInbox', () => {
     expect(
       await screen.findByText(`Transfer due ${rendered}`),
     ).toBeInTheDocument()
-    // The action's accessible name carries the rendered title too, never the
-    // marker character.
     const action = screen.getByRole('button', {
       name: zhCN.inbox.markReadAria.replace(
         '{{title}}',
@@ -1051,8 +953,6 @@ describe('NotificationInbox', () => {
     rig.store.set('access-1')
     renderWithProviders(<NotificationInbox />)
 
-    // A missing parameter and a value that carries no instant leave an empty
-    // slot and the original string respectively; neither leaves the marker.
     expect(await screen.findByText('Expires at .')).toBeInTheDocument()
     expect(
       screen.getByText('Expires at not-a-time.'),
@@ -1078,16 +978,10 @@ describe('NotificationInbox', () => {
     const { rig } = mount([])
     const emptyTitle = await screen.findByText(zhCN.inbox.empty.title)
     expect(emptyTitle).toBeInTheDocument()
-    // The empty placeholder is a status, not a section: it must not enter the
-    // page heading outline (only the page's own "Notifications" h1 does), so
-    // its title carries no heading role, and the placeholder is a polite
-    // status region instead.
     expect(
       screen.queryByRole('heading', { name: zhCN.inbox.empty.title }),
     ).not.toBeInTheDocument()
     expect(emptyTitle.closest('[role="status"]')).not.toBeNull()
-    // With nothing unread, the header action's precondition is unmet: it
-    // stays focusable, carries its reason, and swallows activation.
     const markAll = screen.getByRole('button', { name: zhCN.inbox.markAllRead })
     expect(markAll).toHaveAttribute('aria-disabled', 'true')
     expect(markAll).toHaveAccessibleDescription(
@@ -1104,8 +998,6 @@ describe('NotificationInbox', () => {
       { id: 'm1', title: 'Build finished', body: '', read: false },
     ])
     await screen.findByText('Build finished')
-    // The header action and the per-message action are compact controls;
-    // on a finger-driven device each one gates up to the 44x44 floor.
     const gated = [
       screen.getByRole('button', { name: zhCN.inbox.markAllRead }),
       screen.getByRole('button', {
@@ -1161,8 +1053,6 @@ describe('NotificationInbox', () => {
     ]
     const responder = inboxResponder(rows)
     let listReads = 0
-    // The test decides when a list read stays in flight: it is switched on
-    // only for the retry, so the stale refresh itself keeps settling.
     let holdNextRead = false
     const heldReads: Array<(response: Response) => void> = []
     const rig = makeRealClientRigWithoutSession((call) => {
@@ -1173,7 +1063,6 @@ describe('NotificationInbox', () => {
             heldReads.push(resolve)
           })
         }
-        // The first read settles the list; every later refresh fails.
         if (listReads > 1) {
           return jsonResponse(503, {})
         }
@@ -1188,8 +1077,6 @@ describe('NotificationInbox', () => {
       await queryClient.invalidateQueries()
     })
 
-    // The refresh failed, but the old list stays on screen under the stale
-    // notice rather than being replaced by the error placeholder.
     expect(screen.getByText('Build finished')).toBeInTheDocument()
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.stale.description)
@@ -1204,8 +1091,6 @@ describe('NotificationInbox', () => {
     await userEvent.click(retry)
     await waitFor(() => expect(heldReads.length).toBeGreaterThan(0))
 
-    // While the retry is in flight the notice is withdrawn through the
-    // read's own fetching state, not left standing.
     expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.getByText('Build finished')).toBeInTheDocument()
 
