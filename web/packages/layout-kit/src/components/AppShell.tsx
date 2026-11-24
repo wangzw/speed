@@ -18,7 +18,7 @@ import ListItemText from '@mui/material/ListItemText'
 import Toolbar from '@mui/material/Toolbar'
 import Tooltip from '@mui/material/Tooltip'
 import useMediaQuery from '@mui/material/useMediaQuery'
-import { visuallyHiddenSx } from '@speed/ui-kit'
+import { useInertBackground, visuallyHiddenSx } from '@speed/ui-kit'
 import { useLayoutKitTranslation } from '../internal/translation.js'
 import {
   ChevronLeftIcon,
@@ -501,6 +501,11 @@ export function AppShell({
     onMobileOpenChange?.(next)
   }
 
+  // Gated on the mounted variant: crossing to md+ unmounts the temporary
+  // drawer (its ref goes null) before the open state resets, so the flag
+  // alone would inert the whole page in that commit.
+  const mobileDrawerRef = useRef<HTMLDivElement | null>(null)
+  useInertBackground(!isDesktop && mobileOpen, mobileDrawerRef)
   const permanentSlotState: AppShellNavSlotState = {
     narrow: sidebarCollapsed,
     closeDrawer: () => undefined,
@@ -896,6 +901,7 @@ export function AppShell({
           </Drawer>
         ) : (
           <Drawer
+            ref={mobileDrawerRef}
             variant="temporary"
             open={mobileOpen}
             onClose={() => setMobileOpen(false)}

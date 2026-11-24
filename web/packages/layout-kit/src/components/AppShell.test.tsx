@@ -178,6 +178,41 @@ describe('AppShell', () => {
       })
     })
 
+    it('marks the background inert while the temporary drawer is open and lifts it when it closes', async () => {
+      mockMatchMedia(false)
+      const user = userEvent.setup()
+      const { container, getByRole } = renderWithProviders(
+        <AppShell navItems={NAV_ITEMS}>content</AppShell>,
+      )
+      // keepMounted keeps the closed portal mounted; it must not inert itself.
+      const drawerRoot = document.querySelector<HTMLElement>(
+        `.${drawerClasses.root}`,
+      )
+      expect(drawerRoot).not.toBeNull()
+      expect(drawerRoot).not.toHaveAttribute('inert')
+      expect(container).not.toHaveAttribute('inert')
+
+      await user.click(getByRole('button', { name: zhCN.appShell.openNav }))
+
+      const banner = getByRole('banner', { hidden: true })
+      const main = getByRole('main', { hidden: true })
+      expect(banner.closest('[inert]')).toBe(container)
+      expect(main.closest('[inert]')).toBe(container)
+      expect(drawerRoot).not.toHaveAttribute('inert')
+      expect(drawerRoot?.closest('[inert]')).toBeNull()
+
+      await user.click(
+        getByRole('button', { name: zhCN.appShell.closeNav, hidden: true }),
+      )
+
+      // Lifted before the exit transition ends.
+      expect(banner.closest('[inert]')).toBeNull()
+      expect(main.closest('[inert]')).toBeNull()
+      expect(container).not.toHaveAttribute('inert')
+      expect(drawerRoot).toBeInTheDocument()
+      expect(drawerRoot).not.toHaveAttribute('inert')
+    })
+
     it('defers the open state to the host when mobileOpen/onMobileOpenChange are supplied', async () => {
       mockMatchMedia(false)
       const onMobileOpenChange = vi.fn()
