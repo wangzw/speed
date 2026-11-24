@@ -40,12 +40,13 @@
     "invalid": "Enter a valid value."
   },
   "humanVerification": {
+    "groupLabel": "Human verification",
+    "required": "Complete the human verification below; it continues on its own once done.",
     "working": "Confirming you are human…",
     "verified": "Human verification complete.",
     "failed": "Human verification failed. Please try again.",
     "retry": "Try again",
     "captcha": {
-      "groupLabel": "Human verification",
       "answerLabel": "Answer",
       "submit": "Confirm",
       "refresh": "New challenge",

@@ -37,15 +37,38 @@
  * serves. The id prefix carries the scope, so two blocks on one page --
  * such as a step-up dialog over an account section -- never share the
  * answer field's id.
+ *
+ * Whatever the mechanism, the block renders inside one named group. It
+ * never moves focus into itself: the control that asked while the proof
+ * is pending keeps focus. It records that control when the group appears,
+ * announces once (through the kit's delayed live region) that completing
+ * the block continues on its own, keeps focus at the group when the
+ * block's own state change removes the control that held it, and hands
+ * focus back to the recorded control when the group goes away and the
+ * viewer was still inside. The refresh and audio entries stand outside
+ * the keyed challenge form so a swap keeps the control that asked for it
+ * mounted and busy. The block's own buttons are ActionButtons: `busy`
+ * while their action runs, `unavailable` when the host's send is in
+ * flight or their precondition is unmet.
  */
 
-import { useEffect, useId, useRef, useState } from 'react'
+import {
+  Fragment,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
+import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useUiKitTranslation } from '../internal/translation.js'
+import { visuallyHiddenSx } from '../visually-hidden.js'
+import { ActionButton } from './ActionRow.js'
+import { AnnouncementRegion } from './AnnouncementRegion.js'
 
 /** The surface a block serves. */
 export type HumanVerificationScope = 'phone' | 'other'
@@ -177,6 +200,139 @@ function loadTurnstile(): Promise<TurnstileApi> {
   return turnstileLoader
 }
 
+/** A subtree in which an element cannot take focus. */
+const UNFOCUSABLE_ANCESTOR = '[hidden], [inert]'
+
+/** Hands focus back to the control that asked for the block, when that
+ * control is still in the document and still focusable. */
+function restoreInitiator(initiator: HTMLElement | null): void {
+  if (initiator === null || !initiator.isConnected) {
+    return
+  }
+  if (initiator.closest(UNFOCUSABLE_ANCESTOR) !== null) {
+    return
+  }
+  initiator.focus()
+}
+
+/**
+ * The block's one container: the named group every mechanism renders
+ * inside, the announcement inserted a frame after it appears, and the
+ * focus hand-off around it.
+ *
+ * The block never moves focus into itself. It records the control that
+ * held focus outside it when the container appeared (an automatic send
+ * has none, because focus is on the body), continues at this container
+ * when a control inside it left the document because of the block's own
+ * state change, and hands focus back to the recorded control when the
+ * container goes away while the viewer was still inside it. Focus the
+ * viewer has moved elsewhere is left alone.
+ */
+function HumanVerificationFrame({
+  children,
+}: {
+  readonly children: ReactNode
+}) {
+  const { t } = useUiKitTranslation()
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const initiatorRef = useRef<HTMLElement | null>(null)
+  const lastFocusInsideRef = useRef<HTMLElement | null>(null)
+  const focusEscapedRef = useRef(false)
+
+  // The control that asked for the block. Recorded in the commit the
+  // container first renders in, before any focus a child moves in its
+  // own effect (the audio player).
+  useLayoutEffect(() => {
+    const container = containerRef.current
+    const active = document.activeElement
+    if (container === null || !(active instanceof HTMLElement)) {
+      return
+    }
+    if (active === document.body || container.contains(active)) {
+      return
+    }
+    initiatorRef.current = active
+  }, [])
+
+  // The viewer's focus travelling inside the block, and whether it has
+  // since moved to an element outside it.
+  useEffect(() => {
+    const container = containerRef.current
+    if (container === null) {
+      return undefined
+    }
+    const onFocusIn = (event: FocusEvent): void => {
+      const target = event.target
+      if (!(target instanceof HTMLElement)) {
+        return
+      }
+      if (container.contains(target)) {
+        lastFocusInsideRef.current = target
+        focusEscapedRef.current = false
+      } else if (target !== document.body) {
+        focusEscapedRef.current = true
+      }
+    }
+    document.addEventListener('focusin', onFocusIn)
+    return () => {
+      document.removeEventListener('focusin', onFocusIn)
+    }
+  }, [])
+
+  // A control inside the block left the document because the block's own
+  // state changed (the answer was submitted, the retry started another
+  // attempt): continue at the container. A control the viewer is still on
+  // is untouched.
+  useLayoutEffect(() => {
+    const container = containerRef.current
+    const last = lastFocusInsideRef.current
+    if (container === null || last === null || last.isConnected) {
+      return
+    }
+    if (document.activeElement !== document.body || focusEscapedRef.current) {
+      return
+    }
+    container.focus()
+  })
+
+  // The block is going away: hand focus back to the control that asked
+  // for it, unless the viewer has moved focus somewhere else.
+  useLayoutEffect(() => {
+    return () => {
+      const last = lastFocusInsideRef.current
+      if (last === null) {
+        return
+      }
+      const active = document.activeElement
+      const heldFocus =
+        active === last ||
+        (active === document.body &&
+          !last.isConnected &&
+          !focusEscapedRef.current)
+      if (!heldFocus) {
+        return
+      }
+      restoreInitiator(initiatorRef.current)
+    }
+  }, [])
+
+  return (
+    <Box
+      ref={containerRef}
+      role="group"
+      aria-label={t('humanVerification.groupLabel')}
+      tabIndex={-1}
+      sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, width: '100%' }}
+    >
+      <AnnouncementRegion
+        message={t('humanVerification.required')}
+        sx={visuallyHiddenSx}
+      />
+      {children}
+    </Box>
+  )
+}
+
 /** The Turnstile widget. Its token is single-use, so the widget is reset
  * once the host clears the proof it consumed. */
 function TurnstileBlock({
@@ -290,15 +446,14 @@ function PowBlock({
         <Typography variant="body2" color="error" role="alert">
           {t('humanVerification.failed')}
         </Typography>
-        <Button
+        <ActionButton
           type="button"
           size="small"
-          variant="outlined"
-          disabled={disabled}
+          unavailable={disabled}
           onClick={onRetry}
         >
           {t('humanVerification.retry')}
-        </Button>
+        </ActionButton>
       </Box>
     )
   }
@@ -406,12 +561,20 @@ function CaptchaSlider({
       ? Math.max(0, Math.round((background.height - piece.height) / 2))
       : 0
   const instruction = instructionText(challenge.instruction, t)
+  // The host's send is in flight, or the piece's travel is not known yet:
+  // either way the slider has no answer to give. A native range has no
+  // read-only semantics (`readonly` is ignored on it), so the control keeps
+  // the read-only treatment's promise -- focusable, reported unavailable,
+  // its interactions swallowed -- by carrying `aria-disabled` and guarding
+  // the handlers itself, instead of taking the native disable that would
+  // drop focus.
+  const held = disabled || maxOffset === 0
   // The slider is the answer: releasing it (or pressing Enter after the
   // keyboard has moved it) hands the offset to the host, so aligning the
   // piece is the whole interaction and no separate confirmation stands
   // between the viewer and the next step.
   const answer = (): void => {
-    if (disabled || maxOffset === 0) {
+    if (held) {
       return
     }
     onAnswer(String(offset))
@@ -480,10 +643,19 @@ function CaptchaSlider({
         max={maxOffset}
         step={1}
         value={offset}
-        disabled={disabled || maxOffset === 0}
+        // Not a native `disabled`: that would take the range out of the tab
+        // order and move a focused control's focus away. The held state is
+        // reported with `aria-disabled`, and the handlers below decline the
+        // interactions it covers.
+        aria-disabled={held ? true : undefined}
         aria-describedby={`${rangeId}-instruction`}
         aria-keyshortcuts="Enter"
-        onChange={(event) => setOffset(Number(event.currentTarget.value))}
+        onChange={(event) => {
+          if (held) {
+            return
+          }
+          setOffset(Number(event.currentTarget.value))
+        }}
         onPointerUp={answer}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
@@ -521,17 +693,11 @@ function CaptchaForm({
   challenge,
   disabled,
   onToken,
-  onRefresh,
-  onRequestAudio,
-  audioRetryAfterSeconds,
 }: {
   readonly scope: HumanVerificationScope
   readonly challenge: HumanCaptchaChallenge
   readonly disabled: boolean
   readonly onToken: (token: string | null) => void
-  readonly onRefresh?: () => void
-  readonly onRequestAudio?: () => void
-  readonly audioRetryAfterSeconds?: number
 }) {
   const { t, i18n } = useUiKitTranslation()
   const answerId = `human-verification-${scope}-${useId()}`
@@ -548,10 +714,6 @@ function CaptchaForm({
     }
   }, [challenge.form])
   const audioLanguage = i18n.resolvedLanguage ?? i18n.language
-  const audioWait =
-    audioRetryAfterSeconds === undefined || audioRetryAfterSeconds <= 0
-      ? undefined
-      : audioRetryAfterSeconds
   const submit = (): void => {
     const value = answer.trim()
     if (value === '' || disabled) {
@@ -562,8 +724,6 @@ function CaptchaForm({
 
   return (
     <Box
-      role="group"
-      aria-label={t('humanVerification.captcha.groupLabel')}
       sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, width: '100%' }}
     >
       {challenge.form === 'image' && challenge.image_url !== undefined ? (
@@ -605,9 +765,14 @@ function CaptchaForm({
             id={answerId}
             label={t('humanVerification.captcha.answerLabel')}
             value={answer}
-            disabled={disabled}
             autoComplete="off"
             slotProps={{
+              // A write in flight takes the field read-only, not natively
+              // disabled: the field stays focusable, and the ADR gives the
+              // form's inputs the read-only treatment. TextField forwards
+              // `readOnly` to the input slot, which puts it on the input
+              // element; the top-level prop would only reach FormControl.
+              input: { readOnly: disabled },
               htmlInput: { 'aria-describedby': `${answerId}-instruction` },
             }}
             onChange={(event) => setAnswer(event.currentTarget.value)}
@@ -619,49 +784,102 @@ function CaptchaForm({
             }}
             fullWidth
           />
-          <Button
+          <ActionButton
             type="button"
-            variant="outlined"
             size="small"
-            disabled={disabled || answer.trim() === ''}
+            unavailable={disabled || answer.trim() === ''}
+            unavailableDescribedBy={
+              disabled || answer.trim() !== ''
+                ? undefined
+                : `${answerId}-instruction`
+            }
             onClick={submit}
           >
             {t('humanVerification.captcha.submit')}
-          </Button>
+          </ActionButton>
         </>
       )}
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-          {/* The image and slider forms are the server's rotation, so the
-              block offers no form choice. The audio alternative is the one
-              accessibility entry, held while a refusal states a wait. */}
-          {challenge.form !== 'audio' ? (
-            <Button
-              type="button"
-              size="small"
-              disabled={disabled || audioWait !== undefined}
-              onClick={() => onRequestAudio?.()}
-            >
-              {t('humanVerification.captcha.useAudio')}
-            </Button>
-          ) : null}
-          <Button
+    </Box>
+  )
+}
+
+/**
+ * The refresh and audio entries, and the wait a refusal states. They stand
+ * outside the keyed challenge form, so a challenge swap keeps the control
+ * that asked for it mounted: it carries `busy` while the next challenge is
+ * requested, and the other entry is `unavailable`.
+ */
+function CaptchaActions({
+  form,
+  disabled,
+  switching,
+  pendingAction,
+  audioWaitId,
+  audioWait,
+  onRequestAudio,
+  onRefresh,
+}: {
+  readonly form: HumanCaptchaForm | null
+  readonly disabled: boolean
+  readonly switching: boolean
+  readonly pendingAction: 'refresh' | 'audio' | null
+  readonly audioWaitId: string
+  readonly audioWait: number | undefined
+  readonly onRequestAudio: () => void
+  readonly onRefresh: () => void
+}) {
+  const { t } = useUiKitTranslation()
+  const audioBusy = switching && pendingAction === 'audio'
+  const refreshBusy = switching && pendingAction === 'refresh'
+  const audioHeld = disabled || switching || audioWait !== undefined
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        {/* The image and slider forms are the server's rotation, so the
+            block offers no form choice. The audio alternative is the one
+            accessibility entry, held while a refusal states a wait. */}
+        {form !== 'audio' ? (
+          <ActionButton
             type="button"
             size="small"
-            disabled={disabled}
-            onClick={() => onRefresh?.()}
+            busy={audioBusy}
+            unavailable={audioHeld}
+            unavailableDescribedBy={
+              !disabled && !switching && audioWait !== undefined
+                ? audioWaitId
+                : undefined
+            }
+            onClick={onRequestAudio}
           >
-            {t('humanVerification.captcha.refresh')}
-          </Button>
-        </Box>
-        {audioWait !== undefined ? (
-          <Typography variant="body2" color="text.secondary" role="status">
-            {t('humanVerification.captcha.audioWait', {
-              seconds: audioWait,
-            })}
-          </Typography>
+            {t('humanVerification.captcha.useAudio')}
+          </ActionButton>
         ) : null}
+        <ActionButton
+          type="button"
+          size="small"
+          busy={refreshBusy}
+          // A swap is in flight: the one that started it is busy, and every
+          // other entry, this one included, is held until it lands. The
+          // refresh used to stay available when the audio entry or the host
+          // started the swap, so it could layer a second request onto it.
+          unavailable={disabled || (switching && pendingAction !== 'refresh')}
+          onClick={onRefresh}
+        >
+          {t('humanVerification.captcha.refresh')}
+        </ActionButton>
       </Box>
+      {audioWait !== undefined ? (
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          id={audioWaitId}
+          role="status"
+        >
+          {t('humanVerification.captcha.audioWait', {
+            seconds: audioWait,
+          })}
+        </Typography>
+      ) : null}
     </Box>
   )
 }
@@ -693,8 +911,38 @@ function CaptchaBlock({
   readonly disabled: boolean
 }) {
   const { t } = useUiKitTranslation()
+  const audioWaitId = useId()
+  // The form the current or most recent challenge took. It outlives a
+  // swap, so the audio entry keeps its place while the next challenge is
+  // requested.
+  const [shownForm, setShownForm] = useState<HumanCaptchaForm | null>(null)
+  // Which of the two entries asked for the swap in flight.
+  const [pendingAction, setPendingAction] = useState<
+    'refresh' | 'audio' | null
+  >(null)
+  if (challenge !== null && challenge.form !== shownForm) {
+    setShownForm(challenge.form)
+  }
+  // A challenge arriving means the swap the entry asked for has landed, a
+  // failure means it did not, and a proof means the block is done: in each
+  // case no entry has a swap in flight any more. The id is the dependency,
+  // so a host that re-creates the object does not clear the state mid-swap.
+  const challengeId = challenge?.id ?? null
+  useEffect(() => {
+    if (challengeId !== null || proof !== null || status === 'failed') {
+      setPendingAction(null)
+    }
+  }, [challengeId, proof, status])
+  const switching =
+    challenge === null && status === 'working' && shownForm !== null
+  const audioWait =
+    audioRetryAfterSeconds === undefined || audioRetryAfterSeconds <= 0
+      ? undefined
+      : audioRetryAfterSeconds
+
+  let content: ReactNode
   if (proof !== null) {
-    return (
+    content = (
       <Box
         role="status"
         sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}
@@ -704,10 +952,9 @@ function CaptchaBlock({
         </Typography>
       </Box>
     )
-  }
-  if (challenge === null) {
-    if (status === 'failed') {
-      return (
+  } else if (challenge === null) {
+    content =
+      status === 'failed' ? (
         <Box
           sx={{
             display: 'flex',
@@ -719,41 +966,63 @@ function CaptchaBlock({
           <Typography variant="body2" color="error" role="alert">
             {t('humanVerification.failed')}
           </Typography>
-          <Button
+          <ActionButton
             type="button"
             size="small"
-            variant="outlined"
-            disabled={disabled}
+            unavailable={disabled}
             onClick={onRetry}
           >
             {t('humanVerification.retry')}
-          </Button>
+          </ActionButton>
+        </Box>
+      ) : (
+        <Box
+          role="status"
+          sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}
+        >
+          <CircularProgress size={16} aria-hidden={true} />
+          <Typography variant="body2" color="text.secondary">
+            {t('humanVerification.working')}
+          </Typography>
         </Box>
       )
-    }
-    return (
-      <Box
-        role="status"
-        sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}
-      >
-        <CircularProgress size={16} aria-hidden={true} />
-        <Typography variant="body2" color="text.secondary">
-          {t('humanVerification.working')}
-        </Typography>
-      </Box>
+  } else {
+    content = (
+      <CaptchaForm
+        key={`${challenge.id}:${challenge.form}`}
+        scope={scope}
+        challenge={challenge}
+        disabled={disabled}
+        onToken={onToken}
+      />
     )
   }
+
+  // The entries keep their slot across every state, so a control that
+  // held focus while the challenge was replaced is not rebuilt.
   return (
-    <CaptchaForm
-      key={`${challenge.id}:${challenge.form}`}
-      scope={scope}
-      challenge={challenge}
-      disabled={disabled}
-      onToken={onToken}
-      onRefresh={onRefresh}
-      onRequestAudio={onRequestAudio}
-      audioRetryAfterSeconds={audioRetryAfterSeconds}
-    />
+    <>
+      <Fragment key="content">{content}</Fragment>
+      {proof === null && (challenge !== null || switching) ? (
+        <CaptchaActions
+          key="actions"
+          form={shownForm}
+          disabled={disabled}
+          switching={switching}
+          pendingAction={pendingAction}
+          audioWaitId={audioWaitId}
+          audioWait={audioWait}
+          onRequestAudio={() => {
+            setPendingAction('audio')
+            onRequestAudio?.()
+          }}
+          onRefresh={() => {
+            setPendingAction('refresh')
+            onRefresh?.()
+          }}
+        />
+      ) : null}
+    </>
   )
 }
 
@@ -779,8 +1048,9 @@ export function HumanVerification({
   if (surface === undefined || !surface.required || surface.provider === 'off') {
     return null
   }
+  let content: ReactNode
   if (surface.provider === 'turnstile') {
-    return (
+    content = (
       <TurnstileBlock
         siteKey={surface.site_key ?? ''}
         action={surface.action}
@@ -789,12 +1059,12 @@ export function HumanVerification({
         disabled={disabled}
       />
     )
-  }
-  if (surface.provider === 'pow') {
-    return <PowBlock status={status} onRetry={onRetry} disabled={disabled} />
-  }
-  if (surface.provider === 'captcha') {
-    return (
+  } else if (surface.provider === 'pow') {
+    content = (
+      <PowBlock status={status} onRetry={onRetry} disabled={disabled} />
+    )
+  } else if (surface.provider === 'captcha') {
+    content = (
       <CaptchaBlock
         scope={scope}
         challenge={captcha}
@@ -808,6 +1078,8 @@ export function HumanVerification({
         disabled={disabled}
       />
     )
+  } else {
+    return null
   }
-  return null
+  return <HumanVerificationFrame>{content}</HumanVerificationFrame>
 }

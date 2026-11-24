@@ -40,12 +40,13 @@
     "invalid": "请输入有效值。"
   },
   "humanVerification": {
+    "groupLabel": "人机验证",
+    "required": "请完成下方的人机验证，完成后会自动继续。",
     "working": "正在确认你是真人…",
     "verified": "人机验证已完成。",
     "failed": "人机验证未通过，请重试。",
     "retry": "重试",
     "captcha": {
-      "groupLabel": "人机验证",
       "answerLabel": "答案",
       "submit": "确认",
       "refresh": "换一个挑战",

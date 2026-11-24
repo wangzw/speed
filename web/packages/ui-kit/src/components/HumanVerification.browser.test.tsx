@@ -9,8 +9,9 @@
  * control out; the unit suite covers the same form's markup with supplied
  * sizes.
  */
+import { useEffect, useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import { useTheme } from '@mui/material/styles'
 // The provider-backed keyboard performs the browser's own default action
 // (the DOM-simulating user-event does not move a native range).
@@ -22,9 +23,12 @@ import {
   HumanVerification,
   type HumanCaptchaChallenge,
   type HumanVerificationGate,
+  type HumanVerificationGateSet,
+  type HumanVerificationStatus,
 } from './HumanVerification.js'
 
-const CAPTCHA_COPY = zhCN.humanVerification.captcha
+const COPY = zhCN.humanVerification
+const CAPTCHA_COPY = COPY.captcha
 
 /** An inline SVG image of the given natural size. */
 function svg(width: number, height: number): string {
@@ -308,4 +312,239 @@ describe('HumanVerification slider accent in Chromium', () => {
       })
     }
   }
+})
+
+const GATE_SET: HumanVerificationGateSet = {
+  phone: CAPTCHA_GATE,
+  other: CAPTCHA_GATE,
+}
+
+const IMAGE_CHALLENGE: HumanCaptchaChallenge = {
+  id: 'challenge-image',
+  form: 'image',
+  instruction: 'type-the-digits',
+  image_url: svg(120, 40),
+  expires_in: 300,
+}
+
+/** The host that asks for a send and unmounts the block once it holds a proof. */
+function CompletingHost() {
+  const [pending, setPending] = useState(false)
+  const [proof, setProof] = useState<string | null>(null)
+  useEffect(() => {
+    if (proof !== null) {
+      setPending(false)
+    }
+  }, [proof])
+  return (
+    <div>
+      <button type="button" onClick={() => setPending(true)}>
+        Send code
+      </button>
+      {pending ? (
+        <HumanVerification
+          scope="phone"
+          gate={GATE_SET}
+          captcha={IMAGE_CHALLENGE}
+          proof={proof}
+          onToken={(token) => setProof(token)}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+/** The swap the refresh control starts, finished by the case. */
+let finishRefresh: (() => void) | null = null
+
+/** The host that holds a challenge swap in flight until the case lets it land. */
+function RefreshHost() {
+  const [challenge, setChallenge] = useState<HumanCaptchaChallenge | null>(
+    IMAGE_CHALLENGE,
+  )
+  const [status, setStatus] = useState<HumanVerificationStatus>('ready')
+  const refresh = (): void => {
+    setChallenge(null)
+    setStatus('working')
+    finishRefresh = () => {
+      setChallenge({ ...IMAGE_CHALLENGE, id: 'challenge-image-2' })
+      setStatus('ready')
+    }
+  }
+  return (
+    <HumanVerification
+      scope="phone"
+      gate={GATE_SET}
+      captcha={challenge}
+      status={status}
+      onToken={() => {}}
+      onRefreshCaptcha={refresh}
+    />
+  )
+}
+
+/** The host whose failed solve turns to working when the retry is activated. */
+function PowRetryHost() {
+  const [status, setStatus] = useState<HumanVerificationStatus>('failed')
+  return (
+    <HumanVerification
+      scope="phone"
+      gate={{
+        phone: { required: true, provider: 'pow' },
+        other: { required: true, provider: 'pow' },
+      }}
+      status={status}
+      onToken={() => {}}
+      onRetry={() => setStatus('working')}
+    />
+  )
+}
+
+/** The host that keeps the verified state once it holds the answer's proof. */
+function CaptchaProofHost() {
+  const [proof, setProof] = useState<string | null>(null)
+  return (
+    <HumanVerification
+      scope="phone"
+      gate={GATE_SET}
+      captcha={IMAGE_CHALLENGE}
+      proof={proof}
+      status={proof === null ? 'idle' : 'ready'}
+      onToken={(token) => setProof(token)}
+    />
+  )
+}
+
+/** The unmount the escape case asks for, from outside any event on the
+ * field that holds focus. */
+let escapeBlock: (() => void) | null = null
+
+/** The host that asks for the block from a control, keeps a field beside
+ * it, and unmounts the block when the case asks. */
+function EscapeHost() {
+  const [pending, setPending] = useState(false)
+  const [shown, setShown] = useState(true)
+  useEffect(() => {
+    escapeBlock = () => setShown(false)
+    return () => {
+      escapeBlock = null
+    }
+  }, [])
+  return (
+    <div>
+      <button type="button" onClick={() => setPending(true)}>
+        Send code
+      </button>
+      <input aria-label="Other field" />
+      {pending && shown ? (
+        <HumanVerification
+          scope="phone"
+          gate={GATE_SET}
+          captcha={IMAGE_CHALLENGE}
+          onToken={() => {}}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+describe('HumanVerification focus in Chromium', () => {
+  it('returns focus to the control that asked once the block completes', async () => {
+    renderWithProviders(<CompletingHost />)
+    const send = screen.getByRole('button', { name: 'Send code' })
+    send.focus()
+    await browserUserEvent.keyboard('{Enter}')
+    const answer = await screen.findByLabelText(CAPTCHA_COPY.answerLabel)
+    // The block does not move focus into itself while it waits.
+    expect(document.activeElement).toBe(send)
+    answer.focus()
+    await browserUserEvent.keyboard('12345')
+    await browserUserEvent.keyboard('{Enter}')
+    await waitFor(() =>
+      expect(screen.queryByRole('group')).not.toBeInTheDocument(),
+    )
+    expect(document.activeElement).toBe(send)
+  })
+
+  it('keeps focus on the refresh control through the swap it starts', async () => {
+    finishRefresh = null
+    renderWithProviders(<RefreshHost />)
+    const refresh = screen.getByRole('button', { name: CAPTCHA_COPY.refresh })
+    refresh.focus()
+    await browserUserEvent.keyboard('{Enter}')
+    await waitFor(() => expect(refresh).toHaveAttribute('aria-busy', 'true'))
+    expect(document.activeElement).toBe(refresh)
+    act(() => {
+      finishRefresh?.()
+    })
+    await waitFor(() => expect(refresh).not.toHaveAttribute('aria-busy'))
+    expect(screen.getByLabelText(CAPTCHA_COPY.answerLabel)).toBeInTheDocument()
+    expect(document.activeElement).toBe(refresh)
+  })
+
+  it('continues at the group container when a failed solve removes the retry that held focus', async () => {
+    renderWithProviders(<PowRetryHost />)
+    const retry = screen.getByRole('button', { name: COPY.retry })
+    retry.focus()
+    await browserUserEvent.keyboard('{Enter}')
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('group', { name: COPY.groupLabel }),
+      ),
+    )
+  })
+
+  it('continues at the group container when a submitted answer leaves the form', async () => {
+    renderWithProviders(<CaptchaProofHost />)
+    const answer = screen.getByLabelText(CAPTCHA_COPY.answerLabel)
+    answer.focus()
+    await browserUserEvent.keyboard('1234')
+    await browserUserEvent.keyboard('{Enter}')
+    await waitFor(() =>
+      expect(screen.getByText(COPY.verified)).toBeInTheDocument(),
+    )
+    expect(document.activeElement).toBe(
+      screen.getByRole('group', { name: COPY.groupLabel }),
+    )
+  })
+
+  it('leaves focus where the viewer moved it when the block goes away', async () => {
+    // The viewer asks for the block, steps into it, then moves to a field
+    // beside it. When the block unmounts, that field keeps focus: the block
+    // hands focus back only while the viewer was still inside it.
+    renderWithProviders(<EscapeHost />)
+    const send = screen.getByRole('button', { name: 'Send code' })
+    send.focus()
+    await browserUserEvent.keyboard('{Enter}')
+    const answer = await screen.findByLabelText(CAPTCHA_COPY.answerLabel)
+    answer.focus()
+    await browserUserEvent.keyboard('12345')
+    const other = screen.getByLabelText('Other field')
+    other.focus()
+    expect(document.activeElement).toBe(other)
+    // Record every focus the unmount takes. The block must not touch the
+    // control that asked once the viewer has moved away, not even for the
+    // instant before React restores the pre-commit focus.
+    const focused: Element[] = []
+    const record = (event: FocusEvent): void => {
+      if (event.target instanceof Element) {
+        focused.push(event.target)
+      }
+    }
+    document.addEventListener('focusin', record)
+    act(() => {
+      escapeBlock?.()
+    })
+    document.removeEventListener('focusin', record)
+    await waitFor(() =>
+      expect(screen.queryByRole('group')).not.toBeInTheDocument(),
+    )
+    // This assertion is the criterion: no focus ever landed on the control
+    // that asked while the block unmounted. The final position alone does
+    // not discriminate, because React restores the pre-commit focus once
+    // the unmount is done, so a mutant that grabs the inviter for an
+    // instant also ends up back at `other`.
+    expect(focused).not.toContain(send)
+    expect(document.activeElement).toBe(other)
+  })
 })
