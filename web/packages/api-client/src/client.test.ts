@@ -12,6 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@speed/test-utils/timers'
 import {
   createClient,
   createMemoryAccessTokenStore,
@@ -1622,7 +1623,7 @@ describe('401 and the refresh hook', () => {
         },
       ])
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
@@ -1688,7 +1689,7 @@ describe('401 and the refresh hook', () => {
         { message: 'access token refresh failed', attrs: { status: 401 } },
       ])
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 })
@@ -1797,7 +1798,7 @@ describe('transient retries (idempotent methods only)', () => {
       await expect(pending).resolves.toEqual({ ok: true })
       expect(standin.calls).toHaveLength(2)
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
@@ -1821,7 +1822,7 @@ describe('transient retries (idempotent methods only)', () => {
       await expect(pending).resolves.toEqual({ ok: true })
       expect(standin.calls).toHaveLength(2)
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
@@ -1890,8 +1891,8 @@ describe('timeouts', () => {
     vi.useFakeTimers()
   })
 
-  afterEach(() => {
-    vi.useRealTimers()
+  afterEach(async () => {
+    await restoreRealTimers()
   })
 
   it('retries a timed-out request when budget remains', async () => {
@@ -2075,7 +2076,7 @@ describe('caller cancellation', () => {
       await rejection
       expect(standin.calls).toHaveLength(1)
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
@@ -2464,7 +2465,7 @@ describe('caller cancellation', () => {
       expect(standin.calls).toHaveLength(1)
       await pending
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 })
