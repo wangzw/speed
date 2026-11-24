@@ -674,27 +674,47 @@ func splitLedgerStatements(sql string) []string {
 	return out
 }
 
-func splitStatements(sql string) []string {
-	var out []string
-	for _, part := range bytes.Split([]byte(sql), []byte(";")) {
-		text := string(part)
-		if onlyCommentsOrBlank(text) {
-			continue
-		}
-		out = append(out, text)
+// TestSplitStatementsDropsCommentLinesBeforeSplitting checks that a semicolon
+// inside a whole-line comment does not end the statement the comment annotates.
+func TestSplitStatementsDropsCommentLinesBeforeSplitting(t *testing.T) {
+	sql := "-- the challenges; the guard is idempotent\n" +
+		"CREATE TABLE alpha (id INTEGER);\n" +
+		"-- the budget event; the guard is idempotent\n" +
+		"CREATE TABLE beta (id INTEGER);\n"
+	want := []string{
+		"CREATE TABLE alpha (id INTEGER)",
+		"CREATE TABLE beta (id INTEGER)",
 	}
-	return out
+	got := splitStatements(sql)
+	if len(got) != len(want) {
+		t.Fatalf("split into %d statements, want %d: %q", len(got), len(want), got)
+	}
+	for i := range want {
+		if trimmed := strings.TrimSpace(got[i]); trimmed != want[i] {
+			t.Errorf("statement %d is %q, want %q", i, trimmed, want[i])
+		}
+	}
 }
 
-func onlyCommentsOrBlank(text string) bool {
-	for _, line := range bytes.Split([]byte(text), []byte("\n")) {
-		trimmed := bytes.TrimSpace(line)
-		if len(trimmed) == 0 || bytes.HasPrefix(trimmed, []byte("--")) {
+// splitStatements drops whole-line comments before splitting on semicolons, so
+// a semicolon inside a comment cannot end the statement the comment annotates.
+func splitStatements(sql string) []string {
+	var body strings.Builder
+	for _, line := range strings.Split(sql, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
 			continue
 		}
-		return false
+		body.WriteString(line)
+		body.WriteByte('\n')
 	}
-	return true
+	var out []string
+	for _, part := range strings.Split(body.String(), ";") {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+		out = append(out, part)
+	}
+	return out
 }
 
 func openSQLite(t *testing.T) db.Database {
