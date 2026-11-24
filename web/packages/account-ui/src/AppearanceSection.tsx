@@ -4,7 +4,7 @@
 
 import MenuItem from '@mui/material/MenuItem'
 import TextField from '@mui/material/TextField'
-import { SectionCard } from '@speed/ui-kit'
+import { SectionCard, useInertSelectMenu } from '@speed/ui-kit'
 import { useAccountUiTranslation } from './internal/translation.js'
 
 /** One preset the host offers: its id and its host-translated label. */
@@ -39,6 +39,7 @@ export function AppearanceSection({
   hideLabel = false,
 }: AppearanceSectionProps) {
   const { t } = useAccountUiTranslation()
+  const menu = useInertSelectMenu()
 
   return (
     <SectionCard
@@ -52,6 +53,7 @@ export function AppearanceSection({
         slotProps={{
           // displayEmpty keeps the select rendering when no option matches the value.
           select: {
+            ...menu,
             displayEmpty: true,
             slotProps: {
               input: { 'aria-label': t('appearance.theme.label') },

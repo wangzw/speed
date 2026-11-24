@@ -107,6 +107,34 @@ describe('PreferencesSection', () => {
     await expectNoAxeViolations()
   })
 
+  it('marks the page behind an open language menu inert', async () => {
+    const { respond } = makeProfileResponder({})
+    const { container } = mountSection(respond)
+
+    const language = await screen.findByRole('combobox', {
+      name: zhCN.preferences.language.label,
+    })
+    expect(container).not.toHaveAttribute('inert')
+
+    fireEvent.mouseDown(language)
+    expect(screen.getAllByRole('option').length).toBeGreaterThan(1)
+    expect(container).toHaveAttribute('inert')
+  })
+
+  it('marks the page behind an open timezone menu inert', async () => {
+    const { respond } = makeProfileResponder({})
+    const { container } = mountSection(respond)
+
+    const timezone = await screen.findByRole('combobox', {
+      name: zhCN.preferences.timezone.label,
+    })
+    expect(container).not.toHaveAttribute('inert')
+
+    fireEvent.mouseDown(timezone)
+    expect(screen.getAllByRole('option').length).toBeGreaterThan(1)
+    expect(container).toHaveAttribute('inert')
+  })
+
   it('caps the preference selects so they do not span the whole content width', async () => {
     const { respond } = makeProfileResponder({})
     mountSection(respond)

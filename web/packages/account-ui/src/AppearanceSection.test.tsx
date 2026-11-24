@@ -118,6 +118,20 @@ describe('AppearanceSection', () => {
     expect(screen.getAllByRole('option')).toHaveLength(1)
   })
 
+  it('marks the page behind an open preset menu inert and lifts it on close', () => {
+    const { container } = renderWithProviders(
+      <AppearanceSection presets={presets} value="glass" onChange={() => {}} />,
+    )
+    expect(container).not.toHaveAttribute('inert')
+
+    fireEvent.mouseDown(presetSelect())
+    expect(screen.getByRole('option', { name: 'Classic' })).toBeTruthy()
+    expect(container).toHaveAttribute('inert')
+
+    fireEvent.click(screen.getByRole('option', { name: 'Classic' }))
+    expect(container).not.toHaveAttribute('inert')
+  })
+
   it('renders an empty preset list without collapsing the section or its control', () => {
     renderWithProviders(
       <AppearanceSection presets={[]} value="" onChange={() => {}} />,

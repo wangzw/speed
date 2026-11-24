@@ -18,6 +18,7 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Link from '@mui/material/Link'
 import Typography from '@mui/material/Typography'
+import { useForkRef } from '@mui/material/utils'
 import type { AuthnSessionView } from '@speed/api-sdk'
 import type {
   AuthSession,
@@ -26,7 +27,12 @@ import type {
   StepUpReason,
 } from '@speed/auth-core'
 import { useStepUp } from '@speed/auth-core'
-import { ActionButton, ActionRow, HumanVerification } from '@speed/ui-kit'
+import {
+  ActionButton,
+  ActionRow,
+  HumanVerification,
+  useInertBackground,
+} from '@speed/ui-kit'
 import { InlineError } from './inline-error.js'
 import { FlowStep } from './flow-step.js'
 import { useFactorsQuery, useSessionViewQuery } from './queries.js'
@@ -154,6 +160,12 @@ export const StepUpChallengeFrame = forwardRef<
   // A restart remounts the flow driver: useStepUp has no restart of its own.
   const [run, setRun] = useState(0)
 
+  // The dialog unmounts when `open` turns false, so the layout cleanup that
+  // lifts `inert` runs before MUI's focus trap restores focus.
+  const rootRef = useRef<HTMLDivElement>(null)
+  const dialogRef = useForkRef(ref, rootRef)
+  useInertBackground(open, rootRef)
+
   if (!open) {
     return null
   }
@@ -167,7 +179,7 @@ export const StepUpChallengeFrame = forwardRef<
 
   return (
     <Dialog
-      ref={ref}
+      ref={dialogRef}
       open={open}
       onClose={onCancel}
       aria-labelledby={titleId}

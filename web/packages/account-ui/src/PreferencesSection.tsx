@@ -20,6 +20,7 @@ import {
 } from '@speed/i18n'
 import {
   SectionCard,
+  useInertSelectMenu,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import { AccountAsyncSection } from './internal/async-section.js'
@@ -47,6 +48,8 @@ export function PreferencesSection() {
   const patchProfile = useAuthnProfilePatch()
   const languageFeedback = useWriteFeedback()
   const timezoneFeedback = useWriteFeedback()
+  const languageMenu = useInertSelectMenu()
+  const timezoneMenu = useInertSelectMenu()
 
   const languageOptions = useMemo(
     () => readSupportedLanguages(i18n),
@@ -149,6 +152,7 @@ export function PreferencesSection() {
                   // displayEmpty: without it the empty-string "not chosen"
                   // value renders blank instead of the option's label.
                   select: {
+                    ...languageMenu,
                     displayEmpty: true,
                     slotProps: {
                       input: {
@@ -186,6 +190,7 @@ export function PreferencesSection() {
                 slotProps={{
                   input: { readOnly: saving },
                   select: {
+                    ...timezoneMenu,
                     displayEmpty: true,
                     slotProps: {
                       input: {
