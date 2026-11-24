@@ -190,6 +190,11 @@ export {
   type ActivationGuardState,
 } from './activation-guard.js'
 export {
+  useInertBackground,
+  useInertSelectMenu,
+  type InertSelectMenuProps,
+} from './inert-background.js'
+export {
   WriteFeedbackPageProvider,
   useWriteFeedbackPageCoordination,
   type WriteFeedbackPageCoordination,

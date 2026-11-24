@@ -8,11 +8,13 @@ import { forwardRef, useCallback, useEffect, useId, useRef, useState } from 'rea
 import type { ReactNode, Ref } from 'react'
 import Box from '@mui/material/Box'
 import Dialog from '@mui/material/Dialog'
+import { useForkRef } from '@mui/material/utils'
 import DialogContent from '@mui/material/DialogContent'
 import DialogContentText from '@mui/material/DialogContentText'
 import DialogTitle from '@mui/material/DialogTitle'
 import { useUiKitTranslation } from '../internal/translation.js'
 import type { RootStyleProps } from '../internal/root-style-props.js'
+import { useInertBackground } from '../inert-background.js'
 import { visuallyHiddenSx } from '../visually-hidden.js'
 import { ActionButton, ActionRow } from './ActionRow.js'
 
@@ -90,6 +92,9 @@ function ConfirmDialogInner(
   const [armLockout, setArmLockout] = useState(false)
   // Held so every reset path can cancel a pending re-enable.
   const armLockoutTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const dialogRef = useForkRef(ref, rootRef)
+  useInertBackground(open, rootRef)
 
   // Every reset of `armed` calls this, so the lockout cannot outlive its arm.
   const endArmLockout = useCallback(() => {
@@ -149,7 +154,7 @@ function ConfirmDialogInner(
 
   return (
     <Dialog
-      ref={ref}
+      ref={dialogRef}
       className={className}
       sx={sx}
       open={open}
