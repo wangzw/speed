@@ -39,12 +39,8 @@ describe("the preset's caller time scale", () => {
   })
 
   it.each([
-    // A decimal literal that overflows to Infinity: the finite check is what
-    // refuses it, so deleting that check lets it through here.
     '1e999',
-    // Not a decimal literal at all.
     'NaN',
-    // Decimal, but below the floor.
     '-2',
   ])('refuses %s, which is not a usable scale', (raw) => {
     vi.stubEnv('GATE_TIME_SCALE', raw)
@@ -70,10 +66,6 @@ describe("the preset's caller time scale", () => {
   })
 
   it('injects the caller scale into the browser tier', async () => {
-    // The browser page has no process global, so the tier's config parses
-    // the variable in Node and hands the value to the setup as a define.
-    // This pins that a caller's 2.5 actually reaches the tier; the browser
-    // case then applies it to the async budget.
     vi.stubEnv('GATE_TIME_SCALE', '2.5')
     vi.resetModules()
     const config = (await import('../vitest.browser.config.ts')).default
