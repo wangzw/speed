@@ -53,8 +53,7 @@ func TestARoleWithoutDDLPrivilegeStartsOnAnAppliedDatabase(t *testing.T) {
 	parsed.User = url.UserPassword(role, "dml-password")
 	roleDSN := parsed.String()
 
-	// The control: the role really cannot create anything, so a startup that
-	// succeeds below is one that asked for nothing it lacks.
+	// The control: the role really cannot create anything, so a startup that succeeds below is one that asked for nothing it lacks.
 	asRole, err := sql.Open("pgx", roleDSN)
 	if err != nil {
 		t.Fatalf("opening a connection as the role: %v", err)

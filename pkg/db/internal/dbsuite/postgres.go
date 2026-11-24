@@ -12,10 +12,7 @@ import (
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
-// init contributes the PostgreSQL fixture, so every dialect-neutral case runs
-// against this engine too. The build tag keeps it out of the unit run, which is
-// SQLite alone; the integration run's fixture comes from the compose stack, and
-// a case that cannot reach the server fails.
+// init contributes the PostgreSQL fixture, so every dialect-neutral case runs against this engine too. The build tag keeps it out of the unit run, which is SQLite alone; the integration run's fixture comes from the compose stack.
 func init() {
 	Contribute(func(t *testing.T) Fixture {
 		t.Helper()

@@ -44,8 +44,6 @@ const (
 	replyKindRedirect
 )
 
-// replyValue is the one implementation of Reply. Its zero fields are the ones
-// the kind does not use.
 type replyValue struct {
 	kind      replyKind
 	status    int
@@ -170,10 +168,7 @@ func (w *SSEWriter) Send(event string, data []byte) error {
 	return nil
 }
 
-// splitEventData splits one event's data into the lines that each get a data
-// field. SSE ends a line with CRLF, LF or CR, so a bare CR must start a new
-// line: a client reading the frame would otherwise treat everything after it
-// as an unknown field and drop it.
+// splitEventData splits one event's data into the lines that each get a data field. SSE ends a line with CRLF, LF or CR, so a bare CR must start a new line: a client would otherwise treat everything after it as an unknown field and drop it.
 func splitEventData(data []byte) []string {
 	text := strings.ReplaceAll(string(data), "\r\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "\n")
@@ -236,8 +231,6 @@ func writeReply(c *gin.Context, operationID string, responses []Response, reply 
 	writeReplyValue(c, operationID, response, value)
 }
 
-// checkReplyDeclaration compares a reply kind with the declared response it
-// answers, and returns why they do not match, or "".
 func checkReplyDeclaration(value *replyValue, response Response) string {
 	switch value.kind {
 	case replyKindJSON:
@@ -311,10 +304,7 @@ func checkBodyMediaType(value *replyValue, response Response) string {
 	return ""
 }
 
-// checkReplyResponses refuses a reply declaration the writer cannot describe:
-// a body with no media type, or a JSON body whose structure is not declared.
-// Either would publish a shape the entry point cannot validate the reply
-// against, so it is refused when the handler is built.
+// checkReplyResponses refuses a reply declaration the writer cannot describe: a body with no media type, or a JSON body whose structure is not declared. Either would publish a shape the entry point cannot validate the reply against, so it is refused when the handler is built.
 func checkReplyResponses(responses []Response) {
 	for _, response := range responses {
 		if response.Body == nil {
@@ -428,10 +418,7 @@ func declaredMediaType(response Response, fallback string) string {
 	return fallback
 }
 
-// streamFailed ends a reply whose body had already started to go out. The
-// status cannot change any more, so the failure is recorded and the connection
-// is abandoned; the recovery layer lets http.ErrAbortHandler past for exactly
-// this reason.
+// streamFailed ends a reply whose body had already started to go out. The status cannot change any more, so the failure is recorded and the connection is abandoned; the recovery layer lets http.ErrAbortHandler past for exactly this reason.
 func streamFailed(c *gin.Context, err error) {
 	_ = c.Error(err)
 	log.FromContext(c.Request.Context()).Error(

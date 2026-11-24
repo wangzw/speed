@@ -28,8 +28,6 @@ func RefusedCommit(t *testing.T, handle, observer *gorm.DB) {
 	RefusedCommitBy(t, handle, observer, deferredForeignKey)
 }
 
-// deferredForeignKey is a pet whose owner does not exist: every statement
-// writes, and the COMMIT refuses.
 func deferredForeignKey(t *testing.T, handle *gorm.DB) error {
 	t.Helper()
 	var early error
@@ -50,14 +48,7 @@ func deferredForeignKey(t *testing.T, handle *gorm.DB) error {
 	return err
 }
 
-// RefusedCommitBy holds a handle to the contract over a refusal the caller
-// brings about: the transaction took no effect, and the connection goes back to
-// the pool outside any transaction. The handle must be held to one connection.
-//
-// observer is another pool on the same database, through which a write made
-// after the refusal must be seen; that tells a committed write from one taken
-// into a transaction left open. It is nil for a database private to its one
-// connection.
+// RefusedCommitBy holds a handle, held to one connection, to the contract over a refusal the caller brings about: the transaction took no effect and the connection returns outside any transaction. observer is another pool on the same database, through which a write after the refusal must be seen; it is nil for a database private to its one connection.
 func RefusedCommitBy(t *testing.T, handle, observer *gorm.DB, refuse Refusal) {
 	t.Helper()
 	for _, statement := range refusedCommitSchema {

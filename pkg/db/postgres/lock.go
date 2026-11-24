@@ -10,10 +10,7 @@ import (
 	"github.com/vislake/speed/pkg/db"
 )
 
-// migrationLockKey is the advisory lock key the whole migration run is held
-// under: the FNV-1a 64-bit hash of "speed:db:migrations", written out so every
-// replica computes the same number. PostgreSQL scopes advisory locks to one
-// database, so processes on other databases are left alone.
+// migrationLockKey is the advisory lock key the whole migration run is held under: the FNV-1a 64-bit hash of "speed:db:migrations", written out so every replica computes the same number. PostgreSQL scopes advisory locks to one database, so processes on other databases are left alone.
 const migrationLockKey int64 = 3798569497438843947
 
 // lockPollInterval is how often a waiting replica asks again. The wait polls

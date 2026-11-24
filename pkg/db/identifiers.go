@@ -45,9 +45,6 @@ func writtenText(st *gorm.Statement, column clause.Column) string {
 	return written.String()
 }
 
-// namesColumn reports whether an identifier, as the statement carries it, names
-// column on the statement's engine. An engine without a rule of its own is
-// judged by both rules at once.
 func namesColumn(st *gorm.Statement, name string, quoted bool, column string) bool {
 	switch engineDialect(st) {
 	case SQLite:
@@ -216,8 +213,6 @@ func openingQuote(closing byte) (byte, bool) {
 	}
 }
 
-// splitSelection cuts a selection written as one text into its items, at the
-// commas outside parentheses, string literals and quoted identifiers.
 func splitSelection(text string) []string {
 	var (
 		items []string

@@ -19,11 +19,9 @@ const (
 	blindIndexPurpose = "speed/db/blind-index"
 )
 
-// minimumRootKeyBytes is the shortest current root key an assembly accepts: 112
-// bits, the floor NIST SP 800-131A sets.
+// minimumRootKeyBytes is the shortest current root key an assembly accepts: 112 bits.
 const minimumRootKeyBytes = 112 / 8
 
-// subkeyLength is how long each subkey is: AES-256's width.
 const subkeyLength = 32
 
 type keySet struct {
@@ -31,8 +29,7 @@ type keySet struct {
 	blindIndex []byte
 }
 
-// keyRing is the material one assembled database works under. Only the current
-// set writes; the retired sets open and never seal.
+// keyRing is the material one assembled database works under: only the current set seals, and the retired sets open only.
 type keyRing struct {
 	current keySet
 	retired []keySet

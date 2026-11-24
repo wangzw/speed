@@ -29,11 +29,7 @@ const (
 // subdirectory a migration set keeps this engine's files in.
 const Dialect = db.SQLite
 
-// Dialector binds the SQLite driver to a connection locator, for pkg/db to open
-// the handle with.
-//
-// A locator that puts its connections in shared-cache mode is refused: awaiting
-// a table lock there is bounded by neither the busy timeout nor a context.
+// Dialector binds the SQLite driver to a connection locator, for pkg/db to open the handle with. A locator that puts its connections in shared-cache mode is refused: awaiting a table lock there is bounded by neither the busy timeout nor a context.
 func Dialector(dsn string) gorm.Dialector {
 	dialector := &sqlitedriver.Dialector{DriverName: driverName, DSN: dsn}
 	if sharesCache(dsn) {
@@ -61,10 +57,7 @@ func sharesCache(dsn string) bool {
 	return ok && l.sharedCache && l.name != ""
 }
 
-// constraintViolation classifies UNIQUE, PRIMARY KEY and ROWID refusals as a
-// duplicated key and FOREIGN KEY as a foreign key violation. The rowid is
-// classified here because the driver's own GORM translation leaves it out. A
-// foreign key is enforced only where the locator turns it on.
+// constraintViolation classifies UNIQUE, PRIMARY KEY and ROWID refusals as a duplicated key and FOREIGN KEY as a foreign key violation; the rowid is classified here because the driver's own GORM translation leaves it out. A foreign key is enforced only where the locator turns it on.
 func constraintViolation(err error) error {
 	var refusal *gosqlite.Error
 	if !errors.As(err, &refusal) {

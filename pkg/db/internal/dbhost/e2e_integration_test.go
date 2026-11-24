@@ -54,10 +54,7 @@ var concurrentRun struct {
 	results []replicaRun
 }
 
-// runReplicas returns the pair both cases read, starting it on first use.
-//
-// A skip or a fatal inside Do leaves it incomplete, so the second case re-enters
-// and reports the same thing rather than reading a run that was never started.
+// runReplicas returns the pair both cases read, starting it on first use. A skip or a fatal inside Do leaves it incomplete, so the second case re-enters and reports the same thing rather than reading a run that was never started.
 func runReplicas(t *testing.T) []replicaRun {
 	t.Helper()
 	concurrentRun.once.Do(func() { concurrentRun.results = startReplicas(t) })

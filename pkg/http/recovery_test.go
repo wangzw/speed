@@ -14,13 +14,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// panicking is a route handler that panics with thrown.
 func panicking(thrown any) gin.HandlerFunc {
 	return func(*gin.Context) { panic(thrown) }
 }
 
-// panicValue is an error a handler panics with, so that a test can tell the
-// value it threw from one that merely reads the same.
 type panicValue struct{ detail string }
 
 func (p *panicValue) Error() string { return p.detail }

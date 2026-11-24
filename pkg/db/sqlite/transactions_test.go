@@ -55,8 +55,6 @@ func TestBeginStatementReadsTheLocatorTheWayTheDriverDocumentsIt(t *testing.T) {
 	}
 }
 
-// The locks a transaction on the first connection holds, as a second connection on the
-// same file observes them.
 const (
 	holdsNothing   = "nothing"
 	holdsWriteLock = "the write lock"

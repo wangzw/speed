@@ -190,8 +190,6 @@ var exportedSurface = []string{
 	"var ErrUnknownListener",
 }
 
-// The registration surface is expressed in gin's types: a route takes gin.HandlerFuncs,
-// a layer is one, and the error entry point takes the gin context.
 var (
 	_ func(Endpoint, string, string, ...gin.HandlerFunc) = Endpoint.Route
 	_ func(*gin.Context, Problem)                        = Fail

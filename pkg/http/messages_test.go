@@ -114,8 +114,6 @@ type refusalCase struct {
 	body     func() io.Reader
 }
 
-// refusalCases is the four refusals: the no-route 404, the method-not-allowed
-// 405, the body-too-large 413 and the recovered-panic 500.
 func refusalCases() []refusalCase {
 	return []refusalCase{
 		{

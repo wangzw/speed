@@ -42,9 +42,6 @@ func sqliteSection(dsn string) lockingConfig {
 	}}
 }
 
-// discardingLogger is the logger a case hands to openHandle or newDatabase when
-// it does not read what the handle writes: one over slog.DiscardHandler, which
-// accepts every record and keeps none.
 func discardingLogger() *slog.Logger { return slog.New(slog.DiscardHandler) }
 
 func unopenableDSN(t *testing.T) string {
@@ -61,8 +58,6 @@ func poolOf(t *testing.T, handle *gorm.DB) *sql.DB {
 	return pool
 }
 
-// releaseAtEnd gives a pool back when the case ends, so that a case which
-// asserted on what the pool did does not leave it open for the rest of the run.
 func releaseAtEnd(t *testing.T, pool *sql.DB) {
 	t.Helper()
 	t.Cleanup(func() {

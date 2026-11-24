@@ -1,9 +1,4 @@
-// Command dbhost is the test host the end-to-end cases in this directory drive
-// as a child process. It is not part of the product: it lives under internal/,
-// and nothing but this package's own tests builds it.
-//
-// The tree has two commands: the root drives the whole lifecycle, and `migrate`
-// stops at the migration stage.
+// Command dbhost is the test host the end-to-end cases in this directory drive as a child process; it is not part of the product. Its tree has two commands: the root drives the whole lifecycle, and `migrate` stops at the migration stage.
 package main
 
 import (
@@ -29,14 +24,11 @@ const (
 	missingProviderMarker   = "dbhost: missing-provider"
 )
 
-// finish ends the run: cancelling lets Run shut every module down in order, the
-// way an interrupt would.
 var finish context.CancelFunc
 
 func main() { os.Exit(run()) }
 
-// run drives the lifecycle and turns its outcome into an exit status. It is a
-// function of its own so the deferred cancel runs before os.Exit skips it.
+// run drives the lifecycle and turns its outcome into an exit status; it is a function of its own so the deferred cancel runs before os.Exit skips it.
 func run() int {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -63,10 +55,7 @@ func run() int {
 	return 0
 }
 
-// namedModules is what the command tree takes in: the engine this scenario
-// configures, and the dependant beside it. The engine is named because the
-// capability is delivered exclusively, so the dependency closure pulls no
-// provider in on its own.
+// namedModules is what the command tree takes in: the engine this scenario configures and the dependant beside it. The engine is named because the capability is delivered exclusively, so the dependency closure pulls no provider in on its own.
 func namedModules() []string {
 	switch scenario() {
 	case caseBothEnginesConfigured:
@@ -84,8 +73,6 @@ func namedModules() []string {
 	}
 }
 
-// say writes one line of this host's own narration. The dropped write error is
-// stated once here: stdout is the output channel itself.
 func say(line string) {
 	//nolint:errcheck // dropping the error is what this function is for; the
 	// doc comment above says why there is nothing to do with it.

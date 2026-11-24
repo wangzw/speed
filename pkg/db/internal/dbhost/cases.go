@@ -13,9 +13,7 @@ import (
 	"github.com/vislake/speed/pkg/db"
 )
 
-// scenarioEnv names the scenario to run. It is read from the environment because
-// the configuration loader rejects positional arguments, and it stays outside the
-// host's prefix so it is not reported as an input item nobody reads.
+// scenarioEnv names the scenario to run. It is read from the environment because the configuration loader rejects positional arguments, and it stays outside the host's prefix so it is not reported as an input item nobody reads.
 const scenarioEnv = "SPEED_DB_E2E_CASE"
 
 const (
@@ -54,8 +52,6 @@ const (
 	servedMarker = "dbhost: served"
 )
 
-// recordTableName is the name the database module keeps to itself, spelled here
-// by the scenario that reads the table back.
 const recordTableName = "db_migrations"
 
 const appliersTable = "dbhost_appliers"
@@ -120,9 +116,6 @@ func probeMigrate(_ context.Context, _ *core.Registry, instance any) error {
 	return nil
 }
 
-// reportRecordedMigrations prints the migration record table, one line per row,
-// naming module and file so the case can tell this host's own declaration from
-// some other migration.
 func (p *probe) reportRecordedMigrations() error {
 	var rows []struct {
 		Module string
@@ -138,9 +131,6 @@ func (p *probe) reportRecordedMigrations() error {
 	return nil
 }
 
-// joinReplicas meets the other replica at the rendezvous and marks the moment
-// this process has all but reached its migration stage. Construction is the last
-// point of a run this host controls, so the marker precedes the migration.
 func (p *probe) joinReplicas() error {
 	identity, err := p.sessionIdentity()
 	if err != nil {
@@ -166,8 +156,6 @@ func (p *probe) joinReplicas() error {
 	return nil
 }
 
-// sessionIdentity reads the name this replica's connections go by: the session's
-// own answer, which is what the migration records.
 func (p *probe) sessionIdentity() (string, error) {
 	var identity string
 	if err := p.capability.DB().Raw(`SELECT current_setting('application_name')`).Scan(&identity).Error; err != nil {
@@ -176,9 +164,7 @@ func (p *probe) sessionIdentity() (string, error) {
 	return identity, nil
 }
 
-// reportWhoApplied prints the marker the concurrency case divides the replicas
-// by. The row the migration wrote is the whole of the evidence: everything else
-// a replica could observe after the fact is identical on both sides.
+// reportWhoApplied prints the marker the concurrency case divides the replicas by: the row the migration wrote is the whole of the evidence, since everything else a replica could observe after the fact is identical on both sides.
 func (p *probe) reportWhoApplied() error {
 	var appliers []string
 	if err := p.capability.DB().Raw(`SELECT role FROM ` + appliersTable).Scan(&appliers).Error; err != nil {
@@ -205,9 +191,7 @@ type secret struct {
 	Value string `gorm:"serializer:encrypted"`
 }
 
-// encryptedRoundTrip writes one model through the delivered handle and reads it
-// back. The process is fresh, so a serializer registered after the handle was
-// delivered is unresolved here, on the first statement that carries it.
+// encryptedRoundTrip writes one model through the delivered handle and reads it back. The process is fresh, so a serializer registered after the handle was delivered is unresolved here, on the first statement that carries it.
 func (p *probe) encryptedRoundTrip() error {
 	handle := p.capability.DB()
 	if err := handle.AutoMigrate(&secret{}); err != nil {
@@ -228,8 +212,6 @@ func (p *probe) encryptedRoundTrip() error {
 	return nil
 }
 
-// meetOtherReplicas blocks until every replica has reached this point, so they
-// go for the migration mutex together.
 func meetOtherReplicas(role string) error {
 	dir := os.Getenv(rendezvousEnv)
 	if dir == "" {
@@ -273,8 +255,6 @@ func meetOtherReplicas(role string) error {
 
 func scenario() string { return os.Getenv(scenarioEnv) }
 
-// mark prints a marker and the moment this process reached it, which is what the
-// overlap assertion reads.
 func mark(name string) {
 	say(name + "\t" + time.Now().UTC().Format(time.RFC3339Nano))
 }

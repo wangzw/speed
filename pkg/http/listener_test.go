@@ -154,10 +154,7 @@ func TestStopClosesListenerSynchronously(t *testing.T) {
 	go func() { inFlight <- get("http://" + addr + "/") }()
 	waitFor(t, gate.entered, "the request to reach the handler")
 
-	// stop is called with a deadline of its own: an implementation that
-	// drained inside stop would otherwise park here until the whole binary
-	// times out, and this assertion is exactly the one that tells the two
-	// shapes apart.
+	// stop is called with a deadline of its own: an implementation that drained inside stop would otherwise park here until the whole binary times out, and this assertion tells the two shapes apart.
 	stopped := make(chan error, 1)
 	go func() { stopped <- l.stop(context.Background()) }()
 	select {
@@ -312,10 +309,7 @@ func TestNormalStopIsNotAnAnomalousExit(t *testing.T) {
 	if err := l.close(context.Background()); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	// The accept loop returns on its own goroutine. Its done signal is what
-	// says the goroutine is over, so the absence below is observed after the
-	// last moment a record could be written rather than after an interval that
-	// a loaded machine may finish first.
+	// The accept loop returns on its own goroutine, and its done signal is what says the goroutine is over, so the absence below is observed after the last moment a record could be written rather than after an interval.
 	waitFor(t, l.acceptDone, "the accept loop to return")
 
 	if written := records.at(slog.LevelError); len(written) > 0 {

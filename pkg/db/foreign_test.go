@@ -92,18 +92,13 @@ func builtByNew(t *testing.T, spec Spec, dsn string, modules ...core.Module) *da
 	return product
 }
 
-// rivalSpec is another implementation's Spec: the same engine under another
-// name, which is what makes its product another implementation's.
 func rivalSpec() Spec {
 	spec := sqliteSpec()
 	spec.ModuleName, spec.ConfigNamespace = "db.rival", "db.rival"
 	return spec
 }
 
-// driveCatching drives a registry and turns a panic out of it into a failure of
-// the case, instead of the abort of the whole test binary: a panic in a rollback
-// is what several of these cases exist to catch, and they would take the rest of
-// the run down with them.
+// driveCatching drives a registry and turns a panic out of it into a failure of the case: a panic in a rollback is what several of these cases exist to catch, and it would otherwise abort the whole test binary.
 func driveCatching(t *testing.T, reg *core.Registry, drive core.Drive) error {
 	t.Helper()
 	defer func() {

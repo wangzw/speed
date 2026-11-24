@@ -23,7 +23,6 @@ import (
 	"github.com/vislake/speed/pkg/db/internal/dbsuite"
 )
 
-// The values the cases bind, each a mark the records are searched for.
 const (
 	slowValue   = "logged-value-slow"
 	failedValue = "logged-value-failed"
@@ -40,27 +39,20 @@ const (
 	silencedValue   = "logged-value-silenced"
 )
 
-// withheldText is written out here, not read from the logger, so rewording it is
-// a change these cases see.
+// withheldText is written out here, not read from the logger, so rewording it is a change these cases see.
 const withheldText = "statement withheld: GORM filled its values in before the logger saw it"
 
-// notSlow is a threshold no statement a case runs reaches.
 const notSlow = time.Hour
 
-// briefly is how long a statement that ran as any other is said to have taken: a
-// positive time whatever the clock resolution.
 const briefly = time.Millisecond
 
 func began(took time.Duration) time.Time { return time.Now().Add(-took) }
 
-// thisFile is the call site every record has to name.
 var thisFile = func() string {
 	_, file, _, _ := runtime.Caller(0)
 	return file
 }()
 
-// nextLine is the expected call site of the call on the next line, taken from
-// the source and not from the logger.
 func nextLine() int {
 	_, _, line, _ := runtime.Caller(1)
 	return line + 1
@@ -232,7 +224,6 @@ func durationOf(attrs map[string]slog.Value, key string) (time.Duration, bool) {
 	return value.Duration(), true
 }
 
-// countOf is the integer attribute under key, and whether it is carried.
 func countOf(attrs map[string]slog.Value, key string) (int64, bool) {
 	value, carried := attrs[key]
 	if !carried || value.Kind() != slog.KindInt64 {
@@ -249,8 +240,6 @@ func siteOf(record slog.Record) runtime.Frame {
 	return frame
 }
 
-// checkVocabulary holds a record to the vocabulary, the attribute kinds and the
-// call site every record shares, and returns its attributes by key.
 func checkVocabulary(t *testing.T, record slog.Record) map[string]slog.Value {
 	t.Helper()
 	attrs := attributesOf(t, record)
@@ -558,7 +547,6 @@ func TestTheLoggerWritesNoValueOnAnyPath(t *testing.T) {
 	}
 }
 
-// everythingOf is the text of each of the records, one to a line.
 func everythingOf(records []slog.Record) string {
 	lines := make([]string, len(records))
 	for i, record := range records {
@@ -571,17 +559,12 @@ func everythingOf(records []slog.Record) string {
 // runs is written with its text withheld on every path.
 func TestAStatementRunThroughScanIsWrittenWithoutItsText(t *testing.T) {
 	cases := []struct {
-		name  string
-		value string
-		slow  time.Duration
-		debug bool
-		// issue runs the statement on a handle that holds a row under value and
-		// returns the error it reports, which fails says whether to expect.
-		issue func(handle *gorm.DB, value string) error
-		fails bool
-		// message is the record the statement is written as, classes the classes
-		// it carries, threshold the one it exceeded, and rows what it counts,
-		// when rowsKnown says the case holds it to a count.
+		name             string
+		value            string
+		slow             time.Duration
+		debug            bool
+		issue            func(handle *gorm.DB, value string) error
+		fails            bool
 		message, classes string
 		threshold        time.Duration
 		rows             int64
@@ -662,9 +645,8 @@ func TestAStatementRunThroughScanIsWrittenWithoutItsText(t *testing.T) {
 func TestAStatementRunThroughAnotherFinisherKeepsItsTextWhereScanWithholdsIt(t *testing.T) {
 	const statement = "SELECT id FROM logged_entries WHERE value = ?"
 	cases := []struct {
-		name string
-		run  func(t *testing.T, handle *gorm.DB, value string)
-		// uncounted says the statement is one GORM counts no rows for.
+		name      string
+		run       func(t *testing.T, handle *gorm.DB, value string)
 		uncounted bool
 	}{
 		{
@@ -849,9 +831,8 @@ func (e resultCodeError) Code() int     { return e.code }
 // error's classes, spelled as documented, and never its text.
 func TestAFailedStatementIsWrittenWithTheClassesOfItsError(t *testing.T) {
 	cases := []struct {
-		name string
-		err  error
-		// classes is the attribute's text, and empty where the record has none.
+		name    string
+		err     error
 		classes string
 	}{
 		{"an engine's SQLSTATE", quotingError{failedValue, "22P02"}, "SQLSTATE 22P02"},
@@ -1255,7 +1236,6 @@ func TestADebugSessionIsWrittenAsInfoRecords(t *testing.T) {
 	})
 }
 
-// messagesOf is the message of each of the records, in order.
 func messagesOf(records []slog.Record) []string {
 	messages := make([]string, len(records))
 	for i, record := range records {
@@ -1264,10 +1244,7 @@ func messagesOf(records []slog.Record) []string {
 	return messages
 }
 
-// trailOf is the trail a handler keeps when the logger asks it about each of the
-// wanted records, finds each one written, renders it and hands it over: the
-// level asked, the rendering and the delivery, in that order. Each wanted record
-// is a level and its message, as "WARN slow statement".
+// trailOf is the trail a handler keeps when the logger asks it about each wanted record, finds it written, renders it and hands it over: the level asked, the rendering and the delivery, in that order. Each wanted record is a level and its message, as "WARN slow statement".
 func trailOf(wanted []string) []string {
 	var trail []string
 	for _, record := range wanted {
@@ -1540,8 +1517,6 @@ func TestARecordTheHeldLoggerWillNotWriteIsNeverRendered(t *testing.T) {
 	}
 }
 
-// contextKey is the key of the value the contexts the cases hand to the logger
-// carry.
 type contextKey struct{}
 
 // TestANilContextIsTolerated checks that a nil context is replaced before it reaches the handler
@@ -1609,7 +1584,6 @@ func TestAStatementLoggerOverNoLoggerPanics(t *testing.T) {
 	newStatementLogger(nil)
 }
 
-// refusingHandler is a handler that writes no record at any level.
 type refusingHandler struct{}
 
 func (refusingHandler) Enabled(context.Context, slog.Level) bool { return false }
@@ -1660,8 +1634,6 @@ func TestARecordTheHeldLoggerWillNotWriteCostsNoAllocation(t *testing.T) {
 	}
 }
 
-// attributeOrder is the keys of the attributes a record carries, in the order it
-// carries them.
 func attributeOrder(record slog.Record) []string {
 	var keys []string
 	record.Attrs(func(attr slog.Attr) bool {
@@ -1799,11 +1771,8 @@ func TestTheClassesOfAnErrorAreWrittenInAFixedOrder(t *testing.T) {
 	}
 }
 
-// failingHandler is a handler that keeps what it is handed and reports that it
-// could not write it: every Handle returns an error.
 type failingHandler struct {
 	*recordingHandler
-	// err is what Handle returns.
 	err error
 }
 
@@ -1915,7 +1884,6 @@ func TestAStatementIsWrittenAsGORMRenderedIt(t *testing.T) {
 	}
 }
 
-// panickingHandler is a handler whose Handle panics.
 type panickingHandler struct{ *recordingHandler }
 
 func (panickingHandler) Handle(context.Context, slog.Record) error { panic("the handler cannot cope") }

@@ -25,41 +25,21 @@ var declaredStages = [...]Stage{
 }
 
 type orderingRemark struct {
-	// endpoint says which endpoint the declaration was made on; with layer it locates the
-	// declaration.
-	endpoint string
-	// layer is what the line is about: the layer that declared the constraint.
-	layer string
-	// field is "After" or "Before" and at is the position in it, which is what locates the
-	// one declaration among several on the same layer.
-	field string
-	at    int
-	// capability is the type the token designates, rendered with its package path, so the
-	// reader can go and look at who was meant to stand for it.
+	endpoint   string
+	layer      string
+	field      string
+	at         int
 	capability string
-	// cause is why the line is there.
-	cause remarkCause
+	cause      remarkCause
 }
 
-// remarkCause is why a remark is written. The causes are told apart because
-// the fixing action differs, so a report that does not name the cause sends
-// half its readers after the wrong thing. The level and the words travel with
-// the cause too, because they differ the same way: a redundant cross-stage
-// constraint is not the failure an unplaced constraint may be.
+// remarkCause is why a remark is written. The causes are told apart because the fixing action differs, and the level and words travel with the cause too: a redundant cross-stage constraint is not the failure an unplaced constraint may be.
 type remarkCause string
 
 const (
-	// causeNoProvider is a capability no layer on this endpoint stands for:
-	// the module that would stand for it is not in this process, or it is
-	// and does not guard this endpoint, or its layer is here and left its
-	// Provides empty. The graph cannot tell those apart, and a module that is
-	// absent or does not guard the endpoint is a legal configuration.
+	// causeNoProvider is a capability no layer on this endpoint stands for: the module is not in this process, or it is and does not guard this endpoint, or its layer is here and left Provides empty. The graph cannot tell those apart, and most are legal configurations.
 	causeNoProvider remarkCause = "no layer on this endpoint stands for the capability"
-	// causeSelfOnly is a capability whose only representative is the layer
-	// declaring the constraint. The self edge is dropped, so the constraint
-	// places nothing; nobody is absent, and the declaration is what is wrong.
-	// A capability another layer stands for as well is not this case: that
-	// part of the claim holds, so the constraint did what it said.
+	// causeSelfOnly is a capability whose only representative is the layer declaring the constraint. The self edge is dropped, so the constraint places nothing; nobody is absent, and the declaration is what is wrong. A capability another layer also stands for is not this case.
 	causeSelfOnly remarkCause = "the declaring layer is the only layer standing for the capability"
 	// causeStageSatisfied is a constraint whose provider is in another stage, in the
 	// direction the stage order already gives.
@@ -70,11 +50,7 @@ func orderLayers(endpoint string, layers []layer) ([]layer, []orderingRemark, er
 	providers := providersByCapability(endpoint, layers)
 
 	var reported []orderingRemark
-	// note records a constraint that placed nothing, with the reason. The
-	// declaring layer's own standing is what the answer turns on: the edge
-	// to it is dropped, so a layer that is the only one standing for the
-	// capability it names places nothing either, and a layer another
-	// provider stands beside still draws that edge.
+	// note records a constraint that placed nothing, with the reason. The declaring layer's own standing is what the answer turns on: the edge to it is dropped, so a layer that is the only one standing for the capability it names places nothing, while a layer another provider stands beside still draws that edge.
 	note := func(self int, name, field string, at int, key reflect.Type) {
 		cause, unplaced := unplacedCause(providers[key], self)
 		if !unplaced {
@@ -104,10 +80,7 @@ func orderLayers(endpoint string, layers []layer) ([]layer, []orderingRemark, er
 		edges[from][to] = true
 		indegree[to]++
 	}
-	// place resolves one provider of one constraint. A provider in the
-	// declaring layer's own stage draws the edge; one in another stage draws
-	// nothing, and instead either repeats what the stage order gives or
-	// contradicts it, which the caller cannot be given a position for.
+	// place resolves one provider of one constraint. A provider in the declaring layer's own stage draws the edge; one in another stage draws nothing, and instead either repeats what the stage order gives or contradicts it.
 	place := func(i, p int, field string, at int, key reflect.Type) error {
 		if layers[p].mw.Stage == layers[i].mw.Stage {
 			if field == "After" {
@@ -200,8 +173,6 @@ func orderLayers(endpoint string, layers []layer) ([]layer, []orderingRemark, er
 		}
 	}
 	if len(order) != len(layers) {
-		// No chain comes out of a cyclic graph, and the report describes an assembly that is
-		// about to be abandoned; the failure is the only thing worth reading here.
 		return nil, nil, cycleError(endpoint, layers, order, edges)
 	}
 
@@ -213,10 +184,7 @@ func orderLayers(endpoint string, layers []layer) ([]layer, []orderingRemark, er
 }
 
 func stageConflict(endpoint string, declarer layer, field string, at int, provider layer, key reflect.Type) error {
-	// After asks to sit inside the named layer, Before outside it. The
-	// contradiction is that the stage order puts the declarer on the other
-	// side, so the two words name opposite sides and the text has to keep them
-	// apart.
+	// After asks to sit inside the named layer, Before outside it. The contradiction is that the stage order puts the declarer on the other side, so the two words name opposite sides and the text has to keep them apart.
 	asked, placed := "inside", "outside"
 	if field == "Before" {
 		asked, placed = "outside", "inside"
@@ -247,10 +215,7 @@ func unplacedCause(providers []int, self int) (remarkCause, bool) {
 	return causeNoProvider, true
 }
 
-// providersByCapability indexes the layers by the capabilities they stand for.
-// Two tokens designating one capability land on one key, whoever wrote them,
-// which is what lets a constraint reach a layer registered by a module it
-// never names.
+// providersByCapability indexes the layers by the capabilities they stand for. Two tokens designating one capability land on one key, whoever wrote them, which lets a constraint reach a layer registered by a module it never names.
 func providersByCapability(endpoint string, layers []layer) map[reflect.Type][]int {
 	providers := make(map[reflect.Type][]int)
 	for i, l := range layers {
@@ -346,8 +311,6 @@ func capabilityNames(endpoint string, l layer, field string, tokens []core.Token
 	return names
 }
 
-// declarationSite locates a token for the panic an illegal one raises: which
-// endpoint, which layer, which field, which position in it.
 func declarationSite(endpoint, name, field string, at int) string {
 	return fmt.Sprintf("endpoint %q middleware %q %s[%d]", endpoint, name, field, at)
 }

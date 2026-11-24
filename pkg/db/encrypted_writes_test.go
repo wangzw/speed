@@ -20,9 +20,6 @@ func writtenRow(t *testing.T, product *database) encryptedModel {
 	return row
 }
 
-// assertSealed holds one column of one row to the two things a sealed write
-// leaves: the column does not carry the plaintext, and the model reads the
-// plaintext back.
 func assertSealed(t *testing.T, product *database, id uint, want string) {
 	t.Helper()
 	stored := storedColumn(t, product, id, "email")
@@ -248,8 +245,6 @@ type contactModel struct {
 	Note         string
 }
 
-// leftOut is what a case puts under Note where its Select leaves Note out, so
-// that the column still holding something else shows the Select was in force.
 const leftOut = "left out"
 
 func assertContactSealed(t *testing.T, product *database, id uint, want string) {
@@ -508,8 +503,6 @@ func TestAnUpdateFromAnotherStructMustCarryTheSerializer(t *testing.T) {
 	}
 	assertSealed(t, product, row.ID, "sealed@example.com")
 
-	// A struct that leaves the field at its zero value does not write it, so
-	// there is nothing to refuse.
 	if err := product.DB().Model(&encryptedModel{}).Where("id = ?", row.ID).
 		Updates(indexPatch{EmailIndex: "digest"}).Error; err != nil {
 		t.Errorf("an update from a struct that does not reach the sealed column was refused: %v", err)

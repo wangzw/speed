@@ -36,10 +36,7 @@ func validateSpec(module string, s Spec) error {
 			"Either embed the module's openapi.json into it or drop the declaration",
 			ErrInvalidSpec, module)
 	}
-	// utf8.Valid comes before the JSON decoding on purpose: encoding/json
-	// replaces an illegal byte inside a string with U+FFFD instead of
-	// failing, so a fragment carrying mis-encoded text would pass the decode
-	// and reach the reader's merge as silently corrupted content.
+	// utf8.Valid comes before JSON decoding on purpose: encoding/json replaces an illegal byte inside a string with U+FFFD instead of failing, so a fragment carrying mis-encoded text would pass the decode and reach the reader's merge corrupted.
 	if !utf8.Valid(s.Document) {
 		return fmt.Errorf("%w: module %q declared a Spec whose Document is not valid UTF-8. "+
 			"JSON is UTF-8 by definition; re-encode the file the fragment came from",
@@ -124,8 +121,6 @@ func validateDocumentPaths(module string, s Spec, top map[string]json.RawMessage
 	return nil
 }
 
-// checkPrefixSegments validates a path written as bare literal segments, the
-// form Prefix takes: "api" or "internal/api", never "/api".
 func checkPrefixSegments(prefix string) error {
 	if strings.HasPrefix(prefix, "/") {
 		return errors.New("begins with \"/\"; write bare segments, for example \"api\"")

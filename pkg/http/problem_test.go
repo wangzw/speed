@@ -735,9 +735,7 @@ func TestTheDefaultShapeDropsTheHeadersThatDescribeAnotherBody(t *testing.T) {
 		name   string
 		path   string
 		status int
-		// kept is the representation headers the response is to carry, with their
-		// values: none for a panic.
-		kept map[string]string
+		kept   map[string]string
 	}{
 		{"a panic answered by the fallback", "/by-panic", nethttp.StatusInternalServerError, nil},
 		{"a refusal by a handler", "/by-handler", nethttp.StatusConflict, sampleRepresentation},

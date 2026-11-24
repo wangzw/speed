@@ -33,11 +33,7 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// providerName is the name of the module that delivers the log capability in the
-// cases that stand a recording logger in for the log module. It sorts after the
-// name of the database module on purpose: modules with no dependency between
-// them are constructed in the order of their names, so the provider comes ahead
-// of the database only when the database module declares the dependency.
+// providerName is the module that delivers the log capability in the cases that stand a recording logger in for the log module. It sorts after the database module on purpose: modules with no dependency between them are constructed in name order, so the provider comes ahead only when the database module declares the dependency.
 const providerName = "zz-log-provider"
 
 type seen struct {
@@ -121,8 +117,7 @@ var _ log.Logger = (*recordingLogger)(nil)
 
 func newRecordingLogger() *recordingLogger { return &recordingLogger{into: new(recorder)} }
 
-// Named hands out a logger carrying the attribute the log module's own Named binds, so
-// that a record reads the same through either.
+// Named hands out a logger carrying the attribute the log module's own Named binds, so that a record reads the same through either.
 func (l *recordingLogger) Named(name string) *slog.Logger {
 	l.mu.Lock()
 	l.named = append(l.named, name)
@@ -132,18 +127,13 @@ func (l *recordingLogger) Named(name string) *slog.Logger {
 
 func (l *recordingLogger) Redaction() log.Redaction { return ignoredRules{} }
 
-// names is what Named was asked for, in the order it was asked.
 func (l *recordingLogger) names() []string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return slices.Clone(l.named)
 }
 
-// module is the descriptor that delivers the logger, and it does so from its New:
-// the registry constructs it, which is what a provider the host supplies is not.
-// An instance supplied for a module exists before any New has run, so it takes
-// its place in no order and cannot show what the order is. The capability is not
-// claimed exclusively, so two of these can stand side by side.
+// module is the descriptor that delivers the logger from its New, so the registry constructs it and it takes its place in the order. An instance supplied for a module exists before any New has run and takes its place in no order; the capability is not claimed exclusively, so two of these can stand side by side.
 func (l *recordingLogger) module(name string) core.Module {
 	return core.Module{
 		Name:     name,
@@ -287,8 +277,7 @@ func TestAHostWithoutALogModuleStartsAndDeliversAWorkingHandle(t *testing.T) {
 	if execErr := handle.Exec(insertNote, debugValue).Error; execErr != nil {
 		t.Errorf("writing a row on the delivered handle: %v", execErr)
 	}
-	// The statement fails on purpose, and the process default logger would
-	// write it to the output of the test.
+	// The statement fails on purpose, and the process default logger would write it to the output of the test.
 	quiet := handle.Session(&gorm.Session{Logger: logger.Discard})
 	if execErr := quiet.Exec(insertMissing, failedValue).Error; execErr == nil {
 		t.Error("an insert into a table that does not exist succeeded, so the handle hides the error")
@@ -534,8 +523,6 @@ func (f logFile) statementRecords() []map[string]any {
 	return own
 }
 
-// wantedRecord is what the logger writes for one of the statements
-// issueStatements runs.
 type wantedRecord struct {
 	what                  string
 	level, message        string

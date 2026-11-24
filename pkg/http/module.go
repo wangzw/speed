@@ -12,10 +12,7 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// ModuleName is this module's name in the registry. It is also the name a host writes
-// to take this module into a command of its tree, and that is why it is exported: a
-// command takes a module in by name, and a literal spread over a host's commands is one
-// a rename leaves behind with nothing to catch it.
+// ModuleName is this module's name in the registry, and the name a host writes to take this module into a command of its tree. It is exported for that: a command takes a module in by name, and a literal spread over a host's commands is one a rename leaves behind.
 const ModuleName = "http"
 
 func init() { core.ProcessRegistry.Register(Module()) }
@@ -107,12 +104,7 @@ func Module() core.Module {
 	}
 }
 
-// productOf recovers this module's product from what the registry hands back.
-// A nil instance, or one of another type, is tolerated rather than asserted:
-// a startup that fails part-way rolls back every constructed instance, so the
-// later callbacks run on modules whose New never returned a product, and the
-// instance a host supplied for this module is any type that delivers Router.
-// What is not this module's product is left alone.
+// productOf recovers this module's product from what the registry hands back. A nil instance, or one of another type, is tolerated rather than asserted: a startup that fails part-way rolls back every constructed instance, and a host-supplied instance is any type that delivers Router.
 func productOf(instance any) (*router, bool) {
 	r, ok := instance.(*router)
 	return r, ok && r != nil
@@ -154,8 +146,7 @@ func newModule(reader config.Reader, injected *slog.Logger, responder ErrorRespo
 	r.resolver = resolver
 	r.logger = injected
 	if r.logger == nil {
-		// No Logger capability in this assembly, a state reached only by building the
-		// registry by hand: importing this package pulls in pkg/log, which registers itself.
+		// No Logger capability in this assembly, a state reached only by building the registry by hand: importing this package pulls in pkg/log, which registers itself.
 		r.logger = log.Default()
 	}
 	return r, nil

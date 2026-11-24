@@ -34,11 +34,7 @@ type Failure interface {
 	StatusCode() int
 }
 
-// bind builds the entry point's handler for one declared operation: it binds
-// the declared input from the request, calls the handler and writes the
-// declared success response. A handler never sees the request, so a parameter
-// the declaration does not carry cannot be read, and a body field it does not
-// describe cannot be decoded.
+// bind builds the entry point's handler for one declared operation: it binds the declared input from the request, calls the handler and writes the declared success response. A handler never sees the request, so a parameter the declaration does not carry cannot be read and a body field it does not describe cannot be decoded.
 func bind[In, Out any](
 	handle func(context.Context, In) (Out, error),
 	operationID string,
@@ -98,18 +94,13 @@ func bind[In, Out any](
 }
 
 type requestBinding struct {
-	input reflect.Type
-	// mediaType is the request body's media type, normalised; empty when the operation
-	// takes no body.
+	input     reflect.Type
 	mediaType string
-	// required is whether a request must carry a body.
-	required bool
-	// json, form and file map a member name to its field index.
-	json map[string]int
-	form map[string]int
-	file map[string]int
-	// raw is the index of the single raw-tagged field, or -1.
-	raw int
+	required  bool
+	json      map[string]int
+	form      map[string]int
+	file      map[string]int
+	raw       int
 }
 
 // newRequestBinding reads an operation's request declaration and panics on a
@@ -289,8 +280,6 @@ func contentTypeMatches(header, declared string) bool {
 	return true
 }
 
-// requiredBodyError is the refusal of a request the declaration says must carry
-// a body and that carries none.
 func requiredBodyError() error {
 	return &bindingError{status: http.StatusBadRequest, reason: "http: the request body is required"}
 }
@@ -493,10 +482,7 @@ func jsonFields(input reflect.Type) map[string]int {
 	return taggedFields(input, "json")
 }
 
-// bindBody reads the request body into the input's fields for the declared
-// media type. A Content-Type that is not the declared one is refused before
-// the body is read, so a handler never sees a body decoded by a reader the
-// declaration did not ask for.
+// bindBody reads the request body into the input's fields for the declared media type. A Content-Type that is not the declared one is refused before the body is read, so a handler never sees a body decoded by a reader the declaration did not ask for.
 func (b requestBinding) bindBody(c *gin.Context, value reflect.Value) error {
 	if !contentTypeMatches(c.GetHeader("Content-Type"), b.mediaType) {
 		return &bindingError{
@@ -517,10 +503,7 @@ func (b requestBinding) bindBody(c *gin.Context, value reflect.Value) error {
 	return nil
 }
 
-// bindJSON reads a JSON object into the input's json-tagged fields. Unknown
-// members are refused, so a body carrying a field the declaration does not
-// describe is a 400 rather than a silently dropped value. An empty body is the
-// zero input when the declaration does not require one, and a 400 when it does.
+// bindJSON reads a JSON object into the input's json-tagged fields. Unknown members are refused, so a body carrying an undescribed field is a 400 rather than a silently dropped value; an empty body is the zero input when the declaration does not require one, and a 400 when it does.
 func (b requestBinding) bindJSON(c *gin.Context, value reflect.Value) error {
 	raw, err := readRequestBody(c)
 	if err != nil {
@@ -587,10 +570,7 @@ func (b requestBinding) bindForm(c *gin.Context, value reflect.Value) error {
 	return setFormValues(values, value, b.form)
 }
 
-// bindMultipart reads a multipart body into the input's form- and file-tagged
-// fields. The endpoint's body limit is already on the request's body, so the
-// parser's own read is what ends with a *http.MaxBytesError when the upload is
-// over it.
+// bindMultipart reads a multipart body into the input's form- and file-tagged fields. The endpoint's body limit is already on the request's body, so the parser's own read ends with a *http.MaxBytesError when the upload is over it.
 func (b requestBinding) bindMultipart(c *gin.Context, value reflect.Value) error {
 	if err := c.Request.ParseMultipartForm(multipartMemory); err != nil {
 		return multipartError(err)
@@ -613,7 +593,6 @@ func (b requestBinding) bindMultipart(c *gin.Context, value reflect.Value) error
 				reason: fmt.Sprintf("http: the request body carries the unknown part %q", name),
 			}
 		}
-		// A file-tagged field holds one file.
 		if len(headers) > 1 {
 			return &bindingError{
 				status: http.StatusBadRequest,
@@ -642,7 +621,6 @@ func setFormValues(values url.Values, value reflect.Value, fields map[string]int
 			}
 		}
 		field := value.Field(index)
-		// A scalar field holds one value.
 		if field.Kind() != reflect.Slice && len(items) > 1 {
 			return &bindingError{
 				status: http.StatusBadRequest,

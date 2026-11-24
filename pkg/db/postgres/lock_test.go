@@ -43,9 +43,7 @@ func TestLockTimeoutIsErrMigrationLockTimeout(t *testing.T) {
 			"ErrMigrationLockTimeout", err)
 	}
 	if errors.Is(err, db.ErrMigrationFailed) {
-		// Both sentinels matching would send the host looking through the
-		// migration files, when what it has to look at is the replica
-		// holding the mutex.
+		// Both sentinels matching would send the host through sound migration files, when what it has to look at is the replica holding the mutex.
 		t.Error("the timeout also matches ErrMigrationFailed, which points the host at the migrations " +
 			"instead of at the other replica")
 	}
@@ -134,9 +132,6 @@ func TestReleasingAMutexWhoseSessionDiedReportsIt(t *testing.T) {
 		t.Errorf("the message does not say what failed: %v", err)
 	}
 
-	// The server released the lock when it dropped the session, so the next
-	// replica gets in. This is here so that the case above cannot be read as
-	// the mutex having been stranded.
 	next := newReplica(t, dsn, time.Second)
 	if err := next.Acquire(ctx); err != nil {
 		t.Fatalf("the mutex was still held after its session was dropped: %v", err)
@@ -247,8 +242,6 @@ func replicaOnAPoolOf(t *testing.T, dsn string, timeout time.Duration, maxOpen i
 	return &replica{handle: handle, conn: conn, lock: postgres.NewMigrationLock(timeout)}
 }
 
-// Acquire and Release put the mutex on this replica's borrowed connection, the way the
-// migration run does.
 func (r *replica) Acquire(ctx context.Context) error { return r.lock.Acquire(ctx, r.conn) }
 func (r *replica) Release(ctx context.Context) error { return r.lock.Release(ctx, r.conn) }
 

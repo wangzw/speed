@@ -11,24 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// Connection runs fn, under ctx, on one connection of the handle's pool, taken
-// within wait. It is for statements a module issues on its own account, which
-// can be reached from a caller already holding connections of the same pool.
-//
-// Only the wait for the connection is bounded; fn's statements wait for locks
-// as the engine makes them wait. The session fn receives is pinned to the
-// connection, and so are the sessions and transactions derived from it. When fn
-// returns or panics, every transaction and result set it left open on the
-// connection is closed and the connection goes back to the pool; fn's own error
-// is returned as it is.
-//
-// A handle already on a connection — a transaction, a pinned session — or on a
-// pool this package cannot name runs fn on the handle itself, with nothing
-// waited for.
-//
-// No connection within wait reports an error wrapping
-// context.DeadlineExceeded while ctx has not ended. A wait that is not positive,
-// and a nil handle, are refused.
+// Connection runs fn, under ctx, on one connection of the handle's pool, taken within wait; only that wait is bounded. The session fn receives and anything derived from it are pinned to the connection, and what fn leaves open there is closed when it returns or panics, with fn's own error returned as it is. A wait that is not positive, and a nil handle, are refused; no connection within wait wraps context.DeadlineExceeded while ctx has not ended.
 func Connection(ctx context.Context, handle *gorm.DB, wait time.Duration, fn func(session *gorm.DB) error) error {
 	if wait <= 0 {
 		return fmt.Errorf("db: Connection was given a wait of %v, and a bound on waiting has to be positive", wait)
@@ -66,8 +49,6 @@ func Connection(ctx context.Context, handle *gorm.DB, wait time.Duration, fn fun
 	return fn(session)
 }
 
-// pooledOn is the pool a handle's statements take their connection from, or
-// false for a handle already on one connection or on a pool it cannot name.
 func pooledOn(handle *gorm.DB) (*sql.DB, bool) {
 	on := handle.ConnPool
 	if handle.Statement != nil && handle.Statement.ConnPool != nil {
@@ -86,9 +67,7 @@ func pooledOn(handle *gorm.DB) (*sql.DB, bool) {
 	}
 }
 
-// pinnedConn is the connection Connection took, keeping within reach of the call
-// what fn could leave open on it. It answers GORM's TxBeginner rather than
-// TxCommitter, so a session on it is outside any transaction.
+// pinnedConn is the connection Connection took, keeping within reach what fn could leave open on it. It answers GORM's TxBeginner rather than TxCommitter, so a session on it is outside any transaction.
 type pinnedConn struct {
 	conn     *sql.Conn
 	released context.Context
@@ -132,8 +111,6 @@ func (p *pinnedConn) untilReleased(ctx context.Context) context.Context {
 	return bounded
 }
 
-// end rolls back every transaction begun on the connection that is still open,
-// before the connection goes back.
 func (p *pinnedConn) end() {
 	p.mu.Lock()
 	begun := p.begun
@@ -146,9 +123,7 @@ func (p *pinnedConn) end() {
 
 const engineMarkerName = "github.com/vislake/speed/pkg/db#engine"
 
-// engineMarker is the engine behind the handle, carried in the plugin table so a
-// callback handed nothing but a statement can read the statement's identifiers
-// by that engine's rules (namesColumn).
+// engineMarker is the engine behind the handle, carried in the plugin table so a callback handed nothing but a statement can read the statement's identifiers by that engine's rules (namesColumn).
 type engineMarker struct {
 	dialect Dialect
 }

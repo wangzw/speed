@@ -11,25 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// openHandle opens one connection with an implementation's driver, sizes its
-// pool from the configuration, and checks that the database answers.
-//
-// The connectivity check is bound to ctx. GORM's own check on open takes no
-// context and would wait for a server that never answers, so it is switched off
-// and the check below is the one that runs.
-//
-// A failure at any step reports ErrConnectFailed, naming the dialect and the
-// step and never the locator, which carries credentials.
-//
-// A locator whose database belongs to the connection that opens it, recognised
-// through Spec.ConnectionScoped, gets a pool of one connection that is never
-// replaced: over a larger pool each connection would open a database of its own
-// under the one handle.
-//
-// Every handle classifies the constraint refusals its driver reports through
-// Spec.ConstraintViolation, carries the engine marker in its plugin table, and
-// logs through statementLogger. A nil logger is a defect in the caller, and
-// openHandle panics on it before anything is opened.
+// openHandle opens one connection with an implementation's driver, sizes its pool from the configuration, and checks that the database answers, with the check bound to ctx; GORM's own contextless check on open is switched off. A failure at any step reports ErrConnectFailed, naming the dialect and the step and never the locator. A connection-scoped locator gets a pool of one connection that is never replaced; every handle classifies constraint refusals, carries the engine marker, logs through statementLogger, and openHandle panics on a nil logger.
 func openHandle(ctx context.Context, spec Spec, cfg lockingConfig, logger *slog.Logger) (*gorm.DB, error) {
 	// The stance judged the trimmed locator, so the driver gets the same text.
 	locator := strings.TrimSpace(cfg.DSN)

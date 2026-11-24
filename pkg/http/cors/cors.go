@@ -46,10 +46,7 @@ type Config struct {
 type Policy struct {
 	// AllowAllOrigins allows every origin.
 	AllowAllOrigins bool `config:"allow-all-origins"`
-	// AllowOrigins lists the origins a cross-origin request may come from. The
-	// single entry "*" is read as AllowAllOrigins. An origin carries a scheme —
-	// http, https, or one of the schemas the flags below add — or a wildcard,
-	// which the library refuses otherwise.
+	// AllowOrigins lists the origins a cross-origin request may come from; the single entry "*" is read as AllowAllOrigins. An origin carries a scheme (http, https, or one the flags below add) or a wildcard, which the library refuses otherwise.
 	AllowOrigins []string `config:"allow-origins"`
 	// AllowMethods lists the methods a preflight may allow.
 	AllowMethods []string `config:"allow-methods"`
@@ -109,10 +106,7 @@ type endpointLayer struct {
 	handler gin.HandlerFunc
 }
 
-// validate refuses a configuration this module cannot serve: an empty endpoint
-// set, or a policy the library would reject or panic on. Prepare calls it, so a
-// bad policy ends the startup with a message naming the endpoint and the key
-// rather than with the library's own refusal.
+// validate refuses a configuration this module cannot serve: an empty endpoint set, or a policy the library would reject or panic on. Prepare calls it, so a bad policy ends the startup naming the endpoint and the key rather than with the library's own refusal.
 func (c Config) validate() error {
 	if len(c.Endpoints) == 0 {
 		return fmt.Errorf("%s: no listening endpoint is guarded: %s is empty. List the endpoints "+
@@ -127,11 +121,7 @@ func (c Config) validate() error {
 	return nil
 }
 
-// build returns the layer for each configured endpoint, in endpoint-name order
-// so two runs over one configuration register the layers in one order. It
-// validates first: cors.New panics on a configuration Validate refuses, and a
-// panic inside Init would take the process down with a stack trace during a
-// stage whose failures are meant to end the startup in an orderly way.
+// build returns the layer for each configured endpoint in endpoint-name order, so two runs register the layers in one order. It validates first: cors.New panics on a configuration Validate refuses, and a panic inside Init would take the process down.
 func (c Config) build() ([]endpointLayer, error) {
 	if err := c.validate(); err != nil {
 		return nil, err

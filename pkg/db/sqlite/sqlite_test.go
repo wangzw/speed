@@ -137,9 +137,7 @@ func TestSQLiteModuleShape(t *testing.T) {
 		t.Fatalf("importing this package did not register %s in the process registry, so a host "+
 			"running on SQLite would find no module to configure", module.Name)
 	}
-	// The registration has to be the descriptor this subpackage builds, not a
-	// name under which nothing is delivered: a stub satisfies the lookup
-	// above and leaves every dependant without a handle.
+	// The registration has to be the descriptor this subpackage builds, not a name under which nothing is delivered: a stub satisfies the lookup and leaves every dependant without a handle.
 	if len(registered.Provides) != 1 || !registered.Provides[0].Exclusive || registered.Migrate == nil {
 		t.Errorf("the process registry holds a descriptor under %s that is not the one this "+
 			"subpackage builds: it delivers nothing, or does not claim the capability exclusively, "+

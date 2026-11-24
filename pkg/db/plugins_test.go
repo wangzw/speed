@@ -238,7 +238,6 @@ func TestOpenedFromAnswersTheDeliveredHandle(t *testing.T) {
 
 type orderingCapability interface{ ordered() }
 
-// orderingProduct is what the module providing it constructs.
 type orderingProduct struct{}
 
 func (orderingProduct) ordered() {}

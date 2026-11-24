@@ -9,12 +9,7 @@ import (
 // Migrations is the resource a module with tables declares to hand its
 // migration files over.
 type Migrations struct {
-	// FS holds one subdirectory per dialect, named by that dialect's value,
-	// with that dialect's migration files inside it.
-	//
-	// Files are applied in name order, so a 0001_ prefix makes lexical order
-	// agree with intended order. A declaration without a subdirectory for the
-	// running dialect is zero migrations for it, not an error.
+	// FS holds one subdirectory per dialect, named by that dialect's value. Files are applied in name order, so a 0001_ prefix makes lexical order agree with intended order; a declaration without a subdirectory for the running dialect is zero migrations for it, not an error.
 	FS fs.FS
 }
 

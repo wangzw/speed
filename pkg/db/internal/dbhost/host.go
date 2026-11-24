@@ -18,7 +18,6 @@ func init() {
 	core.ProcessRegistry.Register(probeModule())
 }
 
-// hostModule carries the environment prefix, which precedes all configuration.
 func hostModule() core.Module {
 	return core.Module{
 		Name:      "host",

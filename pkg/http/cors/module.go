@@ -40,8 +40,7 @@ func Module() core.Module {
 			return &bridge{layers: layers}, nil
 		},
 
-		// The layer is wired here and not in New: the entry point is taken up at this stage,
-		// where every instance exists already.
+		// The layer is wired here and not in New: the entry point is taken up at this stage, where every instance exists already.
 		Init: func(_ context.Context, reg *core.Registry, instance any) error {
 			b, ok := instance.(*bridge)
 			if !ok {
@@ -68,10 +67,7 @@ type bridge struct {
 	layers []endpointLayer
 }
 
-// wire registers each endpoint's layer on the endpoint. A name the entry point
-// never declared is an error: the two lists are maintained apart, and a name that
-// exists here but not there is a startup failure rather than a layer bound
-// nowhere.
+// wire registers each endpoint's layer on the endpoint. A name the entry point never declared is an error: the two lists are maintained apart, and a name that exists here but not there is a startup failure rather than a layer bound nowhere.
 func (b *bridge) wire(reg *core.Registry) error {
 	router, err := core.Resolve[speedhttp.Router](reg)
 	if err != nil {

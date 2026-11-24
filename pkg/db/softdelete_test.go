@@ -63,9 +63,7 @@ func TestSoftDeleteRoundTripsThroughTheDeliveredHandle(t *testing.T) {
 			"row to stay in place marked (1 of 1)", rows, marked)
 	}
 
-	// The other direction: a delete past the scope removes the row, which is
-	// what tells the marker apart from a delete that never reaches the
-	// database at all.
+	// The other direction: a delete past the scope removes the row, which tells the marker apart from a delete that never reaches the database.
 	if err := handle.Unscoped().Delete(&kept).Error; err != nil {
 		t.Fatalf("deleting the row past the soft-delete scope: %v", err)
 	}

@@ -67,9 +67,7 @@ func TestEveryFailurePathKeepsTheChain(t *testing.T) {
 				"0001_widgets.sql": "CREATE TABLE widgets (id INTEGER)",
 			})},
 		})
-		// A timeout is its own class: it means the other replica has to be
-		// looked at, and reporting it as a migration that would not apply sends
-		// the reader through migration files that are sound.
+		// A timeout is its own class: reporting it as a migration that would not apply sends the reader through migration files that are sound.
 		assertReportsOnly(t, err, "ErrMigrationLockTimeout")
 		if !errors.Is(err, holder) {
 			t.Errorf("the tree under %v does not hold the error the mutex reported, so what the "+
@@ -193,9 +191,7 @@ func statementRefusal(t *testing.T, statement string) error {
 	return refusal
 }
 
-// pluginRefusal is what a plugin reports when it will not install. It has a type
-// of its own so that reaching it is observed with errors.As rather than by
-// reading the text, which a %v would leave in place.
+// pluginRefusal is what a plugin reports when it will not install; its own type lets a case observe it with errors.As rather than by reading text a %v would leave in place.
 type pluginRefusal struct{ reason string }
 
 func (e *pluginRefusal) Error() string { return "the audit plugin will not install: " + e.reason }
@@ -208,9 +204,7 @@ func (p refusingPlugin) Initialize(*gorm.DB) error { return p.err }
 
 type refusingLock struct {
 	allowance time.Duration
-	// holder is what the mutex puts underneath the sentinel, standing for what
-	// a real one says about the replica it waited for.
-	holder error
+	holder    error
 }
 
 func (l *refusingLock) Acquire(ctx context.Context, _ *sql.Conn) error {
@@ -224,6 +218,4 @@ func (l *refusingLock) Acquire(ctx context.Context, _ *sql.Conn) error {
 		db.MigrationLockTimeoutKey, l.holder)
 }
 
-// Release gives the mutex up. The run never calls it on this path — it releases only a
-// mutex it took — and its own half is pinned in pkg/db/postgres.
 func (l *refusingLock) Release(context.Context, *sql.Conn) error { return nil }

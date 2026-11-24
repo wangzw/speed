@@ -1,12 +1,4 @@
-// Package dbsuite hands the migration tests one database per dialect, so the
-// same cases run against every engine an implementation subpackage supports, and
-// carries the cases each engine's own tests run on the handle its module
-// delivers.
-//
-// It does not import pkg/db: the migration engine's entry point is unexported,
-// so the cases driving it live in pkg/db's own test package, and a package those
-// tests import cannot import pkg/db back. A fixture names its dialect with a
-// plain string for the same reason.
+// Package dbsuite hands the migration tests one database per dialect, so the same cases run against every engine an implementation subpackage supports. It does not import pkg/db: the migration engine's entry point is unexported, so the cases driving it live in pkg/db's own test package, and a package those tests import cannot import pkg/db back.
 package dbsuite
 
 import (
@@ -46,11 +38,7 @@ func Fixtures(t *testing.T) []Fixture {
 	return out
 }
 
-// OpenSQLite opens a handle on an empty SQLite database in a temporary
-// directory, with its pool held to one connection, and closes it when the test
-// ends. SQLite locks the whole file for a write, so a second connection would
-// report a locked database instead of what the case is about. The logger is
-// discarded because several cases fail a migration on purpose.
+// OpenSQLite opens an empty SQLite database in a temporary directory, with its pool held to one connection, and closes it when the test ends. SQLite locks the whole file for a write, so a second connection would report a locked database; the logger is discarded because several cases fail a migration on purpose.
 func OpenSQLite(t *testing.T) *gorm.DB {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "migrations.db")

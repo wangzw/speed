@@ -17,17 +17,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// MigrationLock is the cross-process mutex the migration run is held under. An
-// implementation subpackage supplies one when its dialect appears in
-// multi-replica deployments.
-//
-// Both halves take the connection the whole run is pinned to: a mutex of this
-// kind belongs to the session that took it, and taken on one connection and
-// given up on another it is never given up at all.
-//
-// Acquire waits within the implementation's own deadline and reports
-// ErrMigrationLockTimeout once it passes. The mutex is taken before the record
-// table is created and released after the last migration has been applied.
+// MigrationLock is the cross-process mutex the migration run is held under; an implementation supplies one when its dialect appears in multi-replica deployments. Both halves take the connection the whole run is pinned to: a session-scoped mutex taken on one connection and given up on another is never given up. Acquire waits within the implementation's deadline and reports ErrMigrationLockTimeout once it passes.
 type MigrationLock interface {
 	// Acquire takes the mutex on conn, waiting for another process to release
 	// it.
@@ -63,10 +53,7 @@ type recordKey struct {
 	file   string
 }
 
-// applyMigrations applies every declared migration the record table does not
-// list, recording each one. One connection is borrowed and kept for the whole
-// run, so the session-scoped mutex and the statements it orders sit on the same
-// connection and the run occupies one connection rather than two.
+// applyMigrations applies every declared migration the record table does not list, recording each one. One connection is borrowed and kept for the whole run, so the session-scoped mutex and the statements it orders sit on the same connection and the run occupies one connection rather than two.
 func applyMigrations(ctx context.Context, reg *core.Registry, handle *gorm.DB, dialect Dialect, lock MigrationLock) (err error) {
 	pool, err := handle.DB()
 	if err != nil {
@@ -156,10 +143,7 @@ func discard(conn *sql.Conn) error {
 	return nil
 }
 
-// applyUnderLock is the run itself, with the mutex already held. The record
-// table is looked up before it is created: PostgreSQL checks the privilege to
-// create in the schema before it looks for the table, so creating it on every
-// start would demand DDL privilege of a read-only service role.
+// applyUnderLock is the run itself, with the mutex already held. The record table is looked up before it is created: PostgreSQL checks the privilege to create in the schema first, so creating it on every start would demand DDL privilege of a read-only service role.
 func applyUnderLock(reg *core.Registry, session *gorm.DB, dialect Dialect) error {
 	if !session.Migrator().HasTable(recordTableName) {
 		if err := session.Exec(createRecordTable).Error; err != nil {
@@ -202,10 +186,7 @@ func readRecords(session *gorm.DB) (map[recordKey]struct{}, error) {
 	return applied, nil
 }
 
-// applyOne executes a migration and records it in one transaction, so it is
-// neither recorded without running nor run twice. Holding the two together
-// rests on the dialect putting DDL inside a transaction, and the file goes to
-// the driver whole: splitting it here would mean parsing SQL.
+// applyOne executes a migration and records it in one transaction, so it is neither recorded without running nor run twice. Holding the two together rests on the dialect putting DDL inside a transaction, and the file goes to the driver whole: splitting it here would mean parsing SQL.
 func applyOne(session *gorm.DB, m migration) error {
 	err := session.Transaction(func(tx *gorm.DB) error {
 		if execErr := tx.Exec(m.body).Error; execErr != nil {
@@ -223,16 +204,7 @@ func applyOne(session *gorm.DB, m migration) error {
 	return nil
 }
 
-// collectMigrations turns the declared resources into the list to apply, in the
-// order to apply it.
-//
-// The declaring set forms the list and the participating set only narrows it;
-// the two must not be collapsed into one. Collected by participation alone, a
-// command that runs only the engine, whose tables belong to modules the closure
-// never reaches, applies no migration at all and exits successfully.
-//
-// The order comes from dependencyRank over every registered module, so a set of
-// migrations is applied in the same sequence whichever command applies them.
+// collectMigrations turns the declared resources into the order to apply them. The declaring set forms the list and the participating set only narrows it: collected by participation alone, a command that runs only the engine applies no migration at all and exits successfully. The order comes from dependencyRank, so a set of migrations applies in the same sequence whichever command applies them.
 func collectMigrations(reg *core.Registry, dialect Dialect) ([]migration, error) {
 	rank := dependencyRank(reg)
 

@@ -84,7 +84,6 @@ type recordRow struct {
 	File   string
 }
 
-// recordedMigrations reads the record table, and fails the test if it cannot.
 func recordedMigrations(t *testing.T, handle *gorm.DB) []recordRow {
 	t.Helper()
 	var rows []recordRow
@@ -156,9 +155,6 @@ func TestSecondRunAppliesNothing(t *testing.T) {
 
 type mutedCapability interface{ muted() }
 
-// rivalProduct is what the module holding the capability against the muted one
-// constructs. It exists because a module that declares a delivery has to
-// construct something that delivers it.
 type rivalProduct struct{}
 
 func (rivalProduct) muted() {}
@@ -169,9 +165,7 @@ func TestDisabledModuleMigrationsAreNotApplied(t *testing.T) {
 		muted := declaring("muted", migrationSet(dialect, map[string]string{
 			"0001_create_muted.sql": `CREATE TABLE muted_rows (id INTEGER NOT NULL, PRIMARY KEY (id))`,
 		}))
-		// The muted module loses a resolution rather than stating that it does
-		// not run: a module taken in at run level has to start, so a case that
-		// needs the disabled verdict has to produce it the one way it exists.
+		// The muted module loses a resolution rather than stating that it does not run: a module taken in at run level has to start, so a case that needs the disabled verdict has to produce it the one way it exists.
 		muted.Provides = []core.Provision{{Token: (*mutedCapability)(nil), Exclusive: true}}
 		rival := core.Module{
 			Name:     "rival",
@@ -629,9 +623,6 @@ type probeLock struct {
 	recordsAtRelease     int
 }
 
-// Both halves look at the database through the connection they are handed, which is the
-// connection the run itself is on.
-
 func (l *probeLock) Acquire(ctx context.Context, conn *sql.Conn) error {
 	l.acquires++
 	if l.acquireErr != nil {
@@ -910,8 +901,6 @@ func TestReleaseFailureSaysTheMigrationsWereApplied(t *testing.T) {
 			t.Errorf("the text %q does not say the migrations went in, so it reads as a migration that "+
 				"would not apply and sends the reader to the wrong files", err)
 		}
-		// The claim the text makes has to be true, which is why both of
-		// these are here rather than only the string.
 		if !hasTable(t, handle, "widgets") {
 			t.Error("the message says every migration was applied, and the table is not there")
 		}

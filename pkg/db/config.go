@@ -9,11 +9,7 @@ import (
 // Config is the set of input items every implementation of the database
 // capability accepts, mounted under the implementation's own namespace.
 type Config struct {
-	// DSN is the connection locator, in the form this implementation's own
-	// driver reads. It is marked sensitive: it carries credentials.
-	//
-	// An assembly that names this implementation has to set it; Prepare fails
-	// the startup naming this key when it does not.
+	// DSN is the connection locator, in the form the implementation's own driver reads. It is marked sensitive and an assembly that names this implementation has to set it: Prepare fails the startup naming this key when it does not.
 	DSN string `config:"dsn"`
 	// MaxOpenConns is the largest number of connections the pool opens. Its
 	// default is 25.
@@ -23,12 +19,7 @@ type Config struct {
 	// ConnMaxLifetime is how long one connection is reused before it is
 	// replaced. Its default is 30 minutes.
 	ConnMaxLifetime time.Duration `config:"conn-max-lifetime"`
-	// EncryptionKey is the root key the field encryption and blind index
-	// subkeys are derived from. Marked sensitive.
-	//
-	// An absent key is not a startup failure: encryption and decryption then
-	// fail on the statement that reaches an encrypted field. A present key
-	// shorter than 14 bytes, or one of whitespace only, fails the assembly.
+	// EncryptionKey is the root key the field encryption and blind index subkeys derive from; marked sensitive. An absent key is not a startup failure: encryption and decryption fail on the statement that reaches an encrypted field. A present key shorter than 14 bytes, or whitespace only, fails the assembly.
 	EncryptionKey string `config:"encryption-key"`
 	// EncryptionRetiredKeys are root keys that are no longer written with but
 	// still decrypt what they wrote. Marked sensitive.
@@ -51,9 +42,7 @@ const (
 	encryptionRetiredKeysKey = "encryption-retired-keys"
 )
 
-// MigrationLockTimeoutKey is the input item bounding the wait for the migration
-// mutex, relative to an implementation's configuration namespace. It is
-// exported so a subpackage's timeout message can name the declared item.
+// MigrationLockTimeoutKey names the input item bounding the wait for the migration mutex, relative to an implementation's configuration namespace.
 const MigrationLockTimeoutKey = "migration-lock-timeout"
 
 const (
@@ -62,9 +51,7 @@ const (
 	defaultConnMaxLifetime = 30 * time.Minute
 )
 
-// defaults returns the carrier this implementation's items are declared with,
-// filled with the values an absent key takes. The pool parameters must not
-// land on 0: database/sql reads that as no limit.
+// defaults returns the carrier this implementation's items are declared with, filled with the values an absent key takes. The pool parameters must not land on 0: database/sql reads that as no limit.
 func (s Spec) defaults() lockingConfig {
 	return lockingConfig{
 		Config: Config{

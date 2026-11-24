@@ -41,8 +41,6 @@ func hostConfig(t *testing.T, extra ...string) string {
 	return body + "}}}"
 }
 
-// unopenableLocator is a locator the driver refuses: the directory it names
-// does not exist.
 func unopenableLocator(t *testing.T) string {
 	t.Helper()
 	return filepath.Join(t.TempDir(), "no-such-directory", "db.sqlite")
@@ -144,9 +142,7 @@ func startHostWith(t *testing.T, spec db.Spec, body string, before func(*core.Re
 		before(reg)
 	}
 
-	// The command line is the process's, and a test binary carries arguments
-	// of its own, so they are taken away while the tree reads them. The cases
-	// here therefore do not run in parallel.
+	// The command line is the process's and a test binary carries arguments of its own, so they are taken away while the tree reads them; the cases here therefore do not run in parallel.
 	previous := os.Args
 	os.Args = []string{"db.test"}
 

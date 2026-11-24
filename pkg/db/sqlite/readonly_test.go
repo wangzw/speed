@@ -106,10 +106,7 @@ func TestATransactionOnAConnectionAStatementTurnedQueryOnlyRuns(t *testing.T) {
 	}
 }
 
-// readsAndRefusesWrites runs a transaction on handle that reads table t's one
-// row and then tries to write it, and fails the case unless the transaction
-// began, read the row, and had the write refused as a write to a database the
-// connection cannot write.
+// readsAndRefusesWrites runs a transaction on handle that reads table t's one row and then tries to write it, and fails the case unless the transaction began, read the row, and had the write refused as a write to a database the connection cannot write.
 func readsAndRefusesWrites(t *testing.T, handle *gorm.DB, options *sql.TxOptions) {
 	t.Helper()
 	var rows int64

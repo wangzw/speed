@@ -6,15 +6,9 @@ import "errors"
 // errors.Is, and the error text carries what is needed to locate the cause and states
 // the fixing action.
 var (
-	// ErrUnknownEndpoint reports a lookup for an endpoint name that
-	// configuration never declared. The text lists the names that do exist,
-	// because that is the fixing action; there is no fallback to a default
-	// endpoint.
+	// ErrUnknownEndpoint reports a lookup for an endpoint name configuration never declared. The text lists the names that do exist, because that is the fixing action; there is no fallback to a default endpoint.
 	ErrUnknownEndpoint = errors.New("http: endpoint name was never declared")
-	// ErrUnknownListener reports an endpoint that hangs on a listener name the
-	// configuration never declared. The text names the endpoint, the listener
-	// it named and the listeners that do exist, because picking one of them is
-	// the fixing action.
+	// ErrUnknownListener reports an endpoint that hangs on a listener name the configuration never declared. The text names the endpoint, the listener it named and the listeners that do exist, because picking one of them is the fixing action.
 	ErrUnknownListener = errors.New("http: listener name was never declared")
 	// ErrInvalidConfig reports a value error read out of configuration: an unknown key, a
 	// missing address, the reserved endpoint name, a duration an item refuses, a claim

@@ -30,19 +30,7 @@ func keysInContext(ctx context.Context) (*keyRing, bool) {
 	return keys, ok
 }
 
-// installEncryption registers the serializer and puts this section's key
-// material on one handle's context, so every statement running on it or derived
-// from it finds the key.
-//
-// The serializer is registered process-wide, because GORM has no per-instance
-// registration; what is per-instance is the key, so the registered value holds
-// no state and the key travels on each statement's context. It is put on the
-// context at every statement rather than once on the handle because
-// WithContext replaces the statement's context. The handle's own context
-// carries it too: that is how ScanRows, which runs no callback chain, finds it.
-//
-// An assembly with no root key installs a nil ring all the same, so the
-// serializer reports the missing key rather than an unassembled handle.
+// installEncryption registers the serializer and puts this section's key material on one handle's context, so every statement running on it or derived from it finds the key. The serializer is registered process-wide because GORM has no per-instance registration, and the key travels on each statement's context because WithContext replaces it; the handle's own context carries it too, for ScanRows. An assembly with no root key installs a nil ring all the same.
 func installEncryption(session *gorm.DB, namespace string, cfg Config) error {
 	keys, err := newKeyRing(namespace, cfg)
 	if err != nil {

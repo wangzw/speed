@@ -34,7 +34,6 @@ type encryptedModel struct {
 	Nickname *string `gorm:"serializer:encrypted"`
 }
 
-// intEncryptedModel declares the serializer on a type it does not carry.
 type intEncryptedModel struct {
 	ID  uint
 	Age int `gorm:"serializer:encrypted"`
@@ -48,8 +47,6 @@ func sectionBody(dsn string, items ...string) string {
 	return body + "}}}"
 }
 
-// encryptedDSN is a locator in a directory of this case's own. Two assemblies
-// that have to see the same rows take the locator once and share it.
 func encryptedDSN(t *testing.T) string {
 	t.Helper()
 	return filepath.Join(t.TempDir(), "encrypted.db")
@@ -286,8 +283,7 @@ func startedRun(t *testing.T, body string, modules ...core.Module) error {
 	os.Args = []string{"db.test"}
 	defer func() { os.Args = previous }()
 
-	// One command taking every registered module in, which is the tree the
-	// modules a case handed in have to be assembled by.
+	// One command taking every registered module in, which is the tree the modules a case handed in have to be assembled by.
 	app := config.NewApp(reg)
 	app.Root().IncludeAll()
 	app.Root().Do(core.StageServe, nil)

@@ -25,7 +25,6 @@ func recovery(endpoint string, localizer i18n.Localizer) gin.HandlerFunc {
 				if returned {
 					return
 				}
-				// Nothing was recovered and the handler never returned.
 				log.FromContext(c.Request.Context()).Error("a request's handler stopped without returning "+
 					"and without a panic value, by runtime.Goexit or by panic(nil) under "+
 					"GODEBUG=panicnil=1, and the endpoint's recovery layer answered it",
@@ -40,12 +39,7 @@ func recovery(endpoint string, localizer i18n.Localizer) gin.HandlerFunc {
 			if err, isErr := thrown.(error); isErr && errors.Is(err, nethttp.ErrAbortHandler) {
 				panic(thrown)
 			}
-			// A handler may refuse by panicking with a fault it declared; that is
-			// a deliberate answer, not a defect, so it is written without a
-			// stack and only when the operation declared its status. A fault on
-			// a route with no declaration, or a status it did not declare, is a
-			// defect like any other panic. So is a fault asking for a header the
-			// matched declared response does not carry.
+			// A handler may refuse by panicking with a fault it declared; that is a deliberate answer, not a defect, so it is written without a stack and only when the operation declared its status. A fault on a route with no declaration, or a status it did not declare, is a defect like any other panic, as is a fault asking for an undeclared header.
 			if fault, ok := thrown.(interface{ Problem() Problem }); ok {
 				if declared, ok := c.Get(declaredFailuresContextKey); ok {
 					if responses, ok := declared.(map[int]Response); ok {
@@ -119,10 +113,7 @@ func answerDefect(c *gin.Context, cause error, localizer i18n.Localizer) {
 	if c.Writer.Written() {
 		return
 	}
-	// A panic is a handler that failed without having decided anything about its
-	// response, so the headers it set describe a response it did not send; the
-	// default shape drops the ones that describe content. A delivered responder
-	// decides its own body and is handed the writer as the caller left it.
+	// A panic is a handler that failed without deciding anything about its response, so the headers it set describe a response it did not send; the default shape drops the ones that describe content. A delivered responder decides its own body and is handed the writer as the caller left it.
 	if responderFrom(c.Request.Context()) == nil {
 		discardRepresentationHeaders(c.Writer.Header())
 	}
@@ -133,11 +124,7 @@ func answerDefect(c *gin.Context, cause error, localizer i18n.Localizer) {
 	})
 }
 
-// representationHeaders are the headers that describe the content a handler
-// meant to send: a validator, a range, a download name, and the directives that
-// let a cache keep it. An error response written in the handler's place is not
-// that content, so the default shape does not inherit them; a 500 carrying the
-// handler's "Cache-Control: public" would be kept by a cache as the answer.
+// representationHeaders describe the content a handler meant to send: a validator, a range, a download name, and the cache directives. An error response written in the handler's place is not that content, so the default shape does not inherit them; a 500 carrying the handler's "Cache-Control: public" would be kept by a cache as the answer.
 var representationHeaders = []string{
 	"Content-Disposition", "ETag", "Last-Modified", "Content-Range", "Accept-Ranges",
 	"Cache-Control", "Expires",

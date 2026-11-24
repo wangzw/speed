@@ -15,17 +15,10 @@ import (
 )
 
 type listener struct {
-	// settings is the configuration this listener binds: its name, address, timeouts and
-	// TLS, declared at construction and repeated by start.
-	settings listenerSettings
-	// endpoints are the endpoints hanging on this listener, in name order, set at
-	// construction.
+	settings  listenerSettings
 	endpoints []*endpoint
 
-	mu sync.Mutex
-	// name and drainTimeout are copied from the settings when the address is bound, so the
-	// messages the background drain writes carry them without reaching back into the
-	// settings.
+	mu           sync.Mutex
 	name         string
 	drainTimeout time.Duration
 
@@ -39,36 +32,23 @@ type listener struct {
 	// accepting is what Accepting reports. It goes false on Stop and on an
 	// accept loop that exited on its own.
 	accepting bool
-	// stopping records that Stop ran, which is what tells a normal shutdown
-	// apart from an accept loop that died by itself.
-	stopping bool
+	stopping  bool
 
-	// draining is closed when stop closes the socket.
 	draining chan struct{}
 
-	// drainBegan is closed when the background drain begins waiting for the in-flight
-	// requests.
 	drainBegan chan struct{}
 	// drained is closed when the background drain has finished, and drainErr holds what it
 	// came back with. close waits on the channel rather than draining itself, because the
 	// drain starts in stop.
 	drained  chan struct{}
 	drainErr error
-	// acceptDone is closed when the accept loop has returned. Nothing in the
-	// shutdown waits on it: stop closes the socket and close waits for the
-	// drain. It exists so that a test proving what a clean stop did not write
-	// can wait for the goroutine to be over instead of for an interval to
-	// pass, which on a loaded machine could end before the goroutine did.
+	// acceptDone is closed when the accept loop returns. Nothing in the shutdown waits on it: it exists so a test proving what a clean stop did not write can wait for the goroutine to be over instead of for an interval.
 	acceptDone chan struct{}
-	// reported says drainErr has been handed to a caller already.
-	reported bool
+	reported   bool
 
-	// handlers counts the handler calls under way on this listener.
 	handlers inFlight
 
-	// logger is where this listener's own diagnostics go.
 	logger *slog.Logger
-	// listen opens the socket.
 	listen func(network, address string) (net.Listener, error)
 }
 
@@ -88,12 +68,7 @@ func (l *listener) start(s listenerSettings, h nethttp.Handler, logger *slog.Log
 		return fmt.Errorf("%w: listener %q on %q: %w", ErrListen, s.name, s.address, err)
 	}
 	if s.tls() {
-		// A certificate that cannot be loaded joins ErrListen rather than
-		// adding a sentinel of its own. The criterion is the host's
-		// remedy: a mistyped certificate path and an address already in
-		// use are both fixed by changing the configuration and starting
-		// again, so they are one class to act on, and the text carries
-		// which half of the pair failed and why.
+		// A certificate that cannot be loaded joins ErrListen rather than adding a sentinel: a mistyped certificate path and an address already in use are both fixed by changing the configuration, so they are one class to act on, and the text carries which half failed and why.
 		cert, certErr := tls.LoadX509KeyPair(s.tlsCertFile, s.tlsKeyFile)
 		if certErr != nil {
 			closeErr := socket.Close()
@@ -121,12 +96,7 @@ func (l *listener) start(s listenerSettings, h nethttp.Handler, logger *slog.Log
 		BaseContext: func(net.Listener) context.Context {
 			return withDraining(context.Background(), draining)
 		},
-		// What net/http writes for itself goes to this module's logger rather
-		// than to the process default: a panic outside the request path — in
-		// the base layer, or in the protocol implementation — and its own
-		// reports about a connection would otherwise be the only records in
-		// the process that miss the configured destinations. The wording is
-		// net/http's and this module does not rewrite it.
+		// What net/http writes for itself goes to this module's logger rather than the process default: a panic outside the request path and its own reports about a connection would otherwise be the only records missing the configured destinations. The wording is net/http's.
 		ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError),
 	}
 	// The socket is wrapped so that closing it twice is closing it once.
@@ -233,11 +203,7 @@ func (l *listener) drain(ctx context.Context, server *nethttp.Server, began, dra
 	}
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
-		// Shutdown gives up waiting but leaves the connections it was
-		// waiting for running. server.Close is what actually cuts them, and
-		// without it the caller is told the listener was cut while the
-		// requests carry on. A hijacked connection is not among them: it
-		// belongs to its handler, and nothing here can cut it.
+		// Shutdown gives up waiting but leaves the connections it was waiting for running. server.Close is what actually cuts them, and without it the caller is told the listener was cut while the requests carry on; a hijacked connection is not among them, as it belongs to its handler.
 		cutErr := server.Close()
 		err = fmt.Errorf("%w: listener %q still had requests in flight when its drain-timeout "+
 			"of %s expired, and the connections still open were cut. Raise %s.%s.%s.drain-timeout "+
@@ -292,11 +258,7 @@ func (l *listener) track(next nethttp.Handler) nethttp.Handler {
 	})
 }
 
-// inFlight counts calls under way and tells a waiter when none is left.
-//
-// A sync.WaitGroup does not fit: the count may rise again after a waiter has
-// begun, when a request read just before the socket closed reaches its
-// handler, and a WaitGroup forbids an Add from zero concurrent with a Wait.
+// inFlight counts calls under way and tells a waiter when none is left. A sync.WaitGroup does not fit: the count may rise again after a waiter has begun, when a request read just before the socket closed reaches its handler, and a WaitGroup forbids an Add from zero concurrent with a Wait.
 type inFlight struct {
 	mu sync.Mutex
 	n  int
@@ -341,8 +303,6 @@ func (l *listener) isAccepting() bool {
 	return l.accepting
 }
 
-// addr is the address the socket really bound, which is what a test that asked
-// for port 0 connects to. It is empty on an endpoint that never bound.
 func (l *listener) addr() net.Addr {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -352,12 +312,7 @@ func (l *listener) addr() net.Addr {
 	return l.socket.Addr()
 }
 
-// onceCloser closes the wrapped listener once and hands the same result back
-// to every later call. Two closes race by construction here: stop closes the
-// socket and starts the drain, and the drain's Shutdown closes every listener
-// the server is still tracking, which this one is until the accept loop has
-// returned. The window is short and the failure it produces is intermittent,
-// which is what makes it worth closing rather than diagnosing.
+// onceCloser closes the wrapped listener once and hands the same result back to every later call. Two closes race by construction here: stop closes the socket and starts the drain, and the drain's Shutdown closes every listener the server is still tracking, which this one is until the accept loop has returned.
 type onceCloser struct {
 	net.Listener
 	once sync.Once

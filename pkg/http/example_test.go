@@ -34,8 +34,6 @@ const exampleDocument = `{
   }
 }`
 
-// exampleDeadline bounds every wait in this file. It is generous on purpose:
-// what it guards against is a wait that never ends, not a slow machine.
 const exampleDeadline = 10 * time.Second
 
 // anExampleHost is one assembly running for an example: the registry going
@@ -87,11 +85,7 @@ func startExample(registrant func(*core.Registry) error, extra ...core.Module) (
 		},
 	})
 
-	// The host's command tree: one command, every available module in it,
-	// driven to the end of the lifecycle. The reader every module reads its
-	// configuration through is loaded here and supplied to the config module
-	// registered first above. A registry made with core.New does not inherit that
-	// registration from the process registry, and NewApp panics on one without it.
+	// The host's command tree: one command, every available module in it, driven to the end of the lifecycle. The reader is loaded here and supplied to the config module registered first above; a registry made with core.New does not inherit that registration, and NewApp panics on one without it.
 	app := config.NewApp(reg)
 	app.Root().IncludeAll()
 	app.Root().Do(core.StageServe, nil)

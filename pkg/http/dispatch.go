@@ -114,12 +114,7 @@ func (d *dispatch) handler(localizer i18n.Localizer) nethttp.Handler {
 	return engine
 }
 
-// owner returns the endpoint whose claimed prefix the path falls under, together
-// with that prefix, the longest one winning, or nil and "" when no claim covers
-// the path. entries is ordered longest-first, so the first prefix that covers
-// the path is the longest. The fallback — the endpoint claiming "/" — is not one
-// of the entries and is therefore never returned here; selection falls back to
-// it only when owner finds nothing.
+// owner returns the endpoint whose claimed prefix the path falls under, with that prefix, the longest winning, or nil and "" when no claim covers the path. entries is ordered longest-first, so the first covering prefix is the longest; the fallback is never returned here, and selection falls back to it only when owner finds nothing.
 func (d *dispatch) owner(path string) (*endpoint, string) {
 	for _, e := range d.entries {
 		if fallsUnder(path, e.prefix) {
@@ -129,22 +124,12 @@ func (d *dispatch) owner(path string) (*endpoint, string) {
 	return nil, ""
 }
 
-// fallsUnder reports whether a request path lies at or below a claimed prefix:
-// equal to it, or continuing past it at a segment boundary. A bare string-prefix
-// match is not enough — "/apifoo" does not fall under "/api" — which is what
-// keeps an endpoint's claim to its own segment subtree. No entry is "/": the
-// endpoint that claims the root is its listener's fallback and contributes no
-// entry (see buildDispatch), so the root needs no case here.
+// fallsUnder reports whether a path lies at or below a claimed prefix: equal to it, or continuing past it at a segment boundary, so "/apifoo" does not fall under "/api". No entry is "/": the root is the listener's fallback and contributes no entry.
 func fallsUnder(path, prefix string) bool {
 	return path == prefix || strings.HasPrefix(path, prefix+"/")
 }
 
-// literalLeadingPath returns the literal part a route leads with: everything
-// before its first segment that begins with ":" or "*". A fully literal route
-// contributes its whole path; a route at the root and one whose first segment is
-// already dynamic contribute "". It is this prefix, not the registered path, that
-// the dispatch's selection has to answer the same way as the registering
-// endpoint.
+// literalLeadingPath returns the literal part a route leads with: everything before its first segment that begins with ":" or "*". A fully literal route contributes its whole path; a route at the root and one whose first segment is dynamic contribute "".
 func literalLeadingPath(path string) string {
 	segments := pathSegments(path)
 	if len(segments) == 0 {

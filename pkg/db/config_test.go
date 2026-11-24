@@ -344,8 +344,6 @@ type pathRecordingReader struct {
 	path string
 }
 
-// Decode records the path. The target keeps what the caller put in it, which is what
-// config's own reader does for a path no module declared.
 func (r *pathRecordingReader) Decode(path string, _ any) error {
 	r.path = path
 	return nil

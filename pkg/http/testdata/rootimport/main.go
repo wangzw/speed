@@ -13,11 +13,8 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// observation is what this program saw in its own process registry.
 type observation struct {
-	// Modules is every module name the registry holds.
 	Modules []string `json:"modules"`
-	// Routers is the names of the modules delivering Router.
 	Routers []string `json:"routers"`
 	// Exclusive is true when every one of those deliveries claims Router exclusively, and
 	// false when there is none.

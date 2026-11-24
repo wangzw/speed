@@ -9,15 +9,11 @@ import (
 	"testing"
 )
 
-// The root keys these cases derive from. They are values rather than secrets: what is
-// observed is that the material is a function of them, and of nothing else.
 const (
 	firstRootKey  = "the-root-key-of-the-cases"
 	secondRootKey = "another-root-key"
 )
 
-// ringOver derives the material one section configures, and fails the case if
-// it cannot be derived at all.
 func ringOver(t *testing.T, cfg Config) *keyRing {
 	t.Helper()
 	ring, err := newKeyRing("db.crypto", cfg)
@@ -47,8 +43,6 @@ func TestBlindIndexSubkeyDiffersFromEncryptionSubkey(t *testing.T) {
 			"cipher and a narrower HMAC key is a weaker one",
 			len(encryption), len(blindIndex), subkeyLength)
 	}
-	// The digest is not the one the encryption subkey would give, which is what
-	// a swapped pair of purposes looks like from the outside.
 	swapped := digestUnder(encryption, "user@example.com")
 	if got := ringOver(t, Config{EncryptionKey: firstRootKey}).blindIndex("user@example.com"); got == swapped {
 		t.Error("the digest is computed under the encryption subkey, so one key answers both purposes " +
@@ -75,8 +69,6 @@ func TestTheSameRootKeyAlwaysDerivesTheSameSubkeys(t *testing.T) {
 		t.Error("another root key opens what this one sealed, so the material does not depend on the " +
 			"root key at all")
 	}
-	// A second seal of the same plaintext is a different column, which is what
-	// makes the encrypted column unusable for an equality query.
 	again := first.encrypt([]byte("user@example.com"))
 	if again == sealed {
 		t.Error("one plaintext sealed to one value twice, so a ciphertext identifies its plaintext")

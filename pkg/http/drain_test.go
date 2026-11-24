@@ -73,8 +73,6 @@ func (h *hijackingHandler) letGo() {
 	}
 }
 
-// openHijackedConnection sends one request on a raw connection and leaves the
-// connection open, which is what a client of an upgraded protocol does.
 func openHijackedConnection(t *testing.T, addr string) {
 	t.Helper()
 	conn, err := net.DialTimeout("tcp", addr, waitDeadline())

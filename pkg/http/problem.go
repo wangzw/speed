@@ -30,10 +30,7 @@ type Problem struct {
 	Cause error
 }
 
-// ErrorResponder decides the shape of every error response this module writes: the
-// fallback's answer to a panic, the answer to a request that matches no route and to
-// one whose method the matched path does not allow, and the responses written through
-// Fail.
+// ErrorResponder decides the shape of every error response this module writes: the fallback's answer to a panic, the answer to a request that matches no route and to one whose method the matched path does not allow, and the responses written through Fail.
 type ErrorResponder interface {
 	// RespondError writes the response for p.
 	RespondError(w nethttp.ResponseWriter, r *nethttp.Request, p Problem)
@@ -41,19 +38,13 @@ type ErrorResponder interface {
 
 const problemMediaType = "application/problem+json"
 
-// Fail writes p as an error response and ends the chain. It is what a layer or a
-// handler calls to refuse or fail a request: a response header the caller needs on the
-// response — WWW-Authenticate on a 401, Retry-After on a 429 — is set before the call
-// and stays. Once the response has started, it only ends the chain.
+// Fail writes p as an error response and ends the chain. A response header the caller needs on the response, such as WWW-Authenticate on a 401 or Retry-After on a 429, is set before the call and stays; once the response has started, Fail only ends the chain.
 func Fail(c *gin.Context, p Problem) {
 	c.Abort()
 	if c.Writer.Written() {
 		return
 	}
-	// The step-up answer shares its status with a refused credential, and a
-	// layer that charges a source by outcome has to tell them apart. Every
-	// writer of the answer writes this type, so it is recognised here rather
-	// than at each of them.
+	// The step-up answer shares its status with a refused credential, and a layer that charges a source by outcome has to tell them apart. Every writer of the answer writes this type, so it is recognised here rather than at each of them.
 	if p.Status == nethttp.StatusUnauthorized && p.Type == TypeStepUp {
 		MarkStepUp(c)
 	}
@@ -79,12 +70,7 @@ type problemBody struct {
 func writeDefaultProblem(w nethttp.ResponseWriter, r *nethttp.Request, p Problem) {
 	w.Header().Del("Content-Length")
 	w.Header().Del("Content-Encoding")
-	// Name the language the body is rendered in. The locale is the one resolved
-	// for the request — the request's own when one was settled, the run's
-	// configured default otherwise — so a client that asked for one language and
-	// was answered in another learns which it got. With no resolver assembled
-	// nothing is named, which is the header state an assembly that settles no
-	// language has always written.
+	// Name the language the body is rendered in: the locale resolved for the request, so a client that asked for one language and was answered in another learns which it got. With no resolver assembled nothing is named, which is the header state an assembly that settles no language has always written.
 	if resolver := resolverFrom(r.Context()); resolver != nil {
 		if locale := resolver.LocaleOf(r.Context()); locale != "" {
 			w.Header().Set("Content-Language", string(locale))
@@ -102,7 +88,6 @@ func writeDefaultProblem(w nethttp.ResponseWriter, r *nethttp.Request, p Problem
 	if body.Title == "" {
 		body.Title = nethttp.StatusText(status)
 	}
-	// The members are strings and an integer, which encoding/json always marshals.
 	encoded, _ := json.Marshal(body)
 	w.Header().Set("Content-Type", problemMediaType)
 	w.WriteHeader(status)

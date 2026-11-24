@@ -130,13 +130,7 @@ func (loggedRow) TableName() string { return "logged_rows" }
 // statement is repeated, and the last run is judged as it stands.
 const runs = 3
 
-// BoundValuesReachNoOutput holds the GORM logger on a handle an engine's module
-// opens to what it writes and where, in a child process with no logging module:
-// no value a statement binds or reads reaches either stream, each statement is
-// exactly one record, a statement the Scan finisher runs is written with its
-// text withheld, every record carries the module's name and a caller, nothing
-// reaches standard error, and a statement outside a Debug session is not written
-// as a "statement" record.
+// BoundValuesReachNoOutput holds the logger to what it writes and where, in a child process with no logging module: no bound or read value reaches either stream, each statement is one record, a Scan-finisher statement is written with its text withheld, every record carries the module name and a caller, nothing reaches standard error, and a non-Debug statement is not written as a "statement" record.
 func BoundValuesReachNoOutput(t *testing.T, module, uniqueCode string, locate func(t *testing.T) string,
 	rerun func(t *testing.T, variable string) (stdout, stderr []byte, err error),
 	open func(t *testing.T, dsn string) *gorm.DB,
@@ -187,15 +181,11 @@ func BoundValuesReachNoOutput(t *testing.T, module, uniqueCode string, locate fu
 	}
 }
 
-// suiteFile is this file, whose lines are the call sites of the statements the
-// case looks for.
 func suiteFile() string {
 	_, file, _, _ := runtime.Caller(0)
 	return file
 }
 
-// ranSlowly reports whether a statement the case runs was written as slow. A
-// statement the module runs on its own has a call site outside this file.
 func ranSlowly(records []Record) bool {
 	suite := suiteFile()
 	return slices.ContainsFunc(records, func(r Record) bool {
@@ -203,8 +193,6 @@ func ranSlowly(records []Record) bool {
 	})
 }
 
-// nothingOnStandardError fails the case when standard error carries a record or
-// names the table the statements ran on.
 func nothingOnStandardError(t *testing.T, stderr []byte) {
 	t.Helper()
 	for _, record := range Records(t, "the child's standard error", string(stderr)) {
@@ -219,8 +207,6 @@ func nothingOnStandardError(t *testing.T, stderr []byte) {
 	}
 }
 
-// nothingBesideTheRecords fails the case when a line that is not a record names
-// the table the statements ran on.
 func nothingBesideTheRecords(t *testing.T, stdout []byte) {
 	t.Helper()
 	for line := range strings.SplitSeq(string(stdout), "\n") {
@@ -231,10 +217,7 @@ func nothingBesideTheRecords(t *testing.T, stdout []byte) {
 	}
 }
 
-// statementsOnStandardOutput holds the records to what each statement
-// issueLoggedStatements runs is written as. Each statement's record has to be
-// the only one matching it, which tells a logger that writes a statement twice
-// from one that writes each once.
+// statementsOnStandardOutput holds the records to what each statement issueLoggedStatements runs is written as: each statement's record has to be the only one matching it, which tells a logger that writes a statement twice from one that writes each once.
 func statementsOnStandardOutput(t *testing.T, module, uniqueCode string, records []Record) {
 	t.Helper()
 	if len(records) == 0 {
@@ -269,8 +252,6 @@ func statementsOnStandardOutput(t *testing.T, module, uniqueCode string, records
 	}
 	debuggedScan := func(r Record) bool { return debugged(r) && withheld(r) }
 
-	// found is the one record of a statement the case runs; its caller has to
-	// name a line of this file.
 	found := func(what string, match func(Record) bool) (Record, bool) {
 		record, ok := exactlyOne(t, what, records, match)
 		if ok && !namesLineOf(record.Attrs["caller"], suite) {
@@ -315,8 +296,6 @@ func statementsOnStandardOutput(t *testing.T, module, uniqueCode string, records
 	}
 }
 
-// exactlyOne is the single record match accepts, or a failure naming what the
-// record is of.
 func exactlyOne(t *testing.T, what string, records []Record, match func(Record) bool) (Record, bool) {
 	t.Helper()
 	var found []Record
@@ -335,8 +314,7 @@ func exactlyOne(t *testing.T, what string, records []Record, match func(Record) 
 	return found[0], true
 }
 
-// sameClasses reports whether a record's classes are exactly want, in any order;
-// a record with none has no classes attribute.
+// sameClasses reports whether a record's classes are exactly want, in any order; a record with none has no classes attribute.
 func sameClasses(record Record, want ...string) bool {
 	classes, carried := record.Attrs["classes"]
 	if !carried {
@@ -348,8 +326,6 @@ func sameClasses(record Record, want ...string) bool {
 	return slices.Equal(got, want)
 }
 
-// namesLineOf reports whether caller is a file:line of file, or of any file when
-// file is empty.
 func namesLineOf(caller, file string) bool {
 	colon := strings.LastIndex(caller, ":")
 	if colon <= 0 {
@@ -359,8 +335,6 @@ func namesLineOf(caller, file string) bool {
 	return err == nil && line > 0 && (file == "" || caller[:colon] == file)
 }
 
-// issueLoggedStatements runs each statement the logger writes and fails the case
-// unless each met the outcome that has it written.
 func issueLoggedStatements(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	if err := handle.Exec(`CREATE TABLE logged_rows (id INTEGER PRIMARY KEY, secret TEXT NOT NULL UNIQUE,

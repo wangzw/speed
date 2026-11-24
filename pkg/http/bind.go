@@ -7,10 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// BindJSON binds the request's body to dst as JSON and then lets dst check itself
-// when it has a Validate method. It reports true on success; on failure it writes a
-// Problem through Fail — 413 for a body over the limit, 422 for a failed Validate,
-// 400 otherwise — and reports false.
+// BindJSON binds the request's body to dst as JSON and then lets dst check itself through Validate. It reports true on success; on failure it writes a Problem through Fail — 413 for a body over the limit, 422 for a failed Validate, 400 otherwise — and reports false.
 func BindJSON(c *gin.Context, dst any) bool {
 	if err := c.ShouldBindJSON(dst); err != nil {
 		status := nethttp.StatusBadRequest

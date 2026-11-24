@@ -127,12 +127,7 @@ const heldAllowKey = "http:held-allow"
 // registered layer, because holdAllow is on no registration surface.
 const holdAllowName = "holdAllow"
 
-// holdAllow is the first handler on every engine. A request that gin answers
-// with 405 arrives with the Allow header already on the response; this takes
-// it off and keeps it for the method-not-allowed handler, so that a layer
-// refusing the request first does not carry it out. It does nothing to a
-// request that has no such header, which is every request that matched a route
-// or none.
+// holdAllow is the first handler on every engine: gin answers a request whose method the path does not allow with the Allow header already on the response, so this takes it off and keeps it for the method-not-allowed handler, and a layer refusing first does not carry it out.
 func holdAllow(c *gin.Context) {
 	if allow := c.Writer.Header().Get("Allow"); allow != "" {
 		c.Writer.Header().Del("Allow")
