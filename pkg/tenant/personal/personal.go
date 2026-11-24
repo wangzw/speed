@@ -1,24 +1,6 @@
 // Package personal is the tenant capability's personal-tenant module: it
-// makes every user account own a personal tenant and drives that tenant
-// through the account's life.
-//
-// The tenant is written inside the account's own transaction through
-// authn/provisioning.AccountProvisioning, so an account and the space it owns
-// either both come into being or neither does. The identity's name is the
-// account's username, which is how a personal organization is addressed on the
-// request surface; a user account always has a username, and the seam refuses
-// one that carries none. The service account owns no organization and the seam
-// writes nothing for it.
-//
-// The module also implements authn.AccountLifecycle: after the account's
-// transaction has committed the create hook completes anything the seam left
-// unfinished, the two status hooks move the tenant with the account, and the
-// deletion hook winds the tenant down. Those hooks are idempotent and are the
-// retry path; the transaction seam is the authority.
-//
-// The module is always in force when an assembly names it: there is no
-// configuration switch, because a user account without its personal tenant is
-// not a state the product has.
+// makes every user account own a personal tenant, written in the account's own
+// transaction, and drives that tenant through the account's life.
 package personal
 
 import (
@@ -43,81 +25,49 @@ import (
 	tenantcatalog "github.com/vislake/speed/pkg/tenant/catalog"
 )
 
-// ModuleName is this module's name in the registry. A host writes it into the
-// command that assembles personal tenants.
+// ModuleName is this module's name in the registry.
 const ModuleName = "org.personal"
 
-// FeatureName is the static feature this module serves. It is present whenever
-// the module is in force; there is no switch that withdraws it.
+// FeatureName is the static feature this module serves; it is always present.
 const FeatureName = ModuleName
 
-// IDPrefix is the fixed prefix of every personal tenant identifier. The rest
-// is the account identifier, so the string is deterministic and carries no
-// personal data. The prefix is reserved in the username namespace, so no
-// account's name can read as one of these identifiers.
+// IDPrefix is the prefix of every personal tenant identifier; the rest is the
+// account identifier. It is reserved in the username namespace.
 const IDPrefix = "personal-"
 
-// TenantID derives the personal tenant identifier from the account. The
-// identifier is internal and deterministic; the tenant's name is the
-// account's username and is written separately.
+// TenantID derives the personal tenant identifier from the account.
 func TenantID(account authn.AccountID) tenant.ID {
 	return tenant.ID(IDPrefix + string(account))
 }
 
 // IsPersonalTenantID reports whether an identifier is a personal tenant's.
-//
-// It is the one place the prefix is compared. The host's write guards, the
-// seed's skip and the kind resolver call it, so the derivation has one
-// statement rather than several that can drift apart. A caller deciding
-// whether a tenant is its *own* space compares TenantID's answer exactly
-// instead: the prefix identifies any account's personal tenant, not only the
-// caller's.
+// It matches any account's personal tenant, so a caller asking whether a
+// tenant is its own must compare against TenantID instead.
 func IsPersonalTenantID(id string) bool {
 	return strings.HasPrefix(id, IDPrefix)
 }
 
-// personalTenantAdminRole is the role the module writes in every personal
-// tenant.
 const personalTenantAdminRole = authz.TenantAdminRole
 
-// legacyPersonalOwnerRole is the role the old personal-tenant model wrote. The
-// ensure removes it, with its grants and bindings, once the tenant-admin role
-// and the account's binding are in place.
 const legacyPersonalOwnerRole = authz.Role("owner")
 
-// personalTenantAdminDescriptionKey is the description key written with the
-// tenant-admin role.
 const personalTenantAdminDescriptionKey = "authz.role.tenantAdmin"
 
-// personalMemberSource is the membership source the seam and the ensure write.
-// The account module publishes it on the membership event; "personal" names this
-// module's own provisioning rather than an administrator, an invitation or an
-// import.
 const personalMemberSource = "personal"
 
-// personalBusinessPermissions is the set of business-resource permissions a
-// personal tenant's tenant-admin may hold. It is written out in code and not
-// derived from the process catalog, so a permission a module declares later
-// does not join the role on its own. It is empty in this skeleton.
+// personalBusinessPermissions is written out, not derived from the process
+// catalog, so a permission a module declares later does not join the role on its own.
 var personalBusinessPermissions = []authz.Permission{}
 
-// personalExcludedPermissions is the part of the business-resource face a
-// personal tenant's tenant-admin must never hold: membership management and
-// invitations would let its holder add accounts, and identity-provider
-// management would let it manage SSO.
 var personalExcludedPermissions = []authz.Permission{
 	authz.PermissionMembershipManage,
 	authz.PermissionIDPManage,
 }
 
-// personalTenantAdminPermissions is the allowlist the ensure converges the
-// tenant-admin role's grants to.
 func personalTenantAdminPermissions(catalog authz.Catalog) []authz.Permission {
 	return personalAllowlist(catalog, personalBusinessPermissions)
 }
 
-// personalAllowlist derives the personal tenant-admin allowlist from the
-// business-resource set: (business ∩ TenantGoverned) − excluded.
 func personalAllowlist(catalog authz.Catalog, business []authz.Permission) []authz.Permission {
 	governed := make(map[authz.Permission]bool, len(catalog.TenantGoverned()))
 	for _, permission := range catalog.TenantGoverned() {
@@ -136,7 +86,6 @@ func personalAllowlist(catalog authz.Catalog, business []authz.Permission) []aut
 	return out
 }
 
-// The audit vocabulary the module writes, one action per tenant-side write.
 const (
 	personalCreateAction   = "org.personal.tenant.create"
 	personalDeleteAction   = "org.personal.tenant.delete"
@@ -147,7 +96,6 @@ const (
 	personalDetailTenant   = "tenant"
 )
 
-// The module's refusals.
 var (
 	// ErrTenantUnavailable refuses an account whose personal tenant row exists
 	// and is not enabled.
@@ -157,32 +105,14 @@ var (
 	ErrIdentifierUnavailable = errors.New("the personal tenant's identifier or name is unavailable")
 )
 
-// init registers this module with the process registry.
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// Module is the descriptor a host registers.
+// Module returns the descriptor a host registers. The module is always
+// enabled, declares the static feature org.personal and mounts no route.
 //
-// The roster and its transaction-aware write, the policy manager and its
-// transaction-aware surface, the seeding surface, the permission catalog and
-// the audit capability are required: the seam writes the first five, the
-// lifecycle writes the audit row, and a command that names this module without
-// one of them cannot run it.
-//
-// The module provides the account provisioning seam, the account lifecycle and
-// the tenant kind resolver. It provides the resolver rather than requiring one
-// because the module itself is the one place that knows which identifiers are
-// personal. An assembly without this module has no personal tenant, and
-// tenant.self's optional resolver then reads every tenant as business.
-//
-// The account module requires the provisioning seam this module provides, so
-// the membership read, the deletion removal and the transaction-aware
-// membership write are taken up in Init, not declared in Requires: a
-// requirement in the other direction would be a cycle. The optional
-// capabilities are taken up there too because their modules may sit downstream
-// of the account module.
-//
-// The feature is static. A user account's personal tenant is part of what the
-// account is, so there is no configuration item that turns it off.
+// The membership, deletion-removal and transaction-aware membership seams are
+// resolved in Init, not required: the account module requires the provisioning
+// seam this module provides, so a requirement would be a cycle.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -223,50 +153,33 @@ func Module() core.Module {
 	}
 }
 
-// product is the module's instance.
 type product struct {
-	roster tenant.Catalog
-	// txRoster and txManager are the transaction-aware writes the provisioning
-	// seam runs on the account's transaction.
-	txRoster  tenantcatalog.TxCatalog
-	txManager authzpolicy.TxManager
-	// membershipWriter is the account module's transaction-aware membership
-	// write. It is taken up in Init because the account module requires the
-	// provisioning seam this module provides.
-	membershipWriter provisioning.MembershipWriter
-	memberships      authn.Memberships
-	// membershipCleanup is the account-deletion removal path, which does not ask
-	// the membership guard.
+	roster            tenant.Catalog
+	txRoster          tenantcatalog.TxCatalog
+	txManager         authzpolicy.TxManager
+	membershipWriter  provisioning.MembershipWriter
+	memberships       authn.Memberships
 	membershipCleanup authn.MembershipCleanup
 	manager           authz.Manager
 	seeder            authz.Seeder
 	catalog           authz.Catalog
 	audit             audit.Audit
 	logger            *slog.Logger
-	// accounts is the account read surface; nil in an assembly without one.
-	// The event compensation reads the account's current state through it, and
-	// the idempotent completion reads the account's username to name the
-	// tenant's name.
-	accounts accountReader
-	// bus is where the compensation subscribes; nil leaves the synchronous
-	// hooks as the only route.
-	bus  event.Bus
-	seen *seenEvents
+	accounts          accountReader
+	bus               event.Bus
+	seen              *seenEvents
 }
 
-// accountReader is the part of authn.Accounts this module reads.
 type accountReader interface {
 	Get(ctx context.Context, id authn.AccountID) (authn.Account, error)
 	Identifiers(ctx context.Context, id authn.AccountID) ([]authn.Identifier, error)
 }
 
-// productOf narrows an instance to this module's product.
 func productOf(instance any) (*product, bool) {
 	p, ok := instance.(*product)
 	return p, ok && p != nil
 }
 
-// newProduct takes up what the descriptor requires.
 func newProduct(reg *core.Registry) (*product, error) {
 	roster, err := core.Resolve[tenant.Catalog](reg)
 	if err != nil {
@@ -309,7 +222,6 @@ func newProduct(reg *core.Registry) (*product, error) {
 	}, nil
 }
 
-// wire takes up the optional capabilities and subscribes the compensation.
 func (p *product) wire(reg *core.Registry) error {
 	var err error
 	if delivered, loggerErr := core.Resolve[log.Logger](reg); loggerErr == nil {
@@ -338,7 +250,6 @@ func (p *product) wire(reg *core.Registry) error {
 	return nil
 }
 
-// optional takes up a capability whose absence is a legal assembly.
 func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 	var zero T
 	v, err := core.Resolve[T](reg)
@@ -352,12 +263,8 @@ func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 	}
 }
 
-// seenEventsCapacity bounds the set of event identifiers remembered to tell a
-// second delivery from a new event.
 const seenEventsCapacity = 4096
 
-// seenEvents remembers the identifiers of the events handled lately, bounded:
-// when it is full the oldest is forgotten.
 type seenEvents struct {
 	mu       sync.Mutex
 	capacity int

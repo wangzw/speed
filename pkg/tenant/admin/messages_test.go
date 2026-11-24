@@ -7,13 +7,9 @@ import (
 	"testing"
 )
 
-// TestTheEmbeddedCatalogCarriesOneKeySetForEveryLocale holds that every locale
-// file this module ships carries the same keys, and that they are exactly the
-// description keys of the permissions it declares.
-//
-// The permission list is the source of the key set. A permission added to it
-// and given no row here would reach a picker as its own key, and a row left
-// behind by a permission since removed is text nothing can ask for.
+// TestTheEmbeddedCatalogCarriesOneKeySetForEveryLocale holds that every locale file
+// carries the same keys, exactly the description keys of the permissions the module
+// declares.
 func TestTheEmbeddedCatalogCarriesOneKeySetForEveryLocale(t *testing.T) {
 	want := map[string]bool{}
 	for _, key := range permissionSpec().DescriptionKeys {
@@ -47,7 +43,6 @@ func TestTheEmbeddedCatalogCarriesOneKeySetForEveryLocale(t *testing.T) {
 				t.Errorf("%s carries %q, which is no permission's description here", name, key)
 			}
 		}
-		// An entry with no text is a label a picker shows as nothing.
 		for key, text := range entries {
 			if strings.TrimSpace(text) == "" {
 				t.Errorf("%s carries %q with no text behind it", name, key)

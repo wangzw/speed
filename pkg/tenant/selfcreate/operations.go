@@ -7,14 +7,10 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// pathFragment is the route as the fragment writes it: relative to the API root
-// the module's spec declares.
 const pathFragment = "/orgs"
 
-// The problem types the module writes, in the org namespace the personal
-// tenant's refusals also use. A code the frontend renders by code has to keep
-// the urn:speed:<module>:<dashed-code> shape, because @speed/api-client
-// normalizes each dash to an underscore when it names the i18n key.
+// Problem types must keep the urn:speed:<module>:<dashed-code> shape: @speed/api-client
+// turns each dash into an underscore for the i18n key.
 const (
 	problemPrefix          = "urn:speed:org:"
 	creationInProgressCode = "creation-in-progress"
@@ -23,7 +19,6 @@ const (
 	identifierUnavailable  = "identifier-unavailable"
 )
 
-// The audit vocabulary the module writes.
 const (
 	auditAction     = "org.tenant.create"
 	outcomeSuccess  = "success"
@@ -38,11 +33,6 @@ const (
 //go:embed openapi/tenant.selfcreate.json
 var openAPIFragment []byte
 
-// spec is the API root the module's fragment and route hang off. The route
-// hangs off the account endpoint's /api/v1/orgs claim; the prefix is written
-// into every configuration, so it stays claimed even when the switch is off
-// (the claim is configuration, the mounting is assembly: an off switch answers
-// the path with the endpoint's own 404).
 var spec = speedhttp.Spec{
 	Endpoint: endpointName,
 	Prefix:   "api",
@@ -50,13 +40,9 @@ var spec = speedhttp.Spec{
 	Document: openAPIFragment,
 }
 
-// RoutePath is the absolute path the creation is mounted on: the fragment path
-// resolved against the API root.
+// RoutePath is the absolute path of the creation route.
 var RoutePath = spec.ResolvePath(pathFragment)
 
-// createInput is the request body of the self-service creation. The caller
-// chooses the name and gives a display name and a description; the identifier
-// is generated, so no technical name reaches a person filling the form.
 type createInput struct {
 	_ struct{} `description:"The name, display name and description of the organization to create. The identifier is generated."`
 
@@ -65,28 +51,29 @@ type createInput struct {
 	Description string `json:"description" description:"The organization's description; at most 500 runes after trimming."`
 }
 
-// OrganizationCreatedReply is the creation's success answer.
+// OrganizationCreatedReply is the 201 answer of the creation.
 type OrganizationCreatedReply struct {
 	_ struct{} `description:"The organization this call created."`
 
+	// Tenant is the organization this call created.
 	Tenant OrganizationCreatedTenant `json:"tenant" required:"true"`
 }
 
-// OrganizationCreatedTenant is the created organization as the answer renders
-// it. The identifier is generated and stays internal; the name is the one the
-// caller chose.
+// OrganizationCreatedTenant is the created organization as answered: the name the caller
+// chose and the profile, with no identifier.
 type OrganizationCreatedTenant struct {
 	_ struct{} `description:"The created organization: the caller's name and profile, and the active state. The generated identifier is internal and never appears."`
 
-	Name        string `json:"name" required:"true" description:"The request-surface name the caller chose; unique across the roster and immutable after creation."`
+	// Name is the name the caller chose.
+	Name string `json:"name" required:"true" description:"The request-surface name the caller chose; unique across the roster and immutable after creation."`
+	// DisplayName is the trimmed display name.
 	DisplayName string `json:"display_name" required:"true" description:"The organization's display name, trimmed."`
+	// Description is the trimmed description.
 	Description string `json:"description" required:"true" description:"The organization's description, trimmed."`
-	Status      string `json:"status" required:"true" enum:"active" description:"The organization's state; a self-service organization starts active."`
+	// Status is always "active" for a new organization.
+	Status string `json:"status" required:"true" enum:"active" description:"The organization's state; a self-service organization starts active."`
 }
 
-// rateLimitedResponse is the 429 answer with the Retry-After header declared. A
-// handler's Fault supplies the value; the declaration publishes the header on
-// the contract.
 func rateLimitedResponse() speedhttp.Response {
 	response := speedhttp.ProblemResponse(http.StatusTooManyRequests,
 		"The account has reached the hourly creation limit; Retry-After names the seconds until the next window")
@@ -98,8 +85,6 @@ func rateLimitedResponse() speedhttp.Response {
 	return response
 }
 
-// createOperation declares POST /orgs: the creation of one business
-// organization for the calling account.
 var createOperation = speedhttp.NewOperation[createInput, OrganizationCreatedReply](
 	"org.create.create",
 	http.MethodPost,
@@ -142,6 +127,4 @@ var createOperation = speedhttp.NewOperation[createInput, OrganizationCreatedRep
 	},
 )
 
-// operations is this module's declaration of the API it serves. The fragment is
-// generated from it; the route is mounted from the same declaration.
 var operations = speedhttp.Operations{createOperation}

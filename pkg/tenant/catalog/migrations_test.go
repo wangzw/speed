@@ -7,12 +7,10 @@ import (
 	"testing"
 )
 
-// TestTheOwnerAndDeletionMigrationDeclaresItsColumnsForBothDialects holds the
-// fourth migration of each dialect to the two columns the roster now reads and
-// the index the owner lookup needs. The DDL is applied to a SQLite table, so
-// the statements are exercised without the compose stack; the PostgreSQL file's
-// ADD COLUMN IF NOT EXISTS, which SQLite does not parse, is reduced to the same
-// statement without its guard before it is run here.
+// TestTheOwnerAndDeletionMigrationDeclaresItsColumnsForBothDialects checks that
+// the fourth migration of each dialect declares the owner and deletion columns
+// and the owner index; the PostgreSQL file's ADD COLUMN IF NOT EXISTS guard,
+// which SQLite does not parse, is stripped before it is run.
 func TestTheOwnerAndDeletionMigrationDeclaresItsColumnsForBothDialects(t *testing.T) {
 	for _, dialect := range []string{"sqlite", "postgres"} {
 		t.Run(dialect, func(t *testing.T) {

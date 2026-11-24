@@ -16,34 +16,23 @@ import (
 	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
 )
 
-// The cases in this file are about which models the filter recognises as
-// scoped, and on which column. Embedding the convention is the declaration,
-// and the tenant column is the column GORM parsed the convention's field onto,
-// however the convention is embedded and whatever else the model declares. A
-// model that embeds the convention where no one tenant column can be taken
-// from it is refused, whatever the context; a model that does not embed it is
-// left alone.
-
-// ShapeBase is a base struct an application's models share. It is exported, as
-// GORM needs it to be to read it.
+// ShapeBase is a base struct application models share; it is exported because
+// GORM does not read an embedded struct of an unexported type.
 type ShapeBase struct {
 	tenant.Model
 }
 
-// shapeBase is the same base, unexported: GORM does not read an embedded
-// struct of an unexported type.
+// shapeBase is the unexported twin of ShapeBase, which GORM does not read.
 type shapeBase struct {
 	tenant.Model
 }
 
-// ShapeOuter is an exported base struct that GORM reads, embedding the
-// convention through one it does not.
+// ShapeOuter is an exported base struct that embeds the convention through one
+// GORM does not read.
 type ShapeOuter struct {
 	shapeBase
 }
 
-// shapeLoop embeds a pointer to itself, which a walk over embeddings has to end
-// at rather than follow.
 type shapeLoop struct {
 	*shapeLoop
 }
@@ -53,14 +42,10 @@ type ShapeLike struct {
 	TenantID tenant.ID `gorm:"column:tenant_id;not null"`
 }
 
-// shapeLike is the same lookalike, unexported, so GORM does not read it
-// either.
 type shapeLike struct {
 	TenantID tenant.ID `gorm:"column:tenant_id;not null"`
 }
 
-// orderMeta is a struct a model embeds under a name, carrying a column the
-// convention also declares.
 type orderMeta struct {
 	TenantID string
 }
@@ -264,8 +249,6 @@ type shapeTwice struct {
 
 func (shapeTwice) TableName() string { return "shape_twice" }
 
-// shapeDoubled embeds the convention directly and once more through an
-// exported base: two fields of the convention, on one column.
 type shapeDoubled struct {
 	tenant.Model
 	ShapeBase
@@ -275,8 +258,6 @@ type shapeDoubled struct {
 
 func (shapeDoubled) TableName() string { return "shape_doubled" }
 
-// shapeNamedUpper embeds the convention in a named field whose tag spells the
-// embedded setting in capitals, which GORM reads as it reads it in any case.
 type shapeNamedUpper struct {
 	Owner tenant.Model `gorm:"EMBEDDED"`
 	ID    string       `gorm:"column:id;primaryKey"`
@@ -285,8 +266,6 @@ type shapeNamedUpper struct {
 
 func (shapeNamedUpper) TableName() string { return "shape_named_upper" }
 
-// shapeUnexportedUpper embeds the convention in an unexported named field
-// tagged Embedded, which GORM does not read.
 type shapeUnexportedUpper struct {
 	owner tenant.Model `gorm:"Embedded"`
 	ID    string       `gorm:"column:id;primaryKey"`
@@ -295,10 +274,6 @@ type shapeUnexportedUpper struct {
 
 func (shapeUnexportedUpper) TableName() string { return "shape_unexported_upper" }
 
-// shapeShadowed carries, ahead of the convention, a field of its own on a
-// column the database may read as the tenant column: the same column on
-// SQLite, which compares names without regard to case, and one of its own on
-// PostgreSQL, which keeps the quoted capitals. GORM writes both.
 type shapeShadowed struct {
 	Owner string `gorm:"column:TENANT_ID"`
 	tenant.Model
@@ -308,9 +283,6 @@ type shapeShadowed struct {
 
 func (shapeShadowed) TableName() string { return "shape_shadowed" }
 
-// shapeDuplicated embeds a struct under a name that repeats the convention's
-// column exactly. GORM binds the column to the convention's field, declared
-// first, and never writes the embedded one.
 type shapeDuplicated struct {
 	tenant.Model
 	ID   string    `gorm:"column:id;primaryKey"`
@@ -320,9 +292,6 @@ type shapeDuplicated struct {
 
 func (shapeDuplicated) TableName() string { return "shape_duplicated" }
 
-// shapeDefaulted embeds a struct under a name that repeats the convention's
-// column exactly with a default the database supplies, which GORM writes
-// beside the convention's field whenever it holds a value.
 type shapeDefaulted struct {
 	tenant.Model
 	ID   string        `gorm:"column:id;primaryKey"`
@@ -332,42 +301,24 @@ type shapeDefaulted struct {
 
 func (shapeDefaulted) TableName() string { return "shape_defaulted" }
 
-// recognition is what the filter is to make of a declaration shape.
 type recognition int
 
 const (
-	// scopedShape is a model the filter scopes on the column named.
 	scopedShape recognition = iota
-	// globalShape is a model that does not embed the convention.
 	globalShape
-	// refusedShape is a model that embeds the convention where no one
-	// tenant column can be taken from it.
 	refusedShape
 )
 
-// shape is one way of declaring a model, with the table it reads.
 type shape struct {
-	name   string
-	expect recognition
-	table  string
-	// column is the table's tenant column.
-	column string
-	// extra is the table's columns besides the tenant column, id and note,
-	// and extraPostgres the ones it has besides those on PostgreSQL alone.
+	name                 string
+	expect               recognition
+	table                string
+	column               string
 	extra, extraPostgres string
-	// keyOutside marks a model whose field on the tenant column is outside
-	// its key, so that a write addressed by the key does not read it.
-	keyOutside bool
-	// row is a row of the model with this identifier whose field on the
-	// tenant column holds owner, or is left unwritten when owner is empty.
-	row func(id, owner string) any
-	// unwritten, when set, is the row an insert under acme leaves the tenant
-	// column of to the filter, where row(id, "") writes a field GORM writes
-	// beside it.
-	unwritten func(id string) any
-	// stray, when set, is a row writing another tenant through a field GORM
-	// writes beside the tenant column, which row leaves unwritten.
-	stray func(id string) any
+	keyOutside           bool
+	row                  func(id, owner string) any
+	unwritten            func(id string) any
+	stray                func(id string) any
 }
 
 var shapes = []shape{
@@ -596,12 +547,9 @@ var shapes = []shape{
 	},
 }
 
-// Every declaration shape is recognised the same way on both dialects: a
-// shape that embeds the convention where GORM reads it is scoped on the column
-// GORM parsed the convention's field onto — its reads conditioned, its writes
-// filled and checked, and every statement refused with no tenant — one that
-// embeds it where no one tenant column can be taken from it is refused
-// whatever the context, and one that does not embed it is a global table.
+// TestEveryDeclarationOfTheConventionIsRecognised checks that every declaration
+// shape is recognised the same way on both dialects: scoped on the column GORM
+// parsed, refused where no one tenant column can be taken, or global.
 func TestEveryDeclarationOfTheConventionIsRecognised(t *testing.T) {
 	for _, d := range shapeDialects {
 		t.Run(d.name, func(t *testing.T) {
@@ -738,8 +686,6 @@ func requireRefusedShape(t *testing.T, handle *gorm.DB, s shape) {
 	requireShapeRows(t, handle, s, "a=acme b=globex")
 }
 
-// everyStatement runs one statement of each kind through the model, each
-// reaching every row it can, and returns what each gave.
 func everyStatement(t *testing.T, db *gorm.DB, s shape) map[string]error {
 	t.Helper()
 	var n int64
@@ -755,7 +701,6 @@ func everyStatement(t *testing.T, db *gorm.DB, s shape) map[string]error {
 	}
 }
 
-// withoutPanic runs fn, reporting a panic as its error.
 func withoutPanic(t *testing.T, fn func() error) (err error) {
 	t.Helper()
 	defer func() {
@@ -766,12 +711,10 @@ func withoutPanic(t *testing.T, fn func() error) (err error) {
 	return fn()
 }
 
-// shapeRows is a pointer to an empty slice of the shape's model.
 func shapeRows(s shape) any {
 	return reflect.New(reflect.SliceOf(reflect.TypeOf(s.row("", "")).Elem())).Interface()
 }
 
-// shapeIDs lists the identifiers of the rows a read returned, in order.
 func shapeIDs(rows any) string {
 	v := reflect.ValueOf(rows).Elem()
 	ids := make([]string, 0, v.Len())
@@ -781,8 +724,6 @@ func shapeIDs(rows any) string {
 	return strings.Join(ids, ",")
 }
 
-// createShapeTable creates the shape's table and writes one row for each of
-// two tenants into it, past the filter.
 func createShapeTable(t *testing.T, handle *gorm.DB, s shape) {
 	t.Helper()
 	extra := s.extra
@@ -800,7 +741,6 @@ func createShapeTable(t *testing.T, handle *gorm.DB, s shape) {
 	}
 }
 
-// requireShapeRows asserts the table's rows, each written as id=tenant.
 func requireShapeRows(t *testing.T, handle *gorm.DB, s shape, want string) {
 	t.Helper()
 	var rows []struct {
@@ -821,7 +761,6 @@ func requireShapeRows(t *testing.T, handle *gorm.DB, s shape, want string) {
 	}
 }
 
-// shapeNote reads one row's note past the filter.
 func shapeNote(t *testing.T, handle *gorm.DB, s shape, id string) string {
 	t.Helper()
 	var note string
@@ -833,9 +772,8 @@ func shapeNote(t *testing.T, handle *gorm.DB, s shape, id string) string {
 	return note
 }
 
-// openShapesOnSQLite is an empty in-memory SQLite database with the filter
-// installed. The pool is closed when the case ends, so that a rerun under
-// -count finds the database gone.
+// The pool is closed when the case ends, so that a rerun under -count finds the
+// database gone.
 func openShapesOnSQLite(t *testing.T) *gorm.DB {
 	t.Helper()
 	return filteredShapes(t, sqlitedriver.Open("file:"+t.Name()+"?mode=memory&cache=shared"))
@@ -858,8 +796,6 @@ func filteredShapes(t *testing.T, dialector gorm.Dialector) *gorm.DB {
 	return handle
 }
 
-// shapeHolder is a global model that reaches two of the shapes through
-// associations.
 type shapeHolder struct {
 	ID       string              `gorm:"column:id;primaryKey"`
 	ItemID   string              `gorm:"column:item_id"`
@@ -870,10 +806,9 @@ type shapeHolder struct {
 
 func (shapeHolder) TableName() string { return "shape_holders" }
 
-// A join is recognised as the model it reaches is: a join reaching a model
-// scoped on a column an embedded prefix renamed is held to the context's
-// tenant on that column, and a join reaching a model no tenant column can be
-// taken from refuses the read, whatever its context.
+// TestAJoinIsRecognisedAsTheModelItReaches checks that a join is scoped or
+// refused as the model it reaches is, including a column an embedded prefix
+// renamed.
 func TestAJoinIsRecognisedAsTheModelItReaches(t *testing.T) {
 	for _, d := range shapeDialects {
 		t.Run(d.name, func(t *testing.T) {

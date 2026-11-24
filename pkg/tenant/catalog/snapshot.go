@@ -7,24 +7,13 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// tableName is the roster's table. It is fixed here rather than derived from
-// the type, so that renaming the Go type cannot silently point the reads at a
-// table the migration did not create.
+// tableName is fixed rather than derived from the type, so renaming the type
+// cannot repoint reads at a table the migration did not create.
 const tableName = "tenants"
 
-// row is the roster table's shape.
-//
-// It deliberately does not embed tenant.Model. The filter recognises scoped
-// models by that convention, and the roster is the fact scoping is decided
-// from: a read of it that needed a tenant first would have nothing to read it
-// with. Nothing is special-cased for it — it takes the same path through the
-// filter as any other global table, which is the path a model that embeds
-// nothing takes.
-//
-// The name's `uniqueIndex` tag does not hold that column unique: this type is
-// never migrated — the table comes from the module's declared migration — so
-// the constraint in that file is what enforces the name, and the tag records
-// the shape for a reader.
+// row deliberately does not embed tenant.Model: the roster is what scoping is
+// decided from. Its uniqueIndex tag is not enforced because the type is never
+// migrated; the migration's constraint is.
 type row struct {
 	ID         string `gorm:"column:id;primaryKey"`
 	Name       string `gorm:"column:name;not null;uniqueIndex"`
@@ -44,22 +33,15 @@ type row struct {
 // TableName fixes the table this type maps to.
 func (row) TableName() string { return tableName }
 
-// snapshot is the roster as of one read. It is replaced whole rather than
-// amended, so a reader holding one sees a consistent roster for as long as it
-// holds it — which is what makes two resolutions inside one request agree.
 type snapshot struct {
 	byID    map[tenant.ID]tenant.Tenant
 	byName  map[string]tenant.Tenant
 	ordered []tenant.Tenant
 }
 
-// buildSnapshot indexes the rows two ways and keeps the order.
-//
-// The name index is built by assignment rather than merged, which is why
-// uniqueness cannot be left to this step: two rows sharing a name would
-// overwrite one another here and the roster would quietly lose one of them.
-// The column's unique index and the check in Put are what keep that from
-// happening; this is the reason both are load-bearing.
+// The name index is built by assignment, so two rows sharing a name would
+// silently lose one; uniqueness is enforced by the column's unique index and
+// the check in Put.
 func buildSnapshot(rows []row) *snapshot {
 	s := &snapshot{
 		byID:    make(map[tenant.ID]tenant.Tenant, len(rows)),
@@ -72,16 +54,10 @@ func buildSnapshot(rows []row) *snapshot {
 		s.byName[t.Name] = t
 		s.ordered = append(s.ordered, t)
 	}
-	// The roster is ordered by the name a client reads. The
-	// identifier is internal and no view carries it, so sorting by it would
-	// give a client an order it cannot reproduce.
 	sort.Slice(s.ordered, func(i, j int) bool { return s.ordered[i].Name < s.ordered[j].Name })
 	return s
 }
 
-// tenantOf reads one row as the roster serves it: the status and the disable
-// source through their closed sets, and the owner, the profile, the creation
-// time and the deletion time as the table holds them.
 func tenantOf(r row) tenant.Tenant {
 	return tenant.Tenant{
 		ID:           tenant.ID(r.ID),
@@ -100,11 +76,8 @@ func tenantOf(r row) tenant.Tenant {
 	}
 }
 
-// disabledByOf reads the source column as the roster serves it: only the
-// account's value reads as the account's, and everything else — the operator's
-// value, a value this build does not know, and the default an existing row
-// took — reads as the operator's. An unexplained disable must never be
-// revocable by account state.
+// Only the account's value reads as the account's; anything else reads as the
+// operator's, so an unexplained disable is never revocable by account state.
 func disabledByOf(source int) tenant.DisabledBy {
 	if source == int(tenant.DisabledByAccount) {
 		return tenant.DisabledByAccount
@@ -112,9 +85,6 @@ func disabledByOf(source int) tenant.DisabledBy {
 	return tenant.DisabledByOperator
 }
 
-// counts reports how many tenants are in each state, for the startup account.
-// The three counts are disjoint and their sum is the roster's size; a status
-// this build does not know reads as disabled, as it does everywhere else.
 func (s *snapshot) counts() (active, disabled, deleted int) {
 	for _, t := range s.ordered {
 		switch t.Status {

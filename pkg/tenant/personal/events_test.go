@@ -10,8 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// recordingBus keeps the handlers subscribed to it and delivers an event to the
-// one registered for its type.
 type recordingBus struct {
 	mu       sync.Mutex
 	handlers map[string]event.Handler

@@ -7,22 +7,15 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The fragment's info section. The title and the version are the ones the
-// hand-written fragment published before the declaration generated it.
 const (
 	fragmentTitle   = "tenant.admin"
 	fragmentVersion = "1.0.0"
 
-	// tenantOwnerFragmentTitle is the title of the tenant-surface fragment.
 	tenantOwnerFragmentTitle = "tenant.owner"
 
-	// selfFragmentTitle is the title of the account-level target fragment.
 	selfFragmentTitle = "tenant.self"
 )
 
-// The routes as the fragment writes them: relative to the API root the module's
-// Spec declares. The mounting resolves them to the absolute paths the routes are
-// registered at, so a path is written once.
 const (
 	pathTenantsFragment       = "/tenants"
 	pathTenantFragment        = "/tenants/:tenant"
@@ -30,59 +23,39 @@ const (
 	pathTenantProfileFragment = "/tenants/:tenant/profile"
 )
 
-// The tenant-surface routes, relative to the tenants-scope API root. The
-// absolute path is /api/v1/tenants/:tenant.
 const pathOrganizationFragment = "/:tenant"
 
-// The success bodies. Each is an alias of an anonymous struct, so the fragment
-// publishes the wrapper inline, as the hand-written fragment did, rather than as
-// a component of its own.
 type (
-	// tenantListBody is the 200 answer of the listing.
 	tenantListBody = struct {
 		_       struct{}            `description:"The whole roster in one answer, because the listing is not paged."`
 		Tenants []TenantAdminTenant `json:"tenants" required:"true" description:"Every tenant the roster holds, ordered by name."`
 	}
 
-	// tenantCreatedBody is the 201 answer of a registration.
 	tenantCreatedBody = struct {
 		_      struct{}          `description:"The tenant as registered, in the same view the read routes render."`
 		Tenant TenantAdminTenant `json:"tenant" required:"true" description:"The registered tenant, its state active."`
 	}
 
-	// tenantReadBody is the 200 answer of a single-tenant read.
 	tenantReadBody = struct {
 		_      struct{}          `description:"The tenant the name named."`
 		Tenant TenantAdminTenant `json:"tenant" required:"true" description:"The tenant, with its name, kind, owner account and state."`
 	}
 )
 
-// createBody is the request of a registration: the name the request surface
-// will address the tenant by and its optional profile. The identifier is
-// generated, so it is not part of the body and a body that carries one is
-// refused. The status is not here either: a registration starts the tenant
-// active. The type name is unexported, and the declaration publishes the body
-// under the name the hand-written fragment used.
 type createBody struct {
 	_    struct{} `description:"The name and optional profile of a tenant to register. The identifier is generated and the state starts active, so neither is part of the body."`
 	Name string   `json:"name" required:"true" description:"The name to give the tenant; the roster refuses one another tenant already holds."`
 
-	// The profile fields are optional here: the platform form requires a
-	// display name, but the API leaves a registration without a profile valid.
 	DisplayName  string `json:"display_name" description:"The organization's display name, at most 100 runes. Empty when the registration names none."`
 	Description  string `json:"description" description:"A longer account of the organization, at most 500 runes."`
 	ContactEmail string `json:"contact_email" description:"The organization's contact address, one bare email address of at most 254 bytes."`
 	Website      string `json:"website" description:"The organization's absolute http or https address, at most 2048 bytes, with a host and no userinfo."`
 }
 
-// getTenantInput is the request of a single-tenant read: the name in the path.
 type getTenantInput struct {
 	ID string `path:"tenant" description:"The tenant's name. The platform name layer resolves it to the internal identifier before the handler runs; a name no tenant carries is a 404."`
 }
 
-// setProfileInput is the request of a profile update: the identifier in the
-// path and the four descriptive fields in the body, each of which must be
-// present. A field the body carries empty clears the stored value.
 type setProfileInput struct {
 	ID string `path:"tenant" description:"The tenant's name. The platform name layer resolves it to the internal identifier before the handler runs; a name no tenant carries is a 404."`
 
@@ -92,27 +65,15 @@ type setProfileInput struct {
 	Website      string `json:"website" required:"true" description:"The organization's absolute http or https address, at most 2048 bytes, with a host and no userinfo. Empty clears it."`
 }
 
-// profileWriteFields are the body members a profile update must carry. The
-// declaration marks them required, and the entry point's binding enforces body
-// presence, so the declaration carries them the way the tenant profile module
-// carries its own write body: the same snake_case names the registration body
-// uses.
 var profileWriteFields = []string{"display_name", "description", "contact_email", "website"}
 
-// registrationForbiddenFields are the body members a registration may not
-// carry. The identifier is generated on the server; a client that sends one is
-// refused rather than allowed to choose an internal key.
 var registrationForbiddenFields = []string{"id"}
 
-// setStatusInput is the request of a status change: the identifier in the path
-// and the target state in the body.
 type setStatusInput struct {
 	ID     string `path:"tenant" description:"The tenant's name. The platform name layer resolves it to the internal identifier before the handler runs; a name no tenant carries is a 404."`
 	Status string `json:"status" required:"true" enum:"active,disabled" description:"active serves the tenant; disabled stops serving it."`
 }
 
-// listOperation declares GET /tenants: every tenant the roster
-// holds, in the roster's own order.
 var listOperation = speedhttp.NewOperation[struct{}, tenantListBody](
 	"tenant.admin.tenants.list",
 	http.MethodGet,
@@ -136,8 +97,6 @@ var listOperation = speedhttp.NewOperation[struct{}, tenantListBody](
 	},
 )
 
-// createOperation declares POST /tenants: it registers a tenant
-// whose identifier the roster does not hold yet.
 var createOperation = speedhttp.NewOperation[createBody, tenantCreatedBody](
 	"tenant.admin.tenants.create",
 	http.MethodPost,
@@ -175,9 +134,7 @@ var createOperation = speedhttp.NewOperation[createBody, tenantCreatedBody](
 	},
 )
 
-// getOperation declares GET /tenants/:tenant: one tenant the roster
-// holds. Its handler builds the answer because a tenant the roster does not hold
-// is a bare 404, which the problem-document writer cannot produce.
+// The handler builds the answer itself because an unknown tenant is a bare 404, which the problem-document writer cannot produce.
 var getOperation = speedhttp.NewReplyOperation[getTenantInput](
 	"tenant.admin.tenants.get",
 	http.MethodGet,
@@ -206,14 +163,7 @@ var getOperation = speedhttp.NewReplyOperation[getTenantInput](
 	},
 )
 
-// deleteOperation declares DELETE /tenants/:tenant: it writes the tenant's
-// tombstone and cleans its core relations. Its handler builds the answer because
-// an unknown tenant is a bare 404.
-//
-// This is the platform surface: it requires tenant.manage in the platform
-// domain. An organization's owner deletes through the tenant surface
-// (tenantDeleteOperation) and is refused here unless they also hold that
-// permission; the two surfaces share the write and its locks.
+// The handler builds the answer itself because an unknown tenant is a bare 404, which the problem-document writer cannot produce.
 var deleteOperation = speedhttp.NewReplyOperation[getTenantInput](
 	"tenant.admin.tenants.delete",
 	http.MethodDelete,
@@ -247,9 +197,7 @@ var deleteOperation = speedhttp.NewReplyOperation[getTenantInput](
 	},
 )
 
-// setProfileOperation declares PATCH /tenants/:tenant/profile: it writes one
-// tenant's organization profile and nothing else. Its handler builds the answer
-// because an unknown tenant is a bare 404.
+// The handler builds the answer itself because an unknown tenant is a bare 404, which the problem-document writer cannot produce.
 var setProfileOperation = speedhttp.NewReplyOperation[setProfileInput](
 	"tenant.admin.tenants.profile",
 	http.MethodPatch,
@@ -288,9 +236,7 @@ var setProfileOperation = speedhttp.NewReplyOperation[setProfileInput](
 	},
 )
 
-// setStatusOperation declares POST /tenants/:tenant/status: it changes
-// one tenant's state. Its handler builds the answer because the success is a 204
-// and an unknown tenant is a bare 404.
+// The handler builds the answer itself because the success is a 204 and an unknown tenant is a bare 404.
 var setStatusOperation = speedhttp.NewReplyOperation[setStatusInput](
 	"tenant.admin.tenants.setStatus",
 	http.MethodPost,
@@ -330,16 +276,11 @@ var setStatusOperation = speedhttp.NewReplyOperation[setStatusInput](
 	},
 )
 
-// tenantDeleteInput is the request of the tenant-surface delete: the name in
-// the path, held to the resolved tenant by the tenant administration guard
-// before the handler runs.
 type tenantDeleteInput struct {
 	ID string `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; a name no tenant carries is a 404."`
 }
 
-// tenantDeleteOperation declares DELETE /:tenant on the tenant surface: the
-// organization's own owner ends it. Its handler builds the answer because an
-// unknown tenant is a bare 404.
+// The handler builds the answer itself because an unknown tenant is a bare 404, which the problem-document writer cannot produce.
 var tenantDeleteOperation = speedhttp.NewReplyOperation[tenantDeleteInput](
 	"tenant.admin.owner.delete",
 	http.MethodDelete,
@@ -374,8 +315,6 @@ var tenantDeleteOperation = speedhttp.NewReplyOperation[tenantDeleteInput](
 	},
 )
 
-// operations is this module's declaration of the API it serves. The fragment is
-// generated from it; the routes are mounted from the same declarations.
 var operations = speedhttp.Operations{
 	listOperation,
 	createOperation,
@@ -388,9 +327,6 @@ var operations = speedhttp.Operations{
 	setStatusOperation,
 }
 
-// tenantOperations is this module's declaration of the tenant-surface API. The
-// fragment is generated from it; the routes are mounted from the same
-// declarations.
 var tenantOperations = speedhttp.Operations{
 	tenantRequestTransferOperation,
 	tenantPendingTransferOperation,
@@ -398,8 +334,6 @@ var tenantOperations = speedhttp.Operations{
 	tenantDeleteOperation,
 }
 
-// selfOperations declares the target's account-level API. The fragment is
-// generated from it; the routes are mounted from the same declarations.
 var selfOperations = speedhttp.Operations{
 	myTransferRequestsOperation,
 	myTransferRequestOperation,

@@ -14,8 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// provisioningProduct assembles the product with the transaction-aware
-// stand-ins a provisioning case drives.
 func provisioningProduct() (*product, *fakeTxCatalog, *fakeTxManager, *fakeMembershipWriter) {
 	roster, manager, writer := &fakeTxCatalog{}, &fakeTxManager{}, &fakeMembershipWriter{}
 	return &product{
@@ -118,11 +116,8 @@ func TestProvisionAccountReplaysOnAnExistingTenant(t *testing.T) {
 	}
 }
 
-// A name another tenant holds is this module's exported refusal, and it wraps
-// the roster's own error so a caller may match either. It also carries
-// authn.ErrAccountExists, which is what the account module passes through: a
-// login therefore answers the name as taken rather than as an unavailable
-// dependency.
+// A name another tenant holds returns ErrNameConflict, which also matches
+// tenant.ErrNameConflict and authn.ErrAccountExists.
 func TestProvisionAccountNameConflictReturnsTheSentinel(t *testing.T) {
 	p, roster, manager, writer := provisioningProduct()
 	roster.createErr = tenant.ErrNameConflict
@@ -159,11 +154,7 @@ func TestProvisionAccountStopsOnAnyOtherFailure(t *testing.T) {
 	}
 }
 
-// Every transaction-aware write hands its after-commit work to the collector on
-// the context the account module supplied. The collector runs the tenant row,
-// the membership, the role and the binding; the grant set is empty here, so its
-// write answers a nil closure exactly as the production write does, and the
-// creation's audit row is the collector's own addition.
+// Every transaction-aware write hands its after-commit closure to the collector on the context.
 func TestProvisionAccountRegistersEveryAfterCommitClosure(t *testing.T) {
 	p, roster, manager, writer := provisioningProduct()
 	ctx, after := provisioning.WithAfterCommit(context.Background())
@@ -191,9 +182,7 @@ func TestProvisionAccountRegistersEveryAfterCommitClosure(t *testing.T) {
 	}
 }
 
-// The creation's audit row is written after the account's transaction commits,
-// exactly once: a replay that finds the tenant row already there records
-// nothing.
+// The creation audit row is written once, after the commit, and not on a replay.
 func TestProvisionAccountWritesTheCreationAuditAfterTheCommit(t *testing.T) {
 	p, roster, _, _ := provisioningProduct()
 	facts := provisioning.AccountFacts{

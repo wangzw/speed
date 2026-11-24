@@ -10,14 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The profile route and the registration's profile fields: the platform
-// surface carries the descriptive fields without letting them change anything
-// the roster resolves requests by.
-
-// profileWriteBody is the profile write's JSON body as a case sends it. The
-// handler's declared input also carries the path's identifier, which JSON does
-// not carry. The names are snake_case, the same shape the registration body
-// uses.
 type profileWriteBody struct {
 	DisplayName  string `json:"display_name"`
 	Description  string `json:"description"`
@@ -25,7 +17,6 @@ type profileWriteBody struct {
 	Website      string `json:"website"`
 }
 
-// fullProfile is every member present, which the profile route requires.
 func fullProfile() profileWriteBody {
 	return profileWriteBody{
 		DisplayName:  "Acme",
@@ -35,8 +26,8 @@ func fullProfile() profileWriteBody {
 	}
 }
 
-// TestTheCreateCarriesTheProfile holds the registration's four optional fields
-// on their way to the provisioner, trimmed the way the root package defines.
+// TestTheCreateCarriesTheProfile holds the registration's four optional fields on
+// their way to the provisioner, trimmed the way the root package defines.
 func TestTheCreateCarriesTheProfile(t *testing.T) {
 	r := newRig(t)
 	w := r.do(http.MethodPost, pathTenants, createBody{
@@ -73,9 +64,9 @@ func TestTheCreateCarriesTheProfile(t *testing.T) {
 	}
 }
 
-// A profile outside the root package's domain is refused before the audit and
-// the provisioner: a registration that would store a website the caller was
-// never shown does not run.
+// A profile outside the root package's domain is refused before the audit and the
+// provisioner: a registration that would store a website the caller was never shown
+// does not run.
 func TestTheCreateRefusesAnInvalidProfile(t *testing.T) {
 	r := newRig(t)
 	w := r.do(http.MethodPost, pathTenants, createBody{
@@ -92,10 +83,8 @@ func TestTheCreateRefusesAnInvalidProfile(t *testing.T) {
 	}
 }
 
-// TestTheProfileUpdateWritesOnlyTheProfile holds the write's seam: PATCH
-// /tenants/:tenant/profile reads the tenant for the 404 and calls SetProfile,
-// never Put or SetStatus, so it cannot undo a disable or a
-// deletion another path committed.
+// TestTheProfileUpdateWritesOnlyTheProfile holds that PATCH /tenants/:tenant/profile
+// calls SetProfile, never Put or SetStatus.
 func TestTheProfileUpdateWritesOnlyTheProfile(t *testing.T) {
 	r := newRig(t)
 	created := time.Date(2026, 5, 6, 7, 8, 9, 0, time.UTC)
@@ -138,9 +127,9 @@ func TestTheProfileUpdateWritesOnlyTheProfile(t *testing.T) {
 	}
 }
 
-// TestTheProfileUpdateWritesTheMandatoryAuditFirst holds the order: the
-// permitted row lands before SetProfile, names the platform surface, and links
-// to the failed row a refusal writes.
+// TestTheProfileUpdateWritesTheMandatoryAuditFirst holds the order: the permitted row
+// lands before SetProfile, names the platform surface, and links to the failed row a
+// refusal writes.
 func TestTheProfileUpdateWritesTheMandatoryAuditFirst(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
@@ -171,8 +160,8 @@ func TestTheProfileUpdateWritesTheMandatoryAuditFirst(t *testing.T) {
 	}
 }
 
-// A roster refusal closes the permitted row with a linked failed one carrying
-// the same surface; a tombstone is the refusal this route maps to a 409.
+// A roster refusal closes the permitted row with a linked failed one carrying the same
+// surface; a tombstone is the refusal this route maps to a 409.
 func TestTheProfileUpdateOnATombstoneIsAConflict(t *testing.T) {
 	r := newRig(t)
 	r.catalog.found = true
@@ -218,8 +207,8 @@ func TestTheProfileUpdateStopsWhenTheAuditDoesNotLand(t *testing.T) {
 	}
 }
 
-// The shape checks run before the roster read and the audit, and an unknown
-// tenant is a bare 404 with no row written.
+// The shape checks run before the roster read and the audit, and an unknown tenant is
+// a bare 404 with no row written.
 func TestTheProfileUpdateRefusesShapeAndMissingTenantsBeforeTheAudit(t *testing.T) {
 	t.Run("invalid profile", func(t *testing.T) {
 		r := newRig(t)
@@ -266,8 +255,8 @@ func TestTheProfileUpdateRefusesShapeAndMissingTenantsBeforeTheAudit(t *testing.
 	})
 }
 
-// The profile view carries the four descriptive fields and the mandatory
-// creation time.
+// The profile view carries the four descriptive fields and the mandatory creation
+// time.
 func TestTheTenantViewCarriesTheProfileAndTheCreationTime(t *testing.T) {
 	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	r := newRig(t)
@@ -298,8 +287,7 @@ func TestTheTenantViewCarriesTheProfileAndTheCreationTime(t *testing.T) {
 	}
 }
 
-// The profile route is a management write: tenant.manage in the platform
-// domain.
+// The profile route is a management write: tenant.manage in the platform domain.
 func TestTheProfileRouteAsksTenantManageInThePlatformDomain(t *testing.T) {
 	r := newRig(t)
 	r.catalog.found = true

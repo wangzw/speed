@@ -12,10 +12,7 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The first cases drive each route over the real HTTP surface the rig mounts,
-// with the identity a caller carries, and hold both the answer and what reached
-// the roster.
-
+// TestTheListAnswersEveryTenantInRosterOrder checks that the listing answers every tenant in the roster's order.
 func TestTheListAnswersEveryTenantInRosterOrder(t *testing.T) {
 	r := newRig(t)
 	r.catalog.list = []tenant.Tenant{
@@ -40,6 +37,7 @@ func TestTheListAnswersEveryTenantInRosterOrder(t *testing.T) {
 	}
 }
 
+// TestTheGetAnswersOneTenant checks that reading one tenant answers its view.
 func TestTheGetAnswersOneTenant(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
@@ -62,8 +60,8 @@ func TestTheGetAnswersOneTenant(t *testing.T) {
 	}
 }
 
-// A tenant the roster does not hold is a bare 404: no problem type, so the
-// answer says something is not there and not which refusal it was.
+// A tenant the roster does not hold is a bare 404: no problem type, so the answer says
+// something is not there and not which refusal it was.
 func TestTheGetOfAnUnknownTenantIs404(t *testing.T) {
 	r := newRig(t)
 	w := r.do(http.MethodGet, pathTenants+"/t_ghost", nil)
@@ -75,9 +73,9 @@ func TestTheGetOfAnUnknownTenantIs404(t *testing.T) {
 	}
 }
 
-// Names are immutable after creation and the name-change route is gone: a
-// PATCH on a tenant path reaches no handler, so the request is a bare 404 and
-// nothing reaches the roster or the audit.
+// Names are immutable after creation and the name-change route is gone: a PATCH on a
+// tenant path reaches no handler, so the request is a bare 404 and nothing reaches the
+// roster or the audit.
 func TestTheNameChangeRouteIsGone(t *testing.T) {
 	r := newRig(t)
 	w := r.do(http.MethodPatch, pathTenants+"/t_acme", map[string]string{"name": "acme-labs"})
@@ -92,6 +90,7 @@ func TestTheNameChangeRouteIsGone(t *testing.T) {
 	}
 }
 
+// TestTheCreateAnswersCreatedAndPassesTheRowOn checks that a registration answers 201 and passes the row on to the provisioner.
 func TestTheCreateAnswersCreatedAndPassesTheRowOn(t *testing.T) {
 	r := newRig(t)
 	w := r.do(http.MethodPost, pathTenants, createBody{Name: "acme"})
@@ -105,8 +104,6 @@ func TestTheCreateAnswersCreatedAndPassesTheRowOn(t *testing.T) {
 	if got.Tenant.Name != "acme" || got.Tenant.Status != "active" {
 		t.Errorf("tenant = %+v, want the registration, active", got.Tenant)
 	}
-	// The answer carries the creation instant the roster recorded, not the zero
-	// value of the value this call assembled.
 	if !got.Tenant.CreatedAt.Equal(provisionedAt) {
 		t.Errorf("created_at = %v, want the roster's %v", got.Tenant.CreatedAt, provisionedAt)
 	}
@@ -127,6 +124,7 @@ func TestTheCreateAnswersCreatedAndPassesTheRowOn(t *testing.T) {
 	}
 }
 
+// TestTheStatusChangePassesTheTargetOn checks that a status change passes the target state on to the roster.
 func TestTheStatusChangePassesTheTargetOn(t *testing.T) {
 	r := newRig(t)
 	w := r.do(http.MethodPost, pathTenants+"/t_acme/status", statusBody{Status: "disabled"})
@@ -141,8 +139,8 @@ func TestTheStatusChangePassesTheTargetOn(t *testing.T) {
 }
 
 // The decision is asked per method — a read needs tenant.read and a write needs
-// tenant.manage — and it is asked in the platform domain, so the request's own
-// tenant never steers it.
+// tenant.manage — and it is asked in the platform domain, so the request's own tenant
+// never steers it.
 func TestTheDecisionIsAskedPerMethodInThePlatformDomain(t *testing.T) {
 	cases := map[string]struct {
 		method string
@@ -184,9 +182,9 @@ func TestTheDecisionIsAskedPerMethodInThePlatformDomain(t *testing.T) {
 	}
 }
 
-// A request with no identity is a 401 with the realm challenge, the same answer
-// the admission and authorization layers write, and it reaches neither the guard
-// nor the roster nor the audit.
+// A request with no identity is a 401 with the realm challenge, the same answer the
+// admission and authorization layers write, and it reaches neither the guard nor the
+// roster nor the audit.
 func TestARequestWithNoIdentityIsA401(t *testing.T) {
 	for name, tc := range map[string]struct {
 		method string
@@ -248,8 +246,8 @@ func TestAGuardRefusalReachesNoRoster(t *testing.T) {
 }
 
 // A write whose mandatory audit row does not land is a 503 and the action is not
-// carried out: the roster is not reached and no failed row is written beside a
-// row that was never written.
+// carried out: the roster is not reached and no failed row is written beside a row
+// that was never written.
 func TestTheMandatoryAuditLandingIsRequired(t *testing.T) {
 	writes := map[string]struct {
 		method string
@@ -283,8 +281,8 @@ func TestTheMandatoryAuditLandingIsRequired(t *testing.T) {
 	}
 }
 
-// A write the roster refuses is closed with a failed row linked to the mandatory
-// one by the action identifier, and the answer is the mapped one.
+// A write the roster refuses is closed with a failed row linked to the mandatory one
+// by the action identifier, and the answer is the mapped one.
 func TestAFailedWriteClosesWithALinkedRow(t *testing.T) {
 	r := newRig(t)
 	r.provisioner.fail(tenant.ErrTenantExists)
@@ -311,8 +309,8 @@ func TestAFailedWriteClosesWithALinkedRow(t *testing.T) {
 	}
 }
 
-// Each write route carries its own audit action, one per route, and a read
-// writes no audit row at all.
+// Each write route carries its own audit action, one per route, and a read writes no
+// audit row at all.
 func TestEachWriteCarriesItsOwnAuditAction(t *testing.T) {
 	cases := map[string]struct {
 		method string
@@ -349,9 +347,9 @@ func TestEachWriteCarriesItsOwnAuditAction(t *testing.T) {
 	}
 }
 
-// The refusal mapping is closed and fail-closed: each sentinel the roster
-// returns reaches its status, and a failure no sentinel names is a 503 whose
-// cause stays in the log.
+// The refusal mapping is closed and fail-closed: each sentinel the roster returns
+// reaches its status, and a failure no sentinel names is a 503 whose cause stays in
+// the log.
 func TestTheFailureMappingIsClosed(t *testing.T) {
 	t.Run("create", func(t *testing.T) {
 		for name, tc := range map[string]struct {
@@ -418,9 +416,9 @@ func TestTheFailureMappingIsClosed(t *testing.T) {
 	})
 }
 
-// A shape refusal happens after the decision and before the action: a blank
-// identifier or name, a body that cannot be read, and a status outside the
-// closed set are 400s, and neither the roster nor the audit is reached.
+// A shape refusal happens after the decision and before the action: a blank identifier
+// or name, a body that cannot be read, and a status outside the closed set are 400s,
+// and neither the roster nor the audit is reached.
 func TestAShapeRefusalReachesNeitherTheRosterNorTheAudit(t *testing.T) {
 	cases := map[string]struct {
 		method string
@@ -477,12 +475,8 @@ func TestAShapeRefusalReachesNeitherTheRosterNorTheAudit(t *testing.T) {
 	})
 }
 
-// The view carries the fields the design names, per state, spelled the way
-// tenant.Status and tenant.DisabledBy spell them: the name, the kind, the owner
-// account and the state's name on every row, and disabled_by only on a disabled
-// one. It carries no identifier. A field added to a record later does not reach a
-// client by being there, and a source never appears on a row whose state is not
-// disabled.
+// The view carries the name, kind, owner account and state on every row, and
+// disabled_by only on a disabled one.
 func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 	createdAt := time.Date(2026, 7, 8, 9, 10, 11, 0, time.UTC)
 	cases := map[string]struct {
@@ -590,9 +584,8 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 	}
 }
 
-// TestThePlatformDetailCarriesTheOwner holds the one place the platform surface
-// names the organization's owner: the single-tenant detail. The value is the
-// roster row's owner column, not a value this module derives.
+// TestThePlatformDetailCarriesTheOwner holds that the single-tenant detail carries the
+// organization's owner.
 func TestThePlatformDetailCarriesTheOwner(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = tenant.Tenant{

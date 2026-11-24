@@ -23,6 +23,7 @@ func request(t *testing.T, target, host string, header map[string]string) *netht
 	return r
 }
 
+// TestHeaderExtractor checks that the header extractor trims surrounding space and reports an empty or blank value as absent.
 func TestHeaderExtractor(t *testing.T) {
 	e := headerExtractor{name: "X-Tenant"}
 	for _, tc := range []struct {
@@ -49,6 +50,7 @@ func TestHeaderExtractor(t *testing.T) {
 	}
 }
 
+// TestSubdomainExtractor checks that the subdomain extractor reads the configured label, drops a port and lower-cases the label.
 func TestSubdomainExtractor(t *testing.T) {
 	for _, tc := range []struct {
 		what  string
@@ -78,6 +80,7 @@ func TestSubdomainExtractor(t *testing.T) {
 	}
 }
 
+// TestPathExtractor checks that the path extractor reads the configured segment and ignores leading and trailing slashes.
 func TestPathExtractor(t *testing.T) {
 	for _, tc := range []struct {
 		what  string
@@ -107,18 +110,13 @@ func TestPathExtractor(t *testing.T) {
 	}
 }
 
-// stub is a stand-in for an extractor another module would register.
 type stub struct{ name string }
 
 func (s stub) Extract(*nethttp.Request) (string, bool) { return s.name, s.name != "" }
 
 var _ tenant.Extractor = stub{}
 
-// TestRegisterOutsideTheWindowPanics pins the shut side of the state
-// transition and the message a caller acts on: the window runs from this
-// module's Migrate callback to its Start callback, and the fixing action is to
-// register from the registrant's own Init callback. Registration before that
-// window opened is refused rather than dropped.
+// TestRegisterOutsideTheWindowPanics checks that registering outside the registration window panics with a message naming the Init callback as the place to register.
 func TestRegisterOutsideTheWindowPanics(t *testing.T) {
 	text := wantPanicMessage(t, func() {
 		newResolver(settings{}, nil).Register("late", stub{})
@@ -134,7 +132,6 @@ func TestRegisterOutsideTheWindowPanics(t *testing.T) {
 	}
 }
 
-// wantPanicMessage runs f, requires it to panic, and returns the panic's text.
 func wantPanicMessage(t *testing.T, f func()) string {
 	t.Helper()
 	var text string
@@ -155,6 +152,7 @@ func wantPanicMessage(t *testing.T, f func()) string {
 	return text
 }
 
+// TestSealRefusesADuplicateName checks that sealing reports a name registered twice.
 func TestSealRefusesADuplicateName(t *testing.T) {
 	r := newResolver(settings{extractor: "header"}, nil)
 	r.open()
@@ -166,9 +164,7 @@ func TestSealRefusesADuplicateName(t *testing.T) {
 	}
 }
 
-// A name is free of blanks, and a blank is any character Unicode counts as
-// space, not the four ASCII ones alone: a name carrying one cannot be written
-// into configuration so that it reads back as the same name.
+// TestSealRefusesANameCarryingAnyBlank checks that sealing refuses an extractor name carrying any Unicode space character.
 func TestSealRefusesANameCarryingAnyBlank(t *testing.T) {
 	for _, name := range []string{"a b", "a\tb", "a\nb", "a\rb", "a\vb", "a\fb", "a\u00a0b", "a\u2028b", "\u3000"} {
 		t.Run(strconv.Quote(name), func(t *testing.T) {
@@ -183,6 +179,7 @@ func TestSealRefusesANameCarryingAnyBlank(t *testing.T) {
 	}
 }
 
+// TestSealRefusesAnUnregisteredSelection checks that sealing reports ErrNoExtractor when the configured extractor was never registered.
 func TestSealRefusesAnUnregisteredSelection(t *testing.T) {
 	r := newResolver(settings{extractor: "subdomain"}, nil)
 	r.open()
@@ -197,6 +194,7 @@ func TestSealRefusesAnUnregisteredSelection(t *testing.T) {
 	}
 }
 
+// TestSealRefusesANilImplementation checks that sealing refuses a registration with a nil implementation.
 func TestSealRefusesANilImplementation(t *testing.T) {
 	r := newResolver(settings{extractor: "custom"}, nil)
 	r.open()
@@ -207,6 +205,7 @@ func TestSealRefusesANilImplementation(t *testing.T) {
 	}
 }
 
+// TestSealSelectsTheConfiguredExtractor checks that sealing selects the extractor the configuration names.
 func TestSealSelectsTheConfiguredExtractor(t *testing.T) {
 	r := newResolver(settings{extractor: HeaderExtractor}, nil)
 	r.open()

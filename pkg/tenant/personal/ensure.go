@@ -1,16 +1,5 @@
 package personal
 
-// The idempotent completion of a personal tenant. The account-creation
-// transaction is the guarantee that the tenant exists; the lifecycle hook runs
-// this after the transaction commits to complete anything the seam left
-// unfinished. It never creates a tenant for an account whose username cannot be
-// read: the name is always the account's username.
-//
-// The ensure writes the same five pieces the transaction seam writes, through
-// the context-taking surfaces, each idempotent. A membership row that exists is
-// left as it stands, and a tenant row that is not enabled is refused before
-// anything is written.
-
 import (
 	"context"
 	"errors"
@@ -25,13 +14,11 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// personalResult is the ensure's outcome.
 type personalResult struct {
 	Tenant  tenant.Tenant
 	Created bool
 }
 
-// auditRequired writes the mandatory row of an action.
 func (p *product) auditRequired(ctx context.Context, e audit.Entry) error {
 	if err := p.audit.Record(ctx, e); err != nil {
 		p.logger.Error(ModuleName+": the mandatory audit row could not be written, so the action was not carried out",
@@ -41,7 +28,6 @@ func (p *product) auditRequired(ctx context.Context, e audit.Entry) error {
 	return nil
 }
 
-// auditBestEffort writes the failed row that closes a failed attempt.
 func (p *product) auditBestEffort(ctx context.Context, e audit.Entry) {
 	if err := p.audit.Record(ctx, e); err != nil {
 		p.logger.Error(ModuleName+": a failed-action audit row could not be written",
@@ -49,18 +35,6 @@ func (p *product) auditBestEffort(ctx context.Context, e audit.Entry) {
 	}
 }
 
-// ensure checks and completes the five pieces of a personal tenant:
-//
-//  1. the tenant row (created, or read back when it already exists),
-//  2. the account's membership in it,
-//  3. the non-builtin tenant-admin role,
-//  4. the tenant-admin role's grants, converged to the allowlist,
-//  5. the account's binding to that role.
-//
-// Each step is idempotent, and a failure leaves the earlier steps in place for
-// the next call to complete. A membership row that exists is left as it stands,
-// and a tenant row that is not enabled is answered with a refusal before
-// anything is written.
 func (p *product) ensure(ctx context.Context, account authn.AccountID) (personalResult, error) {
 	personalID := TenantID(account)
 	if !tenant.IsIdentifier(string(personalID)) {
@@ -82,16 +56,12 @@ func (p *product) ensure(ctx context.Context, account authn.AccountID) (personal
 	if own {
 		record, err = p.registeredTenant(ctx, personalID)
 	} else {
-		// The name is the account's username, and the audit row names the
-		// tenant by it: it is read before the mandatory row so the row carries
-		// the name the surface uses.
+		// The username is read before the mandatory audit row because the row names the tenant by it.
 		name, err = p.usernameOf(ctx, account)
 		if err != nil {
 			return personalResult{}, err
 		}
-		// The mandatory row lands before the create: an audit module that cannot
-		// take it stops the registration, so no tenant is ever created without the
-		// record of it.
+		// The mandatory audit row lands before the create, so no tenant exists without its record.
 		actionID = newPersonalActionID()
 		createBegan = true
 		if auditErr := p.auditRequired(ctx, personalAudit(personalCreateAction, account, name, actionID)); auditErr != nil {
@@ -108,9 +78,6 @@ func (p *product) ensure(ctx context.Context, account authn.AccountID) (personal
 	if record.Name != "" {
 		name = record.Name
 	}
-	// fail closes whatever is left of a create attempt with the failed row that
-	// links to its permitted one. A read-back attempt has no permitted row to
-	// close.
 	fail := func(err error) (personalResult, error) {
 		if createBegan {
 			p.auditBestEffort(ctx, personalFailedAudit(personalCreateAction, name, actionID))
@@ -118,7 +85,6 @@ func (p *product) ensure(ctx context.Context, account authn.AccountID) (personal
 		return personalResult{}, err
 	}
 	if record.Status != tenant.StatusActive {
-		// A disabled tenant is the operator's decision. Nothing below runs.
 		return fail(ErrTenantUnavailable)
 	}
 
@@ -181,26 +147,17 @@ func (p *product) ensure(ctx context.Context, account authn.AccountID) (personal
 		}
 	}
 
-	// A tenant built under the old model still carries its owner role. The
-	// tenant-admin role and the account's binding are in place above, so removing
-	// the old role finishes the migration.
 	if err := p.manager.DeleteRole(ctx, string(personalID), legacyPersonalOwnerRole); err != nil &&
 		!errors.Is(err, authz.ErrBuiltinRole) {
 		return fail(fmt.Errorf("removing the personal tenant's legacy owner role: %w", err))
 	}
 
 	if createRefused {
-		// Another call won the race the deterministic identifier creates: this
-		// attempt's create was refused, and the row it read back is the answer.
 		p.auditBestEffort(ctx, personalFailedAudit(personalCreateAction, name, actionID))
 	}
 	return personalResult{Tenant: record, Created: created}, nil
 }
 
-// usernameOf reads the account's username, which names its personal tenant's
-// name. An assembly without the account read surface, an account the store no
-// longer holds and an account with no username identifier are all refusals: the
-// name is always the username, never a derived identifier.
 func (p *product) usernameOf(ctx context.Context, account authn.AccountID) (string, error) {
 	if p.accounts == nil {
 		return "", fmt.Errorf("%w: the assembly has no account read surface", ErrUsernameMissing)
@@ -220,7 +177,6 @@ func (p *product) usernameOf(ctx context.Context, account authn.AccountID) (stri
 	return "", fmt.Errorf("%w: account %q", ErrUsernameMissing, account)
 }
 
-// registeredTenant reads the personal tenant's row back.
 func (p *product) registeredTenant(ctx context.Context, id tenant.ID) (tenant.Tenant, error) {
 	if _, enterErr := p.roster.EnterRegistered(ctx, id); enterErr != nil {
 		return tenant.Tenant{}, fmt.Errorf("catching the roster's snapshot up with the personal "+
@@ -237,8 +193,6 @@ func (p *product) registeredTenant(ctx context.Context, id tenant.ID) (tenant.Te
 	return held, nil
 }
 
-// createTenant registers the personal tenant. A row the roster's table already
-// holds is read back instead. The name is the account's username.
 func (p *product) createTenant(ctx context.Context, id tenant.ID, name string) (tenant.Tenant, bool, bool, error) {
 	record := tenant.Tenant{ID: id, Name: name, Status: tenant.StatusActive}
 	err := p.roster.Create(ctx, record)
@@ -255,8 +209,6 @@ func (p *product) createTenant(ctx context.Context, id tenant.ID, name string) (
 	}
 }
 
-// convergeTenantAdminGrants brings the tenant-admin role's grants to the
-// allowlist: a grant outside it is revoked, and a missing one is added.
 func (p *product) convergeTenantAdminGrants(ctx context.Context, tenantID string) error {
 	held, err := p.manager.Grants(ctx, tenantID, personalTenantAdminRole)
 	if err != nil {
@@ -292,10 +244,6 @@ func (p *product) convergeTenantAdminGrants(ctx context.Context, tenantID string
 	return nil
 }
 
-// personalAudit builds the mandatory row of a tenant-side write: the tenant's
-// name is the object, and the detail names the action's two ends and the
-// identifier that links the rows of one attempt. The internal identifier stays
-// out of the row.
 func personalAudit(action string, account authn.AccountID, name, actionID string) audit.Entry {
 	return audit.Entry{
 		Action:  action,
@@ -309,7 +257,6 @@ func personalAudit(action string, account authn.AccountID, name, actionID string
 	}
 }
 
-// personalFailedAudit builds the row that closes a failed attempt.
 func personalFailedAudit(action, name, actionID string) audit.Entry {
 	return audit.Entry{
 		Action:  action,
@@ -319,6 +266,4 @@ func personalFailedAudit(action, name, actionID string) audit.Entry {
 	}
 }
 
-// newPersonalActionID mints the identifier that links the audit rows of one
-// attempt.
 func newPersonalActionID() string { return uuid.NewString() }

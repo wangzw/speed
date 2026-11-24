@@ -14,15 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The cases in this file are about GORM's association mode on scoped models.
-// It writes the keys of the records it is given into a statement's conditions,
-// and a record addressed by the rest of its key leaves the tenant half of it to
-// the filter, as a write addressed by a struct's key does. A many-to-many
-// association goes through a join table, which is scoped by the tenant the
-// scoped models it joins put into a link, and refused where no one column
-// carries it.
-
-// assocContact is a scoped model on the other side of most associations.
 type assocContact struct {
 	tenant.Model
 	ID   string `gorm:"column:id;primaryKey"`
@@ -31,15 +22,12 @@ type assocContact struct {
 
 func (assocContact) TableName() string { return "assoc_contacts" }
 
-// assocTag is a global model on the other side of an association.
 type assocTag struct {
 	ID string `gorm:"column:id;primaryKey"`
 }
 
 func (assocTag) TableName() string { return "assoc_tags" }
 
-// assocNote is a scoped model a deal has many of, by a foreign key that is the
-// deal's whole key, and that belongs to its deal by that key.
 type assocNote struct {
 	tenant.Model
 	ID     string     `gorm:"column:id;primaryKey"`
@@ -49,7 +37,6 @@ type assocNote struct {
 
 func (assocNote) TableName() string { return "assoc_notes" }
 
-// assocDeal is a scoped model declaring an association of each shape.
 type assocDeal struct {
 	tenant.Model
 	ID string `gorm:"column:id;primaryKey"`
@@ -70,8 +57,6 @@ type assocDeal struct {
 
 func (assocDeal) TableName() string { return "assoc_deals" }
 
-// assocLink is a join model embedding the convention, on the column both keys
-// put their tenant on.
 type assocLink struct {
 	tenant.Model
 	DealID    string `gorm:"column:deal_id;primaryKey"`
@@ -80,8 +65,6 @@ type assocLink struct {
 
 func (assocLink) TableName() string { return "assoc_linked" }
 
-// assocBareLink is a join model of the host's that does not embed the
-// convention, with a plain field on the column both keys put their tenant on.
 type assocBareLink struct {
 	TenantID  string `gorm:"column:tenant_id;primaryKey"`
 	DealID    string `gorm:"column:deal_id;primaryKey"`
@@ -90,8 +73,6 @@ type assocBareLink struct {
 
 func (assocBareLink) TableName() string { return "assoc_bare" }
 
-// assocStampedLink is a join model embedding the convention for an
-// association joining both of its scoped models by the rest of their keys.
 type assocStampedLink struct {
 	tenant.Model
 	DealID    string `gorm:"column:deal_id;primaryKey"`
@@ -100,8 +81,6 @@ type assocStampedLink struct {
 
 func (assocStampedLink) TableName() string { return "assoc_stamped" }
 
-// assocMisplacedLink is a join model embedding the convention on a column
-// other than the one both keys put their tenant on.
 type assocMisplacedLink struct {
 	Link      tenant.Model `gorm:"embedded;embeddedPrefix:link_"`
 	TenantID  string       `gorm:"column:tenant_id;primaryKey"`
@@ -111,43 +90,25 @@ type assocMisplacedLink struct {
 
 func (assocMisplacedLink) TableName() string { return "assoc_misplaced" }
 
-// byName is how the read GORM's association mode makes of a many-to-many
-// association — Find and Count, which join the join table into a read of the
-// other side by its table name — is to be judged.
 type byName int
 
 const (
-	// joinedInTenant is a read held to the context's tenant on the column
-	// the joined table carries tenants on.
 	joinedInTenant byName = iota
-	// joinRefused is a read refused whatever its context.
 	joinRefused
 )
 
-// assocShape is one way of declaring a many-to-many association between a
-// scoped model and another, with the join table it goes through.
 type assocShape struct {
-	name  string
-	field string
-	// join is the join model SetupJoinTable names, nil where GORM builds it.
-	join  any
-	table string
-	// columns are the join table's columns.
-	columns string
-	// tenant and target read one link back: the tenant it belongs to, and the
-	// row it names beside the deal.
+	name           string
+	field          string
+	join           any
+	table          string
+	columns        string
 	tenant, target string
-	// seed writes acme's twin naming a and globex's twin naming b.
-	seed   string
-	expect recognition
-	byName byName
-	// global marks an association whose other side is the global model.
-	global bool
-	// theirs is what a read across tenants of globex's association returns,
-	// when it is not globex's b: a link naming the other side by the rest of
-	// its key names that row in every tenant holding the key, and a read that
-	// crosses tenants reaches each of them.
-	theirs string
+	seed           string
+	expect         recognition
+	byName         byName
+	global         bool
+	theirs         string
 }
 
 var assocShapes = []assocShape{
@@ -222,14 +183,8 @@ var assocShapes = []assocShape{
 	},
 }
 
-// Every shape of a many-to-many association is recognised the same way on
-// both dialects. Through a join table judged scoped, each statement of the
-// association mode stays in the context's tenant with the owner and the
-// records given addressed by the rest of their keys — the reads, the
-// additions, the removals, the replacement and the preload — a link naming
-// another tenant's key is refused, and every statement is refused with no
-// tenant. Through one no one tenant column can be taken from, every statement
-// through the join table is refused whatever the context.
+// TestEveryAssociationShapeIsRecognised checks that every many-to-many shape is
+// either held to the context's tenant or refused, the same way on both dialects.
 func TestEveryAssociationShapeIsRecognised(t *testing.T) {
 	for _, d := range shapeDialects {
 		t.Run(d.name, func(t *testing.T) {
@@ -250,21 +205,14 @@ func TestEveryAssociationShapeIsRecognised(t *testing.T) {
 	}
 }
 
-// keyedDeal is the owner of every association, addressed by the rest of its
-// key.
 func keyedDeal() *assocDeal { return &assocDeal{ID: "twin"} }
 
-// dealOf is the owner, naming its tenant.
 func dealOf(owner string) *assocDeal {
 	return &assocDeal{Model: tenant.Model{TenantID: tenant.ID(owner)}, ID: "twin"}
 }
 
-// keyedTarget is a record of the association's other side, addressed by the
-// rest of its key.
 func keyedTarget(s assocShape, id string) any { return targetOf(s, id, "") }
 
-// targetOf is a record of the association's other side naming its tenant, or
-// leaving it unwritten when owner is empty.
 func targetOf(s assocShape, id, owner string) any {
 	if s.global {
 		return &assocTag{ID: id}
@@ -272,7 +220,6 @@ func targetOf(s assocShape, id, owner string) any {
 	return &assocContact{Model: tenant.Model{TenantID: tenant.ID(owner)}, ID: id}
 }
 
-// targets is a pointer to an empty slice of the association's other side.
 func targets(s assocShape) any {
 	if s.global {
 		return &[]assocTag{}
@@ -280,8 +227,6 @@ func targets(s assocShape) any {
 	return &[]assocContact{}
 }
 
-// namedTargets lists the records a read of the association returned, in order,
-// each as its identifier and, on a scoped side, its tenant.
 func namedTargets(out any) string {
 	var ids []string
 	switch v := out.(type) {
@@ -300,9 +245,6 @@ func namedTargets(out any) string {
 	return strings.Join(ids, ",")
 }
 
-// associationStatements runs each statement of the association mode once
-// against a fresh association on the owner, with records of the other side
-// naming owner as their tenant, and returns what each gave.
 func associationStatements(db *gorm.DB, s assocShape, owner func() *assocDeal, tenantOf string,
 	reads bool,
 ) map[string]error {
@@ -430,10 +372,6 @@ func requireRefusedAssociation(t *testing.T, handle *gorm.DB, s assocShape) {
 	requireLinks(t, handle, s, "acme:a globex:b")
 }
 
-// createAssociationSides creates the tables on either side of the
-// associations and writes two tenants' rows into them, past the filter: a deal
-// named twin in each, contacts a, b and c in acme and a and b in globex, and
-// the global tags a, b and c.
 func createAssociationSides(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	for _, stmt := range []string{
@@ -456,8 +394,6 @@ func createAssociationSides(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// createJoinTable creates the shape's join table, names its join model when it
-// has one, and writes one link for each tenant into it, past the filter.
 func createJoinTable(t *testing.T, handle *gorm.DB, s assocShape) {
 	t.Helper()
 	if err := handle.Exec(fmt.Sprintf("CREATE TABLE %s (%s)", s.table, s.columns)).Error; err != nil {
@@ -473,7 +409,6 @@ func createJoinTable(t *testing.T, handle *gorm.DB, s assocShape) {
 	}
 }
 
-// requireLinks asserts the twin's links, each written as tenant:target.
 func requireLinks(t *testing.T, handle *gorm.DB, s assocShape, want string) {
 	t.Helper()
 	var rows []struct {
@@ -497,10 +432,8 @@ func requireLinks(t *testing.T, handle *gorm.DB, s assocShape, want string) {
 	}
 }
 
-// A deletion of links whose owner and records are loaded runs: GORM writes its
-// conditions as a WHERE of their own inside the statement's, and the tenant
-// condition put beside them keeps that WHERE a group of conditions rather than
-// a clause with its keyword.
+// TestALinkDeletionOfLoadedRecordsRuns checks that deleting links with the owner
+// and records loaded runs.
 func TestALinkDeletionOfLoadedRecordsRuns(t *testing.T) {
 	for _, d := range shapeDialects {
 		t.Run(d.name, func(t *testing.T) {
@@ -518,11 +451,8 @@ func TestALinkDeletionOfLoadedRecordsRuns(t *testing.T) {
 	}
 }
 
-// A replacement keeps the links to the records it is given and removes the
-// rest, and GORM writes the keys of the kept records inside a NOT. Where the
-// records are not saved first — their upsert omitted — nothing fills their
-// tenant half before GORM reads it, and the filter fills it inside the NOT:
-// the link to the record kept stays, and only the others go.
+// TestAReplacementKeepsTheRecordsItIsGivenInTheirTenant checks that a replacement
+// keeps the links to the given records and removes the rest, within the tenant.
 func TestAReplacementKeepsTheRecordsItIsGivenInTheirTenant(t *testing.T) {
 	for _, d := range shapeDialects {
 		t.Run(d.name, func(t *testing.T) {
@@ -544,12 +474,9 @@ func TestAReplacementKeepsTheRecordsItIsGivenInTheirTenant(t *testing.T) {
 	}
 }
 
-// A deal has many notes by its whole key, and each note belongs to its deal by
-// it. The association mode reads and adds notes of a deal addressed by the rest
-// of its key within the context's tenant, and finds a note's deal the same way.
-// Taking a note off its deal writes a null into each column of the foreign key,
-// the tenant column among them, and a write emptying the tenant column is
-// refused; the unscoped removal, which deletes the note, stays in the tenant.
+// TestAnAssociationByTheWholeKeyStaysInItsTenant checks that has-many and
+// belongs-to associations keyed by the whole key stay in the context's tenant, and
+// that emptying the tenant column is refused.
 func TestAnAssociationByTheWholeKeyStaysInItsTenant(t *testing.T) {
 	for _, d := range shapeDialects {
 		t.Run(d.name, func(t *testing.T) {
@@ -596,7 +523,6 @@ func TestAnAssociationByTheWholeKeyStaysInItsTenant(t *testing.T) {
 	}
 }
 
-// requireNotes asserts the notes, each written as id=tenant:deal.
 func requireNotes(t *testing.T, handle *gorm.DB, want string) {
 	t.Helper()
 	var rows []struct {
@@ -625,9 +551,6 @@ func requireNotes(t *testing.T, handle *gorm.DB, want string) {
 	}
 }
 
-// assocLooseDeal is a scoped model with a many-to-many association to a global
-// model that joins the deal by the rest of its key, through a join table that
-// carries no tenant.
 type assocLooseDeal struct {
 	tenant.Model
 	ID   string     `gorm:"column:id;primaryKey"`
@@ -636,9 +559,6 @@ type assocLooseDeal struct {
 
 func (assocLooseDeal) TableName() string { return "assoc_deals" }
 
-// assocTextDeal is a scoped model whose tenant column a string field of its own
-// takes over, with a many-to-many association to a global model by its whole
-// key.
 type assocTextDeal struct {
 	tenant.Model
 	TenantID string     `gorm:"column:tenant_id;primaryKey"`
@@ -648,15 +568,9 @@ type assocTextDeal struct {
 
 func (assocTextDeal) TableName() string { return "assoc_deals" }
 
-// GORM's association mode reads a many-to-many association as a read of the
-// other side with the join table joined in by name, and nothing of the owner
-// reaches that read: where the other side is global, the tenant half of the
-// owner's key, recognised by its type, is all that could hold it to a tenant.
-// A scoped model declaring such an association without that half — joining by
-// the rest of its key, or through a tenant field that is not an identifier —
-// is refused on every statement through it, under any context, and nothing is
-// written. The read itself, on an owner no statement goes through, is the
-// design's non-guarantee.
+// TestAnAssociationWhoseReadCannotBeHeldToATenantRefusesItsOwner checks that a
+// scoped model declaring an association whose read cannot be held to a tenant is
+// refused on every statement.
 func TestAnAssociationWhoseReadCannotBeHeldToATenantRefusesItsOwner(t *testing.T) {
 	for _, d := range shapeDialects {
 		t.Run(d.name, func(t *testing.T) {
@@ -734,17 +648,9 @@ func TestAnAssociationWhoseReadCannotBeHeldToATenantRefusesItsOwner(t *testing.T
 	}
 }
 
-// The read GORM's association mode makes of such an association's other side
-// carries nothing of the owner: the join table is joined into it by its table
-// name, the owner's key is written into the ON, and neither the owner's model
-// nor its schema appears in the statement. Nothing in that read holds it to a
-// tenant, which is why the design writes it as a non-guarantee; the case pins
-// what that statement says. On the declaration joining by the rest of its key,
-// the join table carries no tenant and the read reaches the links of every
-// tenant holding that key, under any context. On the declaration whose tenant
-// field is a string, the value that field holds decides which tenant's links
-// are read. A build that closes the read changes this case and the
-// non-guarantee together.
+// TestAnAssociationReadWithNoOwnerInTheStatementStaysGlobal pins that the read of
+// an association's other side with no owner in the statement is not held to a
+// tenant; closing that read changes this case.
 func TestAnAssociationReadWithNoOwnerInTheStatementStaysGlobal(t *testing.T) {
 	for _, d := range shapeDialects {
 		t.Run(d.name, func(t *testing.T) {

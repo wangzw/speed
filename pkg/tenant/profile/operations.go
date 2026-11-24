@@ -7,27 +7,17 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The fragment's info section: the title this module's fragment carries and the
-// version of the fragment's shape.
 const (
 	fragmentTitle   = "tenant.profile"
 	fragmentVersion = "1.0.0"
 )
 
-// pathProfileFragment is the route as the fragment writes it: relative to the
-// tenants-scope API root, so the absolute path is
-// /api/v1/tenants/{tenant}/profile. The mounting resolves the same declaration,
-// so the path is written once.
 const pathProfileFragment = "/:tenant/profile"
 
-// profileInput is the request of the read: the tenant named in the path.
 type profileInput struct {
 	Tenant string `path:"tenant" description:"The tenant's name the organization profile belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; a name no tenant carries is a 404."`
 }
 
-// profileWriteInput is the request of the write: the tenant named in the path
-// and the four descriptive fields in the body, each of which must be present. A
-// field the body carries empty clears the stored value.
 type profileWriteInput struct {
 	Tenant string `path:"tenant" description:"The tenant's name the organization profile belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; a name no tenant carries is a 404."`
 
@@ -37,22 +27,15 @@ type profileWriteInput struct {
 	Website      string `json:"website" required:"true" description:"The organization's absolute http or https address, at most 2048 bytes, with a host and no userinfo. Empty clears it."`
 }
 
-// profileWriteFields are the body members a write must carry. The declaration
-// marks them required; the entry point's binding enforces body presence and not
-// member presence, so the prescreen holds the members. The names are the JSON
-// names, the same snake_case the platform registration body uses.
+// The entry point's binding checks body presence, not member presence, so the prescreen holds these members.
 var profileWriteFields = []string{"display_name", "description", "contact_email", "website"}
 
-// profileBody is the 200 answer of a read and of a write: the profile view.
 type profileBody = struct {
 	_ struct{} `description:"The organization profile of one tenant."`
 
 	Profile TenantProfileView `json:"profile" required:"true" description:"The tenant's organization profile, with its name, kind, owner account and state."`
 }
 
-// getOperation declares GET /:tenant/profile: the organization profile of one
-// tenant. Its handler builds the answer because an unknown tenant is a bare
-// 404, which the problem-document writer cannot produce.
 var getOperation = speedhttp.NewReplyOperation[profileInput](
 	"tenant.profile.get",
 	http.MethodGet,
@@ -81,10 +64,6 @@ var getOperation = speedhttp.NewReplyOperation[profileInput](
 	},
 )
 
-// setOperation declares PATCH /:tenant/profile: it writes one tenant's
-// organization profile and nothing else. Its handler builds the answer because
-// an unknown tenant is a bare 404 and a refusal carries this surface's problem
-// type.
 var setOperation = speedhttp.NewReplyOperation[profileWriteInput](
 	"tenant.profile.update",
 	http.MethodPatch,
@@ -123,8 +102,6 @@ var setOperation = speedhttp.NewReplyOperation[profileWriteInput](
 	},
 )
 
-// operations is this module's declaration of the API it serves. The fragment is
-// generated from it; the routes are mounted from the same declarations.
 var operations = speedhttp.Operations{
 	getOperation,
 	setOperation,

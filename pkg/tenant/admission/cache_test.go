@@ -14,10 +14,7 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The cases here hold what the layer remembers: which reads a request skips, for
-// how long, that an error is never remembered, and that an event only shortens
-// the time.
-
+// TestAMembershipIsRememberedForTheLifetimeAndNotLonger checks that a membership answer is reused within the lifetime and read again after it.
 func TestAMembershipIsRememberedForTheLifetimeAndNotLonger(t *testing.T) {
 	r := newRig(t)
 	for i := 0; i < 3; i++ {
@@ -40,6 +37,7 @@ func TestAMembershipIsRememberedForTheLifetimeAndNotLonger(t *testing.T) {
 	}
 }
 
+// TestANonMembershipIsRememberedToo checks that a non-membership answer is remembered like a membership.
 func TestANonMembershipIsRememberedToo(t *testing.T) {
 	r := newRig(t)
 	r.serve(r.as(acme, authntest.WithAccount(bob)))
@@ -56,6 +54,7 @@ func TestANonMembershipIsRememberedToo(t *testing.T) {
 	}
 }
 
+// TestAnAnswerIsRememberedPerAccountAndTenant checks that remembered answers are keyed by account and tenant.
 func TestAnAnswerIsRememberedPerAccountAndTenant(t *testing.T) {
 	r := newRig(t)
 	r.members.add(alice, globex)
@@ -68,6 +67,7 @@ func TestAnAnswerIsRememberedPerAccountAndTenant(t *testing.T) {
 	}
 }
 
+// TestAnImpersonationIsKeyedByTheImpersonatedAccount checks that an impersonation is cached under the impersonated account's key.
 func TestAnImpersonationIsKeyedByTheImpersonatedAccount(t *testing.T) {
 	r := newRig(t)
 	r.members.add(bob, acme)
@@ -78,13 +78,13 @@ func TestAnImpersonationIsKeyedByTheImpersonatedAccount(t *testing.T) {
 	if n, _ := r.members.reads(); n != 1 {
 		t.Fatalf("the impersonation of alice read the membership again (%d reads): it is alice's answer", n)
 	}
-	// Bob's own request is bob's answer, a different key.
 	r.serve(r.as(acme, authntest.WithAccount(bob)))
 	if n, _ := r.members.reads(); n != 2 {
 		t.Fatalf("bob's own request did not read his membership (%d reads)", n)
 	}
 }
 
+// TestAnErrorIsNeverRemembered checks that a failed membership read is not remembered.
 func TestAnErrorIsNeverRemembered(t *testing.T) {
 	r := newRig(t)
 	r.members.fail(errBoom)
@@ -100,6 +100,7 @@ func TestAnErrorIsNeverRemembered(t *testing.T) {
 	}
 }
 
+// TestACachedMemberIsAdmittedThroughAnOutageUntilTheLifetimeEnds checks that a cached member is still admitted during an outage of the memberships until the lifetime ends.
 func TestACachedMemberIsAdmittedThroughAnOutageUntilTheLifetimeEnds(t *testing.T) {
 	r := newRig(t)
 	r.serve(r.as(acme))
@@ -113,6 +114,7 @@ func TestACachedMemberIsAdmittedThroughAnOutageUntilTheLifetimeEnds(t *testing.T
 	}
 }
 
+// TestAZeroLifetimeSwitchesTheMemoryOff checks that a zero lifetime switches the memory off.
 func TestAZeroLifetimeSwitchesTheMemoryOff(t *testing.T) {
 	r := newRig(t)
 	r.withSettings().set(settings.Global(), checkTTLKey, time.Duration(0))
@@ -130,6 +132,7 @@ func TestAZeroLifetimeSwitchesTheMemoryOff(t *testing.T) {
 	}
 }
 
+// TestTheLifetimeIsReadOnEveryRequest checks that the lifetime is read on every request, so shortening it applies to entries already held.
 func TestTheLifetimeIsReadOnEveryRequest(t *testing.T) {
 	r := newRig(t)
 	store := r.withSettings()
@@ -140,7 +143,6 @@ func TestTheLifetimeIsReadOnEveryRequest(t *testing.T) {
 	if n, _ := r.members.reads(); n != 1 {
 		t.Fatalf("under a 10s lifetime a 6s-old answer was read again (%d reads)", n)
 	}
-	// Shortening the setting applies to the entry already held.
 	store.set(settings.Global(), checkTTLKey, 3*time.Second)
 	r.serve(r.as(acme))
 	if n, _ := r.members.reads(); n != 2 {
@@ -148,6 +150,7 @@ func TestTheLifetimeIsReadOnEveryRequest(t *testing.T) {
 	}
 }
 
+// TestALifetimeTheCodeCannotActOnIsTheDefaultAndIsReported checks that an unreadable or out-of-domain lifetime falls to the default and is reported.
 func TestALifetimeTheCodeCannotActOnIsTheDefaultAndIsReported(t *testing.T) {
 	for name, apply := range map[string]func(s *settingsStub){
 		"unreadable":      func(s *settingsStub) { s.failKey(checkTTLKey, errBoom) },
@@ -176,6 +179,7 @@ func TestALifetimeTheCodeCannotActOnIsTheDefaultAndIsReported(t *testing.T) {
 	}
 }
 
+// TestTheLifetimeFaultIsReportedAgainOnceItHasBeenCleared checks that a lifetime fault is reported again once it has been cleared.
 func TestTheLifetimeFaultIsReportedAgainOnceItHasBeenCleared(t *testing.T) {
 	r := newRig(t)
 	store := r.withSettings()
@@ -190,6 +194,7 @@ func TestTheLifetimeFaultIsReportedAgainOnceItHasBeenCleared(t *testing.T) {
 	}
 }
 
+// TestThePermissionIsRememberedAndAnErrorIsNot checks that a permission answer, a refusal included, is remembered and an error is not.
 func TestThePermissionIsRememberedAndAnErrorIsNot(t *testing.T) {
 	r := newRig(t)
 	d := r.withDecider(true)
@@ -204,8 +209,6 @@ func TestThePermissionIsRememberedAndAnErrorIsNot(t *testing.T) {
 	if got := len(d.questions()); got != 2 {
 		t.Fatalf("the decider was asked %d times, want 2: the failure and one answer, then the memory", got)
 	}
-	// A refusal is remembered as well, so a decider that changes its mind is
-	// heard when the lifetime ends and not before.
 	d.mu.Lock()
 	d.allow = false
 	d.mu.Unlock()
@@ -218,6 +221,7 @@ func TestThePermissionIsRememberedAndAnErrorIsNot(t *testing.T) {
 	}
 }
 
+// TestTheSSOExemptionIsRemembered checks that the SSO exemption answer is remembered.
 func TestTheSSOExemptionIsRemembered(t *testing.T) {
 	r := newRig(t)
 	r.withProviders()
@@ -231,7 +235,6 @@ func TestTheSSOExemptionIsRemembered(t *testing.T) {
 	}
 }
 
-// membershipChanged is an event of the kind the account module publishes.
 func membershipChanged(account, tenantID string) event.Event {
 	return event.Event{
 		ID:       "e-" + account + "-" + tenantID,
@@ -241,6 +244,7 @@ func membershipChanged(account, tenantID string) event.Event {
 	}
 }
 
+// TestAMembershipEventDropsThatAccountInThatTenantAndNothingElse checks that a membership event drops that account's entries in that tenant and nothing else.
 func TestAMembershipEventDropsThatAccountInThatTenantAndNothingElse(t *testing.T) {
 	r := newRig(t)
 	r.members.add(alice, globex)
@@ -268,6 +272,7 @@ func TestAMembershipEventDropsThatAccountInThatTenantAndNothingElse(t *testing.T
 	}
 }
 
+// TestAMembershipEventEndsAnAdmissionAtOnce checks that a membership event ends a remembered admission at once.
 func TestAMembershipEventEndsAnAdmissionAtOnce(t *testing.T) {
 	r := newRig(t)
 	if rp := r.serve(r.as(acme)); !rp.reached() {
@@ -283,6 +288,7 @@ func TestAMembershipEventEndsAnAdmissionAtOnce(t *testing.T) {
 	notFound(t, "the removed member after the event", r.serve(r.as(acme)))
 }
 
+// TestAMembershipEventDropsEveryKindOfEntry checks that a membership event drops every kind of cache entry.
 func TestAMembershipEventDropsEveryKindOfEntry(t *testing.T) {
 	r := newRig(t)
 	r.withProviders()
@@ -304,6 +310,7 @@ func TestAMembershipEventDropsEveryKindOfEntry(t *testing.T) {
 	_ = d
 }
 
+// TestAMembershipEventIsIdempotent checks that handling a membership event again, or for an account with no entries, changes nothing.
 func TestAMembershipEventIsIdempotent(t *testing.T) {
 	r := newRig(t)
 	r.serve(r.as(acme))
@@ -315,12 +322,12 @@ func TestAMembershipEventIsIdempotent(t *testing.T) {
 	if rp := r.serve(r.as(acme)); !rp.reached() {
 		t.Fatalf("answered %d after repeated events, want it admitted: the read is of the table", rp.status)
 	}
-	// An event about an account nothing is remembered for is no change.
 	if err := r.l.onMembershipChanged(t.Context(), membershipChanged("nobody", "nowhere")); err != nil {
 		t.Fatal(err)
 	}
 }
 
+// TestAnEventThatCannotBeReadDownToAKeyDropsEverything checks that an event that cannot be read down to a key drops every entry.
 func TestAnEventThatCannotBeReadDownToAKeyDropsEverything(t *testing.T) {
 	for name, evt := range map[string]event.Event{
 		"no payload":              {Type: authn.EventMembershipChanged, TenantID: acme},
@@ -346,6 +353,7 @@ func TestAnEventThatCannotBeReadDownToAKeyDropsEverything(t *testing.T) {
 	}
 }
 
+// TestAnEventInTheShapeATransportDeliversIsRead checks that an event in the shape a transport delivers is read.
 func TestAnEventInTheShapeATransportDeliversIsRead(t *testing.T) {
 	r := newRig(t)
 	r.serve(r.as(acme))
@@ -361,12 +369,10 @@ func TestAnEventInTheShapeATransportDeliversIsRead(t *testing.T) {
 	}
 }
 
+// TestAnAnswerReadWhileAnEventArrivesIsNotLeftBehind checks that an answer read while a membership event arrives is not stored.
 func TestAnAnswerReadWhileAnEventArrivesIsNotLeftBehind(t *testing.T) {
 	r := newRig(t)
 	r.members.during = func() {
-		// The removal's event reaches this replica while the read it makes
-		// obsolete is in flight, and the read then answers with what it saw
-		// before the removal.
 		_ = r.l.onMembershipChanged(t.Context(), membershipChanged(string(alice), acme))
 	}
 	if rp := r.serve(r.as(acme)); !rp.reached() {
@@ -381,14 +387,10 @@ func TestAnAnswerReadWhileAnEventArrivesIsNotLeftBehind(t *testing.T) {
 	}
 }
 
-// TestAnAnswerReadWhileAClearArrivesIsNotLeftBehind is the clear() side of the
-// property above: clear() empties the tables, and a read that straddled it would
-// still be stored afterwards were it not for the epoch. The event here cannot be
-// read down to a key, which is what takes the clear() path.
+// TestAnAnswerReadWhileAClearArrivesIsNotLeftBehind checks the same for an event that clears the whole cache.
 func TestAnAnswerReadWhileAClearArrivesIsNotLeftBehind(t *testing.T) {
 	r := newRig(t)
 	r.members.during = func() {
-		// An event with no tenant to place it in clears every table.
 		_ = r.l.onMembershipChanged(t.Context(), event.Event{
 			Type:    authn.EventMembershipChanged,
 			Payload: authn.MembershipChanged{AccountID: string(alice)},
@@ -406,6 +408,7 @@ func TestAnAnswerReadWhileAClearArrivesIsNotLeftBehind(t *testing.T) {
 	}
 }
 
+// TestTheSubscriptionIsMadeInInitAndWithoutABusTheLifetimeAlone checks that the subscription is made in Init and that without a bus the lifetime alone bounds staleness.
 func TestTheSubscriptionIsMadeInInitAndWithoutABusTheLifetimeAlone(t *testing.T) {
 	bus := newBusStub()
 	f := fixture{supplied: []supply{withBus(bus)}}
@@ -421,8 +424,6 @@ func TestTheSubscriptionIsMadeInInitAndWithoutABusTheLifetimeAlone(t *testing.T)
 		}
 	}
 
-	// With no bus the lifetime is the only bound: the removal is seen when it
-	// ends and not before.
 	r := newRig(t)
 	r.serve(r.as(acme))
 	r.members.remove(alice, acme)
@@ -434,6 +435,7 @@ func TestTheSubscriptionIsMadeInInitAndWithoutABusTheLifetimeAlone(t *testing.T)
 	notFound(t, "the removed member once the lifetime ended", r.serve(r.as(acme)))
 }
 
+// TestAPublishedEventReachesTheHandlerTheLayerSubscribed checks that a published event reaches the handler the layer subscribed.
 func TestAPublishedEventReachesTheHandlerTheLayerSubscribed(t *testing.T) {
 	bus := newBusStub()
 	var product *layer
@@ -458,8 +460,7 @@ func TestAPublishedEventReachesTheHandlerTheLayerSubscribed(t *testing.T) {
 	}
 }
 
-// The decision cache's own bound.
-
+// TestTheCacheHoldsAtMostItsBound checks that each table holds at most maxEntries entries and expired entries make room.
 func TestTheCacheHoldsAtMostItsBound(t *testing.T) {
 	if maxEntries != 1<<16 {
 		t.Fatalf("the per-kind bound is %d, want 1<<16: it is the documented ceiling on caller-chosen keys", maxEntries)
@@ -479,7 +480,6 @@ func TestTheCacheHoldsAtMostItsBound(t *testing.T) {
 	if _, found := c.get(kindMember, cacheKey{account: authn.AccountID("a" + strconv.Itoa(maxEntries+5)), tenant: acme}, ttl); found {
 		t.Fatal("an entry was added to a full table of current entries")
 	}
-	// Entries that have expired make room.
 	clk.advance(ttl)
 	c.put(kindMember, cacheKey{account: "fresh", tenant: acme}, true, ttl, c.begin())
 	if _, found := c.get(kindMember, cacheKey{account: "fresh", tenant: acme}, ttl); !found {

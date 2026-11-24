@@ -12,13 +12,9 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// ordersDDL is the scoped table these cases write, keyed the way the
-// convention requires.
 const ordersDDL = "CREATE TABLE orders (tenant_id TEXT NOT NULL, id TEXT NOT NULL, " +
 	"note TEXT, PRIMARY KEY (tenant_id, id))"
 
-// openUnfiltered is a handle with the orders table and no filter: what a
-// command that runs a scoped model without the roster module gets.
 func openUnfiltered(t *testing.T) *gorm.DB {
 	t.Helper()
 	handle, err := gorm.Open(sqlitedriver.Open("file:"+t.Name()+"?mode=memory&cache=shared"),
@@ -37,10 +33,10 @@ func openUnfiltered(t *testing.T) *gorm.DB {
 	return handle
 }
 
-// requireUnfilteredInsertRefused is the case itself, on either handle. With no
-// filter installed nothing fills the column, and the NOT NULL a migration
-// declares does not stop an empty string: the identifier refusing to be bound
-// empty is what keeps the row that no tenant owns out of the table.
+// requireUnfilteredInsertRefused: with no filter nothing fills the tenant
+// column, and the NOT NULL a migration declares does not stop an empty string,
+// so the empty identifier refusing to be bound is what keeps an ownerless row
+// out.
 func requireUnfilteredInsertRefused(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	err := handle.WithContext(context.Background()).Create(&order{ID: "x"}).Error
@@ -60,13 +56,15 @@ func requireUnfilteredInsertRefused(t *testing.T, handle *gorm.DB) {
 	}
 }
 
+// TestAnInsertWithNoFilterAndNoTenantFails checks that, with no filter, an
+// insert with no tenant fails where the empty identifier is bound.
 func TestAnInsertWithNoFilterAndNoTenantFails(t *testing.T) {
 	requireUnfilteredInsertRefused(t, openUnfiltered(t))
 }
 
-// A delete addressed by a key whose tenant half is empty names no tenant's
-// row. Unfiltered, it fails where the empty identifier is bound, rather than
-// reaching nothing and reporting success.
+// TestAnUnfilteredDeleteByAKeyWithNoTenantFails checks that, with no filter, a
+// delete by a key with an empty tenant half fails where the identifier is bound
+// instead of reporting success.
 func TestAnUnfilteredDeleteByAKeyWithNoTenantFails(t *testing.T) {
 	handle := openUnfiltered(t)
 	err := handle.Delete(&order{ID: "x"}).Error

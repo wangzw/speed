@@ -15,9 +15,8 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The roster reads and writes its table over a handle the host opened itself
-// with gorm.Open, as it does over the one the database module delivers: its
-// statements take a connection of whatever pool the handle is on.
+// TestTheRosterWorksOverAHandleTheHostOpened checks that the roster reads and
+// writes over a handle the host opened itself with gorm.Open.
 func TestTheRosterWorksOverAHandleTheHostOpened(t *testing.T) {
 	handle, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "host.db")),
 		&gorm.Config{Logger: logger.Discard})
@@ -44,7 +43,8 @@ func TestTheRosterWorksOverAHandleTheHostOpened(t *testing.T) {
 	}
 }
 
-// Blanks around an item and an empty setting read as PostgreSQL reads them.
+// TestASearchPathOfNoNamesReadsAsNone checks that blanks around an item and an
+// empty setting read as PostgreSQL reads them.
 func TestASearchPathOfNoNamesReadsAsNone(t *testing.T) {
 	for setting, want := range map[string][]string{
 		"":            nil,

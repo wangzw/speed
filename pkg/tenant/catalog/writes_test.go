@@ -10,12 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The cases in this file are about what a write puts into the tenant column:
-// every shape GORM accepts an assignment or a row in has to be read the way
-// GORM reads it, so that a value naming another tenant — or no tenant at all —
-// cannot reach the column through a shape the filter does not look at.
-
-// requireNoRow asserts that no row carries this identifier.
 func requireNoRow(t *testing.T, handle *gorm.DB, id string) {
 	t.Helper()
 	if got := tenantsOf(t, handle)[id]; len(got) != 0 {
@@ -23,8 +17,6 @@ func requireNoRow(t *testing.T, handle *gorm.DB, id string) {
 	}
 }
 
-// noPanic runs a statement and turns a panic into a failure of the case, so
-// that one shape panicking does not end the whole binary.
 func noPanic(t *testing.T, run func() error) (err error) {
 	t.Helper()
 	defer func() {
@@ -35,8 +27,9 @@ func noPanic(t *testing.T, run func() error) (err error) {
 	return run()
 }
 
-// The tenant column of an update is found the way GORM finds it, so every key
-// GORM resolves to that column is one the check has to read.
+// TestUpdateNamingAnotherTenantUnderAnyKeyIsRefused checks that an update
+// naming another tenant is refused under every key GORM resolves to the tenant
+// column.
 func TestUpdateNamingAnotherTenantUnderAnyKeyIsRefused(t *testing.T) {
 	for _, key := range []string{"tenant_id", "TenantID", "TenantId", "tenantId", "tenantID", "TENANT_ID", "Tenant_ID"} {
 		t.Run(key, func(t *testing.T) {
@@ -50,9 +43,8 @@ func TestUpdateNamingAnotherTenantUnderAnyKeyIsRefused(t *testing.T) {
 	}
 }
 
-// A value the check cannot read as the context's identifier is not one it can
-// let through: an expression, and the empty value, which leaves the row to no
-// tenant at all.
+// TestUpdateWritingAnythingButTheContextTenantIsRefused checks that an update
+// writing an expression or the empty value to the tenant column is refused.
 func TestUpdateWritingAnythingButTheContextTenantIsRefused(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -75,7 +67,8 @@ func TestUpdateWritingAnythingButTheContextTenantIsRefused(t *testing.T) {
 	}
 }
 
-// Writing the context's own identifier is the same statement said twice.
+// TestUpdateWritingTheContextTenantIsAllowed checks that an update writing the
+// context's own identifier is allowed.
 func TestUpdateWritingTheContextTenantIsAllowed(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -91,7 +84,9 @@ func TestUpdateWritingTheContextTenantIsAllowed(t *testing.T) {
 	requireRowTenant(t, handle, "a", "acme")
 }
 
-// A struct update selecting the tenant column writes it even at its zero value.
+// TestUpdateSelectingAnUnwrittenTenantColumnIsRefused checks that a struct
+// update selecting the tenant column is refused, since it writes the column
+// even at its zero value.
 func TestUpdateSelectingAnUnwrittenTenantColumnIsRefused(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -101,8 +96,7 @@ func TestUpdateSelectingAnUnwrittenTenantColumnIsRefused(t *testing.T) {
 	requireRowTenant(t, handle, "a", "acme")
 }
 
-// A save rewrites every column of the row it is handed, and its key is a
-// condition rather than an assignment, so a row read back and saved is not a
+// TestSavingARowReadBackIsAllowed checks that saving a row read back is not a
 // write naming another tenant.
 func TestSavingARowReadBackIsAllowed(t *testing.T) {
 	handle := open(t)
@@ -120,11 +114,9 @@ func TestSavingARowReadBackIsAllowed(t *testing.T) {
 	requireRowTenant(t, handle, "a", "acme")
 }
 
-// GORM decides before any callback runs that a struct whose key has a zero
-// part is a new row, so a save of a struct whose tenant half is unwritten is an
-// insert, whatever the filter then fills in. Against a row that exists it
-// fails on the key rather than rewriting the row, and it fails loudly: the row
-// is untouched and the caller has an error.
+// TestSavingAStructWithoutItsTenantHalfFailsRatherThanRewrites checks that
+// saving a struct with an unwritten tenant half, which GORM decides is an
+// insert, fails on the key and leaves the row untouched.
 func TestSavingAStructWithoutItsTenantHalfFailsRatherThanRewrites(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -142,9 +134,8 @@ func TestSavingAStructWithoutItsTenantHalfFailsRatherThanRewrites(t *testing.T) 
 	}
 }
 
-// A save meant to rewrite a row by its key writes the tenant half of the key
-// itself, from the context: the value is the context's own, so the filter lets
-// it stand, and GORM, finding no key part zero, updates the row.
+// TestSavingAStructWithTheContextTenantWrittenRewritesTheRow checks that a save
+// writing the context's tenant in the key's tenant half updates the row.
 func TestSavingAStructWithTheContextTenantWrittenRewritesTheRow(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -165,11 +156,9 @@ func TestSavingAStructWithTheContextTenantWrittenRewritesTheRow(t *testing.T) {
 	requireRowsUnmoved(t, handle)
 }
 
-// A write that creates a row or rewrites the one its key names, with the
-// tenant half left to the filter, is an upsert on the key: the filter fills the
-// tenant half before GORM renders the conflict clause, and the composite key
-// puts the conflict on the context tenant's own row — never on another
-// tenant's row that happens to share the rest of the key.
+// TestAnUpsertByKeyRewritesTheContextTenantsOwnRow checks that an upsert with
+// the tenant half left to the filter conflicts on the context tenant's own row,
+// never another tenant's sharing the rest of the key.
 func TestAnUpsertByKeyRewritesTheContextTenantsOwnRow(t *testing.T) {
 	requireUpsertByKey(t, open(t))
 }
@@ -207,7 +196,8 @@ func requireUpsertByKey(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// An explicit SET clause is the assignment list GORM renders as it stands.
+// TestUpdateThroughAnExplicitSetClauseIsChecked checks that an explicit SET
+// clause, which GORM renders as it stands, is judged.
 func TestUpdateThroughAnExplicitSetClauseIsChecked(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -219,8 +209,6 @@ func TestUpdateThroughAnExplicitSetClauseIsChecked(t *testing.T) {
 	requireRowTenant(t, handle, "a", "acme")
 }
 
-// An update carrying its assignments in a type other than the model's is how a
-// PATCH handler usually writes one.
 type orderPatch struct {
 	Note string `gorm:"column:note"`
 }
@@ -230,6 +218,8 @@ type orderPatchWithTenant struct {
 	Note     string `gorm:"column:note"`
 }
 
+// TestUpdatesWithAnotherStructTypeIsScoped checks that an update carrying its
+// assignments in another struct type is scoped to the context's tenant.
 func TestUpdatesWithAnotherStructTypeIsScoped(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -248,6 +238,8 @@ func TestUpdatesWithAnotherStructTypeIsScoped(t *testing.T) {
 	}
 }
 
+// TestUpdatesWithAnotherStructTypeNamingAnotherTenantIsRefused checks that an
+// update from another struct type naming another tenant is refused.
 func TestUpdatesWithAnotherStructTypeNamingAnotherTenantIsRefused(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -259,8 +251,8 @@ func TestUpdatesWithAnotherStructTypeNamingAnotherTenantIsRefused(t *testing.T) 
 	requireRowTenant(t, handle, "a", "acme")
 }
 
-// GORM accepts an insert handed by value, as a slice of values and as a slice
-// of pointers; each one has to land in the context's tenant.
+// TestCreateByValueFillsTheColumn checks that an insert handed by value, as a
+// slice of values or of pointers, lands in the context's tenant.
 func TestCreateByValueFillsTheColumn(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -285,6 +277,8 @@ func TestCreateByValueFillsTheColumn(t *testing.T) {
 	}
 }
 
+// TestCreateByValueNamingAnotherTenantIsRefused checks that an insert by value
+// naming another tenant is refused.
 func TestCreateByValueNamingAnotherTenantIsRefused(t *testing.T) {
 	handle := open(t)
 	err := handle.WithContext(scopedContext("acme")).
@@ -294,8 +288,8 @@ func TestCreateByValueNamingAnotherTenantIsRefused(t *testing.T) {
 	requireNoRow(t, handle, "w1")
 }
 
-// A map insert names its columns by key, and GORM resolves the keys the same
-// way it resolves an update's.
+// TestCreateFromAMapIsFilledAndChecked checks that a map insert is filled and
+// checked, its keys resolved as an update's are.
 func TestCreateFromAMapIsFilledAndChecked(t *testing.T) {
 	handle := open(t)
 	ctx := scopedContext("acme")
@@ -320,6 +314,8 @@ func TestCreateFromAMapIsFilledAndChecked(t *testing.T) {
 	requireRowTenant(t, handle, "m3", "acme")
 }
 
+// TestCreateFromASliceOfMapsIsFilledAndChecked checks that an insert from a
+// slice of maps is filled and checked row by row.
 func TestCreateFromASliceOfMapsIsFilledAndChecked(t *testing.T) {
 	handle := open(t)
 	ctx := scopedContext("acme")
@@ -343,8 +339,9 @@ func TestCreateFromASliceOfMapsIsFilledAndChecked(t *testing.T) {
 	requireNoRow(t, handle, "s4")
 }
 
-// The assignments of an upsert run on the conflicting row, which is the
-// context's own: assigning the tenant column there moves that row away.
+// TestAnUpsertAssigningTheTenantColumnIsRefused checks that an upsert assigning
+// the tenant column is refused, since it would move the context's own
+// conflicting row.
 func TestAnUpsertAssigningTheTenantColumnIsRefused(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -357,9 +354,8 @@ func TestAnUpsertAssigningTheTenantColumnIsRefused(t *testing.T) {
 	requireRowTenant(t, handle, "a", "acme")
 }
 
-// An upsert that reassigns the column from the row it was about to insert is
-// the same statement written twice, and the inserted row carries the context's
-// tenant.
+// TestAnUpsertAssigningTheColumnFromTheInsertedRowIsAllowed checks that an
+// upsert reassigning the column from the row being inserted is allowed.
 func TestAnUpsertAssigningTheColumnFromTheInsertedRowIsAllowed(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -374,12 +370,9 @@ func TestAnUpsertAssigningTheColumnFromTheInsertedRowIsAllowed(t *testing.T) {
 	requireRowTenant(t, handle, "a", "acme")
 }
 
-// Reassigning the tenant column from the inserted row is the same statement
-// written twice only when what it reads there is the tenant column itself, in
-// the form GORM writes it. Another column of that row carries whatever the
-// caller put there, and an expression over the column is a value of its own:
-// either one copied into the tenant column moves the conflicting row — the
-// context tenant's own — into the tenant it names.
+// TestAnUpsertAssigningTheColumnFromAnythingElseOfTheInsertedRowIsRefused
+// checks that an upsert assigning the tenant column from another column or an
+// expression over the inserted row is refused.
 func TestAnUpsertAssigningTheColumnFromAnythingElseOfTheInsertedRowIsRefused(t *testing.T) {
 	requireInsertedRowCopiesRefused(t, open)
 }
@@ -403,9 +396,9 @@ func requireInsertedRowCopiesRefused(t *testing.T, open func(*testing.T) *gorm.D
 	}
 }
 
-// Crossing tenants lifts the condition and the fill, not the column: a row
-// written across tenants with no tenant in its column belongs to none, and no
-// scoped statement can ever reach it again.
+// TestACrossTenantInsertWithAnEmptyTenantColumnIsRefused checks that crossing
+// tenants does not allow a row with an empty tenant column, which no scoped
+// statement could reach again.
 func TestACrossTenantInsertWithAnEmptyTenantColumnIsRefused(t *testing.T) {
 	handle := open(t)
 	for name, write := range map[string]func(*gorm.DB) error{
@@ -429,6 +422,8 @@ func TestACrossTenantInsertWithAnEmptyTenantColumnIsRefused(t *testing.T) {
 	requireRowTenant(t, handle, "y", "globex")
 }
 
+// TestACrossTenantUpdateEmptyingTheTenantColumnIsRefused checks that a
+// cross-tenant update writing an empty tenant column is refused.
 func TestACrossTenantUpdateEmptyingTheTenantColumnIsRefused(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -451,8 +446,6 @@ func TestACrossTenantUpdateEmptyingTheTenantColumnIsRefused(t *testing.T) {
 	requireRowTenant(t, handle, "a", "globex")
 }
 
-// readOnlyTenantOrder binds the tenant column to a field of its own that GORM
-// only reads.
 type readOnlyTenantOrder struct {
 	tenant.Model
 	TenantID *string `gorm:"column:tenant_id;->"`
@@ -460,11 +453,8 @@ type readOnlyTenantOrder struct {
 	Note     string  `gorm:"column:note"`
 }
 
-// An insert GORM builds without the tenant column — its selection or its
-// omission leaves the column out, or the field bound to it is one GORM does not
-// write — puts no tenant on the row whatever the filter fills or the caller
-// wrote: the row belongs to no tenant where the column takes a null, and fails
-// on the constraint where it does not. It is refused, and nothing is written.
+// TestAnInsertLeavingTheTenantColumnOutIsRefused checks that an insert GORM
+// builds without the tenant column is refused and nothing is written.
 func TestAnInsertLeavingTheTenantColumnOutIsRefused(t *testing.T) {
 	handle := open(t)
 	if err := handle.Exec("CREATE TABLE loose (tenant_id TEXT NULL, id TEXT NOT NULL, note TEXT)").Error; err != nil {

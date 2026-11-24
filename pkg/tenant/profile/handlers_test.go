@@ -13,8 +13,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// writeBody is the write request as a case builds it. The names are the JSON
-// names the API declares: snake_case, as every management write body uses.
 type writeBody struct {
 	DisplayName  string `json:"display_name"`
 	Description  string `json:"description"`
@@ -22,7 +20,6 @@ type writeBody struct {
 	Website      string `json:"website"`
 }
 
-// validWrite is a body every field of which is admitted.
 func validWrite() writeBody {
 	return writeBody{
 		DisplayName:  "New Name",
@@ -32,9 +29,7 @@ func validWrite() writeBody {
 	}
 }
 
-// TestTheReadAnswersTheProfileWithoutTheDisableSource holds the read's view:
-// every profile field beside the read-only identity and state, and no disable
-// source, which belongs to the platform management surface.
+// TestTheReadAnswersTheProfileWithoutTheDisableSource checks that the read returns every profile field beside the read-only identity and state, and no disable source.
 func TestTheReadAnswersTheProfileWithoutTheDisableSource(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = sampleTenant()
@@ -80,8 +75,7 @@ func TestTheReadAnswersTheProfileWithoutTheDisableSource(t *testing.T) {
 	}
 }
 
-// TestAnUnknownTenantIsABareNotFound holds the read's answer when the roster
-// does not carry the resolved tenant.
+// TestAnUnknownTenantIsABareNotFound checks that a resolved tenant the roster does not carry is a bare 404.
 func TestAnUnknownTenantIsABareNotFound(t *testing.T) {
 	r := newRig(t)
 	r.catalog.found = false
@@ -95,7 +89,7 @@ func TestAnUnknownTenantIsABareNotFound(t *testing.T) {
 	}
 }
 
-// TestAReadRequiresAnIdentity holds the route reached with no identity.
+// TestAReadRequiresAnIdentity checks that a read with no identity is refused.
 func TestAReadRequiresAnIdentity(t *testing.T) {
 	r := newRig(t)
 
@@ -108,8 +102,7 @@ func TestAReadRequiresAnIdentity(t *testing.T) {
 	}
 }
 
-// TestTheReadNeedsTheReadPermission holds the guard's denial: nothing reaches
-// the roster.
+// TestTheReadNeedsTheReadPermission checks that a denied read permission stops the request before the roster.
 func TestTheReadNeedsTheReadPermission(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
@@ -123,9 +116,7 @@ func TestTheReadNeedsTheReadPermission(t *testing.T) {
 	}
 }
 
-// TestTheProfileViewCarriesTheOwner holds the owner exposure the requirement
-// owner ruled: the profile view names the account that owns the organization,
-// read from the roster row's owner column.
+// TestTheProfileViewCarriesTheOwner checks that the view names the roster row's owner account.
 func TestTheProfileViewCarriesTheOwner(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = sampleTenant()
@@ -143,9 +134,7 @@ func TestTheProfileViewCarriesTheOwner(t *testing.T) {
 	}
 }
 
-// TestAnOrdinaryMemberWithoutTheReadPermissionSeesNoOwner holds the boundary on
-// the owner exposure: a caller without tenant.profile.read is refused with a 403
-// before the roster is read, so the answer names no owner.
+// TestAnOrdinaryMemberWithoutTheReadPermissionSeesNoOwner checks that a caller without tenant.profile.read gets a 403 and sees no owner.
 func TestAnOrdinaryMemberWithoutTheReadPermissionSeesNoOwner(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = sampleTenant()
@@ -165,9 +154,7 @@ func TestAnOrdinaryMemberWithoutTheReadPermissionSeesNoOwner(t *testing.T) {
 	}
 }
 
-// TestTheWriteStoresTheProfileAndAuditsIt holds the write's action, the view it
-// answers, and the order of its two steps: the mandatory audit row lands before
-// the roster write.
+// TestTheWriteStoresTheProfileAndAuditsIt checks the write's action and view, and that the mandatory audit row lands before the roster write.
 func TestTheWriteStoresTheProfileAndAuditsIt(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = sampleTenant()
@@ -261,9 +248,7 @@ func TestTheWriteStoresTheProfileAndAuditsIt(t *testing.T) {
 	}
 }
 
-// TestTheWriteRequiresAProvedEmailAddress holds the registration gate: an
-// account whose self-registration has not proved an email address is refused
-// before the guard, the audit or the roster.
+// TestTheWriteRequiresAProvedEmailAddress checks that an account with an unproved email address is refused before the guard, the audit or the roster.
 func TestTheWriteRequiresAProvedEmailAddress(t *testing.T) {
 	r := newRig(t)
 	r.signup.answer(authn.SignupPending, nil)
@@ -286,8 +271,7 @@ func TestTheWriteRequiresAProvedEmailAddress(t *testing.T) {
 	}
 }
 
-// TestTheWriteRefusesAnEmailStateThatCannotBeRead holds the gate's failure mode:
-// an answer that cannot be read is a 503, never a pass.
+// TestTheWriteRefusesAnEmailStateThatCannotBeRead checks that an unreadable email state is a 503, never a pass.
 func TestTheWriteRefusesAnEmailStateThatCannotBeRead(t *testing.T) {
 	r := newRig(t)
 	r.signup.answer(authn.SignupNone, errors.New("the account store is down"))
@@ -310,8 +294,7 @@ func TestTheWriteRefusesAnEmailStateThatCannotBeRead(t *testing.T) {
 	}
 }
 
-// TestTheWriteNeedsTheWritePermission holds the guard's denial: no audit row and
-// no roster write.
+// TestTheWriteNeedsTheWritePermission checks that a denied write permission writes no audit row and makes no roster write.
 func TestTheWriteNeedsTheWritePermission(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
@@ -330,8 +313,7 @@ func TestTheWriteNeedsTheWritePermission(t *testing.T) {
 	}
 }
 
-// TestTheMandatoryAuditRowComesBeforeTheWrite holds that a mandatory row that
-// cannot land stops the write: no roster call follows it.
+// TestTheMandatoryAuditRowComesBeforeTheWrite checks that a mandatory audit row that cannot land stops the write.
 func TestTheMandatoryAuditRowComesBeforeTheWrite(t *testing.T) {
 	r := newRig(t)
 	r.audit.fail(errors.New("the audit store is down"))
@@ -353,9 +335,7 @@ func TestTheMandatoryAuditRowComesBeforeTheWrite(t *testing.T) {
 	}
 }
 
-// TestAProfileOutsideTheDomainIsRefusedBeforeTheAudit holds the shape check: a
-// profile the root package refuses is a 400 with this surface's problem type,
-// and neither the roster nor the audit is reached.
+// TestAProfileOutsideTheDomainIsRefusedBeforeTheAudit checks that an invalid profile is a 400 and reaches neither the roster nor the audit.
 func TestAProfileOutsideTheDomainIsRefusedBeforeTheAudit(t *testing.T) {
 	cases := map[string]writeBody{
 		"a website with a non-http scheme":  {Website: "ftp://acme.test"},
@@ -381,8 +361,7 @@ func TestAProfileOutsideTheDomainIsRefusedBeforeTheAudit(t *testing.T) {
 	}
 }
 
-// TestABodyThatIsNotOneJSONObjectIsABadRequest holds the prescreen: the entry
-// point's own binding refusal is replaced by this surface's problem type.
+// TestABodyThatIsNotOneJSONObjectIsABadRequest checks that a body that is not one JSON object gets this surface's bad-request problem type.
 func TestABodyThatIsNotOneJSONObjectIsABadRequest(t *testing.T) {
 	r := newRig(t)
 
@@ -398,8 +377,7 @@ func TestABodyThatIsNotOneJSONObjectIsABadRequest(t *testing.T) {
 	}
 }
 
-// TestAWriteMissingAFieldIsABadRequest holds the body's four required members:
-// a write that omits one replaces no field.
+// TestAWriteMissingAFieldIsABadRequest checks that a write omitting one of the four members is a 400 and replaces no field.
 func TestAWriteMissingAFieldIsABadRequest(t *testing.T) {
 	r := newRig(t)
 
@@ -418,8 +396,7 @@ func TestAWriteMissingAFieldIsABadRequest(t *testing.T) {
 	}
 }
 
-// TestTheWriteMapsARosterFailure holds the closed mapping of the failures a
-// roster write returns, and the linked failed row each one closes with.
+// TestTheWriteMapsARosterFailure checks the status each roster failure maps to and the linked failed audit row it closes with.
 func TestTheWriteMapsARosterFailure(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -472,8 +449,7 @@ func TestTheWriteMapsARosterFailure(t *testing.T) {
 	}
 }
 
-// TestTheViewAlwaysCarriesTheCreationTime holds the mandatory column's
-// rendering: every row has one, so the field is present rather than omitted.
+// TestTheViewAlwaysCarriesTheCreationTime checks that the creation time is always present in the view.
 func TestTheViewAlwaysCarriesTheCreationTime(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = sampleTenant()
@@ -491,9 +467,7 @@ func TestTheViewAlwaysCarriesTheCreationTime(t *testing.T) {
 	}
 }
 
-// TestTheReadCarriesTheTenantKind holds the value a client branches on: the
-// kind comes from the host's resolver, not from the name, so a personal
-// tenant whose name is an ordinary username still reads as personal.
+// TestTheReadCarriesTheTenantKind checks that the kind comes from the host's resolver, not the name.
 func TestTheReadCarriesTheTenantKind(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = sampleTenant()

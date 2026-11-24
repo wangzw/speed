@@ -59,8 +59,7 @@ func TestEnsureNamesTheNameAfterTheUsername(t *testing.T) {
 	}
 }
 
-// A username the ensure cannot read is a refusal, not a derived name: the
-// personal tenant's name is always the account's username.
+// A username the ensure cannot read is a refusal, not a derived name.
 func TestEnsureRefusesWhenTheUsernameCannotBeRead(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -137,9 +136,7 @@ func TestEnsureClosesALostRaceWithAFailedAuditRow(t *testing.T) {
 	}
 }
 
-// The kind names a personal tenant's identifier, whoever asks: the platform
-// roster lists every account's spaces, so another account's personal tenant
-// must read personal too.
+// KindOf reads any account's personal tenant identifier as personal, whoever asks.
 func TestKindOfNamesAPersonalTenantsIdentifier(t *testing.T) {
 	p := &product{}
 	for _, id := range []tenant.ID{TenantID(unitAccount), TenantID("another-account")} {
@@ -227,8 +224,7 @@ func TestEnsureCatchesTheRosterSnapshotUp(t *testing.T) {
 	}
 }
 
-// The ensure converges the tenant-admin role's grants to the allowlist: every
-// grant outside it is revoked. The skeleton's allowlist is empty, so all are.
+// The ensure revokes every grant outside the allowlist.
 func TestEnsureConvergesTheTenantAdminsGrantsToTheAllowlist(t *testing.T) {
 	p, _, _, manager, seeder := unitProduct()
 	ctx := context.Background()
@@ -257,8 +253,7 @@ func TestEnsureConvergesTheTenantAdminsGrantsToTheAllowlist(t *testing.T) {
 	}
 }
 
-// A tenant built under the old model is converged to the tenant-admin role:
-// the ensure removes the legacy owner role with its grants and bindings.
+// The ensure removes the legacy owner role with its grants and bindings.
 func TestEnsureMigratesTheLegacyOwnerRole(t *testing.T) {
 	p, roster, memberships, manager, seeder := unitProduct()
 	ctx := context.Background()

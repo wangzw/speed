@@ -10,22 +10,11 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The cases in this file are about deletion: the one write that reaches the
-// terminal state, and what every other write and entry owes a tombstone.
-
-// insertRow is one roster row written as a statement, with its status and its
-// disable source given. It is the route to the table Put and Create do not
-// police — a tombstone, and a row whose source this build does not know, reach
-// the roster only this way.
 func insertRow(id, name string, status tenant.Status, source tenant.DisabledBy) string {
 	return fmt.Sprintf("INSERT INTO tenants (id, name, status, disabled_by) VALUES ('%s', '%s', %d, %d)",
 		id, name, int(status), int(source))
 }
 
-// requireRow asserts that one roster row holds exactly these values, read back
-// from the table rather than from the snapshot. The creation and deletion
-// instants are the roster's to write and vary by call, so they are cleared on
-// both sides; a case that cares about one reads it directly.
 func requireRow(t *testing.T, r *roster, id string, want row) {
 	t.Helper()
 	got, ok := rowOf(t, r, id)
@@ -39,9 +28,8 @@ func requireRow(t *testing.T, r *roster, id string, want row) {
 	}
 }
 
-// Delete writes the terminal state and changes nothing else: the row, the
-// identifier and the name stay, so a scoped table's data still has a tenant to
-// be found under, and a caller reading the roster sees what became of it.
+// TestDeleteWritesTheTerminalStateAndKeepsTheName checks that Delete writes the
+// terminal state and keeps the row, identifier and name.
 func TestDeleteWritesTheTerminalStateAndKeepsTheName(t *testing.T) {
 	r := rosterOver(t, insert("t_acme", "acme"))
 	ctx := context.Background()
@@ -66,9 +54,8 @@ func TestDeleteWritesTheTerminalStateAndKeepsTheName(t *testing.T) {
 	}
 }
 
-// Delete records the instant of the terminal write beside the state, and keeps
-// the identifier, the name and the owner: the tombstone is the row it was,
-// marked rather than emptied.
+// TestDeleteWritesTheDeletionInstantAndKeepsTheOwner checks that Delete records
+// the deletion instant beside the state and keeps identifier, name and owner.
 func TestDeleteWritesTheDeletionInstantAndKeepsTheOwner(t *testing.T) {
 	r := rosterOver(t, "INSERT INTO tenants (id, name, status, owner_account) VALUES "+
 		"('t_acme', 'acme', 1, 'acct-1')")
@@ -107,10 +94,8 @@ func TestDeleteWritesTheDeletionInstantAndKeepsTheOwner(t *testing.T) {
 	}
 }
 
-// Deleting a tombstone again is a no-op that succeeds and writes nothing: a
-// sweep that retries a deletion has no way to know it already landed, and a
-// failure would leave it retrying for good. The reread after a write serves the
-// writer its own write, so a no-op must not pay for one.
+// TestDeleteIsIdempotent checks that deleting a tombstone again succeeds,
+// writes nothing and pays for no reread.
 func TestDeleteIsIdempotent(t *testing.T) {
 	r := rosterOver(t, insertRow("t_acme", "acme", tenant.StatusDeleted, tenant.DisabledByOperator))
 	reads := countFullReads(t, r)
@@ -124,9 +109,8 @@ func TestDeleteIsIdempotent(t *testing.T) {
 	}
 }
 
-// An identifier no row carries, and one outside the domain, are refused and
-// nothing is written: there is no row to write, and a value the domain refuses
-// is no tenant's.
+// TestDeleteRefusesAnIdentifierItCannotPlace checks that an unknown identifier
+// and one outside the domain are refused and nothing is written.
 func TestDeleteRefusesAnIdentifierItCannotPlace(t *testing.T) {
 	r := rosterOver(t, insert("t_acme", "acme"))
 	ctx := context.Background()
@@ -147,11 +131,9 @@ func TestDeleteRefusesAnIdentifierItCannotPlace(t *testing.T) {
 	}
 }
 
-// A tombstone is terminal for every write path but Create, which answers with
-// the registration conflict it answers every existing identifier with. Each
-// call is checked against the table as well as its error: a write that returns
-// ErrTenantDeleted after changing the row is not the refusal the sentinel
-// claims.
+// TestATombstoneRefusesEveryWrite checks that every write path but Create
+// refuses a tombstone with ErrTenantDeleted and leaves the row unchanged, while
+// Create answers the existing-identifier conflict.
 func TestATombstoneRefusesEveryWrite(t *testing.T) {
 	tombstone := row{ID: "t_acme", Name: "acme", Status: int(tenant.StatusDeleted)}
 	for name, write := range map[string]struct {
@@ -193,9 +175,8 @@ func TestATombstoneRefusesEveryWrite(t *testing.T) {
 	}
 }
 
-// A tombstone keeps its identifier and its name: the identifier cannot be
-// registered again, and the name cannot be put on another tenant while the row
-// still carries it.
+// TestATombstoneKeepsItsIdentifierAndName checks that a tombstone's identifier
+// cannot be registered again and its name cannot be put on another tenant.
 func TestATombstoneKeepsItsIdentifierAndName(t *testing.T) {
 	r := rosterOver(t, insertRow("t_acme", "acme", tenant.StatusDeleted, tenant.DisabledByOperator))
 	ctx := context.Background()
@@ -214,9 +195,8 @@ func TestATombstoneKeepsItsIdentifierAndName(t *testing.T) {
 	}
 }
 
-// A delete that cannot reread the roster afterwards reports the write as
-// applied, as every other writer does: the deletion is durable and this process
-// is the only one that can say its snapshot does not hold it.
+// TestDeleteReportsAWriteThatCouldNotBeReread checks that a delete whose reread
+// fails still reports the write as applied.
 func TestDeleteReportsAWriteThatCouldNotBeReread(t *testing.T) {
 	r := rosterOver(t, insert("acme corp", "acme"), insert("globex", "globex"))
 	err := r.Delete(context.Background(), "globex")
@@ -232,12 +212,9 @@ func TestDeleteReportsAWriteThatCouldNotBeReread(t *testing.T) {
 	}
 }
 
-// Delete writes the status column and nothing else. The disable source is part
-// of "nothing else": a row an account disabled keeps that source through the
-// deletion, read back from the raw column rather than through the normalising
-// accessor. A delete that rewrote the source as the operator's would otherwise
-// be indistinguishable from one that preserved it, because the operator's value
-// is the column's default.
+// TestDeleteKeepsAnAccountsDisableSource checks, on the raw column because the
+// operator's value is the column default, that Delete keeps an account's
+// disable source.
 func TestDeleteKeepsAnAccountsDisableSource(t *testing.T) {
 	r := rosterOver(t, insertRow("t_acme", "acme", tenant.StatusDisabled, tenant.DisabledByAccount))
 

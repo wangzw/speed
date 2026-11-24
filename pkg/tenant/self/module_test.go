@@ -18,8 +18,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// quietLogging delivers a logger that discards every record, so the module's
-// startup diagnostics do not reach the process default logger.
 type quietLogging struct{}
 
 func (quietLogging) Named(string) *slog.Logger { return slog.New(slog.DiscardHandler) }
@@ -30,16 +28,12 @@ type quietRedaction struct{}
 func (quietRedaction) AddKeys(...string)              {}
 func (quietRedaction) AddPattern(string, log.Matcher) {}
 
-// membershipsSeam satisfies the membership read without implementing it: Init
-// resolves it and stores it, and no method is called before a request arrives.
 type membershipsSeam struct{ authn.Memberships }
 
-// catalogSeam satisfies the roster read without implementing it.
 type catalogSeam struct{ tenant.Catalog }
 
-// TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters holds the fragment to
-// the route the module's own Init registers. The two are separately maintained
-// facts, and the fragment is the only source a generated client is built from.
+// TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters checks that the fragment's route
+// is the one Init registers.
 func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 	routecontract.Check(t, routecontract.Case{
 		Module:    Module(),
@@ -54,7 +48,6 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 	})
 }
 
-// recordingGate records every open declaration.
 type recordingGate struct {
 	opened [][2]string
 }
@@ -65,9 +58,6 @@ func (g *recordingGate) Open(method, path string) {
 }
 func (*recordingGate) Covered(string, string) bool { return false }
 
-// recordingAdmission records the routes the module tells the gateway admit an
-// impersonating identity. The other methods are the embedded interface's and
-// are never called by this module.
 type recordingAdmission struct {
 	authn.Gate
 	impersonable [][3]string
@@ -77,11 +67,8 @@ func (a *recordingAdmission) Impersonable(endpoint, method, path string) {
 	a.impersonable = append(a.impersonable, [3]string{endpoint, method, path})
 }
 
-// TestWireRegistersTheRouteImpersonable holds the host's source of tenant names after a
-// full page load: an impersonating identity reaches the caller tenant read,
-// whose answer is narrowed to the grant tenant. Without the registration the
-// gateway refuses the read before the handler and a reloaded tenant area
-// announces no name, so every tenant-scoped read is refused 404.
+// TestWireRegistersTheRouteImpersonable checks that Init registers the route as impersonable
+// on the admission surface.
 func TestWireRegistersTheRouteImpersonable(t *testing.T) {
 	admission := &recordingAdmission{}
 	router := routecontract.NewRouter("account")
@@ -105,10 +92,8 @@ func TestWireRegistersTheRouteImpersonable(t *testing.T) {
 	}
 }
 
-// TestWireDeclaresTheRouteOpen holds the wiring: the module takes the
-// route-declaration surface up in Init and records the route as needing no
-// permission, so the enforcement middleware lets an authenticated request
-// through to the handler.
+// TestWireDeclaresTheRouteOpen checks that Init declares the route open on the route-
+// declaration surface.
 func TestWireDeclaresTheRouteOpen(t *testing.T) {
 	gate := &recordingGate{}
 	router := routecontract.NewRouter("account")
@@ -141,9 +126,6 @@ func TestWireDeclaresTheRouteOpen(t *testing.T) {
 	}
 }
 
-// driveInit brings the module to Init with the given stand-in modules and
-// configuration body, and returns the drive's error. The configuration module
-// and the reader are added here, so each case names only what it varies.
 func driveInit(t *testing.T, body string, modules ...core.Module) error {
 	t.Helper()
 	reader := configtest.Reader(t, body, modules...)
@@ -159,10 +141,8 @@ func driveInit(t *testing.T, body string, modules ...core.Module) error {
 	return reg.Drive(t.Context(), core.Drive{Depth: core.StageInit, Participants: names})
 }
 
-// TestNoEntryPointIsErrNoRouter holds the first start failure: a command that
-// mounts the tenant read and names no entry point has nothing to mount it on,
-// and the failure names this module so the fix -- writing the entry point
-// module's name into the command -- is visible.
+// TestNoEntryPointIsErrNoRouter checks that a command with no entry point fails with
+// tenant.ErrNoRouter naming this module.
 func TestNoEntryPointIsErrNoRouter(t *testing.T) {
 	modules := []core.Module{
 		Module(),
@@ -181,9 +161,8 @@ func TestNoEntryPointIsErrNoRouter(t *testing.T) {
 	}
 }
 
-// TestAnUnknownEndpointIsErrUnknownEndpoint holds the second start failure: a
-// name the entry point does not declare stops the startup naming that endpoint,
-// before any route is registered.
+// TestAnUnknownEndpointIsErrUnknownEndpoint checks that an endpoint the entry point does not
+// declare fails startup with tenant.ErrUnknownEndpoint before any route is registered.
 func TestAnUnknownEndpointIsErrUnknownEndpoint(t *testing.T) {
 	router := routecontract.NewRouter("account")
 	modules := []core.Module{

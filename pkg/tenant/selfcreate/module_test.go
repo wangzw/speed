@@ -17,8 +17,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The stand-in types embed the capability's interface, so a module that only
-// resolves and holds one is satisfied without implementing a method.
 type (
 	catalogStub       struct{ tenant.Catalog }
 	membershipsStub   struct{ authn.Memberships }
@@ -46,7 +44,6 @@ func (f *featureRecorder) Post(module, name string) {
 	f.posts = append(f.posts, [2]string{module, name})
 }
 
-// standIns is every capability this module resolves.
 func standIns(admission *admissionRecorder, board *featureRecorder) []core.Module {
 	modules := []core.Module{
 		routecontract.StandIn("stand-in.catalog", catalogStub{}, (*tenant.Catalog)(nil)),
@@ -67,8 +64,6 @@ func standIns(admission *admissionRecorder, board *featureRecorder) []core.Modul
 	return modules
 }
 
-// drive runs the module to Init with the given configuration document and
-// returns the router and the feature recorder.
 func drive(t *testing.T, document string) (*routecontract.Router, *featureRecorder) {
 	t.Helper()
 	router := routecontract.NewRouter(endpointName)
@@ -92,8 +87,8 @@ func drive(t *testing.T, document string) (*routecontract.Router, *featureRecord
 	return router, board
 }
 
-// The descriptor states the module's name, its conditional feature and the
-// route's endpoint.
+// TestTheDescriptorDeclaresTheConditionalFeature checks the module's name, its conditional
+// feature and the route's endpoint.
 func TestTheDescriptorDeclaresTheConditionalFeature(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "org.create" {
@@ -113,9 +108,8 @@ func TestTheDescriptorDeclaresTheConditionalFeature(t *testing.T) {
 	}
 }
 
-// The settings declaration is platform-only: the schema is not tenant-facing,
-// every item leaves TenantAccess, Control, Danger and Effect at their zero
-// values, and the defaults are the product's two bounds.
+// TestTheSettingsSchemaIsPlatformOnly checks that the settings schema is not tenant-facing,
+// leaves tenant access and control at zero values, and defaults to the two product bounds.
 func TestTheSettingsSchemaIsPlatformOnly(t *testing.T) {
 	schema := settingsSchema()
 	if schema.Namespace != SettingsNamespace || SettingsNamespace != "org.create" {
@@ -148,8 +142,8 @@ func TestTheSettingsSchemaIsPlatformOnly(t *testing.T) {
 	}
 }
 
-// The declared operation is the route the module registers on the account
-// endpoint.
+// TestTheDeclaredOperationIsTheRouteTheModuleRegisters checks that the declared operation is
+// the route registered on the account endpoint.
 func TestTheDeclaredOperationIsTheRouteTheModuleRegisters(t *testing.T) {
 	routecontract.Check(t, routecontract.Case{
 		Module:    Module(),
@@ -159,9 +153,8 @@ func TestTheDeclaredOperationIsTheRouteTheModuleRegisters(t *testing.T) {
 	})
 }
 
-// With the switch on, the route is on the account endpoint, registered
-// impersonable, and the feature is posted. With it off, nothing is mounted and
-// nothing is posted.
+// TestTheSwitchDecidesTheRouteAndTheFeature checks that with the switch on the route is
+// mounted impersonable and the feature is posted, and with it off neither happens.
 func TestTheSwitchDecidesTheRouteAndTheFeature(t *testing.T) {
 	on, board := drive(t, `{"org":{"create":{"enabled":true}}}`)
 	if got := on.Routes(); len(got) != 1 || got[0] != (routecontract.Route{Method: http.MethodPost, Path: RoutePath}) {
@@ -180,15 +173,15 @@ func TestTheSwitchDecidesTheRouteAndTheFeature(t *testing.T) {
 	}
 }
 
-// The fragment's path is the absolute route the module mounts.
+// TestTheRoutePathIsTheAccountEndpointsOrgsPath checks that the fragment's path is the
+// absolute route the module mounts.
 func TestTheRoutePathIsTheAccountEndpointsOrgsPath(t *testing.T) {
 	if RoutePath != "/api/v1/orgs" {
 		t.Errorf("RoutePath = %q, want /api/v1/orgs", RoutePath)
 	}
 }
 
-// The module's route is one exact POST, not a prefix that would take over the
-// personal tenant's path.
+// TestTheOperationIsOneExactPost checks that the route is one exact POST and not a prefix.
 func TestTheOperationIsOneExactPost(t *testing.T) {
 	if len(operations) != 1 {
 		t.Fatalf("the module declares %d operations, want one", len(operations))

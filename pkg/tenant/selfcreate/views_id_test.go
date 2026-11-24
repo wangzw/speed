@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// TestTheCreatedOrganizationCarriesNoIdentifier holds the creation answer to
-// the external name: the generated identifier is internal.
+// TestTheCreatedOrganizationCarriesNoIdentifier checks that the creation answer exposes no
+// generated identifier.
 func TestTheCreatedOrganizationCarriesNoIdentifier(t *testing.T) {
 	encoded, err := json.Marshal(OrganizationCreatedTenant{Name: "acme", Status: "active"})
 	if err != nil {

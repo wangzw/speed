@@ -10,37 +10,23 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The helpers the statement-shape cases share. Each case drives a shape GORM
-// accepts besides the plain Find, Create, Update and Delete that plugin_test.go
-// covers, and names the answer the filter owes it: the rows of the context's
-// tenant, a refusal, or GORM's own answer where the filter has nothing to add.
-
-// handleDialect is one dialect a case that runs on more than one runs on, with
-// how to open the handle it works over.
 type handleDialect struct {
 	name string
 	open func(*testing.T) *gorm.DB
 }
 
-// shapeDialects lists the dialects the cases about the filter's recognition of
-// a model run on, each an empty database with the filter installed. PostgreSQL
-// is appended by the tagged file, which is also where its opener lives: without
-// the tag it is not in the list, and no untagged case names it.
+// PostgreSQL is appended to shapeDialects by the tagged file.
 var shapeDialects = []handleDialect{
 	{name: "sqlite", open: openShapesOnSQLite},
 }
 
-// filteredDialects lists the dialects the cases over a handle carrying the
-// orders table with the filter installed run on. PostgreSQL is appended by the
-// tagged file, as above.
+// PostgreSQL is appended to filteredDialects by the tagged file.
 var filteredDialects = []handleDialect{
 	{name: "sqlite", open: open},
 }
 
-// crossContext is a context that crosses tenants on purpose.
 func crossContext() context.Context { return tenant.CrossTenant(context.Background()) }
 
-// tenantsOf reads every row's tenant past the filter, keyed by row identifier.
 func tenantsOf(t *testing.T, handle *gorm.DB) map[string][]string {
 	t.Helper()
 	var rows []struct {
@@ -59,8 +45,6 @@ func tenantsOf(t *testing.T, handle *gorm.DB) map[string][]string {
 	return out
 }
 
-// requireRowTenant asserts that the one row with this identifier belongs to
-// the tenant named.
 func requireRowTenant(t *testing.T, handle *gorm.DB, id, want string) {
 	t.Helper()
 	got := tenantsOf(t, handle)[id]
@@ -69,7 +53,6 @@ func requireRowTenant(t *testing.T, handle *gorm.DB, id, want string) {
 	}
 }
 
-// requireMismatch asserts that a write was refused as naming another tenant.
 func requireMismatch(t *testing.T, err error) {
 	t.Helper()
 	if !errors.Is(err, tenant.ErrExplicitTenantMismatch) {

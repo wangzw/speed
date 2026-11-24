@@ -15,9 +15,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant/pathguard"
 )
 
-// roster is a tenant.Catalog answering the two lookups the guard makes. The rest
-// is refused, so a guard that reaches for another method fails the case instead
-// of silently reading nothing.
 type roster struct {
 	byName map[string]tenant.Tenant
 	byID   map[tenant.ID]tenant.Tenant
@@ -68,16 +65,12 @@ func (*roster) EnterRegistered(context.Context, tenant.ID) (context.Context, err
 	return nil, errUnused
 }
 
-// errUnused is what every roster method the guard does not call answers with.
 var errUnused = errUnusedError{}
 
 type errUnusedError struct{}
 
 func (errUnusedError) Error() string { return "the guard called a roster method it does not use" }
 
-// standardRoster names every tenant so that its name differs from its
-// identifier: the request surface carries the name, and a segment holding the
-// identifier is not a name any tenant is addressed by.
 func standardRoster() *roster {
 	return newRoster(
 		tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive},
@@ -86,13 +79,8 @@ func standardRoster() *roster {
 	)
 }
 
-// wrapFunc is the seam both constructors deliver: a function that wraps one
-// handler.
 type wrapFunc func(gin.HandlerFunc) gin.HandlerFunc
 
-// engine is a router with one tenant-addressed route and one route outside the
-// tenant scope, each wrapped by wrap, and, when resolved is not empty, a layer
-// that binds the tenant a request resolved to, as the resolving layer does.
 func engine(resolved tenant.ID, wrap wrapFunc) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	e := gin.New()
@@ -108,14 +96,10 @@ func engine(resolved tenant.ID, wrap wrapFunc) *gin.Engine {
 	return e
 }
 
-// sharedEngine mounts the whole group behind the shared identity guard the
-// mounter applies to every tenant-scoped group.
 func sharedEngine(resolved tenant.ID, r tenant.Catalog) *gin.Engine {
 	return engine(resolved, pathguard.New(r).Guard)
 }
 
-// tenantAdminEngine mounts a tenant management group behind the stricter guard
-// those modules apply themselves.
 func tenantAdminEngine(resolved tenant.ID, r tenant.Catalog) *gin.Engine {
 	guard := pathguard.NewTenantAdmin(r)
 	return engine(resolved, guard.GuardTenantAdmin)
@@ -127,10 +111,7 @@ func send(e *gin.Engine, path string) *httptest.ResponseRecorder {
 	return w
 }
 
-// TestTheSharedGuardComparesTenantIdentifiers holds the shared rule the mounter
-// applies to every tenant-scoped group: the path segment is resolved through
-// the roster and compared by identifier, so the segment may carry the
-// identifier or the current name, and any other outcome is the bare 404.
+// TestTheSharedGuardComparesTenantIdentifiers checks that the path segment is resolved through the roster and compared by identifier, accepting the identifier or current name and answering a bare 404 otherwise.
 func TestTheSharedGuardComparesTenantIdentifiers(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -158,10 +139,7 @@ func TestTheSharedGuardComparesTenantIdentifiers(t *testing.T) {
 	}
 }
 
-// TestTheSharedGuardDoesNotClaimTheTenantAdminCapability holds the interface
-// split: an assembly that resolves the shared guard cannot type-assert it into
-// the tenant administration capability and apply a guard that omits the
-// platform-domain refusal.
+// TestTheSharedGuardDoesNotClaimTheTenantAdminCapability checks that the shared guard cannot be type-asserted into the tenant administration capability.
 func TestTheSharedGuardDoesNotClaimTheTenantAdminCapability(t *testing.T) {
 	if _, ok := pathguard.New(standardRoster()).(speedhttp.TenantAdminRouteGuard); ok {
 		t.Fatal("the shared guard claims the tenant administration capability, " +
@@ -169,12 +147,8 @@ func TestTheSharedGuardDoesNotClaimTheTenantAdminCapability(t *testing.T) {
 	}
 }
 
-// TestTheSharedGuardAdmitsTheSystemTenant holds the rule the tenant management
-// surfaces add and the shared guard does not: the members, invitations and SSO
-// groups manage the system tenant itself, so a request resolved to the platform
-// domain and addressed by it is legitimate there.
+// TestTheSharedGuardAdmitsTheSystemTenant checks that the shared guard admits a request resolved to and addressed by the platform domain.
 func TestTheSharedGuardAdmitsTheSystemTenant(t *testing.T) {
-	// The route is addressed by the name; the identifier is not a path name.
 	for path, want := range map[string]int{
 		"/tenants/system/members":   nethttp.StatusNotFound,
 		"/tenants/platform/members": nethttp.StatusOK,
@@ -188,10 +162,7 @@ func TestTheSharedGuardAdmitsTheSystemTenant(t *testing.T) {
 	}
 }
 
-// TestTheTenantAdminGuardRefusesTheSystemTenant holds the tenant management
-// surfaces' additional rule: administration acts on a tenant, and the platform
-// domain is not one, so the same request the shared guard admits is refused
-// with the same bare 404, by identifier or by name.
+// TestTheTenantAdminGuardRefusesTheSystemTenant checks that the tenant admin guard answers the bare 404 for the platform domain by identifier or name.
 func TestTheTenantAdminGuardRefusesTheSystemTenant(t *testing.T) {
 	for _, path := range []string{"/tenants/system/members", "/tenants/platform/members"} {
 		t.Run(path, func(t *testing.T) {
@@ -204,9 +175,7 @@ func TestTheTenantAdminGuardRefusesTheSystemTenant(t *testing.T) {
 	}
 }
 
-// TestTheTenantAdminGuardKeepsTheIdentityRule holds that the stricter guard
-// still answers the identity mismatch, and admits a tenant it does administer
-// by identifier or name.
+// TestTheTenantAdminGuardKeepsTheIdentityRule checks that the tenant admin guard still answers a bare 404 on an identity mismatch and admits an administered tenant by identifier or name.
 func TestTheTenantAdminGuardKeepsTheIdentityRule(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -233,10 +202,7 @@ func TestTheTenantAdminGuardKeepsTheIdentityRule(t *testing.T) {
 	}
 }
 
-// TestAnUnresolvedRequestIsRefusedOnATenantAddressedRoute holds the fail-closed
-// side: a tenant-addressed path with no tenant in the request cannot be
-// reconciled, so it is refused like any other mismatch rather than passed on.
-// Both guards answer it the same way.
+// TestAnUnresolvedRequestIsRefusedOnATenantAddressedRoute checks that both guards refuse a tenant-addressed path when the request resolved to no tenant.
 func TestAnUnresolvedRequestIsRefusedOnATenantAddressedRoute(t *testing.T) {
 	for name, e := range map[string]*gin.Engine{
 		"the shared guard":       sharedEngine("", standardRoster()),
@@ -252,9 +218,7 @@ func TestAnUnresolvedRequestIsRefusedOnATenantAddressedRoute(t *testing.T) {
 	}
 }
 
-// TestTheSharedGuardHandsOnTheInternalIdentifier holds the other half of the
-// name boundary: a handler behind the guard binds the tenant's identifier, not
-// the name the request carried.
+// TestTheSharedGuardHandsOnTheInternalIdentifier checks that a handler behind the guard sees the tenant's identifier, not the name the request carried.
 func TestTheSharedGuardHandsOnTheInternalIdentifier(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	e := gin.New()
@@ -276,9 +240,6 @@ func TestTheSharedGuardHandsOnTheInternalIdentifier(t *testing.T) {
 	}
 }
 
-// requireBare404 holds the answer to the shape the resolving layer writes for a
-// tenant it does not serve: the status alone and the default problem document,
-// with no type of the layer's own.
 func requireBare404(t *testing.T, got *httptest.ResponseRecorder) {
 	t.Helper()
 	if ct := got.Header().Get("Content-Type"); ct != "application/problem+json" {

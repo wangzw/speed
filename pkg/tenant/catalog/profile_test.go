@@ -12,13 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The cases in this file are about the organization profile and the creation
-// time: the columns the migration adds, the write paths that carry them, and
-// the read that refuses a row holding a profile this module will not serve.
-
-// profileColumn is one column the profile migration declares, with the shape
-// the migration owes it: whether it is NOT NULL, and the default a row that
-// predates it takes.
 type profileColumn struct {
 	name    string
 	notNull bool
@@ -33,18 +26,16 @@ var profileColumns = []profileColumn{
 	{name: "created_at", notNull: true, def: "CURRENT_TIMESTAMP"},
 }
 
-// TestTheMigrationsDeclareTheOrganizationProfileForBothDialects holds each
-// dialect's migration set to the five columns and their defaults. The DDL is
-// applied to a SQLite table because these columns use no dialect-specific
-// construct beyond the time type, so both files can be exercised without the
-// compose stack.
+// TestTheMigrationsDeclareTheOrganizationProfileForBothDialects checks that
+// each dialect's migration declares the five profile columns with their
+// defaults; both are exercised on SQLite since they use no dialect-specific
+// construct beyond the time type.
 func TestTheMigrationsDeclareTheOrganizationProfileForBothDialects(t *testing.T) {
 	for _, dialect := range []string{"sqlite", "postgres"} {
 		t.Run(dialect, func(t *testing.T) {
 			handle := openHandle(t)
-			// The base table is built from the SQLite set's first two files,
-			// whose statements SQLite accepts; the file under test is the
-			// profile migration of the dialect named, executed as it ships.
+			// The base table is built from the SQLite set's first two files, whose
+			// statements SQLite accepts.
 			for _, name := range []string{"0001_tenants.sql", "0002_tenants_disabled_by.sql"} {
 				ddl, err := fs.ReadFile(migrationsFS, "sqlite/"+name)
 				if err != nil {
@@ -94,9 +85,6 @@ func TestTheMigrationsDeclareTheOrganizationProfileForBothDialects(t *testing.T)
 				}
 			}
 
-			// A row that predates the columns takes their defaults rather than
-			// being rejected: the migration does not backfill and does not make
-			// the profile mandatory.
 			if err := handle.Exec(
 				"INSERT INTO tenants (id, name, status) VALUES ('t_old', 'old', 1)").Error; err != nil {
 				t.Fatalf("writing a row without the profile columns: %v", err)
@@ -106,10 +94,7 @@ func TestTheMigrationsDeclareTheOrganizationProfileForBothDialects(t *testing.T)
 				Description  string
 				ContactEmail string
 				Website      string
-				// The value's driver type differs by dialect: SQLite hands the
-				// TIMESTAMP column back as a time, and the PostgreSQL type name
-				// applied to SQLite as text. The case is about the default being
-				// there, so the value is read as text.
+				// The value's driver type differs by dialect, so it is read as text.
 				CreatedAt sql.NullString
 			}
 			if err := handle.Raw(
@@ -127,8 +112,8 @@ func TestTheMigrationsDeclareTheOrganizationProfileForBothDialects(t *testing.T)
 	}
 }
 
-// TestCreatePersistsTheOrganizationProfile holds the creation path to the
-// profile it was given, in the table and in the writer's snapshot.
+// TestCreatePersistsTheOrganizationProfile checks that Create persists the
+// given profile in the table and in the writer's snapshot.
 func TestCreatePersistsTheOrganizationProfile(t *testing.T) {
 	r := rosterOver(t)
 	profile := tenant.Profile{
@@ -167,10 +152,8 @@ func TestCreatePersistsTheOrganizationProfile(t *testing.T) {
 	}
 }
 
-// TestSetProfileWritesOnlyTheProfileColumns holds SetProfile to the four
-// profile columns: the name, the status, the disable source and the creation
-// time are what other paths own, and a profile update must not write them back
-// from a value it read earlier.
+// TestSetProfileWritesOnlyTheProfileColumns checks that SetProfile writes the
+// four profile columns and nothing else.
 func TestSetProfileWritesOnlyTheProfileColumns(t *testing.T) {
 	r := rosterOver(t, insert("t_acme", "acme"))
 	ctx := context.Background()
@@ -229,8 +212,8 @@ func TestSetProfileWritesOnlyTheProfileColumns(t *testing.T) {
 	}
 }
 
-// TestSetProfileRefusesWhatItCannotWrite holds the edges: an invalid profile,
-// an identifier no row carries, and a tombstone.
+// TestSetProfileRefusesWhatItCannotWrite checks that SetProfile refuses an
+// invalid profile, an unknown identifier and a tombstone.
 func TestSetProfileRefusesWhatItCannotWrite(t *testing.T) {
 	r := rosterOver(t, insert("t_active", "active"),
 		insertRow("t_deleted", "deleted", tenant.StatusDeleted, tenant.DisabledByOperator))
@@ -248,9 +231,8 @@ func TestSetProfileRefusesWhatItCannotWrite(t *testing.T) {
 	}
 }
 
-// TestTheSnapshotCarriesTheOrganizationProfile holds the whole-table read to
-// the profile columns: a row written by another route reaches the snapshot with
-// what the table holds.
+// TestTheSnapshotCarriesTheOrganizationProfile checks that a row written by
+// another route reaches the snapshot with the profile the table holds.
 func TestTheSnapshotCarriesTheOrganizationProfile(t *testing.T) {
 	r := rosterOver(t, "INSERT INTO tenants "+
 		"(id, name, status, display_name, description, contact_email, website) VALUES "+
@@ -280,9 +262,8 @@ func TestTheSnapshotCarriesTheOrganizationProfile(t *testing.T) {
 	}
 }
 
-// TestReadRefusesAnInvalidStoredProfile holds the read to the profile's domain:
-// a table can be written without Create or SetProfile, and what such a row
-// carries is handed to every caller that resolves a tenant.
+// TestReadRefusesAnInvalidStoredProfile checks that a stored row whose profile
+// is outside the domain is refused on read.
 func TestReadRefusesAnInvalidStoredProfile(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -306,10 +287,9 @@ func TestReadRefusesAnInvalidStoredProfile(t *testing.T) {
 	}
 }
 
-// TestCreatedAtIsMandatoryForEveryRow holds the column's NOT NULL shape: a row
-// written around the roster takes the migration's default instant, and a
-// creation writes the moment it happened in UTC. There is no nullable case to
-// fall back to.
+// TestCreatedAtIsMandatoryForEveryRow checks that a row written around the
+// roster takes the migration's default instant and a creation writes the moment
+// in UTC.
 func TestCreatedAtIsMandatoryForEveryRow(t *testing.T) {
 	r := rosterOver(t, insert("t_old", "old"))
 	if err := r.read(context.Background()); err != nil {
@@ -343,8 +323,6 @@ func TestCreatedAtIsMandatoryForEveryRow(t *testing.T) {
 	}
 }
 
-// sameTime reports whether two optional times name the same instant, with both
-// nil counting as the same one.
 func sameTime(a, b *time.Time) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
@@ -352,7 +330,6 @@ func sameTime(a, b *time.Time) bool {
 	return a.Equal(*b)
 }
 
-// readCreatedAt reads one row's creation time straight from the table.
 func readCreatedAt(t *testing.T, r *roster, id string) time.Time {
 	t.Helper()
 	var held []struct{ CreatedAt time.Time }
@@ -365,17 +342,9 @@ func readCreatedAt(t *testing.T, r *roster, id string) time.Time {
 	return held[0].CreatedAt
 }
 
-// TestPutRecordsTheCreationTimeInUTC holds the registration path's time: an
-// insert through Put records the real moment in UTC, as Create does, and a
-// rewrite of the same row leaves that moment alone.
-//
-// The case forces the handle's auto-create clock into a non-UTC zone. A value
-// left to gorm would be taken from that clock and land with the offset; only an
-// explicit UTC value can pass.
-// TestTheSQLiteProfileMigrationCarriesATableHoldingRows holds the migration to
-// the database it actually meets. SQLite refuses an ADD COLUMN whose default is
-// not a constant once the table holds a row, so a deployment upgrading a
-// populated roster is the case that fails, not an empty one.
+// TestTheSQLiteProfileMigrationCarriesATableHoldingRows checks that the profile
+// migration applies to a SQLite table that already holds a row, where ADD
+// COLUMN refuses a non-constant default.
 func TestTheSQLiteProfileMigrationCarriesATableHoldingRows(t *testing.T) {
 	handle := openHandle(t)
 	for _, name := range []string{"0001_tenants.sql", "0002_tenants_disabled_by.sql"} {
@@ -418,6 +387,10 @@ func TestTheSQLiteProfileMigrationCarriesATableHoldingRows(t *testing.T) {
 	}
 }
 
+// TestPutRecordsTheCreationTimeInUTC checks that an insert through Put records
+// the real moment in UTC, as Create does, and a rewrite of the row leaves it
+// alone; the handle's auto-create clock is forced into a non-UTC zone so only
+// an explicit UTC value passes.
 func TestPutRecordsTheCreationTimeInUTC(t *testing.T) {
 	r := rosterOver(t, "")
 	r.handle.NowFunc = func() time.Time {

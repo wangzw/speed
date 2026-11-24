@@ -180,10 +180,8 @@ func TestAccountDeletedIsIdempotentOnATombstone(t *testing.T) {
 	}
 }
 
-// The transaction seam writes the tombstone before the deletion hook runs, so
-// the hook must still remove the memberships the seam could not reach: the rows
-// an administrator added are not the account's own row, which the account
-// transaction erased.
+// The deletion hook removes the memberships of an already-tombstoned tenant,
+// which the seam's transaction cannot reach.
 func TestAccountDeletedClearsTheMembershipsOfATombstonedTenant(t *testing.T) {
 	p, roster, memberships, _, _ := unitProduct()
 	id := TenantID(unitAccount)

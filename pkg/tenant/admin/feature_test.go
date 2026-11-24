@@ -6,8 +6,8 @@ import (
 	"github.com/vislake/speed/pkg/feature"
 )
 
-// TestTheModuleDeclaresTheTenantAdminFeature holds the declaration the frontend
-// gates the roster management surface on: one static Spec with the exact name.
+// TestTheModuleDeclaresTheTenantAdminFeature holds the declaration the frontend gates
+// the roster management surface on: one static Spec with the exact name.
 func TestTheModuleDeclaresTheTenantAdminFeature(t *testing.T) {
 	want := feature.Spec{Name: "tenant.admin"}
 	var got []feature.Spec

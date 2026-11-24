@@ -8,14 +8,10 @@ import (
 	"github.com/vislake/speed/pkg/internal/openapigen"
 )
 
-// fragmentPath is this module's fragment, relative to the package directory
-// `go test` runs in.
 const fragmentPath = "openapi/tenant.selfcreate.json"
 
-// TestTheFragmentIsGeneratedFromTheDeclarations holds the embedded fragment to
-// what the declarations generate.
-//
-// Run with UPDATE_FRAGMENTS=1 to write the generated fragment.
+// TestTheFragmentIsGeneratedFromTheDeclarations checks that the committed fragment matches
+// what the declarations generate; run with UPDATE_FRAGMENTS=1 to regenerate it.
 func TestTheFragmentIsGeneratedFromTheDeclarations(t *testing.T) {
 	generated, err := openapigen.Generate(fragmentTitle, fragmentVersion, operations)
 	if err != nil {

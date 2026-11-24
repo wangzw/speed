@@ -14,15 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The cases in this file are about a condition the caller writes on the tenant
-// column itself. The filter judges it and never rewrites it: the statement
-// reaches the rows the condition selects as written, within the context's
-// tenant, and a write whose condition names another tenant may be refused
-// instead. Filling a tenant half belongs to a key — the shape GORM's
-// association mode writes out of a record, whoever wrote it — and to no other
-// shape of condition.
-
-// provOrder is the scoped model the caller's conditions are written against.
 type provOrder struct {
 	tenant.Model
 	ID   string `gorm:"column:id;primaryKey"`
@@ -31,33 +22,16 @@ type provOrder struct {
 
 func (provOrder) TableName() string { return "prov_orders" }
 
-// provSeed is every row of the table, each written as id@tenant: two rows of
-// acme's, and globex holding one under an identifier acme also uses.
 var provSeed = []string{"a1@acme", "a2@acme", "a1@globex", "b@globex"}
 
-// provShape is one way a caller writes a condition on the tenant column,
-// given the value it compares the column with.
 type provShape struct {
-	name  string
-	where func(tx *gorm.DB, v any) *gorm.DB
-	// skipsZero marks a shape GORM leaves out when the value is empty: a
-	// struct's zero field, which then carries no condition at all.
+	name      string
+	where     func(tx *gorm.DB, v any) *gorm.DB
 	skipsZero bool
-	// typed marks a shape that binds the value as the struct's field holds
-	// it, which is an identifier whatever the caller wrote.
-	typed bool
-	// judged marks a shape the filter reads as a condition on the column, so
-	// that a write naming another tenant through it may be refused.
-	judged bool
-	// key marks the shape GORM's association mode writes a record's key in: a
-	// tuple over the whole key, each column qualified by the table's name, with
-	// the rest of it written. Its tenant half is the one the filter fills where
-	// it is empty.
-	key bool
-	// selects reports whether the condition, as written, selects a row of the
-	// tenant owner under the identifier id, given the tenant its value names;
-	// nil where it selects the rows of that tenant.
-	selects func(owner, id, names string) bool
+	typed     bool
+	judged    bool
+	key       bool
+	selects   func(owner, id, names string) bool
 }
 
 var provShapes = []provShape{
@@ -152,8 +126,6 @@ var provShapes = []provShape{
 	},
 }
 
-// provNamed is columns of the table, each qualified by its name, as GORM's
-// association mode writes the columns of a key.
 func provNamed(names ...string) []clause.Column {
 	cols := make([]clause.Column, 0, len(names))
 	for _, name := range names {
@@ -162,11 +134,9 @@ func provNamed(names ...string) []clause.Column {
 	return cols
 }
 
-// provValue is one value a caller compares the tenant column with.
 type provValue struct {
-	name string
-	v    any
-	// names is the tenant the value names, empty for an empty value.
+	name  string
+	v     any
 	names string
 }
 
@@ -179,12 +149,9 @@ var provValues = []provValue{
 	{name: "the context's identifier", v: tenant.ID("acme"), names: "acme"},
 }
 
-// provContext is one context a statement runs under.
 type provContext struct {
-	name string
-	ctx  func() context.Context
-	// tenant is the tenant the context carries, empty across tenants or with
-	// none.
+	name   string
+	ctx    func() context.Context
 	tenant string
 	cross  bool
 }
@@ -195,8 +162,6 @@ var provContexts = []provContext{
 	{name: "no tenant", ctx: context.Background},
 }
 
-// provStatements are the statements each condition is put on. Each returns
-// the rows it reached, written as id@tenant, or its error.
 var provStatements = []struct {
 	name  string
 	write bool
@@ -233,17 +198,11 @@ var provStatements = []struct {
 	}},
 }
 
-// Every shape a caller writes a condition on the tenant column in, with every
-// value, is judged as written on both dialects: under a tenant the statement
-// reaches what the condition selects within that tenant — nothing for an empty
-// value, which an identifier refuses to be bound as — and a write carrying no
-// condition of the caller's at all is refused, as GORM refuses one. Across
-// tenants the condition is the whole of it, and with no tenant every statement
-// is refused. Nothing else is filled into the caller's condition, so an empty
-// value never widens into the context's tenant. The one shape filled is the
-// one GORM writes a record's key in, a tuple over the whole key with each
-// column qualified by the table's name and the rest of it written, and it
-// reaches the row its key names in the context's tenant and no other.
+// TestACallersConditionOnTheTenantColumnIsJudgedAsWritten checks that every
+// shape and value of a caller's condition on the tenant column is judged as
+// written on both dialects: scoped to the context's tenant, refused with no
+// tenant, never widened from an empty value, and filled only for a record's
+// whole key.
 func TestACallersConditionOnTheTenantColumnIsJudgedAsWritten(t *testing.T) {
 	for _, d := range shapeDialects {
 		t.Run(d.name, func(t *testing.T) {
@@ -269,8 +228,6 @@ func TestACallersConditionOnTheTenantColumnIsJudgedAsWritten(t *testing.T) {
 								}
 							case stmt.write && shape.judged && value.names != "" && value.names != c.tenant &&
 								!c.cross && errors.Is(err, tenant.ErrExplicitTenantMismatch):
-								// A write whose condition names another tenant may be
-								// refused rather than reach nothing.
 								if got != "" {
 									t.Errorf("%s was refused and still reached %s", cell, got)
 								}
@@ -285,10 +242,6 @@ func TestACallersConditionOnTheTenantColumnIsJudgedAsWritten(t *testing.T) {
 	}
 }
 
-// provExpected is what a statement owes: the rows its condition selects as
-// written, within the context's tenant, or the refusal it is owed instead. A
-// key's empty tenant half is the one thing filled, and only under a tenant: the
-// key then selects the row it names in that tenant.
 func provExpected(shape provShape, value provValue, c provContext, write, count bool) (string, error) {
 	if !c.cross && c.tenant == "" {
 		return "", tenant.ErrNoTenantInContext
@@ -305,7 +258,6 @@ func provExpected(shape provShape, value provValue, c provContext, write, count 
 	}
 	_, identifier := value.v.(tenant.ID)
 	if conditioned && empty && (shape.typed || identifier) {
-		// An identifier refuses to be bound empty, on any handle.
 		return "", tenant.ErrNoTenantInContext
 	}
 	selects := shape.selects
@@ -328,7 +280,6 @@ func provExpected(shape provShape, value provValue, c provContext, write, count 
 	return provList(rows), nil
 }
 
-// provSeedRows writes the seed into the table, past the filter.
 func provSeedRows(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	cross := handle.WithContext(crossContext())
@@ -341,8 +292,6 @@ func provSeedRows(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// provRows reads the table back past the filter, each row as id@tenant: every
-// row, or those carrying the note given.
 func provRows(t *testing.T, handle *gorm.DB, note string) []string {
 	t.Helper()
 	var rows []provOrder
@@ -360,14 +309,12 @@ func provRows(t *testing.T, handle *gorm.DB, note string) []string {
 	return out
 }
 
-// provList writes rows in one order.
 func provList(rows []string) string {
 	sorted := slices.Clone(rows)
 	slices.Sort(sorted)
 	return strings.Join(sorted, ",")
 }
 
-// provOutcome is a statement's outcome as a case reports it.
 func provOutcome(got string, err error) string {
 	if err != nil {
 		return fmt.Sprintf("%q and %v", got, err)

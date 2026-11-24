@@ -7,8 +7,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// An account that owns an active business organization cannot be deleted or
-// suspended; its personal organization does not count.
+// TestAnAccountOwningAnOrganizationCannotBeDeletedOrSuspended checks that an account owning an active business organization can be neither deleted nor suspended.
 func TestAnAccountOwningAnOrganizationCannotBeDeletedOrSuspended(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")

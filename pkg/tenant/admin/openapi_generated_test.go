@@ -9,22 +9,14 @@ import (
 	"github.com/vislake/speed/pkg/internal/openapigen"
 )
 
-// fragmentPath is this module's platform fragment, relative to the package
-// directory `go test` runs in.
 const fragmentPath = "openapi/tenant.admin.json"
 
-// tenantOwnerFragmentPath is this module's tenant-surface fragment.
 const tenantOwnerFragmentPath = "openapi/tenant.owner.json"
 
-// selfFragmentPath is this module's account-level target fragment.
 const selfFragmentPath = "openapi/tenant.self.json"
 
-// TestTheFragmentIsGeneratedFromTheDeclarations holds the embedded fragments to
-// what the declarations generate. The fragments are build products: a handler
-// or a route that changes without the declaration fails here, and the fix is to
-// change the declaration and regenerate.
-//
-// Run with UPDATE_FRAGMENTS=1 to write the generated fragments.
+// TestTheFragmentIsGeneratedFromTheDeclarations holds the embedded fragments to what
+// the declarations generate.
 func TestTheFragmentIsGeneratedFromTheDeclarations(t *testing.T) {
 	for _, c := range []struct {
 		path  string

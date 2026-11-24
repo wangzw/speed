@@ -1,9 +1,5 @@
 package ownership_test
 
-// The notice rendering cases: a dispatch carries typed parameters and the
-// engine interpolates them in the recipient's locale, so a message that names
-// a time must use the engine's time form rather than a bare placeholder.
-
 import (
 	"context"
 	"os"
@@ -20,9 +16,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant/ownership"
 )
 
-// driveLocalizer builds the i18n engine over the catalogs this module declares.
-// The module is registered for its resources alone and does not take part in
-// the drive, so its dependencies need no stand-ins.
 func driveLocalizer(t *testing.T) i18n.Localizer {
 	t.Helper()
 	modules := []core.Module{ownership.Module(), catalog.Module()}
@@ -49,10 +42,7 @@ func driveLocalizer(t *testing.T) i18n.Localizer {
 	return localizer
 }
 
-// TestTheTransferRequestNoticeMarksItsExpiry holds the body the in-app channel
-// writes: the marked render replaces the time segment with a marker naming the
-// parameter and formats nothing, so the layout it carries has no effect on the
-// delivered text.
+// TestTheTransferRequestNoticeMarksItsExpiry checks that the in-app render replaces the expiry time with a marker naming the parameter.
 func TestTheTransferRequestNoticeMarksItsExpiry(t *testing.T) {
 	localizer := driveLocalizer(t)
 	expires := time.Date(2026, 11, 20, 9, 30, 0, 0, time.UTC)
@@ -74,12 +64,7 @@ func TestTheTransferRequestNoticeMarksItsExpiry(t *testing.T) {
 	}
 }
 
-// TestTheTransferRequestNoticeCatalogLayoutCarriesNoOffset holds the catalog
-// text itself. The marked render never reads the layout, and the formatted
-// render in the next case only asserts that a date appears, so neither can
-// tell a layout with a zone token from one without. A zone token in the layout
-// would make the writer decide a zone this channel does not decide; the
-// reader's display zone owns that decision.
+// TestTheTransferRequestNoticeCatalogLayoutCarriesNoOffset checks that the catalog's time layout carries no zone token.
 func TestTheTransferRequestNoticeCatalogLayoutCarriesNoOffset(t *testing.T) {
 	const segmentOpen = "{{expires_at, time, "
 	for _, locale := range []i18n.Locale{"zh-CN", "en-US"} {
@@ -99,10 +84,6 @@ func TestTheTransferRequestNoticeCatalogLayoutCarriesNoOffset(t *testing.T) {
 			t.Fatalf("%s leaves the expires_at time segment unterminated", path)
 		}
 		layout := rest[:end]
-		// Every reference-layout spelling of a zone: the abbreviation and
-		// the numeric offset, signed or Z-suffixed, at any precision. A
-		// zone token here would make the writer decide a zone this
-		// channel does not decide.
 		for _, token := range []string{
 			"MST",
 			"-070000", "-07:00:00", "-0700", "-07:00", "-07",
@@ -115,10 +96,7 @@ func TestTheTransferRequestNoticeCatalogLayoutCarriesNoOffset(t *testing.T) {
 	}
 }
 
-// TestTheTransferRequestNoticeRendersItsExpiry holds the request body in both
-// languages: the expiry parameter is a time.Time, which the engine interpolates
-// only through a {{name, time, layout}} segment, so a bare placeholder would
-// reach the recipient as the literal "{{expires_at}}".
+// TestTheTransferRequestNoticeRendersItsExpiry checks that the request notice renders its expiry time in both languages.
 func TestTheTransferRequestNoticeRendersItsExpiry(t *testing.T) {
 	localizer := driveLocalizer(t)
 	expires := time.Date(2026, 11, 20, 9, 30, 0, 0, time.UTC)

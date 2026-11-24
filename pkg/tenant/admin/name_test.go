@@ -12,11 +12,9 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// TestTheNameLayerResolvesThePathTenant holds the platform boundary: a request
-// under /api/v1/system/tenants/ carries the tenant's name, the layer replaces
-// it with the internal identifier, and an unknown name or the old identifier
-// is the bare 404. A tombstone resolves, because the platform surface manages
-// it.
+// TestTheNameLayerResolvesThePathTenant holds that a request under
+// /api/v1/system/tenants/ has its tenant name replaced with the internal identifier,
+// and an unknown name or the old identifier is a bare 404.
 func TestTheNameLayerResolvesThePathTenant(t *testing.T) {
 	r := newRig(t)
 	r.catalog.list = []tenant.Tenant{
@@ -81,7 +79,6 @@ func TestTheNameLayerResolvesThePathTenant(t *testing.T) {
 	})
 }
 
-// stubKind answers a fixed kind per identifier.
 type stubKind map[tenant.ID]tenant.Kind
 
 func (s stubKind) KindOf(_ context.Context, id tenant.ID) (tenant.Kind, error) {
@@ -91,12 +88,11 @@ func (s stubKind) KindOf(_ context.Context, id tenant.ID) (tenant.Kind, error) {
 	return tenant.KindBusiness, nil
 }
 
-// TestTheViewCarriesTheTenantKind holds the value a client branches on: a
-// personal tenant reads personal through a kind resolver, and every tenant
-// reads business when the assembly supplies none.
+// TestTheViewCarriesTheTenantKind holds the value a client branches on: a personal
+// tenant reads personal through a kind resolver, and every tenant reads business when
+// the assembly supplies none.
 func TestTheViewCarriesTheTenantKind(t *testing.T) {
 	r := newRig(t)
-	// The roster orders by name, so the fixture is handed over in that order.
 	r.catalog.list = []tenant.Tenant{
 		{ID: "t_acme", Name: "acme", Status: tenant.StatusActive},
 		{ID: "personal-acc-1", Name: "alice", Status: tenant.StatusActive},

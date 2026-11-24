@@ -15,7 +15,6 @@ const (
 	authnPrefix = authnRoot + "/"
 )
 
-// goList runs go list over this package with the format and returns its fields.
 func goList(t *testing.T, args ...string) []string {
 	t.Helper()
 	cmd := exec.Command("go", append([]string{"list"}, args...)...)
@@ -28,12 +27,7 @@ func goList(t *testing.T, args ...string) []string {
 	return strings.Fields(string(out))
 }
 
-// TestTheLayerReachesTheIdentitySystemThroughItsRootPackageAlone holds the
-// direction the design fixes: the layer reads an identity and the interfaces
-// the account and SSO modules deliver through the authn root package, and
-// imports no implementation subpackage of that tree, not the gateway, a
-// backend, the account module or the login engine. The tree's internal packages
-// are in the closure only through the root, which re-exports them.
+// TestTheLayerReachesTheIdentitySystemThroughItsRootPackageAlone checks that the layer imports the identity system through the authn root package alone.
 func TestTheLayerReachesTheIdentitySystemThroughItsRootPackageAlone(t *testing.T) {
 	direct := goList(t, "-f", `{{join .Imports "\n"}}`, ".")
 	for _, imp := range direct {
@@ -50,17 +44,13 @@ func TestTheLayerReachesTheIdentitySystemThroughItsRootPackageAlone(t *testing.T
 		switch {
 		case !strings.HasPrefix(pkg, authnPrefix):
 		case strings.HasPrefix(pkg, authnPrefix+"internal/"):
-			// Reached through the root, which imports its value types.
 		default:
 			t.Errorf("the closure holds %s", pkg)
 		}
 	}
 }
 
-// TestTheLayerKeepsToTheLibrariesTheDesignNames holds the rest of the
-// dependency table: no direct import of the database, the key-value
-// primitives or a sibling module of the tenant directory. The memberships are
-// read through the interface and the tenant through the root package's context.
+// TestTheLayerKeepsToTheLibrariesTheDesignNames checks that the layer imports no database, key-value primitives or sibling tenant module.
 func TestTheLayerKeepsToTheLibrariesTheDesignNames(t *testing.T) {
 	for _, imp := range goList(t, "-f", `{{join .Imports "\n"}}`, ".") {
 		switch {
@@ -72,10 +62,7 @@ func TestTheLayerKeepsToTheLibrariesTheDesignNames(t *testing.T) {
 	}
 }
 
-// TestNoPackageOfTheAuthnTreeImportsTheLayer holds the other direction of the
-// same edge: the layer is in the tenant directory and the authn tree does not
-// reach it. The tree's own tests hold it for the tree; this holds that the
-// layer's package is not among what a gateway or a backend closes over.
+// TestNoPackageOfTheAuthnTreeImportsTheLayer checks that no package of the authn tree imports the layer.
 func TestNoPackageOfTheAuthnTreeImportsTheLayer(t *testing.T) {
 	self := goList(t, "-f", "{{.ImportPath}}", ".")[0]
 	for _, pkg := range []string{authnRoot, authnPrefix + "gate", authnPrefix + "static"} {

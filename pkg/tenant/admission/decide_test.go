@@ -11,12 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The cases here are the judgement table, row by row. Each row has a case that
-// takes it and, beside it, one that differs from it in the single fact the row
-// turns on and so lands in the next row: a row that was widened, narrowed or
-// moved is a row some neighbour's case lands in the wrong place.
-
-// notFound holds a reply to the one shape every 404 of this layer has.
 func notFound(t *testing.T, what string, rp reply) {
 	t.Helper()
 	if rp.status != nethttp.StatusNotFound {
@@ -35,8 +29,6 @@ func stepUp(t *testing.T, what string, rp reply, acr string) {
 	if !strings.HasSuffix(got, want) {
 		t.Fatalf("%s challenged with %q, want it to end with %q", what, got, want)
 	}
-	// The problem type tells the client what the challenge needs: the SSO
-	// challenge is its own code, because a local factor cannot satisfy it.
 	wantType := "urn:speed:authn:insufficient_user_authentication"
 	if acr == "sso" {
 		wantType = "urn:speed:authn:sso_required"
@@ -49,9 +41,7 @@ func stepUp(t *testing.T, what string, rp reply, acr string) {
 	}
 }
 
-// TestRowNoTenantContext holds the first row: a request with no tenant is not
-// about one, and is let through, except an impersonation, which exists to be
-// confined to a tenant and has none here.
+// TestRowNoTenantContext checks that a request with no tenant is let through, except an impersonation, which is refused.
 func TestRowNoTenantContext(t *testing.T) {
 	t.Run("an anonymous request is admitted", func(t *testing.T) {
 		r := newRig(t)
@@ -73,8 +63,6 @@ func TestRowNoTenantContext(t *testing.T) {
 		r.onlyCounted(admitted)
 	})
 	t.Run("a request with no tenant and no identity on a route that needs one is admitted", func(t *testing.T) {
-		// The row comes first: whether a caller is identified is for the rows
-		// that have a tenant to compare against.
 		r := newRig(t)
 		rp := r.serve(r.bare(""))
 		if !rp.reached() {
@@ -90,7 +78,7 @@ func TestRowNoTenantContext(t *testing.T) {
 	})
 }
 
-// TestRowNoIdentity holds the second row.
+// TestRowNoIdentity checks that a request with no identity passes on open and optional routes and is refused elsewhere.
 func TestRowNoIdentity(t *testing.T) {
 	for name, access := range map[string]authn.Access{
 		"an open route":     authn.AccessOpen,
@@ -109,9 +97,6 @@ func TestRowNoIdentity(t *testing.T) {
 		})
 	}
 	t.Run("a level the gateway never recorded is refused 401 and logged at Error", func(t *testing.T) {
-		// A context with no gateway behind it reads as AccessUnknown. The
-		// level Required, which the gateway records beside an identity, never
-		// reaches here without one, and authntest builds no such context.
 		r := newRig(t)
 		rp := r.serve(r.bare(acme))
 		if rp.status != nethttp.StatusUnauthorized {
@@ -140,7 +125,7 @@ func TestRowNoIdentity(t *testing.T) {
 	})
 }
 
-// TestRowImpersonationScope holds the third row.
+// TestRowImpersonationScope checks that an impersonation scoped to another tenant is refused.
 func TestRowImpersonationScope(t *testing.T) {
 	t.Run("a scope that is another tenant is refused 404 before anything is read", func(t *testing.T) {
 		r := newRig(t)
@@ -164,7 +149,7 @@ func TestRowImpersonationScope(t *testing.T) {
 	})
 }
 
-// TestRowMembership holds the fourth row and the error row that goes with it.
+// TestRowMembership checks that a non-member is refused and a failed membership read is unavailable.
 func TestRowMembership(t *testing.T) {
 	t.Run("a member is admitted", func(t *testing.T) {
 		r := newRig(t)
@@ -184,8 +169,6 @@ func TestRowMembership(t *testing.T) {
 			authntest.WithBackend("static"))))
 	})
 	t.Run("the account asked about is the effective one, not the actor", func(t *testing.T) {
-		// bob acts as alice. alice is the member, so the impersonation goes
-		// through, and it ends when she stops being one.
 		r := newRig(t)
 		impersonating := r.as(acme, authntest.WithAccount(alice), authntest.WithActor(bob),
 			authntest.WithSession("s1"), authntest.WithScope(acme))
@@ -232,8 +215,7 @@ func TestRowMembership(t *testing.T) {
 	})
 }
 
-// TestRowPermissionModel holds the part of the membership row that asks the
-// permission model about a non-member.
+// TestRowPermissionModel checks that a non-member is let in only when the permission model allows it.
 func TestRowPermissionModel(t *testing.T) {
 	t.Run("with no decider a non-member is refused 404", func(t *testing.T) {
 		r := newRig(t)
@@ -319,8 +301,7 @@ func TestRowPermissionModel(t *testing.T) {
 	})
 }
 
-// TestStrengthComesAfterMembership holds that a non-member is only ever told 404
-// or let in, never asked to do what only a member would be asked.
+// TestStrengthComesAfterMembership checks that a non-member is only refused with 404 or let in, never asked for strength.
 func TestStrengthComesAfterMembership(t *testing.T) {
 	r := newRig(t)
 	r.withProviders()
@@ -335,8 +316,7 @@ func TestStrengthComesAfterMembership(t *testing.T) {
 	}
 }
 
-// TestRowExemption holds the row that spares an impersonation and a service
-// account the tenant's strength requirements, and only them.
+// TestRowExemption checks that an impersonation and a service account are exempt from the strength requirements and nothing else is.
 func TestRowExemption(t *testing.T) {
 	withRequirements := func(t *testing.T) *rig {
 		r := newRig(t)
@@ -383,7 +363,7 @@ func TestRowExemption(t *testing.T) {
 	})
 }
 
-// TestRowMultiFactor holds the multi-factor row.
+// TestRowMultiFactor checks that a member below multi-factor is stepped up where the tenant requires it.
 func TestRowMultiFactor(t *testing.T) {
 	multi := authntest.WithAssurance(authn.AssuranceMulti)
 	t.Run("a single-factor member of a tenant that requires multi-factor gets 401 acr 2", func(t *testing.T) {
@@ -412,7 +392,6 @@ func TestRowMultiFactor(t *testing.T) {
 			if strings.Contains(got, "max_age") {
 				t.Fatalf("the challenge states a freshness requirement this layer does not have: %q", got)
 			}
-			// The answer must not be cached for a request of another member.
 			if rp.header.Get("Set-Cookie") != "" {
 				t.Fatalf("the step-up answer sets a cookie: %v", rp.header)
 			}
@@ -435,10 +414,6 @@ func TestRowMultiFactor(t *testing.T) {
 		stepUp(t, "acme falling back to the global row", r.serve(r.as(acme)), acrMultiFactor)
 		stepUp(t, "globex falling back to the global row", r.serve(r.as(globex)), acrMultiFactor)
 	})
-	// The effective value is the platform floor OR the tenant's own choice. A
-	// tenant row of false is a choice to leave the policy off, not a way to
-	// lower a floor the platform set: the next request is judged on the OR, the
-	// same value the tenant-facing view shows.
 	t.Run("the effective value is the global row OR the tenant's own row", func(t *testing.T) {
 		cases := []struct {
 			name     string
@@ -496,7 +471,7 @@ func TestRowMultiFactor(t *testing.T) {
 	})
 }
 
-// TestRowSSO holds the SSO row and the emergency pass.
+// TestRowSSO checks the SSO row and the emergency pass for exempt members.
 func TestRowSSO(t *testing.T) {
 	requiring := func(t *testing.T) *rig {
 		r := newRig(t)
@@ -510,9 +485,6 @@ func TestRowSSO(t *testing.T) {
 		r.onlyCounted(stepUpSSO)
 	})
 	t.Run("a tenant the platform exempts is admitted without a provider", func(t *testing.T) {
-		// The platform's own tenant hosts the console and has no identity
-		// provider of its own: holding it to the row would refuse every request
-		// there, so the deployment names it as exempt.
 		r := requiring(t)
 		r.l.ssoExemptTenants = []string{acme}
 		rp := r.serve(r.as(acme))
@@ -623,9 +595,7 @@ func TestRowSSO(t *testing.T) {
 	})
 }
 
-// TestEffectiveAssurance holds the level the multi-factor requirement compares:
-// a multi-factor level an identity provider declared holds only in the tenant
-// that provider belongs to.
+// TestEffectiveAssurance checks that a multi-factor level an identity provider declared holds only in that provider's tenant.
 func TestEffectiveAssurance(t *testing.T) {
 	declared := func(provider string) []authntest.Option {
 		return []authntest.Option{
@@ -690,8 +660,7 @@ func TestEffectiveAssurance(t *testing.T) {
 	})
 }
 
-// TestSettingsFailures holds the direction of a switch that cannot be read:
-// refuse, because the default it would fall back to is the permissive value.
+// TestSettingsFailures checks that a switch that cannot be read is refused rather than read as its permissive default.
 func TestSettingsFailures(t *testing.T) {
 	for _, key := range []string{requireMFAKey, requireSSOKey} {
 		t.Run(key+" unreadable is 503", func(t *testing.T) {
@@ -724,8 +693,7 @@ func TestSettingsFailures(t *testing.T) {
 	})
 }
 
-// TestAnAdmittedRequestWritesNothing holds that admission is quiet: only a
-// refusal is a line in the log.
+// TestAnAdmittedRequestWritesNothing checks that only a refusal writes a log line.
 func TestAnAdmittedRequestWritesNothing(t *testing.T) {
 	r := newRig(t)
 	r.serve(r.as(acme))
@@ -738,10 +706,7 @@ func TestAnAdmittedRequestWritesNothing(t *testing.T) {
 	}
 }
 
-// TestNoTenantIdentifierTheSettingsRefuseReachesThem holds the guard in front of
-// the settings: an identifier outside their domain is a panic there, and the
-// layer must answer it with a refusal instead. The resolution layer writes only
-// identifiers the roster carries, so this is the layer not trusting that.
+// TestNoTenantIdentifierTheSettingsRefuseReachesThem checks that an identifier outside the settings' domain is refused instead of reaching them.
 func TestNoTenantIdentifierTheSettingsRefuseReachesThem(t *testing.T) {
 	for id, want := range map[string]bool{
 		"": false, "ac me": false, "acme\n": false, "a\x00b": false, " ": false,

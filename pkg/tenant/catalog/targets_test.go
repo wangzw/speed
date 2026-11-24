@@ -13,26 +13,11 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The cases in this file are about which column an assignment reaches. GORM
-// resolves a key through the model's schema and writes one it cannot resolve
-// into the statement as a column name; the database then resolves that name by
-// its own rules — SQLite ignores case, PostgreSQL folds a bare name to lower
-// case, both skip the blanks around a name GORM writes as it stands, and either
-// honours the quotes a name carries. A key the schema does not know therefore
-// still reaches the tenant column whenever the database reads it as that
-// column, and the filter has to judge it as the tenant column. A target it
-// cannot read as one column at all is refused, because it might be that one.
-
-// write is one statement shape that carries an assignment target the caller
-// spells, under the context the case gives it.
 type write struct {
 	name string
 	run  func(tx *gorm.DB, target string, value any) error
 }
 
-// keyedWrites are the shapes whose target is a key GORM quotes into the
-// statement: an update's map, a single-column update, an explicit SET clause,
-// an upsert's assignments, and a map insert, alone and in a slice.
 var keyedWrites = []write{
 	{"Updates with a map", func(tx *gorm.DB, key string, v any) error {
 		return tx.Model(&order{}).Where("id = ?", "a").Updates(map[string]any{key: v}).Error
@@ -59,8 +44,6 @@ var keyedWrites = []write{
 	}},
 }
 
-// rawWrites are the shapes whose target is a column GORM writes into the
-// statement as it stands.
 var rawWrites = []write{
 	{"an explicit SET clause", func(tx *gorm.DB, name string, v any) error {
 		return tx.Model(&order{}).Where("id = ?", "a").
@@ -75,8 +58,6 @@ var rawWrites = []write{
 	}},
 }
 
-// requireRowsUnmoved asserts that the table still holds the two seeded rows
-// and nothing else: acme's a and globex's b.
 func requireRowsUnmoved(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	got := tenantsOf(t, handle)
@@ -86,9 +67,6 @@ func requireRowsUnmoved(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// requireEveryShapeRefused drives each shape with each target under a tenant
-// that is not the value written, and under crossing tenants with the empty
-// value, and asserts every one of them refused with the table as seeded.
 func requireEveryShapeRefused(t *testing.T, open func(*testing.T) *gorm.DB, writes []write, targets []string) {
 	t.Helper()
 	for _, w := range writes {
@@ -111,24 +89,24 @@ func requireEveryShapeRefused(t *testing.T, open func(*testing.T) *gorm.DB, writ
 	}
 }
 
-// SQLite reads every one of these as the tenant column: it ignores case, and
-// a name carrying its own backquotes is written as that quoted name.
+// TestAKeySQLiteReadsAsTheTenantColumnIsJudged checks that every key SQLite
+// reads as the tenant column is judged as it, including a name carrying its own
+// backquotes.
 func TestAKeySQLiteReadsAsTheTenantColumnIsJudged(t *testing.T) {
 	requireEveryShapeRefused(t, open, keyedWrites,
 		[]string{"tEnAnT_iD", "TeNaNt_Id", "`tenant_id`", "`TENANT_ID`"})
 }
 
-// A raw target is read by the database as SQL: around blanks, in any case,
-// quoted or not, and one that is no single column name at all may name the
-// tenant column among others.
+// TestARawTargetSQLiteReadsAsTheTenantColumnIsJudged checks that a raw target
+// the database reads as SQL, with blanks, any case or quoting, or among other
+// columns, is judged as the tenant column.
 func TestARawTargetSQLiteReadsAsTheTenantColumnIsJudged(t *testing.T) {
 	requireEveryShapeRefused(t, open, rawWrites,
 		[]string{" tenant_id", "TENANT_ID ", `"Tenant_Id"`, "[tenant_id]", "tenant_id = 'globex', note"})
 }
 
-// grant is a scoped model whose own key is not named id, so GORM has no
-// primary field it prefers and renders the primary key placeholder as the
-// first column of the model — the tenant column.
+// grant's key is not named id, so GORM renders the primary key placeholder as
+// the model's first column, the tenant column.
 type grant struct {
 	tenant.Model
 	UserID string `gorm:"column:user_id;primaryKey"`
@@ -137,8 +115,8 @@ type grant struct {
 
 func (grant) TableName() string { return "grants" }
 
-// GORM writes its primary key placeholder, as a key or as a column, as the
-// column it stands for.
+// TestThePrimaryKeyPlaceholderIsJudgedAsTheColumnItStandsFor checks that GORM's
+// primary key placeholder is judged as the column it stands for.
 func TestThePrimaryKeyPlaceholderIsJudgedAsTheColumnItStandsFor(t *testing.T) {
 	for name, run := range map[string]func(tx *gorm.DB) error{
 		"a key": func(tx *gorm.DB) error {
@@ -174,9 +152,9 @@ func TestThePrimaryKeyPlaceholderIsJudgedAsTheColumnItStandsFor(t *testing.T) {
 	}
 }
 
-// GORM renders an update's assignments from its destination whenever the
-// destination yields any, in place of a SET clause the caller also wrote; the
-// destination is what reaches the table, so it is judged too.
+// TestAnUpdateCarryingASetClauseAndAMapJudgesTheMap checks that when an
+// update's destination yields assignments they are judged too, because they
+// replace the caller's SET clause.
 func TestAnUpdateCarryingASetClauseAndAMapJudgesTheMap(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -187,8 +165,8 @@ func TestAnUpdateCarryingASetClauseAndAMapJudgesTheMap(t *testing.T) {
 	requireRowsUnmoved(t, handle)
 }
 
-// The judgement does not refuse what reaches another column: a key or a raw
-// target that reads as some other column is assigned as written.
+// TestATargetNamingAnotherColumnIsAssigned checks that a key or raw target
+// reading as another column is assigned as written.
 func TestATargetNamingAnotherColumnIsAssigned(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -212,11 +190,6 @@ func TestATargetNamingAnotherColumnIsAssigned(t *testing.T) {
 	requireRowTenant(t, handle, "a", "acme")
 }
 
-// noted is a scoped model whose note column is named like an exported Go
-// identifier. GORM assigns a model's column from the field of the updating type
-// it finds under that column's name or under that field's Go name, and writes
-// the column that field carries: a patch type's Note field reaches whatever
-// column its own tag names.
 type noted struct {
 	tenant.Model
 	ID   string `gorm:"column:id;primaryKey"`
@@ -225,8 +198,6 @@ type noted struct {
 
 func (noted) TableName() string { return "orders" }
 
-// patchWriting is a type of its own with one field, Note, carrying this value
-// under a column spelled as given.
 func patchWriting(column, value string) any {
 	typ := reflect.StructOf([]reflect.StructField{{
 		Name: "Note",
@@ -238,10 +209,6 @@ func patchWriting(column, value string) any {
 	return v.Interface()
 }
 
-// requirePatchesRefused drives an update whose assignments are carried in
-// another type, with the field GORM finds for the model's Note column writing
-// each of these columns, under a tenant that is not the value written and
-// across tenants with a value no tenant has.
 func requirePatchesRefused(t *testing.T, open func(*testing.T) *gorm.DB, columns []string) {
 	t.Helper()
 	for _, column := range columns {
@@ -262,16 +229,13 @@ func requirePatchesRefused(t *testing.T, open func(*testing.T) *gorm.DB, columns
 	}
 }
 
-// The column an update from another type writes is the one the field GORM
-// found carries, read the way the database reads it — not whichever field of
-// that type is named like the tenant column.
+// TestAnUpdateFromAnotherTypeIsJudgedByTheColumnItWrites checks that an update
+// from another type is judged by the column GORM's matched field carries, not
+// by a field named like the tenant column.
 func TestAnUpdateFromAnotherTypeIsJudgedByTheColumnItWrites(t *testing.T) {
 	requirePatchesRefused(t, open, []string{"TENANT_ID", "Tenant_Id", "`tenant_id`", "tenant_id"})
 }
 
-// shadowed is a scoped model carrying, ahead of the convention, a field of its
-// own whose column the database reads as the tenant column. GORM writes both
-// columns; SQLite keeps the first of an insert's and the last of an update's.
 type shadowed struct {
 	Owner string `gorm:"column:TENANT_ID"`
 	tenant.Model
@@ -280,11 +244,9 @@ type shadowed struct {
 
 func (shadowed) TableName() string { return "orders" }
 
-// A field of the model writing the tenant column under another spelling is
-// judged as the tenant column is, on an insert and on an update alike, and
-// whatever a selection names it by: GORM selects a map key under the column the
-// schema resolves it to, so a selection naming the field by its Go name or by
-// its column's spelling writes it.
+// TestAFieldOfTheModelWritingTheTenantColumnIsJudged checks that a model field
+// writing the tenant column under another spelling is judged on insert and
+// update, whatever a selection names it by.
 func TestAFieldOfTheModelWritingTheTenantColumnIsJudged(t *testing.T) {
 	ctx := scopedContext("acme")
 	for name, write := range map[string]func(tx *gorm.DB) error{
@@ -335,9 +297,6 @@ func TestAFieldOfTheModelWritingTheTenantColumnIsJudged(t *testing.T) {
 	})
 }
 
-// duplicated is a scoped model with a struct embedded under a name that
-// repeats the convention's column exactly. GORM binds the column to the
-// convention's field, declared first, and never writes the embedded one.
 type duplicated struct {
 	tenant.Model
 	ID   string    `gorm:"column:id;primaryKey"`
@@ -347,10 +306,9 @@ type duplicated struct {
 
 func (duplicated) TableName() string { return "orders" }
 
-// A field GORM never writes is not a spelling of the tenant column: an insert
-// binds each column from the one field GORM binds it to, so a field repeating
-// the column exactly — whatever it holds — does not reach the table, and
-// judging it would refuse an insert that writes the context's tenant.
+// TestAFieldGORMNeverWritesIsNotJudged checks that a field GORM never writes,
+// though it repeats the column exactly, is not judged and does not refuse an
+// insert of the context's tenant.
 func TestAFieldGORMNeverWritesIsNotJudged(t *testing.T) {
 	for name, row := range map[string]*duplicated{
 		"left unwritten":        {ID: "x"},
@@ -377,15 +335,10 @@ func TestAFieldGORMNeverWritesIsNotJudged(t *testing.T) {
 	})
 }
 
-// defaultedMeta repeats the convention's column exactly, with a default the
-// database supplies.
 type defaultedMeta struct {
 	TenantID string `gorm:"default:(-)"`
 }
 
-// defaultedRepeat is a scoped model embedding it under a name. GORM binds the
-// column to the convention's field, and writes the embedded one as well
-// whenever it holds a value, because its default is the database's.
 type defaultedRepeat struct {
 	tenant.Model
 	ID   string        `gorm:"column:id;primaryKey"`
@@ -395,9 +348,9 @@ type defaultedRepeat struct {
 
 func (defaultedRepeat) TableName() string { return "orders" }
 
-// A field repeating the tenant column exactly is judged when GORM writes it: an
-// insert carries a field whose default is the database's, and that holds a
-// value, as a column of its own beside the one the column is bound to.
+// TestARepeatedFieldGORMWritesIsJudged checks that a field repeating the tenant
+// column exactly is judged when GORM writes it because its default is the
+// database's.
 func TestARepeatedFieldGORMWritesIsJudged(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -412,8 +365,6 @@ func TestARepeatedFieldGORMWritesIsJudged(t *testing.T) {
 	requireRowTenant(t, handle, "y", "acme")
 }
 
-// stamping is a scoped model carrying a field that GORM stamps with the update
-// time, under another spelling of the tenant column.
 type stamping struct {
 	tenant.Model
 	ID      string `gorm:"column:id;primaryKey"`
@@ -423,9 +374,8 @@ type stamping struct {
 
 func (stamping) TableName() string { return "orders" }
 
-// GORM stamps the update time into a field the map of an update leaves out,
-// and a field doing that under a spelling of the tenant column writes the time
-// into it, which is not the context's tenant.
+// TestAnUpdateStampingASpellingOfTheTenantColumnIsJudged checks that an
+// update-time stamp written into a spelling of the tenant column is judged.
 func TestAnUpdateStampingASpellingOfTheTenantColumnIsJudged(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -435,10 +385,9 @@ func TestAnUpdateStampingASpellingOfTheTenantColumnIsJudged(t *testing.T) {
 	requireRowsUnmoved(t, handle)
 }
 
-// SQLite keeps the last of an update's duplicate columns, so a write carrying
-// the context's tenant under one spelling of the tenant column and another
-// tenant under a later one moves the row to the later: every assignment that
-// reaches the tenant column is judged, not only the first.
+// TestEveryAssignmentReachingTheTenantColumnIsJudged checks that every
+// assignment reaching the tenant column is judged, not only the first, because
+// SQLite keeps the last of duplicate update columns.
 func TestEveryAssignmentReachingTheTenantColumnIsJudged(t *testing.T) {
 	type twoSpellings struct {
 		TenantID string `gorm:"column:tenant_id"`

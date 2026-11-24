@@ -1,9 +1,5 @@
 package ownership_test
 
-// The pending-request cases: a transfer takes effect only after the target
-// confirms it, so the request, its refusals and its lifecycle are held here on
-// their own.
-
 import (
 	"errors"
 	"testing"
@@ -13,9 +9,7 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// A request records the pending row and changes nothing else: the owner column,
-// the target's bindings and the previous owner's membership stay as they were.
-// The target is notified.
+// TestRequestTransferDoesNotChangeOwnership checks that a request records a pending row, notifies the target and changes no ownership, binding or membership.
 func TestRequestTransferDoesNotChangeOwnership(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
@@ -42,7 +36,6 @@ func TestRequestTransferDoesNotChangeOwnership(t *testing.T) {
 			t.Fatalf("the pending read answered %+v found=%t err=%v, want the request", pending, found, err)
 		}
 
-		// The target's own side sees it, and nobody else does.
 		mine, err := a.target.PendingTransfersFor(t.Context(), target.ID.String())
 		if err != nil || len(mine) != 1 || mine[0].ID != request.ID {
 			t.Fatalf("the target's pending list is %+v err=%v, want the request", mine, err)
@@ -66,12 +59,9 @@ func TestRequestTransferDoesNotChangeOwnership(t *testing.T) {
 	})
 }
 
-// notificationRecipientUser mirrors the notification capability's user class
-// without importing that package into every assertion.
 const notificationRecipientUser = "user"
 
-// A second request while one is pending is refused, and the pending one is not
-// replaced.
+// TestASecondRequestIsRefusedWhileOneIsPending checks that a second request is refused while one is pending and does not replace it.
 func TestASecondRequestIsRefusedWhileOneIsPending(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
@@ -96,9 +86,7 @@ func TestASecondRequestIsRefusedWhileOneIsPending(t *testing.T) {
 	})
 }
 
-// Confirming as the target writes the transfer: the target becomes the owner
-// and gains tenant-admin; the previous owner stays an active member holding
-// tenant-admin and every other binding. The previous owner is notified.
+// TestConfirmTransferLandsTheTransfer checks that confirming makes the target the owner with tenant-admin, keeps the previous owner's membership and bindings, and notifies the previous owner.
 func TestConfirmTransferLandsTheTransfer(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
@@ -139,9 +127,7 @@ func TestConfirmTransferLandsTheTransfer(t *testing.T) {
 	})
 }
 
-// Only the named target can confirm or decline: another account is refused with
-// ErrTransferNotTarget, and a request that does not exist with
-// ErrTransferNotFound.
+// TestOnlyTheTargetActsOnARequest checks that another account gets ErrTransferNotTarget and an unknown request ErrTransferNotFound.
 func TestOnlyTheTargetActsOnARequest(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
@@ -167,7 +153,7 @@ func TestOnlyTheTargetActsOnARequest(t *testing.T) {
 	})
 }
 
-// Declining leaves the owner unchanged and tells the requester.
+// TestDeclineLeavesTheOwnerUnchanged checks that declining leaves the owner unchanged and notifies the requester.
 func TestDeclineLeavesTheOwnerUnchanged(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
@@ -208,8 +194,7 @@ func TestDeclineLeavesTheOwnerUnchanged(t *testing.T) {
 	})
 }
 
-// The requester cancels a pending request; an account that is not the owner it
-// observed is refused with ErrOwnerChanged.
+// TestCancelRequiresTheCurrentOwner checks that cancelling succeeds for the observed owner and is refused with ErrOwnerChanged otherwise.
 func TestCancelRequiresTheCurrentOwner(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
@@ -241,9 +226,7 @@ func TestCancelRequiresTheCurrentOwner(t *testing.T) {
 	})
 }
 
-// A request past its window cannot be confirmed: it is settled as expired on
-// the way, the pending read no longer reports it, and the target sees the
-// terminal state.
+// TestAnExpiredRequestCannotBeConfirmed checks that a request past its window is settled as expired, is not reported as pending and cannot be confirmed.
 func TestAnExpiredRequestCannotBeConfirmed(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
@@ -280,8 +263,7 @@ func TestAnExpiredRequestCannotBeConfirmed(t *testing.T) {
 	})
 }
 
-// Confirming after the target left the organization is refused: the target must
-// still be an active member when the transfer is written.
+// TestConfirmAfterTheTargetLeftTheTenantIsRefused checks that confirming is refused once the target is no longer an active member.
 func TestConfirmAfterTheTargetLeftTheTenantIsRefused(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
@@ -305,9 +287,7 @@ func TestConfirmAfterTheTargetLeftTheTenantIsRefused(t *testing.T) {
 	})
 }
 
-// Confirming a request whose target was suspended between the request and the
-// confirmation is refused: the account that would receive the organization must
-// be active.
+// TestConfirmAfterTheTargetWasSuspendedIsRefused checks that confirming is refused once the target's account is suspended.
 func TestConfirmAfterTheTargetWasSuspendedIsRefused(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
@@ -331,9 +311,7 @@ func TestConfirmAfterTheTargetWasSuspendedIsRefused(t *testing.T) {
 	})
 }
 
-// A deleted organization cancels its pending request in the same transaction:
-// the row is cancelled, not left pending, and the target's list no longer shows
-// it.
+// TestDeleteCancelsThePendingRequest checks that deleting the organization cancels its pending request and drops it from the target's list.
 func TestDeleteCancelsThePendingRequest(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
@@ -357,8 +335,7 @@ func TestDeleteCancelsThePendingRequest(t *testing.T) {
 	})
 }
 
-// A request for a tenant that has no owner is refused with ErrNoOwner; the
-// platform's own tenant is the case that matters.
+// TestRequestTransferRefusesATenantWithNoOwner checks that a request for a tenant with no owner is refused with ErrNoOwner.
 func TestRequestTransferRefusesATenantWithNoOwner(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")

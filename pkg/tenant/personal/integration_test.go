@@ -1,15 +1,5 @@
 package personal_test
 
-// The transactional cases: the real account module, the real roster and policy
-// modules and this module, over one SQLite database. They hold the property the
-// seam exists for — the account and everything it owns stand or fall together —
-// and they are deliberately end to end rather than over fakes: a transaction
-// boundary is the one thing a fake transaction cannot answer.
-//
-// The drive keeps every module in service through its action and stops them
-// afterwards, which is why each case's body runs inside the action: a database
-// the drive has stopped is closed.
-
 import (
 	"context"
 	"errors"
@@ -35,8 +25,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant/personal"
 )
 
-// recordingAudit accepts every row and keeps it, so a case can read what the
-// module wrote.
 type recordingAudit struct {
 	mu      sync.Mutex
 	entries []audit.Entry
@@ -55,7 +43,6 @@ func (a *recordingAudit) rows() []audit.Entry {
 	return append([]audit.Entry(nil), a.entries...)
 }
 
-// entriesOfAction answers the entries written for one action.
 func entriesOfAction(entries []audit.Entry, action string) []audit.Entry {
 	var out []audit.Entry
 	for _, entry := range entries {
@@ -66,17 +53,12 @@ func entriesOfAction(entries []audit.Entry, action string) []audit.Entry {
 	return out
 }
 
-// personalWriteGuard is the host's statement that a personal tenant and the
-// platform domain refuse management writes. The account-deletion floor is what
-// reads it here: without it the personal tenant's sole tenant-admin would look
-// like a business organization's.
 type personalWriteGuard struct{}
 
 func (personalWriteGuard) Denied(_ context.Context, tenantID string, _ authz.WriteOp) (bool, error) {
 	return personal.IsPersonalTenantID(tenantID) || tenantID == string(authz.PlatformDomain), nil
 }
 
-// assembly is the running set of modules a transactional case drives.
 type assembly struct {
 	admin       authn.AccountAdmin
 	accounts    authn.Accounts
@@ -87,7 +69,7 @@ type assembly struct {
 }
 
 // withAssembly drives the real modules to Init over a SQLite database of the
-// case's own and runs body while they are in service.
+// case's own; body runs inside the drive because it closes the database afterwards.
 func withAssembly(t *testing.T, body func(t *testing.T, a *assembly)) {
 	t.Helper()
 	dsn := "file:" + filepath.Join(t.TempDir(), "personal.db")
@@ -183,10 +165,7 @@ func (a *assembly) count(t *testing.T, table, where string, args ...any) int64 {
 	return n
 }
 
-// An account and its personal tenant come into being in one transaction. The
-// just-in-time row is the shape both SSO username strategies hand Create: a
-// user account with a username and Via jit. A username it opens with is
-// immutable from then on.
+// An account and its personal tenant come into being in one transaction.
 func TestAnAccountAndItsPersonalTenantStandTogether(t *testing.T) {
 	for _, via := range []string{"admin", "jit"} {
 		t.Run(via, func(t *testing.T) {
@@ -239,9 +218,6 @@ func TestAFailedProvisioningLeavesNoAccount(t *testing.T) {
 	for _, via := range []string{"admin", "jit"} {
 		t.Run(via, func(t *testing.T) {
 			withAssembly(t, func(t *testing.T, a *assembly) {
-				// The membership write is the second step of the seam. Without its
-				// table it fails after the tenant row has been written, which is the
-				// ordering the rollback case needs.
 				if err := a.handle.Exec("DROP TABLE authn_memberships").Error; err != nil {
 					t.Fatalf("dropping the memberships table: %v", err)
 				}
@@ -259,10 +235,8 @@ func TestAFailedProvisioningLeavesNoAccount(t *testing.T) {
 	}
 }
 
-// An account whose username is already a business tenant's name cannot own a
-// personal tenant addressed by it, and the whole creation rolls back. The
-// refusal reaches the account module's caller as ErrAccountExists, so a login
-// answers the name as taken rather than as an unavailable dependency.
+// A username already held as a business tenant's name rolls the whole creation
+// back with ErrAccountExists.
 func TestAnNameConflictLeavesNoAccount(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		if err := a.catalog.Create(t.Context(), tenant.Tenant{
@@ -325,8 +299,7 @@ func TestAServiceAccountOwnsNoPersonalTenant(t *testing.T) {
 	})
 }
 
-// A personal tenant keeps its name when the account is deleted: the tombstone
-// is what makes the username unreusable.
+// A personal tenant keeps its name after the account is deleted.
 func TestTheTombstoneKeepsTheName(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		created, err := a.admin.Create(t.Context(), authn.CreateAccount{Username: "dave", Via: "admin"})
@@ -347,8 +320,7 @@ func TestTheTombstoneKeepsTheName(t *testing.T) {
 	})
 }
 
-// The account's transaction writes the tenant row, so a creation that commits
-// leaves its creation audit row behind.
+// A committed account creation leaves its creation audit row.
 func TestCreatingAnAccountWritesTheCreationAuditRow(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		_, err := a.admin.Create(t.Context(), authn.CreateAccount{Username: "erin", Via: "admin"})
@@ -362,10 +334,7 @@ func TestCreatingAnAccountWritesTheCreationAuditRow(t *testing.T) {
 	})
 }
 
-// The transaction seam tombstones the tenant before the deletion hook runs, but
-// it cannot reach the memberships an administrator added. The hook removes
-// them, so deleting the account does not leave another account's membership in
-// a tenant no request can resolve.
+// The deletion hook removes the other members the transaction seam cannot reach.
 func TestDeletingAnAccountRemovesTheOtherMembersOfItsPersonalTenant(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		alice, err := a.admin.Create(t.Context(), authn.CreateAccount{Username: "alice", Via: "admin"})

@@ -14,15 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// readThrough loads a JSON document through the real configuration path and
-// hands back a reader this module's own section decodes from.
-//
-// The module's own declaration is what is exercised: prepare has to fail on a
-// key nobody wrote, and the route that finds the first one is the real decode.
-// A stub reader would prove the struct tags match the stub instead.
-//
-// Load is that path without a lifecycle behind it, and a reader is the whole of
-// what these cases want.
 func readThrough(t *testing.T, document string) config.Reader {
 	t.Helper()
 
@@ -38,8 +29,6 @@ func readThrough(t *testing.T, document string) config.Reader {
 		Name:      "host",
 		Resources: []any{config.HostIdentity{Prefix: "TENANTTEST", DefaultLocator: "file:" + path}},
 	})
-	// The declaration under test reaches the load as a registered module's
-	// resource, which is the only way one ever reaches it.
 	reg.Register(core.Module{Name: "reader", Resources: []any{schema()}})
 
 	reader, err := config.Load(t.Context(), reg, nil)
@@ -49,11 +38,7 @@ func readThrough(t *testing.T, document string) config.Reader {
 	return reader
 }
 
-// TestPrepareStatesEnabled is the stance a configured module takes. It states
-// StateEnabled rather than StateAuto because it delivers its capability
-// exclusively: StateAuto is the cell resolution disables when a second provider
-// claims the capability, and this module must fail that startup instead of
-// giving way.
+// TestPrepareStatesEnabled checks that a configured module states StateEnabled rather than StateAuto, so a second provider of the capability fails the startup instead of disabling it.
 func TestPrepareStatesEnabled(t *testing.T) {
 	got, err := prepare(readThrough(t, `{
 		"tenant": {"resolve": {"endpoints": ["public"], "extractor": "header"}}
@@ -66,11 +51,7 @@ func TestPrepareStatesEnabled(t *testing.T) {
 	}
 }
 
-// TestPrepareFailsWithoutTheEndpointList pins that a required key nobody wrote
-// fails the startup. A module taken in at run level has to start, so the
-// missing key is a failure carried out of Prepare, not a stance that disables
-// the module and lets the run go on: a prepare answering StateDisabled with a
-// reason and a nil error fails this case on the nil error alone.
+// TestPrepareFailsWithoutTheEndpointList checks that a missing endpoint list fails Prepare with an error rather than disabling the module.
 func TestPrepareFailsWithoutTheEndpointList(t *testing.T) {
 	got, err := prepare(readThrough(t, `{
 		"tenant": {"resolve": {"extractor": "header"}}
@@ -86,9 +67,7 @@ func TestPrepareFailsWithoutTheEndpointList(t *testing.T) {
 	}
 }
 
-// TestPrepareFailsWithoutTheExtractor is the other required key, reached the
-// same way. The two are told apart by name because they point at different
-// lines to write.
+// TestPrepareFailsWithoutTheExtractor checks that a missing extractor name fails Prepare and names that key.
 func TestPrepareFailsWithoutTheExtractor(t *testing.T) {
 	got, err := prepare(readThrough(t, `{
 		"tenant": {"resolve": {"endpoints": ["public"]}}
@@ -104,10 +83,7 @@ func TestPrepareFailsWithoutTheExtractor(t *testing.T) {
 	}
 }
 
-// TestPrepareFailsOnAnEmptyEndpointList covers the same fact by the route the
-// decoder does not take: a list written as empty is given, so the decoder
-// accepts it and prepare is what refuses it. A decoder that never saw the key
-// raises its own failure instead, which the case above pins.
+// TestPrepareFailsOnAnEmptyEndpointList checks that an endpoint list written as empty is refused by Prepare.
 func TestPrepareFailsOnAnEmptyEndpointList(t *testing.T) {
 	got, err := prepare(readThrough(t, `{
 		"tenant": {"resolve": {"endpoints": [], "extractor": "header"}}
@@ -123,9 +99,7 @@ func TestPrepareFailsOnAnEmptyEndpointList(t *testing.T) {
 	}
 }
 
-// TestPrepareFailsOnAnEmptyExtractorName is the extractor half of the route
-// above: a name written as the empty string is a value the decoder accepts and
-// this module refuses, because nothing selects it.
+// TestPrepareFailsOnAnEmptyExtractorName checks that an extractor name written as the empty string is refused by Prepare.
 func TestPrepareFailsOnAnEmptyExtractorName(t *testing.T) {
 	got, err := prepare(readThrough(t, `{
 		"tenant": {"resolve": {"endpoints": ["public"], "extractor": ""}}
@@ -141,15 +115,7 @@ func TestPrepareFailsOnAnEmptyExtractorName(t *testing.T) {
 	}
 }
 
-// TestPrepareTellsTheTwoAbsencesApart pins the distinction the design draws
-// between the two ways Prepare can find nothing: a registry whose config module
-// the host never supplied a reader to, and a section missing a key. The first is
-// the host's omission and carries core's ErrMissingProvider out as it stands;
-// the second is this module's own configuration and names the key. Merging the
-// two would point the operator at the wrong end.
-//
-// The config module is registered and has no instance, which is what the
-// omission leaves behind.
+// TestPrepareTellsTheTwoAbsencesApart checks that a config module with no reader yields core's ErrMissingProvider as it stands, while a section missing a key names that key.
 func TestPrepareTellsTheTwoAbsencesApart(t *testing.T) {
 	reg := core.New()
 	reg.Register(config.Module())
@@ -162,17 +128,7 @@ func TestPrepareTellsTheTwoAbsencesApart(t *testing.T) {
 	}
 }
 
-// TestPrepareFailsOnAnEndpointNamedTwice pins that the endpoint list is a set.
-// The list is this module's own input, and the entry point's surface takes an
-// endpoint by name without deduplicating, so a name written twice registers
-// the resolution layer on that endpoint twice: the roster lookup and the
-// identifier's binding to the logger would each run twice per request, and
-// nothing would say the configuration was wrong. Other modules that read a
-// listening-endpoint list handle a repeat differently: pkg/ratelimit and
-// pkg/authn/gate refuse it at startup, pkg/observability/otel drops it and
-// writes a line saying so, and pkg/audit/journal validates nothing and carries
-// the list through, dropping the repeat in its unique. This module refuses it
-// at startup.
+// TestPrepareFailsOnAnEndpointNamedTwice checks that Prepare refuses an endpoint named twice at startup with ErrDuplicateEndpoint.
 func TestPrepareFailsOnAnEndpointNamedTwice(t *testing.T) {
 	got, err := prepare(readThrough(t, `{
 		"tenant": {"resolve": {"endpoints": ["public", "public"], "extractor": "header"}}
@@ -192,17 +148,12 @@ func TestPrepareFailsOnAnEndpointNamedTwice(t *testing.T) {
 	if !strings.Contains(err.Error(), ConfigNamespace+"."+endpointsItem) {
 		t.Fatalf("the failure does not name the key the repeat was written in: %v", err)
 	}
-	// The namespace appears once, as the prefix of the item path. Writing it
-	// again ahead of the path spells "tenant.resolve: tenant.resolve.endpoints",
-	// and the second copy says nothing the path does not already carry.
 	if n := strings.Count(err.Error(), ConfigNamespace); n != 1 {
 		t.Fatalf("the failure names %s %d times, want once: %v", ConfigNamespace, n, err)
 	}
 }
 
-// TestPrepareAcceptsEachEndpointOnce is the other half of the rule above: a
-// list of distinct names is what this module is for, and the duplicate check
-// must not refuse the configuration it accepts the single entry of.
+// TestPrepareAcceptsEachEndpointOnce checks that a list of distinct endpoint names is accepted.
 func TestPrepareAcceptsEachEndpointOnce(t *testing.T) {
 	got, err := prepare(readThrough(t, `{
 		"tenant": {"resolve": {"endpoints": ["public", "admin"], "extractor": "header"}}

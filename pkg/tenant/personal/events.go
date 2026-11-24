@@ -1,15 +1,5 @@
 package personal
 
-// The event compensation for the account lifecycle hooks. The account module
-// calls the hooks after its own transaction commits, and stages the account
-// events in the same transaction through its outbox. A process that stops
-// between the commit and the hooks would otherwise leave the personal tenant as
-// it was, so the module also subscribes the account events and runs the same
-// idempotent hooks again when a delivery arrives. The event is a hint and never
-// the authority: the handler of a status change reads the account's current
-// state first, so a late or reordered event cannot apply a state the account has
-// already left.
-
 import (
 	"context"
 	"errors"
@@ -19,8 +9,6 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// subscribe registers the compensation for the two account events. It runs in
-// Init, where the bus accepts subscriptions.
 func (p *product) subscribe() {
 	if p.bus == nil {
 		return
@@ -29,7 +17,6 @@ func (p *product) subscribe() {
 	p.bus.Subscribe(authn.EventAccountDeleted, ModuleName, p.once(p.onAccountDeleted))
 }
 
-// once wraps a handler so that one event is acted on once.
 func (p *product) once(h event.Handler) event.Handler {
 	return func(ctx context.Context, evt event.Event) error {
 		if evt.ID != "" && p.seen != nil && p.seen.has(evt.ID) {
@@ -45,9 +32,8 @@ func (p *product) once(h event.Handler) event.Handler {
 	}
 }
 
-// onAccountStatusChanged reruns the status hook that matches the account's
-// current state. The payload's target is not trusted on its own: delivery
-// guarantees neither order nor count.
+// onAccountStatusChanged reruns the hook matching the account's current state;
+// the payload's target is not trusted because delivery guarantees neither order nor count.
 func (p *product) onAccountStatusChanged(ctx context.Context, evt event.Event) error {
 	var payload authn.AccountStatusChanged
 	if err := event.DecodePayload(evt.Payload, &payload); err != nil {
@@ -71,7 +57,6 @@ func (p *product) onAccountStatusChanged(ctx context.Context, evt event.Event) e
 	}
 }
 
-// onAccountDeleted reruns the deletion hook.
 func (p *product) onAccountDeleted(ctx context.Context, evt event.Event) error {
 	var payload authn.AccountDeleted
 	if err := event.DecodePayload(evt.Payload, &payload); err != nil {
@@ -84,7 +69,6 @@ func (p *product) onAccountDeleted(ctx context.Context, evt event.Event) error {
 	return p.AccountDeleted(ctx, id)
 }
 
-// accountStatus answers the account's current state for a status-changed event.
 func (p *product) accountStatus(ctx context.Context, id authn.AccountID,
 	payload authn.AccountStatusChanged,
 ) (authn.AccountStatus, error) {

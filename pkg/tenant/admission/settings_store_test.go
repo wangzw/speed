@@ -22,14 +22,7 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The cases here run the declaration through the settings module that builds
-// the key table from it, over a SQLite database the database module opened: the
-// assembly is refused if an item's key and its field's tag disagree, a write on
-// either side of the lifetime's domain is judged as the code acts on it, a
-// switch's effective value is the global row OR the tenant's row (the declared
-// default applies only where neither holds one), and the layer reads what the
-// store holds.
-
+// TestTheSettingsAreDeclaredToTheStoreWithTheirDomainsAndDefaults checks that the settings module accepts the declaration and holds its domains and defaults.
 func TestTheSettingsAreDeclaredToTheStoreWithTheirDomainsAndDefaults(t *testing.T) {
 	withDeliveredStore(t, func(ctx context.Context, store settings.Store) {
 		declared := map[string]settings.DeclaredItem{}
@@ -64,20 +57,19 @@ func TestTheSettingsAreDeclaredToTheStoreWithTheirDomainsAndDefaults(t *testing.
 	})
 }
 
+// TestTheLayerReadsTheSwitchesTheStoreHoldsPerTenant checks that a switch's effective value is the global row OR the tenant's row, the default applying only where neither holds one.
 func TestTheLayerReadsTheSwitchesTheStoreHoldsPerTenant(t *testing.T) {
 	withDeliveredStore(t, func(ctx context.Context, store settings.Store) {
 		r := newRig(t)
 		r.members.add(alice, globex)
 		r.l.store = store
 
-		// Nothing is written: both tenants are open to a single-factor member.
 		for _, tenantID := range []string{acme, globex} {
 			if rp := r.serve(r.as(tenantID)); !rp.reached() {
 				t.Fatalf("with no row, %s answered %d, want it admitted", tenantID, rp.status)
 			}
 		}
 
-		// A row for acme binds acme alone.
 		write(t, ctx, store, settings.ForTenant(acme), requireMFAKey, true)
 		afterTenant := time.Now().UTC().Add(time.Second)
 		stepUp(t, "acme with its own row", r.serve(r.as(acme, authntest.WithAuthTime(afterTenant))), acrMultiFactor)
@@ -85,8 +77,6 @@ func TestTheLayerReadsTheSwitchesTheStoreHoldsPerTenant(t *testing.T) {
 			t.Fatalf("globex answered %d, want it admitted: only acme has a row", rp.status)
 		}
 
-		// A global row binds every tenant, and a tenant's own row of false does
-		// not lower that floor: the effective value is the OR of the two.
 		write(t, ctx, store, settings.ForTenant(acme), requireMFAKey, false)
 		write(t, ctx, store, settings.Global(), requireMFAKey, true)
 		afterGlobal := time.Now().UTC().Add(time.Second)
@@ -103,6 +93,7 @@ func write(t *testing.T, ctx context.Context, store settings.Store, layer settin
 	}
 }
 
+// TestTheLifetimeIsReadFromTheGlobalRowAlone checks that the lifetime is read from the global row alone.
 func TestTheLifetimeIsReadFromTheGlobalRowAlone(t *testing.T) {
 	withDeliveredStore(t, func(ctx context.Context, store settings.Store) {
 		r := newRig(t)
@@ -118,10 +109,6 @@ func TestTheLifetimeIsReadFromTheGlobalRowAlone(t *testing.T) {
 	})
 }
 
-// withDeliveredStore runs body against the settings store the settings module
-// delivers in an assembly that holds this module's declaration. This module is
-// registered for its declaration alone, the way the key table reads every
-// registered module's: it does not take part in the drive.
 func withDeliveredStore(t *testing.T, body func(ctx context.Context, store settings.Store)) {
 	t.Helper()
 	database := dbtest.SQLite(t, filepath.Join(t.TempDir(), "settings.db"), nil)
@@ -162,8 +149,6 @@ func withDeliveredStore(t *testing.T, body func(ctx context.Context, store setti
 	}
 }
 
-// applySettingsMigrations runs the settings module's own SQLite migrations, read
-// out of the declaration it registers.
 func applySettingsMigrations(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	var tree fs.FS
@@ -195,21 +180,15 @@ func applySettingsMigrations(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// decodesNothing is the configuration reader of an assembly that configures
-// nothing, which leaves every declared default in place.
 type decodesNothing struct{}
 
 func (decodesNothing) Decode(string, any) error { return nil }
 
-// discardingLogger is the logging capability of an assembly whose records nobody
-// reads.
 type discardingLogger struct{}
 
 func (discardingLogger) Named(string) *slog.Logger { return slog.New(slog.DiscardHandler) }
 func (discardingLogger) Redaction() log.Redaction  { return nil }
 
-// acceptingBus takes every event and delivers none: the store publishes a change
-// after each write, and nothing here subscribes to it.
 type acceptingBus struct{}
 
 func (acceptingBus) Publish(context.Context, event.Event) error { return nil }

@@ -21,22 +21,8 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The cases built on this file drive this module's descriptor through a real
-// registry: the configuration module with a reader the real loader produced,
-// this module itself, and stand-ins for the required capabilities and for the
-// entry point it takes up in Init. What a product built by hand cannot show is
-// which callback takes up which dependency, what a single missing capability
-// does at resolution, and what the descriptor says of its own delivery, which is
-// none.
-
-// managementBody is the configuration a default drive runs on: one endpoint of
-// the entry point, "public", that both the platform and the tenant-surface
-// routes are mounted on.
 const managementBody = `{"tenant": {"admin": {"endpoints": ["public"], "tenant-endpoints": ["public"], "self-endpoints": ["public"]}}}`
 
-// recordingModule is this module's descriptor with its New wrapped to record the
-// product it built. The wrapper records the instance and returns it unchanged,
-// so the descriptor behaves as it does when registered as it stands.
 func recordingModule(record *any) core.Module {
 	m := Module()
 	inner := m.New
@@ -51,43 +37,22 @@ func recordingModule(record *any) core.Module {
 	return m
 }
 
-// managementAssembly is one drive. The zero value mounts the management routes
-// on "public" with everything this module requires and a stand-in entry point;
-// each field takes one capability away, replaces one stand-in, or records the
-// product New built.
 type managementAssembly struct {
-	// body is the configuration. The zero value uses managementBody.
-	body string
-	// noCatalog, noGuard, noAudit, noVerification, noWriteGuard and
-	// noProvisioner and noOrganization and noRouteGuard leave out the stand-in
-	// for the required capability named, so the drive reaches resolution without
-	// it.
+	body                                                                                                                  string
 	noCatalog, noGuard, noAudit, noVerification, noWriteGuard, noProvisioner, noOrganization, noOwnerTarget, noRouteGuard bool
-	// noRouter leaves the entry point out, which fails Init.
-	noRouter bool
-	// catalog is the roster stand-in delivered as that capability.
-	catalog tenant.Catalog
-	// writeGuard and provisioner are the host-supplied seams delivered as those
-	// capabilities; nil uses a permissive guard and a provisioner that accepts
-	// every registration.
-	writeGuard   tenant.WriteGuard
-	provisioner  tenant.Provisioner
-	organization tenant.OrganizationWriter
-	ownerTarget  tenant.OwnershipTarget
-	// verification is the signup-state read stand-in; nil uses one that reports
-	// no self-registration.
-	verification authn.SignupVerification
-	// router is the entry point stand-in; nil uses one that declares "public".
-	router speedhttp.Router
-	// gate is the optional route-declaration surface, taken up in Init when set.
-	gate authz.Gate
-	// logger is the logging capability, taken up in Init; nil uses a recorder.
-	logger *slog.Logger
-	// record, when set, receives the product New built.
-	record *any
+	noRouter                                                                                                              bool
+	catalog                                                                                                               tenant.Catalog
+	writeGuard                                                                                                            tenant.WriteGuard
+	provisioner                                                                                                           tenant.Provisioner
+	organization                                                                                                          tenant.OrganizationWriter
+	ownerTarget                                                                                                           tenant.OwnershipTarget
+	verification                                                                                                          authn.SignupVerification
+	router                                                                                                                speedhttp.Router
+	gate                                                                                                                  authz.Gate
+	logger                                                                                                                *slog.Logger
+	record                                                                                                                *any
 }
 
-// drive advances the assembly to depth and runs action there.
 func (a managementAssembly) drive(t *testing.T, depth core.Stage, action func(ctx context.Context, reg *core.Registry) error) error {
 	t.Helper()
 	body := a.body
@@ -191,7 +156,6 @@ func (a managementAssembly) drive(t *testing.T, depth core.Stage, action func(ct
 	return reg.Drive(t.Context(), core.Drive{Depth: depth, Participants: names, Action: action})
 }
 
-// productOfAssembly narrows a recorded instance to this module's product.
 func productOfAssembly(t *testing.T, instance any) *product {
 	t.Helper()
 	p, ok := instance.(*product)
@@ -201,18 +165,16 @@ func productOfAssembly(t *testing.T, instance any) *product {
 	return p
 }
 
-// This module delivers no capability: it carries no product another module
-// resolves, and the routes are its only product.
+// This module delivers no capability: it carries no product another module resolves,
+// and the routes are its only product.
 func TestThisModuleDeliversNothing(t *testing.T) {
 	if provides := Module().Provides; len(provides) != 0 {
 		t.Errorf("Provides = %+v, want none: this module delivers no capability", provides)
 	}
 }
 
-// The required capabilities are each another module's or the host's to deliver:
-// a command that brings this one in without the roster, the guard, the audit
-// capability, the verification read, the write guard or the provisioner fails
-// resolution with ErrMissingProvider, before New builds anything.
+// Each required capability missing from the command fails resolution with
+// ErrMissingProvider before New builds anything.
 func TestAMissingRequiredCapabilityFailsResolution(t *testing.T) {
 	for name, missing := range map[string]managementAssembly{
 		"no catalog":      {noCatalog: true},
@@ -240,8 +202,8 @@ func TestAMissingRequiredCapabilityFailsResolution(t *testing.T) {
 	}
 }
 
-// A command that mounts the management routes and names no entry point fails
-// wiring with ErrNoRouter, naming this module.
+// A command that mounts the management routes and names no entry point fails wiring
+// with ErrNoRouter, naming this module.
 func TestNoEntryPointIsErrNoRouter(t *testing.T) {
 	err := managementAssembly{noRouter: true}.drive(t, core.StageInit, nil)
 	if !errors.Is(err, authz.ErrNoRouter) {
@@ -252,8 +214,8 @@ func TestNoEntryPointIsErrNoRouter(t *testing.T) {
 	}
 }
 
-// An endpoint the configuration lists but the entry point does not declare fails
-// Init with ErrUnknownEndpoint, naming the endpoint.
+// An endpoint the configuration lists but the entry point does not declare fails Init
+// with ErrUnknownEndpoint, naming the endpoint.
 func TestAnUnknownEndpointIsErrUnknownEndpoint(t *testing.T) {
 	body := `{"tenant": {"admin": {"endpoints": ["public", "ghost"]}}}`
 	err := managementAssembly{body: body}.drive(t, core.StageInit, nil)
@@ -265,8 +227,8 @@ func TestAnUnknownEndpointIsErrUnknownEndpoint(t *testing.T) {
 	}
 }
 
-// New takes the roster, the guard, the audit capability, the verification read
-// and the host's two seams up, and Init takes the entry point and the optional
+// New takes the roster, the guard, the audit capability, the verification read and the
+// host's two seams up, and Init takes the entry point and the optional
 // route-declaration surface.
 func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) {
 	catalog := &stubCatalog{}
@@ -322,9 +284,9 @@ func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) 
 	})
 }
 
-// A real registry mounts the module's whole route surface on the configured
-// endpoint and declares every route open on the surface, so the middleware lets
-// a request reach the handler, which makes the decision.
+// A real registry mounts the module's whole route surface on the configured endpoint
+// and declares every route open on the surface, so the middleware lets a request reach
+// the handler, which makes the decision.
 func TestARealRegistryMountsEveryRouteAndDeclaresThemOpen(t *testing.T) {
 	router := newStubRouter("public")
 	gate := authztest.NewGate()
@@ -342,12 +304,10 @@ func TestARealRegistryMountsEveryRouteAndDeclaresThemOpen(t *testing.T) {
 		{http.MethodDelete, "/api/v1/system/tenants/:tenant"}:                         true,
 		{http.MethodPatch, "/api/v1/system/tenants/:tenant/profile"}:                  true,
 		{http.MethodPost, "/api/v1/system/tenants/:tenant/status"}:                    true,
-		// The tenant surface: the organization's own owner.
-		{http.MethodPost, "/api/v1/tenants/:tenant/owner/requests"}:            true,
-		{http.MethodGet, "/api/v1/tenants/:tenant/owner/requests/pending"}:     true,
-		{http.MethodDelete, "/api/v1/tenants/:tenant/owner/requests/:request"}: true,
-		{http.MethodDelete, "/api/v1/tenants/:tenant"}:                         true,
-		// The target's account-level surface: the caller's own identity.
+		{http.MethodPost, "/api/v1/tenants/:tenant/owner/requests"}:                   true,
+		{http.MethodGet, "/api/v1/tenants/:tenant/owner/requests/pending"}:            true,
+		{http.MethodDelete, "/api/v1/tenants/:tenant/owner/requests/:request"}:        true,
+		{http.MethodDelete, "/api/v1/tenants/:tenant"}:                                true,
 		{http.MethodGet, "/api/v1/auth/me/owner-transfer-requests"}:                   true,
 		{http.MethodGet, "/api/v1/auth/me/owner-transfer-requests/:request"}:          true,
 		{http.MethodPost, "/api/v1/auth/me/owner-transfer-requests/:request/confirm"}: true,
@@ -367,9 +327,7 @@ func TestARealRegistryMountsEveryRouteAndDeclaresThemOpen(t *testing.T) {
 	}
 }
 
-// The endpoint list refuses a shape the module cannot run on, naming the key:
-// an empty list mounts the routes nowhere, and the name that stands for every
-// endpoint is refused because it would put them on the public endpoints.
+// The endpoint list refuses a shape the module cannot run on, naming the key.
 func TestTheEndpointListRefusesShapesItCannotRunOn(t *testing.T) {
 	cases := map[string]string{
 		"empty":      `[]`,
@@ -391,10 +349,9 @@ func TestTheEndpointListRefusesShapesItCannotRunOn(t *testing.T) {
 	}
 }
 
-// The descriptor declares the two permissions and their translation as
-// resources, so the process's catalog carries them and the process's translation
-// expresses a decision on either. Without the translation the guard could not
-// express the permission and every route would refuse its caller.
+// The descriptor declares the two permissions and their translation as resources, so
+// the process's catalog carries them and the process's translation expresses a
+// decision on either.
 func TestTheModuleDeclaresItsPermissionVocabulary(t *testing.T) {
 	var spec authz.PermissionSpec
 	var translation authz.TranslationSpec
@@ -432,10 +389,7 @@ func TestTheModuleDeclaresItsPermissionVocabulary(t *testing.T) {
 }
 
 // Driving the real enforcement module alongside this one resolves the process
-// translation with this module's rows and leaves the guard able to express both
-// permissions: the rows reach the one set the whole process decides by, and they
-// do not collide with the rows the authorization capability carries, which would
-// fail the resolution outright.
+// translation with this module's rows without a conflict.
 func TestTheDeclaredRowsReachTheProcessTranslation(t *testing.T) {
 	body := `{"tenant": {"admin": {"endpoints": ["public"], "tenant-endpoints": ["public"], "self-endpoints": ["public"]}}, "authz": {"guard": {"endpoints": ["public"]}}}`
 	enforcer := authztest.NewEnforcer()

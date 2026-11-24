@@ -11,14 +11,9 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The cases in this file are about the WHERE the filter leaves on a statement:
-// that the caller's conditions keep the meaning GORM gives them, that GORM's
-// own refusal of an unconditioned write survives the filter's condition, and
-// that a write addressed by a struct's key reaches the context's row.
-
-// GORM refuses an update or a delete that carries no condition at all. The
-// filter's own condition is not the caller's, so it must not turn that refusal
-// into a statement over the whole tenant.
+// TestAnUnconditionedUpdateIsStillRefused checks that GORM's refusal of an
+// update or delete with no caller condition survives the filter's own
+// condition.
 func TestAnUnconditionedUpdateIsStillRefused(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -37,6 +32,8 @@ func TestAnUnconditionedUpdateIsStillRefused(t *testing.T) {
 	}
 }
 
+// TestAnUnconditionedDeleteIsStillRefused checks that a delete with no caller
+// condition is still refused under the filter.
 func TestAnUnconditionedDeleteIsStillRefused(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -48,8 +45,6 @@ func TestAnUnconditionedDeleteIsStillRefused(t *testing.T) {
 	requireRowTenant(t, handle, "a", "acme")
 }
 
-// softOrder is a scoped model with soft deletion, whose own condition GORM
-// discounts when it judges whether a delete carries one.
 type softOrder struct {
 	tenant.Model
 	ID        string         `gorm:"column:id;primaryKey"`
@@ -58,6 +53,9 @@ type softOrder struct {
 
 func (softOrder) TableName() string { return "soft_orders" }
 
+// TestAnUnconditionedSoftDeleteIsStillRefused checks that a soft delete with no
+// caller condition is still refused, GORM discounting the soft-delete
+// condition.
 func TestAnUnconditionedSoftDeleteIsStillRefused(t *testing.T) {
 	handle := open(t)
 	if err := handle.Exec("CREATE TABLE soft_orders (tenant_id TEXT NOT NULL, id TEXT NOT NULL, " +
@@ -82,7 +80,6 @@ func TestAnUnconditionedSoftDeleteIsStillRefused(t *testing.T) {
 		t.Fatalf("after a refused soft delete %d rows are live, want 2", live)
 	}
 
-	// A conditioned one goes through, and reaches acme's row alone.
 	res := handle.WithContext(ctx).Where("id <> ''").Delete(&softOrder{})
 	if res.Error != nil || res.RowsAffected != 1 {
 		t.Fatalf("a conditioned soft delete gave %v and reached %d rows, want acme's one",
@@ -90,8 +87,8 @@ func TestAnUnconditionedSoftDeleteIsStillRefused(t *testing.T) {
 	}
 }
 
-// An update a caller deliberately widened with AllowGlobalUpdate is still one
-// tenant's statement.
+// TestAGlobalUpdateStaysInsideTheTenant checks that an update widened with
+// AllowGlobalUpdate is still scoped to one tenant.
 func TestAGlobalUpdateStaysInsideTheTenant(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -106,8 +103,6 @@ func TestAGlobalUpdateStaysInsideTheTenant(t *testing.T) {
 	}
 }
 
-// seedSharedID gives globex a row under acme's identifier a, so that a write
-// addressed by the key's identifier half alone would reach both.
 func seedSharedID(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	seed(t, handle)
@@ -118,8 +113,8 @@ func seedSharedID(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// A delete addressed by the struct's own key is how GORM deletes one row; under
-// the composite key the tenant half of that key is the context's.
+// TestDeleteByTheStructKeyReachesTheContextsRow checks that a delete addressed
+// by the struct's own key reaches the context tenant's row.
 func TestDeleteByTheStructKeyReachesTheContextsRow(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -145,7 +140,8 @@ func TestDeleteByTheStructKeyReachesTheContextsRow(t *testing.T) {
 	}
 }
 
-// A key whose tenant half names another tenant is a write naming that tenant.
+// TestDeleteByAKeyNamingAnotherTenantIsRefused checks that a key whose tenant
+// half names another tenant is refused as a write naming that tenant.
 func TestDeleteByAKeyNamingAnotherTenantIsRefused(t *testing.T) {
 	handle := open(t)
 	seedSharedID(t, handle)
@@ -158,8 +154,8 @@ func TestDeleteByAKeyNamingAnotherTenantIsRefused(t *testing.T) {
 	}
 }
 
-// An update addressed by a batch of keys renders them as tuples, whose tenant
-// half is the context's too.
+// TestUpdateByABatchOfKeysReachesTheContextsRows checks that an update by a
+// batch of keys, rendered as tuples, is scoped to the context's tenant.
 func TestUpdateByABatchOfKeysReachesTheContextsRows(t *testing.T) {
 	handle := open(t)
 	seedSharedID(t, handle)
@@ -173,8 +169,9 @@ func TestUpdateByABatchOfKeysReachesTheContextsRows(t *testing.T) {
 	}
 }
 
-// FirstOrCreate and FirstOrInit copy the conditions they searched by onto the
-// value they return when nothing was found.
+// TestFirstOrCreateKeepsTheConditionsItSearchedBy checks that FirstOrCreate and
+// FirstOrInit copy their search conditions onto the value returned when nothing
+// is found.
 func TestFirstOrCreateKeepsTheConditionsItSearchedBy(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -207,8 +204,6 @@ func TestFirstOrCreateKeepsTheConditionsItSearchedBy(t *testing.T) {
 		t.Fatalf("FirstOrInit returned %+v, want the condition's note", inited)
 	}
 
-	// A row that exists in another tenant only is not found, and is not
-	// reused: the row created is acme's own.
 	var other order
 	if err := handle.WithContext(ctx).FirstOrCreate(&other, order{ID: "b"}).Error; err != nil {
 		t.Fatalf("FirstOrCreate over another tenant's id: %v", err)
@@ -218,9 +213,8 @@ func TestFirstOrCreateKeepsTheConditionsItSearchedBy(t *testing.T) {
 	}
 }
 
-// GORM renders a leading single OR by moving it behind the first expression
-// that is not one. The filter groups what the caller wrote and must group what
-// GORM would have rendered, not a rewrite of it.
+// TestALeadingOrKeepsTheMeaningGORMGivesIt checks that a leading single OR is
+// grouped as GORM would render it, not as a rewrite of it.
 func TestALeadingOrKeepsTheMeaningGORMGivesIt(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -236,7 +230,8 @@ func TestALeadingOrKeepsTheMeaningGORMGivesIt(t *testing.T) {
 	}
 }
 
-// A lone OR, and a lone raw condition carrying one, stay inside the tenant.
+// TestALoneOrStaysInsideTheTenant checks that a lone OR, and a lone raw
+// condition carrying one, stay inside the tenant.
 func TestALoneOrStaysInsideTheTenant(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -259,8 +254,8 @@ func TestALoneOrStaysInsideTheTenant(t *testing.T) {
 	}
 }
 
-// Statement reuse: a chain executed twice keeps the caller's conditions as the
-// caller wrote them, and the second execution is as scoped as the first.
+// TestAChainExecutedTwiceStaysScoped checks that a chain executed twice keeps
+// the caller's conditions and is as scoped the second time.
 func TestAChainExecutedTwiceStaysScoped(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -279,8 +274,8 @@ func TestAChainExecutedTwiceStaysScoped(t *testing.T) {
 	}
 }
 
-// A chain executed under one tenant and then carried to another context is
-// judged by the context it runs under now, not by the one it first ran in.
+// TestAChainCarriedToAnotherContextIsJudgedAfresh checks that a chain carried
+// to another context is judged by the context it runs under now.
 func TestAChainCarriedToAnotherContextIsJudgedAfresh(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -314,10 +309,6 @@ func TestAChainCarriedToAnotherContextIsJudgedAfresh(t *testing.T) {
 	}
 }
 
-// byKey is a condition addressing a row by the whole key, in the form GORM's
-// association mode writes a record's key: an IN over a tuple of the key's
-// columns, each qualified by the table's name, with the tenant half left empty
-// and the rest written.
 func byKey(id string) clause.IN {
 	return clause.IN{
 		Column: []clause.Column{{Table: "orders", Name: "tenant_id"}, {Table: "orders", Name: "id"}},
@@ -325,10 +316,9 @@ func byKey(id string) clause.IN {
 	}
 }
 
-// A key whose tenant half was filled under one tenant is filled again under the
-// next: the filter keeps the conditions as they were written, so a chain
-// carried to another context addresses that tenant's row, not the first
-// tenant's.
+// TestAKeyFilledUnderOneTenantIsFilledAfreshUnderAnother checks that a chain
+// carried to another tenant's context addresses that tenant's row, not the
+// first tenant's.
 func TestAKeyFilledUnderOneTenantIsFilledAfreshUnderAnother(t *testing.T) {
 	handle := open(t)
 	seedSharedID(t, handle)
@@ -345,11 +335,8 @@ func TestAKeyFilledUnderOneTenantIsFilledAfreshUnderAnother(t *testing.T) {
 	}
 }
 
-// A column qualified by another table is that table's, whatever its name: a
-// tuple reaching into another table's columns is no key of the statement's
-// own, but the caller's condition across the two, and its tenant half is left
-// as written. Filling it would give a condition that selects nothing the
-// context's tenant, and the rows the other table's columns then pick.
+// TestATupleOverAnotherTablesColumnIsNoKey checks that a tuple over another
+// table's columns is not filled as the statement's own key.
 func TestATupleOverAnotherTablesColumnIsNoKey(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -374,10 +361,9 @@ func TestATupleOverAnotherTablesColumnIsNoKey(t *testing.T) {
 	}
 }
 
-// A write conditioned on another table's tenant column names no tenant of the
-// statement's own: the filter leaves the condition to the database, which
-// refuses a column the statement cannot reach, rather than refusing the write
-// as one naming another tenant.
+// TestAWriteConditionedOnAnotherTablesTenantColumnIsNotJudged checks that a
+// write conditioned on another table's tenant column is left to the database
+// rather than refused as naming another tenant.
 func TestAWriteConditionedOnAnotherTablesTenantColumnIsNotJudged(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)

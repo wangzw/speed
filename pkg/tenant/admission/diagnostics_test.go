@@ -7,8 +7,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// ownLines are the records this module wrote, told from the entry point's by
-// the module name in the message.
 func ownLines(logs *recorder) []record {
 	var out []record
 	for _, rec := range logs.all() {
@@ -19,6 +17,7 @@ func ownLines(logs *recorder) []record {
 	return out
 }
 
+// TestStartupWritesTheGuardedEndpointsAndEveryLineStartsWithTheDirectoryPrefix checks that startup writes the guarded endpoints and every line starts with the tenant prefix.
 func TestStartupWritesTheGuardedEndpointsAndEveryLineStartsWithTheDirectoryPrefix(t *testing.T) {
 	logs := newRecorder()
 	body := `{
@@ -55,6 +54,7 @@ func TestStartupWritesTheGuardedEndpointsAndEveryLineStartsWithTheDirectoryPrefi
 	}
 }
 
+// TestTheWarningForAnAbsentRegistryOfProviders checks that an absent provider registry, with require-sso switchable, writes one Warn.
 func TestTheWarningForAnAbsentRegistryOfProviders(t *testing.T) {
 	warned := func(t *testing.T, supplied ...supply) []record {
 		t.Helper()
@@ -93,6 +93,7 @@ func TestTheWarningForAnAbsentRegistryOfProviders(t *testing.T) {
 	})
 }
 
+// TestTheSupplyOfAnOptionalCapabilityIsSaidInTheStartupLine checks that the startup line states which optional capabilities are supplied.
 func TestTheSupplyOfAnOptionalCapabilityIsSaidInTheStartupLine(t *testing.T) {
 	logs := newRecorder()
 	f := fixture{supplied: []supply{withLogs(logs), withDecider(&deciderStub{}), withProviders(standardProviders())}}

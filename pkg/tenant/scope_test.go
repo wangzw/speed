@@ -8,31 +8,23 @@ import (
 	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
 )
 
-// TestFromContextDoesNotFallBack records the half of the property a test can
-// reach. The other half — that nothing outside this capability directory can
-// write an identifier — is enforced by the compiler, because the writing
-// in an internal package; a test cannot observe its absence.
+// TestFromContextDoesNotFallBack checks that FromContext reports no tenant for a
+// context that carries none.
 func TestFromContextDoesNotFallBack(t *testing.T) {
 	if id, ok := FromContext(context.Background()); ok {
 		t.Fatalf("a context with no tenant reported %q", id)
 	}
 }
 
-// TestCrossTenantIsNotATenant records that crossing tenants and belonging to
-// one are different facts. A context that crosses is not a context that
-// belongs to some tenant, and reading it as one would make every unscoped
-// statement look scoped.
+// TestCrossTenantIsNotATenant checks that a crossing context carries no tenant.
 func TestCrossTenantIsNotATenant(t *testing.T) {
 	if id, ok := FromContext(CrossTenant(context.Background())); ok {
 		t.Fatalf("a cross-tenant context reported tenant %q", id)
 	}
 }
 
-// TestCrossTenantHandsOverTheIdentifier is the same fact on a context that did
-// belong to a tenant: marking it to cross gives that tenant up. A reader of the
-// marked context — the audit journal filling its tenant column is one — would
-// otherwise file an unscoped statement under the tenant of the request that
-// happened to issue it.
+// TestCrossTenantHandsOverTheIdentifier checks that marking a tenant's context to
+// cross gives that tenant up.
 func TestCrossTenantHandsOverTheIdentifier(t *testing.T) {
 	scoped := tenantctx.WithID(context.Background(), "acme")
 	if id, ok := FromContext(CrossTenant(scoped)); ok {
@@ -43,9 +35,8 @@ func TestCrossTenantHandsOverTheIdentifier(t *testing.T) {
 	}
 }
 
-// TestAnIdentifierOutsideTheDomainIsNotBound records the guard the convention
-// carries with it. The empty identifier is what an unfilled tenant column
-// holds, and binding it would write a row that belongs to no tenant.
+// TestAnIdentifierOutsideTheDomainIsNotBound checks that ID.Value refuses an
+// identifier outside the domain and still returns the string.
 func TestAnIdentifierOutsideTheDomainIsNotBound(t *testing.T) {
 	for _, tc := range []struct {
 		id   ID
@@ -59,8 +50,6 @@ func TestAnIdentifierOutsideTheDomainIsNotBound(t *testing.T) {
 		if !errors.Is(err, tc.want) {
 			t.Errorf("binding %q gave %v, want %v", tc.id, err, tc.want)
 		}
-		// The value still comes back beside the refusal, for the callers
-		// that read it and drop the error.
 		if v != string(tc.id) {
 			t.Errorf("binding %q returned the value %#v beside its refusal, want the string", tc.id, v)
 		}
@@ -70,9 +59,8 @@ func TestAnIdentifierOutsideTheDomainIsNotBound(t *testing.T) {
 	}
 }
 
-// TestStatusZeroIsRefused records which direction the zero value falls. A row
-// whose status was never written, and a row holding a value this build does not
-// know, both have to read as not served.
+// TestStatusZeroIsRefused checks that the zero and unrecognised Status values read
+// as not served.
 func TestStatusZeroIsRefused(t *testing.T) {
 	var unset Status
 	if unset != StatusDisabled {
