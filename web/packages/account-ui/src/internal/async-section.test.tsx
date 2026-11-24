@@ -1,10 +1,5 @@
 /**
- * AccountAsyncSection behaviour: the binding derives ui-kit's stale notice
- * from a read's failure over an already settled payload, so a failed
- * refresh keeps the content on screen and states that it may be out of
- * date; the notice is withdrawn while a read is in flight and the retry is
- * the section's own retry. Without a settled payload the same failure
- * stays the retryable error placeholder.
+ * AccountAsyncSection checks the stale notice over retained content.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -44,12 +39,10 @@ describe('AccountAsyncSection', () => {
     const content = screen.getByText('content: ready')
     const alert = screen.getByRole('alert')
     expect(alert).toHaveTextContent(zhCN.stale.description)
-    // The notice stands above the content it marks.
     expect(
       alert.compareDocumentPosition(content) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
-    // The failure never replaces the content with the error placeholder.
     expect(screen.queryByText(errorState.title)).toBeNull()
 
     await user.click(screen.getByRole('button', { name: errorState.retryLabel }))

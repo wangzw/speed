@@ -1,30 +1,7 @@
 /**
- * StepUpChallenge behaviour: the dialog driving one `purpose: 'step-up'`
- * flow (POST /api/v1/auth/flows/authenticated, then POST /api/v1/auth/flows/answer per
- * step).
- *
- * What this suite pins: opening the dialog starts the flow and renders
- * its first step; choosing a factor answers with `step: 'factor'` and
- * the factor identifier; the flow's challenge step then asks for a code
- * answered under the same `factor` step, the chosen factor re-named
- * beside it; a completion in state 'elevated' fires onSuccess; a ready
- * state's `complete` step is answered automatically once per sequence,
- * and the step's own confirmation button takes over when that automatic
- * answer is refused; a refused answer renders its code text and stays
- * retryable; an account with no
- * active factor is recognised from the caller's own factor read and the
- * dialog names the missing second factor, renders no link unless the host
- * supplies accountHref, and starts no flow at all; a 401 start refusal on an established
- * session (factors exist, none may strengthen it) offers a re-login; a
- * 400 or any other start failure renders as its code, never as either of
- * those explanations; an account with no factor re-proves the first factor
- * with the method that established its session when the session is past
- * the fresh-first-factor window, answers under the flow's `answer` step,
- * and re-logins instead when that method cannot be named; a reopening
- * decides from a session read taken after it opens, not from the cached
- * view, and starts no flow until that read lands; a dialog parked on the
- * enrollment hint keeps its verdict past the five-minute window; and cancel
- * fires onCancel without running the gated action.
+ * StepUpChallenge checks the dialog driving one step-up flow: its factor
+ * choice, code step, refused-answer and no-factor branches, the refusal
+ * verdict taken once per opening, and cancel.
  */
 
 import { useState } from 'react'
@@ -54,7 +31,7 @@ import { StepUpChallenge } from './step-up-challenge.js'
 const FLOW_START = '/api/v1/auth/flows/authenticated'
 const FLOW_ANSWER = '/api/v1/auth/flows/answer'
 
-/** One active factor as the caller's own factor read answers it. */
+/** One active factor. */
 const ACTIVE_FACTOR = {
   id: 'factor-1',
   kind: 'totp',
@@ -63,9 +40,7 @@ const ACTIVE_FACTOR = {
   created_at: '2026-01-01T00:00:00Z',
 }
 
-/** A GET /api/v1/auth/session body as the caller's own session answers it. The
- * default is a password session authenticated just now; `ageMs` moves the
- * authentication time back past the five-minute window. */
+/** `ageMs` moves the authentication time back past the five-minute window. */
 function sessionBody(
   options: {
     readonly methods?: readonly string[]
@@ -83,9 +58,7 @@ function sessionBody(
   }
 }
 
-/** Binds a scripted request function that answers the caller's own factor
- * read with `factors`; any other leg is a defect of the case. For the
- * cases that hand the dialog a session directly and never touch the wire. */
+/** Any leg other than the factor read is a defect of the case. */
 function bindFactors(factors: readonly unknown[]): void {
   bindRequestFn((async (path: string, options?: RequestOptions) => {
     if ((options?.method ?? 'GET') === 'GET' && path === '/api/v1/auth/factors') {
@@ -95,9 +68,7 @@ function bindFactors(factors: readonly unknown[]): void {
   }) as RequestFn)
 }
 
-/** A responder whose step-up flow offers one TOTP factor, challenges for a
- * code, and elevates on the code answer; the caller's own factor read
- * answers one active factor. */
+/** One TOTP factor, a code challenge, then elevation. */
 function makeStepUpResponder(overrides: {
   readonly codeAnswer?: () => Response
 } = {}): RealResponder {
@@ -138,11 +109,8 @@ function makeStepUpResponder(overrides: {
   }
 }
 
-/** A step-up that re-proves the session's password first factor and answers
- * its next step in the ready state, `next.kind: 'complete'`: the shape the
- * dialog meets when a gated write asks for a fresh first factor and the
- * server settles right after the first-factor answer. `completeAnswer`
- * scripts that automatic answer; the default elevates. */
+/** A first-factor re-proof that settles straight into a `complete` step;
+ * `completeAnswer` scripts the automatic answer. */
 function makeReadyAfterFirstFactorResponder(overrides: {
   readonly completeAnswer?: () => Response | Promise<Response>
 } = {}): RealResponder {
@@ -197,10 +165,8 @@ function makeReadyAfterFirstFactorResponder(overrides: {
   }
 }
 
-/** A step-up whose account holds a factor registered during this session: the
- * server starts at the password and offers the factor only once it is proved
- * again. The caller's own factor read answers one active factor, so the
- * dialog starts the flow without asking for a first-factor re-proof. */
+/** A factor registered during the session: the server proves the password
+ * again first, then offers the factor. */
 function makeFactorsRegisteredThisSessionResponder(): RealResponder {
   return (call: RealCall) => {
     if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
@@ -236,8 +202,7 @@ function makeFactorsRegisteredThisSessionResponder(): RealResponder {
   }
 }
 
-/** The 429 the ratelimit layer answers a throttled request with: the
- * platform problem type and the wait its Retry-After names. */
+/** The 429 with the wait its Retry-After names. */
 function throttledResponse(retryAfterSeconds: number): Response {
   return new Response(
     JSON.stringify({
@@ -283,8 +248,7 @@ function mount(
   return { rig, onSuccess, onCancel }
 }
 
-/** Mounts the dialog over a session the test hands in directly, for the
- * phase cases that never touch the wire. */
+/** For the phase cases that never touch the wire. */
 function mountSession(
   session: AuthSession,
   handlers: {
@@ -309,12 +273,8 @@ function mountSession(
   return { onSuccess, onCancel }
 }
 
-/** Test control over a dialog mounted once under the providers: the reopen
- * and re-render cases drive `open` and a version bump from the host's own
- * state, so the dialog keeps one provider tree (and so one QueryClient)
- * across the transitions. RTL's `rerender` keeps the providers mounted
- * now too, but the host owns `open` here, and its state update is the
- * shape these cases exercise. */
+/** The host owns `open`, so the dialog keeps one provider tree across the
+ * reopen cases. */
 interface DialogControl {
   setOpen(dialogOpen: boolean): void
   rerender(): void
@@ -367,9 +327,8 @@ function renderControlled(
   return control
 }
 
-/** An established session: the snapshot the step-up shortfall classifier
- * reads -- a start refusal is only "unavailable" while the session is
- * still authenticated. */
+/** A start refusal is only "unavailable" while the session stays
+ * authenticated. */
 const AUTHENTICATED_SNAPSHOT: AuthSnapshot = {
   state: 'authenticated',
   principal: {
@@ -396,10 +355,8 @@ function unused(): never {
   throw new Error('the step-up dialog drives no such operation')
 }
 
-/** A session over an authenticated snapshot whose step-up start is
- * refused by `refusal`. The dialog reads only getSnapshot,
- * isStepUpShortfall, startAuthenticatedFlow and abandonFlow; every other
- * operation is unused. */
+/** The dialog reads only getSnapshot, isStepUpShortfall,
+ * startAuthenticatedFlow and abandonFlow. */
 function refusingStartSession(
   refusal: unknown,
   logout: () => Promise<void> = () => Promise.resolve(),
@@ -429,9 +386,7 @@ function refusingStartSession(
   }
 }
 
-/** A session over an authenticated snapshot that names its username, whose
- * step-up start asks for the password and whose answer elevates. The answer
- * requests are collected for the assertions. */
+/** The answer requests are collected for the assertions. */
 function scriptedPasswordSession(
   requests: { body: unknown }[] = [],
 ): AuthSession {
@@ -495,10 +450,8 @@ function scriptedPasswordSession(
   }
 }
 
-/** One identifier row of the authenticated profile, as GET
- * /api/v1/auth/me publishes it. A username defaults to an unproved row the
- * self way wrote, since the self and admin ways do not prove it; any other
- * kind defaults to a proved row, with the way that proves it. */
+/** A username defaults to the unproved `self` way; any other kind to a
+ * proved row. */
 function profileIdentifier(
   id: string,
   kind: string,
@@ -525,11 +478,7 @@ function profileIdentifier(
   }
 }
 
-/** A session over an authenticated snapshot holding `identifiers`, whose
- * step-up start asks for the phone number and whose answer elevates. The
- * answer requests are collected for the assertions. `impersonating` makes
- * the snapshot the impersonated account's, as a session started from an
- * impersonation window carries it. */
+/** `impersonating` makes the snapshot the impersonated account's. */
 function scriptedPhoneSession(
   requests: { body: unknown }[] = [],
   identifiers: readonly AuthnProfileIdentifier[] = [],

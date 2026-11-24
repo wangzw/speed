@@ -1,21 +1,6 @@
 /**
- * PhoneSection in a real browser: a write in flight keeps the control that
- * started it focused.
- *
- * jsdom keeps a focused button focused after it turns natively disabled, so
- * the focus loss a native `disabled` causes is invisible there; only the
- * browser tier sees it. The same holds for the number and code fields: a
- * write in flight locks them read-only, so they stay focusable, where a
- * native `disabled` would drop the focus of whoever was typing in them.
- *
- * The verify case also pins the focus landing: a successful verify removes
- * the step's controls, and focus goes to the control group rather than the
- * document body.
- *
- * The captcha cases cover the send a human-verification gate holds: the
- * control that asked stays mounted and busy while the proof is outstanding,
- * and, once the viewer leaves the block by answering it, focus comes back to
- * that control when the block disappears.
+ * PhoneSection in a real browser: the in-flight focus a native disable would
+ * lose, the verify's focus landing, and the captcha-held send's focus.
  */
 
 import { describe, expect, it, vi } from 'vitest'

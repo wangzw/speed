@@ -1,58 +1,5 @@
 /**
- * PreferencesSection: the language-and-timezone surface of the account
- * page.
- *
- * Two selects, both editing the account's own stored preferences through
- * the self-service profile route -- GET /api/v1/auth/me for the stored values
- * and PATCH /api/v1/auth/me for a write (pkg/authn/profile):
- *
- *  - Language: the options are the i18n instance's OWN supported set
- *    (readSupportedLanguages), so a host whose instance speaks a wider or
- *    narrower set gets exactly the choices its catalogs can render;
- *    option labels are the language names in the CURRENT UI language
- *    (Intl.DisplayNames, falling back to the raw tag when the engine
- *    cannot name it). Choosing one PATCHes the account first and, only on
- *    success, runs the persisting switchLanguage -- the settings switch
- *    lands the decision on the device (the manual-choice slot) and the
- *    account together, which is the one place both are meant to move.
- *    Clearing the preference (the "not chosen" choice, the empty string
- *    the server stores as no choice) PATCHes the account alone: the
- *    empty string is not a language the instance can switch to, so the
- *    device keeps the language it is showing.
- *  - Timezone: the options are the engine's IANA list
- *    (Intl.supportedValuesOf('timeZone'), guarded) plus an explicit
- *    "not chosen" choice whose value is the empty string -- the stored
- *    clearing value. The stored value is guaranteed present in the option
- *    list: a value the engine's list omits (a zone removed from newer
- *    tzdata, a value written by another engine) is added as its own
- *    option, because a select whose value matches no option would silently
- *    display the wrong one.
- *
- * Both writes are immediate (no submit button) and PATCH-first: the
- * server is asked before anything moves locally, so a refused write
- * leaves the controls reading the stored values -- the natural revert --
- * and renders the resolved code text in that control's own feedback
- * region (authn.bad_request when the server refuses a value, the
- * transport codes when the request never landed). Each select is one
- * control group with its own feedback scope and region beneath it, so
- * the language outcome and the timezone outcome never share a slot and
- * neither clears the other. Both selects turn read-only while a write is in
- * flight, so a change can never race its own predecessor and a select that
- * holds focus keeps it.
- *
- * The write does not ask for a fresh authentication: the route admits the
- * account's own display name, language and time zone directly
- * (REQ-account-058), so the section drives no step-up gate, opens no dialog
- * and takes no session. A refusal renders the resolved code text in that
- * control's own region.
- *
- * Whose preferences these are comes from the caller's bound client and
- * its access token. The section follows the account surfaces'
- * settled-state paradigm: an unresolved load keeps a loading placeholder
- * (one announceable status row), a settled load with no data renders the
- * ui-kit EmptyState error variant with a retry, and the settled-with-data
- * state always renders both controls (a profile answer with no stored
- * locale or time zone renders both as "not chosen").
+ * PreferencesSection: the language-and-timezone surface of the account page.
  */
 
 import { useMemo } from 'react'
@@ -81,12 +28,8 @@ import { useAccountUiTranslation } from './internal/translation.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { ACCOUNT_UI_NAMESPACE } from './resources.js'
 
-/** The engine's IANA timezone list, sorted, or [] when the environment
- * cannot produce one (Intl.supportedValuesOf is newer than the rest of
- * Intl, so its absence is a real deployment shape): the select then
- * offers the "not chosen" choice plus -- via the stored-value guard in
- * the renderer -- whatever value the account already holds, never a
- * fabricated list. */
+/** Sorted, or [] when the engine cannot produce one: the select then offers
+ * "not chosen" plus the stored value, never a fabricated list. */
 function supportedTimeZones(): readonly string[] {
   try {
     const values = Intl.supportedValuesOf('timeZone')
@@ -96,13 +39,12 @@ function supportedTimeZones(): readonly string[] {
   }
 }
 
+/** The language and time-zone selects over the profile's own PATCH. */
 export function PreferencesSection() {
   const { t, i18n } = useAccountUiTranslation()
   const queryClient = useQueryClient()
   const { data, isPending, isFetching, error, refetch } = useProfileQuery()
   const patchProfile = useAuthnProfilePatch()
-  // One scope per select: each control group owns its own result slot, so
-  // the language outcome and the timezone outcome never clear each other.
   const languageFeedback = useWriteFeedback()
   const timezoneFeedback = useWriteFeedback()
 
@@ -113,20 +55,15 @@ export function PreferencesSection() {
   const timeZoneOptions = useMemo(() => supportedTimeZones(), [])
 
   const pending = isPending && data === undefined
-  // A control stays read-only while any preference write is in flight --
-  // including the steps that follow the mutation (the language switch and
-  // the invalidation) -- so no control can change context under a pending
-  // scope. Read-only rather than disabled: the select keeps focus and stays
-  // in the Tab sequence while the write runs.
+  // Read-only rather than disabled: a select keeps focus while the write runs.
   const saving =
     patchProfile.isPending || languageFeedback.pending || timezoneFeedback.pending
 
   const storedLocale = data?.locale ?? ''
   const storedTimezone = data?.time_zone ?? ''
 
-  // The stored timezone is always selectable, even when the engine's list
-  // omits it (see the header): the option list is the engine's, plus the
-  // stored value when absent from it.
+  // A select whose value matches no option displays the wrong one, so a
+  // stored zone the engine's list omits is added as its own option.
   const timeZoneChoices = useMemo(() => {
     if (storedTimezone !== '' && !timeZoneOptions.includes(storedTimezone)) {
       return [storedTimezone, ...timeZoneOptions]
@@ -134,37 +71,22 @@ export function PreferencesSection() {
     return timeZoneOptions
   }, [storedTimezone, timeZoneOptions])
 
-  /** PATCH-first write: the server answers before anything local moves,
-   * so a refusal needs no revert (the controls read the stored values)
-   * and only the language scope's region reports the refusal. */
+  /** The server answers before anything local moves, so a refusal needs no
+   * revert. */
   function saveLocale(locale: string): Promise<void> {
     return languageFeedback.run(async () => {
       await patchProfile.mutateAsync({ data: { locale } })
-      // The empty string IS the clearing value, not a language: a
-      // successful clear leaves the device on its current language, so
-      // only a real choice is switched to (switchLanguage refuses the
-      // empty string, which must not read as a failed save).
+      // The empty string is the clearing value, not a language: only a real
+      // choice is switched to, and a clear leaves the device as it is.
       if (locale !== '') {
-        // The account accepted the choice; land it on the device too (the
-        // persisting form -- this is the manual language-switch UI). A
-        // storage failure inside switchLanguage is a console warning, never
-        // a rejection: the switch itself still happens.
         await switchLanguage(i18n, locale)
       }
       await queryClient.invalidateQueries({
         queryKey: getAuthnProfileGetQueryKey(),
       })
-      // Translated in the language the write just chose, so the
-      // confirmation speaks the newly chosen language. The hook's `t` and
-      // the instance wrapper's `language` are fixed to the render-time
-      // language, so the target is the chosen tag itself; a clear does not
-      // switch, so it keeps the current language. The message names the
-      // control and the chosen value.
+      // Translated in the language the write just chose.
       const target = locale === '' ? i18n.language : locale
       const translate = i18n.getFixedT(target, ACCOUNT_UI_NAMESPACE)
-      // Clearing the preference is a behaviour, not a language choice, so
-      // it confirms with its own sentence instead of naming the
-      // "not chosen" option.
       if (locale === '') {
         return translate('preferences.language.followsDevice')
       }
@@ -181,9 +103,6 @@ export function PreferencesSection() {
       await queryClient.invalidateQueries({
         queryKey: getAuthnProfileGetQueryKey(),
       })
-      // Clearing the preference is a behaviour, not a zone choice, so it
-      // confirms with its own sentence instead of naming the "not chosen"
-      // option.
       if (timezone === '') {
         return t('preferences.timezone.followsDevice')
       }
@@ -221,11 +140,6 @@ export function PreferencesSection() {
       >
         {() => (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {/* The language row and its own scope's region: a write here is
-                immediate, so both a success and a refusal report directly
-                beneath the control that made them. The row's own title names
-                the control, so the select carries no floating label; the
-                accessible name rides the input instead. */}
             <Box sx={{ display: 'flex', flexDirection: 'column' }}>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>
                 {t('preferences.language.label')}
@@ -233,20 +147,11 @@ export function PreferencesSection() {
               <TextField
                 select
                 fullWidth
-                // Both preference controls are short: a language tag or an
-                // IANA zone name does not need to span the whole content
-                // width, so each is capped to a comfortable select width and
-                // fills less than the row on a wide viewport.
                 sx={{ mt: 0.5, maxWidth: '24rem' }}
                 slotProps={{
-                  // A write in flight locks the choice without taking the
-                  // select out of the Tab sequence: it stays focusable and
-                  // its value cannot change.
                   input: { readOnly: saving },
-                  // displayEmpty rides the Select slot (MUI 9's slotProps
-                  // architecture): the "not chosen" choice carries the empty
-                  // string, and without this the control renders blank instead
-                  // of the option's own label.
+                  // displayEmpty: without it the empty-string "not chosen"
+                  // value renders blank instead of the option's own label.
                   select: {
                     displayEmpty: true,
                     slotProps: {
@@ -262,10 +167,6 @@ export function PreferencesSection() {
                 }}
                 helperText={t('preferences.language.helper')}
               >
-                {/* The "not chosen" choice first: an empty stored locale is
-                 * the account's real initial state, and the chain's device
-                 * and default tiers are what actually apply until one is
-                 * chosen. */}
                 <MenuItem value="">
                   {t('preferences.language.notChosen')}
                 </MenuItem>
@@ -278,7 +179,6 @@ export function PreferencesSection() {
               <WriteFeedbackRegion outcome={languageFeedback.outcome} />
             </Box>
 
-            {/* The timezone row and its own scope's region. */}
             <Box sx={{ display: 'flex', flexDirection: 'column' }}>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>
                 {t('preferences.timezone.label')}
@@ -286,12 +186,7 @@ export function PreferencesSection() {
               <TextField
                 select
                 fullWidth
-                // Capped like the language select above: a zone name is short
-                // and the control need not span the content width.
                 sx={{ mt: 0.5, maxWidth: '24rem' }}
-                // Same slots as the language select above: read-only while a
-                // preference write is in flight, and displayEmpty for the
-                // "not chosen" placeholder.
                 slotProps={{
                   input: { readOnly: saving },
                   select: {

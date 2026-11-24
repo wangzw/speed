@@ -1,41 +1,20 @@
 /**
- * The binding round trip's return seam.
- *
- * A social-account binding starts from an account page, but the provider's
- * round trip lands the browser on the host's callback route, which holds no
- * knowledge of the page it started from. The link flow therefore carries
- * that page inside its top-level `return_to`: the callback route plus a
- * `return` query parameter naming the source page. The server stores the
- * whole value in the flow record and lands the browser on it, so the
- * callback stays the one page that completes the flow and the source page
- * is recoverable from the URL there.
- *
- * Only a site-internal relative path is ever carried. A value that names
- * another origin (an absolute URL, a scheme-relative "//host") is dropped
- * rather than sent, and the callback's reader applies the same rule: a
- * missing or unusable target is the caller's safe landing, never a
- * navigation somewhere the flow did not start. The rule mirrors the
- * server's own relative-return-target check (pkg/authn/login): a single
- * leading slash, no scheme-relative "//", no backslash, no control
- * character, no "@" and at most 2048 bytes.
+ * The binding round trip's return seam: the source page travels inside the
+ * link flow's top-level `return_to` as a `return` query parameter.
  */
 
 /** The query parameter that carries the source page inside `return_to`. */
 export const RETURN_PARAM = 'return'
 
-/** The most a return target may be, in bytes, mirroring the server's bound. */
+// Mirrors the server's relative-return-target bound (pkg/authn/login).
 const MAX_TARGET_BYTES = 2048
 
 const ABSOLUTE_URL_PATTERN = /^[a-zA-Z][a-zA-Z0-9+.-]*:/
 
-/**
- * A placeholder origin for parsing a relative callback route. Only the
- * parsed path, query and fragment are read back, so the origin never
- * reaches the returned value.
- */
+// Only the parsed path, query and fragment are read back, so this origin
+// never reaches the returned value.
 const RELATIVE_ORIGIN = 'http://site.invalid'
 
-/** The UTF-8 byte length of a string, without allocating an encoder. */
 function byteLength(value: string): number {
   let bytes = 0
   for (let index = 0; index < value.length; index += 1) {
@@ -56,9 +35,8 @@ function byteLength(value: string): number {
 }
 
 /**
- * Whether the value is a well-formed site-internal relative path. A value
- * naming an origin -- an absolute URL, or a scheme-relative "//host" -- is
- * never one, so it cannot send the callback to another site.
+ * Whether the value is a well-formed site-internal relative path. An
+ * absolute URL or a scheme-relative "//host" is never one.
  */
 export function isSitePath(value: string): boolean {
   if (!value.startsWith('/') || value.startsWith('//')) {
@@ -81,10 +59,9 @@ export function isSitePath(value: string): boolean {
 }
 
 /**
- * The link flow's top-level `return_to`: the host's callback route with the
- * source page appended as `return`, when the source is a site-internal
- * path. Without one the callback route is sent unchanged, so the callback
- * falls back to its own safe landing.
+ * The link flow's top-level `return_to`: the callback route with the source
+ * page appended as `return` when the source is a site-internal path, else
+ * the route unchanged.
  */
 export function withBindingReturn(
   callback: string,
@@ -97,9 +74,8 @@ export function withBindingReturn(
   const relativeRoute =
     callback.startsWith('/') && !callback.startsWith('//')
   if (absolute || relativeRoute) {
-    // Both forms are parsed so the parameter is written to the query: a
-    // callback route that carries a fragment keeps it as a fragment
-    // instead of having the parameter appended after the `#`.
+    // Parse both forms so a fragment stays after the query: appending
+    // inline would place the parameter after the `#`.
     const url = new URL(callback, RELATIVE_ORIGIN)
     url.searchParams.set(RETURN_PARAM, source)
     return absolute
@@ -112,8 +88,7 @@ export function withBindingReturn(
 
 /**
  * The source page a callback route carries, when the query names a
- * site-internal path. A missing or unusable value reads as undefined, and
- * the caller uses its own safe landing instead.
+ * site-internal path. A missing or unusable value reads as undefined.
  */
 export function bindingReturnTarget(search: string): string | undefined {
   const value = new URLSearchParams(search).get(RETURN_PARAM)

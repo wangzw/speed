@@ -1,26 +1,6 @@
 /**
- * SocialBindingsSection behaviour: the bound identities read from the
- * profile's `links` (GET /api/v1/auth/me), the unlink route (DELETE
- * /api/v1/auth/links/{id}), the deployment's discovery document
- * (GET /api/v1/auth/methods) and the add area's `purpose: 'link'` flow
- * start (POST /api/v1/auth/flows/authenticated).
- *
- * What this suite pins: the links render with the provider label of the
- * discovery descriptor that claims the value through its
- * `binding_providers` (an exact entry or a namespace prefix; a descriptor
- * declaring none matches by name), falling back to the family's closed
- * vocabulary for a value no descriptor claims -- and the add area offers
- * only the deployment's unbound redirect methods, labelled by their
- * descriptors; an unlink DELETE-s the link and refetches the profile, and
- * its row action stays busy and focusable through that refetch; a refused
- * unlink (the account's last sign-in method) renders its code text below the
- * list and leaves the row; the unlink actions and the add area's flow starts
- * share one write scope, so their results never stand side by side and one
- * attempt runs at a time -- the control that started it busy, the others
- * unavailable without a reason; a removed row hands focus to the adjacent
- * row's action, never the document body; and the add area's click starts a
- * link flow carrying the host's `return_to` at the top level, whose redirect
- * step's URL is reported upward (the section never navigates).
+ * SocialBindingsSection checks the bound identities, provider resolution, the
+ * unlink route and the add area's link flow.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'

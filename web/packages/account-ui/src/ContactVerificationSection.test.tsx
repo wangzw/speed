@@ -1,22 +1,6 @@
 /**
- * ContactVerificationSection behaviour: the self-registration verification
- * state read from GET /api/v1/auth/me's `verification` field, and the writes
- * that move it (POST /api/v1/auth/identifiers and /identifiers/verify).
- *
- * What this suite pins: `none` renders nothing; `verified` renders the
- * completion state; `pending` with a target renders the address, the code
- * field and the send/resend control; `pending` with no target renders the
- * add-email form and a landed add moves to the code step; a send moves to the
- * code step, announces the destination once and focuses the code field, and
- * the resend control is disabled for the server's interval with the reason
- * stated and stops its timer when the interval expires; a landed verify clears
- * the entry state and refetches the profile alone; a wrong code and
- * a taken address render the section's own verify-step wording; a failed
- * profile read renders the error state and its retry re-reads; 429 and 503
- * render their code text; a 401 authn.insufficient_user_authentication of the
- * send renders as an ordinary failure rather than opening a step-up dialog,
- * while a refused verify opens the dialog and replays the same code; a send
- * waiting on its proof is dropped when the code already in hand verifies.
+ * ContactVerificationSection checks the profile's `verification` states and
+ * the identifier writes that move them.
  */
 
 import { describe, expect, it, vi } from 'vitest'

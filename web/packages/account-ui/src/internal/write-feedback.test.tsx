@@ -1,13 +1,7 @@
 /**
  * WriteFeedbackRegion: the account surface's binding of the shared region.
- *
- * The region itself is ui-kit's; this binding exists so a failure code
- * resolves through the account-ui namespace's whitelist and nothing else.
- * The cases below drive a real scope slot: a whitelisted code renders its
- * own text, while a plain throw collapses through `errorCodeOf` to a code
- * no resolver lists and renders the shared unknown fallback -- never a
- * raw key. Success and failure settle the one slot of the one region, so
- * the two can never stand beside each other.
+ * A failure code resolves through the account-ui namespace's whitelist;
+ * anything else collapses to the shared unknown fallback, never a raw key.
  */
 
 import { describe, expect, it } from 'vitest'

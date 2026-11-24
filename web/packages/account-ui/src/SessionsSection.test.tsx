@@ -1,22 +1,6 @@
 /**
- * SessionsSection behaviour over the authn session routes: GET
- * /api/v1/auth/sessions, DELETE /api/v1/auth/sessions/{id} and DELETE /api/v1/auth/sessions.
- *
- * What this suite pins, per story: the live sessions the server lists
- * render, the current one marked and carrying no revoke affordance, a
- * row without a user agent falling back to the unknown-device label (the
- * raw UA never rendered); a single-row revoke DELETE-s that exact
- * session and refetches the list, so the revoked row is gone; the
- * section-top "sign out other devices" action sits behind the danger
- * double-confirm, DELETE-s the collection and surfaces the answer's
- * revoked count; a refused revoke renders its code text below the list;
- * paging clears the settled result and is held while an attempt is in
- * flight; and the settled states split -- an answer listing zero sessions renders
- * the empty state, a load that failed (and an answer omitting the
- * sessions key) renders the error state with a retry. The display-timezone
- * cases pin the single resolved tier: the host supplies the account's
- * stored choice through DisplayTimeZoneProvider, the section renders that
- * value, and with no provider the harness's fixed TEST_TIME_ZONE applies.
+ * SessionsSection checks the session list, per-row and bulk revocation, and
+ * the display time zone.
  */
 
 import { useState } from 'react'

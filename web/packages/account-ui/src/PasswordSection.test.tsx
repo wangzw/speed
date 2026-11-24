@@ -1,25 +1,6 @@
 /**
- * PasswordSection behaviour: the change-password surface over the profile
- * read (GET /api/v1/auth/me, for the account's `password_set`) and the change
- * write (PUT /api/v1/auth/password).
- *
- * What this suite pins: the current-password field renders only when the
- * profile says a password is set, and an account without one gets the
- * two new-password fields alone (its first password); the two client-side
- * guards (an empty new password, a mismatched confirmation) render on
- * their fields, send no request and clear a settled server result; a
- * valid change PUTs the current and new passwords, reports the success in
- * the region beneath the form and clears the fields; a 401 login-failed
- * renders the section's own sentence, which names no cause because the
- * server answers it for a wrong current password and, silently, while
- * the account's back-off is in force; a code outside the whitelist
- * renders the unknown fallback rather than a raw key; and a change
- * refused with 401 authn.insufficient_user_authentication opens the
- * step-up dialog, a won step-up re-running it exactly once. The in-flight
- * cases pin the section's focus rule: the write makes the fields
- * unchangeable, not unfocusable, so the field that submitted with Enter
- * and the submit button itself keep the focus through the write and after
- * it lands, and a further activation sends no second request.
+ * PasswordSection checks the change-password surface: its guards, refusals,
+ * step-up replay, and the focus the in-flight write keeps.
  */
 
 import { describe, expect, it } from 'vitest'

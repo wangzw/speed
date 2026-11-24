@@ -1,11 +1,7 @@
 /**
- * IdentifiersSection in a real browser: a write's initiating control keeps
- * focus while the write is in flight and while its precondition is unmet,
- * and a landed write that takes its control out of the document hands focus
- * to the neighbour named by the ui-kit's write-feedback rule. jsdom never
- * moves focus when a focused control turns natively disabled, so only the
- * browser tier can tell the native-disabled behaviour from the focusable
- * one.
+ * IdentifiersSection in a real browser: the initiating control keeps focus, and
+ * a landed write hands it to the neighbour. jsdom cannot tell this from a
+ * native disable.
  */
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'

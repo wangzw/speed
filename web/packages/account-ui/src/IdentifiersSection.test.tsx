@@ -1,24 +1,6 @@
 /**
- * IdentifiersSection behaviour: the identifiers and the removal write
- * (DELETE /api/v1/auth/identifiers/{id}) of the profile read
- * (GET /api/v1/auth/me).
- *
- * What this suite pins: each identifier renders with its kind and value and
- * its one-of-two verified/unverified state; the sign-in ways and contacts
- * lists follow the profile, with every registered address a contact and no
- * control that would change that; an unverified email row proves its
- * own address through the code flow and flips its chip; a row's remove sends
- * DELETE /api/v1/auth/identifiers/{id} behind the danger confirm and refetches
- * the profile so the row drops off; a last-way-in refusal (409) renders
- * its code text, and the server's last-login-name code renders its own text
- * and re-reads the profile when the client guard read a stale list; a
- * removal refused with 401
- * authn.insufficient_user_authentication opens the step-up dialog, a won
- * step-up re-running it once; an account with no identifiers renders the
- * empty state; and an answer that omitted the identifiers key renders the
- * error state (never a "no identifiers" claim). An email send waits on the
- * verifier its proof requires, and a row resend waiting on its proof is
- * dropped when the code already in hand verifies.
+ * IdentifiersSection checks the identifiers, their sign-in and contact
+ * grouping, the row actions, and the removal write.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'

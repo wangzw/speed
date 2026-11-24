@@ -1,17 +1,9 @@
 /**
- * FlowStep in a real browser: axe's label-content-name-mismatch (WCAG 2.5.3
- * Label in Name) over the manual-entry disclosure, and the focus a step and
- * its host challenge keep while an answer is in flight.
+ * FlowStep in a real browser: axe's Label in Name over the manual-entry
+ * disclosure, and the focus a step keeps while an answer is in flight.
  *
- * The rule reads a control's visible text through the canvas text
- * measurement API, which jsdom answers with null; the unit suite's scan
- * therefore cannot decide it, and this case is that unit case's deciding
- * verdict (see @speed/test-utils/axe's BROWSER_DETERMINATIONS).
- *
- * Only the browser tier watches a focused control survive a state change
- * the way a person's browser does: jsdom keeps a focused button focused
- * even after it turns natively disabled, so a regression back to a native
- * `disabled` would pass there and drop the operator's place here.
+ * jsdom keeps a natively disabled button focused, so only this tier catches
+ * a regression back to `disabled`.
  */
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
@@ -104,12 +96,10 @@ describe('FlowStep focus in Chromium', () => {
     await user.click(submit)
 
     await waitFor(() => expect(submit).toHaveAttribute('aria-busy', 'true'))
-    // The control that started the answer keeps the focus the click gave
-    // it; a native disable would have moved it to the document body.
+    // A native disable would have moved focus to the body.
     expect(document.activeElement).toBe(submit)
     expect(submit).toHaveAttribute('aria-disabled', 'true')
 
-    // The field is locked but stays focusable and unchangeable.
     expect(field).toHaveAttribute('readonly')
     field.focus()
     expect(field).toHaveFocus()
@@ -159,12 +149,10 @@ describe('FlowStep focus in Chromium', () => {
     await user.click(totp)
     await waitFor(() => expect(answering).toBe(true))
     await waitFor(() => expect(totp).toHaveAttribute('aria-busy', 'true'))
-    // The option that started the answer keeps the click's focus, and its
-    // progress state does not take the operator's place away.
+    // Its progress state must not take the operator's place away.
     expect(document.activeElement).toBe(totp)
 
-    // The step's cancel stays the way out while the answer is in flight --
-    // the same exit the Escape key offers.
+    // Cancel stays the way out while the answer is in flight.
     const cancel = screen.getByRole('button', {
       name: zhCN.mfa.stepUp.cancelLabel,
     })

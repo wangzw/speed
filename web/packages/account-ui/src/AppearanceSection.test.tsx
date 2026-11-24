@@ -1,18 +1,6 @@
 /**
- * AppearanceSection behaviour: the controlled theme-preset choice.
- *
- * What this suite pins: every preset the host supplies renders as an
- * option and the value the host passes is the selected one; a choice
- * reaches the host through onChange with the chosen preset's id and the
- * section itself stays controlled (it holds no selection of its own); and
- * the section survives the two boundary-shaped inputs -- one preset and
- * no presets -- without collapsing its heading or its labelled control.
- * The axe scan runs with the select OPEN, because the open menu is the
- * state a keyboard or screen-reader user meets while choosing a theme.
- *
- * Preset labels here are host data (the component never translates them),
- * so the fixtures may carry English names; every string the section
- * renders itself is asserted from the zh-CN bundle.
+ * AppearanceSection checks the controlled theme-preset choice. Preset labels
+ * are host data, so the fixtures may carry English names.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -51,20 +39,15 @@ describe('AppearanceSection', () => {
       screen.getByRole('heading', { name: zhCN.appearance.title }),
     ).toBeTruthy()
     expect(screen.getByText(zhCN.appearance.description)).toBeTruthy()
-    // The control carries its own helper under the select, the same shape
-    // the preference selects use.
     expect(presetSelect()).toHaveAccessibleDescription(
       zhCN.appearance.theme.helper,
     )
 
     const select = presetSelect()
-    // The closed control shows the current choice, not an empty value.
     expect(select).toHaveTextContent('Glass')
 
     fireEvent.mouseDown(select)
 
-    // Every supplied choice is offered; the current one carries the
-    // selected state and the others do not.
     for (const preset of presets) {
       expect(screen.getByRole('option', { name: preset.label })).toBeTruthy()
     }
@@ -77,8 +60,7 @@ describe('AppearanceSection', () => {
       'false',
     )
 
-    // The open control is the state in which the choice is made: scan
-    // the document with the menu showing.
+    // Scan with the menu open: the state a chooser meets.
     await expectNoAxeViolations()
   })
 
@@ -92,10 +74,7 @@ describe('AppearanceSection', () => {
       />,
     )
 
-    // The host names the control with its own row title, so the section
-    // renders no visible label of its own...
     expect(screen.queryByText(zhCN.appearance.theme.label)).toBeNull()
-    // ...but the control is still named and still shows the current choice.
     const select = presetSelect()
     expect(select).toHaveTextContent('Glass')
     expect(
@@ -119,7 +98,6 @@ describe('AppearanceSection', () => {
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(onChange).toHaveBeenCalledWith('classic')
 
-    // The section did not move by itself: the host owns the value.
     expect(presetSelect()).toHaveTextContent('Default')
   })
 
@@ -154,7 +132,6 @@ describe('AppearanceSection', () => {
 
     const select = presetSelect()
     fireEvent.mouseDown(select)
-    // No presets means no options -- but still a labelled, rendered control.
     expect(screen.queryAllByRole('option')).toHaveLength(0)
     expect(select).toHaveAttribute('aria-expanded', 'true')
   })

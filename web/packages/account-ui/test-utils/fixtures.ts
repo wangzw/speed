@@ -1,15 +1,8 @@
 /**
- * fixtures.ts -- the wire-shaped test data the account suites share.
- *
- * The GET /api/v1/auth/me body is read by several surfaces (preferences,
- * profile, password, identifiers and the composed page), so its shape is
- * built once here rather than re-spelled per suite: `profileBody` returns
- * the full profile document with the fields a read carries, and an
- * override replaces exactly the fields a test cares about.
+ * The wire-shaped test data the account suites share.
  */
 
-/** The GET /api/v1/auth/me body, every documented field present; `overrides`
- * replaces the named fields (a bare profile is the default). */
+/** The GET /api/v1/auth/me body, every documented field present. */
 export function profileBody(
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> {
@@ -30,13 +23,9 @@ export function profileBody(
   }
 }
 
-/** One identifier row of the profile's `identifiers`, in the fragment's
- * own shape. An email or a phone defaults to a row the provider proved, so
- * `proven` is true, with the way that proves it: an email's is `idp:google`,
- * a phone's is `sms-code`. A username the self way wrote proves no ownership,
- * so it defaults to a false `proven` and the `self` way. An email is a
- * sign-in way under the old behaviour's write, which is the state most rows in
- * these suites exercise; a phone starts on neither axis. */
+/** One identifier row; its defaults follow the kind: an email is proved
+ * through `idp:google` and signs in, a phone is proved through `sms-code`
+ * and starts on neither axis, a username proves no ownership (`self`). */
 export function identifier(
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> {

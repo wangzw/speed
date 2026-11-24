@@ -1,17 +1,6 @@
 /**
- * The factor row's overflow menu, driven in a real Chromium.
- *
- * The removal is reached the way a reader reaches it -- choose the row's
- * own remove action, confirm -- and the case pins what the grouped
- * surface owes the reader after the write lands: the row leaves the list,
- * the group's own action stays a plain add, and the success feedback names
- * the row that went. jsdom
- * cannot tell the menu's portal and its focus order from a plain list, so
- * this interaction lives in the browser tier.
- *
- * The regression is pinned through the component and the real request
- * client: no fixture is written into the query cache, and the deletion's
- * answer is what the list reread observes.
+ * The factor row's remove action, driven in a real Chromium: the row leaves,
+ * the group's action stays a plain add, and the success names the row.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -150,11 +139,6 @@ describe('MfaSection rename editor', () => {
    * editor's text-column width on its own line, and the action row closes
    * the next line on the right. jsdom lays nothing out, so the geometry is
    * measured here.
-   *
-   * Which assertions discriminate: the field's full width and the action
-   * row's start below the field's bottom edge fail on the one-line layout
-   * where the field is capped and the actions sit beside it. The group's
-   * adjacency and order are a regression nail for the group.
    */
   it('stacks the name field above its actions, closed on the right edge', async () => {
     await page.viewport(1100, 900)

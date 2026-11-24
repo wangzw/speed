@@ -1,10 +1,6 @@
 /**
- * ColorModeSection in a real browser: the color-mode select is the control
- * that starts its own immediate write, so while the PATCH is in flight it
- * keeps focus and stays focusable but unchangeable (readOnly) instead of
- * turning natively disabled and dropping focus to the document. jsdom never
- * moves focus when a focused control turns natively disabled, so only the
- * browser tier can tell the two behaviours apart.
+ * ColorModeSection in a real browser: the in-flight select stays focused and
+ * read-only rather than natively disabled, which jsdom cannot tell apart.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'

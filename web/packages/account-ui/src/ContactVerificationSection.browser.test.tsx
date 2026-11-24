@@ -1,11 +1,6 @@
 /**
- * ContactVerificationSection's action row in a real browser: the send,
- * change-address and verify controls share one row -- one top edge, the
- * primary verify at the row's right end -- and the verify control stays
- * unavailable-marked until a code is entered. jsdom lays nothing out, so
- * only the browser tier can see the boxes' geometry, and only a real
- * engine drops a focused control's focus when it becomes natively
- * disabled, so the in-flight focus case lives here.
+ * ContactVerificationSection in a real browser: the action row's geometry
+ * and the in-flight focus, neither of which jsdom can see.
  */
 import { describe, expect, it } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'

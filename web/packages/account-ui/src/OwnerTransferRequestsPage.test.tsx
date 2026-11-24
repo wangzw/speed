@@ -1,20 +1,6 @@
 /**
- * OwnerTransferRequestsPage: the account-level confirmation surface.
- *
- * What this suite pins: the list shows the pending requests addressed to
- * the caller and links each to its detail; the detail reads one request and
- * confirms or declines it; a confirmation invalidates the list, the detail
- * and the organization's profile read; a decline leaves ownership alone; a
- * conflict re-reads the detail and words expiry or a finished request; and
- * the whole surface issues only account-level requests -- no tenant path,
- * so a plain member who holds no organization permission can use it.
- *
- * The decision controls also pin the focus contract: only the control that
- * started the write reports busy, its sibling reports unavailable without a
- * reason and sends nothing when activated, and a landed decision that takes
- * both controls out of the document hands focus to the request card instead
- * of the document body -- unless the operator moved focus elsewhere during
- * the write, which the page leaves alone.
+ * OwnerTransferRequestsPage checks the account-level list and detail, the
+ * two decisions, their account-level-only requests, and the focus contract.
  */
 
 import { act, screen, waitFor, within } from '@testing-library/react'

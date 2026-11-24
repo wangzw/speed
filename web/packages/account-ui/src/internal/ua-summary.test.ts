@@ -1,35 +1,16 @@
 /**
- * summarizeUserAgent, the raw-User-Agent-to-readable-summary mapping of
- * the sessions surface.
- *
- * The corpus pins the two hazards that would silently break the surface
- * it feeds: detection ORDER (an iPhone or iPad UA embeds "like Mac OS
- * X", an Android UA opens "(Linux; ...", and a Chromium UA carries a
- * Safari/ token of its own -- each precedence rule exists because a
- * wrong order answers the wrong label, which the raw strings below all
- * contain) and the bounded-vocabulary rule (every answer is a mapped
- * label, never a fragment of the input). The e2e gate's vocabulary names
- * the machine substrings that only ever appear in a raw UA (Mozilla/,
- * AppleWebKit, Gecko, curl/, Safari/); the corpus-wide check below
- * holds the same line for every sample this module claims to
- * understand, so a marker that parsed into a row fails here first.
+ * summarizeUserAgent pins detection order and the bounded vocabulary: every
+ * answer is a mapped label, never a fragment of the raw string.
  */
 
 import { describe, expect, it } from 'vitest'
 import { summarizeUserAgent } from './ua-summary.js'
 
-/** Substrings that only ever appear in a raw User-Agent string -- the
- * e2e gate's own vocabulary, mirrored here so the unit tier
- * holds the same line as the browser tier. */
+/** The e2e gate's own vocabulary, mirrored so both tiers hold the same line. */
 const MACHINE_STRINGS = ['Mozilla/', 'AppleWebKit', 'Gecko', 'curl/', 'Safari/']
 
-/**
- * Real user agents in the shapes servers actually store, each with the
- * label the surface should show instead. The order traps are inside
- * the strings: the iPhone and iPad samples embed "like Mac OS X", the
- * Android samples embed "(Linux; ", and the Chromium samples carry a
- * Safari/ token of their own.
- */
+/** Each raw string with the label the surface should show; the order traps
+ * are inside the strings. */
 const CORPUS: ReadonlyArray<readonly [string, string]> = [
   // Desktop Chrome -- the e2e chromium project's own shape.
   [

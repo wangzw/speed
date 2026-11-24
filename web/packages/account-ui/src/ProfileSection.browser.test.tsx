@@ -1,13 +1,6 @@
 /**
- * ProfileSection in a real browser: a write in flight keeps the control
- * that started it focused, and the landing does not take focus away.
- *
- * jsdom keeps a focused button or field focused after it turns natively
- * disabled, so the focus loss a native `disabled` causes is invisible
- * there; only the browser tier sees it. The save button becomes
- * unavailable once the stored name matches the field again, and the field
- * is locked read-only while the write is in flight: both stay focusable,
- * where a native `disabled` would drop focus to the document body.
+ * ProfileSection in a real browser: the in-flight control and field keep focus,
+ * which a native disable would drop.
  */
 
 import { describe, expect, it } from 'vitest'

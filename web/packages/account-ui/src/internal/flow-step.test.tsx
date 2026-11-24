@@ -1,29 +1,6 @@
 /**
- * FlowStep behaviour: the controlled label vocabulary of a flow step, the
- * TOTP enrolment block and the passkey ceremony's own states.
- *
- * What this suite pins: a challenge field name the family knows renders
- * its translated label, an unknown name renders verbatim; a factor option
- * reads as its kind's translated name, a repeated kind distinguishes its
- * entries by name ("Kind · Name") and an unnamed entry from the second on
- * by ordinal ("Kind (2)"), and an unknown kind shows the kind as given; an
- * enrollment kind follows the same known/unknown rule. The
- * package keeps its vocabulary locally (auth-ui and admin-ui keep their
- * own copies), so this suite is the account-ui side of the registered
- * sync obligation. The ceremony cases pin the assertion step starting its
- * ceremony on arrival (also under StrictMode's double mount, where the
- * abandoned first attempt gives way to the second), the waiting state and
- * its cancel control (with the focus the control that opened the step
- * held), the immediate failure a cancel renders and the retry that runs
- * the ceremony again, a registration step waiting for a click, the
- * registration prompt's own wording, the ceremony being abandoned when the
- * step unmounts, the already-registered refusal's own sentence, and the
- * generic failure sentence naming the ceremony it ran. The TOTP cases pin
- * this package's side of the shared panel: the step's URI becoming the
- * symbol, the parser's secret and parameters reaching the manual
- * disclosure, the confirm-only submission, and the symbol and guidance
- * being withheld when the step carries no URI or one the parser refuses.
- * The panel's own contract is covered beside it in @speed/ui-kit.
+ * FlowStep checks the label vocabulary, the TOTP enrolment block and the
+ * passkey ceremony's states.
  */
 
 import { useState } from 'react'
@@ -60,7 +37,6 @@ function render(
   return { ...rendered, onSubmit }
 }
 
-/** Installs a `navigator.credentials` stub, answering the restorer. */
 function installCredentials(credentials: unknown): () => void {
   const original = Object.getOwnPropertyDescriptor(window.navigator, 'credentials')
   Object.defineProperty(window.navigator, 'credentials', {
@@ -76,7 +52,6 @@ function installCredentials(credentials: unknown): () => void {
   }
 }
 
-/** An assertion credential shaped as the browser's API returns one. */
 const ASSERTION_CREDENTIAL = {
   id: 'cred-1',
   rawId: new Uint8Array([1]).buffer,
@@ -90,14 +65,12 @@ const ASSERTION_CREDENTIAL = {
   getClientExtensionResults: () => ({}),
 }
 
-/** A step whose options ask the browser for an assertion. */
 const ASSERT_STEP: AuthnStep = {
   kind: 'webauthn',
   options: { challenge: 'Y2hhbGxlbmdl' },
 }
 
-/** A step whose options ask the browser for a registration. The `user`
- * member is what tells the ceremony apart from an assertion. */
+/** The `user` member is what tells a registration from an assertion. */
 const REGISTER_STEP: AuthnStep = {
   kind: 'webauthn',
   options: {
@@ -131,8 +104,6 @@ describe('FlowStep labels', () => {
       ],
     })
 
-    // Each kind is offered once, so the kind name is the whole label; the
-    // registration-time name does not replace it.
     expect(
       screen.getByRole('button', { name: zhCN.mfa.factor.kind.totp }),
     ).toBeTruthy()
@@ -143,9 +114,6 @@ describe('FlowStep labels', () => {
   })
 
   it('labels same-named factors of different kinds by their kinds', () => {
-    // Two factors whose registration-time names match must not render two
-    // identical buttons: the step answers "how do I prove it", so the kind
-    // is the label.
     render({
       kind: 'factor',
       factors: [
@@ -200,7 +168,7 @@ describe('FlowStep labels', () => {
     try {
       render(ASSERT_STEP)
       const region = screen.getByRole('status')
-      // The region is inserted by the waiting state's first commit empty.
+      // The waiting state's first commit inserts the region empty.
       expect(region.textContent).toBe('')
       await waitFor(() =>
         expect(region).toHaveTextContent(zhCN.flowStep.passkeyWaiting),
@@ -211,10 +179,6 @@ describe('FlowStep labels', () => {
   })
 
   it('waits on the arrival ceremony, cancels into a retry, and retries the ceremony', async () => {
-    // The assertion ceremony starts on arrival and sits pending in the
-    // browser: it shows an explicit waiting state whose cancel control takes
-    // the focus the control that opened the step held, and cancel fails at
-    // once and offers a retry that drives the ceremony again.
     const get = vi
       .fn()
       // The cancelled attempt never settles; its late answer is irrelevant.
@@ -226,7 +190,6 @@ describe('FlowStep labels', () => {
       const user = userEvent.setup()
 
       expect(screen.getByText(zhCN.flowStep.passkeyPrompt)).toBeTruthy()
-      // No click starts the assertion: the step arrival did.
       expect(await screen.findByText(zhCN.flowStep.passkeyWaiting)).toBeTruthy()
       const cancel = screen.getByRole('button', {
         name: zhCN.flowStep.passkeyCancel,
@@ -238,8 +201,6 @@ describe('FlowStep labels', () => {
         zhCN.flowStep.passkeyCancelled,
       )
 
-      // The retry uses the one primary action mapping every action row
-      // shares, so the three retry surfaces cannot drift apart.
       const retry = screen.getByRole('button', {
         name: zhCN.flowStep.passkeyRetry,
       })
@@ -261,8 +222,6 @@ describe('FlowStep labels', () => {
     const restore = installCredentials({ get, create: vi.fn() })
     try {
       render(ASSERT_STEP)
-      // The waiting state is the first thing the step shows: the Continue
-      // control never renders, because the assertion started itself.
       expect(await screen.findByText(zhCN.flowStep.passkeyWaiting)).toBeTruthy()
       expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull()
       expect(get).toHaveBeenCalledTimes(1)
@@ -272,10 +231,8 @@ describe('FlowStep labels', () => {
   })
 
   it('restarts the arrival ceremony when the server re-sends the same challenge', async () => {
-    // The challenge string alone does not identify a ceremony: the server can
-    // send the same challenge again in the next step. The sequence number
-    // advances with every reply the flow parks, so a re-sent challenge starts
-    // the ceremony again while an ordinary re-render leaves it alone.
+    // The challenge string alone does not identify a ceremony; the sequence
+    // number does.
     const get = vi.fn().mockReturnValue(new Promise(() => {}))
     const restore = installCredentials({ get, create: vi.fn() })
     try {
@@ -315,8 +272,6 @@ describe('FlowStep labels', () => {
   })
 
   it('starts no assertion ceremony when a genuinely different step arrives', async () => {
-    // Only an assertion step starts on arrival. A different step the flow
-    // parks is not an assertion ceremony, whatever sequence it carries.
     const get = vi.fn().mockReturnValue(new Promise(() => {}))
     const restore = installCredentials({ get, create: vi.fn() })
     try {
@@ -362,16 +317,12 @@ describe('FlowStep labels', () => {
   })
 
   it('starts the second ceremony after StrictMode abandons the first', async () => {
-    // StrictMode mounts, unmounts and mounts again in development: the
-    // first arrival's ceremony is abandoned by the cleanup, and the second
-    // one must start cleanly and be the only one that answers.
     const get = vi
       .fn()
       .mockImplementationOnce(() => new Promise(() => {}))
       .mockResolvedValueOnce(ASSERTION_CREDENTIAL)
     const restore = installCredentials({ get, create: vi.fn() })
-    // The StrictMode root is what double-invokes the effects; RTL does not
-    // mount one by default.
+    // RTL does not mount a StrictMode root by default.
     configure({ reactStrictMode: true })
     try {
       const onSubmit = vi.fn()
@@ -403,8 +354,7 @@ describe('FlowStep labels', () => {
   })
 
   it('waits for a click before a registration ceremony starts', async () => {
-    // A creation ceremony needs the user activation some browsers require,
-    // so a registration step stays parked until the viewer clicks.
+    // A creation ceremony needs the user activation some browsers require.
     const create = vi.fn().mockReturnValue(new Promise(() => {}))
     const restore = installCredentials({ get: vi.fn(), create })
     try {
@@ -429,11 +379,6 @@ describe('FlowStep labels', () => {
   })
 
   it('starts no registration ceremony on mount and one per click', async () => {
-    // A registration ceremony is click-driven, not effect-driven: the mount
-    // starts none, and one click asks the browser once. The run is under RTL's
-    // reactStrictMode, so the mount effects are double-invoked -- as the
-    // assertion-ceremony case beside this one also relies on -- and the
-    // ceremony still has no effect firing behind it.
     const create = vi.fn().mockReturnValue(new Promise(() => {}))
     const restore = installCredentials({ get: vi.fn(), create })
     configure({ reactStrictMode: true })
@@ -452,8 +397,6 @@ describe('FlowStep labels', () => {
   })
 
   it('renders the registration prompt for a creation step', () => {
-    // A creation step (its options carry the user) says it registers a
-    // passkey rather than reusing the assertion's wording.
     const step: AuthnStep = {
       kind: 'webauthn',
       options: {
@@ -468,8 +411,7 @@ describe('FlowStep labels', () => {
   })
 
   it('abandons the ceremony when the step unmounts', async () => {
-    // An unmounted step has no flow to answer, so the pending ceremony is
-    // given up: the signal the browser's API received is aborted.
+    // An unmounted step has no flow to answer, so its signal is aborted.
     let received: { signal?: AbortSignal } | undefined
     const get = vi.fn((options: { signal?: AbortSignal }) => {
       received = options
@@ -479,7 +421,6 @@ describe('FlowStep labels', () => {
     try {
       const { unmount } = render(ASSERT_STEP)
 
-      // The arrival started the ceremony; nothing was clicked.
       await screen.findByText(zhCN.flowStep.passkeyWaiting)
       expect(received?.signal?.aborted).toBe(false)
 
@@ -491,10 +432,8 @@ describe('FlowStep labels', () => {
   })
 
   it('reports a device that already holds this account as already registered', async () => {
-    // The server sends excludeCredentials for the account's existing passkeys,
-    // and an authenticator that already holds one refuses the creation with
-    // InvalidStateError. That answer names its own remedy instead of the
-    // generic failure the viewer would retry forever.
+    // An authenticator holding an excluded credential answers InvalidStateError;
+    // that names its own remedy.
     const create = vi
       .fn()
       .mockRejectedValue(
@@ -514,9 +453,6 @@ describe('FlowStep labels', () => {
   })
 
   it('names the ceremony in the generic failure sentence', async () => {
-    // A registration and a sign-in that fail the same way read differently:
-    // the sentence says which ceremony did not complete, so the viewer is not
-    // told a sign-in failed while they were enrolling a factor.
     const composed = (action: string): string =>
       zhCN.flowStep.passkeyFailed.replace('{{action}}', action)
     const boom = (): Promise<never> => Promise.reject(new Error('boom'))
@@ -560,8 +496,7 @@ describe('FlowStep TOTP enrolment', () => {
     const path = image.querySelector('path')?.getAttribute('d')
     expect(path).toBeTruthy()
 
-    // A different URI draws a different matrix: the symbol's payload is the
-    // step's otpauth_uri, not a fixed decoration.
+    // A different URI must draw a different matrix.
     const other = render({
       kind: 'webauthn',
       options: {
@@ -645,8 +580,7 @@ describe('FlowStep TOTP enrolment', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.flowStep.totpManualToggle }),
     )
-    // Label in Name needs canvas text measurement, which jsdom lacks; the
-    // named browser case decides it.
+    // Label in Name needs canvas text measurement; the browser case decides it.
     await expectNoAxeViolations({
       decidedInBrowser: 'flowStepAccountManualDisclosure',
     })
@@ -668,9 +602,8 @@ const FACTOR_STEP: AuthnStep = {
 
 describe('FlowStep held actions', () => {
   it('keeps the submitted control focused while the answer is in flight', async () => {
-    // The control that gave the answer stays focused and keeps its place:
-    // a native disable would drop focus to the document body. The fields
-    // turn read-only instead, so the value stays readable and focusable.
+    // A native disable would drop focus to the body, so the fields turn
+    // read-only instead.
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     function Harness() {
@@ -705,8 +638,6 @@ describe('FlowStep held actions', () => {
   })
 
   it('keeps the activated option busy and holds the rest of its group', async () => {
-    // Only the option that started the answer reports busy; its sibling
-    // refuses another answer without a reason of its own.
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     function Harness() {
@@ -780,9 +711,7 @@ describe('FlowStep held actions', () => {
   })
 
   it('refuses a programmatic form submit while the step is held', () => {
-    // The submit button's own guard swallows the implicit submission it
-    // carries; the form's handler is guarded too, for a submit the button
-    // does not carry (a programmatic one, or a form without its button).
+    // The form's handler is guarded too, for a submit its button does not carry.
     const onSubmit = vi.fn()
     render(CHALLENGE_STEP, onSubmit, { submitDisabled: true })
     fireEvent.submit(document.querySelector('form') as HTMLFormElement)
