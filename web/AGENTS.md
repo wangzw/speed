@@ -166,7 +166,23 @@ control unfocusable the moment it becomes unavailable and drops a keyboard
 user's focus to the document body; the covered control reports
 unavailability through `aria-disabled` instead, as `ActionButton`'s `busy`
 and `unavailable` do. The demo host enables this rule over its own `src`
-with the same implementation and exemption list. Package tests and
+with the same implementation and exemption list.
+
+`no-restricted-imports` (ESLint's own rule) keeps MUI's pagination out of
+every runtime source but one. A default import of
+`@mui/material/TablePagination`, `@mui/material/TablePaginationActions` or
+`@mui/material/Pagination`, a deep import under any of them, and a named
+import of `TablePagination`, `TablePaginationActions` or `Pagination` from
+`@mui/material` are all errors. The table footer is reached through
+`TablePager` or a `DataTable` `pagination` prop instead, because MUI's
+pagination actions move focus off a direction the moment it becomes
+unavailable. The single exemption is
+`packages/ui-kit/src/components/TablePager.tsx`, the module that replaces
+those actions: its block follows the block that enables the rule and names
+that exact path, so the rest of ui-kit stays covered. The demo host enables
+the same options over its own `src`, importing them from
+`web/eslint.config.mjs` rather than restating them; the exemption is
+anchored under `web/` and reaches no app source. Package tests and
 `test-utils/` are exempt by config for these rules, because fixture strings
 and scripted stand-ins are data.
 
