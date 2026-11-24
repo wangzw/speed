@@ -8,27 +8,10 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// The module registers itself. Importing this package is what puts ratelimit
-// in a binary's available set.
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// Module is the descriptor a host registers.
-//
-// The capability is delivered exclusively: two limiting layers in one assembly
-// would each decide on the same request, and which of the two refusals a
-// caller saw is not a fact anything could resolve.
-//
-// There are no construction-time dependencies. The entry point, settings and
-// the key-value primitives are all taken up in Init, where every instance
-// exists already, so there is no order to arrange and no Requires edge to
-// declare. Authentication and tenant resolution are not taken up at all: they
-// are read out of the request context.
-//
-// Where it cannot start — no configuration reader, a section that will not
-// decode, no endpoint named — Prepare returns an error and the startup ends
-// with it. The stance is StateEnabled and never StateAuto: taking this module
-// into a command that configures no endpoint is a mistake, not a request to
-// limit nothing.
+// Module is the descriptor a host registers; the capability is delivered
+// exclusively, and there are no construction-time dependencies.
 func Module() core.Module {
 	return core.Module{
 		Name:      ModuleName,
@@ -36,8 +19,6 @@ func Module() core.Module {
 		Resources: []any{schema(), settingsSchema()},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
-			// A stance handed back beside a failure is not read, so the failing
-			// paths return the zero Enablement with their error.
 			cfg, err := configOf(reg)
 			if err != nil {
 				return core.Enablement{}, err
@@ -69,9 +50,6 @@ func Module() core.Module {
 			return l, nil
 		},
 
-		// The layer is wired here and not in New: the entry point, settings and
-		// the key-value primitives are taken up at this stage, where every
-		// instance exists already.
 		Init: func(_ context.Context, reg *core.Registry, instance any) error {
 			l, ok := productOf(instance)
 			if !ok {
@@ -82,12 +60,8 @@ func Module() core.Module {
 	}
 }
 
-// stance is what this module states in Prepare: StateEnabled, never
-// StateAuto.
 func stance() core.Enablement { return core.Enablement{State: core.StateEnabled} }
 
-// configOf takes up the configuration reader and decodes this module's
-// section.
 func configOf(reg *core.Registry) (Config, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
@@ -102,12 +76,8 @@ func configOf(reg *core.Registry) (Config, error) {
 	return cfg, nil
 }
 
-// productOf narrows an instance to this module's product. An instance of
-// another shape is one the host supplied: a type of the host's own delivers
-// Limiter by embedding it, and the registry takes that as this module's
-// instance. Init leaves such an instance alone, so no layer is registered for
-// it, and the module declares neither Stop nor Close, so whatever the instance
-// holds is released by the host that supplied it.
+// productOf narrows an instance to this module's product, leaving a
+// host-supplied instance alone.
 func productOf(instance any) (*limiter, bool) {
 	l, ok := instance.(*limiter)
 	return l, ok
