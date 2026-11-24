@@ -7,8 +7,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// ownLines are the records this module wrote, told from the entry point's by
-// the module name in the message.
 func ownLines(logs *recorder) []record {
 	var out []record
 	for _, rec := range logs.all() {

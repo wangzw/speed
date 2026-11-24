@@ -10,9 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The request route is platform staff's: it reads the tenant for its two
-// existence answers, lands the mandatory audit row and asks the organization
-// writer to record the pending request.
 func TestTheOwnerTransferRequestGoesThroughTheOrganizationWriter(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = tenant.Tenant{
@@ -35,7 +32,6 @@ func TestTheOwnerTransferRequestGoesThroughTheOrganizationWriter(t *testing.T) {
 	}
 }
 
-// The request's mandatory audit row lands before the writer is reached.
 func TestTheOwnerTransferRequestAuditsBeforeTheWrite(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
@@ -48,8 +44,6 @@ func TestTheOwnerTransferRequestAuditsBeforeTheWrite(t *testing.T) {
 	}
 }
 
-// A request refusal is a 409 with the capability's conflict type, and the
-// failed row is linked to the mandatory one.
 func TestTheOwnerTransferRequestRefusalIsAConflict(t *testing.T) {
 	for name, refusal := range map[string]error{
 		"not a member":           tenant.ErrOwnerNotMember,
@@ -79,8 +73,6 @@ func TestTheOwnerTransferRequestRefusalIsAConflict(t *testing.T) {
 	}
 }
 
-// A request naming the current owner is a 400: the request would change
-// nothing.
 func TestTheOwnerTransferRequestRefusesTheCurrentOwner(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
@@ -96,8 +88,6 @@ func TestTheOwnerTransferRequestRefusesTheCurrentOwner(t *testing.T) {
 	}
 }
 
-// A personal organization is refused with the same protected type the deletion
-// and disable paths use.
 func TestTheOwnerTransferRequestRefusesAPersonalOrganization(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = tenant.Tenant{ID: "personal-acc-1", Name: "personal", Status: tenant.StatusActive}
@@ -116,8 +106,6 @@ func TestTheOwnerTransferRequestRefusesAPersonalOrganization(t *testing.T) {
 	}
 }
 
-// Platform staff delete without an ownership expectation; the route passes the
-// empty expectation to the writer.
 func TestPlatformStaffDeleteWithoutAnOwnerExpectation(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = tenant.Tenant{
@@ -139,9 +127,6 @@ func TestPlatformStaffDeleteWithoutAnOwnerExpectation(t *testing.T) {
 	}
 }
 
-// The organization's owner deletes through the tenant surface without platform
-// permission, and the deletion carries the owner it observed so a racing
-// transfer refuses it.
 func TestTheOwnerDeletesWithTheObservedOwner(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
@@ -165,9 +150,6 @@ func TestTheOwnerDeletesWithTheObservedOwner(t *testing.T) {
 	}
 }
 
-// The owner cannot delete through the platform surface: the platform route asks
-// tenant.manage in the platform domain and has no ownership branch. An owner
-// without that permission is refused there and must use the tenant surface.
 func TestTheOwnerCannotDeleteThroughThePlatformSurface(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
@@ -186,9 +168,6 @@ func TestTheOwnerCannotDeleteThroughThePlatformSurface(t *testing.T) {
 	}
 }
 
-// The owner cannot transfer through the platform surface either: the platform
-// route asks tenant.manage in the platform domain and has no ownership branch.
-// An owner without that permission must use the tenant surface.
 func TestTheOwnerCannotTransferThroughThePlatformSurface(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
@@ -207,9 +186,6 @@ func TestTheOwnerCannotTransferThroughThePlatformSurface(t *testing.T) {
 	}
 }
 
-// The owner requests a transfer through the tenant surface; the same
-// organization writer the platform route calls performs it, and the audit row
-// names the tenant surface.
 func TestTheOwnerRequestsATransferThroughTheTenantSurface(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
@@ -234,8 +210,6 @@ func TestTheOwnerRequestsATransferThroughTheTenantSurface(t *testing.T) {
 	}
 }
 
-// The pending read answers the request the organization writer holds, with the
-// target resolved by display name and username, or an explicit null.
 func TestThePendingTransferRead(t *testing.T) {
 	t.Run("a pending request", func(t *testing.T) {
 		r := newRig(t)
@@ -259,8 +233,6 @@ func TestThePendingTransferRead(t *testing.T) {
 			got.Request.Status != "pending" {
 			t.Errorf("the answer is %+v, want the pending request", got.Request)
 		}
-		// The target's names are wire fields in the underscore spelling; the
-		// view carries no camelCase spelling.
 		var raw struct {
 			Request map[string]any `json:"request"`
 		}
@@ -290,8 +262,6 @@ func TestThePendingTransferRead(t *testing.T) {
 	})
 }
 
-// Cancelling a request goes through the organization writer with the request
-// identifier and the surface's ownership expectation.
 func TestCancellingAnOwnerTransferRequest(t *testing.T) {
 	t.Run("platform staff cancel with no expectation", func(t *testing.T) {
 		r := newRig(t)
@@ -333,7 +303,6 @@ func TestCancellingAnOwnerTransferRequest(t *testing.T) {
 	})
 }
 
-// A request that is not pending is a conflict with the capability's type.
 func TestCancellingAResolvedRequestIsAConflict(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
@@ -345,9 +314,6 @@ func TestCancellingAResolvedRequestIsAConflict(t *testing.T) {
 	}
 }
 
-// A platform staff member who is not the organization's owner cannot use the
-// tenant surface: the tenant route decides by owner identity, not by the
-// platform permission the same account may hold.
 func TestPlatformStaffCannotUseTheTenantSurfaceWithoutBeingTheOwner(t *testing.T) {
 	for name, call := range map[string]func(*rig) int{
 		"request": func(r *rig) int {
@@ -378,9 +344,6 @@ func TestPlatformStaffCannotUseTheTenantSurfaceWithoutBeingTheOwner(t *testing.T
 	}
 }
 
-// A transfer that commits between the guard's read and the handler's read does
-// not hand the deletion the new owner as its own expectation: the caller is the
-// expected owner, so the writer refuses with ErrOwnerChanged.
 func TestTheOwnerDeletionExpectsTheCallerNotTheRowItReadsAgain(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
@@ -394,7 +357,6 @@ func TestTheOwnerDeletionExpectsTheCallerNotTheRowItReadsAgain(t *testing.T) {
 	r.catalog.getHook = func() {
 		reads++
 		if reads > 1 {
-			// A transfer committed after the guard saw the caller as owner.
 			r.catalog.held.OwnerAccount = "acc-new-owner"
 		}
 	}
@@ -409,8 +371,6 @@ func TestTheOwnerDeletionExpectsTheCallerNotTheRowItReadsAgain(t *testing.T) {
 	}
 }
 
-// A tenant administrator who is not the owner is refused, and nothing reaches
-// the writer or the audit.
 func TestANonOwnerTenantAdministratorCannotDelete(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
@@ -432,8 +392,6 @@ func TestANonOwnerTenantAdministratorCannotDelete(t *testing.T) {
 	}
 }
 
-// A tombstone is a 409 for a deletion, and a protected tenant is a 403 with the
-// write guard's type; neither reaches the writer.
 func TestTheDeleteRefusesATombstoneAndAProtectedTenant(t *testing.T) {
 	t.Run("a tombstone", func(t *testing.T) {
 		r := newRig(t)
@@ -466,8 +424,6 @@ func TestTheDeleteRefusesATombstoneAndAProtectedTenant(t *testing.T) {
 	})
 }
 
-// A deletion whose transfer-won race is refused is a 409, and the failure is
-// closed with a failed audit row.
 func TestTheDeleteRefusesAnOwnerThatChanged(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
@@ -487,7 +443,6 @@ func TestTheDeleteRefusesAnOwnerThatChanged(t *testing.T) {
 	}
 }
 
-// The deletion's mandatory audit row lands before the writer is reached.
 func TestTheDeleteAuditsBeforeTheWrite(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
@@ -500,8 +455,6 @@ func TestTheDeleteAuditsBeforeTheWrite(t *testing.T) {
 	}
 }
 
-// A tombstone read still answers 200 with the deleted state: the row is there,
-// and a surface renders it read-only.
 func TestTheTombstoneReadCarriesTheDeletedState(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusDeleted}

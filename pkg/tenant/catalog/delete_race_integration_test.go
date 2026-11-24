@@ -11,17 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The cases here hold the terminal state against a write that read the row
-// before the deletion committed and writes after it. Each write path carries the
-// tombstone condition in its own statement, so the statement updates no row and
-// the transaction reads the row again to answer ErrTenantDeleted. The
-// interleaving is arranged rather than raced: a connection of this test's own
-// deletes the row without committing, the writer reads the row as it was, and
-// the deletion commits while the writer's statement waits for the row lock.
-
-// awaitBlockedWriter waits until a backend of this database is waiting for a
-// row lock. That is the moment the writer has read the row and is updating it:
-// the read does not take a lock, so the wait cannot begin before it.
 func awaitBlockedWriter(t *testing.T, r *roster, done <-chan error) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -47,12 +36,6 @@ func awaitBlockedWriter(t *testing.T, r *roster, done <-chan error) {
 	}
 }
 
-// TestAConcurrentDeletionIsNotOverwrittenOnPostgres holds the terminal state
-// against every write path that reads the row and then updates it by identifier.
-// A deletion commits between the two, and the write's own statement — which
-// carries the tombstone condition — must leave the row as the deletion wrote it:
-// the status stays deleted, the name stays the deleted row's, and the caller is
-// answered ErrTenantDeleted.
 func TestAConcurrentDeletionIsNotOverwrittenOnPostgres(t *testing.T) {
 	for name, write := range map[string]func(context.Context, *roster) error{
 		"SetStatus disabled": func(ctx context.Context, r *roster) error {

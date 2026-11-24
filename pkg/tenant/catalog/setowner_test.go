@@ -8,15 +8,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The cases in this file are about the owner write: SetOwner changes the owner
-// column and nothing else, refuses a tombstone and a value outside the domain,
-// and leaves a repeated transfer as a no-op. Create is where an owner enters the
-// table, and Put is not a transfer path.
-
-// TestSetOwnerWritesOnlyTheOwnerColumn holds the statement to one column. The
-// name, the state, the disable source, the profile and both instants are what
-// other paths own, and a transfer must not write them back from a value it read
-// earlier.
 func TestSetOwnerWritesOnlyTheOwnerColumn(t *testing.T) {
 	r := rosterOver(t, "INSERT INTO tenants "+
 		"(id, name, status, disabled_by, owner_account, display_name, description) VALUES "+
@@ -54,9 +45,6 @@ func TestSetOwnerWritesOnlyTheOwnerColumn(t *testing.T) {
 	}
 }
 
-// TestSetOwnerRefusesATombstoneAndAnUnknownTenant holds the two refusals apart:
-// a deleted row keeps its owner, and an identifier no row carries is the
-// caller's mistake. Neither writes anything.
 func TestSetOwnerRefusesATombstoneAndAnUnknownTenant(t *testing.T) {
 	ctx := context.Background()
 	t.Run("a tombstone", func(t *testing.T) {
@@ -80,9 +68,6 @@ func TestSetOwnerRefusesATombstoneAndAnUnknownTenant(t *testing.T) {
 	})
 }
 
-// TestSetOwnerRefusesAnOwnerOutsideTheDomain holds the value's shape before the
-// table is touched: a business organization always has an owner, so the empty
-// value is refused, as a blank or control character is.
 func TestSetOwnerRefusesAnOwnerOutsideTheDomain(t *testing.T) {
 	for name, owner := range map[string]string{
 		"an empty owner":       "",
@@ -102,8 +87,6 @@ func TestSetOwnerRefusesAnOwnerOutsideTheDomain(t *testing.T) {
 	}
 }
 
-// TestSetOwnerIsIdempotent holds the repeated transfer: writing the owner a row
-// already carries returns nil and pays for no reread.
 func TestSetOwnerIsIdempotent(t *testing.T) {
 	r := rosterOver(t, "INSERT INTO tenants (id, name, status, owner_account) VALUES "+
 		"('t_acme', 'acme', 1, 'acct-1')")
@@ -117,10 +100,6 @@ func TestSetOwnerIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestSetOwnerIfEmptyRepairsOnlyAnOwnerlessRow holds the conditional write: an
-// ownerless row is filled and reports the write, while an owner that arrived
-// since the caller's read stands and the call reports no write. The identifier
-// and tombstone refusals match SetOwner's.
 func TestSetOwnerIfEmptyRepairsOnlyAnOwnerlessRow(t *testing.T) {
 	ctx := context.Background()
 
@@ -174,10 +153,6 @@ func TestSetOwnerIfEmptyRepairsOnlyAnOwnerlessRow(t *testing.T) {
 	})
 }
 
-// TestCreateWritesTheOwnerAndPutLeavesItAlone holds the creation path and the
-// rewrite path apart: Create writes the value's owner, and a rewrite through Put
-// changes the state and the disable source without transferring the organization
-// or changing the name.
 func TestCreateWritesTheOwnerAndPutLeavesItAlone(t *testing.T) {
 	r := rosterOver(t)
 	ctx := context.Background()
@@ -212,10 +187,6 @@ func TestCreateWritesTheOwnerAndPutLeavesItAlone(t *testing.T) {
 	}
 }
 
-// TestReadRefusesAStoredOwnerOutsideTheDomain holds the read path: the table can
-// be written without SetOwner, and an owner value carrying a blank reaches no
-// caller. The empty value is the one the column's default holds and is no
-// failure.
 func TestReadRefusesAStoredOwnerOutsideTheDomain(t *testing.T) {
 	r := rosterOver(t, "INSERT INTO tenants (id, name, status, owner_account) VALUES "+
 		"('t_acme', 'acme', 1, 'acct 1')")

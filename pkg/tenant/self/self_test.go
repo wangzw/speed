@@ -17,8 +17,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// stubMemberships is the membership read keyed by account, recording every
-// account a case asked about. An account it holds no entry for has none.
 type stubMemberships struct {
 	authn.Memberships
 	byAccount map[authn.AccountID][]authn.Membership
@@ -34,8 +32,6 @@ func (s *stubMemberships) Tenants(_ context.Context, id authn.AccountID) ([]auth
 	return append([]authn.Membership(nil), s.byAccount[id]...), nil
 }
 
-// stubCatalog is the roster read keyed by identifier, recording every lookup.
-// A row the map does not carry is absent, as the roster reports one.
 type stubCatalog struct {
 	tenant.Catalog
 	rows  map[tenant.ID]tenant.Tenant
@@ -52,8 +48,6 @@ func (s *stubCatalog) Get(_ context.Context, id tenant.ID) (tenant.Tenant, bool,
 	return row, ok, nil
 }
 
-// stubKindResolver is the host's kind answer keyed by identifier, recording
-// every lookup. An identifier the map does not carry reads as the zero kind.
 type stubKindResolver struct {
 	kinds map[tenant.ID]tenant.Kind
 	err   error
@@ -68,7 +62,6 @@ func (s *stubKindResolver) KindOf(_ context.Context, id tenant.ID) (tenant.Kind,
 	return s.kinds[id], nil
 }
 
-// newRig builds the module over the stub reads, with one endpoint configured.
 func newRig(memberships authn.Memberships, catalog tenant.Catalog) *product {
 	return &product{
 		memberships: memberships,
@@ -78,14 +71,12 @@ func newRig(memberships authn.Memberships, catalog tenant.Catalog) *product {
 	}
 }
 
-// newRigWithKind is newRig over a host kind resolver.
 func newRigWithKind(memberships authn.Memberships, catalog tenant.Catalog, kind tenant.KindResolver) *product {
 	p := newRig(memberships, catalog)
 	p.kind = kind
 	return p
 }
 
-// serve calls one handler over a real *gin.Context carrying ctx.
 func serve(t *testing.T, handler gin.HandlerFunc, ctx context.Context) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -98,13 +89,10 @@ func serve(t *testing.T, handler gin.HandlerFunc, ctx context.Context) *httptest
 	return w
 }
 
-// mounted is the handler the route is mounted with: the identity check in front
-// of the declared handler, bound to the endpoint's realm.
 func mounted(p *product) gin.HandlerFunc {
 	return withRealm("account", p.requireIdentity(tenantsOperation.Handle(p.handleTenants)))
 }
 
-// decode reads the 200 body.
 func decode(t *testing.T, w *httptest.ResponseRecorder) tenantsBody {
 	t.Helper()
 	var body tenantsBody
@@ -114,14 +102,10 @@ func decode(t *testing.T, w *httptest.ResponseRecorder) tenantsBody {
 	return body
 }
 
-// activeTenant is one roster row in the state the read lists.
 func activeTenant(id, name string) tenant.Tenant {
 	return tenant.Tenant{ID: tenant.ID(id), Name: name, Status: tenant.StatusActive}
 }
 
-// TestTheReadListsActiveMembershipsOfActiveTenants holds the answer: every
-// membership that is active and whose roster row is active, carrying the
-// identifier and the name and nothing else.
 func TestTheReadListsActiveMembershipsOfActiveTenants(t *testing.T) {
 	memberships := &stubMemberships{byAccount: map[authn.AccountID][]authn.Membership{
 		"acct-bob": {
@@ -152,10 +136,6 @@ func TestTheReadListsActiveMembershipsOfActiveTenants(t *testing.T) {
 	}
 }
 
-// TestTheReadCarriesTheOrganizationDisplayName holds the host's display-name
-// source: the entry carries the roster's display name beside the name, and a
-// tenant whose profile names none carries an empty one rather than omitting the
-// field, so a host can fall back to the name without a missing-property branch.
 func TestTheReadCarriesTheOrganizationDisplayName(t *testing.T) {
 	memberships := &stubMemberships{byAccount: map[authn.AccountID][]authn.Membership{
 		"acct-bob": {
@@ -199,9 +179,6 @@ func TestTheReadCarriesTheOrganizationDisplayName(t *testing.T) {
 	}
 }
 
-// TestTheKindComesFromTheResolver holds the host seam: each row's kind is the
-// resolver's answer for that tenant, passed through unchanged, and the resolver
-// is asked once per listed tenant.
 func TestTheKindComesFromTheResolver(t *testing.T) {
 	memberships := &stubMemberships{byAccount: map[authn.AccountID][]authn.Membership{
 		"acct-bob": {
@@ -235,9 +212,6 @@ func TestTheKindComesFromTheResolver(t *testing.T) {
 	}
 }
 
-// TestNoResolverReadsEveryTenantAsBusiness holds the assembly with no
-// personal-tenant policy: no resolver means every row is business, not an
-// error and not an absent field.
 func TestNoResolverReadsEveryTenantAsBusiness(t *testing.T) {
 	memberships := &stubMemberships{byAccount: map[authn.AccountID][]authn.Membership{
 		"acct-bob": {{Account: "acct-bob", Tenant: "acme", Active: true}},
@@ -254,8 +228,6 @@ func TestNoResolverReadsEveryTenantAsBusiness(t *testing.T) {
 	}
 }
 
-// TestAKindReadFailureIsA503 holds a resolver outage apart from a business
-// answer: a failure is a 503, never a row silently read as business.
 func TestAKindReadFailureIsA503(t *testing.T) {
 	memberships := &stubMemberships{byAccount: map[authn.AccountID][]authn.Membership{
 		"acct-bob": {{Account: "acct-bob", Tenant: "acme", Active: true}},
@@ -276,10 +248,6 @@ func TestAKindReadFailureIsA503(t *testing.T) {
 	}
 }
 
-// TestTheReadKeepsTheMembershipsOrder holds the answer to the order the
-// membership read gives: the interface already lists by identifier, and the
-// filter preserves that order rather than sorting again. A sort here would
-// answer alpha before zeta, which is the failure this case names.
 func TestTheReadKeepsTheMembershipsOrder(t *testing.T) {
 	memberships := &stubMemberships{byAccount: map[authn.AccountID][]authn.Membership{
 		"acct-bob": {
@@ -300,9 +268,6 @@ func TestTheReadKeepsTheMembershipsOrder(t *testing.T) {
 	}
 }
 
-// TestASuspendedMembershipIsLeftOut holds the membership's own flag to the
-// answer: a suspended membership is not a member, and the roster is not even
-// asked about it.
 func TestASuspendedMembershipIsLeftOut(t *testing.T) {
 	memberships := &stubMemberships{byAccount: map[authn.AccountID][]authn.Membership{
 		"acct-bob": {
@@ -328,8 +293,6 @@ func TestASuspendedMembershipIsLeftOut(t *testing.T) {
 	}
 }
 
-// TestATenantThatIsNotServedIsLeftOut holds the roster's state to the answer: a
-// disabled tenant is not served, so a member is not given an entrance to it.
 func TestATenantThatIsNotServedIsLeftOut(t *testing.T) {
 	memberships := &stubMemberships{byAccount: map[authn.AccountID][]authn.Membership{
 		"acct-bob": {
@@ -350,9 +313,6 @@ func TestATenantThatIsNotServedIsLeftOut(t *testing.T) {
 	}
 }
 
-// TestAMembershipWithoutARosterRowIsLeftOut holds the snapshot's absence to the
-// answer: a membership naming a tenant this replica's roster does not carry
-// would switch into an absent tenant, so it is left out.
 func TestAMembershipWithoutARosterRowIsLeftOut(t *testing.T) {
 	memberships := &stubMemberships{byAccount: map[authn.AccountID][]authn.Membership{
 		"acct-bob": {
@@ -372,8 +332,6 @@ func TestAMembershipWithoutARosterRowIsLeftOut(t *testing.T) {
 	}
 }
 
-// TestTheEmptyAnswerIsAnEmptyList holds the empty result's spelling: an account
-// with no active membership is an answer of an empty list, never null.
 func TestTheEmptyAnswerIsAnEmptyList(t *testing.T) {
 	p := newRig(&stubMemberships{}, &stubCatalog{})
 	ctx := authntest.Context(t, t.Context(), authntest.WithAccount("acct-bob"))
@@ -391,9 +349,6 @@ func TestTheEmptyAnswerIsAnEmptyList(t *testing.T) {
 	}
 }
 
-// TestAnonymousIsRefusedWithTheGatewayChallenge holds the no-identity fallback:
-// the mounted route answers the same 401 the authenticated surfaces answer, and
-// nothing is read.
 func TestAnonymousIsRefusedWithTheGatewayChallenge(t *testing.T) {
 	memberships := &stubMemberships{}
 	p := newRig(memberships, &stubCatalog{})
@@ -411,9 +366,6 @@ func TestAnonymousIsRefusedWithTheGatewayChallenge(t *testing.T) {
 	}
 }
 
-// TestAMembershipReadFailureIsA503 holds an outage apart from an empty list: a
-// membership read that cannot answer is a 503, and the cause never reaches the
-// body.
 func TestAMembershipReadFailureIsA503(t *testing.T) {
 	p := newRig(&stubMemberships{err: errors.New("the store is down")}, &stubCatalog{})
 	ctx := authntest.Context(t, t.Context(), authntest.WithAccount("acct-bob"))
@@ -427,8 +379,6 @@ func TestAMembershipReadFailureIsA503(t *testing.T) {
 	}
 }
 
-// TestARosterReadFailureIsA503 holds the second dependency: a roster that cannot
-// answer is a 503, not a list missing the tenant it could not resolve.
 func TestARosterReadFailureIsA503(t *testing.T) {
 	memberships := &stubMemberships{byAccount: map[authn.AccountID][]authn.Membership{
 		"acct-bob": {{Account: "acct-bob", Tenant: "acme", Active: true}},
@@ -442,9 +392,6 @@ func TestARosterReadFailureIsA503(t *testing.T) {
 	}
 }
 
-// TestAMissingRosterIsA503 holds the snapshot that has not been published: a
-// roster refusing its read with ErrRosterMissing is an outage of the same kind,
-// never an empty list.
 func TestAMissingRosterIsA503(t *testing.T) {
 	memberships := &stubMemberships{byAccount: map[authn.AccountID][]authn.Membership{
 		"acct-bob": {{Account: "acct-bob", Tenant: "acme", Active: true}},
@@ -458,11 +405,6 @@ func TestAMissingRosterIsA503(t *testing.T) {
 	}
 }
 
-// TestAnImpersonatingCallerReadsOnlyTheGrantTenant holds the narrowed answer
-// an impersonating caller receives: the host needs the grant tenant's name
-// after a full page load, when no roster cache survives, and the impersonated
-// account's memberships in other tenants are outside the grant and are not
-// handed over.
 func TestAnImpersonatingCallerReadsOnlyTheGrantTenant(t *testing.T) {
 	memberships := &stubMemberships{byAccount: map[authn.AccountID][]authn.Membership{
 		"acct-bob": {
@@ -495,9 +437,6 @@ func TestAnImpersonatingCallerReadsOnlyTheGrantTenant(t *testing.T) {
 	}
 }
 
-// TestTheReadAsksForTheEffectiveAccount holds an impersonating caller to the
-// account the request is taken to be from: the read asks about the impersonated
-// account, never the actor whose hands are on the request.
 func TestTheReadAsksForTheEffectiveAccount(t *testing.T) {
 	memberships := &stubMemberships{}
 	p := newRig(memberships, &stubCatalog{})

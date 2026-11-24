@@ -10,12 +10,6 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// TestATenantAddressedRouteHoldsThePathTenantToTheResolvedOne drives both rules
-// over a real assembly. This module delivers two capabilities: the shared
-// path-tenant guard every tenant-scoped group is wrapped with, and the tenant
-// administration guard the tenant management surfaces apply themselves. The
-// routes stand in for the members, invitations and SSO groups and for the two
-// tenant management surfaces.
 func TestATenantAddressedRouteHoldsThePathTenantToTheResolvedOne(t *testing.T) {
 	const sharedRoute = "/tenants/:tenant/probe"
 	const adminRoute = "/tenants/:tenant/manage"

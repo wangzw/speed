@@ -1,10 +1,5 @@
 package selfcreate
 
-// The unit cases hold the decision order and the four upper bounds over
-// stand-ins for the module's seams. The assembly of the real modules is held by
-// the demo server's program-level cases; a transaction boundary is the one
-// thing a fake cannot answer.
-
 import (
 	"context"
 	"errors"
@@ -29,23 +24,13 @@ import (
 	tenantpersonal "github.com/vislake/speed/pkg/tenant/personal"
 )
 
-// unitAccount is the account the unit cases act as. It is not a UUID so a
-// failure message stays readable.
 const unitAccount = authn.AccountID("7c1e0f6a")
 
-// testNow is the instant the unit cases run at: fifteen minutes into an hour,
-// so Retry-After has a value the case can name.
 var testNow = time.Date(2026, time.November, 5, 10, 15, 0, 0, time.UTC)
 
-// fakeKV is the in-memory kv.KV the unit cases use. It honours the expiry rules
-// the contract states, because the creation lock and the hourly window are both
-// judged through them.
 type fakeKV struct {
-	mu     sync.Mutex
-	values map[string]kvEntry
-	// lockAttempts, when non-nil, is signalled once per SetIfAbsent call. The
-	// concurrent-lock case uses it to know every request has reached the lock
-	// before the winner's provisioner is released.
+	mu           sync.Mutex
+	values       map[string]kvEntry
 	lockAttempts chan struct{}
 }
 
@@ -154,8 +139,6 @@ func (k *fakeKV) SetIfAbsent(_ context.Context, key string, value []byte, ttl ti
 	return !live, nil
 }
 
-// fakeSettings is the settings.Store the unit cases read. Only Get is reached:
-// the module declares its two items and never writes one.
 type fakeSettings struct {
 	settings.Store
 
@@ -179,7 +162,6 @@ func (s *fakeSettings) Get(_ settings.Layer, key string, target any) error {
 	return nil
 }
 
-// fakeVerification is the signup read the unit cases use.
 type fakeVerification struct {
 	authn.SignupVerification
 
@@ -196,7 +178,6 @@ func (v *fakeVerification) SignupStateOf(_ context.Context, _ authn.AccountID) (
 	return v.status, v.err
 }
 
-// fakeReservation is the reserved-name answer the unit cases use.
 type fakeReservation struct {
 	authn.UsernameReservation
 
@@ -213,16 +194,12 @@ func (r *fakeReservation) ReservedUsername(_ context.Context, username string) (
 	return r.reserved[username], r.err
 }
 
-// fakeReservationOf builds the answer with the built-in names the account module
-// refuses and the personal prefix as a prefix.
 func newFakeReservation() *fakeReservation {
 	return &fakeReservation{reserved: map[string]bool{
 		"api": true, "admin": true, "system": true, "login": true, "root": true,
 	}}
 }
 
-// fakeRoster is the tenant.Catalog the unit cases use. Get, ByName and List are
-// the three the module reads.
 type fakeRoster struct {
 	tenant.Catalog
 
@@ -268,7 +245,6 @@ func (r *fakeRoster) put(t tenant.Tenant) {
 	r.rows[t.ID] = t
 }
 
-// fakeMemberships is the authn.Memberships the unit cases use.
 type fakeMemberships struct {
 	authn.Memberships
 
@@ -283,21 +259,17 @@ func (m *fakeMemberships) Tenants(_ context.Context, id authn.AccountID) ([]auth
 	return append([]authn.Membership(nil), m.rows[id]...), nil
 }
 
-// provisionCall is one Provision request the stand-in saw.
 type provisionCall struct {
 	tenant  tenant.Tenant
 	creator string
 }
 
-// fakeProvisioner is the tenant.Provisioner the unit cases use.
 type fakeProvisioner struct {
 	tenant.Provisioner
 
 	mu    sync.Mutex
 	calls []provisionCall
 	err   error
-	// block, when non-nil, holds every call until it is closed. The lock case
-	// uses it to keep one creation in flight.
 	block chan struct{}
 }
 
@@ -317,7 +289,6 @@ func (p *fakeProvisioner) recorded() []provisionCall {
 	return append([]provisionCall(nil), p.calls...)
 }
 
-// recordedAudit is the audit.Audit the unit cases use.
 type recordedAudit struct {
 	audit.Audit
 
@@ -342,7 +313,6 @@ func (a *recordedAudit) rows() []audit.Entry {
 	return append([]audit.Entry(nil), a.entries...)
 }
 
-// rig is the product plus the stand-ins a case wants to steer.
 type rig struct {
 	product      *product
 	roster       *fakeRoster
@@ -403,8 +373,6 @@ func (r *rig) create(t *testing.T, ctx context.Context, name, displayName string
 	})
 }
 
-// attempts reads the number of creations counted in the account's current
-// hourly window.
 func (r *rig) attempts(t *testing.T) int {
 	t.Helper()
 	count, err := r.product.hourlyCount(context.Background(), unitAccount)
@@ -423,8 +391,6 @@ func faultOf(t *testing.T, err error) speedhttp.Fault {
 	return fault
 }
 
-// TestCreateRequiresAnIdentity holds the first step: a context with no identity
-// is refused 401 and nothing is read or written.
 func TestCreateRequiresAnIdentity(t *testing.T) {
 	rig := newRig()
 	_, err := rig.create(t, context.Background(), "acme-inc", "Acme")
@@ -436,9 +402,6 @@ func TestCreateRequiresAnIdentity(t *testing.T) {
 	}
 }
 
-// TestCreateRefusesImpersonation holds the second step: an identity acting for
-// another account is refused 403 before the verification read, even though the
-// route is mounted so the gateway lets it through.
 func TestCreateRefusesImpersonation(t *testing.T) {
 	rig := newRig()
 	ctx := rig.ctx(t,
@@ -456,7 +419,6 @@ func TestCreateRefusesImpersonation(t *testing.T) {
 	}
 }
 
-// TestCreateRefusesServiceAccountsAndStaticSubjects holds the third step.
 func TestCreateRefusesServiceAccountsAndStaticSubjects(t *testing.T) {
 	for name, options := range map[string][]authntest.Option{
 		"a service account": {authntest.WithAccount("api-client"), authntest.WithMethods(authn.MethodClientSecret)},
@@ -479,9 +441,6 @@ func TestCreateRefusesServiceAccountsAndStaticSubjects(t *testing.T) {
 	}
 }
 
-// TestCreateRequiresAProvedEmailAddress holds the fourth step: a pending address
-// is the authentication capability's contact-required refusal, a read failure is
-// a 503, and an account with no address to prove is admitted.
 func TestCreateRequiresAProvedEmailAddress(t *testing.T) {
 	cases := map[string]struct {
 		status authn.SignupStatus
@@ -524,8 +483,6 @@ func TestCreateRequiresAProvedEmailAddress(t *testing.T) {
 	}
 }
 
-// TestCreateChecksTheEmailBeforeTheShape holds the order: a pending address is
-// refused even when the body is also invalid.
 func TestCreateChecksTheEmailBeforeTheShape(t *testing.T) {
 	rig := newRig()
 	rig.verification.status = authn.SignupStatus{State: authn.SignupPending}
@@ -536,9 +493,6 @@ func TestCreateChecksTheEmailBeforeTheShape(t *testing.T) {
 	}
 }
 
-// TestCreateValidatesTheNameAndProfileShape holds the fifth step: the name is
-// a slug, the display name is required, both fields are held to their bounds,
-// and the reserved set is the account module's answer.
 func TestCreateValidatesTheNameAndProfileShape(t *testing.T) {
 	cases := map[string]createInput{
 		"a blank display name": {Name: "acme-inc", DisplayName: "   "},
@@ -570,9 +524,6 @@ func TestCreateValidatesTheNameAndProfileShape(t *testing.T) {
 	}
 }
 
-// TestCreateAsksTheReservedAnswerAndRefusesAPersonalPrefix holds the reserved
-// seam: the name is asked of the account module's set, and a name under the
-// personal prefix is one of the answers it refuses.
 func TestCreateAsksTheReservedAnswerAndRefusesAPersonalPrefix(t *testing.T) {
 	rig := newRig()
 	rig.reservation.reserved["personal-alice"] = true
@@ -588,8 +539,6 @@ func TestCreateAsksTheReservedAnswerAndRefusesAPersonalPrefix(t *testing.T) {
 	}
 }
 
-// TestCreateReadsTheReservedAnswerFailure is the seam's outage: the creation is
-// not carried out and answers 503.
 func TestCreateReadsTheReservedAnswerFailure(t *testing.T) {
 	rig := newRig()
 	rig.reservation.err = errors.New("the settings store is unavailable")
@@ -602,11 +551,6 @@ func TestCreateReadsTheReservedAnswerFailure(t *testing.T) {
 	}
 }
 
-// TestCreateAnswersANameTheReservationCannotNormalize holds the seam's other
-// refusal: a name outside the username shape is a bad name rather than an
-// outage. A UUID-shaped string is a legal tenant slug, so it passes IsName and
-// reaches the seam, but the account module cannot normalize it and answers
-// authn.ErrInvalidIdentifier; the surface must answer 400, not 503.
 func TestCreateAnswersANameTheReservationCannotNormalize(t *testing.T) {
 	rig := newRig()
 	rig.reservation.err = fmt.Errorf("%w: the name is the shape of an account identifier", authn.ErrInvalidIdentifier)
@@ -622,10 +566,6 @@ func TestCreateAnswersANameTheReservationCannotNormalize(t *testing.T) {
 	}
 }
 
-// TestCreateRefusesAnNameTheRosterHolds holds the sixth step: one namespace for
-// names, identifiers and usernames. A slug another tenant carries as its
-// name or its identifier, and a slug a personal tenant carries as its
-// username, are the same identifier-unavailable refusal.
 func TestCreateRefusesAnNameTheRosterHolds(t *testing.T) {
 	cases := map[string]tenant.Tenant{
 		"a name":        {ID: "tenant-1", Name: "acme-inc", Status: tenant.StatusActive},
@@ -653,9 +593,6 @@ func TestCreateRefusesAnNameTheRosterHolds(t *testing.T) {
 	}
 }
 
-// TestCreateCountsOnlyActiveBusinessMemberships holds the cap: a personal
-// tenant, a disabled tenant and a suspended membership are not counted, and the
-// cap refuses the creation once the active business count reaches it.
 func TestCreateCountsOnlyActiveBusinessMemberships(t *testing.T) {
 	rig := newRig()
 	rig.settings.values[maxOrganizationsPath] = 4
@@ -679,8 +616,6 @@ func TestCreateCountsOnlyActiveBusinessMemberships(t *testing.T) {
 		t.Fatalf("the creation below the cap failed: %v", err)
 	}
 
-	// One more active business tenant reaches the cap. The fake provisioner
-	// does not write the new membership, so the case adds it itself.
 	addBusiness("biz-3", tenant.StatusActive)
 	_, err := rig.create(t, rig.ctx(t), "acme-two", "Acme Two")
 	fault := faultOf(t, err)
@@ -693,9 +628,6 @@ func TestCreateCountsOnlyActiveBusinessMemberships(t *testing.T) {
 	}
 }
 
-// TestCreateLimitsTheHourlyCount holds the hourly bound: three creations in an
-// hour are admitted, the fourth is the rate refusal with a Retry-After, and the
-// next hour starts a new window.
 func TestCreateLimitsTheHourlyCount(t *testing.T) {
 	rig := newRig()
 	for i := range 3 {
@@ -711,7 +643,6 @@ func TestCreateLimitsTheHourlyCount(t *testing.T) {
 	if len(fault.Headers) != 1 || fault.Headers[0].Name != "Retry-After" {
 		t.Fatalf("headers = %+v, want one Retry-After", fault.Headers)
 	}
-	// The test instant is 10:15, so the window has 2700 seconds left.
 	if got := fault.Headers[0].Value; got != "2700" {
 		t.Errorf("Retry-After = %q, want %q", got, "2700")
 	}
@@ -725,10 +656,6 @@ func TestCreateLimitsTheHourlyCount(t *testing.T) {
 	}
 }
 
-// TestCreateDoesNotCountRefusalsBeforeTheCount holds the first half of the
-// counting rule: a request refused at a pre-check consumes no place. The shape
-// refusal, the name refusal and the organization cap stand for every refusal
-// in steps 1-10, all of which return before recordAttempt.
 func TestCreateDoesNotCountRefusalsBeforeTheCount(t *testing.T) {
 	rig := newRig()
 	_, err := rig.product.handleCreate(rig.ctx(t), createInput{DisplayName: "Acme"})
@@ -753,9 +680,6 @@ func TestCreateDoesNotCountRefusalsBeforeTheCount(t *testing.T) {
 	}
 }
 
-// TestCreateCountsAProvisionerFailure holds the second half of the counting
-// rule: once the attempt is counted, a provisioner failure consumes it. With a
-// budget of three, one failed provision leaves room for two creations.
 func TestCreateCountsAProvisionerFailure(t *testing.T) {
 	rig := newRig()
 	rig.provisioner.err = errors.New("the roster is unavailable")
@@ -778,10 +702,6 @@ func TestCreateCountsAProvisionerFailure(t *testing.T) {
 	}
 }
 
-// TestCreateCountsAnAuditFailure holds the order the counting rule depends on:
-// the attempt is counted before the mandatory audit, so an audit failure
-// consumes it. With a budget of three, one failed audit leaves room for two
-// creations.
 func TestCreateCountsAnAuditFailure(t *testing.T) {
 	rig := newRig()
 	rig.audit.err = errors.New("the audit store is down")
@@ -805,9 +725,6 @@ func TestCreateCountsAnAuditFailure(t *testing.T) {
 	}
 }
 
-// TestCreateHoldsThePerAccountLock holds the creation lock: a live lock is the
-// 409 creation-in-progress refusal, and a completed request leaves the lock
-// free again.
 func TestCreateHoldsThePerAccountLock(t *testing.T) {
 	rig := newRig()
 	key := lockKeyOf(unitAccount)
@@ -837,10 +754,6 @@ func TestCreateHoldsThePerAccountLock(t *testing.T) {
 	}
 }
 
-// TestCreateHoldsTheLockAgainstConcurrentRequests holds the lock's purpose: one
-// account's concurrent requests cannot both reach the provisioner. One wins and
-// holds the lock while its provisioner runs; every other request is the
-// creation-in-progress refusal.
 func TestCreateHoldsTheLockAgainstConcurrentRequests(t *testing.T) {
 	const requests = 8
 	rig := newRig()
@@ -871,8 +784,6 @@ func TestCreateHoldsTheLockAgainstConcurrentRequests(t *testing.T) {
 			statuses <- 0
 		}(i)
 	}
-	// Every request has reached the lock before the winner's provisioner is
-	// released, so the others meet a live lock rather than a released one.
 	for range requests {
 		<-rig.kv.lockAttempts
 	}
@@ -905,9 +816,6 @@ func TestCreateHoldsTheLockAgainstConcurrentRequests(t *testing.T) {
 	}
 }
 
-// TestCreateWritesTheMandatoryAuditRow holds the audit step: the mandatory row
-// lands before the provisioner, and a cross-replica identifier or name race is
-// a 409 that does not add a second row for the same request.
 func TestCreateWritesTheMandatoryAuditRow(t *testing.T) {
 	rig := newRig()
 	reply, err := rig.create(t, rig.ctx(t), "acme-inc", "Acme")
@@ -952,8 +860,6 @@ func TestCreateWritesTheMandatoryAuditRow(t *testing.T) {
 	}
 }
 
-// TestCreateClosesAFailedProvisionWithAFailedRow holds the ordinary failure:
-// the mandatory row and a linked failed row, and a 503.
 func TestCreateClosesAFailedProvisionWithAFailedRow(t *testing.T) {
 	rig := newRig()
 	rig.provisioner.err = errors.New("the roster is unavailable")
@@ -970,9 +876,6 @@ func TestCreateClosesAFailedProvisionWithAFailedRow(t *testing.T) {
 	}
 }
 
-// TestCreateGeneratesTheIdentifier holds the identifier rule: one org-<uuid>
-// string with the caller's name and profile, the active state and the creator
-// as owner, and the creator handed to the provisioner.
 func TestCreateGeneratesTheIdentifier(t *testing.T) {
 	rig := newRig()
 	reply, err := rig.create(t, rig.ctx(t), "  acme-inc  ", "  Acme  ")
@@ -1021,9 +924,6 @@ func TestCreateGeneratesTheIdentifier(t *testing.T) {
 	}
 }
 
-// TestCreateRetriesAConflictingIdentifier holds the pre-check: a collision is
-// regenerated, three retries are allowed, and four collisions are the 409
-// identifier-unavailable refusal with no provision.
 func TestCreateRetriesAConflictingIdentifier(t *testing.T) {
 	rig := newRig()
 	for _, taken := range []string{"org-taken-1", "org-taken-2", "org-taken-3"} {
@@ -1070,9 +970,6 @@ func TestCreateRetriesAConflictingIdentifier(t *testing.T) {
 	}
 }
 
-// TestCreateNeverTakesTheNameAsItsIdentifier holds the one namespace: a
-// generator that happens to mint the caller's name is retried like any other
-// taken value.
 func TestCreateNeverTakesTheNameAsItsIdentifier(t *testing.T) {
 	rig := newRig()
 	next := 0
@@ -1094,9 +991,6 @@ func TestCreateNeverTakesTheNameAsItsIdentifier(t *testing.T) {
 	}
 }
 
-// TestCreateReadsTheLimitsAtRequestTime holds the settings seam: the two items
-// come from the global layer of the runtime settings, and a read failure is a
-// 503 that creates nothing.
 func TestCreateReadsTheLimitsAtRequestTime(t *testing.T) {
 	rig := newRig()
 	rig.settings.values[maxOrganizationsPath] = 1
@@ -1117,8 +1011,6 @@ func TestCreateReadsTheLimitsAtRequestTime(t *testing.T) {
 	}
 }
 
-// TestCreateRejectsAnUnusableLimit holds the fail-closed reading of a value the
-// declaration's domain does not admit.
 func TestCreateRejectsAnUnusableLimit(t *testing.T) {
 	rig := newRig()
 	rig.settings.values[maxPerHourPath] = 0
@@ -1128,9 +1020,6 @@ func TestCreateRejectsAnUnusableLimit(t *testing.T) {
 	}
 }
 
-// TestCreateWritesNoAuditRowForAPreCountRefusal holds the audit rule: a request
-// refused before the attempt is counted writes no row at all. The mandatory row
-// records an attempt, not a refused call.
 func TestCreateWritesNoAuditRowForAPreCountRefusal(t *testing.T) {
 	rig := newRig()
 	_, err := rig.product.handleCreate(rig.ctx(t), createInput{DisplayName: "Acme"})
@@ -1142,8 +1031,6 @@ func TestCreateWritesNoAuditRowForAPreCountRefusal(t *testing.T) {
 	}
 }
 
-// Keep the compile-time surface honest about the stand-ins implementing the
-// interfaces they claim.
 var (
 	_ kv.KV                     = (*fakeKV)(nil)
 	_ settings.Store            = (*fakeSettings)(nil)

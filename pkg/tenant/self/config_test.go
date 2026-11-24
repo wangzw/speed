@@ -6,9 +6,6 @@ import (
 	"testing"
 )
 
-// The endpoint list is required and takes concrete names only: a list that
-// mounted the read nowhere, an empty name, the every-endpoint name and a
-// repeated name are each refused, naming the key.
 func TestTheEndpointListRefusesEveryShapeItCannotRunOn(t *testing.T) {
 	cases := map[string][]string{
 		"empty":            nil,
@@ -26,7 +23,6 @@ func TestTheEndpointListRefusesEveryShapeItCannotRunOn(t *testing.T) {
 	}
 }
 
-// A list of concrete names is what the module runs on, in the order given.
 func TestTheEndpointListKeepsConcreteNames(t *testing.T) {
 	endpoints := []string{"account", "api"}
 	got, err := (moduleConfig{Endpoints: endpoints}).resolve()

@@ -6,9 +6,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The two admission switches are the only tenant-facing settings this module
-// declares, and both are read-write. Every field a tenant surface renders is
-// declared here, so the surface does not restate this module's text.
 func TestTheTwoTenantSwitchesAreDeclaredForTheTenantSurface(t *testing.T) {
 	schema := settingsSchema()
 	if !schema.TenantFacing {
@@ -44,9 +41,6 @@ func TestTheTwoTenantSwitchesAreDeclaredForTheTenantSurface(t *testing.T) {
 	}
 }
 
-// The lifetime is a platform adjustment, not a tenant setting. It keeps the zero
-// tenant access and no presentation metadata, so no tenant surface can render
-// it.
 func TestTheLifetimeStaysPlatformOnly(t *testing.T) {
 	item, declared := settingsSchema().Items[checkTTLItem]
 	if !declared {

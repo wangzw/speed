@@ -10,11 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The cases here hold the transaction-aware roster writes: they write in the
-// transaction they are handed, they return the reread for after its commit, and
-// they refuse what the context-taking writes refuse.
-
-// txAfter is one after closure a tx write handed back.
 type txAfter func(context.Context) error
 
 func TestCreateTxWritesInTheCallersTransaction(t *testing.T) {
@@ -137,9 +132,6 @@ func TestTheTxVariantsKeepTheCtxVariantsRefusals(t *testing.T) {
 	}
 }
 
-// GetTx reports a row no table carries as absent and a tombstone as present, so
-// a caller that has to distinguish the two reads the status rather than the
-// boolean.
 func TestGetTxReportsAbsenceAndTheTombstone(t *testing.T) {
 	r := rosterOver(t, insertRow("t_gone", "gone", tenant.StatusDeleted, tenant.DisabledByOperator))
 	if err := r.read(context.Background()); err != nil {
@@ -162,9 +154,6 @@ func TestGetTxReportsAbsenceAndTheTombstone(t *testing.T) {
 	}
 }
 
-// SetOwnerTx refuses an identifier no row carries and a tombstone, writes
-// nothing for a transfer to the current owner, and answers no error for an
-// update that matched no row but left a live row behind.
 func TestSetOwnerTxRejectionBranches(t *testing.T) {
 	r := rosterOver(t,
 		insertOwner("t_acme", "acme", "alice"),
@@ -238,8 +227,6 @@ func TestSetOwnerTxRejectionBranches(t *testing.T) {
 	})
 }
 
-// insertOwner is one roster row written as a statement with its owner column,
-// which insert does not carry.
 func insertOwner(id, name, owner string) string {
 	return "INSERT INTO tenants (id, name, status, owner_account) VALUES ('" +
 		id + "', '" + name + "', 1, '" + owner + "')"

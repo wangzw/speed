@@ -22,10 +22,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// TestEveryNotFoundIsTheSameBytes holds the property that makes the layer no
-// oracle for tenants: the five ways to be turned away with a 404 are told apart
-// in the log and the metric and nowhere a caller can read. The statuses, the
-// headers and the bodies are equal byte for byte.
 func TestEveryNotFoundIsTheSameBytes(t *testing.T) {
 	impersonating := func(r *rig, scope string) context.Context {
 		return r.as(acme, authntest.WithAccount(alice), authntest.WithActor(bob),
@@ -100,9 +96,6 @@ func TestEveryNotFoundIsTheSameBytes(t *testing.T) {
 
 func equalValues(a, b []string) bool { return strings.Join(a, "\x00") == strings.Join(b, "\x00") }
 
-// TestEveryOutcomeIsCountedOnceAndOnlyOnce holds the metric's closed set: each
-// of the eight values is reached by a request of its own, and every request is
-// counted under exactly one.
 func TestEveryOutcomeIsCountedOnceAndOnlyOnce(t *testing.T) {
 	r := newRig(t)
 	r.withProviders()
@@ -153,8 +146,6 @@ func TestEveryOutcomeIsCountedOnceAndOnlyOnce(t *testing.T) {
 	}
 }
 
-// TestTheOutcomeNamesAreTheDocumentedClosedSet holds the values themselves,
-// which a dashboard is written against.
 func TestTheOutcomeNamesAreTheDocumentedClosedSet(t *testing.T) {
 	want := []string{
 		"admitted", "admitted-by-policy", "not-member", "scope-mismatch",
@@ -170,8 +161,6 @@ func TestTheOutcomeNamesAreTheDocumentedClosedSet(t *testing.T) {
 	}
 }
 
-// TestTheStatusSetIsClosed holds that 403 is not an answer of this layer and the
-// statuses are the three the design lists.
 func TestTheStatusSetIsClosed(t *testing.T) {
 	allowed := map[int]bool{
 		nethttp.StatusOK: true, nethttp.StatusNotFound: true,
@@ -188,10 +177,6 @@ func TestTheStatusSetIsClosed(t *testing.T) {
 	}
 }
 
-// TestTheDecisionCountReachesTheMetricCapability reads the counter through a real
-// meter provider, where the assembly carries one: every outcome has a point from
-// the first collection, the empty ones included, and each count is the number of
-// requests that got it.
 func TestTheDecisionCountReachesTheMetricCapability(t *testing.T) {
 	collected := sdkmetric.NewManualReader()
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(collected))
@@ -252,11 +237,6 @@ func TestTheDecisionCountReachesTheMetricCapability(t *testing.T) {
 
 const meterNameForTest = "tenant"
 
-// TestTheStepUpChallengeCarriesTheDocumentedValues pins the two strings a client
-// acts on by their literals: the acr_values that names what the request must
-// satisfy and the error_description. A wrong acr tells the client to satisfy the
-// wrong requirement, and a test that read either off the constant under test
-// would let it change with no failure.
 func TestTheStepUpChallengeCarriesTheDocumentedValues(t *testing.T) {
 	r := newRig(t)
 	r.withProviders()
@@ -284,11 +264,6 @@ func TestTheStepUpChallengeCarriesTheDocumentedValues(t *testing.T) {
 	}
 }
 
-// TestCloseWithdrawsTheCounterCallback holds what the Close callback does: a
-// meter provider outliving the layer must stop reading a closed product, so the
-// counter's callback is withdrawn and the series stops. A case that only
-// recollected the series while the layer ran would let a Close that never
-// unregisters through.
 func TestCloseWithdrawsTheCounterCallback(t *testing.T) {
 	collected := sdkmetric.NewManualReader()
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(collected))
@@ -324,9 +299,6 @@ func TestCloseWithdrawsTheCounterCallback(t *testing.T) {
 	}
 }
 
-// TestCloseSurfacesAFailedWithdrawal holds the direction of a withdrawal that
-// fails: Close reports it, so a host that closes the layer is not told the
-// callback is gone when it is not.
 func TestCloseSurfacesAFailedWithdrawal(t *testing.T) {
 	base := sdkmetric.NewMeterProvider(sdkmetric.WithReader(sdkmetric.NewManualReader()))
 	t.Cleanup(func() {
@@ -342,8 +314,6 @@ func TestCloseSurfacesAFailedWithdrawal(t *testing.T) {
 	}
 }
 
-// faultyMeterProvider hands out a meter whose callback registration cannot be
-// withdrawn.
 type faultyMeterProvider struct {
 	metric.MeterProvider
 	meter metric.Meter
@@ -351,8 +321,6 @@ type faultyMeterProvider struct {
 
 func (p faultyMeterProvider) Meter(string, ...metric.MeterOption) metric.Meter { return p.meter }
 
-// faultyMeter registers a callback and hands back a registration whose
-// Unregister always fails.
 type faultyMeter struct{ metric.Meter }
 
 func (m faultyMeter) RegisterCallback(f metric.Callback, instruments ...metric.Observable) (metric.Registration, error) {
@@ -363,8 +331,6 @@ func (m faultyMeter) RegisterCallback(f metric.Callback, instruments ...metric.O
 	return faultyRegistration{Registration: real}, nil
 }
 
-// faultyRegistration forwards the sealed interface to a real registration and
-// fails only the withdrawal.
 type faultyRegistration struct{ metric.Registration }
 
 func (faultyRegistration) Unregister() error { return errBoom }
@@ -390,10 +356,6 @@ func decisionCounts(rm metricdata.ResourceMetrics) (map[string]int64, string, st
 	return nil, "", ""
 }
 
-// TestARefusalLeavesOneLineThroughTheRequestsLogger holds what the log carries:
-// one Info record for each refusal, through the logger the request's context
-// carries, so it has the fields the layers outside bound; the layer adds the
-// class of cause and nothing that identifies a credential.
 func TestARefusalLeavesOneLineThroughTheRequestsLogger(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -416,8 +378,6 @@ func TestARefusalLeavesOneLineThroughTheRequestsLogger(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			r := newRig(t)
 			ctx := c.ctx(r)
-			// The gateway binds the account, and the resolution layer the
-			// tenant; the record is read with both.
 			ctx = log.WithAttrs(ctx, "account", "bound-by-the-gateway")
 			r.serve(ctx)
 			infos := r.logs.atLevel(levelInfo)
@@ -441,9 +401,6 @@ func TestARefusalLeavesOneLineThroughTheRequestsLogger(t *testing.T) {
 	}
 }
 
-// TestNoSecretReachesAnswerOrLog holds that nothing of the credential, the
-// settings or the cause is in what a caller reads: the cause of a 503 goes to
-// the log, and the Authorization header is not read at all.
 func TestNoSecretReachesAnswerOrLog(t *testing.T) {
 	r := newRig(t)
 	r.members.fail(errBoom)
@@ -459,8 +416,6 @@ func TestNoSecretReachesAnswerOrLog(t *testing.T) {
 	}
 }
 
-// compile-time check that the interfaces the rig stubs are the ones the layer
-// takes.
 var (
 	_ authn.Memberships  = (*memberStub)(nil)
 	_ authn.Decider      = (*deciderStub)(nil)
@@ -468,9 +423,6 @@ var (
 	_ settings.Store     = (*settingsStub)(nil)
 )
 
-// TestCoversIsAnExactMembershipTest holds the guard: the configured names and
-// nothing else, matched whole. The star is a name no list may hold, and it is
-// not a pattern either.
 func TestCoversIsAnExactMembershipTest(t *testing.T) {
 	l := newLayer(resolved{endpoints: []string{"public", "admin-2"}}, newMemberStub())
 	for name, want := range map[string]bool{
@@ -483,9 +435,6 @@ func TestCoversIsAnExactMembershipTest(t *testing.T) {
 	}
 }
 
-// TestTheChallengeNeverCarriesWhatEndsAHeaderField holds the two strings put in
-// the challenge from outside: the scheme the gateway stamped, and the endpoint
-// name used as the realm.
 func TestTheChallengeNeverCarriesWhatEndsAHeaderField(t *testing.T) {
 	for scheme, want := range map[string]string{
 		"":              "Bearer",
@@ -495,13 +444,10 @@ func TestTheChallengeNeverCarriesWhatEndsAHeaderField(t *testing.T) {
 		"Bearer realm=": "Bearer",
 		"Béarer":        "Bearer",
 		`Bea"rer`:       "Bearer",
-		// The interior of the token set: a digit the range may cut, the
-		// special characters beside the letters, and a tag ending in the
-		// last letter of either alphabet.
-		"v0":      "v0",
-		"Token-z": "Token-z",
-		"ABZ":     "ABZ",
-		"buzz":    "buzz",
+		"v0":            "v0",
+		"Token-z":       "Token-z",
+		"ABZ":           "ABZ",
+		"buzz":          "buzz",
 	} {
 		if got := challengeScheme(scheme); got != want {
 			t.Errorf("challengeScheme(%q) = %q, want %q", scheme, got, want)

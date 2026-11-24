@@ -9,10 +9,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The cases here hold both strength requirements to the moment their value was
-// written: turning a policy on applies to members at their next sign-in, and a
-// session authenticated before that moment keeps working. require-mfa and
-// require-sso follow the same rule and the same failure direction.
 func TestStrengthRequirementsBindFromTheNextSignIn(t *testing.T) {
 	written := time.Date(2026, time.November, 1, 12, 0, 0, 0, time.UTC)
 	before := written.Add(-time.Minute)
@@ -43,9 +39,6 @@ func TestStrengthRequirementsBindFromTheNextSignIn(t *testing.T) {
 	})
 
 	t.Run("a sub-second boundary does not exempt the same whole second", func(t *testing.T) {
-		// The row's write time carries nanoseconds and the session's auth time
-		// is whole seconds. A session stamped at the boundary's own second is
-		// not older than the write, so it must be held to the requirement.
 		r := newRig(t)
 		boundary := written.Add(300 * time.Millisecond)
 		r.withSettings().setAt(settings.ForTenant(acme), requireMFAKey, true, boundary)
@@ -82,9 +75,6 @@ func TestStrengthRequirementsBindFromTheNextSignIn(t *testing.T) {
 		store.setAt(settings.Global(), requireMFAKey, true, written)
 		store.setAt(settings.ForTenant(acme), requireMFAKey, true, tenantWritten)
 
-		// The platform requirement was already on, so a session established
-		// between the two writes is held to it: the tenant write cannot lift a
-		// requirement that predates the session.
 		stepUp(t, "a session after the platform write but before the tenant write",
 			r.serve(r.as(acme, authntest.WithAuthTime(written.Add(5*time.Minute)))), acrMultiFactor)
 		if rp := r.serve(r.as(acme, authntest.WithAuthTime(written.Add(-time.Minute)))); !rp.reached() {
@@ -140,9 +130,6 @@ func TestStrengthRequirementsBindFromTheNextSignIn(t *testing.T) {
 	})
 
 	t.Run("require-sso with a revision unavailable refuses", func(t *testing.T) {
-		// A row the store cannot place a revision for must not exempt the
-		// session: the failure direction is to hold the requirement, not to
-		// weaken it.
 		r := newRig(t)
 		r.withProviders()
 		r.withSettings().set(settings.ForTenant(acme), requireSSOKey, true)
@@ -156,8 +143,6 @@ func TestStrengthRequirementsBindFromTheNextSignIn(t *testing.T) {
 		r.withSettings().setAt(settings.ForTenant(acme), requireSSOKey, true, written)
 		r.members.setRow(authn.Membership{Account: alice, Tenant: acme, Active: true, SSOExempt: true})
 
-		// The pass lifts the sign-in requirement and keeps the factor one: the
-		// session's age moves it past the revision rule, not past the factor.
 		stepUp(t, "an exempt single-factor session after the write",
 			r.serve(r.as(acme, authntest.WithAuthTime(after))), acrMultiFactor)
 

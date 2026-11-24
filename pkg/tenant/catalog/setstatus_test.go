@@ -9,13 +9,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The cases in this file are about the two status transitions and the disable
-// source each records: the operator's path, account state's path, and which
-// calls are allowed to write at all.
-
-// TestSetStatusRecordsTheOperatorDisableAndClearsItOnEnable holds the operator
-// path whole: disabling writes the operator as the source, and enabling clears
-// the source, so a later account recovery has nothing to revoke.
 func TestSetStatusRecordsTheOperatorDisableAndClearsItOnEnable(t *testing.T) {
 	r := rosterOver(t, insert("t_acme", "acme"))
 	ctx := context.Background()
@@ -37,9 +30,6 @@ func TestSetStatusRecordsTheOperatorDisableAndClearsItOnEnable(t *testing.T) {
 	})
 }
 
-// The operator disabling a tenant that is already disabled restates the
-// decision, and the source becomes the operator's: a row an account disabled
-// must not stay revocable by that account after an operator has taken it over.
 func TestSetStatusRestatesTheOperatorSource(t *testing.T) {
 	for name, source := range map[string]tenant.DisabledBy{
 		"an account disable":                tenant.DisabledByAccount,
@@ -58,9 +48,6 @@ func TestSetStatusRestatesTheOperatorSource(t *testing.T) {
 	}
 }
 
-// The deleted state is not a status write's to set: deletion has one route,
-// Delete. The refusal comes before any lookup, so it writes nothing whatever
-// the row holds.
 func TestSetStatusRefusesTheDeletedStatus(t *testing.T) {
 	for name, seed := range map[string]string{
 		"an active row":   insert("t_acme", "acme"),
@@ -78,8 +65,6 @@ func TestSetStatusRefusesTheDeletedStatus(t *testing.T) {
 	}
 }
 
-// A status change on a tombstone is refused with its own sentinel, so a caller
-// that waits out a disabled tenant is told this one is not coming back.
 func TestSetStatusRefusesATombstone(t *testing.T) {
 	r := rosterOver(t, insertRow("t_acme", "acme", tenant.StatusDeleted, tenant.DisabledByOperator))
 	for _, s := range []tenant.Status{tenant.StatusActive, tenant.StatusDisabled} {
@@ -89,9 +74,6 @@ func TestSetStatusRefusesATombstone(t *testing.T) {
 	}
 }
 
-// Account state disabling a tenant writes the account as the source, and only
-// from active: a tenant already disabled — by anyone — is not account state's to
-// disable again.
 func TestSetStatusByAccountDisablesOnlyAnActiveTenant(t *testing.T) {
 	t.Run("an active tenant", func(t *testing.T) {
 		r := rosterOver(t, insert("t_acme", "acme"))
@@ -119,9 +101,6 @@ func TestSetStatusByAccountDisablesOnlyAnActiveTenant(t *testing.T) {
 	})
 }
 
-// Account state enables only a tenant it disabled itself. An operator's disable
-// is not account state's to revoke, which is what keeps a tenant an operator
-// took out of service from coming back when its account does.
 func TestSetStatusByAccountOnlyRestoresAnAccountDisable(t *testing.T) {
 	t.Run("an account disable", func(t *testing.T) {
 		r := rosterOver(t, insertRow("t_acme", "acme", tenant.StatusDisabled, tenant.DisabledByAccount))
@@ -154,9 +133,6 @@ func TestSetStatusByAccountOnlyRestoresAnAccountDisable(t *testing.T) {
 	}
 }
 
-// Every transition account state's path does not cause writes nothing and
-// succeeds, so a repeated event changes nothing rather than failing. What it
-// cannot place is refused: no row and the deleted state are answers.
 func TestSetStatusByAccountIgnoresWhatItDoesNotCause(t *testing.T) {
 	t.Run("enabling an active tenant", func(t *testing.T) {
 		r := rosterOver(t, insert("t_acme", "acme"))
@@ -200,9 +176,6 @@ func TestSetStatusByAccountIgnoresWhatItDoesNotCause(t *testing.T) {
 	})
 }
 
-// A registration cannot write an account-caused disable, nor the deleted state:
-// only the two status transitions may write a source, and only Delete reaches
-// deletion. All four calls are refused before anything is written.
 func TestPutAndCreateRefuseWhatOnlyAnotherRouteWrites(t *testing.T) {
 	for name, write := range map[string]func(*roster) error{
 		"Put an account disable": func(r *roster) error {
@@ -248,9 +221,6 @@ func TestPutAndCreateRefuseWhatOnlyAnotherRouteWrites(t *testing.T) {
 	}
 }
 
-// The snapshot normalises the source column on the way in: only the account's
-// value reads as the account's, and a value this build does not know reads as
-// the operator's, so an unexplained disable is never revoked by account state.
 func TestTheSnapshotNormalisesTheDisableSource(t *testing.T) {
 	r := rosterOver(t,
 		insertRow("t_account", "account", tenant.StatusDisabled, tenant.DisabledByAccount),
@@ -276,11 +246,6 @@ func TestTheSnapshotNormalisesTheDisableSource(t *testing.T) {
 	}
 }
 
-// A refused value is named by the value that was refused, not by the name the
-// display spelling happens to give it: a status this build does not know reads
-// as disabled and a source it does not know reads as operator, so a message that
-// reused those spellings would name a value that is accepted. Each refusal below
-// must carry the underlying number and must not carry the display spelling.
 func TestARefusedValueIsNamedByItsNumber(t *testing.T) {
 	r := rosterOver(t, insert("t_acme", "acme"))
 	ctx := context.Background()

@@ -18,9 +18,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// databaseOver is a delivered handle a case can build: the roster reaches the
-// database only through this interface, and a case needs nothing of it beyond
-// the handle.
 type databaseOver struct{ handle *gorm.DB }
 
 func (d databaseOver) DB() *gorm.DB             { return d.handle }
@@ -30,64 +27,30 @@ func (d databaseOver) Open(context.Context, string) (*gorm.DB, error) {
 	return nil, errors.New("this case opens no second connection")
 }
 
-// rosterOver builds a roster over a table of its own, with the rows written
-// into it. The handle speaks SQLite, so the schema is the migration the module
-// ships for that dialect.
 func rosterOver(t *testing.T, rows ...string) *roster {
 	t.Helper()
 	return rosterOverDialect(t, "sqlite", rows...)
 }
 
-// openHandle is the handle a case builds its roster over: the one the database
-// module delivers over a SQLite file of the case's own, which every connection
-// of the pool shares. It is the module's handle rather than one opened here, so
-// that the roster runs over what an assembly hands it: the constraint
-// classification the module installs, and the pool shape it gives the locator.
-//
-// The query log is silenced on the session handed back: a case that makes a
-// read fail on purpose asserts on the error that came back, and GORM's echo of
-// that same failure is output rather than a result.
 func openHandle(t *testing.T) *gorm.DB {
 	t.Helper()
 	return openHandleAt(t, filepath.Join(t.TempDir(), "roster.db"))
 }
 
-// openHandleAt is openHandle over the SQLite locator dsn.
 func openHandleAt(t *testing.T, dsn string) *gorm.DB {
 	t.Helper()
 	return quiet(dbtest.SQLite(t, dsn, nil).DB())
 }
 
-// quiet is a session of a delivered handle that writes no record of a failed
-// statement.
 func quiet(handle *gorm.DB) *gorm.DB {
 	return handle.Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)})
 }
 
-// rosterOverDialect is rosterOver with the dialect named, so that a case can
-// build the table from any dialect's migration rather than only the one this
-// fixture's handle speaks.
-//
-// The rows arrive as statements rather than through Put, which is the point:
-// what these cases are about is a row that reached the table by some other
-// route, and Put is the one route that would have refused it. The schema comes
-// from the migration file itself, so a case cannot drift from the table the
-// module really reads.
-//
-// The database is a file of the case's own, and its pool is closed when the
-// case ends.
 func rosterOverDialect(t *testing.T, dialect string, rows ...string) *roster {
 	t.Helper()
 	return rosterOn(t, openHandle(t), dialect, rows...)
 }
 
-// applyMigrations builds the roster's table from the files the module ships for
-// one dialect, in filename order.
-//
-// A dialect's migration set is every .sql file in its directory: the first
-// creates the table and a later one adds the columns this build reads, so a
-// fixture that applied only the first would build a table the roster no longer
-// matches.
 func applyMigrations(t *testing.T, handle *gorm.DB, dialect string) {
 	t.Helper()
 	entries, err := fs.ReadDir(migrationsFS, dialect)
@@ -108,7 +71,6 @@ func applyMigrations(t *testing.T, handle *gorm.DB, dialect string) {
 	}
 }
 
-// rosterOn is rosterOverDialect over a handle the case opened.
 func rosterOn(t *testing.T, handle *gorm.DB, dialect string, rows ...string) *roster {
 	t.Helper()
 	applyMigrations(t, handle, dialect)
@@ -120,20 +82,10 @@ func rosterOn(t *testing.T, handle *gorm.DB, dialect string, rows ...string) *ro
 	return newRoster(settings{}, databaseOver{handle: handle})
 }
 
-// insert is one roster row written as a statement.
 func insert(id, name string) string {
 	return "INSERT INTO tenants (id, name, status) VALUES ('" + id + "', '" + name + "', 1)"
 }
 
-// TestReadRefusesARowOutsideTheIdentifierDomain is the read-path half of the
-// domain. Put refuses such a tenant, but a table can be written without Put —
-// a statement run by hand, an import, a database this module shares — and what
-// such a row carries is then handed to every caller that resolves a tenant,
-// one of which refuses an out-of-domain identifier by panicking.
-//
-// The read refuses the row rather than leaving it out of the snapshot: a
-// snapshot that quietly omitted a tenant would answer every request for it as
-// one that does not exist, and nothing would say so.
 func TestReadRefusesARowOutsideTheIdentifierDomain(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -160,9 +112,6 @@ func TestReadRefusesARowOutsideTheIdentifierDomain(t *testing.T) {
 				t.Errorf("the failure names neither the table (%q) nor the field (%q): %v",
 					tableName, tc.field, err)
 			}
-			// The value is what the domain exists to keep out of log lines and
-			// error text, so the failure that reports a bad row must not carry
-			// it — a newline in the message would split the record in two.
 			if text := err.Error(); strings.ContainsAny(text, "\n\t\x00") {
 				t.Errorf("the failure carries a control character of its own: %q", text)
 			}
@@ -173,12 +122,6 @@ func TestReadRefusesARowOutsideTheIdentifierDomain(t *testing.T) {
 	}
 }
 
-// TestReadPublishesAConformingRoster is the other side of the same check: the
-// predicate is the domain's, and a table inside it loads.
-//
-// One of the two identifiers is long. This module defines no length for one, so
-// it has none to refuse, and a case that started refusing a long identifier
-// would fail here.
 func TestReadPublishesAConformingRoster(t *testing.T) {
 	r := rosterOver(t,
 		insert("acme", "acme"),
@@ -200,10 +143,6 @@ func TestReadPublishesAConformingRoster(t *testing.T) {
 	}
 }
 
-// TestReadLeavesThePreviousSnapshotInPlaceWhenItRefuses is what the refusal
-// costs and what it buys. A refresh that finds a bad row keeps serving the
-// snapshot it already had, so the tenant that turned bad stops being resolved
-// rather than being resolved to an identifier a consumer refuses.
 func TestReadLeavesThePreviousSnapshotInPlaceWhenItRefuses(t *testing.T) {
 	r := rosterOver(t, insert("acme", "acme"))
 	if err := r.read(context.Background()); err != nil {
@@ -232,17 +171,11 @@ func TestReadLeavesThePreviousSnapshotInPlaceWhenItRefuses(t *testing.T) {
 	}
 }
 
-// rosterWithoutTable builds a roster over a handle whose table was never
-// created. A deployment that never applied this module's migration reaches the
-// read with no table, which is the condition the load has to report rather than
-// read as an empty roster.
 func rosterWithoutTable(t *testing.T) *roster {
 	t.Helper()
 	return newRoster(settings{}, databaseOver{handle: openHandle(t)})
 }
 
-// requireRosterMissingOnLoad holds one load's failure to the sentinel and the
-// table name the design promises it carries.
 func requireRosterMissingOnLoad(t *testing.T, r *roster) {
 	t.Helper()
 	err := r.load(context.Background())
@@ -258,24 +191,12 @@ func requireRosterMissingOnLoad(t *testing.T, r *roster) {
 	}
 }
 
-// TestLoadEndsTheStartupWhenTheTableIsNotThere holds the sentinel the design
-// names for a table that is not there: ErrRosterMissing is reported when the
-// snapshot is loaded, ends the startup, and names the table. It is the failure
-// with no other repair than applying the migration set, so a load that reported
-// it as anything else — or as nothing at all — would leave a deployment serving
-// an empty roster while telling the operator to look elsewhere.
-//
-// Both routes to a missing table are covered: one that was never created, and
-// one dropped from under a roster that has already loaded.
 func TestLoadEndsTheStartupWhenTheTableIsNotThere(t *testing.T) {
 	t.Run("never created", func(t *testing.T) {
 		requireRosterMissingOnLoad(t, rosterWithoutTable(t))
 	})
 	t.Run("dropped after a load", func(t *testing.T) {
 		r := rosterOver(t, insert("acme", "acme"))
-		// The startup account the successful load writes is not what this case
-		// is about, so it is read into a handler that keeps it rather than left
-		// on the process's own logger.
 		captureLogs(r)
 		if err := r.load(context.Background()); err != nil {
 			t.Fatalf("loading a conforming roster: %v", err)
@@ -287,11 +208,6 @@ func TestLoadEndsTheStartupWhenTheTableIsNotThere(t *testing.T) {
 	})
 }
 
-// requireUnreadRefusal holds one read method of a roster that has not been read
-// to a refusal rather than the empty answer. The empty answer — a zero tenant
-// with found false and no error — is what a caller reads as "no tenant carries
-// this", so a method that returned it would turn every request into a 404 for a
-// roster that has not yet looked at the table.
 func requireUnreadRefusal(t *testing.T, method string, got tenant.Tenant, found bool, err error) {
 	t.Helper()
 	if err == nil {
@@ -302,23 +218,12 @@ func requireUnreadRefusal(t *testing.T, method string, got tenant.Tenant, found 
 		t.Errorf("%s reported the tenant %+v (found=%v) on a roster that has not been read",
 			method, got, found)
 	}
-	// A caller decides "no such tenant" from ErrInvalidTenant on the paths that
-	// report it, so the refusal must not be that failure.
 	if errors.Is(err, tenant.ErrInvalidTenant) {
 		t.Errorf("the failure %s returns carries ErrInvalidTenant, which a caller reads as a tenant "+
 			"that is not there: %v", method, err)
 	}
 }
 
-// TestAnUnreadRosterRefusesTheReads holds the whole read face to a refusal
-// before the first read has published a snapshot. A consumer that reached the
-// roster before its load — an ordering the module cannot rule out for the host
-// — must not be answered with the empty result, because the empty result is
-// indistinguishable from the roster saying a tenant does not exist.
-//
-// All three read methods go through the same refusal, so all three are held,
-// each to the same two things: an error rather than the empty answer, and one
-// that is not the sentinel a caller reads as "no such tenant".
 func TestAnUnreadRosterRefusesTheReads(t *testing.T) {
 	r := rosterOver(t)
 	ctx := context.Background()
@@ -343,8 +248,6 @@ func TestAnUnreadRosterRefusesTheReads(t *testing.T) {
 	}
 }
 
-// namesOf joins a listing's names in the order the listing returned them,
-// so that a case can state the order it wants as one value.
 func namesOf(list []tenant.Tenant) string {
 	names := make([]string, len(list))
 	for i, entry := range list {
@@ -353,22 +256,6 @@ func namesOf(list []tenant.Tenant) string {
 	return strings.Join(names, ",")
 }
 
-// TestListIsOrderedByNameAndIsACopy holds the two things List promises
-// about what it hands out.
-//
-// The order is the module's, not the table's: the snapshot is sorted by name
-// as it is built, so a listing does not depend on the order the rows happen to
-// come back in, and it orders by the only name a client reads. The rows here are
-// written in an order of their own, and their identifiers sort in the opposite
-// order from their names, so a listing that echoed the table's order and one
-// sorted by identifier would both be told apart from the name order that comes
-// out. What is read is the name order, which is this promise's own expression:
-// it is what a caller that wants a stable enumeration relies on, and comparing
-// the tenants as a bag of values would hold nothing about it.
-//
-// The slice is a copy: a caller sorting or trimming what it was handed must not
-// disturb what the next caller sees. Mutating the returned slice and listing
-// again is what holds that half.
 func TestListIsOrderedByNameAndIsACopy(t *testing.T) {
 	r := rosterOver(t,
 		insert("t_3_carol", "alice"),
@@ -389,7 +276,6 @@ func TestListIsOrderedByNameAndIsACopy(t *testing.T) {
 			held, "alice,bob,carol")
 	}
 
-	// A caller is free to reorder or replace what it was handed.
 	if len(got) > 0 {
 		got[0] = tenant.Tenant{ID: "zzz", Name: "zzz", Status: tenant.StatusActive}
 	}
@@ -403,9 +289,6 @@ func TestListIsOrderedByNameAndIsACopy(t *testing.T) {
 	}
 }
 
-// TestNameOfAnswersTheNameByIdentifier holds the id-to-name seam: the roster
-// answers the name a view or an audit row names, and an identifier no row
-// carries answers empty rather than failing.
 func TestNameOfAnswersTheNameByIdentifier(t *testing.T) {
 	r := rosterOver(t, insert("t_alice", "alice"))
 	ctx := context.Background()
@@ -428,9 +311,6 @@ func TestNameOfAnswersTheNameByIdentifier(t *testing.T) {
 	}
 }
 
-// TestTenantIDOfAnswersTheIdentifierByName holds the name-to-id seam: the
-// roster answers the identifier a request's tenant name resolves to, and an
-// name no row carries answers false rather than an empty identifier.
 func TestTenantIDOfAnswersTheIdentifierByName(t *testing.T) {
 	r := rosterOver(t, insert("t_acme", "acme"))
 	ctx := context.Background()
@@ -449,10 +329,6 @@ func TestTenantIDOfAnswersTheIdentifierByName(t *testing.T) {
 	}
 }
 
-// TestTenantDescriptionOfAnswersTheNameTheDisplayNameAndTheSystemFlag holds
-// the description seam: one read answers what a view names a tenant and whether
-// it is the system tenant, and an identifier no row carries answers the zero
-// description.
 func TestTenantDescriptionOfAnswersTheNameTheDisplayNameAndTheSystemFlag(t *testing.T) {
 	r := rosterOver(t,
 		"INSERT INTO tenants (id, name, status, display_name) VALUES ('t_acme', 'acme', 1, 'Acme Corporation')",
@@ -481,12 +357,6 @@ func TestTenantDescriptionOfAnswersTheNameTheDisplayNameAndTheSystemFlag(t *test
 	}
 }
 
-// TestListOnALoadedTableWithNoTenants is the third answer a listing has, and
-// the one a caller cannot get from the other two: a table that exists and holds
-// nobody lists as nothing, with no failure, where a roster that has not been
-// read refuses and one with tenants lists them. An operator's first run against
-// a freshly migrated database is this shape, and a listing that failed there
-// would report a fault where there is none.
 func TestListOnALoadedTableWithNoTenants(t *testing.T) {
 	r := rosterOver(t)
 	ctx := context.Background()
@@ -503,13 +373,6 @@ func TestListOnALoadedTableWithNoTenants(t *testing.T) {
 	}
 }
 
-// TestLookupsMissByAnsweringRatherThanFailing is the other side of the unread
-// refusal: once the roster has been read, a name no row carries is an answer —
-// no such tenant — and not a failure. A caller reads the two differently: a
-// failure says the roster has not looked, a miss says it looked and the tenant
-// is not there, and only the second is a fact about the table. Both lookups are
-// held, because the resolving layer makes the name lookup on every request and
-// a miss there is what answers a request for a tenant that does not exist.
 func TestLookupsMissByAnsweringRatherThanFailing(t *testing.T) {
 	r := rosterOver(t, insert("acme", "acme"))
 	ctx := context.Background()
@@ -539,11 +402,6 @@ func TestLookupsMissByAnsweringRatherThanFailing(t *testing.T) {
 	}
 }
 
-// countRows reports how many rows the roster's table holds, read back through
-// the handle the case built and not through the snapshot. What a refused write
-// left behind is a fact about the table: the predicate runs before the write,
-// so a refusal and a row that was written and then failed to reread are told
-// apart by the row count alone, both returning the same sentinel.
 func countRows(t *testing.T, r *roster) int64 {
 	t.Helper()
 	var n int64
@@ -553,7 +411,6 @@ func countRows(t *testing.T, r *roster) int64 {
 	return n
 }
 
-// rowOf reads one roster row by identifier from the table the case built.
 func rowOf(t *testing.T, r *roster, id string) (row, bool) {
 	t.Helper()
 	var held row
@@ -567,15 +424,6 @@ func rowOf(t *testing.T, r *roster, id string) (row, bool) {
 	return held, true
 }
 
-// TestPutRefusesATenantOutsideTheIdentifierDomain is the write-path half of the
-// domain: Put is the route a tenant is meant to enter the table by, and a
-// blank, a control character or an empty value in either field is refused here.
-//
-// The row count is what holds the refusal to its placement. A put that wrote
-// first and failed afterwards returns the same sentinel and names the same
-// field — the reread it ends with refuses the whole table — so only the
-// untouched table says the predicate ran before the write, which is what lets a
-// caller retry with a corrected value instead of finding a row it did not want.
 func TestPutRefusesATenantOutsideTheIdentifierDomain(t *testing.T) {
 	for _, tc := range []struct {
 		label string
@@ -606,9 +454,6 @@ func TestPutRefusesATenantOutsideTheIdentifierDomain(t *testing.T) {
 			if text := err.Error(); !strings.Contains(text, tc.field) {
 				t.Errorf("the failure does not name the field (%q): %v", tc.field, err)
 			}
-			// The value is what the domain exists to keep out of log lines and
-			// error text, so the failure that reports a bad field must not carry
-			// it — a newline in the message would split the record in two.
 			if text := err.Error(); strings.ContainsAny(text, "\n\t\x00") {
 				t.Errorf("the failure carries a control character of its own: %q", text)
 			}
@@ -619,17 +464,6 @@ func TestPutRefusesATenantOutsideTheIdentifierDomain(t *testing.T) {
 	}
 }
 
-// TestPutRewritesByIdentifier is Put's idempotence: the same identifier written
-// twice is one row, carrying the second write's status. Both halves need
-// holding — a put that inserted a second row and one that left the first row
-// untouched are different defects that a claim of "one row" alone would not
-// tell apart.
-//
-// The name is resolved back through the roster rather than only read from the
-// table: a rewrite whose result this process does not serve is one an operator
-// has to wait out a refresh period to see. The name stays the one the row was
-// written with, and the second write names it so that the rewrite is not
-// refused as a rename.
 func TestPutRewritesByIdentifier(t *testing.T) {
 	r := rosterOver(t)
 	ctx := context.Background()
@@ -663,11 +497,6 @@ func TestPutRewritesByIdentifier(t *testing.T) {
 	}
 }
 
-// TestPutRefusesToChangeAName holds the name's immutability: a name is
-// chosen when the row is written and is never changed afterwards, so a rewrite
-// carrying another name is refused and leaves the row as it was. Renaming
-// would otherwise reopen the ambiguity the namespace check closes — a new name
-// could equal another tenant's identifier without any creation path seeing it.
 func TestPutRefusesToChangeAName(t *testing.T) {
 	r := rosterOver(t, insert("t_acme", "acme"))
 	err := r.Put(context.Background(), tenant.Tenant{
@@ -679,11 +508,6 @@ func TestPutRefusesToChangeAName(t *testing.T) {
 	requireRow(t, r, "t_acme", row{ID: "t_acme", Name: "acme", Status: int(tenant.StatusActive)})
 }
 
-// TestCreateRefusesANameThatIsAnotherTenantsIdentifier and
-// TestCreateRefusesAnIdentifierThatIsAnotherTenantsName hold the two halves of
-// one namespace: a slug addresses one tenant whichever way it is looked up, so
-// a creation cannot make one tenant's name read as another tenant's
-// identifier. Both refusals write nothing.
 func TestCreateRefusesANameThatIsAnotherTenantsIdentifier(t *testing.T) {
 	r := rosterOver(t, insert("acme-one", "first"))
 	err := r.Create(context.Background(), tenant.Tenant{
@@ -710,9 +534,6 @@ func TestCreateRefusesAnIdentifierThatIsAnotherTenantsName(t *testing.T) {
 	}
 }
 
-// TestPutRefusesACrossNamespaceInsert holds the same two checks on Put's insert
-// path: the rewrite is not the only way a row enters the table, so a creation
-// through Put cannot leave the namespace ambiguous either.
 func TestPutRefusesACrossNamespaceInsert(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -747,14 +568,6 @@ func TestPutRefusesACrossNamespaceInsert(t *testing.T) {
 	}
 }
 
-// TestPutRefusesANameAnotherTenantHolds is the uniqueness the snapshot's name
-// index cannot supply: the index is built by assignment, so two rows sharing an
-// name would leave the roster quietly holding one of them.
-//
-// The check sits inside the write's transaction so that the refusal can name
-// the tenant holding the name. The column's unique index reports the same
-// collision, but as a constraint violation, which is why the check is
-// load-bearing rather than redundant.
 func TestPutRefusesANameAnotherTenantHolds(t *testing.T) {
 	r := rosterOver(t, insert("globex", "shared"))
 	err := r.Put(context.Background(), tenant.Tenant{
@@ -782,11 +595,6 @@ func TestPutRefusesANameAnotherTenantHolds(t *testing.T) {
 	}
 }
 
-// TestSetStatusRefusesAnIdentifierOutsideTheDomain is the state change's own
-// predicate, judged before it looks anything up. The field is named rather than
-// the value quoted back: the domain keeps the value out of error text, and an
-// identifier that reaches the message is one the predicate did not judge, since
-// the failure for an identifier no row carries is the one that quotes it.
 func TestSetStatusRefusesAnIdentifierOutsideTheDomain(t *testing.T) {
 	for _, tc := range []struct{ name, id string }{
 		{"a blank", "acme corp"},
@@ -812,16 +620,6 @@ func TestSetStatusRefusesAnIdentifierOutsideTheDomain(t *testing.T) {
 	}
 }
 
-// TestSetStatusRefusesAnIdentifierNoTenantCarries is the state change on a
-// tenant that is not there. The identifier is named rather than the update's
-// affected-row count read: a driver is free to report zero rows for an update
-// that set a value to what it already was, and this call would then answer a
-// tenant that exists as one that does not.
-//
-// What a case can hold is the refusal itself. Whether the check is the read or
-// the update's count is not observable through this harness: the SQLite driver
-// counts a row the update matched even when the value is unchanged, so the two
-// agree on every input a case can build here.
 func TestSetStatusRefusesAnIdentifierNoTenantCarries(t *testing.T) {
 	r := rosterOver(t, insert("acme", "acme"))
 	err := r.SetStatus(context.Background(), tenant.ID("globex"), tenant.StatusDisabled)
@@ -839,11 +637,6 @@ func TestSetStatusRefusesAnIdentifierNoTenantCarries(t *testing.T) {
 	}
 }
 
-// TestSetStatusDisabledIsServedToTheWriter is why the write rereads the table:
-// disabling is an operator's action, and the process that made it must not keep
-// serving a tenant it has just disabled until a refresh period happens to pass.
-// A disabled tenant that still resolves as active is the defect — serving it is
-// what the state is for.
 func TestSetStatusDisabledIsServedToTheWriter(t *testing.T) {
 	r := rosterOver(t, insert("acme", "acme"))
 	ctx := context.Background()
@@ -874,20 +667,6 @@ func TestSetStatusDisabledIsServedToTheWriter(t *testing.T) {
 	}
 }
 
-// TestPutAcceptsATenantUnderTheNameItAlreadyHolds is Put's exemption for the
-// row that already carries the name: the conflict check is for a name held
-// by another tenant, so writing a tenant under the name it already carries is
-// not a collision.
-//
-// That is the shape a seed run a second time against an existing database takes
-// — the reference host's seed writes every tenant with its identifier as its
-// name — and a write that only changes a status reaches the same check. Under
-// a check that treated any holder as a conflict, both would come back
-// ErrNameConflict and an operator could neither re-apply a seed nor flip a
-// status without clearing the table first.
-//
-// The name is resolved back through the roster and not only read from the
-// table: what the write is for is the process serving its result.
 func TestPutAcceptsATenantUnderTheNameItAlreadyHolds(t *testing.T) {
 	r := rosterOver(t)
 	ctx := context.Background()
@@ -895,8 +674,6 @@ func TestPutAcceptsATenantUnderTheNameItAlreadyHolds(t *testing.T) {
 		t.Fatalf("the first write: %v", err)
 	}
 
-	// The second write carries the same identifier and the same name, changing
-	// only the status, which is the smallest form the exemption has to admit.
 	if err := r.Put(ctx, tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusDisabled}); err != nil {
 		t.Fatalf("re-registering the tenant under the name it already carries: %v", err)
 	}
@@ -916,17 +693,6 @@ func TestPutAcceptsATenantUnderTheNameItAlreadyHolds(t *testing.T) {
 	}
 }
 
-// TestPutReportsAWriteThatCouldNotBeReread is the failure afterWrite exists to
-// report rather than swallow. When the reread that serves the writer its own
-// write refuses the table — here because the table already holds a row the
-// read will not act on — the write is still durable and the process is serving
-// a roster that omits it. Only the caller can act on that, so Put says the
-// write was applied instead of letting the refusal stand in for a write that
-// never happened.
-//
-// The message is a claim about the table, so the case checks the table: the
-// written row is read back through the handle, which is what the reread failed
-// to fold into the snapshot the process serves.
 func TestPutReportsAWriteThatCouldNotBeReread(t *testing.T) {
 	r := rosterOver(t, insert("acme corp", "acme"))
 	err := r.Put(context.Background(), tenant.Tenant{
@@ -949,20 +715,6 @@ func TestPutReportsAWriteThatCouldNotBeReread(t *testing.T) {
 	}
 }
 
-// TestSetStatusReportsAWriteThatCouldNotBeReread is the same failure on the
-// other writer. The table holds a row the read will not act on — a row that
-// arrived by some route other than Put — so the reread that serves the writer
-// its own write refuses the whole table: the state change is durable and the
-// process is left serving a roster that still holds the tenant as it was.
-//
-// Only the caller can act on that, so the failure says the change was applied
-// instead of letting the refusal stand in for one that never happened. What the
-// case reads is that conclusion — "the write was applied" — and not the
-// sentence it is wrapped in, the same way the sibling case over Put reads it: a
-// caller acts on the conclusion, and the wording may change under it. The
-// message is a claim about the table, so the case checks the table too: the row
-// is read back through the handle, which is what the reread failed to fold into
-// the snapshot the process serves.
 func TestSetStatusReportsAWriteThatCouldNotBeReread(t *testing.T) {
 	r := rosterOver(t, insert("acme corp", "acme"), insert("globex", "globex"))
 	err := r.SetStatus(context.Background(), "globex", tenant.StatusDisabled)
@@ -986,14 +738,6 @@ func TestSetStatusReportsAWriteThatCouldNotBeReread(t *testing.T) {
 	}
 }
 
-// TestPutTellsAnEmptyFieldApartFromABlankOne holds the two domain failures
-// apart. An empty value and one carrying a blank or a control character share
-// the sentinel, but their fixes differ — supply a value at all, versus correct
-// the characters in one — so checkField judges the empty case first and the
-// message says which one the field carried.
-//
-// Both fields are judged, because the empty branch runs for either: a name
-// is as able to arrive empty as an identifier.
 func TestPutTellsAnEmptyFieldApartFromABlankOne(t *testing.T) {
 	for _, tc := range []struct {
 		label string
@@ -1029,23 +773,6 @@ func TestPutTellsAnEmptyFieldApartFromABlankOne(t *testing.T) {
 	}
 }
 
-// TestTheTableRefusesTwoTenantsSharingOneName holds the half of the name
-// invariant that the table carries rather than the writing code.
-//
-// Uniqueness has to hold in two places: Put reports a collision as a failure
-// naming the tenant that holds the name, and the column refuses the row. The
-// case that covers a collision goes through Put, so the column's half is left
-// unheld by it — and losing that half is quiet. A row written by any other
-// route (a statement run by hand, an import, a database this module shares) is
-// then accepted, the snapshot indexes names by assignment, and the name
-// resolves to whichever of the two tenants the index kept while the other
-// leaves the roster with nothing reporting it.
-//
-// The table is built from the sqlite migration set, the one the handle this
-// fixture opens speaks. The postgres set is applied against PostgreSQL by the
-// integration cases, which build their roster through applyMigrations too; the
-// two dialects no longer ship the same text, so one dialect's statements cannot
-// be run through the other's engine.
 func TestTheTableRefusesTwoTenantsSharingOneName(t *testing.T) {
 	r := rosterOverDialect(t, "sqlite", insert("acme", "acme"))
 

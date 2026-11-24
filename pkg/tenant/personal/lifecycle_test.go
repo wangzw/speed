@@ -10,7 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The creation hook completes the personal tenant when the seam did not.
 func TestAccountCreatedBuildsThePersonalTenant(t *testing.T) {
 	p, roster, memberships, manager, _ := unitProduct()
 	if err := p.AccountCreated(context.Background(), unitAccount); err != nil {
@@ -29,7 +28,6 @@ func TestAccountCreatedBuildsThePersonalTenant(t *testing.T) {
 	}
 }
 
-// A service account's creation hook is no work.
 func TestAccountCreatedSkipsAServiceAccount(t *testing.T) {
 	p, roster, _, _, _ := unitProduct()
 	p.accounts = &fakeAccounts{kind: authn.KindService, status: authn.StatusActive}
@@ -41,7 +39,6 @@ func TestAccountCreatedSkipsAServiceAccount(t *testing.T) {
 	}
 }
 
-// The creation hook on a tombstone is no work.
 func TestAccountCreatedLeavesATombstoneAlone(t *testing.T) {
 	p, roster, _, _, _ := unitProduct()
 	id := TenantID(unitAccount)
@@ -54,8 +51,6 @@ func TestAccountCreatedLeavesATombstoneAlone(t *testing.T) {
 	}
 }
 
-// The account-caused disable disables the tenant and records the account as the
-// source.
 func TestAccountDisabledDisablesThePersonalTenant(t *testing.T) {
 	p, roster, _, _, _ := seededPersonal(t)
 	id := TenantID(unitAccount)
@@ -68,7 +63,6 @@ func TestAccountDisabledDisablesThePersonalTenant(t *testing.T) {
 	}
 }
 
-// An account's own disable is lifted; an operator's disable stands.
 func TestTheEnableHookRestoresOnlyTheAccountsDisable(t *testing.T) {
 	t.Run("an account's disable is lifted", func(t *testing.T) {
 		p, roster, _, _, _ := seededPersonal(t)
@@ -104,7 +98,6 @@ func TestTheEnableHookRestoresOnlyTheAccountsDisable(t *testing.T) {
 	})
 }
 
-// The status hooks leave a missing row and a tombstone alone.
 func TestTheStatusHooksLeaveAMissingRowAndATombstoneAlone(t *testing.T) {
 	t.Run("a missing row", func(t *testing.T) {
 		p, roster, _, _, _ := unitProduct()
@@ -129,8 +122,6 @@ func TestTheStatusHooksLeaveAMissingRowAndATombstoneAlone(t *testing.T) {
 	})
 }
 
-// The deletion runs its four steps in order: memberships, policy, audit,
-// tombstone.
 func TestAccountDeletedRunsTheStepsInOrder(t *testing.T) {
 	p, roster, memberships, manager, auditor := seededPersonal(t)
 	id := TenantID(unitAccount)
@@ -162,8 +153,6 @@ func TestAccountDeletedRunsTheStepsInOrder(t *testing.T) {
 	}
 }
 
-// The deletion's tombstone is its completion marker: a second call writes
-// nothing.
 func TestAccountDeletedIsIdempotentOnATombstone(t *testing.T) {
 	p, roster, _, _, auditor := seededPersonal(t)
 	if err := p.AccountDeleted(context.Background(), unitAccount); err != nil {
@@ -180,10 +169,6 @@ func TestAccountDeletedIsIdempotentOnATombstone(t *testing.T) {
 	}
 }
 
-// The transaction seam writes the tombstone before the deletion hook runs, so
-// the hook must still remove the memberships the seam could not reach: the rows
-// an administrator added are not the account's own row, which the account
-// transaction erased.
 func TestAccountDeletedClearsTheMembershipsOfATombstonedTenant(t *testing.T) {
 	p, roster, memberships, _, _ := unitProduct()
 	id := TenantID(unitAccount)
@@ -204,7 +189,6 @@ func TestAccountDeletedClearsTheMembershipsOfATombstonedTenant(t *testing.T) {
 	}
 }
 
-// A deletion whose audit row cannot land stops before the tombstone.
 func TestAccountDeletedStopsWhenTheAuditRowFails(t *testing.T) {
 	p, roster, _, _, auditor := seededPersonal(t)
 	auditor.err = context.DeadlineExceeded
@@ -216,7 +200,6 @@ func TestAccountDeletedStopsWhenTheAuditRowFails(t *testing.T) {
 	}
 }
 
-// A deletion that finds no tenant is no work.
 func TestAccountDeletedDoesNothingWithoutAPersonalTenant(t *testing.T) {
 	p, _, _, _, _ := unitProduct()
 	auditor := p.audit.(*fakeAudit)
@@ -228,7 +211,6 @@ func TestAccountDeletedDoesNothingWithoutAPersonalTenant(t *testing.T) {
 	}
 }
 
-// Revoking a service secret touches no personal tenant.
 func TestServiceSecretRevokedLeavesThePersonalTenantAlone(t *testing.T) {
 	p, roster, _, _, _ := seededPersonal(t)
 	before := roster.statusCalls
@@ -240,8 +222,6 @@ func TestServiceSecretRevokedLeavesThePersonalTenantAlone(t *testing.T) {
 	}
 }
 
-// The lifecycle, provisioning and kind surfaces are the ones the descriptor
-// provides.
 func TestTheProductDeliversTheThreePromisedCapabilities(t *testing.T) {
 	p := &product{}
 	if _, ok := any(p).(authn.AccountLifecycle); !ok {

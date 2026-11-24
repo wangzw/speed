@@ -8,9 +8,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant/pathguard"
 )
 
-// guardRig builds the module with the real tenant administration guard over a
-// roster carrying three tenants: acme under the name acme-name, other, and
-// the platform domain. The request's resolved tenant is the one named.
 func guardRig(t *testing.T, resolved string) *rig {
 	t.Helper()
 	r := newRig(t)
@@ -25,9 +22,6 @@ func guardRig(t *testing.T, resolved string) *rig {
 	return r
 }
 
-// TestAPathNamingAnotherTenantIsNotFound holds the identity rule: a caller
-// resolved to one tenant cannot reach another tenant's profile by naming it in
-// the path. The answer is the bare 404 the resolution and path layers write.
 func TestAPathNamingAnotherTenantIsNotFound(t *testing.T) {
 	r := guardRig(t, "acme")
 
@@ -40,9 +34,6 @@ func TestAPathNamingAnotherTenantIsNotFound(t *testing.T) {
 	}
 }
 
-// TestAPathNamingThePlatformDomainIsNotFound holds the second half of the
-// tenant administration guard: the platform domain is not a tenant this surface
-// administers, even for a caller resolved to it.
 func TestAPathNamingThePlatformDomainIsNotFound(t *testing.T) {
 	r := guardRig(t, "system")
 
@@ -55,9 +46,6 @@ func TestAPathNamingThePlatformDomainIsNotFound(t *testing.T) {
 	}
 }
 
-// TestAnNamePathAddressesTheResolvedTenant holds that the policy decision is
-// made in the resolved tenant's identifier, not in whatever name the path
-// carried: a renamed name still reaches the same tenant's grants.
 func TestAnNamePathAddressesTheResolvedTenant(t *testing.T) {
 	r := guardRig(t, "acme")
 
@@ -70,8 +58,6 @@ func TestAnNamePathAddressesTheResolvedTenant(t *testing.T) {
 	}
 }
 
-// TestAPathNamingNoTenantIsNotFound holds a segment the roster resolves to
-// nothing.
 func TestAPathNamingNoTenantIsNotFound(t *testing.T) {
 	r := guardRig(t, "acme")
 

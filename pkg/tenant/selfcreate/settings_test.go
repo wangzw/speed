@@ -1,10 +1,5 @@
 package selfcreate
 
-// The settings cases drive the real settings module over the declaration this
-// module states. They hold that the two numeric limits are ordinary declared
-// items a platform administrator writes on the global layer, and that the
-// declaration leaves them off the tenant surface.
-
 import (
 	"context"
 	"errors"
@@ -21,21 +16,13 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// busStub is the event capability the settings module takes up. It records
-// nothing and delivers nothing: the cases judge the store, not the events.
 type busStub struct{ event.Bus }
 
 func (busStub) Publish(context.Context, event.Event) error { return nil }
 func (busStub) Subscribe(string, string, event.Handler)    {}
 
-// declarerModuleName is the stand-in module that states this module's settings
-// schema. The declaration's Module field is the declaring module's registry
-// name, which is why the assertions below name it.
 const declarerModuleName = "test.selfcreate.declaration"
 
-// declaration is a module that states this module's settings schema and nothing
-// else, so the real settings module builds its key table over the declaration
-// the module ships.
 func declaration() core.Module {
 	return core.Module{
 		Name:      declarerModuleName,
@@ -43,11 +30,6 @@ func declaration() core.Module {
 	}
 }
 
-// withStore drives the real settings module over a real SQLite engine and this
-// module's declaration, and runs check inside the drive: the engine's lifecycle
-// closes the database when the drive returns. The engine applies the settings
-// module's own migration set, so the store runs over the table an assembly
-// gives it.
 func withStore(t *testing.T, check func(settings.Store)) {
 	t.Helper()
 	engine := sqlite.Module()
@@ -87,8 +69,6 @@ func withStore(t *testing.T, check func(settings.Store)) {
 	}
 }
 
-// The declared defaults are the product's two bounds, and the declaration
-// carries no tenant access.
 func TestTheRealStoreDeclaresTheTwoLimitsAsPlatformItems(t *testing.T) {
 	withStore(t, func(store settings.Store) {
 		declared := store.Declared()
@@ -115,16 +95,10 @@ func TestTheRealStoreDeclaresTheTwoLimitsAsPlatformItems(t *testing.T) {
 	})
 }
 
-// A platform administrator edits both numeric items on the global layer, the
-// domain accepts a positive integer, and a value outside it is refused before
-// anything is stored.
 func TestThePlatformLayerWritesBothNumericLimits(t *testing.T) {
 	withStore(t, func(store settings.Store) {
 		ctx := context.Background()
 
-		// The platform surface hands the store the number a JSON body decoded
-		// to: a float64. The store coerces it to the declared int, which is what
-		// makes the item editable from the settings page.
 		for key, value := range map[string]float64{
 			maxOrganizationsPath: 10,
 			maxPerHourPath:       6,
@@ -154,7 +128,6 @@ func TestThePlatformLayerWritesBothNumericLimits(t *testing.T) {
 	})
 }
 
-// declaredItem finds one item in a declaration listing.
 func declaredItem(items []settings.DeclaredItem, key string) (settings.DeclaredItem, bool) {
 	for _, item := range items {
 		if item.Key == key {

@@ -6,11 +6,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The cases in this file are about a model that embeds the convention only to
-// read a table another module owns, whose tenant column may be null and whose
-// key is its own identifier alone.
-
-// trail is a read-only model over such a table.
 type trail struct {
 	tenant.Model
 	ID     int64  `gorm:"column:id"`
@@ -19,9 +14,6 @@ type trail struct {
 
 func (trail) TableName() string { return "trails" }
 
-// nullableTrail is a read-only model over the same table that embeds the
-// convention and declares a tenant field of its own that can hold a null. GORM
-// reads that field in place of the convention's.
 type nullableTrail struct {
 	tenant.Model
 	TenantID *string `gorm:"column:tenant_id"`
@@ -31,11 +23,6 @@ type nullableTrail struct {
 
 func (nullableTrail) TableName() string { return "trails" }
 
-// A row whose tenant column is null belongs to no tenant: a tenant's read does
-// not reach it. A read across tenants through the embedding type does, and
-// reads its tenant as the empty identifier, with no error — a row no tenant
-// owns is told from one written with an empty tenant only by a type whose
-// tenant field can hold a null.
 func TestAReadOnlyModelReadsANullTenantColumnAsNoTenantsRow(t *testing.T) {
 	for _, d := range filteredDialects {
 		t.Run(d.name, func(t *testing.T) {

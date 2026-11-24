@@ -12,13 +12,9 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// ordersDDL is the scoped table these cases write, keyed the way the
-// convention requires.
 const ordersDDL = "CREATE TABLE orders (tenant_id TEXT NOT NULL, id TEXT NOT NULL, " +
 	"note TEXT, PRIMARY KEY (tenant_id, id))"
 
-// openUnfiltered is a handle with the orders table and no filter: what a
-// command that runs a scoped model without the roster module gets.
 func openUnfiltered(t *testing.T) *gorm.DB {
 	t.Helper()
 	handle, err := gorm.Open(sqlitedriver.Open("file:"+t.Name()+"?mode=memory&cache=shared"),
@@ -37,10 +33,6 @@ func openUnfiltered(t *testing.T) *gorm.DB {
 	return handle
 }
 
-// requireUnfilteredInsertRefused is the case itself, on either handle. With no
-// filter installed nothing fills the column, and the NOT NULL a migration
-// declares does not stop an empty string: the identifier refusing to be bound
-// empty is what keeps the row that no tenant owns out of the table.
 func requireUnfilteredInsertRefused(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	err := handle.WithContext(context.Background()).Create(&order{ID: "x"}).Error
@@ -64,9 +56,6 @@ func TestAnInsertWithNoFilterAndNoTenantFails(t *testing.T) {
 	requireUnfilteredInsertRefused(t, openUnfiltered(t))
 }
 
-// A delete addressed by a key whose tenant half is empty names no tenant's
-// row. Unfiltered, it fails where the empty identifier is bound, rather than
-// reaching nothing and reporting success.
 func TestAnUnfilteredDeleteByAKeyWithNoTenantFails(t *testing.T) {
 	handle := openUnfiltered(t)
 	err := handle.Delete(&order{ID: "x"}).Error

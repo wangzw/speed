@@ -10,9 +10,6 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The paths the management routes are mounted on, resolved from the declarations
-// against the API root the module's Spec carries. The declarations write them
-// relative to that root, so the fragment and the registration share one source.
 var (
 	pathTenants       = tenantAdminSpec.ResolvePath(pathTenantsFragment)
 	pathTenant        = tenantAdminSpec.ResolvePath(pathTenantFragment)
@@ -23,38 +20,21 @@ var (
 	pathTenantPending       = tenantAdminSpec.ResolvePath(pathTenantPendingFragment)
 	pathTenantRequest       = tenantAdminSpec.ResolvePath(pathTenantRequestFragment)
 
-	// The tenant-surface routes. They are resolved against the tenants-scope
-	// root, so the tenant is the first segment after /api/v1/tenants.
 	pathOwnerRequests = tenantOwnerSpec.ResolvePath(pathOwnerRequestsFragment)
 	pathOwnerPending  = tenantOwnerSpec.ResolvePath(pathOwnerPendingFragment)
 	pathOwnerRequest  = tenantOwnerSpec.ResolvePath(pathOwnerRequestFragment)
 	pathOrganization  = tenantOwnerSpec.ResolvePath(pathOrganizationFragment)
 
-	// The target's account-level routes. They are resolved against the ordinary
-	// root, so they sit under /api/v1/auth/me with the caller's other self routes.
 	pathMyRequests = selfSpec.ResolvePath(pathMyRequestsFragment)
 	pathMyRequest  = selfSpec.ResolvePath(pathMyRequestFragment)
 	pathMyConfirm  = selfSpec.ResolvePath(pathMyConfirmFragment)
 	pathMyDecline  = selfSpec.ResolvePath(pathMyDeclineFragment)
 )
 
-// managementGroups names the route groups in the order the start diagnostic
-// writes them. The whole surface is one group, and it is always mounted, because
-// the roster it reads and writes is required.
 var managementGroups = []string{"tenants"}
 
-// realmKey is where the name of the endpoint a management route was mounted on
-// is put for the handler to read back. A handler that answers 401 itself writes
-// the endpoint's name as the realm of its challenge — the name of the protection
-// space, the same realm the admission and authorization layers use — and the
-// endpoint name is known only where the routes are mounted, which is why it is
-// carried on the request rather than read in the handler.
 const realmKey = "tenant.admin.realm"
 
-// withRealm wraps a management handler so the endpoint it was mounted on reaches
-// it as the realm of its 401. The same handler is mounted on every configured
-// endpoint, so the realm is bound per endpoint here rather than held by the
-// handler.
 func withRealm(endpoint string, handler gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Set(realmKey, endpoint)
@@ -62,10 +42,6 @@ func withRealm(endpoint string, handler gin.HandlerFunc) gin.HandlerFunc {
 	}
 }
 
-// route is one route: the method and path it answers, and the handler that
-// serves it. perm is the permission the handler-internal decision asks for on
-// the platform surface; the tenant surface decides by owner identity and asks
-// none.
 type route struct {
 	method  string
 	path    string
@@ -73,15 +49,6 @@ type route struct {
 	handler gin.HandlerFunc
 }
 
-// routes is the closed set of platform-management routes, in the order they are
-// mounted. Each handler is bound from the operation declared for it, so it
-// receives the declared input and writes the declared answer, and each is put
-// behind the guard that makes the identity and permission decision before the
-// entry point binds the request. The write routes are also prescreened, so a
-// body the binding refuses keeps this module's bad-request problem type.
-//
-// Every route here is platform staff's: the organization's owner reaches the
-// transfer and the deletion on the tenant surface, never through this one.
 func (p *product) routes() []route {
 	routes := []route{
 		{
@@ -129,11 +96,6 @@ func (p *product) routes() []route {
 	return routes
 }
 
-// tenantRoutes is the closed set of tenant-surface routes: the organization's
-// own owner transfers it or ends it. Each handler is wrapped by the tenant
-// administration guard, which holds the path tenant to the tenant the request
-// resolved to and refuses the platform domain, and then by the owner decision,
-// which reads the caller and refuses anybody who is not the row's owner.
 func (p *product) tenantRoutes() []route {
 	routes := []route{
 		{
@@ -164,11 +126,6 @@ func (p *product) tenantRoutes() []route {
 	return routes
 }
 
-// selfRoutes is the closed set of the target's account-level routes. Every one
-// acts on the caller's own identity: no tenant resolution, no tenant
-// administration guard and no permission. The confirm route also carries the
-// registration-verification gate; the decline route does not, because it is
-// harmless and may be ignored.
 func (p *product) selfRoutes() []route {
 	return []route{
 		{
@@ -190,14 +147,6 @@ func (p *product) selfRoutes() []route {
 	}
 }
 
-// mount resolves every configured endpoint on the entry point and registers the
-// routes on each. Every name is looked up before any route is registered, so a
-// name the entry point does not declare fails the startup naming that endpoint
-// rather than leaving a partial mounting behind.
-//
-// The platform routes mount on the endpoints tenant.admin.endpoints names. The
-// tenant-surface routes mount on tenant.admin.tenant-endpoints, the endpoints
-// that carry tenant resolution and the tenant administration guard.
 func (p *product) mount(router speedhttp.Router) error {
 	type target struct {
 		name     string
@@ -227,10 +176,6 @@ func (p *product) mount(router speedhttp.Router) error {
 		return err
 	}
 	for _, tgt := range platformTargets {
-		// The tenant every module's platform management route names is an
-		// name on the request surface and an identifier behind it. The layer
-		// is on the endpoint so that it precedes every module's handler under
-		// the prefix, not only this module's routes.
 		tgt.endpoint.Use(p.tenantNameLayer())
 		for _, r := range p.routes() {
 			tgt.endpoint.Route(r.method, r.path, withRealm(tgt.name, r.handler))
@@ -249,16 +194,6 @@ func (p *product) mount(router speedhttp.Router) error {
 	return nil
 }
 
-// declareOpen records every route as needing no permission on the
-// route-declaration surface, when one is present.
-//
-// The routes are declared open so that the authorization middleware lets a
-// request reach the guard wrapper: the wrapper makes the decision, on the
-// permission the request's method implies. Declaring them to require a
-// permission would make the middleware decide, and the module grants itself no
-// permission. With no declaration surface the routes carry no declaration, and a
-// guarded endpoint answers them as undeclared — which is why a command that mounts
-// these routes should name the enforcement module too.
 func (p *product) declareOpen() {
 	if p.gate == nil {
 		return

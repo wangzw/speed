@@ -12,20 +12,11 @@ import (
 	"testing"
 )
 
-// The two host-supplied seams protect the roster from writes a host declares
-// off-limits. The compiler is what holds their shape: a host that implements one
-// with another signature fails to build against the interface, so these
-// assertions are the executable statement of the surface the design declares.
 var (
 	_ WriteGuard  = (*recordingWriteGuard)(nil)
 	_ Provisioner = (*recordingProvisioner)(nil)
 )
 
-// TestTheHostSeamsKeepTheDeclaredSignatures pins the two method shapes beside
-// the interface delivery above: the write operation is a value of its own type
-// and the creator is a plain string, not a type from another capability. Each
-// method value has to be assignable to the declared function type, so a change
-// to either signature fails to build here.
 func TestTheHostSeamsKeepTheDeclaredSignatures(t *testing.T) {
 	takesWriteGuardAnswer((*recordingWriteGuard)(nil).Denied)
 	takesProvision((*recordingProvisioner)(nil).Provision)
@@ -34,7 +25,6 @@ func TestTheHostSeamsKeepTheDeclaredSignatures(t *testing.T) {
 func takesWriteGuardAnswer(func(context.Context, ID, WriteOp) (bool, error)) {}
 func takesProvision(func(context.Context, Tenant, string) error)             {}
 
-// recordingWriteGuard keeps the last write it was asked about.
 type recordingWriteGuard struct {
 	denied bool
 }
@@ -43,7 +33,6 @@ func (g *recordingWriteGuard) Denied(_ context.Context, _ ID, _ WriteOp) (bool, 
 	return g.denied, nil
 }
 
-// recordingProvisioner keeps the last tenant and creator it was handed.
 type recordingProvisioner struct {
 	seen bool
 }
@@ -53,10 +42,6 @@ func (p *recordingProvisioner) Provision(_ context.Context, _ Tenant, _ string) 
 	return nil
 }
 
-// TestTheWriteOperationsAreDistinctAndTheZeroValueIsTheDestructiveOne holds the
-// closed set the design declares: two operations, and the zero value lands on
-// the disable. A value nobody wrote must read as the write protection exists to
-// refuse, the same direction Status's and DisabledBy's zero values fall.
 func TestTheWriteOperationsAreDistinctAndTheZeroValueIsTheDestructiveOne(t *testing.T) {
 	var op WriteOp
 	if op != WriteDisable {
@@ -70,12 +55,6 @@ func TestTheWriteOperationsAreDistinctAndTheZeroValueIsTheDestructiveOne(t *test
 	}
 }
 
-// TestTheProvisionerTakesTheCreatorAsAPlainIdentifier holds the dependency the
-// root package keeps: the first administrator is named by an account identifier,
-// and the root package does not import the authentication capability to spell
-// its type. The signature assertion above is the compile-time half; this case
-// drives the interface through a value built by a package that has that import,
-// to show the two agree at the call site.
 func TestTheProvisionerTakesTheCreatorAsAPlainIdentifier(t *testing.T) {
 	var p Provisioner = &recordingProvisioner{}
 	creator := "operator-account"
@@ -87,13 +66,6 @@ func TestTheProvisionerTakesTheCreatorAsAPlainIdentifier(t *testing.T) {
 	}
 }
 
-// TestTheRosterDoesNotConsultTheWriteSeams holds the boundary between the
-// host's protection and the account lifecycle. Which tenants refuse an operator
-// write is the management surface's question; SetStatusByAccount has to keep
-// disabling a personal tenant when its account is disabled, so the roster's own
-// package may not consult WriteGuard at all. A runtime case cannot observe an
-// absence, so the scan reads the roster's identifiers: a refactor that put the
-// check "once for every status write" fails here even though it compiles.
 func TestTheRosterDoesNotConsultTheWriteSeams(t *testing.T) {
 	roster := filepath.Join(packageDir(t), "catalog")
 	entries, err := os.ReadDir(roster)
@@ -132,8 +104,6 @@ func TestTheRosterDoesNotConsultTheWriteSeams(t *testing.T) {
 	}
 }
 
-// packageDir is this test file's directory, read from the file's own location so
-// that the scan finds the roster wherever go test is run from.
 func packageDir(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)

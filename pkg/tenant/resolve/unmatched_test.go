@@ -7,15 +7,6 @@ import (
 	"testing"
 )
 
-// The entry point runs every registered layer for a request that matches no
-// route and for one whose method the matched path does not allow, and answers
-// those two itself once the layers have handed them on. The resolution layer
-// does not read the route, so these requests are resolved like any other: a
-// request that carries a tenant goes on to the entry point's own answer, and one
-// that carries none is refused here, before the entry point could tell it apart
-// from a request with a route.
-
-// requireNoErrorRecord asserts nothing was logged at error level.
 func requireNoErrorRecord(t *testing.T, h *host) {
 	t.Helper()
 	for _, rec := range h.logs.all() {
@@ -25,9 +16,6 @@ func requireNoErrorRecord(t *testing.T, h *host) {
 	}
 }
 
-// A request that matches no route has no route to read, and the layer resolves
-// it without one: the tenant reaches the layers inside it on a request whose
-// matched path is empty, and the 404 that follows is the entry point's.
 func TestARequestMatchingNoRouteIsResolvedWithoutOne(t *testing.T) {
 	p := &probe{}
 	h := startHost(t, hostOptions{roster: standardRoster(), register: p.register})
@@ -48,8 +36,6 @@ func TestARequestMatchingNoRouteIsResolvedWithoutOne(t *testing.T) {
 	requireNoErrorRecord(t, h)
 }
 
-// A path that exists with another method is answered 405 by the entry point,
-// after the layer has resolved the request and handed it on.
 func TestARequestWhoseMethodIsNotAllowedIsResolvedWithoutARoute(t *testing.T) {
 	p := &probe{}
 	h := startHost(t, hostOptions{roster: standardRoster(), register: p.register})
@@ -67,11 +53,6 @@ func TestARequestWhoseMethodIsNotAllowedIsResolvedWithoutARoute(t *testing.T) {
 	requireNoErrorRecord(t, h)
 }
 
-// A request that carries no tenant is refused by this layer whatever it asks
-// for. The one whose method the path does not allow is the sharp case: had the
-// layer not run first, the entry point would answer 405 where this answers 404,
-// and the refusal carries no Allow header, which would tell a caller with no
-// tenant that the path exists and which methods it takes.
 func TestRequestsWithoutATenantAreRefusedHereWhateverTheyAskFor(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -109,9 +90,6 @@ func TestRequestsWithoutATenantAreRefusedHereWhateverTheyAskFor(t *testing.T) {
 	requireNoErrorRecord(t, h)
 }
 
-// Whatever the entry point writes for a request that matches no route is
-// written in the shape a delivered ErrorResponder decides, which is also the
-// shape this layer's own refusals take.
 func TestTheAnswersForUnmatchedRequestsShareTheLayersShape(t *testing.T) {
 	responder := &capturingResponder{}
 	p := &probe{}

@@ -13,11 +13,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// readThrough loads a JSON document through the real configuration path and
-// hands back a reader this module's own section decodes from. The declaration is
-// what is exercised: that a key nobody wrote is refused at all comes from the
-// item being declared required, and a stub reader would agree with any
-// declaration whatsoever.
 func readThrough(t *testing.T, document string) config.Reader {
 	t.Helper()
 	return authntest.ConfigReader(t, core.Module{Name: ModuleName, Resources: Module().Resources}, document)
@@ -27,8 +22,6 @@ func endpointsConfig(list string) string {
 	return `{"tenant": {"admission": {"endpoints": ` + list + `}}}`
 }
 
-// TestPrepareFailsOnAnEndpointListItCannotRunOn holds the three shapes that are
-// authn.ErrInvalidConfig, each naming the key.
 func TestPrepareFailsOnAnEndpointListItCannotRunOn(t *testing.T) {
 	for name, list := range map[string]string{
 		"an empty list":            `[]`,
@@ -58,8 +51,6 @@ func TestPrepareFailsOnAnEndpointListItCannotRunOn(t *testing.T) {
 	}
 }
 
-// TestPrepareFailsOnAnEndpointNamedTwice holds the duplicate sentinel, with the
-// endpoint and the key in the message and the namespace once.
 func TestPrepareFailsOnAnEndpointNamedTwice(t *testing.T) {
 	got, err := prepare(readThrough(t, endpointsConfig(`["public", "admin", "public"]`)))
 	if err == nil {
@@ -82,8 +73,6 @@ func TestPrepareFailsOnAnEndpointNamedTwice(t *testing.T) {
 	}
 }
 
-// TestPrepareFailsWithoutTheEndpointList holds that the key is required with no
-// default, and that the failure is the decoder's own, which names the path.
 func TestPrepareFailsWithoutTheEndpointList(t *testing.T) {
 	for name, document := range map[string]string{
 		"no section at all": `{}`,
@@ -107,7 +96,6 @@ func TestPrepareFailsWithoutTheEndpointList(t *testing.T) {
 	}
 }
 
-// TestPrepareAcceptsDistinctConcreteNames is the other half of the rules above.
 func TestPrepareAcceptsDistinctConcreteNames(t *testing.T) {
 	got, err := prepare(readThrough(t, endpointsConfig(`["public", "admin"]`)))
 	if err != nil {
@@ -118,8 +106,6 @@ func TestPrepareAcceptsDistinctConcreteNames(t *testing.T) {
 	}
 }
 
-// TestPrepareTellsTheTwoAbsencesApart holds that a registry the host never
-// supplied a reader to is the host's omission, carried out as it stands.
 func TestPrepareTellsTheTwoAbsencesApart(t *testing.T) {
 	reg := core.New()
 	reg.Register(config.Module())
@@ -132,10 +118,6 @@ func TestPrepareTellsTheTwoAbsencesApart(t *testing.T) {
 	}
 }
 
-// TestTheEndpointListIsReadFromThePrimarySourceAlone holds the declaration of the
-// one key: required, and settable nowhere but the primary source. The list
-// decides what is guarded, so an environment variable or a flag that could
-// change it would be a way to switch the layer off for an endpoint.
 func TestTheEndpointListIsReadFromThePrimarySourceAlone(t *testing.T) {
 	item, declared := schema().Items[endpointsItem]
 	if !declared {
@@ -156,11 +138,6 @@ func TestTheEndpointListIsReadFromThePrimarySourceAlone(t *testing.T) {
 	}
 }
 
-// TestTheCeilingIsWhatTheCodeActsOn pins the lifetime ceiling by its literal
-// value. It is the bound of how long a removed member is still admitted by a
-// replica that has not heard of the removal, so a test that read it off the
-// constant would let the ceiling move with no failure. The declared rule and the
-// description restate it, and the three are held together.
 func TestTheCeilingIsWhatTheCodeActsOn(t *testing.T) {
 	if maxCheckTTL != 60*time.Second {
 		t.Fatalf("the lifetime ceiling is %v, want 60s", maxCheckTTL)
@@ -177,18 +154,12 @@ func TestTheCeilingIsWhatTheCodeActsOn(t *testing.T) {
 	}
 }
 
-// TestNoDefaultForTheEndpointList holds that the defaults carry no list: a
-// default of "every endpoint" would cover the endpoint the authentication routes
-// are mounted on.
 func TestNoDefaultForTheEndpointList(t *testing.T) {
 	if len(configDefaults.Endpoints) != 0 {
 		t.Fatalf("the declared default list is %v, want none", configDefaults.Endpoints)
 	}
 }
 
-// readWithResolution loads a document with this module's section and the tenant
-// resolution layer's section both declared, the way a run that takes both
-// modules in declares them.
 func readWithResolution(t *testing.T, document string) config.Reader {
 	t.Helper()
 	type resolution struct {
@@ -207,12 +178,6 @@ func readWithResolution(t *testing.T, document string) config.Reader {
 	)
 }
 
-// TestPrepareRefusesAnEndpointTheResolutionLayerDoesNotCover holds the subset
-// rule between the two tenant layers: an endpoint this layer guards but the
-// resolution layer does not is one where a request has no tenant context, and
-// the layer admits a non-impersonating request without one. The startup failure
-// is the only place that misconfiguration is visible, and it names both keys so
-// a host knows which list to change.
 func TestPrepareRefusesAnEndpointTheResolutionLayerDoesNotCover(t *testing.T) {
 	body := `{"tenant":{
 		"resolve":{"endpoints":["api"]},
@@ -235,9 +200,6 @@ func TestPrepareRefusesAnEndpointTheResolutionLayerDoesNotCover(t *testing.T) {
 	}
 }
 
-// TestPrepareAcceptsAnAdmissionListInsideTheResolutionList is the control: the
-// same lists with the extra endpoint removed start, so the refusal above is the
-// subset and not the surrounding configuration.
 func TestPrepareAcceptsAnAdmissionListInsideTheResolutionList(t *testing.T) {
 	body := `{"tenant":{
 		"resolve":{"endpoints":["api","admin"]},
@@ -252,10 +214,6 @@ func TestPrepareAcceptsAnAdmissionListInsideTheResolutionList(t *testing.T) {
 	}
 }
 
-// TestTheSubsetRuleWaitsForTheResolutionLayersDeclaration holds the limit of the
-// check: a host may supply the resolution capability itself, and a command with
-// no resolution declaration has no list to compare against. The layer then
-// starts and the host owns the pairing, as it owns every supplied instance.
 func TestTheSubsetRuleWaitsForTheResolutionLayersDeclaration(t *testing.T) {
 	got, err := prepare(readThrough(t, endpointsConfig(`["public"]`)))
 	if err != nil {
@@ -266,9 +224,6 @@ func TestTheSubsetRuleWaitsForTheResolutionLayersDeclaration(t *testing.T) {
 	}
 }
 
-// TestResolveCarriesTheSSOExemptTenants holds the exemption list through the
-// module's own resolution: the names reach the layer, and an empty name is
-// refused like an empty endpoint name.
 func TestResolveCarriesTheSSOExemptTenants(t *testing.T) {
 	got, err := moduleConfig{
 		Endpoints:        []string{"public"},

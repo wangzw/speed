@@ -15,9 +15,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// arriveTogether holds the first n inserts into the roster's table until all n
-// have arrived, so that n writes have each looked the table up before any of
-// them inserts — the interleaving a race produces only some of the time.
 func arriveTogether(t *testing.T, r *roster, n int) {
 	t.Helper()
 	var mu sync.Mutex
@@ -48,10 +45,6 @@ func arriveTogether(t *testing.T, r *roster, n int) {
 	}
 }
 
-// Creations of one identifier on two replicas all find it free before any has
-// committed. The table decides: one tenant, and every other creation told
-// ErrTenantExists rather than the driver's constraint violation — or, worse, a
-// success that rewrote the winner's row.
 func TestConcurrentCreationsOfOneIdentifierAreOneTenant(t *testing.T) {
 	first := rosterOverPostgres(t)
 	if err := first.read(context.Background()); err != nil {

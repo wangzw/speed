@@ -6,8 +6,6 @@ import (
 	"testing"
 )
 
-// TestTheSelfTenantCarriesNoIdentifier holds the caller's tenant entry to the
-// external name: the name and the kind are what a client branches on.
 func TestTheSelfTenantCarriesNoIdentifier(t *testing.T) {
 	encoded, err := json.Marshal(tenantSelfTenant{Name: "alice", Kind: "personal"})
 	if err != nil {

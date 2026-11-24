@@ -17,9 +17,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// TestTheDescriptorIsWhatTheDesignSays holds the descriptor field by field: the
-// name, what it requires, what it delivers and that both deliveries are
-// exclusive.
 func TestTheDescriptorIsWhatTheDesignSays(t *testing.T) {
 	m := Module()
 	if m.Name != "tenant.admission" || ModuleName != "tenant.admission" || ConfigNamespace != ModuleName {
@@ -47,10 +44,6 @@ func TestTheDescriptorIsWhatTheDesignSays(t *testing.T) {
 	}
 }
 
-// TestPrepareStatesEnabledNeverAuto holds the stance a configured module takes
-// through the real registry: StateAuto is the cell the resolution of an
-// exclusive capability disables, and this module must fail that startup rather
-// than give way.
 func TestPrepareStatesEnabledNeverAuto(t *testing.T) {
 	reader := readThrough(t, `{"tenant": {"admission": {"endpoints": ["public"]}}}`)
 	got, err := prepare(reader)
@@ -62,10 +55,6 @@ func TestPrepareStatesEnabledNeverAuto(t *testing.T) {
 	}
 }
 
-// TestTheRegistryDeliversEveryCapabilityFromOneInstance drives the real
-// registry to Init. The delivery check the registry runs on construction is
-// the one that matters: a product that lacked a method of one of the interfaces
-// fails the drive with ErrUndeliveredCapability.
 func TestTheRegistryDeliversEveryCapabilityFromOneInstance(t *testing.T) {
 	err := fixture{}.drive(t, core.StageInit, func(_ context.Context, reg *core.Registry) error {
 		anchor, err := core.Resolve[tenant.Admission](reg)
@@ -100,22 +89,12 @@ func TestTheRegistryDeliversEveryCapabilityFromOneInstance(t *testing.T) {
 	}
 }
 
-// otherPackage is a type of a package other than the tenant package, with the
-// one method the anchor has.
 type otherPackage struct{}
 
 func (otherPackage) AdmissionLayer() {}
 
-// stranger is a type of a package other than the rate limiter's.
 type stranger struct{}
 
-// TestTheMarkerMethodIsExportedSoAnotherPackageCanDeliverIt holds why the marker
-// is exported. The interface is in the tenant package and its implementation in
-// another one, so a method that only the tenant package could name would leave
-// the one implementation undeliverable. The rate limiter's anchor, whose method
-// is unexported and whose implementation is in the same package as the
-// interface, is the case that shows the failure: a type of this package cannot
-// deliver it.
 func TestTheMarkerMethodIsExportedSoAnotherPackageCanDeliverIt(t *testing.T) {
 	run := func(token core.Token, instance any) error {
 		reg := core.New()
@@ -134,7 +113,6 @@ func TestTheMarkerMethodIsExportedSoAnotherPackageCanDeliverIt(t *testing.T) {
 	}
 }
 
-// TestTwoAdmissionLayersFailTheStartup holds both exclusive claims.
 func TestTwoAdmissionLayersFailTheStartup(t *testing.T) {
 	for name, token := range map[string]core.Token{
 		"the anchor": (*tenant.Admission)(nil),
@@ -158,8 +136,6 @@ type guardStub struct{}
 
 func (guardStub) Covers(string) bool { return false }
 
-// TestAMissingRequirementEndsAtDependencyResolution holds that neither
-// capability the layer needs is optional.
 func TestAMissingRequirementEndsAtDependencyResolution(t *testing.T) {
 	for name, f := range map[string]fixture{
 		"no memberships": {noMemberships: true},
@@ -173,7 +149,6 @@ func TestAMissingRequirementEndsAtDependencyResolution(t *testing.T) {
 	}
 }
 
-// TestInitFailures holds the sentinels Init reports.
 func TestInitFailures(t *testing.T) {
 	t.Run("no entry point is ErrNoRouter", func(t *testing.T) {
 		err := fixture{noRouter: true}.drive(t, core.StageInit, nil)
@@ -208,16 +183,12 @@ func TestInitFailures(t *testing.T) {
 	})
 }
 
-// TestEveryOptionalCapabilityMayBeAbsent holds that a command with only what the
-// layer requires starts.
 func TestEveryOptionalCapabilityMayBeAbsent(t *testing.T) {
 	if err := (fixture{}).drive(t, core.StageInit, nil); err != nil {
 		t.Fatalf("the drive with no optional capability failed: %v", err)
 	}
 }
 
-// TestEveryOptionalCapabilityIsTakenUp holds that each capability a case supplies
-// is the one the product holds after Init.
 func TestEveryOptionalCapabilityIsTakenUp(t *testing.T) {
 	providers := standardProviders()
 	decider := &deciderStub{}
@@ -243,11 +214,6 @@ func TestEveryOptionalCapabilityIsTakenUp(t *testing.T) {
 	}
 }
 
-// TestAnOptionalCapabilityThatFailsToResolveStopsTheStartup holds the other half
-// of optional(): only ErrMissingProvider leaves the capability out, and any
-// other failure the lookup reports is carried out and ends the startup. A
-// capability the lookup cannot resolve for another reason must not be dropped
-// silently, which is what leaving the layer with the capability absent would do.
 func TestAnOptionalCapabilityThatFailsToResolveStopsTheStartup(t *testing.T) {
 	t.Run("a capability with two providers stops the startup", func(t *testing.T) {
 		err := fixture{supplied: []supply{
@@ -276,16 +242,11 @@ func TestAnOptionalCapabilityThatFailsToResolveStopsTheStartup(t *testing.T) {
 	})
 }
 
-// routerStub stands for an entry point module: only the capability, which is
-// what makes it something Resolve counts when two of them are supplied.
 type routerStub struct{}
 
 func (routerStub) Endpoint(string) (speedhttp.Endpoint, error) { return nil, nil }
 func (routerStub) Endpoints() []string                         { return nil }
 
-// TestASuppliedInstanceThatIsNotTheProductIsLeftAlone holds the design's
-// non-guarantee about a host's own instance: the callbacks do nothing to it, so
-// a command with no entry point starts, which a product could not.
 func TestASuppliedInstanceThatIsNotTheProductIsLeftAlone(t *testing.T) {
 	err := fixture{noRouter: true, instance: &hostAdmission{}}.drive(t, core.StageInit, nil)
 	if err != nil {
@@ -293,8 +254,6 @@ func TestASuppliedInstanceThatIsNotTheProductIsLeftAlone(t *testing.T) {
 	}
 }
 
-// TestACallbackActsOnTheProductAndNothingElse holds the same property from the
-// other side: a wrapper carrying the product's methods is no product.
 func TestACallbackActsOnTheProductAndNothingElse(t *testing.T) {
 	product := newLayer(resolved{endpoints: []string{"public"}}, newMemberStub())
 	wrapper := &wrapped{layer: product}
@@ -316,10 +275,6 @@ func (*hostAdmission) RequiresMFA(context.Context, authn.AccountID) (bool, error
 
 type wrapped struct{ *layer }
 
-// TestTheMiddlewareDeclaresWhatTheDesignSays pins the registration: the name,
-// the anchor it stands for and the stage it declares. The chain cases in
-// live_test.go hold what the entry point makes of it; this holds the
-// declaration itself.
 func TestTheMiddlewareDeclaresWhatTheDesignSays(t *testing.T) {
 	mw := newLayer(resolved{endpoints: []string{"public"}}, newMemberStub()).middlewareFor("public")
 	if mw.Name != "tenant.admission" || mw.Stage != speedhttp.StageAuthorize || mw.Handler == nil {

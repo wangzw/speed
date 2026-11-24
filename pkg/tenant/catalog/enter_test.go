@@ -17,13 +17,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
 )
 
-// The cases in this file are about entering one tenant from a path with no
-// request behind it: what the roster has to say first, and what the entered
-// context then does to the statements issued under it.
-
-// enteringRoster is a roster that has read two tenants — one served, one
-// disabled — over a handle with the filter installed and an orders table
-// holding a row for each of two tenants.
 func enteringRoster(t *testing.T) *roster {
 	t.Helper()
 	r := rosterOver(t,
@@ -48,8 +41,6 @@ func enteringRoster(t *testing.T) *roster {
 	return r
 }
 
-// requireScopedTo asserts that statements under ctx read and write this
-// tenant's rows and no other's.
 func requireScopedTo(t *testing.T, r *roster, ctx context.Context, want tenant.ID) {
 	t.Helper()
 	if id, ok := tenant.FromContext(ctx); !ok || id != want {
@@ -85,8 +76,6 @@ func TestEnterScopesAPathToTheTenant(t *testing.T) {
 	requireScopedTo(t, r, ctx, "t_acme")
 }
 
-// A path that crossed tenants and then enters one is in that tenant: the mark
-// does not survive into the entered context.
 func TestEnterFromACrossingContextLiftsTheMark(t *testing.T) {
 	r := enteringRoster(t)
 	ctx, err := r.Enter(crossContext(), "t_acme")
@@ -96,8 +85,6 @@ func TestEnterFromACrossingContextLiftsTheMark(t *testing.T) {
 	requireScopedTo(t, r, ctx, "t_acme")
 }
 
-// An event handed over with the publisher's context carries the publisher's
-// tenant; entering the tenant the event names replaces it.
 func TestEnterReplacesTheTenantAContextCarried(t *testing.T) {
 	r := enteringRoster(t)
 	ctx, err := r.Enter(scopedContext("t_globex"), "t_acme")
@@ -124,8 +111,6 @@ func TestEnterRefusesATenantTheRosterDoesNotServe(t *testing.T) {
 			if !errors.Is(err, c.want) {
 				t.Fatalf("entering %q gave %v, want %v", c.id, err, c.want)
 			}
-			// The context handed back with the refusal is no tenant's and
-			// does not cross: a caller that drops the error is refused.
 			if id, ok := tenant.FromContext(ctx); ok || tenantctx.CrossTenant(ctx) {
 				t.Fatalf("a refused entry handed back tenant (%q, %v), crossing %v; want neither",
 					id, ok, tenantctx.CrossTenant(ctx))
@@ -139,8 +124,6 @@ func TestEnterRefusesATenantTheRosterDoesNotServe(t *testing.T) {
 	}
 }
 
-// The two refusals are told apart: a caller drops work for a tenant that does
-// not exist and waits out one that is disabled.
 func TestEnterTellsAnUnknownTenantFromADisabledOne(t *testing.T) {
 	r := enteringRoster(t)
 	_, unknown := r.Enter(context.Background(), "t_ghost")
@@ -150,9 +133,6 @@ func TestEnterTellsAnUnknownTenantFromADisabledOne(t *testing.T) {
 	}
 }
 
-// A deleted tenant is told apart from both an unknown and a disabled one: a
-// path drops work for a tenant that does not exist, waits out one that is
-// disabled, and gives up on one that is deleted, because it cannot come back.
 func TestEnterRefusesADeletedTenantAsItsOwnRefusal(t *testing.T) {
 	r := enteringRoster(t)
 	_, unknown := r.Enter(context.Background(), "t_ghost")
@@ -169,8 +149,6 @@ func TestEnterRefusesADeletedTenantAsItsOwnRefusal(t *testing.T) {
 	}
 }
 
-// A deleted tenant's row stays, so work that still belongs to it — clearing or
-// exporting what it left behind — enters it through EnterRegistered.
 func TestEnterRegisteredEntersADeletedTenant(t *testing.T) {
 	r := enteringRoster(t)
 	if err := r.handle.WithContext(crossContext()).Exec(
@@ -191,8 +169,6 @@ func TestEnterBeforeTheRosterIsReadRefuses(t *testing.T) {
 	}
 }
 
-// The writer's replica sees its own write, so a tenant disabled here cannot be
-// entered here from the next call on.
 func TestEnterSeesADisableOnTheWritersReplica(t *testing.T) {
 	r := enteringRoster(t)
 	if err := r.SetStatus(context.Background(), "t_acme", tenant.StatusDisabled); err != nil {
@@ -203,11 +179,6 @@ func TestEnterSeesADisableOnTheWritersReplica(t *testing.T) {
 	}
 }
 
-// A refusal is what a path with no request behind it drops its work on — a bus
-// acknowledges an event whatever its handler answered — so a refusal comes from
-// the table rather than from a snapshot that may be behind it. A tenant another
-// replica registered, or served again, after this replica last read the roster
-// is entered here at once, and this replica's snapshot learns it on the way.
 func TestEnterAdmitsWhatAnotherReplicaWroteSinceTheLastRead(t *testing.T) {
 	for name, write := range map[string]func(ctx context.Context, other *roster) error{
 		"registered": func(ctx context.Context, other *roster) error {
@@ -248,9 +219,6 @@ func TestEnterAdmitsWhatAnotherReplicaWroteSinceTheLastRead(t *testing.T) {
 	}
 }
 
-// What the table refuses stays refused, whatever the snapshot said, and a row
-// this module will not act on is refused on this path as on the read of the
-// whole roster.
 func TestEnterRefusesWhatTheTableRefuses(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -283,10 +251,6 @@ func TestEnterRefusesWhatTheTableRefuses(t *testing.T) {
 	}
 }
 
-// A table that cannot be read gives no answer about the tenant, and the failure
-// is not reported as one: a caller told ErrInvalidTenant drops its work for a
-// tenant that may well exist. A table dropped since the load is reported as the
-// reread of the whole table reports it, with ErrRosterMissing.
 func TestEnterOverADroppedTableGivesNoAnswer(t *testing.T) {
 	for name, enter := range map[string]func(r *roster) (context.Context, error){
 		"Enter": func(r *roster) (context.Context, error) { return r.Enter(context.Background(), "t_new") },
@@ -315,8 +279,6 @@ func TestEnterOverADroppedTableGivesNoAnswer(t *testing.T) {
 	}
 }
 
-// A write over a table dropped since the load reads the table first, and is
-// reported as that read is.
 func TestAWriteOverADroppedTableReportsTheRosterMissing(t *testing.T) {
 	for name, write := range map[string]func(r *roster) error{
 		"Put": func(r *roster) error {
@@ -341,8 +303,6 @@ func TestAWriteOverADroppedTableReportsTheRosterMissing(t *testing.T) {
 	}
 }
 
-// countFullReads counts the reads of the whole roster table this roster makes
-// from here on: the reads that name no row.
 func countFullReads(t *testing.T, r *roster) *atomic.Int32 {
 	t.Helper()
 	var n atomic.Int32
@@ -358,9 +318,6 @@ func countFullReads(t *testing.T, r *roster) *atomic.Int32 {
 	return &n
 }
 
-// rowReadsArriveTogether holds the first n reads of one roster row, once each
-// has its answer, until all n have arrived: n entries have each read the row
-// before any of them goes on to bring the snapshot up to the table.
 func rowReadsArriveTogether(t *testing.T, r *roster, n int) {
 	t.Helper()
 	var mu sync.Mutex
@@ -391,9 +348,6 @@ func rowReadsArriveTogether(t *testing.T, r *roster, n int) {
 	}
 }
 
-// Entries arriving together for a tenant this replica's snapshot lacks read
-// that tenant's row each, and the whole roster once: the first to find the
-// snapshot behind the table brings it up to date, and the rest find it so.
 func TestEntriesTogetherForATenantTheSnapshotLacksRereadTheRosterOnce(t *testing.T) {
 	r := enteringRoster(t)
 	if err := secondReplica(t, r).Create(context.Background(),
@@ -404,9 +358,6 @@ func TestEntriesTogetherForATenantTheSnapshotLacksRereadTheRosterOnce(t *testing
 
 	const entries = 8
 	rowReadsArriveTogether(t, r, entries)
-	// The first reread of the whole roster waits before it publishes, long
-	// enough for every other entry to have found the snapshot behind and to be
-	// waiting its turn to reread it.
 	var first atomic.Bool
 	if err := r.handle.Callback().Query().After("gorm:query").Register("test:slow-first-full-read",
 		func(tx *gorm.DB) {
@@ -437,10 +388,6 @@ func TestEntriesTogetherForATenantTheSnapshotLacksRereadTheRosterOnce(t *testing
 	}
 }
 
-// Work that belongs to one tenant while it is not served — reading its trail,
-// exporting or deleting its data — enters it through EnterRegistered, and the
-// filter scopes that work to it as it scopes any entered path; its records name
-// it.
 func TestEnterRegisteredScopesAPathToADisabledTenant(t *testing.T) {
 	r := enteringRoster(t)
 	if err := r.handle.WithContext(crossContext()).Exec(
@@ -485,8 +432,6 @@ func TestEnterRegisteredRefusesAnIdentifierNoRowCarries(t *testing.T) {
 	}
 }
 
-// Whether a row carries the identifier is the table's answer here as it is for
-// Enter.
 func TestEnterRegisteredAdmitsATenantAnotherReplicaRegistered(t *testing.T) {
 	r := enteringRoster(t)
 	if err := secondReplica(t, r).Create(context.Background(),
@@ -502,9 +447,6 @@ func TestEnterRegisteredAdmitsATenantAnotherReplicaRegistered(t *testing.T) {
 	}
 }
 
-// fieldRecorder is a slog handler that keeps, for each record, every attribute
-// it carried — bound or passed, in order, a repeated key repeated — so that a
-// field bound twice is seen twice.
 type fieldRecorder struct {
 	mu      *sync.Mutex
 	records *[][]slog.Attr
@@ -535,8 +477,6 @@ func (f *fieldRecorder) WithAttrs(attrs []slog.Attr) slog.Handler {
 
 func (f *fieldRecorder) WithGroup(string) slog.Handler { return f }
 
-// values lists what the one record written so far carries under a key, one
-// entry per time the key appears.
 func (f *fieldRecorder) values(t *testing.T, key string) []string {
 	t.Helper()
 	f.mu.Lock()
@@ -553,16 +493,12 @@ func (f *fieldRecorder) values(t *testing.T, key string) []string {
 	return out
 }
 
-// loggedContext is a context whose logger writes into the recorder, with a
-// field bound outside the tenant's.
 func loggedContext() (context.Context, *fieldRecorder) {
 	rec := newFieldRecorder()
 	ctx := log.WithLogger(context.Background(), slog.New(rec))
 	return log.WithAttrs(ctx, slog.String("job", "reindex")), rec
 }
 
-// requireLogged asserts that the one record carries the tenant field these
-// times, with these values, and the field bound outside once.
 func requireLogged(t *testing.T, rec *fieldRecorder, want ...string) {
 	t.Helper()
 	if got := rec.values(t, tenantctx.LogField); !slices.Equal(got, want) {
@@ -573,9 +509,6 @@ func requireLogged(t *testing.T, rec *fieldRecorder, want ...string) {
 	}
 }
 
-// A record written under the entered context is attributed to the tenant, the
-// way a record written under a resolved request is, beside what was bound
-// before.
 func TestEnterBindsTheTenantOnTheLogger(t *testing.T) {
 	r := enteringRoster(t)
 	base, rec := loggedContext()
@@ -587,9 +520,6 @@ func TestEnterBindsTheTenantOnTheLogger(t *testing.T) {
 	requireLogged(t, rec, "t_acme")
 }
 
-// Entering a tenant from a context that belonged to another one replaces the
-// tenant on the logger as it does in the context: the record names the entered
-// tenant, once.
 func TestEnterReplacesTheTenantOnTheLogger(t *testing.T) {
 	r := enteringRoster(t)
 	base, rec := loggedContext()
@@ -605,9 +535,6 @@ func TestEnterReplacesTheTenantOnTheLogger(t *testing.T) {
 	requireLogged(t, rec, "t_acme")
 }
 
-// A refused entry hands back a context that belongs to no tenant, and its
-// records name none: the tenant the context carried before is off the logger
-// as it is out of the context.
 func TestARefusedEnterTakesTheTenantOffTheLogger(t *testing.T) {
 	r := enteringRoster(t)
 	base, rec := loggedContext()
@@ -623,8 +550,6 @@ func TestARefusedEnterTakesTheTenantOffTheLogger(t *testing.T) {
 	requireLogged(t, rec)
 }
 
-// Crossing tenants from an entered context gives the tenant up on the logger
-// with the context: a record about work across tenants does not name one.
 func TestCrossingFromAnEnteredContextTakesTheTenantOffTheLogger(t *testing.T) {
 	r := enteringRoster(t)
 	base, rec := loggedContext()

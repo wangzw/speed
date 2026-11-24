@@ -19,13 +19,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
 )
 
-// The cases in this file drive the resolution layer the way a request reaches
-// it: over a socket, through the entry point's chain, against a roster whose
-// answers the case chooses. They read what the layer answered and what it
-// logged.
-
-// sighting is what the layer just inside the resolution layer saw of one
-// request.
 type sighting struct {
 	path     string
 	fullPath string
@@ -33,16 +26,8 @@ type sighting struct {
 	tenanted bool
 }
 
-// probe is what a case registers on the guarded endpoint, and what it noted
-// about the requests that reached it. Three things are registered: a layer
-// outside the resolution layer that binds the subject the way the
-// authentication layer does, a layer just inside it, and one route.
 type probe struct {
-	// write is the record the route's handler writes through its request's
-	// logger. Nil writes one record, "handled".
-	write func(ctx context.Context)
-	// extractors are registered through the resolution module's own seam, in
-	// the registrant's Init.
+	write      func(ctx context.Context)
 	extractors map[string]tenant.Extractor
 
 	mu      sync.Mutex
@@ -50,8 +35,6 @@ type probe struct {
 	seen    []sighting
 }
 
-// register is the registrant's Init: what a real module does with the entry
-// point.
 func (p *probe) register(reg *core.Registry, ep speedhttp.Endpoint) error {
 	if len(p.extractors) > 0 {
 		resolution, err := core.Resolve[tenant.Resolution](reg)
@@ -68,10 +51,6 @@ func (p *probe) register(reg *core.Registry, ep speedhttp.Endpoint) error {
 	return nil
 }
 
-// subjectLayer stands for the authentication layer: it points at no one, claims
-// the capability the resolution layer points at, and binds the subject onto the
-// request's logger. It is in the identifying stage and declares no constraint,
-// so the resolution layer sits inside it only because of the After it declares.
 func subjectLayer() speedhttp.Middleware {
 	return speedhttp.Middleware{
 		Name:     "subject",
@@ -84,10 +63,6 @@ func subjectLayer() speedhttp.Middleware {
 	}
 }
 
-// witness is a layer that notes what a request looks like on the inside of the
-// resolution layer. It points at the capability the resolution layer claims and
-// is in the same stage, so it sits inside the resolution layer only because of
-// the After it declares.
 func (p *probe) witness() speedhttp.Middleware {
 	return speedhttp.Middleware{
 		Name:  "witness",
@@ -105,8 +80,6 @@ func (p *probe) witness() speedhttp.Middleware {
 	}
 }
 
-// orders is the route: it notes the tenant it read, writes its record and
-// answers 204.
 func (p *probe) orders(c *gin.Context) {
 	ctx := c.Request.Context()
 	id, _ := tenant.FromContext(ctx)
@@ -133,8 +106,6 @@ func (p *probe) sightings() []sighting {
 	return append([]sighting(nil), p.seen...)
 }
 
-// requireNothingInside asserts no request got past the resolution layer: neither
-// the layer just inside it nor the route saw one.
 func (p *probe) requireNothingInside(t *testing.T) {
 	t.Helper()
 	if got := p.sightings(); len(got) != 0 {
@@ -145,9 +116,6 @@ func (p *probe) requireNothingInside(t *testing.T) {
 	}
 }
 
-// capturingResponder is an ErrorResponder that keeps the Problems it is asked to
-// write, and writes a shape of its own: a media type and a body the default
-// shape never produces.
 type capturingResponder struct {
 	mu       sync.Mutex
 	problems []speedhttp.Problem
@@ -170,8 +138,6 @@ func (r *capturingResponder) handed() []speedhttp.Problem {
 	return append([]speedhttp.Problem(nil), r.problems...)
 }
 
-// sameAnswer reports whether two responses are indistinguishable to a client:
-// the status, the body and every header the server does not stamp with the time.
 func sameAnswer(a, b response) bool {
 	if a.status != b.status || a.body != b.body || len(a.header) != len(b.header) {
 		return false
@@ -221,11 +187,6 @@ func TestANameOffTheRosterAndADisabledTenantAnswerAlike(t *testing.T) {
 	p.requireNothingInside(t)
 }
 
-// A deleted tenant is answered exactly as an unknown one. The request face must
-// not say whether a name ever existed, and deletion is one more state that
-// would leak it if it were answered differently: a caller could tell a tenant
-// that was deleted from a name that was never registered and time an attack on
-// the name.
 func TestADeletedTenantAnswersLikeAnUnknownOne(t *testing.T) {
 	p := &probe{}
 	h := startHost(t, hostOptions{roster: standardRoster(), register: p.register})
@@ -252,9 +213,6 @@ func TestAnUnreadableRosterIsAnInternalError(t *testing.T) {
 	p.requireNothingInside(t)
 }
 
-// An admitted request carries the identifier, not the name, both in the
-// context and on the logger the handler writes through, beside what the layers
-// outside it bound.
 func TestAnAdmittedRequestCarriesTheIdentifier(t *testing.T) {
 	p := &probe{}
 	h := startHost(t, hostOptions{roster: standardRoster(), register: p.register})
@@ -284,9 +242,6 @@ func TestAnAdmittedRequestCarriesTheIdentifier(t *testing.T) {
 	}
 }
 
-// A request that announces the tenant's identifier names no tenant: the
-// identifier is internal, and the name is the only thing the request surface
-// carries.
 func TestAnIdentifierNamesNoTenant(t *testing.T) {
 	p := &probe{}
 	h := startHost(t, hostOptions{roster: standardRoster(), register: p.register})
@@ -300,10 +255,6 @@ func TestAnIdentifierNamesNoTenant(t *testing.T) {
 	}
 }
 
-// A handler that crosses tenants from its request's context gives up the
-// tenant on the logger too: a record about work done across tenants does not
-// name the tenant the request belonged to, because that work does not belong
-// to it. What the layers outside bound stays.
 func TestCrossingFromAnAdmittedRequestTakesTheTenantOffTheLogger(t *testing.T) {
 	p := &probe{write: func(ctx context.Context) {
 		log.FromContext(tenant.CrossTenant(ctx)).Info("crossed")
@@ -325,11 +276,6 @@ func TestCrossingFromAnAdmittedRequestTakesTheTenantOffTheLogger(t *testing.T) {
 	}
 }
 
-// A refusal is a record about one request, so it is written through the
-// request's logger: it carries what the layers outside bound — the subject the
-// authentication layer settled, the trace the tracing layer opened — which is
-// what ties an authenticated caller probing tenant names to the probes. The
-// module's own logger carries none of that.
 func TestARefusalIsLoggedOnTheRequestsLogger(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -372,10 +318,6 @@ func TestARefusalIsLoggedOnTheRequestsLogger(t *testing.T) {
 	}
 }
 
-// A refusal and a failure are written through the entry point's error response
-// and carry nothing but their status: the reason is the log's, and a response
-// that carried it would tell a name that never existed from one that was
-// switched off.
 func TestRefusalsAreProblemDetailsResponses(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -396,9 +338,6 @@ func TestRefusalsAreProblemDetailsResponses(t *testing.T) {
 	}
 }
 
-// When a module delivers the ErrorResponder capability the shape is its own, for
-// every answer this layer gives, and what the layer hands it is the status and
-// nothing else.
 func TestADeliveredErrorResponderDecidesTheShape(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -435,11 +374,6 @@ func TestADeliveredErrorResponderDecidesTheShape(t *testing.T) {
 	}
 }
 
-// The layer's place on the chain comes from what it declares within its stage:
-// it stands for the resolution capability and sits inside the layer that stands
-// for authentication, which is the After it declares. The witness declares
-// itself inside the resolution layer, so the chain listing reads subject, then
-// the resolution layer, then the witness.
 func TestTheLayerSitsInsideAuthenticationAndOutsideWhatPointsAtIt(t *testing.T) {
 	h := startHost(t, hostOptions{roster: standardRoster(), register: (&probe{}).register})
 

@@ -29,8 +29,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
 )
 
-// The stubs implement the seams the module takes up, so a stub and an interface
-// cannot drift apart without failing the build.
 var (
 	_ tenant.Catalog                  = (*stubCatalog)(nil)
 	_ guard.Guard                     = (*stubGuard)(nil)
@@ -42,18 +40,12 @@ var (
 	_ log.Logger                      = loggerStub{}
 )
 
-// catalogCall is one call the stub roster recorded: the method's name, the
-// identifier it named, and the profile it wrote.
 type catalogCall struct {
 	op      string
 	id      tenant.ID
 	profile tenant.Profile
 }
 
-// stubCatalog is a stand-in tenant.Catalog. It records every call, answers reads
-// from what a case set, and fails with the error a case set. A per-method error
-// overrides the general one, so a case can let a read succeed while the write it
-// guards against fails.
 type stubCatalog struct {
 	mu         sync.Mutex
 	calls      []catalogCall
@@ -63,9 +55,7 @@ type stubCatalog struct {
 	err        error
 	getErr     error
 	profileErr error
-	// order, when set, collects the names of the actions a case sequences
-	// against the audit rows.
-	order *[]string
+	order      *[]string
 }
 
 func (s *stubCatalog) record(call catalogCall) {
@@ -182,10 +172,6 @@ func (s *stubCatalog) EnterRegistered(ctx context.Context, _ tenant.ID) (context
 	return ctx, nil
 }
 
-// stubGuard is a stand-in guard.Guard. It records the permission every decision
-// asked about, and the domain it decided in, and answers from one setting:
-// allow, deny, or fail. The write-out matches the real guard's — a 403 for a
-// denial and a 503 for an outage.
 type stubGuard struct {
 	mu      sync.Mutex
 	allow   bool
@@ -247,7 +233,6 @@ func (g *stubGuard) domainsAsked() []authz.Domain {
 	return append([]authz.Domain(nil), g.domains...)
 }
 
-// recordingAudit keeps the rows it was asked to write and can be told to fail.
 type recordingAudit struct {
 	mu    sync.Mutex
 	rows  []audit.Entry
@@ -276,9 +261,6 @@ func (a *recordingAudit) entries() []audit.Entry {
 
 func (a *recordingAudit) fail(err error) { a.mu.Lock(); a.err = err; a.mu.Unlock() }
 
-// fakeSignupVerification answers the acting account's self-registration state
-// with what a case scripts, and counts the reads, so a case can hold that a
-// read route was not asked.
 type fakeSignupVerification struct {
 	mu     sync.Mutex
 	state  authn.SignupState
@@ -295,7 +277,6 @@ func (v *fakeSignupVerification) SignupStateOf(_ context.Context, id authn.Accou
 	return authn.SignupStatus{State: v.state}, v.err
 }
 
-// PendingAccountByContact is not part of this surface.
 func (v *fakeSignupVerification) PendingAccountByContact(context.Context, string, string) (string, bool, error) {
 	return "", false, errors.New("tenant.profile: the pending-contact read is not part of this surface")
 }
@@ -312,22 +293,16 @@ func (v *fakeSignupVerification) readCount() int {
 	return v.reads
 }
 
-// permissiveRouteGuard is a stand-in TenantAdminRouteGuard that lets every
-// request through. The guard's own refusals are held in guard_test.go against
-// the real pathguard.
 type permissiveRouteGuard struct{}
 
 func (permissiveRouteGuard) GuardTenantAdmin(next gin.HandlerFunc) gin.HandlerFunc { return next }
 
-// mountedRoute is one (method, path) a registration recorded, with the handler
-// the mounting wrapped.
 type mountedRoute struct {
 	method  string
 	path    string
 	handler gin.HandlerFunc
 }
 
-// stubEndpoint records the routes registered on it.
 type stubEndpoint struct {
 	mu     sync.Mutex
 	routes []mountedRoute
@@ -353,7 +328,6 @@ func (e *stubEndpoint) registered() []mountedRoute {
 	return append([]mountedRoute(nil), e.routes...)
 }
 
-// stubRouter is a stand-in speedhttp.Router over a fixed set of endpoints.
 type stubRouter struct {
 	mu        sync.Mutex
 	endpoints map[string]*stubEndpoint
@@ -391,7 +365,6 @@ func (r *stubRouter) endpoint(name string) *stubEndpoint {
 	return r.endpoints[name]
 }
 
-// loggerStub delivers the logging capability over a recorder.
 type loggerStub struct{ logger *slog.Logger }
 
 func (l loggerStub) Named(string) *slog.Logger { return l.logger }
@@ -402,7 +375,6 @@ type noRules struct{}
 func (noRules) AddKeys(...string)              {}
 func (noRules) AddPattern(string, log.Matcher) {}
 
-// logBuffer collects what the module logs.
 type logBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -424,7 +396,6 @@ func (b *logBuffer) String() string {
 	return b.buf.String()
 }
 
-// decode reads a JSON response body into target.
 func decode(t *testing.T, w *httptest.ResponseRecorder, target any) {
 	t.Helper()
 	if err := json.Unmarshal(w.Body.Bytes(), target); err != nil {
@@ -432,7 +403,6 @@ func decode(t *testing.T, w *httptest.ResponseRecorder, target any) {
 	}
 }
 
-// problem is the default problem-details shape a refusal carries.
 type problem struct {
 	Type   string `json:"type"`
 	Status int    `json:"status"`
@@ -445,7 +415,6 @@ func problemOf(t *testing.T, w *httptest.ResponseRecorder) problem {
 	return p
 }
 
-// standIn is a module that delivers instance for the token named.
 func standIn(name string, instance any, token core.Token) core.Module {
 	return core.Module{
 		Name:     name,
@@ -454,9 +423,6 @@ func standIn(name string, instance any, token core.Token) core.Module {
 	}
 }
 
-// rig is the module with every dependency a case drives, mounted through the
-// module's own mount over a real gin engine, so a case reaches the real
-// routing, path parameters, JSON binding and route wrapping.
 type rig struct {
 	t        *testing.T
 	p        *product
@@ -499,8 +465,6 @@ func newRig(t *testing.T) *rig {
 	return r
 }
 
-// mount registers the module's whole route set through the module's own mount
-// and builds a fresh engine over the handlers it registered.
 func (r *rig) mount() {
 	r.t.Helper()
 	r.router = newStubRouter("api")
@@ -515,8 +479,6 @@ func (r *rig) mount() {
 	r.engine = engine
 }
 
-// do sends one request through the engine with the identity the options build
-// and, when a body is given, a JSON body.
 func (r *rig) do(method, target string, body any, opts ...authntest.Option) *httptest.ResponseRecorder {
 	r.t.Helper()
 	var reader io.Reader
@@ -532,7 +494,6 @@ func (r *rig) do(method, target string, body any, opts ...authntest.Option) *htt
 	return r.send(method, target, reader, body != nil, ctx)
 }
 
-// doRaw sends a body as written.
 func (r *rig) doRaw(method, target, raw string) *httptest.ResponseRecorder {
 	r.t.Helper()
 	ctx := authntest.Context(r.t, context.Background())
@@ -540,8 +501,6 @@ func (r *rig) doRaw(method, target, raw string) *httptest.ResponseRecorder {
 	return r.send(method, target, strings.NewReader(raw), true, ctx)
 }
 
-// doAnonymous sends one request with no identity on it, an optional-access
-// anonymous request.
 func (r *rig) doAnonymous(method, target string) *httptest.ResponseRecorder {
 	r.t.Helper()
 	ctx := authntest.Anonymous(r.t, context.Background(), authn.AccessOptional)
@@ -561,10 +520,8 @@ func (r *rig) send(method, target string, reader io.Reader, jsonBody bool, ctx c
 	return w
 }
 
-// sampleCreatedAt is a fixed creation time a case reads back.
 var sampleCreatedAt = time.Date(2026, time.November, 5, 9, 30, 0, 0, time.UTC)
 
-// sampleTenant is a tenant with every profile field set.
 func sampleTenant() tenant.Tenant {
 	return tenant.Tenant{
 		ID:           "acme",
@@ -581,10 +538,8 @@ func sampleTenant() tenant.Tenant {
 	}
 }
 
-// profileTarget is the mounted write path for the rig's tenant.
 const profileTarget = "/api/v1/tenants/acme/profile"
 
-// kindStub answers the kinds a case maps and business for every other tenant.
 type kindStub struct{ personal map[tenant.ID]bool }
 
 func (k kindStub) KindOf(_ context.Context, id tenant.ID) (tenant.Kind, error) {

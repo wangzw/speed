@@ -10,8 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// recordingBus keeps the handlers subscribed to it and delivers an event to the
-// one registered for its type.
 type recordingBus struct {
 	mu       sync.Mutex
 	handlers map[string]event.Handler
@@ -50,7 +48,6 @@ func (b *recordingBus) subscribed(eventType string) bool {
 	return ok
 }
 
-// The module subscribes both account events.
 func TestTheModuleSubscribesTheAccountEvents(t *testing.T) {
 	p, _, _, _, _ := unitProduct()
 	bus := newRecordingBus()
@@ -63,7 +60,6 @@ func TestTheModuleSubscribesTheAccountEvents(t *testing.T) {
 	}
 }
 
-// A deletion event finishes the cleanup the synchronous hook did not.
 func TestADeletedEventFinishesTheCleanup(t *testing.T) {
 	p, roster, memberships, manager, auditor := seededPersonal(t)
 	p.bus = newRecordingBus()
@@ -91,7 +87,6 @@ func TestADeletedEventFinishesTheCleanup(t *testing.T) {
 	}
 }
 
-// A status event acts on the account's current state, not the payload's target.
 func TestAStatusEventUsesTheAccountsCurrentState(t *testing.T) {
 	statusEvent := func(to string) event.Event {
 		return event.Event{
@@ -128,7 +123,6 @@ func TestAStatusEventUsesTheAccountsCurrentState(t *testing.T) {
 	})
 }
 
-// One event delivered twice is acted on once.
 func TestARepeatedEventIsHandledOnce(t *testing.T) {
 	p, _, _, _, _ := seededPersonal(t)
 	reader := &fakeAccounts{status: authn.StatusActive}

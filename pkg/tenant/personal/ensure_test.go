@@ -11,7 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The ensure writes the same five pieces, and a second call changes nothing.
 func TestEnsureIsIdempotent(t *testing.T) {
 	p, roster, memberships, manager, _ := unitProduct()
 	ctx := context.Background()
@@ -43,7 +42,6 @@ func TestEnsureIsIdempotent(t *testing.T) {
 	}
 }
 
-// The ensure names the tenant's name after the account's username.
 func TestEnsureNamesTheNameAfterTheUsername(t *testing.T) {
 	p, roster, _, _, _ := unitProduct()
 	p.accounts = &fakeAccounts{identifiers: []authn.Identifier{
@@ -59,8 +57,6 @@ func TestEnsureNamesTheNameAfterTheUsername(t *testing.T) {
 	}
 }
 
-// A username the ensure cannot read is a refusal, not a derived name: the
-// personal tenant's name is always the account's username.
 func TestEnsureRefusesWhenTheUsernameCannotBeRead(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -89,7 +85,6 @@ func TestEnsureRefusesWhenTheUsernameCannotBeRead(t *testing.T) {
 	}
 }
 
-// A name another tenant holds is the identifier-unavailable refusal.
 func TestEnsureReportsAHeldName(t *testing.T) {
 	p, roster, _, _, _ := unitProduct()
 	p.accounts = &fakeAccounts{identifiers: []authn.Identifier{{Kind: authn.IdentifierUsername, Value: "alice"}}}
@@ -100,7 +95,6 @@ func TestEnsureReportsAHeldName(t *testing.T) {
 	}
 }
 
-// A disabled tenant is refused without a write.
 func TestEnsureRefusesADisabledTenant(t *testing.T) {
 	p, roster, memberships, manager, _ := unitProduct()
 	id := TenantID(unitAccount)
@@ -116,8 +110,6 @@ func TestEnsureRefusesADisabledTenant(t *testing.T) {
 	}
 }
 
-// A create this call lost to another call leaves a failed audit row beside the
-// winner's tenant.
 func TestEnsureClosesALostRaceWithAFailedAuditRow(t *testing.T) {
 	p, roster, _, _, _ := unitProduct()
 	id := TenantID(unitAccount)
@@ -137,9 +129,6 @@ func TestEnsureClosesALostRaceWithAFailedAuditRow(t *testing.T) {
 	}
 }
 
-// The kind names a personal tenant's identifier, whoever asks: the platform
-// roster lists every account's spaces, so another account's personal tenant
-// must read personal too.
 func TestKindOfNamesAPersonalTenantsIdentifier(t *testing.T) {
 	p := &product{}
 	for _, id := range []tenant.ID{TenantID(unitAccount), TenantID("another-account")} {
@@ -154,8 +143,6 @@ func TestKindOfNamesAPersonalTenantsIdentifier(t *testing.T) {
 	}
 }
 
-// The allowlist is the business set intersected with the governed set, less
-// the management actions a single-person space must not have.
 func TestTheAllowlistKeepsOnlyGovernedBusinessPermissions(t *testing.T) {
 	kept := authz.Permission("crm.deal.read")
 	excluded := authz.PermissionMembershipManage
@@ -167,8 +154,6 @@ func TestTheAllowlistKeepsOnlyGovernedBusinessPermissions(t *testing.T) {
 	}
 }
 
-// Concurrent ensures with the same account collide on the deterministic
-// identifier: one creates the tenant and the rest read it back.
 func TestEnsureCreatesOneTenantUnderConcurrentCalls(t *testing.T) {
 	p, roster, _, _, _ := unitProduct()
 	const callers = 8
@@ -204,8 +189,6 @@ func TestEnsureCreatesOneTenantUnderConcurrentCalls(t *testing.T) {
 	}
 }
 
-// A roster snapshot that lags the table is caught up by EnterRegistered: the
-// existing row is read back and no second tenant is created.
 func TestEnsureCatchesTheRosterSnapshotUp(t *testing.T) {
 	p, roster, _, _, _ := unitProduct()
 	id := TenantID(unitAccount)
@@ -227,8 +210,6 @@ func TestEnsureCatchesTheRosterSnapshotUp(t *testing.T) {
 	}
 }
 
-// The ensure converges the tenant-admin role's grants to the allowlist: every
-// grant outside it is revoked. The skeleton's allowlist is empty, so all are.
 func TestEnsureConvergesTheTenantAdminsGrantsToTheAllowlist(t *testing.T) {
 	p, _, _, manager, seeder := unitProduct()
 	ctx := context.Background()
@@ -257,8 +238,6 @@ func TestEnsureConvergesTheTenantAdminsGrantsToTheAllowlist(t *testing.T) {
 	}
 }
 
-// A tenant built under the old model is converged to the tenant-admin role:
-// the ensure removes the legacy owner role with its grants and bindings.
 func TestEnsureMigratesTheLegacyOwnerRole(t *testing.T) {
 	p, roster, memberships, manager, seeder := unitProduct()
 	ctx := context.Background()

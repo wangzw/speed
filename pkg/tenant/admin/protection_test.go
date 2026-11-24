@@ -13,25 +13,16 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The two host-supplied seams the write routes take up. The compiler holds the
-// stubs to the interfaces, and each keeps the calls it answered, so a case can
-// hold what the handler passed on and that an action it refused never reached
-// the seam.
-
-// writeGuardCall is one question the write guard answered.
 type writeGuardCall struct {
 	id tenant.ID
 	op tenant.WriteOp
 }
 
-// stubWriteGuard answers from what a case scripted and records every question.
 type stubWriteGuard struct {
 	mu     sync.Mutex
 	denied bool
 	err    error
 	calls  []writeGuardCall
-	// during runs inside the answer, before the call is recorded, so a case can
-	// hold what had already happened when the guard was asked.
 	during func()
 }
 
@@ -53,28 +44,18 @@ func (g *stubWriteGuard) recorded() []writeGuardCall {
 
 func (g *stubWriteGuard) refuse(err error) { g.mu.Lock(); g.err = err; g.mu.Unlock() }
 
-// provisionCall is one registration the provisioner was asked for.
 type provisionCall struct {
 	tenant  tenant.Tenant
 	creator string
 }
 
-// provisionedAt is the creation instant the stand-in provisioner records on the
-// row it stores. The real provisioner writes the roster's own UTC instant; a
-// fixed value lets a case hold that the answer is read back from the roster
-// rather than built from the request, which would carry the zero instant.
 var provisionedAt = time.Date(2026, 7, 8, 9, 10, 11, 0, time.UTC)
 
-// stubProvisioner records every registration and answers from what a case
-// scripted. roster, when set, receives the row a successful registration
-// wrote, standing in for the roster the real provisioner fills through
-// Catalog.Create.
 type stubProvisioner struct {
 	mu     sync.Mutex
 	err    error
 	calls  []provisionCall
 	roster *stubCatalog
-	// during runs inside the call, before it is recorded.
 	during func()
 }
 
@@ -105,11 +86,6 @@ func (p *stubProvisioner) recorded() []provisionCall {
 
 func (p *stubProvisioner) fail(err error) { p.mu.Lock(); p.err = err; p.mu.Unlock() }
 
-// TestTheCreateGoesThroughTheProvisionerNotTheRoster holds the registration
-// route's seam: opening a tenant is the provisioner's action, because a tenant
-// and its first administrator have to come into being together. The roster's
-// Create is not called from here, and the mandatory audit row has already landed
-// when the provisioner runs.
 func TestTheCreateGoesThroughTheProvisionerNotTheRoster(t *testing.T) {
 	r := newRig(t)
 	auditRowsAtProvision := -1
@@ -147,10 +123,6 @@ func TestTheCreateGoesThroughTheProvisionerNotTheRoster(t *testing.T) {
 	}
 }
 
-// TestTheProvisionerIsGivenTheActingAccount holds the subject the creator is
-// taken from: under an impersonation the operator whose hands are on the request
-// becomes the first administrator, not the account the request is taken to be
-// from. The two are distinct in the fixture, so reading the wrong one shows.
 func TestTheProvisionerIsGivenTheActingAccount(t *testing.T) {
 	r := newRig(t)
 	w := r.do(http.MethodPost, pathTenants, createBody{Name: "acme"},
@@ -168,11 +140,6 @@ func TestTheProvisionerIsGivenTheActingAccount(t *testing.T) {
 	}
 }
 
-// TestTheProvisionerRefusalsMapLikeTheRoster keeps the closed mapping over the
-// new seam: an identifier or name the roster refuses is a 409 with the
-// capability's conflict type, and any other failure is a 503 with no type. The
-// failed row is written beside the mandatory one, as a roster refusal closes a
-// write.
 func TestTheProvisionerRefusalsMapLikeTheRoster(t *testing.T) {
 	for name, tc := range map[string]struct {
 		err    error
@@ -203,12 +170,6 @@ func TestTheProvisionerRefusalsMapLikeTheRoster(t *testing.T) {
 	}
 }
 
-// TestTheStatusRouteAsksTheWriteGuardBeforeTheAuditAndTheRoster holds the guard
-// on the status route: a tenant the host declares protected refuses the write
-// with 403 and the capability's protected type, and the action writes no audit
-// row and reaches no roster. The guard is asked after the shape checks — the
-// case reaches it, so the shape was accepted — and before the mandatory audit,
-// which is empty when the guard answers.
 func TestTheStatusRouteAsksTheWriteGuardBeforeTheAuditAndTheRoster(t *testing.T) {
 	r := newRig(t)
 	r.writeGuard.denied = true
@@ -239,8 +200,6 @@ func TestTheStatusRouteAsksTheWriteGuardBeforeTheAuditAndTheRoster(t *testing.T)
 	}
 }
 
-// TestAWriteGuardThatCannotAnswerIsA503 holds the failure direction: an answer
-// that cannot be read is a 503, never a pass, and the action is not carried out.
 func TestAWriteGuardThatCannotAnswerIsA503(t *testing.T) {
 	r := newRig(t)
 	r.writeGuard.refuse(errors.New("the policy store is down"))
@@ -262,11 +221,6 @@ func TestAWriteGuardThatCannotAnswerIsA503(t *testing.T) {
 	}
 }
 
-// TestTheWriteGuardIsAskedForADisableAndNotForAnEnable holds the guard's range:
-// a disable is one of the operator writes a host protects, so the status route
-// asks it there; an enable is not, so the route asks nothing and the write
-// lands. A protected tenant's enable is therefore not blocked by the guard,
-// while its disable is.
 func TestTheWriteGuardIsAskedForADisableAndNotForAnEnable(t *testing.T) {
 	t.Run("a disable asks the guard", func(t *testing.T) {
 		r := newRig(t)
@@ -306,10 +260,6 @@ func TestTheWriteGuardIsAskedForADisableAndNotForAnEnable(t *testing.T) {
 	})
 }
 
-// TestTheWriteGuardIsAskedAfterTheShapeChecks holds the guard behind the shape:
-// a status outside the closed set and an identifier outside the domain are 400s
-// and the guard is not asked, so a malformed request never reaches the host's
-// rule.
 func TestTheWriteGuardIsAskedAfterTheShapeChecks(t *testing.T) {
 	for name, tc := range map[string]struct {
 		target string
@@ -333,10 +283,6 @@ func TestTheWriteGuardIsAskedAfterTheShapeChecks(t *testing.T) {
 	}
 }
 
-// TestTheWriteGuardIsNotAskedOnAnyOtherRoute holds the guard's scope: only the
-// status route writes a transition a host protects. A registration goes through
-// the provisioner and a profile write names the profile columns, and neither
-// asks the guard.
 func TestTheWriteGuardIsNotAskedOnAnyOtherRoute(t *testing.T) {
 	cases := map[string]struct {
 		method string

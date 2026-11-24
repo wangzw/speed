@@ -14,10 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// traceRecorder is a GORM logger that keeps every error a statement ended with
-// and every message logged at error level. The database module's logger writes
-// each of those as an error record, so a roster path that hands GORM one writes
-// an error record.
 type traceRecorder struct {
 	mu     sync.Mutex
 	errors []string
@@ -51,8 +47,6 @@ func (r *traceRecorder) recorded() []string {
 	return append([]string(nil), r.errors...)
 }
 
-// statementRecorder is a GORM logger that keeps the text of every statement
-// run.
 type statementRecorder struct {
 	mu         sync.Mutex
 	statements []string
@@ -73,7 +67,6 @@ func (r *statementRecorder) Trace(_ context.Context, _ time.Time, fc func() (str
 	r.statements = append(r.statements, sql)
 }
 
-// take returns the statements recorded since the last call.
 func (r *statementRecorder) take() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -82,11 +75,6 @@ func (r *statementRecorder) take() []string {
 	return taken
 }
 
-// The roster's own answers about a tenant — a name another tenant holds, an
-// identifier already registered, an identifier no row carries — are what the
-// table was read to give, not a statement that failed: the database is not
-// asked afterwards whether the table is there, and the answer does not read as
-// a failed statement.
 func TestTheRostersOwnAnswersAskTheTableNothingFurther(t *testing.T) {
 	r := rosterOver(t, insert("t_acme", "acme"))
 	recorder := &statementRecorder{}
@@ -124,11 +112,6 @@ func TestTheRostersOwnAnswersAskTheTableNothingFurther(t *testing.T) {
 	}
 }
 
-// The roster's lookups inside a write find nothing as a matter of course — a
-// new tenant holds no name yet, and a status change may name a tenant that is
-// not there — and finding nothing is an answer, not a failed statement. Written
-// as a failed statement, it reaches GORM's logger as an error on every tenant a
-// command, an admin route or a seed creates.
 func TestTheRostersWritesHandGORMNoFailedStatement(t *testing.T) {
 	r := rosterOver(t)
 	recorder := &traceRecorder{}

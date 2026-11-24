@@ -107,18 +107,12 @@ func TestPathExtractor(t *testing.T) {
 	}
 }
 
-// stub is a stand-in for an extractor another module would register.
 type stub struct{ name string }
 
 func (s stub) Extract(*nethttp.Request) (string, bool) { return s.name, s.name != "" }
 
 var _ tenant.Extractor = stub{}
 
-// TestRegisterOutsideTheWindowPanics pins the shut side of the state
-// transition and the message a caller acts on: the window runs from this
-// module's Migrate callback to its Start callback, and the fixing action is to
-// register from the registrant's own Init callback. Registration before that
-// window opened is refused rather than dropped.
 func TestRegisterOutsideTheWindowPanics(t *testing.T) {
 	text := wantPanicMessage(t, func() {
 		newResolver(settings{}, nil).Register("late", stub{})
@@ -134,7 +128,6 @@ func TestRegisterOutsideTheWindowPanics(t *testing.T) {
 	}
 }
 
-// wantPanicMessage runs f, requires it to panic, and returns the panic's text.
 func wantPanicMessage(t *testing.T, f func()) string {
 	t.Helper()
 	var text string
@@ -166,9 +159,6 @@ func TestSealRefusesADuplicateName(t *testing.T) {
 	}
 }
 
-// A name is free of blanks, and a blank is any character Unicode counts as
-// space, not the four ASCII ones alone: a name carrying one cannot be written
-// into configuration so that it reads back as the same name.
 func TestSealRefusesANameCarryingAnyBlank(t *testing.T) {
 	for _, name := range []string{"a b", "a\tb", "a\nb", "a\rb", "a\vb", "a\fb", "a\u00a0b", "a\u2028b", "\u3000"} {
 		t.Run(strconv.Quote(name), func(t *testing.T) {

@@ -22,50 +22,22 @@ import (
 	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
 )
 
-// roster is this module's product. It implements tenant.Catalog.
 type roster struct {
 	handle  *gorm.DB
 	refresh time.Duration
 
-	// snap is the roster as of the last read, published whole. A reader
-	// takes the pointer once and works from a consistent roster for as long
-	// as it holds it, which is what makes two resolutions inside one
-	// request agree with each other.
-	//
-	// It is an atomic pointer rather than a plain one because the refresher
-	// publishes from its own goroutine while request goroutines read. A
-	// plain pointer assignment is not a synchronisation point: the race
-	// detector would report it, and a reader could see a pointer to a
-	// snapshot whose contents it never observed being written.
 	snap atomic.Pointer[snapshot]
 
-	// connectWithin is how long a statement of the roster's waits for a
-	// connection of the delivered pool. It is connectionWait unless a test
-	// widens it, which is how a case holds apart a wrong implementation that
-	// applies this wait to a lock from the engine's busy timeout that really
-	// bounds it.
 	connectWithin time.Duration
 
-	// reading is held by the one read of the table in flight. It is a channel
-	// of one slot rather than a mutex so that a read waiting for it gives up
-	// when its context ends.
 	reading chan struct{}
 
-	// logger is where the startup account goes, and where a failed refresh
-	// is reported. It starts at the process root so that a build with no
-	// logging module still says something, and is replaced by the named
-	// logger in Init when there is one.
 	logger *slog.Logger
 
-	// stopCh ends the refresher. It is written in Start and read in Stop,
-	// which the lifecycle runs in that order on one goroutine; once keeps a
-	// second Stop from closing a channel twice.
 	stopCh chan struct{}
 	once   sync.Once
 }
 
-// newRoster builds the product. It reads nothing: the table it reads does not
-// exist until Migrate has run, which is after every product is constructed.
 func newRoster(set settings, database db.Database) *roster {
 	return &roster{
 		handle:        database.DB(),
@@ -76,10 +48,6 @@ func newRoster(set settings, database db.Database) *roster {
 	}
 }
 
-// takeLogger takes up the logging capability for the startup account. It is not
-// a declared dependency: resolving it here costs nothing, and a module that
-// declares one it does not need is a module whose absence changes behaviour it
-// has no business changing.
 func (r *roster) takeLogger(reg *core.Registry) {
 	delivered, err := core.Resolve[log.Logger](reg)
 	if err != nil {
@@ -88,12 +56,6 @@ func (r *roster) takeLogger(reg *core.Registry) {
 	r.logger = delivered.Named(ModuleName)
 }
 
-// load reads the table for the first time. A failure here ends the startup.
-//
-// The alternative — carrying on with an empty roster — would refuse every
-// request on every guarded endpoint while telling the operator nothing about
-// why, which is the shape this capability directory refuses wherever it meets
-// it.
 func (r *roster) load(ctx context.Context) error {
 	if err := r.read(ctx); err != nil {
 		return err
@@ -105,13 +67,6 @@ func (r *roster) load(ctx context.Context) error {
 	return nil
 }
 
-// start begins the refresher. A refresh period of zero is a roster loaded once
-// and never reread, which is a legitimate choice for a deployment whose tenants
-// do not change while it runs.
-//
-// The cancellation function stays inside the goroutine that owns it, so its
-// lifetime is one the reader can see: it is released when that goroutine
-// returns, and the goroutine returns when the stop channel closes.
 func (r *roster) start() {
 	if r.refresh <= 0 {
 		return
@@ -134,9 +89,6 @@ func (r *roster) start() {
 	}()
 }
 
-// stop ends the refresher. It does not wait for an in-flight read: a read is
-// idempotent and produces nothing that has to be released, so a process on its
-// way out does not stop here.
 func (r *roster) stop() {
 	r.once.Do(func() {
 		if r.stopCh != nil {
@@ -145,32 +97,20 @@ func (r *roster) stop() {
 	})
 }
 
-// refreshOnce rereads the table, keeping the previous snapshot if the read
-// fails. Dropping it would refuse every request, and one failed read is not a
-// reason to do that.
 func (r *roster) refreshOnce(ctx context.Context) {
 	if err := r.read(ctx); err != nil {
 		r.reportFailedReread(err)
 	}
 }
 
-// reportFailedReread says that a reread failed and the snapshot it would have
-// replaced is still the one served.
 func (r *roster) reportFailedReread(err error) {
 	r.logger.Warn(diagnosticPrefix+ModuleName+
 		": the roster could not be reread; the previous one stays in force",
 		"error", err)
 }
 
-// read replaces the snapshot with the table's current contents.
-//
-// Reads run one at a time, and each publishes what it read. Three paths read —
-// the refresher, a write rereading once it has committed, and an entry bringing
-// the snapshot up to the table — and two reads in flight together could publish
-// out of order: a refresh that read the table before a write committed,
-// finishing after the write's own reread, would put the roster without the
-// write back in force, and a tenant just disabled would be served again until
-// the next refresh. In sequence, the read that read last publishes last.
+// read replaces the snapshot with the table's current contents. Reads run one
+// at a time so that two in flight cannot publish out of order.
 func (r *roster) read(ctx context.Context) error {
 	if err := r.acquire(ctx); err != nil {
 		return fmt.Errorf("%s%s: reading table %s was given up while another read of it was in flight: %w",
@@ -180,8 +120,6 @@ func (r *roster) read(ctx context.Context) error {
 	return r.readHeld(ctx)
 }
 
-// acquire takes the one slot reads of the table run in, or gives up when the
-// context ends first.
 func (r *roster) acquire(ctx context.Context) error {
 	select {
 	case r.reading <- struct{}{}:
@@ -191,10 +129,8 @@ func (r *roster) acquire(ctx context.Context) error {
 	}
 }
 
-// release gives the slot back.
 func (r *roster) release() { <-r.reading }
 
-// readHeld is read, run by a caller already holding the slot.
 func (r *roster) readHeld(ctx context.Context) error {
 	var rows []row
 	ran, err := r.onConnection(ctx, func(session *gorm.DB) error {
@@ -216,22 +152,6 @@ func (r *roster) readHeld(ctx context.Context) error {
 	return nil
 }
 
-// onConnection runs fn — the roster's own statements — on a connection of the
-// delivered pool taken through db.Connection, within connectionWait, and reports
-// whether fn ran.
-//
-// The roster's statements never join a caller's transaction: its methods take a
-// context, which carries none. db.Connection bounds the wait for the
-// connection, so a caller holding the one connection of a database held to one
-// gets a failure once the bound has passed rather than a statement that waits
-// for it. The statements themselves run under the caller's context and wait for
-// a lock another connection holds as the engine makes them wait
-// (connectionWait).
-//
-// A connection that does not come free within the bound is reported with
-// ErrNoConnection, and a context that ends first with the context's own error;
-// no statement ran, so neither says anything about the table. Any other
-// failure to take a connection is reported as it stands.
 func (r *roster) onConnection(ctx context.Context, fn func(session *gorm.DB) error) (bool, error) {
 	ran := false
 	err := db.Connection(ctx, r.handle, r.connectWithin, func(session *gorm.DB) error {
@@ -244,20 +164,6 @@ func (r *roster) onConnection(ctx context.Context, fn func(session *gorm.DB) err
 	return ran, err
 }
 
-// failedStatement is the failure of a statement of the roster's on its table,
-// under ctx, on the session it ran on.
-//
-// A table that is not there — never created, or dropped since — fails a
-// statement as a statement fails for any other reason, and the drivers word the
-// failure each their own way, so the failure alone does not say which it was.
-// The database is asked instead, on the same connection (tableAbsent): when it
-// has no table by this name, the failure carries ErrRosterMissing, whose repair
-// is the migration set. Every other failure — a lock the engine gave up
-// waiting for, a connection lost, a permission refused — is reported as it
-// stands, with no sentinel, since there is no table missing to repair; so is
-// one whose question fails too, since nothing then says the table is not
-// there. A statement whose context ended is reported with the context's error.
-// The statement's own failure is kept in the chain and in the text either way.
 func failedStatement(ctx context.Context, session *gorm.DB, err error) error {
 	if ended := ctx.Err(); ended != nil {
 		return fmt.Errorf("a statement on table %s ended with its context (%w): %w", tableName, ended, err)
@@ -272,24 +178,6 @@ func failedStatement(ctx context.Context, session *gorm.DB, err error) error {
 	return fmt.Errorf("a statement on table %s failed: %w", tableName, err)
 }
 
-// tableAbsent reports whether the database a session is on has no table named
-// as the roster's where the roster's statements look for it, and reports
-// nothing absent when the question itself fails.
-//
-// On SQLite, which has no privileges, the tables GORM's migrator lists — the
-// main database's — are asked.
-//
-// On PostgreSQL the schemas asked are the ones the session's search path
-// names (namedSchemas), which is where the statement looked and where this
-// module's migration creates the table, and the ones the effective path adds
-// without their being named — the system catalog and the session's temporary
-// schema. The system catalog is read for a relation of that name in any of
-// them, which takes no privilege, where the alternatives do: the information
-// schema lists only the tables the role holds a privilege on, and resolving the
-// name as a statement does skips a schema the role holds no USAGE on, since
-// PostgreSQL drops such a schema from the path it searches. Either way a table
-// that is there would read as one that is not, and a refused permission would
-// be answered with the migration.
 func tableAbsent(session *gorm.DB) bool {
 	if session.Name() != postgresDialector {
 		tables, err := session.Migrator().GetTables()
@@ -307,14 +195,6 @@ func tableAbsent(session *gorm.DB) bool {
 	return err == nil && absent
 }
 
-// namedSchemas lists the schemas a PostgreSQL session's search path names,
-// read as PostgreSQL reads the setting (searchPath), with "$user" standing for
-// the session's current role. A schema the role holds no USAGE on, or that
-// does not exist, is kept: the question is where a statement would look for
-// the table, not whether the role may reach it. The schemas PostgreSQL searches
-// without their being named — the system catalog, and the session's temporary
-// schema when it has one — are the effective path's, which tableAbsent asks
-// beside these.
 func namedSchemas(session *gorm.DB) ([]string, error) {
 	var setting struct {
 		Path string
@@ -336,15 +216,8 @@ func namedSchemas(session *gorm.DB) ([]string, error) {
 	return schemas, nil
 }
 
-// blanks are the characters PostgreSQL skips around an item of an identifier
-// list.
 const blanks = " \t\n\r\f\v"
 
-// searchPath reads the names a PostgreSQL search_path setting lists, as
-// PostgreSQL splits an identifier list: separated by commas, the blanks around
-// each item dropped, a name in double quotes taken as written with a doubled
-// quote standing for one, and any other name folded to lower case in its ASCII
-// letters.
 func searchPath(setting string) []string {
 	var names []string
 	rest := setting
@@ -371,9 +244,6 @@ func searchPath(setting string) []string {
 	}
 }
 
-// quotedName reads a double-quoted name off the front of s, a doubled quote
-// inside it standing for one, and returns it with what follows the closing
-// quote.
 func quotedName(s string) (name, rest string) {
 	var b strings.Builder
 	for i := 1; i < len(s); i++ {
@@ -391,8 +261,6 @@ func quotedName(s string) (name, rest string) {
 	return b.String(), ""
 }
 
-// asciiLower folds the ASCII letters of a name to lower case, as PostgreSQL
-// folds an unquoted identifier in a multibyte encoding.
 func asciiLower(s string) string {
 	return strings.Map(func(r rune) rune {
 		if 'A' <= r && r <= 'Z' {
@@ -402,57 +270,10 @@ func asciiLower(s string) string {
 	}, s)
 }
 
-// postgresDialector is the name the PostgreSQL engine's GORM dialector answers.
 const postgresDialector = "postgres"
 
-// connectionWait is how long each of the roster's own reads and writes — the
-// reads of the whole table, an entry's read of one row, and each write with the
-// reads it makes — waits for a connection of the delivered pool, through
-// db.Connection.
-//
-// The roster's statements run on connections of their own, and a caller may be
-// holding what they need. On a database held to one connection — pkg/db holds
-// an in-memory SQLite database to one — a caller inside its own transaction on
-// the delivered handle holds that connection until its own call returns, and a
-// statement of the roster's waiting for it is waiting for the caller. An
-// in-process bus is the ordinary shape of it, running a subscriber on its
-// publisher's goroutine inside whatever transaction the publisher holds, and
-// the subscriber enters the event's tenant. Nothing a statement can see tells
-// that hold from another caller's brief one, so the wait is bounded rather than
-// recognised. A connection taken under load comes free in the time a statement
-// takes, far inside it.
-//
-// A lock another connection holds is waited for as the engine waits for it,
-// which the bound does not reach. On SQLite that is the connection's busy
-// timeout, the driver's five seconds unless the locator sets another; a
-// roster write inside a caller's transaction that has written to the same
-// database file meets that caller's write lock at its transaction's BEGIN,
-// which the database module issues IMMEDIATE, and waits there for the busy
-// timeout before SQLite refuses it. On PostgreSQL it is until
-// the caller's context ends, or the session's lock_timeout or
-// statement_timeout does; a roster write to a row the caller's own transaction
-// has written waits on that caller, and with neither timeout and no deadline it
-// waits for good.
 const connectionWait = 5 * time.Second
 
-// checkRows refuses a read holding a tenant this module will not act on.
-//
-// The rows are put through the same predicate a write passes, so a row that
-// arrived by some other route — a statement outside this module, a row from a
-// database this module shares — is refused where it is read, and the
-// identifier it carries reaches no caller.
-//
-// It fails the read rather than dropping the row in passing. A snapshot that
-// quietly left a tenant out would answer every request for it as one that does
-// not exist, with nothing said; the identifier's domain is checked here
-// because a caller downstream cannot check it, and a silent omission is the
-// shape that makes the check invisible.
-//
-// The failure takes the read's own semantics: the load at Init ends the
-// startup, and a later refresh keeps the previous snapshot and reports it.
-//
-// What is named is the table and the field. Never the value: keeping the value
-// out of log lines and error text is what the domain is for.
 func checkRows(rows []row) error {
 	for _, r := range rows {
 		if err := checkTenant(tenantOf(r)); err != nil {
@@ -463,9 +284,6 @@ func checkRows(rows []row) error {
 	return nil
 }
 
-// current returns the published snapshot, or says that none was ever published.
-// Once Init has returned there always is one; the check is here so that a path
-// reaching this product before then reports itself rather than reading a nil.
 func (r *roster) current() (*snapshot, error) {
 	s := r.snap.Load()
 	if s == nil {
@@ -474,7 +292,6 @@ func (r *roster) current() (*snapshot, error) {
 	return s, nil
 }
 
-// Get implements tenant.Catalog.
 func (r *roster) Get(_ context.Context, id tenant.ID) (tenant.Tenant, bool, error) {
 	s, err := r.current()
 	if err != nil {
@@ -484,8 +301,6 @@ func (r *roster) Get(_ context.Context, id tenant.ID) (tenant.Tenant, bool, erro
 	return t, ok, nil
 }
 
-// ByName implements tenant.Catalog. It is the lookup the resolving layer makes
-// on every request, and it touches no table.
 func (r *roster) ByName(_ context.Context, name string) (tenant.Tenant, bool, error) {
 	s, err := r.current()
 	if err != nil {
@@ -495,8 +310,6 @@ func (r *roster) ByName(_ context.Context, name string) (tenant.Tenant, bool, er
 	return t, ok, nil
 }
 
-// NameOf implements tenant.NameResolver. The answer comes from the snapshot,
-// like every other read; an identifier no row carries answers empty.
 func (r *roster) NameOf(_ context.Context, id tenant.ID) (string, error) {
 	s, err := r.current()
 	if err != nil {
@@ -508,17 +321,10 @@ func (r *roster) NameOf(_ context.Context, id tenant.ID) (string, error) {
 	return "", nil
 }
 
-// TenantNameOf implements authn.TenantNameResolver. It is NameOf for the
-// authentication directory, which does not import this capability's interface
-// package.
 func (r *roster) TenantNameOf(ctx context.Context, id string) (string, error) {
 	return r.NameOf(ctx, tenant.ID(id))
 }
 
-// TenantIDOf implements authn.TenantDirectory. It is ByName for the
-// authentication directory, which does not import this capability's interface
-// package: a name no tenant carries answers false with no error, so a surface
-// can tell an unknown name from a roster that could not answer.
 func (r *roster) TenantIDOf(ctx context.Context, name string) (string, bool, error) {
 	t, ok, err := r.ByName(ctx, name)
 	if err != nil || !ok {
@@ -527,10 +333,6 @@ func (r *roster) TenantIDOf(ctx context.Context, name string) (string, bool, err
 	return string(t.ID), true, nil
 }
 
-// TenantStateOf implements authn.TenantStateResolver. It is the roster's
-// status reduced to what an authentication path judges: served, disabled or
-// deleted. An identifier no row carries is deleted, because a tenant that is
-// not there is not served.
 func (r *roster) TenantStateOf(_ context.Context, id string) (authn.TenantState, error) {
 	s, err := r.current()
 	if err != nil {
@@ -550,9 +352,6 @@ func (r *roster) TenantStateOf(_ context.Context, id string) (authn.TenantState,
 	}
 }
 
-// TenantDescriptionOf implements authn.TenantDescriptionResolver. It reads the
-// name, the display name and the system flag from the snapshot, like every
-// other read; an identifier no row carries answers the zero description.
 func (r *roster) TenantDescriptionOf(_ context.Context, id string) (authn.TenantDescription, error) {
 	s, err := r.current()
 	if err != nil {
@@ -569,8 +368,6 @@ func (r *roster) TenantDescriptionOf(_ context.Context, id string) (authn.Tenant
 	}, nil
 }
 
-// List implements tenant.Catalog. The slice is a copy, so a caller sorting or
-// trimming it cannot disturb what the next caller sees.
 func (r *roster) List(_ context.Context) ([]tenant.Tenant, error) {
 	s, err := r.current()
 	if err != nil {
@@ -581,52 +378,14 @@ func (r *roster) List(_ context.Context) ([]tenant.Tenant, error) {
 	return out, nil
 }
 
-// Enter implements tenant.Catalog.
 func (r *roster) Enter(ctx context.Context, id tenant.ID) (context.Context, error) {
 	return r.enter(ctx, id, false)
 }
 
-// EnterRegistered implements tenant.Catalog.
 func (r *roster) EnterRegistered(ctx context.Context, id tenant.ID) (context.Context, error) {
 	return r.enter(ctx, id, true)
 }
 
-// enter is both entries: Enter admits a tenant the roster serves, and
-// EnterRegistered one it holds whatever its status. Enter refuses a disabled
-// tenant with ErrTenantDisabled and a tombstone with ErrTenantDeleted — the two
-// are disposed of differently, one waits out and the other is dropped — while
-// EnterRegistered enters both.
-//
-// It admits from the snapshot the resolving layer reads, and refuses only on
-// the table's word. A refusal is what a path with no request behind it drops
-// its work on — a bus acknowledges an event whatever its handler answered — so
-// a snapshot behind the table would lose that work for good: a tenant another
-// replica registered, or served again, since this replica last read the roster.
-// Where the snapshot would refuse, the tenant's row is read from the table, the
-// answer is the row's, and a snapshot found behind it is brought up to the table
-// (catchUp). An admission is taken from the snapshot as it stands, so a tenant
-// disabled on another replica is entered here until this replica's snapshot is
-// next reread — the window the request face has too.
-//
-// The identifier's shape is judged first, because a value outside the domain
-// is no tenant's and the message says which of the two fixes it needs. A table
-// that cannot be read gives no answer, and the failure is reported as it
-// stands rather than as either refusal: with ErrRosterMissing when the table is
-// not there, with ErrNoConnection when no connection came free within
-// connectionWait, with the context's error when the caller's context ended, and
-// otherwise as the read failed (failedStatement). ErrNoConnection is what an
-// entry inside a transaction the caller holds on a database held to one
-// connection meets, once the snapshot would refuse; an admission reads nothing,
-// and is not held up by it.
-//
-// What it writes is what the resolving layer writes on admitting a request —
-// the identifier into the context and onto the logger, replacing a tenant the
-// context carried in both — through the same internal package, which is what
-// keeps the writing side closed to everything outside this capability
-// directory. A refusal writes the empty identifier instead, which lifts a
-// cross-tenant mark the context carried and takes a tenant bound on its logger
-// off: a caller that drops the error and goes on with the context has its
-// scoped statements refused, not let across, and its records name no tenant.
 func (r *roster) enter(ctx context.Context, id tenant.ID, anyStatus bool) (context.Context, error) {
 	refused := tenantctx.Bind(ctx, "", contextLogger)
 	if err := checkField("identifier", string(id)); err != nil {
@@ -655,9 +414,6 @@ func (r *roster) enter(ctx context.Context, id tenant.ID, anyStatus bool) (conte
 	return tenantctx.Bind(ctx, string(t.ID), contextLogger), nil
 }
 
-// fromTable reads one tenant's row from the table, under the caller's context,
-// on a connection taken through onConnection. A row this module will not act on
-// is refused as the read of the whole roster refuses it.
 func (r *roster) fromTable(ctx context.Context, id tenant.ID) (tenant.Tenant, bool, error) {
 	var held []row
 	_, err := r.onConnection(ctx, func(session *gorm.DB) error {
@@ -681,18 +437,6 @@ func (r *roster) fromTable(ctx context.Context, id tenant.ID) (tenant.Tenant, bo
 	return tenantOf(held[0]), true, nil
 }
 
-// catchUp rereads the roster when the row an entry read from the table is not
-// what this replica's snapshot holds for it, so that the snapshot — which the
-// resolving layer reads too — learns what the entry learned.
-//
-// Entries arriving together for one such tenant wait for one another on the
-// slot reads run in; the first to find the snapshot still behind rereads it,
-// and the rest find it caught up. An entry whose context ends while it waits
-// leaves the snapshot to the next reread. The wait for the slot is as long as
-// the reads that hold it take, each of which waits at most connectionWait for
-// its connection and for a lock as long as the engine waits for one
-// (connectionWait). A failed reread is reported as a failed refresh is, and the
-// entry keeps the answer it read.
 func (r *roster) catchUp(ctx context.Context, id tenant.ID, t tenant.Tenant, held bool) {
 	if agrees(r.snap.Load(), id, t, held) {
 		return
@@ -709,17 +453,11 @@ func (r *roster) catchUp(ctx context.Context, id tenant.ID, t tenant.Tenant, hel
 	}
 }
 
-// agrees reports whether a snapshot holds what the table was found to hold for
-// one identifier: this tenant, or, when held is false, none.
 func agrees(s *snapshot, id tenant.ID, t tenant.Tenant, held bool) bool {
 	current, ok := s.byID[id]
 	return ok == held && sameTenant(current, t)
 }
 
-// sameTenant reports whether two readings name the same tenant. It compares the
-// creation instants and the deletion instants rather than the pointers that
-// hold them: two reads of one row build two values, and a struct comparison
-// would take their addresses as the tenant's identity.
 func sameTenant(a, b tenant.Tenant) bool {
 	if a.ID != b.ID || a.Name != b.Name || a.Status != b.Status ||
 		a.DisabledBy != b.DisabledBy || a.OwnerAccount != b.OwnerAccount ||
@@ -732,52 +470,8 @@ func sameTenant(a, b tenant.Tenant) bool {
 	return a.DeletedAt.Equal(*b.DeletedAt)
 }
 
-// contextLogger is how an entered tenant reaches the logger a context carries.
 var contextLogger = tenantctx.Logger{With: log.WithAttrs, Without: log.WithoutAttrs}
 
-// Put implements tenant.Catalog.
-//
-// The rewrite is by identifier, so registering a tenant twice is one row. An
-// name is chosen when the row is written and is immutable afterwards: a
-// rewrite whose value carries another name is refused with ErrInvalidTenant
-// and writes nothing, while one carrying the name the row already has changes
-// only the status and the disable source.
-//
-// An insert takes the name, the owner and the creation time, and the name is
-// checked inside the same transaction as the write: the column's unique index
-// would catch a collision too, but it would report it as a constraint violation
-// rather than as which tenant holds the name. The name and the identifier are
-// one namespace — a slug may be a tenant's name or its identifier, never both —
-// so an insert also refuses a name another tenant carries as its identifier
-// and an identifier another tenant carries as its name (checkNamespace).
-//
-// The check does not close the race on its own. Two writes putting one name
-// on two tenants at once can both find it free, and the later insert then
-// meets the unique index. That is the same conflict, and it is answered the
-// same way: a write that failed is read again against the table, and a name
-// another tenant now holds is reported as ErrNameConflict naming it, with the
-// driver's error kept in the chain.
-//
-// A row that is a tombstone is refused with ErrTenantDeleted, and nothing is
-// written: a deleted tenant is terminal, and the rewrite would otherwise serve it
-// again. The upsert carries the same condition in its own statement, so a
-// deletion committed between the check and the write still leaves the tombstone
-// as it is; a statement that updated no row is read again to tell the tombstone
-// apart from a row that is no longer there. The value's own status and disable
-// source are judged before the write as well (checkWrite), so a record that could
-// not have come from a status transition is refused rather than stored.
-//
-// The write and the read that names a conflict run on one connection (write).
-//
-// The profile, owner and name columns are not written by a rewrite. A rewrite
-// takes the status and the disable source, so it cannot put back a profile
-// another path changed, an owner another path transferred, or a name the row
-// was not created with; an insert it performs takes the migration's profile
-// defaults and the value's owner. The
-// creation time is written on an insert and only on an insert: a registration
-// made through Put records the real moment in UTC, exactly as Create does, while
-// the upsert's update clause leaves an existing row's time alone. Updating a
-// profile is SetProfile's work and transferring an owner is SetOwner's.
 func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
 	if err := checkWrite(t); err != nil {
 		return err
@@ -799,14 +493,9 @@ func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
 			}
 		}
 		written := tx.Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "id"}},
-			// The name is immutable: an existing row keeps the one it was
-			// written with, and the value's name is read only by the insert
-			// below.
+			Columns:   []clause.Column{{Name: "id"}},
 			DoUpdates: clause.AssignmentColumns([]string{"status", "disabled_by"}),
-			// The rewrite itself refuses a tombstone: the check above runs
-			// before the statement, and a deletion committed between the two
-			// would otherwise be overwritten by the values this caller read.
+			// Refuses a tombstone in the statement itself: a deletion may commit after the earlier check.
 			Where: clause.Where{Exprs: []clause.Expression{
 				clause.Neq{Column: clause.Column{Table: tableName, Name: "status"}, Value: int(tenant.StatusDeleted)},
 			}},
@@ -816,14 +505,8 @@ func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
 			Status:     int(t.Status),
 			DisabledBy: int(t.DisabledBy),
 
-			// The owner is written on an insert and never by the update clause,
-			// so a rewrite cannot transfer an organization's ownership.
 			OwnerAccount: t.OwnerAccount,
 
-			// The creation time is the roster's to record, as on Create. The
-			// update clause does not name the column, so an existing row keeps
-			// the time it has; a value left to gorm's auto-create would be
-			// local rather than UTC.
 			CreatedAt: creationTime(),
 		})
 		if written.Error != nil {
@@ -836,13 +519,6 @@ func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
 	}, func(session *gorm.DB, err error) error { return failedPut(session, t, err) })
 }
 
-// write runs one write of the roster in a transaction of its own, on a
-// connection taken through onConnection; failed, when there is one, names what
-// a failed transaction ran into, reading on that same connection outside the
-// transaction. A failure that is none of this module's answers about the tenant
-// is then reported as failedStatement reports it, on that connection too. The
-// connection is given back before the reread that follows a write takes its
-// own, which on a database held to one connection is the only one there is.
 func (r *roster) write(ctx context.Context, apply func(tx *gorm.DB) error,
 	failed func(session *gorm.DB, err error) error,
 ) error {
@@ -852,14 +528,6 @@ func (r *roster) write(ctx context.Context, apply func(tx *gorm.DB) error,
 	return err
 }
 
-// writeResult is write for a caller that may decide, inside the transaction,
-// that there is nothing to write. It reports whether a write happened, and
-// rereads the roster only when one did: a call that changed nothing has no
-// result for this process to serve, and paying a full read for it would turn a
-// repeated event into load.
-//
-// A transaction that fails reports false whatever apply said about writing: it
-// rolled back, so nothing reached the table.
 func (r *roster) writeResult(ctx context.Context, apply func(tx *gorm.DB) (bool, error),
 	failed func(session *gorm.DB, err error) error,
 ) (bool, error) {
@@ -896,26 +564,15 @@ func (r *roster) writeResult(ctx context.Context, apply func(tx *gorm.DB) (bool,
 	return true, nil
 }
 
-// answered reports whether a write's failure is one of this module's answers
-// about the tenant — a conflict, a registration already there, an identifier no
-// row carries, a tombstone — which the table was read to give, rather than a
-// statement that failed.
 func answered(err error) bool {
 	return errors.Is(err, tenant.ErrNameConflict) || errors.Is(err, tenant.ErrTenantExists) ||
 		errors.Is(err, tenant.ErrInvalidTenant) || errors.Is(err, tenant.ErrTenantDeleted)
 }
 
-// tombstone is the refusal of a write that reached a tenant written as deleted.
 func tombstone(id tenant.ID) error {
 	return fmt.Errorf("%w: identifier %q", tenant.ErrTenantDeleted, id)
 }
 
-// missingOrTombstone explains a statement that changed no row, read inside the
-// statement's own transaction. An identifier no row carries is ErrInvalidTenant,
-// and a row written as deleted is ErrTenantDeleted; a row that is there and not
-// a tombstone is a write that had nothing to change, and is no error. The read
-// is what tells a tombstone committed after the caller's own check from a
-// traversal the caller is allowed to skip.
 func missingOrTombstone(tx *gorm.DB, id tenant.ID) error {
 	held, err := lookUp(tx, "id", string(id))
 	if err != nil {
@@ -930,20 +587,10 @@ func missingOrTombstone(tx *gorm.DB, id tenant.ID) error {
 	return nil
 }
 
-// failedPut names the conflict a failed Put ran into when the name turns out
-// to be held by another tenant, and returns the failure as it stands otherwise.
-// The read runs on the write's session outside the failed transaction, which a
-// PostgreSQL transaction that met a constraint no longer accepts statements in.
 func failedPut(session *gorm.DB, t tenant.Tenant, err error) error {
 	return failedName(session, t.ID, t.Name, err)
 }
 
-// failedName names the conflict a failed write on one tenant's name ran into
-// — Put, and Create through failedCreate — when the name turns out to be held
-// by another tenant, and returns the failure as it stands otherwise. A write
-// that meets the name column's unique index in a race reaches the same conflict
-// the check inside the write reports, and the caller is owed the same answer for
-// it.
 func failedName(session *gorm.DB, id tenant.ID, name string, err error) error {
 	if errors.Is(err, tenant.ErrNameConflict) {
 		return err
@@ -956,30 +603,6 @@ func failedName(session *gorm.DB, id tenant.ID, name string, err error) error {
 		"in flight: %w", tenant.ErrNameConflict, name, held[0].ID, err)
 }
 
-// Create implements tenant.Catalog.
-//
-// The value's profile is written with the row, and so is a creation time: the
-// moment of the registration in UTC, never a value taken from the caller. A
-// registration date is a fact about the roster, and a caller that could choose
-// it could date a tenant before its account existed. The profile is judged by
-// checkWrite before any statement, as the identifier and the name are.
-//
-// A tombstone's identifier is taken as any existing identifier is: the creation
-// is refused with ErrTenantExists, so a deleted tenant is never registered
-// again, and its name stays with the row. The value's own status and disable
-// source are judged before the write (checkWrite), as Put judges them.
-//
-// Whether the identifier is taken is asked of the table inside the write, not
-// of the snapshot: a replica whose snapshot predates another replica's
-// registration would otherwise take the identifier for free, and the write
-// would land on that tenant's row. The insert itself does nothing when the
-// identifier is already there, and a write that inserted nothing is the
-// refusal — so two creations of one identifier at once end with one row and
-// one ErrTenantExists, the later one having waited on the earlier's row rather
-// than overwriting it. The name and the identifier are one namespace, so an
-// insert also refuses a name another tenant carries as its identifier and an
-// identifier another tenant carries as its name (checkNamespace); the name's
-// race is answered as Put answers it, on the write's one connection (write).
 func (r *roster) Create(ctx context.Context, t tenant.Tenant) error {
 	if err := checkWrite(t); err != nil {
 		return err
@@ -990,10 +613,6 @@ func (r *roster) Create(ctx context.Context, t tenant.Tenant) error {
 	}, func(session *gorm.DB, err error) error { return failedCreate(session, t, err) })
 }
 
-// createIn is Create's write inside the transaction it is handed. It reports
-// whether it wrote, so that the tx form can decide whether there is a reread to
-// do once the caller's transaction commits, and the context-taking form can
-// tell a refused statement from one that left nothing to write.
 func (r *roster) createIn(_ context.Context, tx *gorm.DB, t tenant.Tenant) (bool, error) {
 	held, err := lookUp(tx, "id", string(t.ID))
 	if err != nil {
@@ -1020,11 +639,7 @@ func (r *roster) createIn(_ context.Context, tx *gorm.DB, t tenant.Tenant) (bool
 		Description:  t.Profile.Description,
 		ContactEmail: t.Profile.ContactEmail,
 		Website:      t.Profile.Website,
-		// The creation time is the roster's to record, not the caller's to
-		// choose: a value read off the request would let a registration
-		// date itself. A row that already exists keeps the time it has,
-		// because this insert does nothing on a taken identifier.
-		CreatedAt: creationTime(),
+		CreatedAt:    creationTime(),
 	})
 	if written.Error != nil {
 		return false, written.Error
@@ -1035,22 +650,14 @@ func (r *roster) createIn(_ context.Context, tx *gorm.DB, t tenant.Tenant) (bool
 	return true, nil
 }
 
-// creationTime is the moment a registration is recorded at, in UTC. A new
-// value each call: two registrations, however close, do not share one.
 func creationTime() time.Time {
 	return time.Now().UTC()
 }
 
-// tenantExists is the refusal of a creation whose identifier is taken.
 func tenantExists(id tenant.ID) error {
 	return fmt.Errorf("%w: identifier %q", tenant.ErrTenantExists, id)
 }
 
-// failedCreate names what a failed Create ran into: its own refusals as they
-// stand, and a driver failure as the conflict it turns out to be once the table
-// is read again — the identifier registered, or the name taken, by a write
-// that got there first. The reads run on the write's session, as failedPut's
-// does.
 func failedCreate(session *gorm.DB, t tenant.Tenant, err error) error {
 	if errors.Is(err, tenant.ErrTenantExists) || errors.Is(err, tenant.ErrNameConflict) {
 		return err
@@ -1063,27 +670,6 @@ func failedCreate(session *gorm.DB, t tenant.Tenant, err error) error {
 	return failedPut(session, t, err)
 }
 
-// SetStatus implements tenant.Catalog, and is the operator's status transition.
-//
-// Only active and disabled are writable here: the deleted state is reached
-// through Delete and nowhere else, so s naming it, or naming anything outside
-// the set, is refused with ErrInvalidTenant. A tombstone is refused with
-// ErrTenantDeleted. Disabling writes the source as the operator's even on a row
-// already disabled — the operator has restated the decision, and a row an
-// account disabled must not stay revocable by that account — and enabling
-// clears it; the two writes put the same operator value in the column.
-//
-// Existence is checked with its own read rather than inferred from the update's
-// affected-row count: a driver is free to report zero rows for an update that
-// set a value to what it already was, and this call would then report a tenant
-// that exists as one that does not. The check and the update run on one
-// connection (write).
-//
-// The transition is written by a statement that refuses a tombstone itself, so a
-// deletion committed between the check and the write cannot be overwritten: the
-// statement updates no row, and the read that distinguishes a tombstone from a
-// missing tenant runs inside the same transaction. The same read covers the
-// driver that reports no row for a value written as it already was.
 func (r *roster) SetStatus(ctx context.Context, id tenant.ID, s tenant.Status) error {
 	if err := checkField("identifier", string(id)); err != nil {
 		return err
@@ -1109,29 +695,6 @@ func (r *roster) SetStatus(ctx context.Context, id tenant.ID, s tenant.Status) e
 	}, nil)
 }
 
-// SetStatusByAccount implements tenant.Catalog, and is the transition account
-// state drives.
-//
-// The two directions are asymmetric on purpose. Disabling is taken only from an
-// active tenant, and writes the source as the account's; a tenant already
-// disabled is not account state's to disable again, whoever disabled it.
-// Enabling is taken only from a tenant disabled by the account, and clears the
-// source; an operator's disable, and a source this build does not know, are not
-// account state's to revoke. Every other request writes nothing and returns nil,
-// so a repeated event is harmless and a no-op costs no reread (writeResult).
-//
-// Neither direction reaches a tombstone, which is refused with ErrTenantDeleted,
-// and s naming the deleted state, or anything outside the set, is refused with
-// ErrInvalidTenant. An identifier no row carries is ErrInvalidTenant, as the
-// operator path reports it.
-//
-// Each direction is written by a statement that carries the state it is allowed
-// to leave behind, so a deletion or an operator's disable committed between the
-// read and the write is not overwritten: the statement updates no row, and a
-// read inside the same transaction distinguishes the tombstone and the missing
-// tenant from a transition that is simply not this call's to make. That read is
-// also what covers a driver reporting no row for a value written as it already
-// was.
 func (r *roster) SetStatusByAccount(ctx context.Context, id tenant.ID, s tenant.Status) error {
 	if err := checkField("identifier", string(id)); err != nil {
 		return err
@@ -1170,18 +733,6 @@ func (r *roster) SetStatusByAccount(ctx context.Context, id tenant.ID, s tenant.
 	return err
 }
 
-// Delete implements tenant.Catalog, and is the one way to reach the terminal
-// state.
-//
-// It writes the status column and the deletion instant together: the row, the
-// identifier, the name, the owner and the disable source stay, so a scoped
-// table's data still has a tenant to be found under and the name cannot be
-// registered again while the row carries it. The instant is recorded in UTC and
-// is the moment the terminal state was reached; the status stays the state a
-// request is resolved by. Deleting a tombstone again is a no-op that returns
-// nil, so a sweep retrying a deletion converges. An identifier no row carries,
-// or one outside the domain, is refused with ErrInvalidTenant, as the status
-// paths refuse it.
 func (r *roster) Delete(ctx context.Context, id tenant.ID) error {
 	if err := checkField("identifier", string(id)); err != nil {
 		return err
@@ -1192,9 +743,6 @@ func (r *roster) Delete(ctx context.Context, id tenant.ID) error {
 	return err
 }
 
-// deleteIn is Delete's write inside the transaction it is handed. It reports
-// whether it wrote: a tombstone and an identifier no row carries both leave
-// nothing for the after-commit reread to see.
 func (r *roster) deleteIn(_ context.Context, tx *gorm.DB, id tenant.ID) (bool, error) {
 	held, err := lookUp(tx, "id", string(id))
 	if err != nil {
@@ -1213,30 +761,10 @@ func (r *roster) deleteIn(_ context.Context, tx *gorm.DB, id tenant.ID) (bool, e
 		}).Error
 }
 
-// deletionTime is the moment a tenant was written as deleted, in UTC. A new
-// value each call, as creationTime is.
 func deletionTime() time.Time {
 	return time.Now().UTC()
 }
 
-// SetOwner implements tenant.Catalog, and is the transfer write.
-//
-// It writes the owner_account column and nothing else. The name, the status,
-// the profile, the creation time and the deletion time are not named, so a
-// transfer cannot undo a disable or a profile update committed in the same
-// window. The owner must be an identifier: the empty string is refused because
-// a business organization always has one, and so is a value carrying a blank or
-// a control character.
-//
-// A tombstone is refused with ErrTenantDeleted: its owner stays with the row.
-// Writing the owner a row already carries is a no-op that returns nil. It still
-// reads that row once inside the transaction, to tell the no-op from a missing
-// row or a tombstone, but it skips the whole-roster afterWrite reread, so a
-// repeated transfer costs no full read. An identifier no row carries is
-// refused with ErrInvalidTenant. The update carries the
-// tombstone condition itself, so a deletion committed between the check and the
-// write leaves the row as it is; a statement that updated no row is read again
-// to tell a tombstone from a tenant that is no longer there.
 func (r *roster) SetOwner(ctx context.Context, id tenant.ID, owner string) error {
 	if err := checkField("identifier", string(id)); err != nil {
 		return err
@@ -1272,19 +800,6 @@ func (r *roster) SetOwner(ctx context.Context, id tenant.ID, owner string) error
 	return err
 }
 
-// SetOwnerIfEmpty implements tenant.Catalog, and is the repair write for a row
-// that carries no owner.
-//
-// The condition is in the statement: the update matches only a row whose owner
-// column is still empty and whose status is not deleted. A transfer that lands
-// between the caller's read and this write therefore stands, and the call
-// answers false with nothing written. The owner value is held to the same
-// domain SetOwner holds it to, with the empty value refused.
-//
-// A statement that updated no row is read again inside the same transaction to
-// tell a standing owner, which is the expected race and not a failure, apart
-// from an identifier no row carries, refused with ErrInvalidTenant, and a
-// tombstone, refused with ErrTenantDeleted.
 func (r *roster) SetOwnerIfEmpty(ctx context.Context, id tenant.ID, owner string) (bool, error) {
 	if err := checkField("identifier", string(id)); err != nil {
 		return false, err
@@ -1312,27 +827,10 @@ func (r *roster) SetOwnerIfEmpty(ctx context.Context, id tenant.ID, owner string
 		if tenant.Status(held[0].Status) == tenant.StatusDeleted {
 			return false, tombstone(id)
 		}
-		// The owner is no longer empty: a transfer got there first, and this
-		// repair leaves it as it stands.
 		return false, nil
 	}, nil)
 }
 
-// SetProfile implements tenant.Catalog, and writes the organization profile
-// alone.
-//
-// The four profile columns are the whole statement. The name, the owner, the
-// status, the disable source and the creation time are not named, so a profile
-// update cannot put back a value this process read before another path changed
-// it: a disable or a deletion committed in the window stays. The tombstone
-// condition is in the statement itself, as it is in SetStatus and SetOwner, so
-// a deletion committed between the checks and the write leaves the row as it
-// is; a statement that updated no row is read again to tell a tombstone from a
-// tenant that is no longer there.
-//
-// The profile is judged before any write, so a refused update leaves the table
-// as it found it. A tombstone is refused with ErrTenantDeleted: its profile is
-// as terminal as the rest of its row.
 func (r *roster) SetProfile(ctx context.Context, id tenant.ID, profile tenant.Profile) error {
 	if err := checkField("identifier", string(id)); err != nil {
 		return err
@@ -1369,19 +867,6 @@ func (r *roster) SetProfile(ctx context.Context, id tenant.ID, profile tenant.Pr
 	}, nil)
 }
 
-// lookUp reads the row, if any, whose unique column holds this value.
-//
-// Finding none is an answer, and it is read as one: an empty result rather than
-// the not-found failure GORM's First reports. That failure reaches GORM's
-// logger as a failed statement, which the database module's logger writes as an
-// error record — on every tenant a new name is put for, and on every status
-// change naming a tenant that is not there.
-//
-// A read that fails is returned as the driver reported it. Its caller reports
-// it as every failed statement of the roster's is (failedStatement), once it is
-// outside any transaction the read ran in: a PostgreSQL transaction a statement
-// failed in accepts no further statement, and telling a table that is not there
-// from any other failure takes one.
 func lookUp(tx *gorm.DB, column, value string) ([]row, error) {
 	var held []row
 	if err := tx.Where(clause.Eq{Column: clause.Column{Name: column}, Value: value}).
@@ -1391,20 +876,6 @@ func lookUp(tx *gorm.DB, column, value string) ([]row, error) {
 	return held, nil
 }
 
-// afterWrite rereads the table so that the writer sees its own write. Writes are
-// an operator's action rather than a request-path one, so paying a read for one
-// is cheaper than making the caller wait out a refresh period.
-//
-// A failed reread is reported rather than swallowed: the write is durable, but
-// this process is now serving a roster that does not contain it, and the caller
-// is the only one in a position to know that.
-//
-// The reread runs on the caller's context with its cancellation taken off. The
-// write has committed by then, so a caller that goes away at that moment has
-// nothing left to stop: ending the reread with it would only leave this replica
-// serving a roster without the write until the next refresh — or, with none
-// configured, until a restart — and report as failed a write that took place.
-// The values the context carries, and so the logger and the trace, stay.
 func (r *roster) afterWrite(ctx context.Context) error {
 	if err := r.read(context.WithoutCancel(ctx)); err != nil {
 		return fmt.Errorf(
@@ -1415,20 +886,6 @@ func (r *roster) afterWrite(ctx context.Context) error {
 	return nil
 }
 
-// checkTenant refuses a tenant this module will not act on.
-//
-// The identifier is judged by the shape this module can judge: not empty, and
-// free of blanks and control characters. The name is judged by the slug form
-// every request surface carries, which is also the username's form because a
-// personal tenant's name is its owner's username. The owner is optional here:
-// an empty value is "no owner yet", which the creation and transfer seams are
-// responsible for filling on a business organization, and a value that is
-// present is held to the identifier's own domain. How long an identifier may be
-// is the declaring party's to say, in the column its migration declares — this
-// module defines no length and so cannot check one. The profile is judged
-// against tenant.Profile.Validate, whose bounds and shapes this module states
-// nowhere else: a row the table holds has to pass the same check a write does,
-// because the table can be written without this module's write paths.
 func checkTenant(t tenant.Tenant) error {
 	if err := checkField("identifier", string(t.ID)); err != nil {
 		return err
@@ -1443,15 +900,6 @@ func checkTenant(t tenant.Tenant) error {
 	return t.Profile.Validate()
 }
 
-// checkWrite is checkTenant plus the two values a registration may not choose.
-//
-// A registration takes the whole row's values, but two of them are written by
-// another route only: the deleted state is reached through Delete, and an
-// account-caused disable only through SetStatusByAccount. The source is judged
-// fail-closed — only the operator's value, which is the zero one, is accepted —
-// so a value this build does not know cannot be stored through a registration
-// and later read as though this build had chosen it. Both refusals run before
-// any write, so a refused registration leaves the table as it found it.
 func checkWrite(t tenant.Tenant) error {
 	if err := checkTenant(t); err != nil {
 		return err
@@ -1467,9 +915,6 @@ func checkWrite(t tenant.Tenant) error {
 	return nil
 }
 
-// checkName refuses a name outside the slug form the roster serves. The form
-// is stated once by tenant.IsName; the empty case is judged first because its
-// fix is the caller's to choose a name rather than to correct one.
 func checkName(name string) error {
 	if name == "" {
 		return fmt.Errorf("%w: the name is empty", tenant.ErrInvalidTenant)
@@ -1481,23 +926,6 @@ func checkName(name string) error {
 	return nil
 }
 
-// checkNamespace holds a name and an identifier to one namespace, for the
-// creation paths, inside the write's transaction.
-//
-// A slug is either a tenant's name or a tenant's identifier, never both: a
-// request surface that carried one value would otherwise name two tenants, and
-// the path guard would refuse that segment on every route that takes a tenant.
-// The two lookups are separate because the columns are — name is unique on its
-// own and id is the primary key — and neither index spans the other column, so
-// the pair's disjointness is this check's to enforce.
-//
-// The row this call is about is not in the table yet: Create has already found
-// its identifier free, and Put reaches here only on its insert path. A name
-// another tenant carries as its identifier is reported as ErrNameConflict, the
-// name being the value whose fix is the caller's; an identifier another tenant
-// carries as its name is reported as ErrTenantExists, for the same reason. The
-// message names the holder and never a value the caller has not already
-// supplied.
 func checkNamespace(tx *gorm.DB, t tenant.Tenant) error {
 	held, err := lookUp(tx, "name", t.Name)
 	if err != nil {
@@ -1526,16 +954,6 @@ func checkNamespace(tx *gorm.DB, t tenant.Tenant) error {
 	return nil
 }
 
-// checkField refuses an identifier that is empty or carries a character it
-// could not survive.
-//
-// Blanks and control characters are refused anywhere in it. An identifier ends
-// up in log lines, diagnostics and error text, where a newline splits one
-// record into two.
-//
-// The domain itself is tenant.IsIdentifier, so this module states the rule
-// once. The empty case is judged first anyway, because the two failures have
-// different fixes and the message says which one the field carried.
 func checkField(what, value string) error {
 	if value == "" {
 		return fmt.Errorf("%w: the %s is empty", tenant.ErrInvalidTenant, what)

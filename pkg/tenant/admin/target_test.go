@@ -1,8 +1,5 @@
 package admin
 
-// The target's account-level routes: they act on the caller's own identity, ask
-// no permission and carry no tenant context.
-
 import (
 	"net/http"
 	"testing"
@@ -13,7 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// requestForTarget is one pending request addressed to the default test account.
 func requestForTarget() tenant.TransferRequest {
 	return tenant.TransferRequest{
 		ID:          "22222222-2222-2222-2222-222222222222",
@@ -26,8 +22,6 @@ func requestForTarget() tenant.TransferRequest {
 	}
 }
 
-// The listing answers every pending request addressed to the caller, with the
-// organization's name and no account identifier.
 func TestTheTargetListsItsOwnPendingRequests(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
@@ -51,8 +45,6 @@ func TestTheTargetListsItsOwnPendingRequests(t *testing.T) {
 	}
 }
 
-// One request addressed to the caller is read in its state; another account's
-// request is a bare 404.
 func TestTheTargetReadsOneRequest(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
@@ -72,8 +64,6 @@ func TestTheTargetReadsOneRequest(t *testing.T) {
 	}
 }
 
-// Confirmation calls the target surface with the caller's identity, lands the
-// audit row naming the target surface, and answers 204.
 func TestTheTargetConfirmsThroughTheOwnershipTarget(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
@@ -97,8 +87,6 @@ func TestTheTargetConfirmsThroughTheOwnershipTarget(t *testing.T) {
 	}
 }
 
-// Confirmation by an account whose registration is unverified is refused before
-// the target surface is reached; declining is not gated.
 func TestConfirmIsRegistrationGatedAndDeclineIsNot(t *testing.T) {
 	confirmPath := pathMyConfirm[:len(pathMyConfirm)-len(":request/confirm")] + requestForTarget().ID + "/confirm"
 	declinePath := pathMyDecline[:len(pathMyDecline)-len(":request/decline")] + requestForTarget().ID + "/decline"
@@ -137,8 +125,6 @@ func TestConfirmIsRegistrationGatedAndDeclineIsNot(t *testing.T) {
 	})
 }
 
-// A confirmation the target surface refuses is a 409 with the capability's
-// conflict type, and the failed row is linked to the mandatory one.
 func TestATargetConfirmationRefusalIsAConflict(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
