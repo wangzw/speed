@@ -67,10 +67,10 @@
  * from a `humanGate` a host already read). The block appears only once a
  * send has been asked for: entering a number shows no challenge, and the
  * send the viewer asked for leaves by itself when the proof arrives. The
- * control that asked gives way to the block while the proof is
- * outstanding, so one action is on screen at a time. The proof is
- * single-use, so every attempt -- a refusal included -- is followed by a
- * fresh one. The verify step sends nothing and presents none.
+ * control that asked stays mounted and busy while the proof is
+ * outstanding, so one action is on screen at a time and focus stays on it.
+ * The proof is single-use, so every attempt -- a refusal included -- is
+ * followed by a fresh one. The verify step sends nothing and presents none.
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -224,8 +224,8 @@ export function PhoneSection({
   const busy =
     startPhone.isPending || verifyPhone.isPending || feedback.pending
   // Asking for a send is one attempt even while it waits on its proof: its
-  // control reports busy (though the block replaces it), and the form
-  // refuses a second submission. The profile re-read that follows a landed
+  // control stays mounted and reports busy, and the form refuses a second
+  // submission. The profile re-read that follows a landed
   // verify is not a send: while it is open the returning send control is
   // held as the scope's sibling, never shown with the send's progress.
   const sendBusy = pendingSend !== null || startPhone.isPending
@@ -340,10 +340,23 @@ export function PhoneSection({
     if (needsProof && human.proof === null) {
       return
     }
+    if (busy) {
+      // A write of this scope is still in flight: the send joins it after it
+      // settles rather than running beside it. Waiting on the proof itself is
+      // not a write, so it does not count here.
+      return
+    }
     const phone = pendingSend
     setPendingSend(null)
     void sendCodeRef.current(phone)
-  }, [pendingSend, human.pending, gateDocument, needsProof, human.proof])
+  }, [
+    pendingSend,
+    human.pending,
+    gateDocument,
+    needsProof,
+    human.proof,
+    busy,
+  ])
 
   function verifyCode(nextCode: string): Promise<void> {
     // The step shows the verify controls only after a send, so the number
@@ -530,37 +543,33 @@ export function PhoneSection({
                   disabled={busy}
                 />
               ) : null}
-              {onCancel === undefined && pendingSend !== null ? null : (
-                <ActionRow sx={{ width: '100%' }}>
-                  {onCancel === undefined ? null : (
-                    <ActionButton
-                      type="button"
-                      unavailable={busy}
-                      onClick={onCancel}
-                    >
-                      {t('phone.close')}
-                    </ActionButton>
-                  )}
-                  {/* The control that asked gives way to the block while the
-                      proof is outstanding, so one action is on screen at a
-                      time. */}
-                  {pendingSend === null ? (
-                    <ActionButton
-                      type="submit"
-                      emphasis="primary"
-                      busy={sendBusy}
-                      unavailable={nationalNumber === '' || busy}
-                      unavailableReason={
-                        nationalNumber === ''
-                          ? t('phone.sendUnavailable')
-                          : undefined
-                      }
-                    >
-                      {t('phone.send')}
-                    </ActionButton>
-                  ) : null}
-                </ActionRow>
-              )}
+              <ActionRow sx={{ width: '100%' }}>
+                {onCancel === undefined ? null : (
+                  <ActionButton
+                    type="button"
+                    unavailable={busy}
+                    onClick={onCancel}
+                  >
+                    {t('phone.close')}
+                  </ActionButton>
+                )}
+                {/* The control that asked stays mounted and busy while the
+                    proof is outstanding: one action is on screen at a time,
+                    and focus stays where the viewer put it. */}
+                <ActionButton
+                  type="submit"
+                  emphasis="primary"
+                  busy={sendBusy}
+                  unavailable={nationalNumber === '' || busy}
+                  unavailableReason={
+                    nationalNumber === ''
+                      ? t('phone.sendUnavailable')
+                      : undefined
+                  }
+                >
+                  {t('phone.send')}
+                </ActionButton>
+              </ActionRow>
             </>
           )
         ) : (

@@ -83,11 +83,12 @@
  * `humanGate` a host already read). The block appears only once a send has
  * been asked for: a step showing its send controls shows no challenge, and
  * the send the viewer asked for leaves by itself when the proof arrives.
- * The control that asked gives way to the block while the proof is
- * outstanding. A resend obtains a fresh proof because the previous one was
- * spent. The automatic landing send has no visitor's click of its own, so
- * it takes the same awaited path as one and leaves as soon as the block
- * holds a proof; a refused automatic send stays a manual action.
+ * The control that asked stays mounted and busy while the proof is
+ * outstanding, and the block appears beside it. A resend obtains a fresh
+ * proof because the previous one was spent. The automatic landing send has
+ * no visitor's click of its own, so it takes the same awaited path as one
+ * and leaves as soon as the block holds a proof; a refused automatic send
+ * stays a manual action.
  */
 
 import {
