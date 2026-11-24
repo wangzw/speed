@@ -25,16 +25,11 @@ const (
 )
 
 // allEndpoints is the reserved endpoint name that stands for every endpoint the
-// entry point declares. The entry point refuses it as the name of an endpoint,
-// so a list can write it without colliding with one.
+// entry point declares; the entry point refuses it as an endpoint's own name.
 const allEndpoints = "*"
 
-// configDefaults is what this module is worth without a configuration file.
-//
-// Without a file the gateway guards every endpoint the entry point declares:
-// the side a mistake falls on is refusal, so an endpoint nobody thought of is
-// guarded and not served open. Narrowing the list, or registering an exemption,
-// is how a route or an endpoint is given a way past it.
+// configDefaults guards every endpoint the entry point declares: the side a
+// mistake falls on is refusal, so an endpoint nobody thought of stays guarded.
 var configDefaults = moduleConfig{
 	Endpoints:  []string{allEndpoints},
 	CallBudget: 5 * time.Second,
@@ -47,49 +42,32 @@ var configDefaults = moduleConfig{
 }
 
 type moduleConfig struct {
-	// Endpoints names the listening endpoints this gateway guards, by the
-	// entry point's own names. The reserved name "*" stands for every declared
-	// endpoint; a list of names narrows the set to those. An empty list is a
-	// mistake and not a way to switch the gateway off: a gateway that guards
-	// nothing would serve every route without a credential, and the way to have
-	// no gateway is to leave this module out of the command.
+	// Endpoints names the listening endpoints this gateway guards, by the entry
+	// point's own names; the reserved "*" stands for every declared endpoint.
+	// An empty list is refused, not a way to have no gateway.
 	Endpoints []string `config:"endpoints"`
-	// CallBudget is the deadline one call into a backend is given and the point
-	// past which its answer is no longer honoured: a backend that answers late
-	// ends the request as an outage, whether what it answered was a pass or a
-	// refusal.
-	//
-	// It does not cut the wait short. The call is synchronous, so a backend
-	// that ignores the deadline holds its goroutine and its in-flight slot
-	// until it returns; abandoning it would either keep the slot, which
-	// changes nothing, or release it and let hung goroutines grow without
-	// bound. What bounds this module's own side is the gate below.
+	// CallBudget is the deadline one call into a backend is given. A backend that
+	// answers late ends the request as an outage, whether it answered a pass or a
+	// refusal; the synchronous call is not abandoned when the deadline passes.
 	CallBudget time.Duration `config:"call-budget"`
-	// InFlight bounds how many calls into backends run at once. Past it a
-	// request ends as an outage without waiting, so that a backend that stopped
-	// answering cannot take every goroutine the server has.
+	// InFlight bounds how many calls into backends run at once. Past it a request
+	// ends as an outage without waiting.
 	InFlight int `config:"in-flight"`
-	// Mount is where the capability's own routes are mounted. The gateway
-	// declares the keys and reads only what its own checks need; the modules
-	// that mount routes read the same keys in their own Prepare.
+	// Mount is where the capability's own routes are mounted; the modules that
+	// mount routes read the same keys in their own Prepare.
 	Mount mountConfig `config:"mount"`
-	// TrustedOrigins are origins the cross-origin check and the return-to
-	// check trust besides the origin of the public URL, each scheme://host[:port].
-	// An entry is turned into the form a browser sends before it is compared:
-	// lower-case, with the scheme's default port left out.
+	// TrustedOrigins are origins the cross-origin check and the return-to check
+	// trust besides the public URL's, each scheme://host[:port], compared in the
+	// form a browser sends: lower-case, with the scheme's default port left out.
 	TrustedOrigins []string `config:"trusted-origins"`
 }
 
 type mountConfig struct {
-	// Endpoints is the endpoint each scope's routes are mounted on. The
-	// capability's routes span policy domains, and the endpoint decides which
-	// layers a request meets before its handler: the tenant-administration
-	// routes are decided in the tenant's domain and need the tenant layers,
-	// while the ordinary and platform-management routes are decided outside
-	// it.
+	// Endpoints is the endpoint each scope's routes are mounted on; the endpoint
+	// decides which layers a request meets before its handler.
 	Endpoints endpoints `config:"endpoints"`
 	// Bases is the base path of each scope the capability's routes are mounted
-	// under: the levels are published under different path segments.
+	// under.
 	Bases bases `config:"bases"`
 	// PublicURL is the origin the deployment is reached at from outside, which
 	// the entry point cannot derive from a request.
@@ -100,15 +78,11 @@ type endpoints struct {
 	// Default is the endpoint the ordinary routes are mounted on. Empty means
 	// the one endpoint the entry point declares.
 	Default string `config:"default"`
-	// Tenants is the endpoint the tenant-administration routes are mounted on.
-	// It has no fallback: those routes are decided in the tenant policy domain,
-	// and the endpoint has to be one both tenant layers cover. Empty leaves the
-	// scope unmountable, which is the state of an assembly that publishes no
-	// tenant-administration routes.
+	// Tenants is the endpoint the tenant-administration routes are mounted on. It
+	// has no fallback, and empty leaves that scope unmountable.
 	Tenants string `config:"tenants"`
-	// System is the endpoint the platform-management routes are mounted on.
-	// Empty means the default endpoint: both are decided outside the tenant
-	// policy domain and share a chain unless the deployment separates them.
+	// System is the endpoint the platform-management routes are mounted on. Empty
+	// means the default endpoint.
 	System string `config:"system"`
 }
 
@@ -165,12 +139,9 @@ func (c moduleConfig) resolve() (settings, error) {
 	if err := checkPublicURL(s.mount.PublicURL); err != nil {
 		return settings{}, err
 	}
-	// The cross-origin check is built from this same list when the module is
-	// constructed, so the list is held to the rule that builds it: a wildcard,
-	// user information, an empty port and a host that is not ASCII fail here and
-	// not at the first request. The refusal is not given the value, which may
-	// carry a password written where none belongs; the entry is named by its
-	// position.
+	// The cross-origin check is built from this same list, so a bad entry fails
+	// here rather than at the first request. The refusal names the entry by its
+	// position and never echoes it, which may carry a password.
 	if _, err := mount.TrustedOrigins(s.mount.PublicURL, s.trustedOrigins); err != nil {
 		return settings{}, fmt.Errorf("%w: %s.%s or %s.%s is not an origin the cross-origin check "+
 			"can trust: %v", authn.ErrInvalidConfig, ConfigNamespace, mountPublicURLItem,
@@ -192,11 +163,8 @@ func checkEndpoints(names []string) error {
 			return fmt.Errorf("%w: %s.%s holds an empty endpoint name, which names no endpoint the "+
 				"entry point has", authn.ErrInvalidConfig, ConfigNamespace, endpointsItem)
 		}
-		// A name written twice would register the layer twice on that
-		// endpoint: every request would be authenticated twice, every backend
-		// asked twice, and every conclusion counted twice. The second
-		// registration buys nothing, so this is a mistake to report rather
-		// than a duplicate to drop quietly.
+		// A name written twice would register the layer on that endpoint twice,
+		// asking every backend twice per request.
 		if _, twice := seen[name]; twice {
 			return fmt.Errorf("%w: %s.%s names the endpoint %q twice, which would register the "+
 				"authentication layer on it twice and ask every backend twice per request",
@@ -233,14 +201,8 @@ func checkBasePath(item, p string) error {
 }
 
 // checkPublicURL holds the public base to an origin, and to https unless the host
-// is a loopback one. Traffic to a loopback host never leaves the machine, so the
-// cookies the authn modules write there, which carry neither a prefix nor Secure,
-// cross no network; on any other host http would carry them in the clear. Empty
-// is allowed here: the modules that need the address refuse it themselves.
-//
-// A URL that does not parse is not quoted, and one that does is quoted without
-// its user information, query or fragment: the value may carry a password written
-// where no password belongs, and the refusal must not copy it into an error text.
+// is loopback. Empty is allowed. A refusal quotes the URL without its user
+// information, query or fragment: the value may carry a password.
 func checkPublicURL(raw string) error {
 	if raw == "" {
 		return nil

@@ -10,9 +10,8 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// TestAnEventIsActedOnOnce holds the deduplication the events design requires: a
-// delivery carrying the same identifier is a no-op, while a new identifier and
-// an event carrying none are acted on.
+// TestAnEventIsActedOnOnce drops a repeat of an identifier while a new
+// identifier and an event carrying none are acted on.
 func TestAnEventIsActedOnOnce(t *testing.T) {
 	p := &product{seen: newSeenEvents()}
 	calls := 0
@@ -37,11 +36,8 @@ func TestAnEventIsActedOnOnce(t *testing.T) {
 	}
 }
 
-// TestWireRegistersTheCacheClearingSubscriptions holds the module wiring:
-// Init (wire) subscribes the handlers that drop the verifying backend's
-// caches, so a revocation a replica hears of clears the entry at once instead
-// of at the end of check-ttl, and the handler that makes a relaxing settings
-// change visible.
+// TestWireRegistersTheCacheClearingSubscriptions subscribes the handlers that
+// drop the cached entries and make a relaxing settings change visible.
 func TestWireRegistersTheCacheClearingSubscriptions(t *testing.T) {
 	r := newRig(t)
 	if err := r.p.wire(core.New()); err != nil {
@@ -68,10 +64,8 @@ func TestWireRegistersTheCacheClearingSubscriptions(t *testing.T) {
 	}
 }
 
-// TestAnAccountEventDropsTheCachedSnapshot holds the account cache's clearing: a
-// session revocation, an account status change or a deletion drops the snapshot
-// cached for the account, so the next verification reads the store again rather
-// than serving the old snapshot for check-ttl.
+// TestAnAccountEventDropsTheCachedSnapshot drops the cached snapshot on a
+// session revocation, an account status change or a deletion.
 func TestAnAccountEventDropsTheCachedSnapshot(t *testing.T) {
 	r := newRig(t)
 	if err := r.p.wire(core.New()); err != nil {
@@ -105,10 +99,8 @@ func TestAnAccountEventDropsTheCachedSnapshot(t *testing.T) {
 	}
 }
 
-// TestAnImpersonationEndedEventDropsTheCachedRecord holds the impersonation
-// cache's clearing: ending a record drops what the backend cached for it, so the
-// next verification asks the capability again rather than serving the old answer
-// for check-ttl.
+// TestAnImpersonationEndedEventDropsTheCachedRecord drops the cached record
+// when an impersonation ends.
 func TestAnImpersonationEndedEventDropsTheCachedRecord(t *testing.T) {
 	r := newRig(t)
 	if err := r.p.wire(core.New()); err != nil {

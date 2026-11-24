@@ -24,19 +24,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// This file imports the static backend, and it may: the rule that the gateway and
-// the backend import neither the other is about the gateway's production closure,
-// which deps_test.go lists without test files. This is an external test package,
-// so the import is an edge of the test binary and of nothing a host links, and it
-// is what lets these cases run the gateway against a real credential table.
-//
-// The cases here assemble the real thing: the registry drives the real gateway,
-// the real password-table backend and the real entry point on loopback ports,
-// and a client sends real requests. What they hold is what no case that builds
-// the gateway by hand can: that the pieces fit as shipped, that the credential a
-// client sends is the one the table is checked against, and that the answers
-// come back the way a caller would see them.
-
 const (
 	// listening is the record the entry point writes once a listener's address
 	// is bound, the only place outside the process that says which port the
@@ -147,8 +134,7 @@ func whoReached(c *gin.Context) {
 }
 
 // table writes the subject table of the password backend: one entry per subject,
-// each in the form the case names. The cost of an entry travels inside it, so the
-// path a production table takes is the one exercised, at a price a test can pay.
+// each in the form the case names.
 func table(t *testing.T) map[string]string {
 	t.Helper()
 	argon, err := static.Hash("alice-password")
@@ -174,9 +160,8 @@ func table(t *testing.T) map[string]string {
 }
 
 // serve drives the real registry to Serve with the gateway, the password backend
-// and the entry point declaring the endpoints named, and hands the case the
-// running host. The routes are registered the way a registrant registers them,
-// in its Init, and nothing is exempt: every endpoint answers to the gateway.
+// and the entry point declaring the two endpoints, and hands the case the running
+// host.
 func serve(t *testing.T, gateItems string, use func(h *host)) {
 	t.Helper()
 
@@ -275,10 +260,8 @@ func requireBasicChallenge(t *testing.T, what string, got reply, realm string) {
 	}
 }
 
-// TestEveryEndpointIsGuardedWithNoConfigurationAndAsksForBasic holds the default
-// from the outside: the gateway is told nothing about which endpoints to guard and
-// guards both of them, the one nobody listed included, and the challenge on each
-// names the Basic scheme the password table takes and the endpoint as the realm.
+// TestEveryEndpointIsGuardedWithNoConfigurationAndAsksForBasic holds that,
+// unconfigured, both endpoints challenge for Basic in their own realm.
 func TestEveryEndpointIsGuardedWithNoConfigurationAndAsksForBasic(t *testing.T) {
 	serve(t, ``, func(h *host) {
 		requireBasicChallenge(t, "the public endpoint with no credential", h.send("public", "GET", "/orders"), "public")
@@ -297,9 +280,7 @@ func TestEveryEndpointIsGuardedWithNoConfigurationAndAsksForBasic(t *testing.T) 
 }
 
 // TestAPassIsStampedWithTheStaticAccountAndTheBackendThatVerifiedIt holds what a
-// handler behind the gateway is told: the account lives in the namespace the
-// password table owns, the backend is the one that verified the credential, and
-// the challenge name is the carrier's.
+// handler is told about the passing identity.
 func TestAPassIsStampedWithTheStaticAccountAndTheBackendThatVerifiedIt(t *testing.T) {
 	serve(t, ``, func(h *host) {
 		got := h.send("public", "GET", "/orders", as("erin", "erin-password"))
@@ -309,9 +290,8 @@ func TestAPassIsStampedWithTheStaticAccountAndTheBackendThatVerifiedIt(t *testin
 	})
 }
 
-// TestAWrongPasswordIsRefusedWithTheBasicChallenge holds the refusals a
-// client can cause with a credential: a wrong password, a name that is not in
-// the table and a credential that is not a Basic pair at all.
+// TestAWrongPasswordIsRefusedWithTheBasicChallenge holds that a wrong, unknown or
+// malformed credential all get the same 401.
 func TestAWrongPasswordIsRefusedWithTheBasicChallenge(t *testing.T) {
 	serve(t, ``, func(h *host) {
 		wrong := h.send("public", "GET", "/orders", as("bob", "not-bob-password"))
@@ -330,10 +310,8 @@ func TestAWrongPasswordIsRefusedWithTheBasicChallenge(t *testing.T) {
 	})
 }
 
-// TestEntriesInEveryFormTheTableAcceptsAuthenticate holds the table's three
-// written forms through the whole stack: an Argon2id entry, a PBKDF2 entry in the
-// PHC form and one in the legacy form each admit their own password and refuse
-// another's.
+// TestEntriesInEveryFormTheTableAcceptsAuthenticate holds that each written table
+// form admits its own password and refuses another.
 func TestEntriesInEveryFormTheTableAcceptsAuthenticate(t *testing.T) {
 	serve(t, ``, func(h *host) {
 		for _, c := range []struct{ name, form, password string }{
@@ -355,8 +333,6 @@ func TestEntriesInEveryFormTheTableAcceptsAuthenticate(t *testing.T) {
 // the back-off from the outside.
 func TestFailuresPastTheFreeAttemptsLockTheNameEvenAgainstItsRightPassword(t *testing.T) {
 	serve(t, ``, func(h *host) {
-		// The control: the right password admits the name before anything has
-		// failed, so a refusal later is the lock and not the credential.
 		if got := h.send("public", "GET", "/orders", as("dave", "dave-password")); got.status != nethttp.StatusOK {
 			t.Fatalf("the right password answered %d before any failure", got.status)
 		}
@@ -382,11 +358,8 @@ func TestFailuresPastTheFreeAttemptsLockTheNameEvenAgainstItsRightPassword(t *te
 	})
 }
 
-// TestParallelRequestsWithTheRightPasswordAreNeverRefusedByTheirOwnTraffic
-// holds the property a browser or a script that opens many connections
-// depends on: once a password has been checked, any number of requests that
-// present it at once, on keep-alive connections of their own, are all
-// admitted.
+// TestParallelRequestsWithTheRightPasswordAreNeverRefusedByTheirOwnTraffic holds
+// that a burst presenting a checked password is all admitted.
 func TestParallelRequestsWithTheRightPasswordAreNeverRefusedByTheirOwnTraffic(t *testing.T) {
 	const workers, requests = 24, 150
 	serve(t, ``, func(h *host) {
@@ -437,9 +410,8 @@ func TestParallelRequestsWithTheRightPasswordAreNeverRefusedByTheirOwnTraffic(t 
 	})
 }
 
-// TestNarrowingTheEndpointsLeavesTheOthersWithNoLayer holds the narrowing the
-// default is the reverse of: with the list written, the endpoint left out has no
-// authentication layer, and a request to it passes with no identity.
+// TestNarrowingTheEndpointsLeavesTheOthersWithNoLayer holds that an endpoint left
+// out of the list serves requests with no identity.
 func TestNarrowingTheEndpointsLeavesTheOthersWithNoLayer(t *testing.T) {
 	serve(t, `"endpoints":["public"]`, func(h *host) {
 		requireBasicChallenge(t, "the guarded endpoint with no credential", h.send("public", "GET", "/orders"), "public")

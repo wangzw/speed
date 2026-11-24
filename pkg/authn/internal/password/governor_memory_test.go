@@ -19,11 +19,8 @@ func heapObjects() uint64 {
 	return sample[0].Value.Uint64()
 }
 
-// TestDerivationsOfLargeEntriesNeverHoldMoreThanTheBudget holds the memory
-// bound on what the process holds and not on what the Governor counts:
-// entries that state 64 MiB are checked all at once against a budget of 128
-// MiB, so at most two of them can run, and the heap stays within the budget
-// and a fixed overhead.
+// TestDerivationsOfLargeEntriesNeverHoldMoreThanTheBudget keeps the heap within
+// the stated budget plus a fixed overhead while 64 MiB derivations run.
 func TestDerivationsOfLargeEntriesNeverHoldMoreThanTheBudget(t *testing.T) {
 	if testing.Short() {
 		t.Skip("allocates what the entries state")
@@ -37,8 +34,6 @@ func TestDerivationsOfLargeEntriesNeverHoldMoreThanTheBudget(t *testing.T) {
 	e := parsed(t, Params{Algorithm: Argon2id, MemoryKiB: entryKiB, Iterations: 1, Parallelism: 1}, "secret")
 	g := NewGovernor(arriving, budgetKiB)
 
-	// A collection after every few megabytes keeps what is dead from standing in
-	// for what is held.
 	defer debug.SetGCPercent(debug.SetGCPercent(5))
 	runtime.GC()
 	baseline := heapObjects()

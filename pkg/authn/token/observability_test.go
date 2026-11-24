@@ -62,9 +62,7 @@ func operationPoints(t *testing.T, rm metricdata.ResourceMetrics) (map[[2]string
 	return nil, "", "", ""
 }
 
-// TestTheOperationsCounterCarriesTheClosedAttributeSet holds the metric the
-// design fixes: every operation and outcome pair is reportable, on the named
-// instrument and unit, and the values are the closed sets a dashboard reads.
+// TestTheOperationsCounterCarriesTheClosedAttributeSet holds every operation and outcome pair reportable on the named instrument.
 func TestTheOperationsCounterCarriesTheClosedAttributeSet(t *testing.T) {
 	r := newRig(t)
 	collected := r.tokenMeter()
@@ -102,9 +100,7 @@ func TestTheOperationsCounterCarriesTheClosedAttributeSet(t *testing.T) {
 	}
 }
 
-// TestADetectedReuseWritesOneEventAndOneAudit holds the reuse signal: the whole
-// family is revoked, one authn.token.reuse-detected event goes out with the
-// session and account, and one authn.token.refresh-reuse audit row is written.
+// TestADetectedReuseWritesOneEventAndOneAudit holds the reuse signal writing one event and one audit row.
 func TestADetectedReuseWritesOneEventAndOneAudit(t *testing.T) {
 	r := newRig(t)
 	id, first := r.issueRefresh()
@@ -146,10 +142,7 @@ func TestADetectedReuseWritesOneEventAndOneAudit(t *testing.T) {
 	}
 }
 
-// TestTheStartupDiagnosticNamesTheRelaxationSwitch holds the startup line the
-// design fixes: when check-session is off the module writes one Warn naming the
-// setting, prefixed so the line is recognisable among the diagnostics' other
-// writers.
+// TestTheStartupDiagnosticNamesTheRelaxationSwitch holds one prefixed Warn when check-session is off.
 func TestTheStartupDiagnosticNamesTheRelaxationSwitch(t *testing.T) {
 	r := newRig(t)
 	r.settings.setBool(checkSessionPath, false)
@@ -167,9 +160,7 @@ func TestTheStartupDiagnosticNamesTheRelaxationSwitch(t *testing.T) {
 	}
 }
 
-// TestNoTokenReachesTheLogsMetricsOrErrors holds the discipline the design puts
-// on the whole surface: an access token, a refresh token and a service secret
-// never appear in a log line, a metric attribute or an error body.
+// TestNoTokenReachesTheLogsMetricsOrErrors holds that no credential appears in a log, a metric or an error body.
 func TestNoTokenReachesTheLogsMetricsOrErrors(t *testing.T) {
 	r := newRig(t)
 	collected := r.tokenMeter()
@@ -182,7 +173,6 @@ func TestNoTokenReachesTheLogsMetricsOrErrors(t *testing.T) {
 	const secret = "spd_cs_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq"
 	_, refresh := r.issueRefresh()
 
-	// A successful client credential: its access token must not leak.
 	rec := form(m, m.BaseIn("")+tokenPath, url.Values{
 		"grant_type":    {grantClientCredentials},
 		"client_id":     {string(account)},
@@ -193,8 +183,6 @@ func TestNoTokenReachesTheLogsMetricsOrErrors(t *testing.T) {
 	form(m, m.BaseIn("")+tokenPath, url.Values{"grant_type": {grantRefreshToken}, "refresh_token": {refresh.Value}})
 	form(m, m.BaseIn("")+revokePath, url.Values{"token": {refresh.Value}})
 
-	// A rejected credential: the secret no longer verifies, so this request is
-	// the 401 whose body and log line must carry none of the three secrets.
 	r.passwords.verify = func(string, string) (authn.AccountID, string, time.Time, error) {
 		return "", "", time.Time{}, authn.ErrInvalidCredentials
 	}
@@ -250,10 +238,7 @@ func collectedPoints(t *testing.T, collected *sdkmetric.ManualReader) map[[2]str
 	return points
 }
 
-// TestTheOperationsCounterRecordsEachRealPath drives one real path per case and
-// holds the exact (operation, outcome) pair it recorded, so the counter a
-// dashboard reads is the one the code actually emits, not only what
-// recordOperation would write if called directly.
+// TestTheOperationsCounterRecordsEachRealPath holds the (operation, outcome) pair each real path records.
 func TestTheOperationsCounterRecordsEachRealPath(t *testing.T) {
 	pair := func(op, outcome string) [2]string { return [2]string{op, outcome} }
 	cases := []struct {
@@ -372,10 +357,7 @@ func auditFailurePoints(t *testing.T, rm metricdata.ResourceMetrics) map[bool]in
 	return nil
 }
 
-// TestADetectedReuseReportsAnAuditWriteFailure holds the design's requirement
-// that a module whose best-effort audit write fails reports it through
-// authn.audit.write-failures: a detected reuse whose audit row cannot be written
-// records one point with mandatory=false.
+// TestADetectedReuseReportsAnAuditWriteFailure holds a failed audit write reported with mandatory=false.
 func TestADetectedReuseReportsAnAuditWriteFailure(t *testing.T) {
 	r := newRig(t)
 	collected := r.tokenMeter()

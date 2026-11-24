@@ -16,17 +16,8 @@ import (
 )
 
 // seamSignatures is the method set of every capability interface that has a
-// signature here, written with the name, then the parameters and results with
-// their names and groupings. TestTheSeamsMatchTheDesign reads the interfaces
-// from the source of this package and compares them with these, so a method
-// added, dropped, renamed or given another signature is found, and so is a
-// parameter that lost its name.
-//
-// Every interface here is implemented outside this package, so a changed
-// signature breaks each implementer: a module delivers the account, session,
-// token, factor, login, SMS, SSO and impersonation contracts and the gate, a
-// host delivers Decider, Provisioner and its own credential backends, and the
-// tenant admission layer delivers ScopeGuard. Passwords.Clear is among them.
+// signature here, and TestTheSeamsMatchTheDesign compares it with the interfaces
+// read from this package's source in both directions.
 var seamSignatures = map[string][]string{
 	"Accounts": {
 		"Get(ctx context.Context, id AccountID) (Account, error)",
@@ -312,9 +303,8 @@ func interfaceMethods(t *testing.T, dir string) map[string][]string {
 	return out
 }
 
-// TestTheSeamsMatchTheDesign holds the method set of each capability
-// interface to the signatures written here, in both directions: an interface
-// that has a method not listed fails as surely as one that lacks one.
+// TestTheSeamsMatchTheDesign holds each capability interface's method set to
+// seamSignatures in both directions.
 func TestTheSeamsMatchTheDesign(t *testing.T) {
 	got := interfaceMethods(t, ".")
 	for name, want := range seamSignatures {
@@ -341,9 +331,8 @@ func TestTheSeamsMatchTheDesign(t *testing.T) {
 	}
 }
 
-// TestTheSeamCheckSeesADriftedSignature runs the comparison over a package whose
-// interface drifts in each way the check is for, so it cannot pass by reading
-// nothing.
+// TestTheSeamCheckSeesADriftedSignature runs the comparison over a drifting
+// interface so it cannot pass by reading nothing.
 func TestTheSeamCheckSeesADriftedSignature(t *testing.T) {
 	dir := writeSurfacePackage(t, map[string]string{
 		"p.go": `package p
@@ -380,9 +369,8 @@ type Seam interface {
 	}
 }
 
-// moduleDeliveries lists, per module that delivers more than one interface, the
-// interfaces its one instance has to implement together: core.Resolve asserts
-// the instance to each of them, so a method name the interfaces share with two
+// moduleDeliveries lists, per module delivering more than one interface, the
+// interfaces one instance implements together; a method name they share with two
 // signatures leaves no type that is all of them.
 var moduleDeliveries = map[string][]reflect.Type{
 	"account": {
@@ -403,10 +391,8 @@ var moduleDeliveries = map[string][]reflect.Type{
 	"admission": {reflect.TypeFor[ScopeGuard](), reflect.TypeFor[TenantMFARequirement]()},
 }
 
-// nameClashes reports the method names that two of the interfaces share with
-// different signatures. The same name with the same signature is not a clash:
-// Sessions.ClearCookie and CookieClearer.ClearCookie are one method to the type
-// that implements both.
+// nameClashes reports the method names two of the interfaces share with different
+// signatures; the same name with the same signature is not a clash.
 func nameClashes(ifaces []reflect.Type) []string {
 	seen := make(map[string]reflect.Type)
 	owner := make(map[string]string)
@@ -427,10 +413,8 @@ func nameClashes(ifaces []reflect.Type) []string {
 	return out
 }
 
-// TestAModulesInterfacesShareNoMethodNameWithAnotherSignature holds the rule that
-// the interfaces one module delivers have disjoint method names, or equal
-// signatures where they share one: a module is one instance, and an instance
-// cannot implement two methods of one name.
+// TestAModulesInterfacesShareNoMethodNameWithAnotherSignature holds that a
+// module's interfaces share no method name with another signature.
 func TestAModulesInterfacesShareNoMethodNameWithAnotherSignature(t *testing.T) {
 	for module, ifaces := range moduleDeliveries {
 		for _, clash := range nameClashes(ifaces) {
@@ -439,9 +423,8 @@ func TestAModulesInterfacesShareNoMethodNameWithAnotherSignature(t *testing.T) {
 	}
 }
 
-// TestTheNameClashCheckSeesAClash gives the check interfaces that clash, that
-// share a method with one signature, and that share nothing, so a reflection that
-// compared nothing would be found.
+// TestTheNameClashCheckSeesAClash runs the check over clashing, equal and
+// disjoint interfaces so a reflection comparing nothing is found.
 func TestTheNameClashCheckSeesAClash(t *testing.T) {
 	type (
 		a      interface{ Do(int) error }
@@ -469,10 +452,8 @@ func TestTheNameClashCheckSeesAClash(t *testing.T) {
 	}
 }
 
-// TestSessionsAndCookieClearerShareOneClearCookie is the one name the session
-// module's interfaces have in common, which the rule allows because the two
-// signatures are equal; if either changes, one method no longer satisfies both
-// and the module could not be built.
+// TestSessionsAndCookieClearerShareOneClearCookie holds the one method name the
+// session interfaces share, with equal signatures.
 func TestSessionsAndCookieClearerShareOneClearCookie(t *testing.T) {
 	s, _ := reflect.TypeFor[Sessions]().MethodByName("ClearCookie")
 	c, _ := reflect.TypeFor[CookieClearer]().MethodByName("ClearCookie")

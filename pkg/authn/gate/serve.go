@@ -23,27 +23,15 @@ const authHeader = "Authorization"
 
 const challengeHeader = "WWW-Authenticate"
 
-// varyValue is what every response on a guarded route varies by. A cache that
-// stored the answer to one caller's credential and served it to another would
-// hand over what the first was let see, so a response is keyed by both carriers.
+// varyValue is what every response on a guarded route varies by.
 const varyValue = "Authorization, Cookie"
 
-// retryAfterBusy is the Retry-After a 503 carries when the backend refused to
-// derive a password because its capacity was in use. It is the one 503 that is a
-// transient condition of this process and says so: every other cause of a 503
-// carries no promise about when to come back.
+// retryAfterBusy is the Retry-After a 503 carries when a backend was busy.
 const retryAfterBusy = "1"
 
-// errStopped and errSaturated are the two refusals the gateway makes before a
-// backend is reached at all. Both end the request as an outage: the module
-// cannot answer right now, and neither says anything about the credential.
-//
-// errAbandoned is the request's own context ending — the deadline it arrived
-// with, or the caller going away — either before a backend was asked or while
-// one was being asked, before this module's own budget ran out. It ends the
-// request as an outage too, and nobody failed: a backend that returns once its
-// context ends is doing what it is required to do, and what it reports then is
-// that it could not answer, which says nothing about its health.
+// errStopped and errSaturated are refusals made before a backend is reached;
+// errAbandoned is the request's own context ending, charged to the gateway and
+// logged at Info because no backend failed.
 var (
 	errStopped   = errors.New("the gateway has stopped accepting backend calls")
 	errSaturated = errors.New("the in-flight gate is full")
@@ -56,14 +44,8 @@ type refusal struct {
 	bucket int
 	// reason is the log line.
 	reason string
-	// level is what the log line is written at, and it follows who has
-	// something to do about it. A refusal is ordinary traffic and is written
-	// at Info, and so is a request its own caller ended; an outage is an
-	// operator's to look at and is written at Warn; a backend that returned
-	// without answering, that panicked, or that passed a principal outside what
-	// it may is a defect somebody has to fix and is written at Error. The
-	// level is the first filter every log pipeline applies, so a signal
-	// written below the one a deployment keeps is a signal nobody receives.
+	// level is the severity the log line is written at: Info for a refusal or
+	// an abandoned request, Warn for an outage, Error for a defect.
 	level slog.Level
 	// backend is the name this is charged to, empty when the gateway
 	// produced the refusal itself.
@@ -90,23 +72,9 @@ func gatewayRefusal(reason string, attrs ...any) *refusal {
 	}
 }
 
-// outage builds a 503, charged to whoever could not answer.
-//
-// The cause decides that. A backend that reported a failure, timed out or
-// panicked is charged; the gateway having stopped taking calls, or its own
-// in-flight gate being full, is this module's own limit and is charged here —
-// the backend was never asked, and an operator chasing a 503 against a backend
-// that is perfectly healthy would be chasing the wrong thing. The request's own
-// context ending is charged here as well, for the same reason: no backend
-// failed.
-//
-// The cause decides the level too. An outage is written at Warn; a panic is a
-// defect rather than an outage, is written at Error, and carries the stack it
-// was raised on; a request its own caller brought to an end is ordinary
-// traffic and is written at Info. And the cause decides the one header a 503
-// may carry: a backend that says its capacity is in use is a condition that
-// passes in a moment, so the response says to ask again in one second, and no
-// other cause of a 503 says anything of the kind.
+// outage builds a 503 charged by cause: a backend failure goes to the backend
+// (a panic at Error with its stack), the gateway's own stop, saturation and a
+// caller-ended request go here at Info, and only a busy backend carries Retry-After.
 func outage(backend, reason string, cause error, attrs ...any) *refusal {
 	if errors.Is(cause, errStopped) || errors.Is(cause, errSaturated) ||
 		errors.Is(cause, errAbandoned) {
@@ -155,21 +123,10 @@ func caught(format string, args ...any) *backendPanic {
 	return &backendPanic{message: fmt.Sprintf(format, args...), stack: debug.Stack()}
 }
 
-// middlewareFor builds the layer registered on one endpoint.
-//
-// Provides carries the same token the module descriptor delivers the capability
-// under. That is the only anchor another layer has for placing itself inside or
-// outside authentication, which makes it this module's stable contract surface
-// on the chain.
-//
-// It sits in the identifying stage, where authentication is the layer that
-// settles the caller. A layer that wants to sit inside or outside it within the
-// stage declares After or Before pointing at (*authn.Gate)(nil).
+// middlewareFor builds the layer registered on one endpoint. It provides
+// (*authn.Gate)(nil) in the identifying stage, the anchor a layer uses to place
+// itself inside or outside authentication.
 func (g *gateway) middlewareFor(endpoint string) speedhttp.Middleware {
-	// The layer is built out of the dispatch table, so the table has to exist
-	// by now. A nil one is a mistake in this package's own ordering rather than
-	// anything a host did, and saying so here beats the nil dereference it
-	// would otherwise become several frames away.
 	if g.table == nil {
 		panic(ModuleName + ": a layer was built for endpoint " + endpoint + " before the " +
 			"dispatch table. The table decides what the layer answers a refusal with, so " +
@@ -190,25 +147,14 @@ func (g *gateway) middlewareFor(endpoint string) speedhttp.Middleware {
 	}
 }
 
-// admit runs the whole authentication decision for one request and reports
-// whether it passes. When it does not, the response has already been written
-// through the entry point and the chain is ended.
-//
-// The call to the next layer is deliberately outside this function. The recover
-// below is for this module's own defects; a panic in a layer or a handler behind
-// this one belongs to the entry point's fallback, and catching it here would
-// answer for code this module does not own.
+// admit runs the authentication decision for one request and reports whether it
+// passes. The recover inside covers only this module's own defects; a panic in a
+// layer or handler behind this one is left to the entry point's fallback.
 func (g *gateway) admit(endpoint string, ch *challenge, c *gin.Context) (passed bool) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			// The gateway's own defect. It is counted in none of the
-			// buckets: those count judgements about a credential, and this
-			// is not one.
-			//
-			// The entry point's fallback would answer a panic here with
-			// a 500 as well, and could not say which layer it was
-			// raised in. Recovering is what puts this one on this
-			// module's name, with the endpoint and the stack.
+			// A gateway defect: counted in no bucket, because the
+			// buckets count judgements about a credential.
 			log.FromContext(c.Request.Context()).Error(ModuleName+": the gateway panicked while "+
 				"deciding this request",
 				slog.Any("panic", rec), slog.String("endpoint", endpoint),
@@ -229,7 +175,6 @@ func (g *gateway) admit(endpoint string, ch *challenge, c *gin.Context) (passed 
 	if reg.optional {
 		level = authn.AccessOptional
 	}
-	// From here the response depends on what the request carries.
 	c.Writer.Header().Add("Vary", varyValue)
 
 	found, deny := g.credentialOf(c.Request)
@@ -255,13 +200,9 @@ func (g *gateway) admit(endpoint string, ch *challenge, c *gin.Context) (passed 
 			found.backend.clearer.ClearCookie(c.Writer)
 		}
 		if deny.status == nethttp.StatusUnauthorized {
-			// A 401 carrying no challenge tells a caller it needs a
-			// credential without saying what kind, which is the one
-			// thing RFC 9110 does not allow a 401 to do. The entry point
-			// decides the shape of the body, and it is not this module's
-			// to carry the answer in, so the header is the whole of what
-			// a caller can rely on. It is set before the response is
-			// written, and the entry point keeps it.
+			// RFC 9110 requires a 401 to carry a challenge; the header
+			// is the whole of what a caller can rely on, and it is set
+			// before the entry point writes the response.
 			c.Header(challengeHeader, ch.valueFor(deny.refused))
 		}
 		if deny.retryAfter != "" {
@@ -280,10 +221,9 @@ func (g *gateway) admit(endpoint string, ch *challenge, c *gin.Context) (passed 
 	return true
 }
 
-// identityAttrs are the correlation fields every record of a request carries
-// once the gateway has stamped an identity on it: the account, the backend that
-// verified it and, when they apply, the actor of an impersonation and the
-// session. The account is an identifier and never a credential.
+// identityAttrs are the correlation fields every record of a request carries:
+// the account (an identifier, never a credential), the verifying backend, and
+// when they apply the impersonation actor and the session.
 func identityAttrs(id identity.Identity) []any {
 	attrs := []any{
 		slog.String("account", string(id.Account())),
@@ -302,12 +242,9 @@ func (g *gateway) identify(c *gin.Context, endpoint string, reg access, found *c
 	b := found.backend
 	r := c.Request
 
-	// The unsafe request of a credential the browser may attach by itself is held
-	// to the cross-origin check before any backend is asked: a request a page of
-	// another origin made with the browser's own cookie or a credential it
-	// stored after a challenge is the forgery the check exists to refuse. It is
-	// the gateway's own refusal, and the credential is not cleared, because
-	// nothing about it was judged.
+	// A credential the browser may attach itself is held to the cross-origin
+	// check before any backend is asked; failing it is the gateway's own refusal
+	// and the credential is not cleared, because nothing about it was judged.
 	if found.attachedByBrowser() {
 		if err := g.csrf.Check(r); err != nil {
 			attrs := []any{slog.String("cause", err.Error())}
@@ -348,13 +285,9 @@ func (g *gateway) identify(c *gin.Context, endpoint string, reg access, found *c
 			ModuleName+": the backend cannot answer about this credential right now",
 			verdict.CauseOf(answer))
 	default:
-		// The zero verdict. It ends the request the way a refusal does
-		// and is counted apart from one: a refusal says the credential
-		// does not hold, this says the backend returned without
-		// answering, and an operator needs to tell a wrong password
-		// from a broken plugin. It is written at Error for the same
-		// reason: it is a defect in the backend's code, and a line
-		// written at Info is one a production pipeline drops.
+		// The zero verdict: counted as unspoken and written at Error,
+		// because the backend returned without answering — a defect,
+		// not a refusal of the credential.
 		return identity.Identity{}, &refusal{
 			status:  nethttp.StatusUnauthorized,
 			bucket:  int(verdict.Unspoken),
@@ -372,12 +305,9 @@ func (g *gateway) identify(c *gin.Context, endpoint string, reg access, found *c
 		return identity.Identity{}, deny
 	}
 	if principal.Actor != "" && !g.impersonationAdmitted(endpoint, reg) {
-		// The credential holds and the principal is well formed, and the route
-		// is still not one an impersonating identity may reach: it is neither
-		// registered for it nor on an endpoint whose tenant range the
-		// admission layer checks. The refusal is the gateway's judgement and
-		// is charged to the backend whose pass it declines, and it is
-		// ordinary traffic, so it is written at Info.
+		// The pass holds but the route admits no impersonating identity: the
+		// refusal is the gateway's judgement, charged to the backend whose pass
+		// it declines, and written at Info as ordinary traffic.
 		return identity.Identity{}, &refusal{
 			status:  nethttp.StatusUnauthorized,
 			bucket:  int(verdict.Denied),
@@ -391,10 +321,9 @@ func (g *gateway) identify(c *gin.Context, endpoint string, reg access, found *c
 	return identity.New(principal, b.name, challengeName(found)), nil
 }
 
-// impersonationAdmitted reports whether an impersonating identity may be let
-// into the route: the route is registered Impersonable, or the endpoint is one
-// the scope guard covers. With no scope guard in the assembly only the first can
-// hold.
+// impersonationAdmitted reports whether an impersonating identity may enter the
+// route: it is registered Impersonable, or the endpoint is one the scope guard
+// covers.
 func (g *gateway) impersonationAdmitted(endpoint string, reg access) bool {
 	if reg.impersonable {
 		return true
@@ -402,10 +331,9 @@ func (g *gateway) impersonationAdmitted(endpoint string, reg access) bool {
 	return g.scope != nil && g.scope.Covers(endpoint)
 }
 
-// exitRefusal builds the refusal for a pass that did not survive the exit
-// checks. It is the gateway's own judgement, so it is charged to the gateway,
-// and it is written at Error: whoever is charged, a backend said something it
-// had no authority to say.
+// exitRefusal builds the refusal for a pass that failed the exit checks,
+// charged to the backend and written at Error, since it said something it had
+// no authority to say.
 func exitRefusal(reason string, b *backend, attrs ...any) *refusal {
 	deny := gatewayRefusal(reason, append([]any{slog.String("backend", b.name)}, attrs...)...)
 	deny.level = slog.LevelError
@@ -423,10 +351,9 @@ func challengeName(found *claimed) string {
 	return canonicalScheme(found.cred.Scheme)
 }
 
-// causeAttrs renders what a verdict carried, for the log line. The cause
-// decides nothing — it reaches the log and no further — which is what stops a
-// backend from turning a wrong password into an outage by choosing what to put
-// in it.
+// causeAttrs renders what a verdict carried for the log line. The cause reaches
+// the log and no further, so a backend cannot turn a wrong password into an
+// outage by what it puts there.
 func causeAttrs(v authn.Verdict) []any {
 	if cause := verdict.CauseOf(v); cause != nil {
 		return []any{slog.String("cause", cause.Error())}
@@ -434,10 +361,9 @@ func causeAttrs(v authn.Verdict) []any {
 	return nil
 }
 
-// conclude counts the conclusion and writes the log line that carries the
-// attribution, at the level the refusal was built with. The response carries a
-// status code and the headers that go with it and nothing of why, so attribution
-// lives in the log alone.
+// conclude counts the conclusion and writes the log line carrying the
+// attribution, at the refusal's own level; attribution lives in the log alone,
+// never in the response.
 func (g *gateway) conclude(r *nethttp.Request, endpoint string, deny *refusal) {
 	g.counts[deny.bucket].Add(1)
 
@@ -469,14 +395,9 @@ type claimed struct {
 	fromCookie bool
 }
 
-// scriptWrittenScheme is the one Authorization scheme the gateway knows a browser
-// never attaches by itself: a Bearer header is written by the page's own script,
-// which the same-origin policy keeps from a page of another site. It is named
-// because the gateway reads nothing of a credential and so cannot tell whether a
-// scheme it was told about is one a browser stores after a challenge and sends
-// again on its own, as it does Basic, Digest, Negotiate and NTLM. Every other
-// scheme is held to the cross-origin check, so a scheme nobody listed fails
-// closed and not open.
+// scriptWrittenScheme is the one Authorization scheme a browser never attaches
+// by itself, because a page's own script writes it and the same-origin policy
+// keeps another site out; every other scheme is held to the cross-origin check.
 const scriptWrittenScheme = "bearer"
 
 // attachedByBrowser reports whether the browser may send this credential on a
@@ -486,22 +407,9 @@ func (c *claimed) attachedByBrowser() bool {
 	return c.fromCookie || c.cred.Scheme != scriptWrittenScheme
 }
 
-// credentialOf reads the credential out of the request. A nil credential with no
-// refusal is a request that carries none.
-//
-// The Authorization header goes first and goes alone: when one is there the
-// cookies are not read, and a header that does not hold is not made up for by a
-// cookie that might, because two carriers judged separately would be two ways
-// for a caller to get through. More than one Authorization header is refused
-// rather than resolved by picking one: which of them the caller meant cannot be
-// known, and choosing would let a caller who can add a header decide which
-// credential is judged.
-//
-// Without the header, the cookies a backend takes are the source. Two of them on
-// one request, the same name twice or two names two backends take, are refused
-// for the same reason: which was meant cannot be known, and a page that can set
-// a cookie for this site must not be the one to choose. A cookie no backend
-// takes is not a credential at all.
+// credentialOf reads the credential out of the request: the Authorization header
+// first and alone, otherwise the cookies a backend takes. More than one header,
+// or more than one claimed cookie, is refused because the caller's intent cannot be told.
 func (g *gateway) credentialOf(r *nethttp.Request) (*claimed, *refusal) {
 	values := r.Header.Values(authHeader)
 	switch {
@@ -516,18 +424,15 @@ func (g *gateway) credentialOf(r *nethttp.Request) (*claimed, *refusal) {
 			return nil, gatewayRefusal(ModuleName + ": the " + authHeader + " header is empty or " +
 				"names no scheme")
 		}
-		// The scheme is folded here, once, because that is what the surface
-		// promises a backend: authentication scheme names are case-insensitive
-		// on the wire, and a backend left to compare the raw token would
-		// authenticate or refuse on the casing a client happened to send.
+		// Folding the scheme here is the contract with the backend: scheme
+		// names are case-insensitive on the wire, so a backend never
+		// compares raw casing.
 		folded := strings.ToLower(scheme)
 		b, taken := g.table.byScheme[folded]
 		if !taken {
-			// What the client wrote in the scheme position is not written
-			// down. A caller who left the scheme out puts the credential
-			// itself there, and a masking rule cannot be relied on to catch
-			// an arbitrary secret, so the record carries the shape of what
-			// arrived and none of its text.
+			// The scheme position is not logged: a caller may have put
+			// the credential itself there, so the record carries only
+			// its shape.
 			return nil, gatewayRefusal(ModuleName+": no backend takes this credential's "+
 				"authentication scheme", slog.Int("scheme_length", len(scheme)),
 				slog.Bool("scheme_separated", separated))
@@ -582,10 +487,9 @@ func (g *gateway) verify(ctx context.Context, b *backend, cred authn.Credential)
 		return authn.Verdict{}, fmt.Errorf("backend %q did not answer within the call budget of %s",
 			b.name, g.settings.budget)
 	}
-	// Only a report of not being able to answer is read against the
-	// request's context. A pass or a refusal is an answer about the
-	// credential and the zero verdict is a defect of the backend's own, and
-	// each stands however late the caller's own deadline was.
+	// Only an Unavailable answer is read against the request's context; a
+	// pass, a refusal or the zero verdict stands however late the caller's
+	// deadline was.
 	if verdict.OutcomeOf(answer) == verdict.Unavailable {
 		if abandoned := made.abandoned(); abandoned != nil {
 			return authn.Verdict{}, abandoned
@@ -594,16 +498,9 @@ func (g *gateway) verify(ctx context.Context, b *backend, cred authn.Credential)
 	return answer, nil
 }
 
-// enter takes an in-flight slot and puts the call under the budget. The
-// returned release gives the slot back and cancels the budget.
-//
-// The slot is taken without waiting: past the gate a request ends as an outage
-// straight away rather than queueing, so that a backend that stopped answering
-// cannot take every goroutine the server has.
-//
-// A request whose own context has already ended is not let in at all. Nobody is
-// waiting for its answer, and asking a backend anyway would spend a
-// verification and a slot on it.
+// enter takes an in-flight slot and puts the call under the budget, returning
+// the release that gives the slot back. The slot is taken without waiting, and
+// a request whose own context has already ended is not let in.
 func (g *gateway) enter(ctx context.Context) (call, error) {
 	if ended := ctx.Err(); ended != nil {
 		return call{}, fmt.Errorf("%w: %w", errAbandoned, ended)
@@ -624,12 +521,9 @@ func (g *gateway) enter(ctx context.Context) (call, error) {
 	g.inFlight.Add(1)
 	g.callsMu.Unlock()
 
-	// Whether the deadline on the call is this module's own is settled here,
-	// before the child context folds the two together. WithTimeout keeps the
-	// earlier of the two, so a caller that arrived with less time left than
-	// the budget produces a deadline that is the caller's, not the backend's
-	// — and a 503 blamed on a backend that answered perfectly well would
-	// send an operator to read the logs of a credential store that is fine.
+	// Settle whether the deadline is this module's before WithTimeout folds the
+	// two: it keeps the earlier, so a caller with less time left must not be
+	// blamed on the backend.
 	outer, inherited := ctx.Deadline()
 	callCtx, cancel := context.WithTimeout(ctx, g.settings.budget)
 	ours := true
@@ -648,10 +542,8 @@ func (g *gateway) enter(ctx context.Context) (call, error) {
 	}, nil
 }
 
-// call is one admitted call into a backend: the context it runs under, the
-// request's own context it was derived from, whether the deadline on the call's
-// context is this module's budget or one the request arrived with, and the
-// release that gives the in-flight slot back.
+// call is one admitted backend call: its context, the request context it came
+// from, whether the deadline is this module's budget, and the slot release.
 type call struct {
 	ctx     context.Context
 	request context.Context
@@ -659,20 +551,15 @@ type call struct {
 	release func()
 }
 
-// overran reports whether this call ran out the budget this module gave it.
-//
-// A deadline the request arrived with does not count, and neither does a client
-// that went away: neither is this module failing to answer in the time it
-// allows itself, and charging either to a backend would name the wrong party.
+// overran reports whether this call ran out this module's own budget; a deadline
+// the request arrived with, or a client that went away, does not count.
 func (c call) overran() bool {
 	return c.ours && errors.Is(c.ctx.Err(), context.DeadlineExceeded)
 }
 
-// abandoned reports the request's own context having ended while the call was
-// inside the backend, when it was that and not this module's budget which ended
-// the call's context. A backend that returns once its context ends reports that
-// it could not answer, and the report is the caller's doing rather than a
-// failure of the backend.
+// abandoned reports the request's own context ending inside the backend, rather
+// than this module's budget: the backend's failure to answer is the caller's
+// doing, not its own.
 func (c call) abandoned() error {
 	if c.overran() {
 		return nil

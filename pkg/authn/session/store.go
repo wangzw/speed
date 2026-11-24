@@ -175,10 +175,9 @@ func (p *product) insert(ctx context.Context, r sessionRow) error {
 	return err
 }
 
-// insertService writes the row of a secret unless one is there, and reports
-// whether it wrote it. Which of two concurrent first calls wins is told by the
-// rows the statement changed, so nothing depends on the statement returning a
-// row.
+// insertService writes a service session's row unless one is there, and reports
+// whether it wrote it, from the rows the statement changed rather than a
+// returned row.
 func (p *product) insertService(ctx context.Context, r sessionRow) (bool, error) {
 	n, err := p.exec(ctx, "writing a service session",
 		"INSERT INTO "+tableName+" "+insertColumns+" ON CONFLICT (credential_id) DO NOTHING", r.insertParams()...)
@@ -204,10 +203,8 @@ func (p *product) revokeRow(ctx context.Context, id authn.SessionID, reason stri
 const liveCondition = "account_id = ? AND kind IN ('browser', 'token') AND revoked_at IS NULL " +
 	"AND expires_at > ? AND (kind = 'token' OR idle_expires_at > ?)"
 
-// revocableCondition selects the rows RevokeAccount ends, so that the set a
-// caller reads to name them and the set that statement changes are one set. A
-// row past its deadline is among them: the statement ends it, and a caller
-// writing one audit row per revocation has to name it.
+// revocableCondition selects the rows RevokeAccount ends, the same set a caller
+// reads to name them; a row past its deadline is among them.
 const revocableCondition = "account_id = ? AND kind IN ('browser', 'token') AND revoked_at IS NULL"
 
 func (p *product) liveRows(ctx context.Context, account authn.AccountID, now time.Time, order string) ([]sessionRow, error) {

@@ -6,10 +6,8 @@ import (
 	"testing"
 )
 
-// TestNameFollowsThePublicURLsScheme holds the naming rule over each kind of
-// public URL: an http public URL gives the bare stem whatever its host, https
-// gives __Host- or, with a Domain, __Secure-, https on a loopback host included,
-// and a value that is neither keeps the prefix.
+// TestNameFollowsThePublicURLsScheme holds the name each kind of public URL gives:
+// http the bare stem, https __Host- or __Secure- with a Domain.
 func TestNameFollowsThePublicURLsScheme(t *testing.T) {
 	cases := []struct {
 		name, publicURL, domain, want string
@@ -39,10 +37,8 @@ func TestNameFollowsThePublicURLsScheme(t *testing.T) {
 	}
 }
 
-// TestSecureFollowsThePublicURLsScheme holds the Secure rule over each kind
-// of public URL: an http public URL writes no Secure whatever its host, https
-// writes it, https on a loopback host included, and so does every value that
-// is not an http URL.
+// TestSecureFollowsThePublicURLsScheme holds that https writes Secure and http
+// writes none, whatever the host.
 func TestSecureFollowsThePublicURLsScheme(t *testing.T) {
 	cases := []struct {
 		name, publicURL string
@@ -75,9 +71,8 @@ func TestSecureFollowsThePublicURLsScheme(t *testing.T) {
 	}
 }
 
-// TestTheSchemeAloneDecides holds that the host of the public URL takes no part
-// in the rule: over each host, loopback or not, http gives the bare name without
-// Secure and https gives __Host- with Secure.
+// TestTheSchemeAloneDecides holds that the host takes no part: http gives the bare
+// name, https __Host-, over every host.
 func TestTheSchemeAloneDecides(t *testing.T) {
 	for _, host := range []string{"localhost", "127.0.0.1", "[::1]:8080", "app.example.com", "192.168.1.10:8080"} {
 		for scheme, want := range map[string]struct {
@@ -111,12 +106,8 @@ func TestEveryStemTakesTheSameRule(t *testing.T) {
 	}
 }
 
-// TestCookieBuildsEveryAttributeFromThePublicURLAndTheSpec holds the
-// constructor every authn cookie writer calls: an http public URL gives the
-// bare name and no Secure, https, https on localhost included, gives __Host-
-// and Secure, a Domain on https gives __Secure- and Secure, and every cookie
-// is HttpOnly on Path=/ with the value, Domain, Max-Age and SameSite of the
-// spec.
+// TestCookieBuildsEveryAttributeFromThePublicURLAndTheSpec holds the cookie's name,
+// Secure, HttpOnly, Path and the spec's own attributes.
 func TestCookieBuildsEveryAttributeFromThePublicURLAndTheSpec(t *testing.T) {
 	cases := []struct {
 		name, publicURL string

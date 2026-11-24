@@ -130,7 +130,6 @@ func TestTwoBackendsTakingOneCarrierFailTheStartupNamingBoth(t *testing.T) {
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			// Both orders: the failure does not depend on which was listed first.
 			for _, pair := range [][]authn.Verifier{{c.first, c.second}, {c.second, c.first}} {
 				_, err := buildDispatch(pair)
 				if !errors.Is(err, authn.ErrClaimConflict) {
@@ -153,9 +152,8 @@ func TestTwoBackendsTakingOneCarrierFailTheStartupNamingBoth(t *testing.T) {
 	}
 }
 
-// TestAccountPrefixesMayNotNestOrRepeat holds the namespaces to being disjoint:
-// a prefix that begins another, or is the same, would let an identifier belong
-// to either backend, and two backends' identities would then share one key.
+// TestAccountPrefixesMayNotNestOrRepeat refuses prefixes that nest or repeat,
+// which would let an identifier belong to either backend.
 func TestAccountPrefixesMayNotNestOrRepeat(t *testing.T) {
 	prefixed := func(name, scheme, prefix string) *fakeVerifier {
 		return &fakeVerifier{name: name, accepts: authn.Accepts{Schemes: []string{scheme}, Accounts: prefix}}
@@ -200,10 +198,8 @@ func TestAccountPrefixesMayNotNestOrRepeat(t *testing.T) {
 	}
 }
 
-// TestTheStaticPrefixBelongsToTheBackendNamedStatic holds the reservation the
-// whole namespace check leans on: the prefix an operator is recognised by is
-// declared by the backend named static and by no other, nor by any prefix that
-// could hand out an identifier under it.
+// TestTheStaticPrefixBelongsToTheBackendNamedStatic holds the static prefix to
+// the backend named static, and to no other backend or prefix.
 func TestTheStaticPrefixBelongsToTheBackendNamedStatic(t *testing.T) {
 	with := func(name, prefix string) authn.Verifier {
 		return &fakeVerifier{name: name, accepts: authn.Accepts{Schemes: []string{"basic"}, Accounts: prefix}}
@@ -232,9 +228,6 @@ func TestTheStaticPrefixBelongsToTheBackendNamedStatic(t *testing.T) {
 		})
 	}
 
-	// Prefixes that only look like it are fine when no identifier under them can
-	// begin with the static prefix, and refused when one can: "static" without
-	// its dot hands out static.ops, "statics." and "Static." and "stat." do not.
 	for _, c := range []struct {
 		prefix string
 		ok     bool
@@ -257,10 +250,8 @@ func TestTheStaticPrefixBelongsToTheBackendNamedStatic(t *testing.T) {
 	}
 }
 
-// TestTheTableIsKeyedByFoldedSchemesAndExactCookies holds what the request path
-// looks up: schemes folded to lower case and without repeats, cookies as they
-// were declared, and a backend that declared a scheme in capitals is found by
-// the folded one.
+// TestTheTableIsKeyedByFoldedSchemesAndExactCookies finds a scheme folded to
+// lower case and a cookie exactly as it was declared.
 func TestTheTableIsKeyedByFoldedSchemesAndExactCookies(t *testing.T) {
 	both := &fakeVerifier{
 		name:    "both",
@@ -325,9 +316,8 @@ func TestABackendIsFoundByTheOptionalInterfacesItImplements(t *testing.T) {
 	}
 }
 
-// TestTheNamespaceCheckHoldsEachBackendToItsOwnNamespace holds the check from
-// both sides for the three kinds of namespace there are: a declared prefix, the
-// library namespace, and the static prefix.
+// TestTheNamespaceCheckHoldsEachBackendToItsOwnNamespace checks the three kinds
+// of namespace: a declared prefix, the library namespace and the static prefix.
 func TestTheNamespaceCheckHoldsEachBackendToItsOwnNamespace(t *testing.T) {
 	corp := &fakeVerifier{name: "corp", accepts: authn.Accepts{Schemes: []string{"a"}, Accounts: "corp."}}
 	static := &fakeVerifier{name: "static", accepts: authn.Accepts{Schemes: []string{"basic"}, Accounts: "static."}}
@@ -353,7 +343,7 @@ func TestTheNamespaceCheckHoldsEachBackendToItsOwnNamespace(t *testing.T) {
 	}{
 		{"corp", "corp.alice", true},
 		{"corp", "corp.a", true},
-		{"corp", "corp.", false}, // the namespace and nobody after it
+		{"corp", "corp.", false},
 		{"corp", "corpx", false},
 		{"corp", "corporate.alice", false},
 		{"corp", "alice", false},
@@ -381,9 +371,6 @@ func TestTheNamespaceCheckHoldsEachBackendToItsOwnNamespace(t *testing.T) {
 		}
 	}
 
-	// With no static backend in the assembly, the library namespace still
-	// excludes the static prefix: an operator's identifier is never one the
-	// library can hand out, whichever backends happen to be installed.
 	alone, err := buildDispatch([]authn.Verifier{library})
 	if err != nil {
 		t.Fatal(err)

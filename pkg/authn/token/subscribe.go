@@ -12,10 +12,8 @@ import (
 )
 
 // seenCapacity is how many event identifiers the subscriptions remember. The bus
-// delivers an event at least once on some transports and a handler only drops a
-// cache entry either way, so the set saves a repeated clear and cannot make the
-// outcome wrong; it is bounded, and an identifier that has fallen out is simply
-// cleared again.
+// delivers at least once, so the set only saves a repeated clear; an identifier
+// that has fallen out is simply cleared again.
 const seenCapacity = 1024
 
 type seenEvents struct {
@@ -52,17 +50,8 @@ func (s *seenEvents) mark(id string) {
 }
 
 // subscribe registers the handlers that drop the caches the verifying backend
-// serves from. The account snapshot and the impersonation record it read are
-// kept for check-ttl; an event that says one changed clears the entry so a
-// replica that hears it stops serving the old value at once, and check-ttl stays
-// the longest a replica that missed the event can go on serving it. The
-// subscriptions are made in Init and their types are static. They are the rows
-// the events design lists for a verifying backend.
-//
-// The session a token names is not cached here: the session module caches it and
-// clears it from its own subscription, so this backend reads it through that
-// seam. A session revocation therefore drops the account snapshot alone, which
-// costs a re-read and is the conservative side.
+// serves from; an event that says a value changed clears its entry at once, and
+// check-ttl stays the longest a replica that missed the event serves it.
 func (p *product) subscribe() {
 	if p.bus == nil {
 		return
@@ -137,10 +126,9 @@ func (p *product) onImpersonationEnded(_ context.Context, evt event.Event) error
 	return nil
 }
 
-// forgetAccount drops the snapshot cached for the account. An event that names
-// no account clears the whole cache: a change that cannot be placed is treated as
-// one that may touch anything, which costs a re-read and never serves a stale
-// snapshot.
+// forgetAccount drops the snapshot cached for the account. An event that names no
+// account clears the whole cache, since a change that cannot be placed may touch
+// anything.
 func (p *product) forgetAccount(id string) {
 	if id == "" {
 		p.caches().accounts.Purge()

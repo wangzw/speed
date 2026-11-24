@@ -49,9 +49,8 @@ func loadSettings(t *testing.T, body string, args ...string) (settings, error) {
 	return readSettings(reader)
 }
 
-// TestAnEnvironmentVariableCannotRelaxWhatTheMainSourceStates holds the item
-// that widens what the gateway accepts: the list of origins trusted beyond
-// the public one.
+// TestAnEnvironmentVariableCannotRelaxWhatTheMainSourceStates refuses a trusted
+// origin set by an environment variable.
 func TestAnEnvironmentVariableCannotRelaxWhatTheMainSourceStates(t *testing.T) {
 	const gate = "SPEEDGATETEST_AUTHN__GATE__"
 
@@ -79,9 +78,8 @@ func TestAnEnvironmentVariableCannotRelaxWhatTheMainSourceStates(t *testing.T) {
 	})
 }
 
-// TestACommandLineArgumentCannotRelaxWhatTheMainSourceStates holds the same
-// item against the command line, which a process listing shows and a wrapper
-// script can add to.
+// TestACommandLineArgumentCannotRelaxWhatTheMainSourceStates refuses the same
+// trusted origin set by a command-line argument.
 func TestACommandLineArgumentCannotRelaxWhatTheMainSourceStates(t *testing.T) {
 	set, err := loadSettings(t, `{}`, "--authn.gate.trusted-origins=https://evil.example")
 	if err == nil && len(set.trustedOrigins) != 0 {
@@ -92,9 +90,8 @@ func TestACommandLineArgumentCannotRelaxWhatTheMainSourceStates(t *testing.T) {
 	}
 }
 
-// TestTheMainSourceCanRelaxWhatItAloneMay is the control for the cases above: the
-// item does take a value from the main source, so a refusal there is a refusal of
-// the other origins and not of the item.
+// TestTheMainSourceCanRelaxWhatItAloneMay accepts a trusted origin from the main
+// source.
 func TestTheMainSourceCanRelaxWhatItAloneMay(t *testing.T) {
 	set, err := loadSettings(t, `{"authn":{"gate":{"mount":{"public-url":"https://example.com"},`+
 		`"trusted-origins":["https://app.example.com"]}}}`)
@@ -106,9 +103,8 @@ func TestTheMainSourceCanRelaxWhatItAloneMay(t *testing.T) {
 	}
 }
 
-// TestAnHTTPPublicURLStartsOnlyOnALoopbackHost holds the one form an http
-// public URL may take: a loopback host, whose traffic never leaves the
-// machine.
+// TestAnHTTPPublicURLStartsOnlyOnALoopbackHost admits an http public URL only on
+// a loopback host.
 func TestAnHTTPPublicURLStartsOnlyOnALoopbackHost(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -172,10 +168,8 @@ func messages(records []slog.Record) []string {
 	return out
 }
 
-// TestACookieWithoutTheHostPrefixIsWarnedAboutOnceEach holds the diagnostic for a
-// cookie name a backend takes: the one that is host-only by its prefix needs
-// none, and each that is not gets a line of its own naming the backend and the
-// cookie, and never a value.
+// TestACookieWithoutTheHostPrefixIsWarnedAboutOnceEach warns once per cookie
+// lacking a __Host- prefix.
 func TestACookieWithoutTheHostPrefixIsWarnedAboutOnceEach(t *testing.T) {
 	logs := liveAssembly{
 		backends: []authn.Verifier{
@@ -243,11 +237,8 @@ func TestTheCookiePrefixDiagnosticFollowsThePublicURL(t *testing.T) {
 	}
 }
 
-// TestAMountEndpointTheResolutionListCannotBeReadForIsOnlyAWarning holds the
-// failure direction of the one check that reads another module's
-// configuration: when the list has a shape this module cannot decode, the
-// startup goes on and says on a Warn line that the endpoint was not checked
-// against it.
+// TestAMountEndpointTheResolutionListCannotBeReadForIsOnlyAWarning warns and
+// continues when the resolution list cannot be decoded.
 func TestAMountEndpointTheResolutionListCannotBeReadForIsOnlyAWarning(t *testing.T) {
 	type stand struct {
 		name string
@@ -315,11 +306,8 @@ func mounting() supply {
 	return supply{module: "stand-in.mount", token: (*mount.Mounter)(nil), instance: fakeMounter{}}
 }
 
-// TestAMountEndpointLeftEmptyIsNotJudgedWhenNoModuleMountsRoutes holds that
-// the gateway picks no endpoint of its own accord: with the key empty and no
-// module that mounts routes in the assembly nothing is checked, whatever the
-// entry point declares and whatever the admission layer or the resolution
-// layer covers, and no sentinel about the routes is produced.
+// TestAMountEndpointLeftEmptyIsNotJudgedWhenNoModuleMountsRoutes checks nothing
+// when the mount endpoint is empty and no module mounts routes.
 func TestAMountEndpointLeftEmptyIsNotJudgedWhenNoModuleMountsRoutes(t *testing.T) {
 	err := assembly{
 		body:     `{"authn":{"gate":{"endpoints":["public"]}},"tenant":{"resolve":{"endpoints":["public"]}}}`,
@@ -333,10 +321,8 @@ func TestAMountEndpointLeftEmptyIsNotJudgedWhenNoModuleMountsRoutes(t *testing.T
 	}
 }
 
-// TestAMountEndpointLeftEmptyIsJudgedWhenAModuleMountsRoutes holds the same
-// assembly with a module that mounts routes added: the empty key is then the
-// only endpoint, and the gateway refuses it for what covers it, from the real
-// descriptor and its stages.
+// TestAMountEndpointLeftEmptyIsJudgedWhenAModuleMountsRoutes refuses an empty
+// mount endpoint that a tenant layer covers when a module mounts routes.
 func TestAMountEndpointLeftEmptyIsJudgedWhenAModuleMountsRoutes(t *testing.T) {
 	admission := func(covered bool) supply {
 		return supply{module: "stand-in.admission", token: (*authn.ScopeGuard)(nil), instance: fakeScope{"public": covered}}
@@ -402,11 +388,8 @@ func TestAMountEndpointLeftEmptyIsJudgedWhenAModuleMountsRoutes(t *testing.T) {
 	}
 }
 
-// TestAModuleThatMountsRoutesWithNoEndpointToPickIsRefusedAtStartToo holds the
-// fallback for a mounting module that did not settle the endpoint itself: with
-// the key empty and several endpoints declared the gateway reaches the same
-// sentinel from the same rule, so the routes are never left on an endpoint nobody
-// chose.
+// TestAModuleThatMountsRoutesWithNoEndpointToPickIsRefusedAtStartToo refuses
+// startup when a mounting module has no endpoint to pick.
 func TestAModuleThatMountsRoutesWithNoEndpointToPickIsRefusedAtStartToo(t *testing.T) {
 	err := assembly{
 		body:     `{}`,
@@ -419,10 +402,8 @@ func TestAModuleThatMountsRoutesWithNoEndpointToPickIsRefusedAtStartToo(t *testi
 	}
 }
 
-// TestTheTenantScopesMountEndpointMustBeCoveredByBothTenantLayers is the
-// opposite rule for the tenant-administration scope: its routes decide in the
-// tenant's own policy domain, so the endpoint they are mounted on has to be
-// one both tenant layers guard.
+// TestTheTenantScopesMountEndpointMustBeCoveredByBothTenantLayers requires the
+// tenant scope's endpoint to be guarded by both tenant layers.
 func TestTheTenantScopesMountEndpointMustBeCoveredByBothTenantLayers(t *testing.T) {
 	resolved := `"tenant":{"resolve":{"endpoints":["api"]}}`
 	for _, c := range []struct {

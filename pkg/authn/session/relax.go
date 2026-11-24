@@ -11,9 +11,7 @@ import (
 )
 
 // dirIncrease is the direction a setting of this module is moved in to relax a
-// check: every watched setting is a period, and a longer period is a weaker
-// check, so the direction is the same for each. The direction strings are the
-// closed set the design fixes; this module uses this one.
+// check: every watched setting is a period, and a longer period checks less.
 const dirIncrease = "increase"
 
 var relaxing = map[string]string{
@@ -32,12 +30,9 @@ const (
 	relaxedOutcome = "relaxed"
 )
 
-// onSettingsChanged is the subscriber of the settings module's change event. A
-// change to one of this module's settings in the direction that relaxes a check
-// is a Warn and a best-effort audit record, and nothing else: the settings store
-// has no access control of its own and cannot be made to refuse, so what this
-// module guarantees is that the change is visible after the fact. The handler is
-// idempotent and never fails an event.
+// onSettingsChanged turns a change in the relaxing direction into a Warn and a
+// best-effort audit record and nothing else: the settings store cannot be made to
+// refuse, so what is guaranteed is that the change is visible after the fact.
 func (p *product) onSettingsChanged(ctx context.Context, evt event.Event) error {
 	var change settings.Change
 	if err := event.DecodePayload(evt.Payload, &change); err != nil {

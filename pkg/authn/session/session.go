@@ -1,23 +1,6 @@
-// Package session carries the login sessions of the identity system: the
-// browser session behind a cookie, the token session behind an access token and a
-// refresh token, and the one row of each service-account secret. All three share
-// one table, authn_sessions, and one revocation surface.
-//
-// The module delivers the session store (authn.Sessions) exclusively, and
-// delivers a credential-verifying backend that recognises the session cookie
-// (authn.Verifier, non-exclusively) and the hook that cleans up after an account
-// is disabled or deleted (authn.AccountLifecycle, non-exclusively). It is the
-// only place the session cookie is named, written, cleared and read.
-//
-// The session library, scs, is used for what it gets right: the token, its
-// digest in the store, the cookie's attributes and the creation path. The adapter
-// that stores rows, the public identifier, the revocation, the period of each
-// kind, the node-local caches and the token rotation are this package's. The
-// library appears in this package and in no signature of the interface package.
-//
-// Nothing here writes a token, a cookie value or a password into a log line, an
-// error text, an event or a metric attribute. A token is held as its digest from
-// the moment it is read.
+// Package session carries the login sessions of the identity system: the browser
+// session, the token session and the service-account secret, in one table. No
+// token, cookie value or password is written to a log line, error or metric.
 package session
 
 import (
@@ -54,18 +37,13 @@ import (
 const ModuleName = "authn.session"
 
 // defaultEndpoint is the endpoint this module's own OpenAPI fragment declares its
-// routes for. The endpoint the routes are actually mounted on is the one the
-// mounter resolves; the fragment is a static declaration written before that is
-// known, so it carries the conventional name.
+// routes for; the actual endpoint is resolved by the mounter.
 const defaultEndpoint = "account"
 
 //go:embed openapi/session.json
 var sessionFragment []byte
 
-// sessionSpec is the API root this module's fragment and routes hang off. Its
-// prefix and version are the common ones; the fragment writes the capability's
-// own segment, so a route's declared path begins with the part of the mounter's
-// base that lies below this root.
+// sessionSpec is the API root this module's fragment and routes hang off.
 var sessionSpec = speedhttp.Spec{
 	Endpoint: defaultEndpoint,
 	Prefix:   "api",
@@ -123,7 +101,6 @@ type product struct {
 	sweepEvery sweepPace
 }
 
-// product must satisfy everything the module delivers.
 var (
 	_ authn.Sessions         = (*product)(nil)
 	_ authn.Verifier         = (*product)(nil)
@@ -133,23 +110,9 @@ var (
 
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// Module is the descriptor a host registers.
-//
-// The three required capabilities are the database the table is in, the mounter
-// the routes are registered through, and the account store the validity of a
-// session is judged against. A command that takes this module in without one of
-// them fails at resolution, naming it. The impersonation capability, the settings
-// store, the event bus, the logger and the meter are taken up in Init: each has a
-// stated behaviour for its absence, so none is declared. The audit capability is
-// taken up in Init too, and is declared as an optional requirement only so that a
-// command carrying one initialises it before this module; its absence stays a
-// legal assembly, in which a relaxed setting writes the Warn alone and no record.
-//
-// Sessions is delivered exclusively, and the stance is StateEnabled and never
-// StateAuto: an exclusive provider that states StateAuto is the cell resolution
-// disables, which would let one session store yield to another. A module a drive
-// includes has to start, so a configuration it cannot run on is an error from
-// Prepare.
+// Module is the descriptor a host registers: database, mounter and account store
+// are required, the rest are taken up in Init; audit is an optional requirement
+// only to order it first, and Sessions is delivered exclusively as StateEnabled.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -377,10 +340,8 @@ func (p *product) takeMeter(reg *core.Registry) error {
 	return nil
 }
 
-// caches is the cache set for the current value of check-ttl. A change of the
-// setting replaces the set, so a lifetime that was lowered takes effect at once
-// and one that was raised does not keep serving from entries made under the
-// shorter one.
+// caches is the cache set for the current check-ttl, replaced when the setting
+// changes so a lowered lifetime takes effect at once.
 func (p *product) caches() *cacheSet {
 	ttl := p.settings.checkTTL()
 	for {

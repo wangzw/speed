@@ -22,13 +22,9 @@ type Field struct {
 	Required, Secret bool
 }
 
-// Proof is everything a login method hands over when a first factor holds. The
-// engine resolves the account from it and trusts no claim the method makes
-// about whether an account exists. Exactly one of Account, Identifier and
-// External is set.
-//
-// A method reports facts and never a level: the assurance is composed in one
-// place, by the multi-factor module.
+// Proof is everything a login method hands over when a first factor holds;
+// exactly one of Account, Identifier and External is set. A method reports facts
+// and never a level: the assurance is composed by the multi-factor module.
 type Proof struct {
 	Account    AccountID   // the method already determined the account (password, passkey)
 	Identifier *Identifier // the method proved ownership of an identifier (a phone verified by SMS)

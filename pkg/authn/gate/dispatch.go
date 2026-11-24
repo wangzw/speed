@@ -49,9 +49,8 @@ type dispatch struct {
 }
 
 // buildDispatch admits the backends and builds the table, refusing the set when
-// any backend or any pair of them breaks an admission condition. The checks run
-// over the backends in name order, so the failure a set produces does not depend
-// on the order the registry listed them in.
+// any backend or pair of them breaks an admission condition; the checks run in
+// name order, so the failure does not depend on the registry's order.
 func buildDispatch(verifiers []authn.Verifier) (*dispatch, error) {
 	if len(verifiers) == 0 {
 		return nil, fmt.Errorf("%w: this command includes the authentication gateway but not one "+
@@ -181,14 +180,9 @@ func admitBackend(v authn.Verifier) (*backend, error) {
 	return b, nil
 }
 
-// checkPrefix holds the account prefix a backend declared to its own shape and
-// to the reservation of authn.StaticPrefix.
-//
-// The static prefix is the one the example decision seam and the migrations read
-// as an administrator, so nothing but the backend named static may declare it,
-// nor any prefix that shares a beginning with it: a backend declaring "st" could
-// hand back "static.ops". The backend named static, in turn, answers for that
-// namespace and no other.
+// checkPrefix holds the account prefix to its own shape and to the reservation
+// of authn.StaticPrefix: only the backend named static may declare it or any
+// prefix overlapping it, and that backend answers for it and no other namespace.
 func checkPrefix(b *backend) error {
 	prefix := b.accounts
 	if prefix != "" {
@@ -221,10 +215,9 @@ func checkPrefix(b *backend) error {
 	return nil
 }
 
-// inNamespace reports whether the backend may hand back this account: the
-// identifier begins with the prefix the backend declared and names somebody
-// beyond it, or, for the library namespace, begins with neither the static
-// prefix nor any other backend's declared prefix.
+// inNamespace reports whether the backend may hand back this account: a declared
+// prefix requires a longer identifier beginning with it, and the library
+// namespace is any identifier beginning with no other backend's prefix.
 func (d *dispatch) inNamespace(b *backend, id authn.AccountID) bool {
 	s := string(id)
 	if b.accounts != "" {

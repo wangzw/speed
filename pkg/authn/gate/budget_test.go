@@ -89,10 +89,8 @@ func TestARefusalThatArrivesAfterTheBudgetIsNotHonouredEither(t *testing.T) {
 	}
 }
 
-// TestADeadlineInsideARefusalDoesNotMakeItAnOutage keeps the case above honest: a
-// refusal that arrives within the budget stays a refusal whatever it carries, a
-// timeout value included, so a backend cannot turn a wrong password into a 503 by
-// choosing its cause.
+// TestADeadlineInsideARefusalDoesNotMakeItAnOutage keeps a refusal carrying a
+// deadline within the budget a 401, so a backend cannot turn it into a 503.
 func TestADeadlineInsideARefusalDoesNotMakeItAnOutage(t *testing.T) {
 	prompt := basicBackend("static", "static.")
 	prompt.verify = func(context.Context, authn.Credential) authn.Verdict {
@@ -137,14 +135,9 @@ func TestTheInFlightGateRefusesRatherThanQueues(t *testing.T) {
 		return authn.Denied(nil)
 	}
 
-	// The call budget is an hour, far past the bound this case allows: a gate
-	// that queued behind the backend and then gave up when the budget ran out
-	// would need up to that hour, while a gate that refuses at once needs none
-	// of it. That hour is the wrong implementation's time, stated to
-	// DeclaredAgainst rather than left to a comment. The bound on the refusal
-	// carries the caller's scale alone and not the race factor, so an
-	// implementation that pauses a fixed few seconds before refusing is seen
-	// here as well.
+	// The call budget is an hour, far past the bound this case allows: a gate that
+	// queued behind the backend would need it, one that refuses at once none of it.
+	// The refusal bound carries the caller's scale alone, so a fixed pause is caught.
 	g := gatewayWith(t, settings{endpoints: []string{"public"}, budget: time.Hour, inFlight: 1}, blocking)
 	sealed(t, g, routerWith("public"))
 
@@ -152,11 +145,8 @@ func TestTheInFlightGateRefusesRatherThanQueues(t *testing.T) {
 	<-admitted
 	defer close(release)
 
-	// The one slot is taken. A second request does not queue behind it: the
-	// refusal has to come back while the first request still holds the slot.
-	// That is the structural difference. A gate that queued would wait for the
-	// first request, which the case holds inside the backend until it ends, so
-	// the second one answers at all only because it did not queue.
+	// The one slot is taken; the second request must answer while the first still
+	// holds it, so it answered at all only because it did not queue.
 	refused := make(chan struct{})
 	var w *httptest.ResponseRecorder
 	var seen *arrival
@@ -188,10 +178,8 @@ func TestTheInFlightGateRefusesRatherThanQueues(t *testing.T) {
 	}
 }
 
-// TestAnExemptRouteStillAnswersWhileTheInFlightGateIsFull holds what the gate
-// leaves alone: everything that needs no backend goes on being served, the exempt
-// routes above all, which is what lets a health check answer while the credential
-// store is down.
+// TestAnExemptRouteStillAnswersWhileTheInFlightGateIsFull keeps exempt and
+// optional routes served while the in-flight gate is full.
 func TestAnExemptRouteStillAnswersWhileTheInFlightGateIsFull(t *testing.T) {
 	admitted := make(chan struct{})
 	release := make(chan struct{})
@@ -288,13 +276,9 @@ func TestDrainingGivesUpOnCallsThatOutlastTheBudget(t *testing.T) {
 	<-admitted
 	g.stop()
 
-	// The drain runs on the configured 20ms budget, not the package default of
-	// five seconds; the backend never answers. Waiting in a goroutine separates
-	// a bounded drain (which returns at once) from an unbounded one (which
-	// waits for the backend the case holds until it ends). The elapsed bound
-	// below is what tells the configured budget from the default: it carries
-	// GATE_TIME_SCALE alone, and the default (configDefaults.CallBudget) is the
-	// wrong implementation's time, stated to DeclaredAgainst.
+	// The drain runs on the configured 20ms budget, not the package default of five
+	// seconds, and the backend never answers. The elapsed bound carries GATE_TIME_SCALE
+	// alone; the default (configDefaults.CallBudget) is the wrong implementation's time.
 	drained := make(chan error, 1)
 	started := time.Now()
 	go func() { drained <- g.drain(context.Background()) }()
@@ -320,10 +304,9 @@ func TestDrainingGivesUpOnCallsThatOutlastTheBudget(t *testing.T) {
 	}
 }
 
-// endings are the two ways a request's own context comes to an end while a
-// backend is being asked, before this module's budget runs out: the caller goes
-// away, or the deadline the request arrived with fires first. inside is closed
-// once the backend is inside the call.
+// endings are the two ways a request's own context ends while a backend is being
+// asked, before the module's budget runs out: the caller goes away, or the
+// deadline it brought fires first. inside is closed once the backend is in the call.
 var endings = []struct {
 	name string
 	end  func(inside chan struct{}) (context.Context, func())
@@ -474,10 +457,8 @@ func TestARequestWhoseContextHasEndedReachesNoBackend(t *testing.T) {
 	}
 }
 
-// TestABackendThatRunsOutTheBudgetIsChargedEvenWhenItHonoursItsContext keeps the
-// cases above honest: a backend that stops at the gateway's own deadline did not
-// answer within the time it was given, and that is the backend's outage whatever
-// it reports once the deadline has fired.
+// TestABackendThatRunsOutTheBudgetIsChargedEvenWhenItHonoursItsContext charges a
+// backend that stops at the gateway's own deadline to the backend's outage.
 func TestABackendThatRunsOutTheBudgetIsChargedEvenWhenItHonoursItsContext(t *testing.T) {
 	g := gatewayWith(t, settings{endpoints: []string{"public"}, budget: 5 * time.Millisecond, inFlight: 4},
 		honouring(make(chan struct{})))
@@ -492,10 +473,8 @@ func TestABackendThatRunsOutTheBudgetIsChargedEvenWhenItHonoursItsContext(t *tes
 	}
 }
 
-// TestACallBudgetOverrunOnAnImpersonationIsStillAnOutage holds that a pass that
-// arrives late is not read for what it says, impersonating or not: the budget
-// invalidates the answer before the principal is looked at, so a backend that is
-// late cannot get an identity with an actor admitted either.
+// TestACallBudgetOverrunOnAnImpersonationIsStillAnOutage refuses a late
+// impersonating pass before the principal is looked at.
 func TestACallBudgetOverrunOnAnImpersonationIsStillAnOutage(t *testing.T) {
 	imp := &fakeVerifier{name: "imp", accepts: authn.Accepts{Schemes: []string{"bearer"}, Impersonation: true}}
 	imp.verify = func(context.Context, authn.Credential) authn.Verdict {

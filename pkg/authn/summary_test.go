@@ -11,15 +11,9 @@ import (
 	"testing"
 )
 
-// This file is the cross-module summary case: the closed sets (the audit detail
-// key names, the instruments and their attribute keys and values) are held
-// against every module of the capability directory at once, by reading the
-// sources. Each module's own case holds its own set; a module that adds a key or
-// a value outside the set has no own case to catch it, and this one does,
-// because it aggregates over the tree instead of over one module's table.
-//
-// The sets below are the contract, so they are written out here and not derived
-// from the code under test; only what the code uses is read from the source.
+// This file checks the closed sets — audit detail keys, metric instruments, and
+// metric attribute keys and values — across every module of the capability
+// directory by reading the sources; the sets are written here, not derived from the code.
 
 var auditDetailKeys = []string{
 	"method", "delivery", "reason_class", "sid", "peer", "identifier_mac", "factor_id",
@@ -224,10 +218,8 @@ func (s *scanner) resolveIn(expr ast.Expr, dir string) (string, bool) {
 			return v, true
 		}
 	case *ast.Ident:
-		// A bare name can only be a name of the same package's constants: a
-		// name from another package is always a selector. Resolving a bare name
-		// against every package's constants would read a parameter as the value
-		// of some unrelated module's constant of the same name.
+		// A bare name can only belong to the same package's constants; resolving
+		// it against every package's would read a parameter as an unrelated constant.
 		if v, ok := s.dirConst[dir][e.Name]; ok {
 			return v, true
 		}
@@ -605,8 +597,7 @@ func paramIndex(fn *ast.FuncDecl, name string) (int, bool) {
 	return 0, false
 }
 
-// TestTheSummaryScanReachedTheTree is the guard the rest of the file rests on:
-// a scan that silently read nothing would pass every case below.
+// TestTheSummaryScanReachedTheTree fails when the scan read nothing.
 func TestTheSummaryScanReachedTheTree(t *testing.T) {
 	s := newScanner(t)
 	byDir := s.parse(auditAttrRoots)
@@ -628,9 +619,8 @@ func TestTheSummaryScanReachedTheTree(t *testing.T) {
 	}
 }
 
-// TestEveryAuditDetailKeyIsInTheDesignsSet holds the first cross-module
-// discipline: whatever key any module of the tree writes into an audit row's
-// detail belongs to the closed set.
+// TestEveryAuditDetailKeyIsInTheDesignsSet holds every audit detail key written
+// in the tree to the closed set.
 func TestEveryAuditDetailKeyIsInTheDesignsSet(t *testing.T) {
 	s := newScanner(t)
 	byDir := s.parse(auditAttrRoots)
@@ -665,8 +655,8 @@ func TestEveryAuditDetailKeyIsInTheDesignsSet(t *testing.T) {
 	}
 }
 
-// TestEveryMetricAttributeKeyIsInTheDesignsSet holds the attribute keys the
-// tree reports under against the closed set.
+// TestEveryMetricAttributeKeyIsInTheDesignsSet holds every metric attribute key
+// in the tree to the closed set.
 func TestEveryMetricAttributeKeyIsInTheDesignsSet(t *testing.T) {
 	s := newScanner(t)
 	byDir := s.parse(auditAttrRoots)
@@ -682,8 +672,8 @@ func TestEveryMetricAttributeKeyIsInTheDesignsSet(t *testing.T) {
 	}
 }
 
-// TestEveryMetricInstrumentIsInTheDesignsSet holds the instrument names the
-// authn tree registers against the closed set.
+// TestEveryMetricInstrumentIsInTheDesignsSet holds every instrument name the
+// authn tree registers to the closed set.
 func TestEveryMetricInstrumentIsInTheDesignsSet(t *testing.T) {
 	s := newScanner(t)
 	byDir := s.parse(instrumentRoots)
@@ -699,9 +689,8 @@ func TestEveryMetricInstrumentIsInTheDesignsSet(t *testing.T) {
 	}
 }
 
-// TestEveryMetricAttributeValueIsInItsDesignsSet holds the values that can be
-// read from the sources against the value set of the key they are reported
-// under.
+// TestEveryMetricAttributeValueIsInItsDesignsSet holds every value readable from
+// the sources to its key's value set.
 func TestEveryMetricAttributeValueIsInItsDesignsSet(t *testing.T) {
 	s := newScanner(t)
 	byDir := s.parse(auditAttrRoots)
@@ -723,10 +712,8 @@ func TestEveryMetricAttributeValueIsInItsDesignsSet(t *testing.T) {
 	}
 }
 
-// TestEveryModuleHoldingASecretShipsASentinelTest holds the third
-// cross-module discipline: a module that holds a secret configuration value
-// registers the value as a literal matcher and asserts, through a test over its
-// error paths, that the configured sentinel never reaches the output.
+// TestEveryModuleHoldingASecretShipsASentinelTest requires a module holding a
+// secret configuration value to ship a secrecy_test.go.
 func TestEveryModuleHoldingASecretShipsASentinelTest(t *testing.T) {
 	s := newScanner(t)
 	byDir := s.parse(auditAttrRoots)

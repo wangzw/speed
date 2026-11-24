@@ -7,9 +7,8 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/model"
 )
 
-// TestTheNewValueTypesAreTheModelsOwn holds that each type the root re-exports is
-// the model's type and not a second declaration of it: an alias turned into a
-// definition compiles, and the two would then convert only by hand.
+// TestTheNewValueTypesAreTheModelsOwn holds each root type is the model's type,
+// not a second declaration of it.
 func TestTheNewValueTypesAreTheModelsOwn(t *testing.T) {
 	for _, c := range []struct{ root, model reflect.Type }{
 		{reflect.TypeFor[AccountKind](), reflect.TypeFor[model.AccountKind]()},
@@ -54,10 +53,8 @@ func TestTheNewValueTypesAreTheModelsOwn(t *testing.T) {
 	}
 }
 
-// TestTheWireValuesOfTheNewConstantsAreFrozen pins what is written to a
-// table, a token, a payload or a route: the status numbers of the status
-// column, the texts of the kind columns, the closed sets that other modules
-// and clients compare.
+// TestTheWireValuesOfTheNewConstantsAreFrozen pins the numbers and texts written
+// to a table, a token, a payload or a route.
 func TestTheWireValuesOfTheNewConstantsAreFrozen(t *testing.T) {
 	if StatusDisabled != 0 || StatusActive != 1 || StatusDeleted != 2 {
 		t.Errorf("account statuses read %d, %d, %d, want 0, 1, 2 (the status column)", StatusDisabled, StatusActive, StatusDeleted)
@@ -111,9 +108,8 @@ func TestTheWireValuesOfTheNewConstantsAreFrozen(t *testing.T) {
 	}
 }
 
-// TestTheActionsAreTheDesignsFifteenAndAreUnique holds the values the permission
-// model is promised: a published action is never renamed, and the set is exactly
-// the design's.
+// TestTheActionsAreTheDesignsFifteenAndAreUnique holds the fifteen action strings
+// and their uniqueness.
 func TestTheActionsAreTheDesignsFifteenAndAreUnique(t *testing.T) {
 	want := map[Action]string{
 		ActionAccountRead:         "authn.account.read",
@@ -142,9 +138,8 @@ func TestTheActionsAreTheDesignsFifteenAndAreUnique(t *testing.T) {
 	}
 }
 
-// TestTheAttributeBoundsAreTheDesignsNumbers holds the sub-bounds as the design
-// writes them, read through the root, together with the arithmetic that makes
-// them fit the gateway's totals.
+// TestTheAttributeBoundsAreTheDesignsNumbers holds the published bounds and the
+// arithmetic that fits them under the gateway's totals.
 func TestTheAttributeBoundsAreTheDesignsNumbers(t *testing.T) {
 	for _, c := range []struct {
 		name      string

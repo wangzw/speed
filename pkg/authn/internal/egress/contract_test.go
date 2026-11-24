@@ -20,9 +20,8 @@ import (
 	"time"
 )
 
-// TestNewRefusesLoopbackWithDefaultOptions holds the production constructor's
-// default path: neither the zero Options nor Options with only roots reaches a
-// loopback server.
+// TestNewRefusesLoopbackWithDefaultOptions refuses a loopback server under the
+// zero Options and under roots-only Options.
 func TestNewRefusesLoopbackWithDefaultOptions(t *testing.T) {
 	var hits counter
 	srv, pool := tlsServer(t, hits.handler(ok))
@@ -160,10 +159,8 @@ func TestDialAllGivesEachAttemptAShareOfTheRemainingDeadline(t *testing.T) {
 	}
 }
 
-// TestTheDialSeesTheDeadlineOfTheCall holds that the deadline of the call reaches
-// the dial, which net/http hands a context detached from the call, so that the
-// share per attempt takes effect in production and not only when dialAll is
-// called directly.
+// TestTheDialSeesTheDeadlineOfTheCall carries the call's deadline into the dial,
+// which net/http hands a context detached from the call.
 func TestTheDialSeesTheDeadlineOfTheCall(t *testing.T) {
 	srv, pool := tlsServer(t, http.HandlerFunc(ok))
 	port := portOf(t, srv)
@@ -239,14 +236,12 @@ func TestDialAllFailsWhenResolutionDoes(t *testing.T) {
 	}
 }
 
-// TestASuppliedPoolStillVerifiesTheCertificate holds that a root pool narrows
-// the roots and nothing else: an empty pool trusts nothing, and a trusted
-// certificate still has to name the host.
+// TestASuppliedPoolStillVerifiesTheCertificate narrows the roots with a supplied
+// pool; an empty pool trusts nothing and a certificate still has to name the host.
 func TestASuppliedPoolStillVerifiesTheCertificate(t *testing.T) {
 	var hits counter
 	srvB, _ := tlsServer(t, hits.handler(ok))
 	t.Run("a certificate outside the pool", func(t *testing.T) {
-		// A pool that holds no root trusts nothing; it must not read as "no pool".
 		_, err := get(New(Options{AllowLoopback: true, RootCAs: x509.NewCertPool()}), srvB.URL)
 		var unknown x509.UnknownAuthorityError
 		if !errors.As(err, &unknown) {
@@ -268,8 +263,8 @@ func TestASuppliedPoolStillVerifiesTheCertificate(t *testing.T) {
 	}
 }
 
-// TestTheHandshakeIsBounded holds the transport's bounds that the package
-// documentation relies on for a call whose context has no deadline.
+// TestTheHandshakeIsBounded bounds the TLS handshake and idle connection
+// timeouts.
 func TestTheHandshakeIsBounded(t *testing.T) {
 	tr := New(Options{}).Transport.(*guarded).next.(*http.Transport)
 	if tr.TLSHandshakeTimeout <= 0 || tr.TLSHandshakeTimeout > 30*time.Second {
@@ -348,9 +343,8 @@ func TestTheDialEndsWithTheCall(t *testing.T) {
 	}
 }
 
-// TestTheHeadersOfAResponseAreBounded holds that the header block is bounded far
-// below the transport's default of 10 MiB, which would be ten times the cap on
-// the body.
+// TestTheHeadersOfAResponseAreBounded bounds the header block far below the
+// transport's 10 MiB default.
 func TestTheHeadersOfAResponseAreBounded(t *testing.T) {
 	tr := New(Options{}).Transport.(*guarded).next.(*http.Transport)
 	if tr.MaxResponseHeaderBytes <= 0 || tr.MaxResponseHeaderBytes > 64<<10 {
@@ -366,16 +360,11 @@ func TestTheHeadersOfAResponseAreBounded(t *testing.T) {
 	}
 }
 
-// TestCloseIdleConnectionsReachesTheTransport holds that the owner of the client
-// can release its idle connections, which the wrapper around the transport must
-// not hide.
+// TestCloseIdleConnectionsReachesTheTransport lets the client's owner release its
+// idle connections through the wrapper around the transport.
 func TestCloseIdleConnectionsReachesTheTransport(t *testing.T) {
 	states := make(chan http.ConnState, 16)
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(ok))
-	// The server reclaims a connection left idle. Its timeout is set well
-	// beyond the bound the test waits under, so a client that never carried
-	// the call to the transport fails that wait instead of passing when the
-	// server closes the connection on its own.
 	srv.Config.IdleTimeout = 3 * time.Second
 	srv.Config.ConnState = func(_ net.Conn, s http.ConnState) {
 		states <- s
@@ -390,13 +379,7 @@ func TestCloseIdleConnectionsReachesTheTransport(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// StateIdle is the transition that says the connection is in the pool.
-	// Waiting for it rather than for an interval is what keeps a loaded
-	// machine from reading the connection before it has become idle.
 	awaitState(t, states, 5*time.Second, http.StateIdle, "the connection to become idle")
-	// Nothing has asked for a close yet, so a close reported now would be the
-	// transport's own doing and the later one could not be attributed to the
-	// call.
 	for quiet := false; !quiet; {
 		select {
 		case s := <-states:

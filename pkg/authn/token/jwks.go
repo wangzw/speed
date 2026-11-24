@@ -9,10 +9,9 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The headers of the key set. Its public cache is the one response of the
-// capability without no-store: the body holds no secret and changes only with the
-// keys loaded at startup, so a public cache is free, and its lifetime is the
-// wait a key rotation counts on before it switches the signing key.
+// The key set's public cache is the one response without no-store: the body
+// holds no secret and changes only with the keys loaded at startup, so its
+// lifetime is the wait a key rotation counts on.
 const (
 	jwksContentType  = "application/jwk-set+json"
 	jwksCacheControl = "public, max-age=300"
@@ -27,18 +26,13 @@ func (p *product) JWKS(_ context.Context) ([]byte, error) {
 	return marshalJWKS(p.keys.entries)
 }
 
-// mountJWKS registers the key set on its public route. It is the only route this
-// piece of the module mounts; the token and revocation endpoints are registered
-// by the piece that builds them.
 func (p *product) mountJWKS() {
 	mount.Declared(p.mounter, jwksOperation, jwksPath, jwksOperation.Handle(p.handleJWKS))
 }
 
 // handleJWKS writes the key set with the media type and public cache the
-// contract declares, over the no-store the mounter's wrapper put on the
-// response, as the design says the key set is the one response allowed a public
-// cache. The body is produced from the startup key set and cannot fail for a
-// request.
+// contract declares, over the wrapper's no-store. The body is produced from the
+// startup key set and cannot fail for a request.
 func (p *product) handleJWKS(ctx context.Context, _ struct{}, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	body, err := p.JWKS(ctx)
 	if err != nil {

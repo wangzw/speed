@@ -11,29 +11,13 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/acctcache"
 )
 
-// MaxCacheTTL is the longest a check that held may be remembered, which is the
-// top of the range the lifetime setting takes. The store behind the cache keeps
-// an entry that long and the lifetime in force is read against the time it was
-// stored, so a lifetime that is lowered at run time takes effect on the entries
-// already there.
+// MaxCacheTTL is the longest a held check is remembered, the top of the
+// lifetime setting's range.
 const MaxCacheTTL = 5 * time.Minute
 
-// Cache remembers that a password held against an entry, so that a backend whose
+// Cache remembers that a password held against an entry, so a backend whose
 // credential is presented on every request does not derive on every request.
-//
-// A key is the HMAC-SHA-256, under a secret drawn when the Cache is made and
-// never written anywhere, of the subject, the digest of the entry and the
-// password. The password and nothing reversible from it is kept, and the
-// secret's loss with the process is what makes a stolen copy of the cache worth
-// nothing. Only a check that held is remembered, so a wrong password costs a
-// derivation every time and the cache gives nobody a faster way to be refused.
-// An entry that is written again has a new digest, so the checks against the
-// old one are never found.
-//
-// The cache is for the backend whose credential is presented on every request,
-// and not for an interactive login: a login has no repeated derivation to save,
-// and the difference in time between a hit and a miss would tell a caller that
-// this password had held lately.
+// Only a held check is remembered, and the cache is not for an interactive login.
 type Cache struct {
 	secret [sha256.Size]byte
 	store  *acctcache.Cache[time.Time]
@@ -74,10 +58,8 @@ func (c *Cache) key(subject string, e Entry, password string) string {
 }
 
 // Hit reports whether this password held against this entry for this subject
-// within ttl of the derivation that remembered it. The lifetime is absolute: it
-// runs from that derivation, and a hit does not extend it, so a password
-// presented more often than ttl is still derived once per ttl. A ttl of zero or
-// less is the cache switched off.
+// within ttl of the derivation that remembered it; the lifetime is absolute, and
+// a ttl of zero or less is the cache switched off.
 func (c *Cache) Hit(ttl time.Duration, subject string, e Entry, password string) bool {
 	if ttl <= 0 {
 		return false
@@ -86,10 +68,8 @@ func (c *Cache) Hit(ttl time.Duration, subject string, e Entry, password string)
 	return found && c.now().Sub(stored) < ttl
 }
 
-// Remember records that the password held, at the time of the call. The caller
-// remembers a password after a derivation that vouched for it and not after a
-// hit, which is what keeps the lifetime absolute. With a ttl of zero or less it
-// records nothing.
+// Remember records that the password held, at the time of the call, after a
+// derivation and not after a hit; with a ttl of zero or less it records nothing.
 func (c *Cache) Remember(ttl time.Duration, subject string, e Entry, password string) {
 	if ttl <= 0 {
 		return

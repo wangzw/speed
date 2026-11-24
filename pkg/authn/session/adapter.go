@@ -12,19 +12,9 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// storeAdapter is the library's store over the table. It does what the library
-// asks of a store and no more, in the shapes the design fixes:
-//
-//   - FindCtx finds only a live browser row, so a revoked, idle or expired one is
-//     not found whatever the cache held.
-//   - CommitCtx creates a row and ignores the expiry the library computed, which
-//     comes from a Lifetime that is the settings' upper bound and not their value.
-//     The periods written are the ones this module computed from the settings and
-//     carried in the payload.
-//   - DeleteCtx unlinks the token and nothing else. Revocation is a decision of
-//     this module and goes through Sessions.Revoke alone.
-//
-// It caches nothing: what a read costs is the verifying path's to decide.
+// storeAdapter is the library's store over the table. FindCtx finds only a live
+// browser row; CommitCtx ignores the library's expiry and writes the periods the
+// module computed; DeleteCtx unlinks the token and nothing else.
 type storeAdapter struct {
 	p *product
 }
@@ -42,8 +32,7 @@ const (
 )
 
 // rowSink is where FindCtx leaves the row it found, for the caller of the
-// library's Load that needs the columns the payload does not carry. It is put in
-// the context of that one call.
+// library's Load that needs columns the payload does not carry.
 type rowSink struct {
 	row *sessionRow
 }
@@ -52,9 +41,8 @@ type client struct {
 	ip, userAgent string
 }
 
-// FindCtx reads the browser row whose token has the store key. The row is put in
-// the sink of ctx, when there is one, and its payload is returned for the
-// library to decode.
+// FindCtx reads the browser row whose token has the store key, puts it in ctx's
+// sink when there is one, and returns its payload for the library to decode.
 func (a storeAdapter) FindCtx(ctx context.Context, key string) ([]byte, bool, error) {
 	row, err := a.p.byStoreKey(ctx, key, a.p.now())
 	if errors.Is(err, errNoRow) {
@@ -69,8 +57,8 @@ func (a storeAdapter) FindCtx(ctx context.Context, key string) ([]byte, bool, er
 	return []byte(row.Data), true, nil
 }
 
-// CommitCtx creates the row of a browser session. The payload is decoded for the
-// facts the row is made from; the expiry is not used.
+// CommitCtx creates the row of a browser session from the payload; the expiry
+// argument is not used.
 func (a storeAdapter) CommitCtx(ctx context.Context, key string, b []byte, _ time.Time) error {
 	if len(b) > maxDataBytes {
 		return fmt.Errorf("%w: the payload is longer than %d bytes", authn.ErrInvalidArgument, maxDataBytes)
@@ -83,8 +71,7 @@ func (a storeAdapter) CommitCtx(ctx context.Context, key string, b []byte, _ tim
 		return fmt.Errorf("%w: only a browser session is committed through the store", authn.ErrInvalidArgument)
 	}
 	now := a.p.now()
-	// A period that is over by the time it would be written is not written: the
-	// session is read as expired, as it would be a moment later.
+	// A period already over is not written: the session is read as expired.
 	if !pl.Expires.After(now) {
 		return nil
 	}
@@ -104,17 +91,15 @@ func (a storeAdapter) CommitCtx(ctx context.Context, key string, b []byte, _ tim
 	})
 }
 
-// DeleteCtx unlinks a token from its session: the row stays, and so does its
-// revocation state.
+// DeleteCtx unlinks a token from its session; the row and its revocation state stay.
 func (a storeAdapter) DeleteCtx(ctx context.Context, key string) error {
 	_, err := a.p.exec(ctx, "unlinking a token",
 		"UPDATE "+tableName+" SET token_hash = NULL WHERE token_hash = ?", key)
 	return err
 }
 
-// Find, Commit and Delete are the library's store interface without a context.
-// The library calls the context forms, which it prefers when the store has them;
-// these are for the interface and carry the background context.
+// Find, Commit and Delete are the library's store interface without a context;
+// the library prefers the context forms, and these carry the background context.
 func (a storeAdapter) Find(key string) ([]byte, bool, error) {
 	return a.FindCtx(context.Background(), key)
 }

@@ -7,11 +7,8 @@ import (
 )
 
 // Principal is everything a verifying backend hands over when a credential
-// holds. Its fields are the backend's claims, not an identity: the gateway
-// checks them one by one before stamping an Identity from them.
-//
-// A Principal may be written as a literal; a malformed one compiles and is
-// refused at run time by the gateway's checks.
+// holds: the backend's claims, not an identity, which the gateway checks before
+// stamping an Identity. A malformed one compiles and is refused at run time.
 type Principal struct {
 	// Account is the account the credential was verified for.
 	Account AccountID

@@ -25,10 +25,8 @@ func parsed(t *testing.T, p Params, plaintext string) Entry {
 
 var cheapPBKDF2 = Params{Algorithm: PBKDF2SHA256, PBKDF2Iterations: 1}
 
-// TestADerivationThatFindsTheWidthTakenIsRefusedAsBusyAndDoesNotQueue holds the
-// concurrency bound from both sides: with the width held a derivation is refused
-// with ErrBusy at once and verifies nothing, and with the width released the
-// same call goes through.
+// TestADerivationThatFindsTheWidthTakenIsRefusedAsBusyAndDoesNotQueue refuses a
+// busy derivation at once and lets it through once the width is free.
 func TestADerivationThatFindsTheWidthTakenIsRefusedAsBusyAndDoesNotQueue(t *testing.T) {
 	g := NewGovernor(1, 1<<20)
 	e := parsed(t, cheapPBKDF2, "secret")
@@ -75,9 +73,8 @@ func TestTheSlotIsGivenBackWhateverTheDerivationDid(t *testing.T) {
 	}
 }
 
-// TestTheMemoryBudgetBoundsWhatArgon2idHoldsAtOnce holds the byte bound: an
-// Argon2id derivation draws the memory its entry states, one that would pass the
-// budget is refused, PBKDF2 draws none, and the share comes back.
+// TestTheMemoryBudgetBoundsWhatArgon2idHoldsAtOnce charges Argon2id its memory,
+// gives it back, and charges PBKDF2 none.
 func TestTheMemoryBudgetBoundsWhatArgon2idHoldsAtOnce(t *testing.T) {
 	g := NewGovernor(8, 100)
 	big := parsed(t, Params{Algorithm: Argon2id, MemoryKiB: 64, Iterations: 1, Parallelism: 1}, "secret")
@@ -115,9 +112,8 @@ func TestAShareThatCanNeverBeHadIsRefusedAtOnce(t *testing.T) {
 	}
 }
 
-// TestAWaitIsHonouredBeforeABusyAnswer holds the wait a caller allows: a
-// derivation that finds the width taken waits at least that long before it is
-// refused, and is refused as busy and not as the caller's context.
+// TestAWaitIsHonouredBeforeABusyAnswer waits the allowed time and answers
+// ErrBusy, not the caller's context.
 func TestAWaitIsHonouredBeforeABusyAnswer(t *testing.T) {
 	g := NewGovernor(1, 1<<20)
 	e := parsed(t, cheapPBKDF2, "secret")
@@ -141,9 +137,8 @@ func TestAWaitIsHonouredBeforeABusyAnswer(t *testing.T) {
 	}
 }
 
-// TestAWaitingDerivationGetsTheSlotWhenItIsReleased holds that waiting is not
-// only delaying a refusal: a derivation that waits goes through once the width
-// is free.
+// TestAWaitingDerivationGetsTheSlotWhenItIsReleased lets a waiting derivation
+// through once the width is free.
 func TestAWaitingDerivationGetsTheSlotWhenItIsReleased(t *testing.T) {
 	g := NewGovernor(1, 1<<20)
 	e := parsed(t, cheapPBKDF2, "secret")
@@ -168,9 +163,8 @@ func TestAWaitingDerivationGetsTheSlotWhenItIsReleased(t *testing.T) {
 	}
 }
 
-// TestACallersOwnContextIsNotTheWidthBeingFull holds the distinction the
-// backend's answer depends on: a context that has ended is reported as itself,
-// before any capacity is taken, and not as ErrBusy.
+// TestACallersOwnContextIsNotTheWidthBeingFull reports a cancelled context as
+// itself, never as ErrBusy.
 func TestACallersOwnContextIsNotTheWidthBeingFull(t *testing.T) {
 	g := NewGovernor(1, 1<<20)
 	e := parsed(t, cheapPBKDF2, "secret")
@@ -190,9 +184,6 @@ func TestACallersOwnContextIsNotTheWidthBeingFull(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer release()
-	// The slot is held and the wait is a minute, so the only way out is the
-	// cancellation; it comes from a timer and not from a goroutine racing the
-	// call, and the call is made on this goroutine.
 	waiting, stop := context.WithCancel(context.Background())
 	defer stop()
 	time.AfterFunc(20*time.Millisecond, stop)
@@ -201,9 +192,8 @@ func TestACallersOwnContextIsNotTheWidthBeingFull(t *testing.T) {
 	}
 }
 
-// TestNoMoreThanTheWidthRunsAtOnce holds the bound under load: with a width
-// of two and many callers, the derivations inside the Governor never exceed
-// two.
+// TestNoMoreThanTheWidthRunsAtOnce keeps concurrent derivations at or under the
+// width.
 func TestNoMoreThanTheWidthRunsAtOnce(t *testing.T) {
 	const width, callers = 2, 24
 	g := NewGovernor(width, 1<<20)
@@ -225,8 +215,6 @@ func TestNoMoreThanTheWidthRunsAtOnce(t *testing.T) {
 			running++
 			peak = max(peak, running)
 			mu.Unlock()
-			// Hold the section until two have arrived or the others have
-			// all finished, so that the peak is reached when it can be.
 			time.Sleep(time.Millisecond)
 			mu.Lock()
 			running--
@@ -257,10 +245,8 @@ func TestTheDefaultsAreWhatTheDesignStates(t *testing.T) {
 	}
 }
 
-// TestAGovernorHashesUnderTheSameBounds holds the writing side of the Governor:
-// it writes a readable entry when it has capacity and is refused as busy when it
-// has none, and a parameter set no reader would accept is refused before any
-// capacity is taken.
+// TestAGovernorHashesUnderTheSameBounds writes a readable entry with capacity,
+// refuses as busy without it, and refuses a bad parameter set before taking any.
 func TestAGovernorHashesUnderTheSameBounds(t *testing.T) {
 	g := NewGovernor(1, 1<<20)
 	encoded, err := g.Hash(context.Background(), cheapPBKDF2, "secret", 0)
@@ -292,11 +278,8 @@ func TestTheDefaultWaitIsASecond(t *testing.T) {
 	}
 }
 
-// TestAMemoryShareThatIsNotFreedWithinTheWaitIsBusyAndGivesTheSlotBack holds the
-// budget as a bound apart from the width: with the slots free and the memory
-// taken, an Argon2id derivation waits the time it was allowed, is refused as
-// busy and not as the caller's context, and does not keep the slot it took on
-// the way; a derivation that does not draw memory goes through meanwhile.
+// TestAMemoryShareThatIsNotFreedWithinTheWaitIsBusyAndGivesTheSlotBack refuses as
+// busy and gives the slot back; a derivation that draws no memory runs meanwhile.
 func TestAMemoryShareThatIsNotFreedWithinTheWaitIsBusyAndGivesTheSlotBack(t *testing.T) {
 	g := NewGovernor(2, 100)
 	big := parsed(t, Params{Algorithm: Argon2id, MemoryKiB: 64, Iterations: 1, Parallelism: 1}, "secret")
@@ -323,9 +306,8 @@ func TestAMemoryShareThatIsNotFreedWithinTheWaitIsBusyAndGivesTheSlotBack(t *tes
 	}
 }
 
-// TestAShareIsGivenBackWhenTheCallerLeavesWhileWaitingForIt holds that a caller
-// whose context ends while it waits for memory leaves neither the slot nor the
-// memory taken.
+// TestAShareIsGivenBackWhenTheCallerLeavesWhileWaitingForIt leaves neither slot
+// nor memory held when the caller leaves while waiting.
 func TestAShareIsGivenBackWhenTheCallerLeavesWhileWaitingForIt(t *testing.T) {
 	g := NewGovernor(2, 100)
 	big := parsed(t, Params{Algorithm: Argon2id, MemoryKiB: 64, Iterations: 1, Parallelism: 1}, "secret")

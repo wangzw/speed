@@ -11,10 +11,8 @@ func standing(th *Throttle, key string) time.Duration {
 	return th.Standing(authn.ScopeIdentifier, key)
 }
 
-// TestStandingCountsTheFailuresThatStandAndNotTheAttemptsInFlight holds the line
-// between the two readings of a key: an attempt in flight is a failure for
-// whoever is about to make an attempt of their own, and is not one for whoever
-// only asks whether the key is being held back for what it has already done.
+// TestStandingCountsTheFailuresThatStandAndNotTheAttemptsInFlight checks that an
+// attempt in flight counts for Check but not for Standing.
 func TestStandingCountsTheFailuresThatStandAndNotTheAttemptsInFlight(t *testing.T) {
 	clock := newClock()
 	th := throttleAt(clock, defaultParams)
@@ -44,9 +42,8 @@ func TestStandingCountsTheFailuresThatStandAndNotTheAttemptsInFlight(t *testing.
 	}
 }
 
-// TestStandingAgesTheFailuresLikeEveryOtherReading holds that the failures a key
-// stands on are the live ones: once the window and the wait they earned have
-// passed, nothing stands.
+// TestStandingAgesTheFailuresLikeEveryOtherReading checks that only the live
+// failures stand, so nothing stands once the window and wait pass.
 func TestStandingAgesTheFailuresLikeEveryOtherReading(t *testing.T) {
 	clock := newClock()
 	th := throttleAt(clock, defaultParams)
@@ -60,10 +57,8 @@ func TestStandingAgesTheFailuresLikeEveryOtherReading(t *testing.T) {
 	}
 }
 
-// TestStandingReservesNothingAndRemembersNothing holds that a reading changes no
-// state: it admits no attempt, so the free attempts of the key are still the
-// free attempts, and it does not make the table remember a key it was asked
-// about.
+// TestStandingReservesNothingAndRemembersNothing checks that a reading admits no
+// attempt and does not remember a key it was asked about.
 func TestStandingReservesNothingAndRemembersNothing(t *testing.T) {
 	th := throttleAt(newClock(), defaultParams)
 	before := th.Len()

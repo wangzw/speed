@@ -1,20 +1,6 @@
-// Package token carries the access tokens and the refresh tokens of the
-// identity system: a short-lived JWT signed with a configured key and an opaque
-// random string whose digest is stored, both revoked through the login session
-// they name.
-//
-// The module delivers the token surface (authn.Tokens) exclusively and registers
-// as a credential-verifying backend for the bearer scheme (authn.Verifier,
-// non-exclusively). It owns the signing and verification key set loaded from the
-// configuration's files and the authn_refresh_tokens table, and it publishes the
-// public half of its keys as a JWK set. It is the one package that speaks to the
-// JOSE library; the rest of the capability reaches it through the interfaces the
-// root package declares.
-//
-// A token never carries a secret into a log line, an error text, an event or a
-// metric attribute: a refresh token is held as its digest, the signing key is a
-// private key the loaded signer holds and never writes out, and the spd_rt_ and
-// spd_cs_ prefixes let the log redactors recognise what must not be written.
+// Package token carries the identity system's access tokens, a short-lived JWT
+// signed with a configured key, and refresh tokens, an opaque string whose digest
+// is stored; a token never carries a secret into a log line, error, event or metric.
 package token
 
 import (
@@ -40,10 +26,9 @@ const ModuleName = "authn.token"
 // ConfigNamespace is where this module's input items and settings are mounted.
 const ConfigNamespace = ModuleName
 
-// defaultEndpoint is the endpoint this module's own OpenAPI fragment declares its
-// routes for. The endpoint the routes are actually mounted on is the one the
-// mounter resolves; the fragment is a static declaration written before that is
-// known, so it carries the conventional name.
+// defaultEndpoint is the endpoint this module's OpenAPI fragment declares its
+// routes for; the mounter resolves the endpoint actually used, so this is only
+// the conventional name the static declaration carries.
 const defaultEndpoint = "account"
 
 //go:embed openapi/token.json
@@ -70,28 +55,9 @@ var migrationsFS = func() fs.FS {
 
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// Module is the descriptor a host registers.
-//
-// Tokens is delivered exclusively: a host may put an equivalent module in its
-// place, and the modules that take a Tokens take the interface, not this module.
-// Verifier is delivered without claiming the capability, so several
-// credential-verifying backends stand side by side behind one gateway.
-//
-// The required capabilities are the database the refresh-token table is in, the
-// mounter the routes are registered through, and the account, session, password
-// and throttle stores the tokens are judged against. A command that names this
-// module without one of them fails at resolution, naming it. The settings store
-// and the logging capability are required as optional only so that both are
-// constructed first: the store's snapshot is loaded in its Init, and Init reads
-// the check-session switch from it. The impersonation capability, the event bus,
-// the audit capability, the metric capability and every ClaimsContributor are
-// taken up in Init: each has a stated behaviour for its absence, so none is
-// declared.
-//
-// The stance is StateEnabled and never StateAuto: an exclusive provider that
-// states StateAuto is the cell resolution disables, which would let one token
-// surface yield to another. A module a drive includes has to start, so a
-// configuration it cannot run on is an error from Prepare.
+// Module is the descriptor a host registers. Tokens is delivered exclusively and
+// Verifier non-exclusively; the stance is StateEnabled, so a configuration the
+// module cannot run on is an error from Prepare.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -212,10 +178,9 @@ func readerOf(reg *core.Registry) (config.Reader, error) {
 	return reader, nil
 }
 
-// start probes the module's table and, once it is there, launches the
-// refresh-token sweep. The probe comes first because New does not touch the
-// table: on a first start it is not there until the migration has run, and the
-// sweep must not run against a table that does not exist yet.
+// start probes the module's table and then launches the refresh-token sweep: the
+// probe comes first because New does not touch the table, which a first start
+// only has once the migration has run.
 func (p *product) start(ctx context.Context) error {
 	if err := p.probe(ctx); err != nil {
 		return err

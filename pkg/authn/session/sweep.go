@@ -29,10 +29,9 @@ type sweeper struct {
 	done   chan struct{}
 }
 
-// start probes the table and starts the sweep. A table that is not there means
-// the migrations were not applied, which is a startup failure that names the
-// remedy: New does not touch the table, because on a first start it is not
-// there until Migrate has run.
+// start probes the table and starts the sweep. A table that is not there means the
+// migrations were not applied, a startup failure naming the remedy; New leaves the
+// table alone because on a first start Migrate has not run yet.
 func (p *product) start(ctx context.Context) error {
 	if err := p.probe(ctx); err != nil {
 		return err
@@ -104,11 +103,9 @@ func (p *product) sweepLoop(ctx context.Context, cancel context.CancelFunc, done
 	}
 }
 
-// sweepOnce deletes the rows that ended and are past retention, in batches, and
-// returns how many it deleted. A browser or token row ends when its absolute
-// period does; a service row ends with its secret, so it is deleted only once
-// revoked and past retention, and a row that follows a secret with no expiry
-// is never deleted by the clock.
+// sweepOnce deletes the ended rows past retention in batches and returns how many.
+// A browser or token row ends at its absolute period; a service row is deleted only
+// once revoked and past retention, and one with no expiry never by the clock.
 func (p *product) sweepOnce(ctx context.Context) (int, error) {
 	cutoff := clock.UTC(p.now().Add(-p.settings.retention()))
 	total := 0

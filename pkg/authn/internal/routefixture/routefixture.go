@@ -1,35 +1,6 @@
 // Package routefixture is the assembly the authentication capability's route
-// checks run on: the parts every module of the directory shares, and one
-// stand-in for the capabilities each one holds.
-//
-// Two of the parts are the real modules, and both for one reason: a stand-in
-// would encode this fixture's own reading of a fact the check exists to hold to
-// production. The route-mounting capability's module owns the base path every
-// registration is written under, and its interface belongs to
-// pkg/authn/internal/mount, so no package outside the capability can implement
-// it anyway. The gateway declares the configuration keys the deployment's own
-// address is read from — they are the gateway's, not the mounter's — so a case
-// that left it out would have nowhere to write an address, and the session
-// module refuses to start with none.
-//
-// The backend that verifies a credential answers the two questions the gateway
-// asks while it is assembling — its name and the carriers it takes — and
-// refuses every credential, because no request is served. It is taken in only
-// when the module under test is not itself a backend.
-//
-// The rest are stand-in capabilities with no body at all. A module resolves
-// each in its Prepare, its New or its Init and holds it, and the check drives
-// to Init and serves no request. The three a module does call while it is
-// assembling — the scope guard the gateway asks which endpoints an impersonating
-// identity may reach, the login method the engine names, and the register reads
-// the administration and SAML modules assert — carry that one method each and
-// no more.
-//
-// A stand-in embeds one interface and no more. Embedding several in one struct
-// would leave every method they have in common ambiguous, and an ambiguous
-// method is not promoted: the struct would satisfy none of the interfaces it
-// was built for, which the registry reports as a module that did not deliver
-// what it declared.
+// checks run on: the real route-mounting module and gateway, a backend that
+// refuses every credential, and stand-ins embedding one interface each.
 package routefixture
 
 import (
@@ -55,11 +26,9 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// Backend is a credential-verifying backend of a host's own, in the shape the
-// gateway admits one: it names itself and declares the carrier it takes. It is
-// the one stand-in here that answers more than "I am present", because the
-// gateway reads both of those while it is assembling, and it is taken in only
-// when the module under test is not itself a backend.
+// Backend is a credential-verifying backend of a host's own: it names itself
+// and declares the carrier it takes, and it is taken in only when the module
+// under test is not itself a backend.
 type Backend struct{}
 
 var _ authn.Verifier = Backend{}
@@ -76,10 +45,9 @@ func (Backend) Verify(context.Context, authn.Credential) authn.Verdict {
 	return authn.Denied(errors.New("routefixture: no request is served"))
 }
 
-// The stand-in types, one per capability. Each embeds its interface and
-// implements no method: resolving one and holding it never calls a method, and
-// a capability that is called during Init — the entry point, the gateway, the
-// database, the bus — is supplied for real instead.
+// The stand-in types, one per capability; each embeds its interface and
+// implements no method, so resolving one and holding it never calls a method.
+// A capability called during Init is supplied for real instead.
 type (
 	accounts         struct{ authn.Accounts }
 	accountAdmin     struct{ authn.AccountAdmin }
@@ -106,10 +74,9 @@ type (
 	keyValue        struct{ kv.KV }
 )
 
-// impersonation carries the read the administration module asserts an
-// impersonation register to have before it mounts the group of routes that
-// show a grant. The module judges the assertion itself and mounts nothing
-// without it, so an assembly that wants those routes declared must satisfy it.
+// impersonation carries the register read the administration module asserts
+// before it mounts the group of routes that show a grant; an assembly that
+// wants those routes declared must satisfy it.
 type impersonation struct {
 	authn.Impersonation
 }
@@ -138,7 +105,6 @@ type loginMethod struct {
 	authn.LoginMethod
 }
 
-// Name is this method's stable name, unique across the assembly.
 func (loginMethod) Name() string { return "routefixture" }
 
 // Begin starts no flow: no request is served.
@@ -215,12 +181,9 @@ var standIns = map[core.Token]func() core.Module{
 	},
 }
 
-// Seams is the stand-in set for exactly the capabilities named, which are the
-// ones a module under test requires and nothing supplies otherwise.
-//
-// A capability the module under test delivers exclusively must not be named
-// here: two exclusive providers in one assembly is a startup failure, and the
-// module's own instance is the one that belongs there.
+// Seams is the stand-in set for exactly the capabilities named. A capability
+// the module under test delivers exclusively must not be named here, since two
+// exclusive providers in one assembly is a startup failure.
 func Seams(tokens ...core.Token) []core.Module {
 	out := make([]core.Module, 0, len(tokens))
 	for _, token := range tokens {
@@ -233,26 +196,14 @@ func Seams(tokens ...core.Token) []core.Module {
 	return out
 }
 
-// PublicURL is the address the assembly is reached at from outside. The mounter
-// builds the cross-origin check from it, and the modules that name a cookie or
-// build a redirect read it as well; the session module refuses to start without
-// one, because the cookie it writes is named and scoped by that address.
+// PublicURL is the address the assembly is reached at from outside; the mounter
+// builds the cross-origin check from it, and the session module refuses to
+// start without one.
 const PublicURL = "https://app.example.com"
 
-// Assembly is the part of the assembly every authentication module shares: the
-// route-mounting capability's own module, the gateway, a credential-verifying
-// backend, and a database, together with the configuration they run on. That
-// configuration holds the deployment's own address and the database's file; a
-// case merges its own module's section into it.
-//
-// The gateway is the real one and is taken in for the configuration as much as
-// for the capability: the keys the deployment's own address is read from are
-// the gateway's, so an assembly that left it out would have nowhere to write
-// them, and the session module refuses to start with no address at all. The
-// gateway in turn refuses to start without a backend that verifies a
-// credential, so one is taken in beside it — unless module is itself a backend,
-// which the session and token modules both are, and which two of them would
-// make a claim conflict neither has.
+// Assembly is the part every authentication module's check shares: the real
+// route-mounting module, gateway and a database, a verifying backend unless
+// module is one itself, and the configuration they run on.
 func Assembly(t *testing.T, module core.Module) ([]core.Module, map[string]any) {
 	t.Helper()
 	database, databaseConfig := routecontract.SQLite(t)
@@ -270,10 +221,8 @@ func Assembly(t *testing.T, module core.Module) ([]core.Module, map[string]any) 
 				"mount": map[string]any{
 					"public-url": PublicURL,
 					// The fixture drives to Init, where the tenant scope's
-					// routes have to have an endpoint to mount on. The
-					// gateway's Start then judges that endpoint against the
-					// tenant layers, which this assembly does not carry; a
-					// case about that pairing drives its own assembly.
+					// routes need an endpoint to mount on; the gateway's Start
+					// would judge it against tenant layers this assembly lacks.
 					"endpoints": map[string]any{"tenants": routecontract.DefaultEndpoint},
 				},
 			},
@@ -286,14 +235,9 @@ func standIn(name string, instance any, token core.Token) core.Module {
 	return routecontract.StandIn("stand-in."+name, instance, token)
 }
 
-// SigningKey writes a P-256 private key and returns the configuration subtree
-// that points the token module at it, for a case to merge into its own.
-//
-// The token module refuses to construct without a key: there would be nothing
-// to verify a token with. The key is generated rather than fixed, so that no
-// private key is committed, and it is written where the module's own check
-// reads it — mode 0600, or the module reports the file as readable by other
-// users.
+// SigningKey writes a generated P-256 private key, mode 0600 where the token
+// module reads it, and returns the configuration subtree that points the module
+// at it; the module refuses to construct without a key.
 func SigningKey(t *testing.T) map[string]any {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

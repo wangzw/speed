@@ -22,9 +22,8 @@ const maxHeaderBytes = 64 << 10
 
 var (
 	// ErrDestinationDenied is the failure of a connection attempt to an address
-	// that is not public unicast. It is the same failure for every route to
-	// that address: a literal, a name resolving to it, or one record among
-	// several.
+	// that is not public unicast, the same failure for a literal, a name that
+	// resolves to it, or one record among several.
 	ErrDestinationDenied = errors.New("egress: destination address is not permitted")
 
 	// ErrSchemeNotHTTPS is the failure of a request whose URL scheme is not
@@ -44,11 +43,8 @@ type Options struct {
 	AllowLoopback bool
 
 	// RootCAs is the pool the peer's certificate is verified against, replacing
-	// the transport's default of the system roots: a deployment whose identity
-	// provider uses a private certificate authority, or a test serving its own
-	// certificate. Nil means the system roots. [RootCAsFromFile] builds one that
-	// appends a PEM file to the system roots rather than replacing them.
-	// Verification itself is never switched off.
+	// the transport's default of the system roots; nil means the system roots,
+	// [RootCAsFromFile] appends to them, and verification is never switched off.
 	RootCAs *x509.CertPool
 }
 
@@ -123,15 +119,9 @@ func judge(allowLoopback bool) controlFunc {
 	}
 }
 
-// dialAll resolves the host itself and connects to its addresses one after the
-// other, so that each attempt is a separate connection through the dialer and
-// so through the judgement. Resolving here also keeps the host in whatever
-// notation it was written — 0x7f.0.0.1, 2130706433 — out of any parsing of
-// ours: only the address that comes out is judged.
-//
-// The context net/http gives a dial is detached from the call that asked for
-// it: it has neither the call's deadline nor its cancellation. [guarded] carries
-// the call's context across as a value, and the dial ends with the call.
+// dialAll resolves the host and connects to its addresses one after the other,
+// judging only the resolved address; the dial context net/http supplies carries
+// neither the call's deadline nor its cancellation, which [guarded] restores.
 func dialAll(dialer *net.Dialer, lookup func(context.Context, string) ([]netip.Addr, error)) func(context.Context, string, string) (net.Conn, error) {
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
 		ctx, release := endWithCall(ctx)
@@ -166,9 +156,8 @@ func dialAll(dialer *net.Dialer, lookup func(context.Context, string) ([]netip.A
 type callKey struct{}
 
 // endWithCall returns ctx bounded by the call it was started for: it ends when
-// the call is cancelled and carries the call's deadline. A context that carries
-// no call is returned as it is. The release func is called when the dial is
-// over.
+// the call ends and carries its deadline, and a context with no call is
+// returned unchanged. Release is called when the dial is over.
 func endWithCall(ctx context.Context) (context.Context, context.CancelFunc) {
 	call, ok := ctx.Value(callKey{}).(context.Context)
 	if !ok {

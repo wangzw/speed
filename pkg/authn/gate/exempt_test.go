@@ -52,14 +52,13 @@ func TestRegisteringOutsideTheWindowPanics(t *testing.T) {
 
 		t.Run(reg.name+" inside the window", func(t *testing.T) {
 			g := testGateway(t, []string{"public"}, basicBackend("static", "static."))
-			reg.call(g, "public", "GET", "/health") // does not panic
+			reg.call(g, "public", "GET", "/health")
 		})
 	}
 }
 
-// TestARegistrationThatCannotLandFailsTheStartup holds the two validations
-// Start makes of the endpoint every registration names, each with its own
-// sentinel and for each of the three kinds.
+// TestARegistrationThatCannotLandFailsTheStartup fails the startup for an
+// unknown or unguarded endpoint, per kind and sentinel.
 func TestARegistrationThatCannotLandFailsTheStartup(t *testing.T) {
 	for _, reg := range registrations {
 		for _, c := range []struct {
@@ -144,9 +143,8 @@ func TestOneRouteWithTwoLevelsThatExcludeEachOtherFailsTheStartup(t *testing.T) 
 	}
 }
 
-// TestTheFrozenTableCarriesEachKindOnTheRoutesItWasRegisteredOn holds the
-// freeze: the tables say, route by route, which of the three levels each route
-// has, and a route registered with none has the zero value.
+// TestTheFrozenTableCarriesEachKindOnTheRoutesItWasRegisteredOn records each
+// route's levels, with the zero value where none was registered.
 func TestTheFrozenTableCarriesEachKindOnTheRoutesItWasRegisteredOn(t *testing.T) {
 	g := testGateway(t, []string{"admin", "public"}, basicBackend("static", "static."))
 	g.Exempt("public", "GET", "/status")
@@ -173,9 +171,8 @@ func TestTheFrozenTableCarriesEachKindOnTheRoutesItWasRegisteredOn(t *testing.T)
 	}
 }
 
-// TestTheFrozenTablesAreWrittenByEndpointMethodAndPath holds the startup
-// diagnostics that state what is public, what is optional and what admits an
-// impersonation.
+// TestTheFrozenTablesAreWrittenByEndpointMethodAndPath writes the diagnostics as
+// method and path per endpoint.
 func TestTheFrozenTablesAreWrittenByEndpointMethodAndPath(t *testing.T) {
 	logs := liveAssembly{
 		endpoints: []string{"public", "admin"},
@@ -229,10 +226,8 @@ func TestTheFrozenTablesAreWrittenByEndpointMethodAndPath(t *testing.T) {
 	}
 }
 
-// TestAnEmptyFrozenTableSaysSo holds the other half of that diagnostic: with
-// nothing registered it still speaks, and the exempt table says that every route
-// needs a credential, which is the sentence that makes an absent registration
-// readable.
+// TestAnEmptyFrozenTableSaysSo still writes the exempt table when nothing is
+// registered, saying every route needs a credential.
 func TestAnEmptyFrozenTableSaysSo(t *testing.T) {
 	attrs := registrationAttrs(nil, func(a access) bool { return a.exempt }, "exemptions",
 		"none: every route on every guarded endpoint requires a credential")
@@ -271,8 +266,6 @@ func TestAnExemptRouteReachesNoBackendAtAll(t *testing.T) {
 		},
 		exempt: []liveRoute{{endpoint: "public", method: "GET", path: "/health"}},
 	}.serve(t, func(l *live) {
-		// The request carries a credential, so that what is held is the ordering
-		// and not merely the absence of a header.
 		exempt = l.send("public", "GET", "/health", asAlice)
 		askedByExempt = asked.Load()
 		guarded = l.send("public", "GET", "/orders", asAlice)
@@ -298,10 +291,7 @@ func TestAnExemptRouteReachesNoBackendAtAll(t *testing.T) {
 }
 
 // TestAnOptionalRouteTakesARequestWithNoCredentialAndJudgesOneWithACredential
-// holds the optional registration against the real entry point: no credential
-// passes as nobody and the access level says optional, a good credential is the
-// account, a refused one is a 401 and not a pass as nobody, and a route beside
-// it that is not optional is guarded.
+// passes a bare request as nobody and still judges a credential that is present.
 func TestAnOptionalRouteTakesARequestWithNoCredentialAndJudgesOneWithACredential(t *testing.T) {
 	tokens := schemeBackend("token", "bearer")
 	tokens.verify = func(_ context.Context, c authn.Credential) authn.Verdict {
@@ -368,8 +358,6 @@ func TestAnExemptionMatchesTheRegisteredMethodAndPathOnly(t *testing.T) {
 	requireStatus(t, "GET /other, a route nobody exempted", other, nethttp.StatusUnauthorized)
 	requireStatus(t, "GET /either, the optional route", optionalGet, nethttp.StatusOK)
 	requireStatus(t, "POST /either, on the same path as the optional one", optionalPost, nethttp.StatusUnauthorized)
-	// The three refused above are refused by the gateway before the router
-	// answers, so they are one answer: same status, same headers, same body.
 	for _, c := range []struct {
 		name string
 		got  reply
@@ -412,15 +400,12 @@ func TestAnExemptionWrittenAsTheRouteWasRegisteredCoversThatRouteOnly(t *testing
 	requireStatus(t, "GET /public/css/site.css, matched to the same catch-all", nested, nethttp.StatusOK)
 	requireStatus(t, "GET /private/logo.png, matched to a catch-all nobody exempted",
 		elsewhere, nethttp.StatusUnauthorized)
-	// Both refusals come from the gateway before the matched routes' handlers
-	// run, so they are one answer despite matching different routes.
 	requireSameReply(t, "a refusal on a route beside the exempted one and on a catch-all nobody exempted",
 		"GET /accounts/me", sibling, "GET /private/logo.png", elsewhere, true)
 }
 
-// TestAnExemptionSpelledDifferentlyFromEveryRouteNeverMatches holds the cost
-// the comparison accepts: a registration that no route carries, in those
-// exact characters, is not an error and is not a match.
+// TestAnExemptionSpelledDifferentlyFromEveryRouteNeverMatches treats a spelling
+// no route carries as neither an error nor a match.
 func TestAnExemptionSpelledDifferentlyFromEveryRouteNeverMatches(t *testing.T) {
 	routes := []liveRoute{
 		{endpoint: "public", method: "GET", path: "/accounts/:id"},
@@ -451,8 +436,6 @@ func TestAnExemptionSpelledDifferentlyFromEveryRouteNeverMatches(t *testing.T) {
 		{"GET", "/orders/9"},
 		{"GET", "/nowhere"},
 	}
-	// Each registration is tried on its own, in a drive of its own: an exempt
-	// route may not also be optional, so the two kinds cannot share a spelling.
 	for kind, assemble := range map[string]func(liveAssembly) liveAssembly{
 		"an exemption":      func(a liveAssembly) liveAssembly { a.exempt = spelled; return a },
 		"an optional route": func(a liveAssembly) liveAssembly { a.optional = spelled; return a },
@@ -476,18 +459,13 @@ func TestAnExemptionSpelledDifferentlyFromEveryRouteNeverMatches(t *testing.T) {
 	}
 }
 
-// TestARequestTheRouterAnswersWithoutARouteIsStillChallenged holds the
-// position of the gateway relative to the router's own answers: a request
-// that matches no route, one the matched path does not allow the method for,
-// and a HEAD to a route registered for GET alone, are all answered by the
-// gateway first when they carry no credential, and by the router once they
-// do.
+// TestARequestTheRouterAnswersWithoutARouteIsStillChallenged answers first when
+// no credential is carried, and by the router once one is.
 func TestARequestTheRouterAnswersWithoutARouteIsStillChallenged(t *testing.T) {
 	requests := []struct {
-		name   string
-		method string
-		path   string
-		// answered is what the router answers once the caller has authenticated.
+		name     string
+		method   string
+		path     string
 		answered int
 	}{
 		{"a path no route carries", "GET", "/nowhere", nethttp.StatusNotFound},
@@ -525,9 +503,6 @@ func TestARequestTheRouterAnswersWithoutARouteIsStillChallenged(t *testing.T) {
 	for i, r := range requests {
 		requireStatus(t, r.name+" without a credential", bare[i], nethttp.StatusUnauthorized)
 		requireChallenge(t, r.name+" without a credential", bare[i])
-		// The gateway refuses all three before the router answers, so the answers
-		// must not differ in anything but Date: same status, same headers (Allow
-		// included) and, where the method has a body, the same body.
 		requireSameReply(t, r.name+" without a credential", requests[0].name, bare[0],
 			r.name, bare[i], r.method != nethttp.MethodHead)
 		if got := bare[i].header.Get("Allow"); got != "" {
@@ -593,7 +568,6 @@ func TestARegistrationOnlyAppliesToTheEndpointItWasRegisteredOn(t *testing.T) {
 		nethttp.StatusUnauthorized)
 }
 
-// assertPanics runs fn and fails unless it panicked.
 func assertPanics(t *testing.T, what string, fn func()) {
 	t.Helper()
 	defer func() {
@@ -604,10 +578,8 @@ func assertPanics(t *testing.T, what string, fn func()) {
 	fn()
 }
 
-// panicked is assertPanics with the message kept. The panic a refused
-// registration raises is a rendered message, and it is the whole of what the
-// caller sees: only the text can hold which side of the window the call fell on
-// and where the call belongs.
+// panicked is assertPanics with the panic's message kept, which is all a caller
+// of a refused registration sees.
 func panicked(t *testing.T, what string, fn func()) (text string) {
 	t.Helper()
 	defer func() {

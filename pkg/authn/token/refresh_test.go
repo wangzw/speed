@@ -51,9 +51,8 @@ func (c *fakeClock) advance(d time.Duration) {
 	c.t = c.t.Add(d)
 }
 
-// fakeSettings is a settings store a test writes by hand. It carries every item
-// the token module reads, so a case changes one and the rest stay at their
-// declared defaults, exactly as a real store without rows behaves.
+// fakeSettings is a settings store a test writes by hand, carrying every item the
+// token module reads so a case changes one and the rest stay at their declared defaults.
 type fakeSettings struct {
 	settings.Store
 	mu     sync.Mutex
@@ -109,11 +108,9 @@ func (f *fakeSettings) Get(_ settings.Layer, key string, target any) error {
 	return nil
 }
 
-// fakeSessions is a session store a test writes by hand. statuses holds the
-// answer StatusFresh gives for each identifier; an identifier that is not there
-// is ErrSessionNotFound. It records the identifiers Revoke and ForCredential
-// were called with, and whether Status (the cached read) was ever called, which
-// is what a case asserts against when it holds that a rotation reads fresh.
+// fakeSessions is a session store a test writes by hand: statuses answers StatusFresh,
+// an identifier not there is ErrSessionNotFound, and it records what Revoke and
+// ForCredential were called with and whether the cached Status read was used.
 type fakeSessions struct {
 	authn.Sessions
 	mu           sync.Mutex
@@ -171,8 +168,7 @@ func (f *fakeSessions) Status(_ context.Context, _ authn.SessionID) (authn.Sessi
 func (f *fakeSessions) Revoke(ctx context.Context, id authn.SessionID, reason string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	// A cancelled context is a failure here, as it would be for the real store's
-	// SQL, so a case can hold that a write does not depend on the caller's.
+	// A cancelled context fails here, as the real store's SQL would.
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -397,9 +393,8 @@ type rig struct {
 	logs      *logBuffer
 }
 
-// newRig builds the product: one signing key, a real refresh table, and the
-// stand-in collaborators at their defaults. The caller changes a field of the
-// rig and then drives the product.
+// newRig builds the product: one signing key, a real refresh table, and the stand-in
+// collaborators at their defaults; the caller changes a field and drives the product.
 func newRig(t *testing.T) *rig {
 	t.Helper()
 	dsn := filepath.Join(t.TempDir(), "tokens.db") + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
@@ -517,8 +512,8 @@ func (r *rig) rowsForSession(id authn.SessionID) []refreshRow {
 	return out
 }
 
-// checks that NewRefresh is refused for a session that is not a token
-// session.
+// TestNewRefreshOnlyForTokenSessions refuses a refresh token for a session that is
+// not a token session.
 func TestNewRefreshOnlyForTokenSessions(t *testing.T) {
 	ctx := context.Background()
 	for _, kind := range []authn.SessionKind{authn.SessionBrowser, authn.SessionService} {
@@ -813,9 +808,8 @@ func applyMigrationFile(t *testing.T, handle *gorm.DB, dialect string) {
 	}
 }
 
-// TestBothDialectMigrationsRejectADuplicateTokenHash holds the uniqueness of
-// token_hash in both migrations: a second row carrying the same digest is
-// refused.
+// TestBothDialectMigrationsRejectADuplicateTokenHash holds that both dialect
+// migrations reject a second row carrying the same token_hash.
 func TestBothDialectMigrationsRejectADuplicateTokenHash(t *testing.T) {
 	for _, dialect := range []string{"sqlite", "postgres"} {
 		t.Run(dialect, func(t *testing.T) {
@@ -837,9 +831,8 @@ func TestBothDialectMigrationsRejectADuplicateTokenHash(t *testing.T) {
 	}
 }
 
-// TestARotationCopiesTheSessionsAuthenticationFacts holds that the access token
-// a rotation issues carries the session's assurance and authentication time, not
-// a widened level or a dropped time.
+// TestARotationCopiesTheSessionsAuthenticationFacts holds that a rotation's access
+// token carries the session's assurance and authentication time unchanged.
 func TestARotationCopiesTheSessionsAuthenticationFacts(t *testing.T) {
 	r := newRig(t)
 	_, first := r.issueRefresh()
@@ -879,9 +872,8 @@ func TestARotationCarriesAMultiFactorSessionAsMulti(t *testing.T) {
 	}
 }
 
-// TestRefreshVerifiesTheSessionEvenInTheStatelessMode holds that check-session
-// turns off only the verifying backend's session step: a rotation still reads the
-// session fresh, so a session that is no longer live refuses the exchange.
+// TestRefreshVerifiesTheSessionEvenInTheStatelessMode holds that a rotation still
+// reads the session fresh when check-session is off.
 func TestRefreshVerifiesTheSessionEvenInTheStatelessMode(t *testing.T) {
 	r := newRig(t)
 	id, first := r.issueRefresh()
@@ -895,15 +887,11 @@ func TestRefreshVerifiesTheSessionEvenInTheStatelessMode(t *testing.T) {
 	}
 }
 
-// TestARefreshWhoseRowDisappearsMidCallIsInvalidGrant holds the reread branch: a
-// row that vanishes between the read by digest and the reread after a lost
-// consume answers invalid_grant, the same case the first read answers, not the
-// store's private sentinel the endpoint would map to 503.
+// TestARefreshWhoseRowDisappearsMidCallIsInvalidGrant holds that a row vanishing
+// mid-call answers invalid_grant, not a sentinel that maps to 503.
 func TestARefreshWhoseRowDisappearsMidCallIsInvalidGrant(t *testing.T) {
 	r := newRig(t)
 	_, first := r.issueRefresh()
-	// The session read deletes the row, as a concurrent revoke or sweep would
-	// between the read by digest and the reread.
 	r.sessions.freshHook = func() {
 		if err := r.p.handle.Exec("DELETE FROM " + tableName).Error; err != nil {
 			t.Errorf("deleting the row: %v", err)
@@ -914,9 +902,8 @@ func TestARefreshWhoseRowDisappearsMidCallIsInvalidGrant(t *testing.T) {
 	}
 }
 
-// TestTheRowStoresTimesAsUTCText holds the stored representation, not just
-// the instant: the column text carries the UTC designator, which is what the
-// SQLite string comparisons rely on.
+// TestTheRowStoresTimesAsUTCText holds that the stored column text carries the UTC
+// designator the SQLite string comparisons rely on.
 func TestTheRowStoresTimesAsUTCText(t *testing.T) {
 	r := newRig(t)
 	r.clock.t = time.Date(2026, time.October, 12, 16, 0, 0, 0, time.FixedZone("UTC+8", 8*3600))
@@ -947,9 +934,7 @@ func TestTheRefreshIdleTTLSettingIsRead(t *testing.T) {
 }
 
 // TestTheReuseRevocationDoesNotDependOnTheRequestContext holds that the family
-// revocation, the event and the audit of a detected reuse run on a context
-// detached from the request: the reuse is detected on the retry path, where the
-// client's connection may already be gone, and the family must still be ended.
+// revocation, the event and the audit of a detected reuse run on a detached context.
 func TestTheReuseRevocationDoesNotDependOnTheRequestContext(t *testing.T) {
 	r := newRig(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -966,9 +951,8 @@ func TestTheReuseRevocationDoesNotDependOnTheRequestContext(t *testing.T) {
 	}
 }
 
-// TestRefreshRefusesAnImpersonationSession holds the same guard NewRefresh has:
-// a session marked an impersonation never rotates a refresh token, however its
-// row came to exist.
+// TestRefreshRefusesAnImpersonationSession holds that an impersonation session
+// never rotates a refresh token.
 func TestRefreshRefusesAnImpersonationSession(t *testing.T) {
 	r := newRig(t)
 	id, first := r.issueRefresh()
@@ -980,9 +964,8 @@ func TestRefreshRefusesAnImpersonationSession(t *testing.T) {
 	}
 }
 
-// TestAGraceHitIsLoggedAtWarn holds the security signal the design fixes: a
-// second presentation inside the grace window is written at Warn, naming the
-// session.
+// TestAGraceHitIsLoggedAtWarn holds that a second presentation inside the grace
+// window is written at Warn, naming the session.
 func TestAGraceHitIsLoggedAtWarn(t *testing.T) {
 	r := newRig(t)
 	r.settings.set(refreshGracePath, time.Minute)
@@ -1000,9 +983,8 @@ func TestAGraceHitIsLoggedAtWarn(t *testing.T) {
 	}
 }
 
-// TestTheRefreshGraceBoundaryIsInclusive holds the grace comparison's boundary:
-// a retry exactly one grace period after the row was used is still a sibling,
-// not a reuse.
+// TestTheRefreshGraceBoundaryIsInclusive holds that a retry exactly one grace
+// period after the row was used is a sibling, not a reuse.
 func TestTheRefreshGraceBoundaryIsInclusive(t *testing.T) {
 	r := newRig(t)
 	grace := time.Minute

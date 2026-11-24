@@ -11,15 +11,8 @@ import (
 	"github.com/go-jose/go-jose/v4/jwt"
 )
 
-// This file is the one bridge from the package to the JOSE library. Everything
-// the token's signing, verification and publication need of go-jose is here and
-// nowhere else: the rest of the package reads a token through the methods of
-// signedToken and builds a key set through marshalJWKS, so a change of library
-// reaches this file alone. The library is not named in any signature outside it.
-
 // keyID is the RFC 7638 thumbprint of a public key, base64url without padding:
-// the kid of the key, taken from the key itself rather than from any name in the
-// configuration, so two replicas that read the same file agree on it.
+// it is taken from the key itself, so replicas reading the same file agree.
 func keyID(pub crypto.PublicKey) (string, error) {
 	sum, err := (&jose.JSONWebKey{Key: pub}).Thumbprint(crypto.SHA256)
 	if err != nil {
@@ -40,9 +33,8 @@ func marshalJWKS(keys []keyEntry) ([]byte, error) {
 	return json.Marshal(set)
 }
 
-// sign signs payload with the signing key of k and returns the compact JWS. The
-// header carries the kid and the type typ; the algorithm is the key's own, so
-// the algorithm of a token is fixed by the key rather than by a claim.
+// sign signs payload with the signing key of k and returns the compact JWS,
+// whose header carries the kid, the typ and the key's own algorithm.
 func sign(k keyEntry, typ string, payload []byte) (string, error) {
 	if k.signer == nil {
 		return "", fmt.Errorf("%s: the key %s has no private half", ModuleName, k.kid)
@@ -65,16 +57,13 @@ func sign(k keyEntry, typ string, payload []byte) (string, error) {
 	return obj.CompactSerialize()
 }
 
-// signedToken is a parsed access token. The jose types it holds live in this
-// file alone: the rest of the package reads a token through the methods below
-// and never names the library.
+// signedToken is a parsed access token.
 type signedToken struct {
 	token *jwt.JSONWebToken
 }
 
-// parseSigned parses raw, accepting only a signature whose algorithm is in
-// algorithms. A token that does not carry exactly one signature, or one whose
-// algorithm is not listed, is refused here.
+// parseSigned parses raw, accepting only an algorithm in algorithms and exactly
+// one signature.
 func parseSigned(raw string, algorithms []string) (*signedToken, error) {
 	allowed := make([]jose.SignatureAlgorithm, len(algorithms))
 	for i, a := range algorithms {
@@ -110,22 +99,16 @@ func (t *signedToken) criticalHeader() bool {
 	return ok
 }
 
-// verify checks the signature against pub and decodes the claims into dest. The
-// claims are handed back only through dest, so a token whose signature does not
-// hold yields no claim set. It is the reading a revocation needs, which judges
-// no lifetime and no session.
+// verify checks the signature against pub and decodes the claims into dest, so a
+// token whose signature does not hold yields no claim set. It judges no lifetime
+// and no session.
 func (t *signedToken) verify(pub crypto.PublicKey, dest any) error {
 	return t.token.Claims(pub, dest)
 }
 
-// validate is the verifying sequence's claim step: it checks the signature
-// against pub, decodes the claims into dest and runs the library's own
-// standard-claim validation over them — the issuer compared exactly, the
-// audience needing a non-empty intersection with audience, and exp, nbf and iat
-// compared against now with leeway. It is the one place the library's Expected
-// and ValidateWithLeeway are named, so the verifying sequence states neither the
-// library's type nor its rules. A token whose exp is absent passes here, because
-// the library leaves it optional; requiring it is the caller's own rule.
+// validate verifies the signature against pub, decodes the claims into dest and
+// runs the library's standard-claim validation: issuer exact, audience
+// intersecting, exp, nbf and iat against now with leeway. An absent exp passes.
 func (t *signedToken) validate(pub crypto.PublicKey, dest any, issuer string, audience []string,
 	now time.Time, leeway time.Duration,
 ) error {

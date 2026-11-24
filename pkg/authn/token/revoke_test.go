@@ -119,9 +119,8 @@ func TestRevokeOfAnUnrecognisableTokenIsANoOpAndAlwaysSucceeds(t *testing.T) {
 	}
 }
 
-// TestRevokeDoesNotRevokeForATokenOfAnotherKey holds that a token whose
-// signature does not hold is a no-op: a revocation never trusts an unsigned
-// payload.
+// TestRevokeDoesNotRevokeForATokenOfAnotherKey treats a token of another key as
+// a no-op: a revocation never trusts an unsigned payload.
 func TestRevokeDoesNotRevokeForATokenOfAnotherKey(t *testing.T) {
 	r := newRig(t)
 	id, _ := r.issueRefresh()
@@ -146,9 +145,8 @@ func TestRevokeDoesNotRevokeForATokenOfAnotherKey(t *testing.T) {
 	}
 }
 
-// TestRevokeOfARefreshTokenRefusesWhenTheTableIsUnreachable holds the failure
-// direction of a revocation: a dependency that cannot answer is ErrUnavailable,
-// never the success a presenter would read as "the token is gone".
+// TestRevokeOfARefreshTokenRefusesWhenTheTableIsUnreachable returns ErrUnavailable
+// when the table cannot answer, never success.
 func TestRevokeOfARefreshTokenRefusesWhenTheTableIsUnreachable(t *testing.T) {
 	r := newRig(t)
 	_, refresh := r.issueRefresh()
@@ -162,9 +160,8 @@ func TestRevokeOfARefreshTokenRefusesWhenTheTableIsUnreachable(t *testing.T) {
 	}
 }
 
-// TestRevokeOfARefreshTokenRefusesWhenTheSessionWriteFails holds that a
-// revocation whose session write fails is not reported as success: the session
-// stays live, so the caller must not be told it was revoked.
+// TestRevokeOfARefreshTokenRefusesWhenTheSessionWriteFails returns ErrUnavailable
+// when the session write fails, not success.
 func TestRevokeOfARefreshTokenRefusesWhenTheSessionWriteFails(t *testing.T) {
 	r := newRig(t)
 	_, refresh := r.issueRefresh()
@@ -178,9 +175,8 @@ func TestRevokeOfARefreshTokenRefusesWhenTheSessionWriteFails(t *testing.T) {
 	}
 }
 
-// TestRevokeOfAnAccessTokenRefusesWhenTheSessionStoreIsUnreachable holds the
-// same direction on the access-token path: the session read that decides the
-// kind cannot answer, so the revocation refuses rather than revoke blindly.
+// TestRevokeOfAnAccessTokenRefusesWhenTheSessionStoreIsUnreachable refuses rather
+// than revoke blindly when the session read fails.
 func TestRevokeOfAnAccessTokenRefusesWhenTheSessionStoreIsUnreachable(t *testing.T) {
 	r := newRig(t)
 	id, _ := r.issueRefresh()
@@ -195,9 +191,8 @@ func TestRevokeOfAnAccessTokenRefusesWhenTheSessionStoreIsUnreachable(t *testing
 	}
 }
 
-// TestRevokeOfAnImpersonationTokenRefusesWhenTheRecordStoreIsUnreachable holds
-// that ending an impersonation record that cannot be reached is ErrUnavailable,
-// not a success the still-live record contradicts.
+// TestRevokeOfAnImpersonationTokenRefusesWhenTheRecordStoreIsUnreachable returns
+// ErrUnavailable when the record store cannot be reached.
 func TestRevokeOfAnImpersonationTokenRefusesWhenTheRecordStoreIsUnreachable(t *testing.T) {
 	r := newRig(t)
 	admin := authn.SessionID("sess-admin-1")
@@ -220,9 +215,8 @@ func TestRevokeOfAnImpersonationTokenRefusesWhenTheRecordStoreIsUnreachable(t *t
 	}
 }
 
-// TestRevokeOfATokenForAnAbsentSessionStillSucceeds holds the other half: a
-// session the token names that is already gone is a no-op success, so a token
-// that outlived its session does not turn a revocation into a 503.
+// TestRevokeOfATokenForAnAbsentSessionStillSucceeds succeeds for a token whose
+// session is already gone.
 func TestRevokeOfATokenForAnAbsentSessionStillSucceeds(t *testing.T) {
 	r := newRig(t)
 	access := r.accessFor(authn.SessionID("sess-gone"), "")

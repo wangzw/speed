@@ -1,33 +1,6 @@
-// Package mount is the interface through which a module of the authentication
-// capability mounts a route, and the options that qualify one registration.
-//
-// The implementation is the module in pkg/authn/mount, which registers the route
-// and its access level in one call: a route and the exemption that lets it
-// through the gateway are never written separately, so there is no route that
-// was mounted and left unexempted, and no exemption that names a path with a typo
-// in it.
-//
-// Two rules are read by that module and by the gateway both, and live here so
-// that there is one reading of each: which endpoint the routes are mounted on
-// (Endpoint) and which origins the cross-origin check trusts (TrustedOrigins,
-// CrossOrigin). The gateway cannot hand its own check to the Mounter, because a
-// host may supply a Gate of its own, so each builds an instance from the same
-// rule.
-//
-// The package also holds what every handler mounted through it shares, so that
-// each module writes none of it again: the closed set of problem codes and the
-// writers that answer with them (Fail, Unauthorized, StepUpRequired, Forbidden,
-// Throttled, Unavailable, Busy), the response-header writers a typed handler
-// uses for a header its answer body does not express (SetResponseHeader,
-// AddResponseHeader), the challenge a typed handler answers 401 with
-// (UnauthorizedChallenge), the request body decoder
-// (Decode), the wrapper every registration goes through (Wrap) and the bypass of
-// the cross-origin check for a callback (AllowCallback). The mounttest package
-// is a Mounter for the tests of those modules.
-//
-// The package is internal to pkg/authn. The modules that mount routes require
-// the capability by this interface, and a host reaches it only through the
-// modules, never by the type.
+// Package mount is the interface through which a module mounts a route with its
+// access level, and the options that qualify one registration. It is internal to
+// pkg/authn and reached only through the modules that mount routes.
 package mount
 
 import (
@@ -38,12 +11,9 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// DefaultBasePath is the base path the capability's ordinary routes are
-// mounted under without a configured one: the self-service and sign-in
-// surface, which carries no scope segment. The gateway declares it as the
-// default of mount.bases.default and the module that mounts routes reads it
-// back the same way; it is written once here so a host-supplied gateway and
-// the module cannot come to disagree on where the routes are.
+// DefaultBasePath is the base path the capability's ordinary routes mount under
+// without a configured one: the self-service and sign-in surface, which carries
+// no scope segment.
 const DefaultBasePath = "/api/v1/auth"
 
 // HumanProofMaxBytes is the longest human-verification proof a send request may
@@ -51,12 +21,9 @@ const DefaultBasePath = "/api/v1/auth"
 // request before it asks a provider, so an unbounded field never reaches one.
 const HumanProofMaxBytes = 8 << 10
 
-// The defaults of the management scopes. Each is derived from the same API
-// root and the scope segment, so a deployment that changes none of them gets
-// the path taxonomy the repository publishes. The system base is the scope's
-// root and not a capability's namespace under it: the scope carries both the
-// account surface (/auth) and the platform's tenant-addressed administration
-// (/tenants), and one base has to contain every path the scope publishes.
+// The defaults of the management scopes: each scope's base path, derived from
+// the same API root and scope segment, with the system base at the scope root so
+// it contains every path the scope publishes.
 const (
 	DefaultTenantsBasePath = "/api/v1/tenants"
 	DefaultSystemBasePath  = "/api/v1/system"
@@ -75,15 +42,9 @@ func DefaultBaseFor(scope speedhttp.Scope) string {
 	}
 }
 
-// Mounter registers routes under the capability's base path together with the
-// access level the gateway is to apply to each.
-//
-// Every registration goes through one wrapper: the response carries
-// Cache-Control: no-store, and a POST, PUT, PATCH or DELETE that is not a
-// Callback passes the cross-origin check first and is refused with 401 when it
-// does not. The path is Base() + rel, and a registration that fails (a route
-// conflict, a call outside the registration window) panics in the way the
-// router's own Route does.
+// Mounter registers routes under the capability's base path with the access
+// level the gateway applies; every registration carries Cache-Control: no-store
+// and, unless a Callback, the cross-origin check, and a failed one panics like Route.
 type Mounter interface {
 	// Public registers the route and exempts it from authentication.
 	Public(method, rel string, h gin.HandlerFunc, opts ...Option)
@@ -100,9 +61,7 @@ type Mounter interface {
 	// BaseIn is the base path routes of the given scope are joined to.
 	BaseIn(scope speedhttp.Scope) string
 	// Endpoint is the name of the endpoint the ordinary scope's routes are
-	// mounted on. A handler that answers 401 itself writes it as the realm of
-	// its challenge, the name of the protection space being the endpoint, as
-	// the gateway's own is.
+	// mounted on; a handler that answers 401 itself writes it as its challenge's realm.
 	Endpoint() string
 	// PublicURL is the origin the deployment is reached at from outside,
 	// without a path.
@@ -112,14 +71,9 @@ type Mounter interface {
 	CSRF() *http.CrossOriginProtection
 }
 
-// Declared registers the route an operation declares, at the access level the
-// declaration names. The registration and the declaration are then one source:
-// a route cannot be mounted public while its operation says it is guarded, and
-// the fragment cannot publish a requirement the gateway does not apply.
-//
-// Callback is registered separately, because a callback is both public and
-// exempt from the cross-origin check, and only its own registrant knows which
-// methods arrive from another site.
+// Declared registers the route an operation declares at the access level the
+// declaration names, so a route cannot be mounted at a level its operation does
+// not say. Callback is registered separately.
 func Declared(m Mounter, operation speedhttp.Declared, rel string, h gin.HandlerFunc, opts ...Option) {
 	descriptor := operation.Descriptor()
 	switch descriptor.Access {

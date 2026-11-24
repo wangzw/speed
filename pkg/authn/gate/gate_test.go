@@ -24,11 +24,9 @@ type fakeVerifier struct {
 	name    string
 	accepts authn.Accepts
 	verify  func(ctx context.Context, c authn.Credential) authn.Verdict
-	// asked counts the calls into Verify, which is how a case asserts that a
-	// backend was not reached at all. It is atomic because the cases about the
-	// in-flight gate drive one backend from several request goroutines at once,
-	// and a miscount there would show up as an assertion failing for no visible
-	// reason. It may be nil, in which case calls are not counted.
+	// asked counts the calls into Verify; it is atomic because several request
+	// goroutines drive one backend at once. It may be nil, in which case calls
+	// are not counted.
 	asked *atomic.Int64
 	// mu guards handed.
 	mu sync.Mutex
@@ -91,9 +89,7 @@ func cookieBackend(name string, cookies ...string) *fakeVerifier {
 }
 
 // principalOf is what a backend claims about a caller whose credential holds
-// for the account local: an account in the backend's own namespace, one
-// authentication method and the time it is now. Every field the gateway's exit
-// check reads is one a well-behaved backend sets.
+// for the account local: an account, one method and the time now.
 func principalOf(f *fakeVerifier, local string) authn.Principal {
 	return authn.Principal{
 		Account:   authn.AccountID(f.accepts.Accounts + local),
@@ -112,10 +108,8 @@ func passes(f *fakeVerifier) *fakeVerifier {
 	return f
 }
 
-// fakeEndpoint records what was registered on one endpoint. It stands in for the
-// entry point in the cases about what the descriptor registers and which
-// endpoint names it accepts; what a real chain does with a request is held
-// against the real entry point instead.
+// fakeEndpoint records what was registered on one endpoint. It stands in for
+// the entry point in cases about what the descriptor registers.
 type fakeEndpoint struct {
 	middleware []speedhttp.Middleware
 }

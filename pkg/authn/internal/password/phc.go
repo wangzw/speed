@@ -1,17 +1,6 @@
 // Package password is what the authentication capability does with a password
-// once it has one: the PHC form a password hash is stored in, the derivation
-// and the check against it, the bounds on what a derivation may cost, the cache
-// of checks that held, and the in-process back-off of failed attempts.
-//
-// Two kinds of backend use it. The static table, which is a credential a
-// request presents every time, uses all of it. The account backend, whose
-// passwords are checked at an interactive login, uses the form, the derivation,
-// the bounds and the decoy, and keeps its back-off in the database.
-//
-// An entry is read before anything is derived from it. Reading is strict and
-// bounded, so that what an entry says cannot decide what one check costs: a
-// table or a database row that holds an entry asking for gigabytes of memory is
-// refused, and the refusal costs nothing.
+// once it has one: the PHC form, the derivation and the check against it, the
+// bounds on what a derivation may cost, the cache of checks that held, and back-off.
 package password
 
 import (
@@ -28,10 +17,8 @@ import (
 )
 
 // ErrMalformedHash reports a password hash this package cannot read, or one it
-// would not write because no reader would accept the result. It is declared
-// here because the reading is, and the static backend exports it under its own
-// name: the format is the stored contract between whoever writes an entry and
-// the code that reads it.
+// would not write; the static backend exports it under its own name as the
+// stored contract between the writer and the reader of an entry.
 var ErrMalformedHash = errors.New("authn/static: password hash is not in a readable format")
 
 // Algorithm names a password hashing algorithm as the first segment of a PHC
@@ -71,11 +58,9 @@ const (
 	argonKeyLen   = 32
 )
 
-// argonPHC is the one shape an Argon2id string may have. The library that reads
-// the parameters accepts more than the standard form, such as a parameter list
-// with something after it, so the shape is held here first: nothing reaches the
-// library that is not already canonical, with no whitespace, no padding, no
-// unknown or repeated parameter and no number with a sign or leading zero.
+// argonPHC is the one shape an Argon2id string may have; the library that reads
+// the parameters accepts more, so nothing reaches it that is not already
+// canonical: no whitespace, padding, unknown or repeated parameter, sign or leading zero.
 var argonPHC = regexp.MustCompile(
 	`^\$argon2id\$v=19\$m=[1-9][0-9]{0,9},t=[1-9][0-9]{0,9},p=[1-9][0-9]{0,9}\$[A-Za-z0-9+/]+\$[A-Za-z0-9+/]+$`)
 
@@ -85,9 +70,7 @@ var argonPHC = regexp.MustCompile(
 var pbkdf2Params = regexp.MustCompile(`^i=([1-9][0-9]{0,9}),l=([1-9][0-9]{0,9})$`)
 
 // b64 is the encoding of a salt and a key in every form: the standard alphabet
-// without padding, strict about the bits after the last full byte. Padding is a
-// character several configuration formats quote differently, and a decoder that
-// ignored line endings would let an entry carry them.
+// without padding, strict about the bits after the last full byte.
 var b64 = base64.RawStdEncoding.Strict()
 
 // Params are the cost parameters an entry was written with, or one would be
@@ -113,9 +96,7 @@ func DefaultParams() Params {
 }
 
 // BelowFloor reports whether the parameters are weaker than the least OWASP
-// recommends: Argon2id at one of five (memory, iterations) combinations with at
-// least one lane, or PBKDF2-SHA256 at 600000 iterations. A reader does not
-// refuse a weaker entry; it names it.
+// recommends; a reader does not refuse such an entry, it names it.
 func (p Params) BelowFloor() bool {
 	switch p.Algorithm {
 	case Argon2id:
@@ -136,11 +117,9 @@ func (p Params) BelowFloor() bool {
 	return true
 }
 
-// Weaker reports whether an entry written with p is weaker than one written
-// with current, which is what asks for it to be written again after a check
-// that held. An entry of another algorithm than the current one is weaker by
-// that alone: a deployment that changed algorithm moves its entries over as
-// each is used.
+// Weaker reports whether an entry written with p is weaker than one written with
+// current, so a check that held asks for it to be written again; an entry of
+// another algorithm is weaker by that alone.
 func (p Params) Weaker(current Params) bool {
 	if p.Algorithm != current.Algorithm {
 		return true
@@ -178,11 +157,9 @@ func (e Entry) Legacy() bool { return e.legacy }
 // the digest and so retires every cached check against it.
 func (e Entry) Digest() [sha256.Size]byte { return sha256.Sum256([]byte(e.encoded)) }
 
-// PHC is the entry in the PHC form: the string itself for an entry that is
-// already in it, and for a legacy entry the same salt and key, byte for byte, in
-// the PHC shell, so that the one password verifies against both. A legacy entry
-// whose salt is shorter than a PHC entry may carry cannot be written that way and
-// is refused with ErrMalformedHash.
+// PHC is the entry in the PHC form: the string itself for a PHC entry, and for a
+// legacy entry the same salt and key in the PHC shell. A legacy salt too short
+// for that form is refused with ErrMalformedHash.
 func (e Entry) PHC() (string, error) {
 	switch {
 	case e.params.Algorithm == "":
@@ -206,14 +183,9 @@ func (e Entry) MemoryKiB() int64 {
 	return 0
 }
 
-// Parse reads an entry. A string that begins with a dollar sign is a PHC string
-// and is dispatched on its first segment; any other is read as the legacy form
-// pbkdf2-sha256$<iterations>$<salt>$<key>.
-//
-// Reading is strict: nothing is accepted that is not canonical, and every number
-// is held to its bound before the entry is returned, so an entry that is
-// returned can be derived from within a known cost. The error never carries the
-// string or any part of it.
+// Parse reads an entry: a string beginning with a dollar sign is a PHC string
+// dispatched on its first segment, any other is the legacy form; reading is
+// strict and bounded, and the error never carries the string or part of it.
 func Parse(encoded string) (Entry, error) {
 	for i := 0; i < len(encoded); i++ {
 		if c := encoded[i]; c <= ' ' || c == 0x7f {
@@ -341,11 +313,8 @@ func parseLegacy(encoded string) (Entry, error) {
 }
 
 // pbkdf2Entry finishes a PBKDF2 entry with the one check that depends on the
-// process: whether a derivation can run at all with these parameters. In FIPS
-// 140-only mode the standard library refuses a salt shorter than 128 bits, and
-// a table entry that could never verify is a startup failure and not a refusal
-// only the holder of that account would run into. A single round is enough to
-// ask, and the answer does not depend on the password or on the count.
+// process: in FIPS 140-only mode the standard library refuses a salt shorter
+// than 128 bits, so an entry that could never verify fails at parse time.
 func pbkdf2Entry(encoded string, iterations int, salt, key []byte, legacy bool) (Entry, error) {
 	if _, err := pbkdf2.Key(sha256.New, "", salt, 1, len(key)); err != nil {
 		return Entry{}, fmt.Errorf("%w: this process cannot derive a key from it: %w", ErrMalformedHash, err)

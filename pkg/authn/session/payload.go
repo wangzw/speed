@@ -14,10 +14,8 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// maxDataBytes is the most the data column of a row may hold, in bytes. The
-// table refuses a longer text as well, and a payload is refused here first so
-// that the failure is an invalid argument and not a statement the database
-// rejected.
+// maxDataBytes is the most the data column of a row may hold; the table refuses a
+// longer text too, and refusing here first keeps the failure an invalid argument.
 const maxDataBytes = 8192
 
 const maxTokenLen = 256
@@ -30,10 +28,9 @@ const maxMethods = 8
 // the row it sits in. Such a row never authenticates anybody.
 var errCorrupt = errors.New("session: the stored payload is not one this module wrote")
 
-// payload is what the data column holds, in the JSON the codec writes: the facts
-// a verifying backend builds an identity from that are not columns of their own.
-// The session identifier, the account and the kind repeat the row's, which is
-// how a payload moved onto another row is told apart.
+// payload is what the data column holds: the facts a verifying backend builds an
+// identity from that are not columns of their own. The identifier, account and
+// kind repeat the row's, which is how a payload moved onto another row is caught.
 type payload struct {
 	SID        string            `json:"sid"`
 	Account    string            `json:"account"`
@@ -102,11 +99,9 @@ func decodePayload(b []byte) (payload, bool, error) {
 	return p, ok, nil
 }
 
-// storeKey is the key a token is kept under in the store: the SHA-256 of the
-// token in the encoding the token itself has. It is the library's own function
-// of a token, which the library hands the store when HashTokenInStore is set,
-// and this module computes it for the rotation, which does not go through the
-// library; a test holds the two equal.
+// storeKey is the key a token is kept under: the SHA-256 of the token in the
+// encoding the token has, the library's own function, which this module computes
+// itself for the rotation.
 func storeKey(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return base64.RawURLEncoding.EncodeToString(sum[:])

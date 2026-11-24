@@ -41,10 +41,9 @@ func recordText(r slog.Record) string {
 	return b.String()
 }
 
-// sharedWindow returns a stretch of the secret, twelve bytes long or the whole of
-// it when it is shorter, that haystack carries, and whether there is one. Looking
-// for a stretch and not the whole value is what catches a record that cut the
-// value short, lower-cased it or clipped it.
+// sharedWindow returns a stretch of secret, twelve bytes or the whole of a shorter
+// one, that haystack carries, and whether it found one; looking for a stretch
+// catches a record that cut, lower-cased or clipped the value.
 func sharedWindow(haystack, secret string) (string, bool) {
 	n := min(12, len(secret))
 	for i := 0; i+n <= len(secret); i++ {
@@ -70,9 +69,8 @@ func responseText(w *httptest.ResponseRecorder) string {
 	return b.String()
 }
 
-// TestNoCredentialTextReachesARecordOrTheResponse holds the rule that a
-// credential is written nowhere: not in the log line a refusal produces,
-// whatever the refusal is for, and not in the response.
+// TestNoCredentialTextReachesARecordOrTheResponse writes no credential into a log
+// record or a response.
 func TestNoCredentialTextReachesARecordOrTheResponse(t *testing.T) {
 	const (
 		jwt       = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXNlY3JldC1ieXRlcw"
@@ -172,10 +170,8 @@ func TestNoCredentialTextReachesARecordOrTheResponse(t *testing.T) {
 	}
 }
 
-// TestTheLengthOfAnUnclaimedSchemeIsAllTheRecordSays holds what the record of an
-// unclaimed scheme does carry: that a scheme was there, how long the word was,
-// and whether a space followed it, which is what tells a client that sent a scheme
-// from one that sent a bare credential.
+// TestTheLengthOfAnUnclaimedSchemeIsAllTheRecordSays records an unclaimed
+// scheme's length and whether a space followed it.
 func TestTheLengthOfAnUnclaimedSchemeIsAllTheRecordSays(t *testing.T) {
 	for _, c := range []struct {
 		name      string
@@ -227,11 +223,8 @@ func TestTheCookieNameIsReadableThroughTheRealRedaction(t *testing.T) {
 	}
 }
 
-// TestAConfigurationErrorNeverRepeatsWhatMayHoldASecret holds that the error for a
-// public URL or a trusted origin written in the wrong form does not carry the
-// user information, the query or the fragment of what was written: a password put
-// in a URL is a mistake, and the refusal must not copy it into every place a
-// startup failure is written to.
+// TestAConfigurationErrorNeverRepeatsWhatMayHoldASecret keeps user information,
+// query and fragment out of a configuration error.
 func TestAConfigurationErrorNeverRepeatsWhatMayHoldASecret(t *testing.T) {
 	const secret = "hunter2-password"
 	for name, edit := range map[string]func(*moduleConfig){
@@ -269,9 +262,8 @@ func TestAConfigurationErrorNeverRepeatsWhatMayHoldASecret(t *testing.T) {
 	}
 }
 
-// TestAnAbsentResolutionLayerListIsNotAShapeTheGatewayCouldNotRead holds the
-// difference between a configuration nobody wrote and one the gateway could
-// not decode.
+// TestAnAbsentResolutionLayerListIsNotAShapeTheGatewayCouldNotRead tells an
+// absent resolution list from one it cannot decode.
 func TestAnAbsentResolutionLayerListIsNotAShapeTheGatewayCouldNotRead(t *testing.T) {
 	for name, c := range map[string]struct {
 		body     string
@@ -299,10 +291,8 @@ func TestAnAbsentResolutionLayerListIsNotAShapeTheGatewayCouldNotRead(t *testing
 	}
 }
 
-// TestAnAmbiguousLoggingCapabilityStopsInitToo holds that a failure to take the
-// logging capability up that is not its absence ends Init with the failure, as
-// it ends New: reading it as absence would leave the scheme rule unregistered
-// without a word.
+// TestAnAmbiguousLoggingCapabilityStopsInitToo ends Init on an error taking the
+// logging capability up rather than treating it as absent.
 func TestAnAmbiguousLoggingCapabilityStopsInitToo(t *testing.T) {
 	reg := core.New()
 	for _, name := range []string{"stand-in.log-a", "stand-in.log-b"} {

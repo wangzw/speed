@@ -105,8 +105,6 @@ func TestAnUnreachableDatabaseIsUnavailableAndNeverDenied(t *testing.T) {
 			t.Errorf("the cause %v does not wrap ErrUnavailable", causeOf(v))
 		}
 
-		// An entry already cached is served until it runs out, and a touch that
-		// cannot be written does not fail the request.
 		f.settings.set(checkTTLPath, time.Minute)
 		f.p.cacheSlot.Store(nil)
 		f.p.handle = f.database.DB()
@@ -411,10 +409,6 @@ func TestTheAccountIsCheckedAgainAfterTheSessionCacheAnswered(t *testing.T) {
 		t.Fatalf("verdict = %s", got)
 	}
 
-	// The session cache holds an active entry; the cleanup hook was missed and
-	// only the account's own cache learns the account is disabled. The clock
-	// moves on so the session is older than the valid-after instant the
-	// disabling stamps, which is what the re-enabling case below turns on.
 	f.clock.Advance(30 * time.Second)
 	f.disable(alice)
 	f.p.caches().accounts.Invalidate(string(alice))
@@ -436,8 +430,8 @@ func TestTheAccountIsCheckedAgainAfterTheSessionCacheAnswered(t *testing.T) {
 	}
 }
 
-// checks that a session from SSO carries its provider and the IdP's assurance
-// level.
+// TestASessionFromSSOCarriesItsProviderAndTheIdPsLevel checks that a session from
+// SSO carries its provider and the IdP's assurance level.
 func TestASessionFromSSOCarriesItsProviderAndTheIdPsLevel(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -462,8 +456,6 @@ func TestTheTouchIntervalIsNeverLongerThanHalfTheIdleTimeout(t *testing.T) {
 	issued := f.create(newBrowser(alice))
 	f.sql.reset()
 
-	// The user is active every 20 seconds. With a 10-minute interval the first
-	// write would come after the idle period had ended under them.
 	for i := 1; i <= 9; i++ {
 		f.clock.Advance(20 * time.Second)
 		if got := outcomeOf(f.verify(issued.Token)); got.String() != "authenticated" {
@@ -507,9 +499,8 @@ func TestAVerdictNamesNoTokenAndNoAccountState(t *testing.T) {
 	}
 }
 
-// A session whose account row is gone is Denied, not Unavailable: the gateway
-// clears the cookie instead of leaving the browser to send it again, so a
-// session of a deleted account is not retried forever on every request.
+// TestAVerifyOfASessionWhoseAccountIsGoneIsDenied denies a session whose account
+// row is gone rather than reporting it unavailable.
 func TestAVerifyOfASessionWhoseAccountIsGoneIsDenied(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -528,7 +519,6 @@ func TestAVerifyOfASessionWhoseAccountIsGoneIsDenied(t *testing.T) {
 		t.Errorf("the cause %v wraps ErrUnavailable, so the gateway would retry the cookie instead of clearing it", causeOf(v))
 	}
 
-	// A store that cannot be reached is what Unavailable is for.
 	f.accounts.failWith(errors.New("account store down"))
 	f.p.caches().accounts.Invalidate(string(alice))
 	if got := outcomeOf(f.verify(issued.Token)); got.String() != "unavailable" {
@@ -536,9 +526,8 @@ func TestAVerifyOfASessionWhoseAccountIsGoneIsDenied(t *testing.T) {
 	}
 }
 
-// An account attribute under a reserved prefix the session does not also carry
-// is dropped from the identity: the two prefixes belong to whoever writes them,
-// and this module is the one that writes idp.* into an identity.
+// TestTheAccountsReservedPrefixAttributeIsDroppedInThePrincipal drops an
+// account attribute under a reserved prefix the session does not carry.
 func TestTheAccountsReservedPrefixAttributeIsDroppedInThePrincipal(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, map[string]string{"dept": "eng", "idp.role": "admin", "authn.flag": "x"})

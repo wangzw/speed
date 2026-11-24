@@ -24,7 +24,7 @@ func baseConfig() moduleConfig {
 	return moduleConfig{ClientID: clientIDDefault, Algorithm: algES256}
 }
 
-// TestAnEmptyAudienceIsRefused checks that an empty audience is refused.
+// TestAnEmptyAudienceIsRefused refuses an audience with nothing to default it to.
 func TestAnEmptyAudienceIsRefused(t *testing.T) {
 	_, err := baseConfig().resolve(gateMount{})
 	if !errors.Is(err, authn.ErrInvalidConfig) {
@@ -35,8 +35,7 @@ func TestAnEmptyAudienceIsRefused(t *testing.T) {
 	}
 }
 
-// TestTheIssuerAndAudienceDefaultToThePublicAddress checks that the issuer
-// and audience default to the public address.
+// TestTheIssuerAndAudienceDefaultToThePublicAddress defaults both to the public address.
 func TestTheIssuerAndAudienceDefaultToThePublicAddress(t *testing.T) {
 	const public = "https://auth.example.com"
 	cfg, err := baseConfig().resolve(gateMount{PublicURL: public})
@@ -51,8 +50,7 @@ func TestTheIssuerAndAudienceDefaultToThePublicAddress(t *testing.T) {
 	}
 }
 
-// TestAConfiguredAudienceAndIssuerWin checks that a configured audience and
-// issuer win.
+// TestAConfiguredAudienceAndIssuerWin keeps a configured audience and issuer.
 func TestAConfiguredAudienceAndIssuerWin(t *testing.T) {
 	cfg := baseConfig()
 	cfg.Issuer = "https://issuer.example.com"
@@ -69,8 +67,7 @@ func TestAConfiguredAudienceAndIssuerWin(t *testing.T) {
 	}
 }
 
-// TestAnUnsupportedAlgorithmIsRefused checks that an unsupported algorithm is
-// refused.
+// TestAnUnsupportedAlgorithmIsRefused refuses an algorithm other than ES256 or RS256.
 func TestAnUnsupportedAlgorithmIsRefused(t *testing.T) {
 	cfg := baseConfig()
 	cfg.Algorithm = "HS256"
@@ -98,8 +95,8 @@ func TestTheRelaxationSwitchIsASettingAndNotAConfigurationItem(t *testing.T) {
 	}
 }
 
-// checks that the signing key file is Sensitive and takes no command-line
-// flag.
+// TestTheSigningKeyFileIsSensitiveAndTakesNoCommandLine holds that the signing
+// key file is Sensitive and takes no command-line flag.
 func TestTheSigningKeyFileIsSensitiveAndTakesNoCommandLine(t *testing.T) {
 	item, ok := schema().Items[signingKeyFileItem]
 	if !ok {
@@ -117,10 +114,8 @@ func TestTheSigningKeyFileIsSensitiveAndTakesNoCommandLine(t *testing.T) {
 }
 
 // loadConfig runs the real loader over a JSON primary source holding body, with
-// args as the command line, and resolves this module's configuration from the
-// result. The environment is the process's own, which a case steers with
-// t.Setenv. The gateway's module is registered so the public address the issuer
-// defaults to is declared.
+// args as the command line, and resolves this module's configuration; the
+// gateway's module is registered so the public address is declared.
 func loadConfig(t *testing.T, body string, args ...string) (resolved, error) {
 	t.Helper()
 	locator := filepath.Join(t.TempDir(), "config.json")
@@ -198,10 +193,8 @@ func TestAnRS256ConfigurationResolves(t *testing.T) {
 	}
 }
 
-// TestAnEmptyIssuerWithAnAudienceIsRefused holds the issuer item's own refusal:
-// an audience that is configured keeps the audience branch from firing, so an
-// empty issuer with no public address to default it to is refused, naming the
-// issuer.
+// TestAnEmptyIssuerWithAnAudienceIsRefused refuses an empty issuer when the
+// audience is configured and no public address is there to default it to.
 func TestAnEmptyIssuerWithAnAudienceIsRefused(t *testing.T) {
 	cfg := baseConfig()
 	cfg.Audience = []string{"https://api.example.com"}
@@ -215,9 +208,8 @@ func TestAnEmptyIssuerWithAnAudienceIsRefused(t *testing.T) {
 	}
 }
 
-// TestAnEmptyClientIDIsRefused holds the client-id item's refusal: an explicit
-// empty client-id is refused rather than signing a token with an empty
-// client_id.
+// TestAnEmptyClientIDIsRefused refuses an explicit empty client-id rather than
+// signing a token with an empty client_id.
 func TestAnEmptyClientIDIsRefused(t *testing.T) {
 	cfg := baseConfig()
 	cfg.Issuer = "https://iss.example.com"

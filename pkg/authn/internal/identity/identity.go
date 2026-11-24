@@ -1,26 +1,6 @@
 // Package identity holds the authenticated caller and the context it travels
-// in.
-//
-// Both making one and putting one into a context live here, so that neither is
-// reachable from outside this capability directory: Go admits an internal
-// package to the subtree it sits in and to nothing else. The interface package
-// re-exports the type under an alias, so a permission model reads an identity
-// the ordinary way while a package outside the directory cannot write one. The
-// packages inside it are admitted by the compiler and held to a closed list by
-// the dependency test of the interface package: the interface package itself,
-// the gateway, the login engine and the test builder. Deciding who the caller is
-// exactly once, in exactly one place, is the whole of what authentication does.
-//
-// The type lives here rather than beside the value types in internal/model
-// because its value lies in its fields being unexported, and a package that
-// also held the other types without that property would put them all in one
-// scope. It refers to the value types in its signatures.
-//
-// The readers of an Identity are methods, as the surface the design states,
-// and each one that returns a slice or a map returns a copy: an identity has
-// no write entry and a caller cannot make one by changing what it was handed.
-// The context writers, With and WithAccess, are functions of this package and
-// therefore out of reach of everything outside the subtree.
+// in: making one and writing it into a context are reachable only inside this
+// capability directory, and every reader returning a slice or map returns a copy.
 package identity
 
 import (
@@ -32,9 +12,8 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/model"
 )
 
-// Identity is the caller a request was authenticated as. The zero value is no
-// caller: it has no account, satisfies no requirement, and its key is empty.
-// Whether a request has an identity at all is told by From's second result,
+// Identity is the caller a request was authenticated as; the zero value is no
+// caller. Whether a request has an identity is told by From's second result,
 // never by the key being non-empty.
 type Identity struct {
 	account    model.AccountID
@@ -51,17 +30,9 @@ type Identity struct {
 	attributes map[string]string
 }
 
-// New makes an identity. On the request chain the gateway is its only caller,
-// after it checked the principal's claims; the test builder is the other. New
-// stores the principal as it is and settles nothing: an assurance left unstated
-// is read as a single factor by the gateway before the call, and is kept as
-// AssuranceNone here.
-//
-// Backend and challenge are separate parameters and not read from the
-// principal: the gateway stamps them from the verifier's name and the
-// credential's carrier, and nothing a backend handed over may reach them. The
-// principal is copied, so a backend changing its own copy afterwards changes
-// nothing here.
+// New makes an identity from a principal, storing it as it is and settling
+// nothing; backend and challenge are separate because the gateway stamps them
+// and nothing a backend hands over may reach them. The principal is copied.
 func New(p model.Principal, backend, challenge string) Identity {
 	return Identity{
 		account:    p.Account,
@@ -95,14 +66,9 @@ func (i Identity) Actor() model.AccountID {
 // Impersonating reports whether Actor differs from Account.
 func (i Identity) Impersonating() bool { return i.Actor() != i.account }
 
-// Key is the accountability key, and it is always string(Actor()).
-//
-// Rate limiting counts by it and the audit trail records it as the actor, so
-// that an impersonation spends the actor's allowance and not the impersonated
-// account's, and blame does not land on the one impersonated. Every consumer
-// uses it as an opaque string and none parses it. The zero identity's key is
-// empty, and an empty key does not mean "recognized as nobody in particular":
-// whether there is an identity is told by From.
+// Key is the accountability key, always string(Actor()), which rate limiting
+// counts by and the audit trail records as the actor; every consumer treats it
+// as an opaque string. An empty key does not mean no identity: From tells that.
 func (i Identity) Key() string { return string(i.Actor()) }
 
 // Session is the login session the request belongs to, empty for a backend
@@ -153,22 +119,9 @@ func (i Identity) Attributes() map[string]string {
 	return out
 }
 
-// Satisfies reports whether the identity meets a requirement at the instant
-// now. All of these hold:
-//
-//   - the assurance is not below the requirement's;
-//   - the requirement asks for no freshness (MaxAge zero), or no more than
-//     MaxAge has passed since AuthTime. An AuthTime after now is a negative
-//     age and is not stale, so that clocks of two hosts that differ a little
-//     do not read a login that just happened as stale; how far ahead a time may
-//     be is the gateway's exit check, not this method. A zero AuthTime is as old
-//     as time can be measured and is stale under any MaxAge. A zero now is a
-//     clock that was never set and meets no MaxAge;
-//   - when the requirement is Local, the assurance is not an IdP's
-//     declaration.
-//
-// The refusal side is fail-closed: the zero identity satisfies nothing,
-// whatever the requirement, and a negative MaxAge is met by no identity.
+// Satisfies reports whether the identity meets a requirement at now: assurance
+// at least the required one, a MaxAge fresh, and a Local requirement not met by
+// an IdP declaration. The zero identity and a negative MaxAge satisfy nothing.
 func (i Identity) Satisfies(r model.Requirement, now time.Time) bool {
 	if i.account == "" {
 		return false
@@ -198,15 +151,9 @@ func With(ctx context.Context, i Identity) context.Context {
 	return context.WithValue(ctx, key{}, i)
 }
 
-// From takes the identity out of a request's context.
-//
-// There is no fallback. The second result is false on an exempt route, on an
-// optional route without a credential, on an endpoint the gateway does not
-// guard, in a process where this module was not taken into the command that
-// started it, and anywhere off the request path. A caller has to handle that:
-// the alternative is reading an anonymous request as some subject. This is the
-// reverse of how a logger travels, where falling back to the process root is
-// right — a logger has a default and an identity does not.
+// From takes the identity out of a request's context and has no fallback: the
+// second result is false wherever none was written, which a caller has to
+// handle rather than read as some subject.
 func From(ctx context.Context) (Identity, bool) {
 	i, ok := ctx.Value(key{}).(Identity)
 	return i, ok
@@ -218,11 +165,9 @@ func WithAccess(ctx context.Context, a model.Access) context.Context {
 	return context.WithValue(ctx, accessKey{}, a)
 }
 
-// AccessFrom takes the recorded access level out of a request's context.
-//
-// There is no fallback either: a context the gateway did not decide anything
-// for reads as AccessUnknown, which a consumer must not treat as open or as
-// authenticated. It and From are a pair to read together.
+// AccessFrom takes the access level out of a request's context; with none
+// recorded it reads as AccessUnknown, which a consumer must not treat as open
+// or as authenticated. It and From are read together.
 func AccessFrom(ctx context.Context) model.Access {
 	a, _ := ctx.Value(accessKey{}).(model.Access)
 	return a

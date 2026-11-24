@@ -9,10 +9,9 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The keys of the settings this module reads, relative to its namespace. They
-// are read from the global layer of the settings store while the process runs.
-// The absolute lifetime of a session's refresh tokens is not here: it is the
-// session's, and the module reads it through Sessions.
+// The keys of the settings this module reads, relative to its namespace, read from
+// the global layer of the settings store. A session's absolute refresh lifetime is
+// not here: it is the session's, read through Sessions.
 const (
 	accessTTLKey      = "access-ttl"
 	leewayKey         = "leeway"
@@ -27,10 +26,9 @@ const (
 	checkSessionPath   = ConfigNamespace + "." + checkSessionKey
 )
 
-// checkTTLPath is the session module's setting the verifying backend's own
-// caches are bounded by. The token backend reads it because the identity it
-// serves from those caches carries the same lifetime as the session check they
-// stand beside, and the two are one bound an operator sets.
+// checkTTLPath is the session module's setting bounding the verifying backend's own
+// caches; the token backend reads it because the identity it serves from them shares
+// one bound with the session check.
 const (
 	checkTTLKey     = "check-ttl"
 	checkTTLPath    = "authn.session." + checkTTLKey
@@ -38,10 +36,9 @@ const (
 	defaultCheckTTL = 5 * time.Second
 )
 
-// The domains of the settings: the one statement of each range. The settings
-// store holds a write to it, and a read is judged against it again, since a
-// value stored before the domain was declared, or written around the store, is
-// served as it is.
+// The domains of the settings: the one statement of each range. A read is judged
+// against it again, since a value stored before the domain was declared, or written
+// around the store, is served as it is.
 const (
 	accessTTLMin      = time.Minute
 	accessTTLMax      = time.Hour
@@ -124,11 +121,9 @@ func settingsSchema() settings.Schema {
 	}
 }
 
-// settingReader reads the settings this module acts on. The store is nil when
-// the assembly has none, and then every setting reads as its declared default.
-// A read that fails and a value outside the setting's domain both read as the
-// declared default and are reported at Error, once for as long as the same
-// fault stands.
+// settingReader reads the settings this module acts on; a nil store reads every
+// setting as its declared default, and so does a failed read or an out-of-domain
+// value, each reported at Error once for as long as the fault stands.
 type settingReader struct {
 	store  settings.Store
 	logger *slog.Logger

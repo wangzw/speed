@@ -59,9 +59,7 @@ func TestShapeRulesMaskEveryOccurrenceInAValue(t *testing.T) {
 	}
 }
 
-// An otpauth address is masked whole: its label names the account the seed
-// belongs to and its query carries the seed, and neither is a key=value pair the
-// pair rule would catch on its own.
+// An otpauth address is masked whole, its parts a key=value pair rule would miss.
 func TestAnOtpauthAddressIsMaskedWholeWithoutHelpFromThePairRule(t *testing.T) {
 	got := mask(shapeMatcher, "enrolled otpauth://totp/Speed:alice?issuer=Speed&digits=6 ok")
 	for _, leaked := range []string{"alice", "issuer", "digits"} {
@@ -95,7 +93,6 @@ func TestASchemeInsideAWordDoesNotEndTheScan(t *testing.T) {
 	}
 }
 
-// TestSchemeMatcherHoldsItsEdges checks that scheme matcher holds its edges.
 func TestSchemeMatcherHoldsItsEdges(t *testing.T) {
 	for _, c := range []struct {
 		name    string

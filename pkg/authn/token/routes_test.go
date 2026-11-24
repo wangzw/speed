@@ -53,8 +53,7 @@ func decodeToken(t *testing.T, rec *httptest.ResponseRecorder) AuthnTokenRespons
 	return body
 }
 
-// decodeError reads a failure body as the members it carries, so a case can
-// hold that it carries error and nothing besides.
+// decodeError reads a failure body as the members it carries.
 func decodeError(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
 	t.Helper()
 	var body map[string]any
@@ -64,9 +63,8 @@ func decodeError(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
 	return body
 }
 
-// TestTheTokenEndpointAnswersAClientCredentialWithAnAccessTokenOnly holds the
-// success shape of the client_credentials grant and the cache headers RFC 6749
-// §5.1 requires of a response that carries a token.
+// TestTheTokenEndpointAnswersAClientCredentialWithAnAccessTokenOnly answers the
+// client_credentials grant with an access token and no refresh token.
 func TestTheTokenEndpointAnswersAClientCredentialWithAnAccessTokenOnly(t *testing.T) {
 	r := newRig(t)
 	m := r.mountToken()
@@ -101,9 +99,8 @@ func TestTheTokenEndpointAnswersAClientCredentialWithAnAccessTokenOnly(t *testin
 	}
 }
 
-// TestTheTokenEndpointTakesTheClientCredentialFromTheBasicHeader holds the
-// other half of client authentication: the Basic header works as well as the
-// form fields.
+// TestTheTokenEndpointTakesTheClientCredentialFromTheBasicHeader accepts the
+// client credential from the Basic header as well as from the form fields.
 func TestTheTokenEndpointTakesTheClientCredentialFromTheBasicHeader(t *testing.T) {
 	r := newRig(t)
 	m := r.mountToken()
@@ -122,8 +119,8 @@ func TestTheTokenEndpointTakesTheClientCredentialFromTheBasicHeader(t *testing.T
 	}
 }
 
-// TestTheTokenEndpointAnswersARefreshWithANewPair holds the refresh_token
-// grant: the body carries both an access token and a fresh refresh token.
+// TestTheTokenEndpointAnswersARefreshWithANewPair answers the refresh_token grant
+// with a new access token and a fresh refresh token.
 func TestTheTokenEndpointAnswersARefreshWithANewPair(t *testing.T) {
 	r := newRig(t)
 	m := r.mountToken()
@@ -145,9 +142,8 @@ func TestTheTokenEndpointAnswersARefreshWithANewPair(t *testing.T) {
 	}
 }
 
-// TestTheTokenEndpointFailuresAreTheOAuthShape holds every member of the closed
-// set of failures and the status each is answered with, and that the body
-// carries error alone.
+// TestTheTokenEndpointFailuresAreTheOAuthShape answers each failure of the closed
+// set with its status and error alone.
 func TestTheTokenEndpointFailuresAreTheOAuthShape(t *testing.T) {
 	const badSecret = "spd_cs_wrong"
 
@@ -260,9 +256,8 @@ func TestTheTokenEndpointFailuresAreTheOAuthShape(t *testing.T) {
 	}
 }
 
-// TestTheTokenEndpointAnswersUnavailableWhenTheStoreIsDown holds the failure
-// direction: a dependency that cannot answer is temporarily_unavailable, never
-// invalid_grant, so the client keeps its refresh token and retries.
+// TestTheTokenEndpointAnswersUnavailableWhenTheStoreIsDown answers 503 rather
+// than invalid_grant when the store cannot answer.
 func TestTheTokenEndpointAnswersUnavailableWhenTheStoreIsDown(t *testing.T) {
 	r := newRig(t)
 	m := r.mountToken()
@@ -288,10 +283,8 @@ func TestTheTokenEndpointAnswersUnavailableWhenTheStoreIsDown(t *testing.T) {
 	}
 }
 
-// TestTheRevocationEndpointAnswers200ForATokenOutcome holds RFC 7009: whatever
-// token is presented — a live one, an unrecognisable one, a service token, an
-// impersonation token — the answer is the same 200 with no body, so a presenter
-// cannot use the endpoint to probe a token's state.
+// TestTheRevocationEndpointAnswers200ForATokenOutcome answers 200 with an empty
+// body whatever token is presented.
 func TestTheRevocationEndpointAnswers200ForATokenOutcome(t *testing.T) {
 	t.Run("a live refresh token", func(t *testing.T) {
 		r := newRig(t)
@@ -368,10 +361,8 @@ func TestTheRevocationEndpointAnswers200ForATokenOutcome(t *testing.T) {
 	})
 }
 
-// TestTheRevocationEndpointRefusesWhenTheStoreIsDown holds the failure direction
-// of the revocation endpoint: a store that cannot answer is
-// temporarily_unavailable, never the 200 a presenter would read as "the token is
-// gone".
+// TestTheRevocationEndpointRefusesWhenTheStoreIsDown answers 503, never the 200 a
+// presenter would read as "the token is gone".
 func TestTheRevocationEndpointRefusesWhenTheStoreIsDown(t *testing.T) {
 	r := newRig(t)
 	m := r.mountToken()
@@ -387,10 +378,8 @@ func TestTheRevocationEndpointRefusesWhenTheStoreIsDown(t *testing.T) {
 	}
 }
 
-// TestTheTokenEndpointsAreCallbacksWithoutTheCrossOriginCheck holds the
-// registration: the two POST routes are registered as callbacks, and a
-// cross-site request reaches the handler rather than being refused by the
-// cross-origin check, which the endpoints do not apply.
+// TestTheTokenEndpointsAreCallbacksWithoutTheCrossOriginCheck registers both POST
+// routes as callbacks that a cross-site request reaches.
 func TestTheTokenEndpointsAreCallbacksWithoutTheCrossOriginCheck(t *testing.T) {
 	r := newRig(t)
 	m := r.mountToken()
@@ -416,8 +405,8 @@ func TestTheTokenEndpointsAreCallbacksWithoutTheCrossOriginCheck(t *testing.T) {
 	}
 }
 
-// TestTheEndpointsReadTheFormTheWayTheDesignFixesIt holds the endpoint's own
-// reading of a form against the entry point's stricter binding.
+// TestTheEndpointsReadTheFormTheWayTheDesignFixesIt ignores unknown form
+// parameters and keeps the first value of a repeated one.
 func TestTheEndpointsReadTheFormTheWayTheDesignFixesIt(t *testing.T) {
 	t.Run("an extra parameter is ignored", func(t *testing.T) {
 		r := newRig(t)
@@ -465,8 +454,8 @@ func TestTheEndpointsReadTheFormTheWayTheDesignFixesIt(t *testing.T) {
 	})
 }
 
-// TestTheGrantErrorMappingIsClosed holds the mapping of every sentinel a grant
-// can return to its status and error member, so a change to it is caught here.
+// TestTheGrantErrorMappingIsClosed maps every sentinel a grant can return to its
+// status and error member.
 func TestTheGrantErrorMappingIsClosed(t *testing.T) {
 	wrapped := refreshUnavailable("op", authn.ErrUnavailable)
 	cases := []struct {
@@ -497,9 +486,8 @@ func TestTheGrantErrorMappingIsClosed(t *testing.T) {
 	}
 }
 
-// TestARefreshGrantWithoutATokenIsInvalidRequest holds the one failure member of
-// the refresh_token grant's own request parsing: a grant_type of refresh_token
-// with no refresh_token is invalid_request, not invalid_grant.
+// TestARefreshGrantWithoutATokenIsInvalidRequest answers a refresh_token grant
+// with no refresh_token as invalid_request, not invalid_grant.
 func TestARefreshGrantWithoutATokenIsInvalidRequest(t *testing.T) {
 	r := newRig(t)
 	m := r.mountToken()
@@ -512,9 +500,8 @@ func TestARefreshGrantWithoutATokenIsInvalidRequest(t *testing.T) {
 	}
 }
 
-// TestAClaimsContributorDefectIsLoggedAtError holds the level the design fixes
-// for a contributor that returns a reserved claim name: the answer stays the 503
-// the unavailable class carries, and the line is written at Error.
+// TestAClaimsContributorDefectIsLoggedAtError answers 503 and logs at Error when a
+// contributor returns a reserved claim name.
 func TestAClaimsContributorDefectIsLoggedAtError(t *testing.T) {
 	r := newRig(t)
 	r.p.claims = []authn.ClaimsContributor{contributor{claims: map[string]any{"sub": "x"}}}

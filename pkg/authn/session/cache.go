@@ -11,16 +11,12 @@ import (
 )
 
 // cacheCapacity is the most entries each of the three caches holds, and the most
-// the session index tracks. It is a size fixed at construction and no setting:
-// how large a cache is is not a knob an operator turns, where how long an entry
-// is believed, check-ttl, is.
+// the session index tracks.
 const cacheCapacity = 10_000
 
-// sessionEntry is what the session cache holds for a session: the status read
-// from the row and the account, the identifier the status belongs to and, for a
-// browser session, when its idle period was last extended. The entry is shared
-// by every request that hits it and is read-only, but for the one atomic
-// field.
+// sessionEntry is what the session cache holds for a session: the status and
+// account read from the row, the session identifier, and for a browser session
+// its idle period's end. It is shared and read-only but for lastSeen.
 type sessionEntry struct {
 	id     authn.SessionID
 	status authn.SessionStatus
@@ -33,9 +29,6 @@ type sessionEntry struct {
 	lastSeen atomic.Int64
 }
 
-// lapsed reports whether the idle period the entry was read with has run out. An
-// entry that has is not served: the row is read again, which finds the period
-// extended when a request touched it since, and ended when none did.
 func (e *sessionEntry) lapsed(now time.Time) bool {
 	return !e.idleExpires.IsZero() && !now.Before(e.idleExpires)
 }
@@ -45,15 +38,9 @@ type grantEntry struct {
 	active bool
 }
 
-// cacheSet is the three process-local caches and the index beside the first,
-// built for one value of check-ttl. A change of the setting builds a new set and
-// leaves the old one to whoever still holds it.
-//
-// Each cache is an instance of internal/acctcache with its own keys and values,
-// and none shares an entry with another. The session cache is keyed by the
-// digest of a token and, for Status, by the public identifier of a session; the
-// account cache by the account identifier; the impersonation cache by the
-// identifier of the record. No key holds a token.
+// cacheSet is the three process-local caches built for one value of check-ttl,
+// keyed by token digest, session identifier, account identifier and grant
+// identifier; no key holds a token.
 type cacheSet struct {
 	ttl      time.Duration
 	sessions *acctcache.Cache[*sessionEntry]
@@ -78,10 +65,9 @@ func sessionKey(id authn.SessionID) string { return "s:" + string(id) }
 
 func accountKey(account authn.AccountID) string { return "a:" + string(account) }
 
-// putSession stores a session entry under its identifier and, for a browser
-// session read by its token, under the digest as well. epoch is the session
-// cache's epoch taken before the row was read, and nothing is stored when an
-// invalidation has happened since.
+// putSession stores a session entry under its identifier and, when key is set,
+// under the token digest too; nothing is stored when an invalidation has
+// happened since epoch.
 func (c *cacheSet) putSession(e *sessionEntry, key string, epoch uint64) {
 	stored := c.sessions.PutIfEpoch(sessionKey(e.id), e, epoch)
 	if key != "" && c.sessions.PutIfEpoch(digestKey(key), e, epoch) {
@@ -126,13 +112,8 @@ func (c *cacheSet) purge() {
 }
 
 // sessionIndex maps a session's public identifier to the digest key its entry is
-// cached under and to its account, so that an invalidation by identifier or by
-// account reaches the entry a lookup by token made. It is held outside the cache
-// because the cache has one key per entry, and it is bounded as the cache is:
-// when it is full the least recently used identifier is dropped, and an entry it
-// pointed at is no longer reachable by identifier, which a cache of the same
-// size has evicted or is about to. Removing an identifier the index does not hold
-// is a no-op.
+// cached under and to its account, so a lookup by token is reachable by
+// identifier or account; removing an identifier it does not hold is a no-op.
 type sessionIndex struct {
 	mu       sync.Mutex
 	capacity int

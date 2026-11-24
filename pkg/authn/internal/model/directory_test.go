@@ -7,11 +7,7 @@ import (
 	"time"
 )
 
-// TestTheZeroValuesRefuse holds the reading of each new type's zero value, which
-// the design fixes in the direction of refusing: an account nobody enabled is
-// disabled, a membership nobody activated is suspended and reads as not a member,
-// a session status nobody filled in is not active, no multi-factor outcome is
-// asked for, and an identifier verification names no way.
+// TestTheZeroValuesRefuse holds that every new type's zero value reads as refusing.
 func TestTheZeroValuesRefuse(t *testing.T) {
 	var s AccountStatus
 	if s != StatusDisabled || s == StatusActive || s == StatusDeleted {
@@ -43,9 +39,7 @@ func TestTheZeroValuesRefuse(t *testing.T) {
 	}
 }
 
-// TestAccountStatusReadsOneWayEveryWay pins the numbers of the status column and
-// the names an event payload writes, and that a value outside the set is neither
-// valid nor one of the three names.
+// TestAccountStatusReadsOneWayEveryWay pins the status numbers and names.
 func TestAccountStatusReadsOneWayEveryWay(t *testing.T) {
 	for _, c := range []struct {
 		s    AccountStatus
@@ -67,8 +61,7 @@ func TestAccountStatusReadsOneWayEveryWay(t *testing.T) {
 	}
 }
 
-// TestSignupStateValidIsTheClosedSet holds the three values the signup_state
-// column admits: none, pending and verified, and nothing above them.
+// TestSignupStateValidIsTheClosedSet holds the three values the signup_state column admits.
 func TestSignupStateValidIsTheClosedSet(t *testing.T) {
 	for _, c := range []struct {
 		s     SignupState
@@ -86,8 +79,7 @@ func TestSignupStateValidIsTheClosedSet(t *testing.T) {
 	}
 }
 
-// TestTheKindsAreClosedSets holds the texts of the kinds, which the tables'
-// CHECK constraints carry, and that Valid accepts them and nothing near them.
+// TestTheKindsAreClosedSets holds the kind texts and rejects anything near them.
 func TestTheKindsAreClosedSets(t *testing.T) {
 	for _, c := range []struct {
 		got   string
@@ -114,11 +106,7 @@ func TestTheKindsAreClosedSets(t *testing.T) {
 	}
 }
 
-// TestVerificationAcceptsTheClosedSetOfWays holds the forms the design lists for
-// verified_via and which of them prove ownership: a code sent to the phone, a
-// code sent to the address and an IdP's declaration do; an invitation, an
-// administrator's word, an account holder's assertion and an unverified import do
-// not; and a value outside the set is neither.
+// TestVerificationAcceptsTheClosedSetOfWays holds the forms of verified_via and which prove ownership.
 func TestVerificationAcceptsTheClosedSetOfWays(t *testing.T) {
 	for _, c := range []struct {
 		via    string
@@ -174,9 +162,7 @@ func repeatByte(b byte, n int) []byte {
 	return out
 }
 
-// TestThePageSizeIsTheDefaultOrAtMostTheCeiling holds how a listing reads its
-// Limit: not positive reads as the default, above the ceiling reads as the
-// ceiling, and anything between is taken as it is.
+// TestThePageSizeIsTheDefaultOrAtMostTheCeiling holds how a listing reads its Limit.
 func TestThePageSizeIsTheDefaultOrAtMostTheCeiling(t *testing.T) {
 	for _, c := range []struct{ in, want int }{
 		{0, 100},
@@ -206,8 +192,7 @@ func TestThePageSizeIsTheDefaultOrAtMostTheCeiling(t *testing.T) {
 	}
 }
 
-// TestTheEndReasonsAreTheDesignsEight holds the closed set of why an
-// impersonation record ends, by text.
+// TestTheEndReasonsAreTheDesignsEight holds the closed set of impersonation end reasons.
 func TestTheEndReasonsAreTheDesignsEight(t *testing.T) {
 	want := []string{
 		"explicit", "revoked", "expired", "session-ended", "actor-disabled",
@@ -232,8 +217,7 @@ func TestTheEndReasonsAreTheDesignsEight(t *testing.T) {
 	}
 }
 
-// TestTheClosedStringSetsAreFrozen pins the texts of the purposes, the input
-// actions, the protocols and the ways of provisioning.
+// TestTheClosedStringSetsAreFrozen pins the texts of the purposes, input actions, protocols and provisioning ways.
 func TestTheClosedStringSetsAreFrozen(t *testing.T) {
 	for _, c := range [][2]string{
 		{PurposeLogin, "login"},
@@ -263,9 +247,8 @@ func TestTheClosedStringSetsAreFrozen(t *testing.T) {
 	}
 }
 
-// fullAccount and the fixtures after it have every field set, so a Clone that
-// forgets one fails DeepEqual, and every map, slice and pointer holds something,
-// so a Clone that shares one is caught by the walk below.
+// fullAccount and the fixtures after it have every field set, and every map,
+// slice and pointer non-empty, so a Clone that forgets or shares one is caught.
 func fullAccount() Account {
 	return Account{
 		ID: "a", Kind: KindService, Status: StatusActive, DisplayName: "n", MFARequired: true, Protected: true,
@@ -393,10 +376,7 @@ func shares(path string, a, b reflect.Value) (string, bool) {
 	return "", false
 }
 
-// TestCloneSharesNothingWithTheOriginal is the property of every Clone of
-// this package: the copy is equal to the original, no map, slice or pointer
-// is the same one, and writing into the original's after the copy was taken
-// does not change the copy.
+// TestCloneSharesNothingWithTheOriginal holds that every Clone is equal, shares nothing, and survives a later write to the original.
 func TestCloneSharesNothingWithTheOriginal(t *testing.T) {
 	type cloner struct {
 		name  string
@@ -428,10 +408,6 @@ func TestCloneSharesNothingWithTheOriginal(t *testing.T) {
 		})
 	}
 
-	// Writing through the original after the copy leaves the copy alone, for
-	// each shape of field once: a map, a slice of values, a slice of bytes, a
-	// pointer, url.Values (a map of slices), and the proof string that the
-	// flow fixtures carry.
 	a := fullAccount()
 	ac := a.Clone()
 	a.Attributes["k"] = "changed"
@@ -481,9 +457,7 @@ func TestCloneSharesNothingWithTheOriginal(t *testing.T) {
 	}
 }
 
-// TestCloneKeepsWhatIsNilNil holds that a Clone of the zero value is the zero
-// value: a nil map that became an empty one would read differently where the
-// difference matters, such as an attribute set that was never given.
+// TestCloneKeepsWhatIsNilNil holds that a Clone of the zero value is the zero value.
 func TestCloneKeepsWhatIsNilNil(t *testing.T) {
 	for name, equal := range map[string]bool{
 		"Account":       reflect.DeepEqual(Account{}.Clone(), Account{}),
@@ -521,9 +495,7 @@ func hasReference(t reflect.Type) bool {
 	return false
 }
 
-// TestEveryTypeWithAReferenceHasAClone holds the rule that a record holding a
-// map, a slice or a pointer carries the Clone that copies it, and that a
-// record without any has none to forget.
+// TestEveryTypeWithAReferenceHasAClone holds that only a record holding a map, slice or pointer has a Clone.
 func TestEveryTypeWithAReferenceHasAClone(t *testing.T) {
 	for _, typ := range []reflect.Type{
 		reflect.TypeFor[Account](), reflect.TypeFor[CreateAccount](), reflect.TypeFor[Verification](),

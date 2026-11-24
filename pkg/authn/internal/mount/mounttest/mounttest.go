@@ -1,24 +1,6 @@
-// Package mounttest is a Mounter for the tests of the modules that mount routes:
-// session, multi-factor, the login engine and the account self-service routes.
-// It stands in for the authn.mount module and the gateway behind it, on a gin
-// engine that a test drives with httptest, so that those tests need neither a
-// registry nor an entry point.
-//
-// Every registration goes through the real wrapper, mount.Wrap, so the
-// cache header, the cross-origin check and the 401 it answers with are the
-// production ones, and a Callback adds its bypass to the Mounter's own check as
-// the module does. What the stand-in adds of its own is the part of the gateway a
-// handler's test needs: the kind of each registration is recorded and readable,
-// and the request carries the identity a test chose, the way the gateway leaves
-// it. A route registered Public carries no identity and AccessOpen. An Optional
-// route carries the identity chosen, or none and AccessOptional. A Guarded route
-// carries the identity chosen, or is refused with 401 when none was. A route that
-// is not registered Impersonable refuses an impersonating identity with 401, as
-// the gateway does outside the admission layer's endpoints.
-//
-// The identity is built by authntest.Context, so it is one the gateway would
-// stamp. The package is for tests: the dependency test in the parent directory
-// fails when a non-test file imports it.
+// Package mounttest is a test-only Mounter for the tests of the modules that
+// mount routes, standing in for the authn.mount module and the gateway on a gin
+// engine driven with httptest; every registration goes through the real mount.Wrap.
 package mounttest
 
 import (
@@ -137,24 +119,18 @@ func New(t testing.TB, opts ...Option) *Mounter {
 	}
 	m.csrf = csrf
 	m.engine = gin.New()
-	// A handler that panics ends in a 500 so a test that drives one gets a
-	// response instead of the panic ending the test, and the panic's text is not
-	// written to the test's output. This is not the entry point's fallback: the
-	// fallback is a net/http layer outside the module a Mounter stands in for, it
-	// answers the panic itself, and its default shape drops the representation
-	// headers, Cache-Control among them, so the header the wrapper set is not on a
-	// client's response there. The stand-in's part is what a handler reads, not
-	// the panic response's headers.
+	// A panicking handler ends in a 500 so a test gets a response, and this
+	// recovery keeps the headers the wrapper set, which the entry point's own
+	// fallback does not.
 	m.engine.Use(gin.CustomRecoveryWithWriter(io.Discard, func(c *gin.Context, _ any) {
 		c.AbortWithStatus(http.StatusInternalServerError)
 	}))
 	return m
 }
 
-// As sets the identity the requests that follow carry on Optional and Guarded
-// routes, built by authntest.Context from opts. An option the gateway would not
-// stamp fails the test when a request arrives. As with no option is the default
-// identity of authntest.
+// As sets the identity the following requests on Optional and Guarded routes
+// carry, built by authntest.Context from opts; an option the gateway would not
+// stamp fails the test when a request arrives. No option is the default identity.
 func (m *Mounter) As(opts ...authntest.Option) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

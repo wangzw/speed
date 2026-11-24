@@ -1,28 +1,6 @@
-// Package gate carries the authentication gateway: the module that registers a
-// middleware layer on the guarded listening endpoints, decides who each
-// request's caller is, and closes the decision into a pass or a status code.
-//
-// It holds the dispatch table that says which credential-verifying backend
-// answers for which carrier, the Authorization scheme or the cookie, and the
-// per-endpoint tables of the routes registered Exempt, Optional and
-// Impersonable. A host takes the gateway in by writing ModuleName into a
-// command, together with at least one backend; the gateway itself implements no
-// credential check and interprets no credential.
-//
-// What this package writes to a log is a category, an identifier and an outcome,
-// and never a credential: not a request body, a form field, a cookie value, a
-// token, a password, a one-time code, an assertion or an authorization code. A
-// log line says that a cookie was refused and which backend refused it, not what
-// the cookie held. The redaction rules the gateway registers with the logging
-// capability (redact.go) are the second line behind that discipline and not a
-// substitute for it: they mask the names and shapes this capability's values
-// travel under, and a value that has neither is not caught.
-//
-// Nothing here is reached through the interface package. A registrant reaches
-// the registration surface as authn.Gate, taken up from the registry, and a
-// backend answers through authn.Verifier; both are in the parent package, which
-// is what keeps a module that registers a route or delivers a backend from
-// depending on this one.
+// Package gate carries the authentication gateway: it registers a middleware
+// layer on the guarded endpoints, decides who each request's caller is, and
+// closes the decision into a pass or a status code, never logging a credential.
 package gate
 
 import (
@@ -53,16 +31,12 @@ import (
 // commands whose traffic is authenticated.
 const ModuleName = "authn.gate"
 
-// ConfigNamespace is where this module's input items are mounted. It is this
-// module's own name, the way a registering module's namespace always is, so
-// that each backend's section sits beside this one under the capability
-// directory's heading and no module owns that heading itself.
+// ConfigNamespace is where this module's input items are mounted: this module's
+// own name, beside each backend's section under the capability directory's heading.
 const ConfigNamespace = ModuleName
 
-// diagnosticPrefix starts every line this module writes to the startup
-// diagnostics, which have several writers. It names the capability directory
-// rather than the module: a reader scanning the diagnostics is looking for what
-// authentication did, and the gateway is the only part of it that writes here.
+// diagnosticPrefix starts every line this module writes to the startup diagnostics,
+// which have several writers; it names the capability directory, not the module.
 const diagnosticPrefix = "authn: "
 
 type gateway struct {
@@ -72,10 +46,9 @@ type gateway struct {
 	// the trusted origins.
 	csrf *http.CrossOriginProtection
 
-	// mu guards the registration window and what is registered through it.
-	// Both are written from other modules' callbacks, which may register from a
-	// goroutine of their own, so the order of the writes is not that of the
-	// drive.
+	// mu guards the registration window and what is registered through it; both
+	// may be written from other modules' goroutines, so the order of writes is
+	// not that of the drive.
 	mu       sync.Mutex
 	phase    phase
 	declared []registration
@@ -97,9 +70,7 @@ type gateway struct {
 	// taken up in Init, and nil when the assembly has no admission layer.
 	scope authn.ScopeGuard
 	// mounted is whether a module that mounts the capability's routes is in the
-	// assembly, found in Init by the Mounter it delivers. It decides whether
-	// the endpoint those routes go on is judged when the configuration leaves it
-	// empty.
+	// assembly; it decides whether an empty mount setting takes the only endpoint.
 	mounted bool
 	// routes is frozen in Start, one table per endpoint that carries a
 	// registration, and read-only afterwards. An endpoint with no registration
@@ -128,39 +99,16 @@ type gateway struct {
 	metrics metric.Registration
 }
 
-// gateway must satisfy the capability it delivers.
 var _ authn.Gate = (*gateway)(nil)
 
-// init registers this module with the process registry.
-//
-// Registration travels with the import, which is what makes "does this binary
-// have an authentication entry at all" a question the host answers by importing
-// this subpackage. The interface package registers nothing, so the backends
-// that implement its interfaces and the business code that reads an identity
-// out of a context carry no module in with them.
-//
-// The cost is that an import is enough: a dependency that reaches this package
-// for any reason puts the gateway in the available set, where a command taking
-// in every available module will assemble it.
+// init registers this module with the process registry: the import alone puts the
+// gateway in the available set, so a dependency that reaches this package can get
+// it assembled by a command taking in every available module.
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// Module is the descriptor a host registers.
-//
-// Requires holds one entry, an optional dependency on logging, so that the
-// credential redaction rules a module owns are registered in its New, before
-// any logger binds an attribute. Nothing else is required: the entry point, the
-// backends, the scope guard, the route mounter and the metric capability are
-// taken up in Init, where every instance already exists, so there is nothing for
-// a construction-time requirement to order. Declaring one would also make the
-// closure of a command that includes this module pull in whichever provider
-// happens to be registered, which is the host's choice to write down, not this
-// module's to force.
-//
-// The capability is delivered exclusively and the stance is StateEnabled. Two
-// gateways on one endpoint would each register a layer and each decide the same
-// request, so the pair is deliberate: resolution only stands a provider down
-// when it claims exclusivity and states StateAuto, and a second gateway should
-// fail the startup rather than quietly lose its registrations.
+// Module is the descriptor a host registers: it delivers the gateway in Init and
+// is Exclusive with StateEnabled, so a second gateway fails startup rather than
+// quietly losing its registrations.
 func Module() core.Module {
 	return core.Module{
 		Name:      ModuleName,
@@ -195,29 +143,9 @@ func Module() core.Module {
 			return g, nil
 		},
 
-		// The window is opened in Migrate and sealed in Start, the two
-		// stage slots the design's stage table gives it. The window that
-		// leaves open contains the Init stage whole and reaches beyond it
-		// at both ends, because a stage advances one module at a time:
-		// this module's Migrate callback runs before the assembly enters
-		// Init, and its Start callback runs once Init has ended. The rest
-		// of the Migrate stage, and the Start callbacks ordered ahead of
-		// this module, lie inside it too, and a registration from any of
-		// them is accepted and takes effect.
-		// Neither end could be this module's own Init callback — a module
-		// that never declared a dependency on Gate may legally resolve it
-		// and register from an Init that runs before this one. This
-		// module migrates nothing and has no service of its own to start,
-		// so the two slots have no other use.
-		//
-		// Whether either slot runs is the depth of the drive to decide,
-		// and the two are tied by nothing. A drive shallower than Migrate
-		// runs neither and reaches no Init: both sides of the window are
-		// absent together and the result is consistent. A drive that stops
-		// exactly at Migrate opens the window with nobody to seal it, and it
-		// stays open for the rest of the process; that run has no Init, no
-		// registration and no traffic. The way round it is for a command
-		// whose purpose is to apply migrations not to take this module in.
+		// The registration window opens in Migrate and seals in Start; a drive that
+		// stops exactly at Migrate leaves it open, so a migration-only command
+		// should not take this module in.
 		Migrate: func(_ context.Context, _ *core.Registry, instance any) error {
 			if g, ok := productOf(instance); ok {
 				g.open()
@@ -258,26 +186,17 @@ func Module() core.Module {
 	}
 }
 
-// productOf recovers this module's product from what the registry hands back.
-// A nil instance, or one of another type, is tolerated rather than asserted.
-// The host may have supplied an instance of its own for this module, one that is
-// not a gateway, and every callback does nothing for it: no layer is registered,
-// no window opens or shuts, and what the instance holds is released by whoever
-// supplied it. A startup that fails part-way also runs Stop and Close over every
-// constructed instance whatever stage it reached.
+// productOf recovers this module's product; a nil instance or one of another type
+// is tolerated rather than asserted, and every callback does nothing for it, so
+// what such an instance holds is released by whoever supplied it.
 func productOf(instance any) (*gateway, bool) {
 	g, ok := instance.(*gateway)
 	return g, ok && g != nil
 }
 
-// readerOf takes up the configuration reader.
-//
-// Its absence means the host never handed one to the registry before the drive
-// began, which is core's own failure and is carried out as it stands: the fix is
-// the host's, not a defect this module judged. It is deliberately not read as
-// "nothing was configured" — that reading would let a host missing the reader
-// lose the whole authentication layer in silence, which is the same hole as a
-// zero verdict read as a pass.
+// readerOf takes up the configuration reader; its absence is an error carried out
+// as it stands, deliberately not read as "nothing was configured", which would lose
+// the whole authentication layer in silence.
 func readerOf(reg *core.Registry) (config.Reader, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
@@ -288,12 +207,9 @@ func readerOf(reg *core.Registry) (config.Reader, error) {
 	return reader, nil
 }
 
-// prepare reads the configuration and states that this module runs.
-//
-// There is no stance in which the gateway is switched off by what it reads: a
-// command that names this module has promised it starts, so a configuration it
-// cannot run on is a startup failure naming the key, and no key is required. The
-// way to have no gateway is to leave the module out of the command.
+// prepare reads the configuration and always states that this module runs: a
+// configuration it cannot run on is a startup failure naming the key, and leaving
+// the module out of the command is the only way to have no gateway.
 func prepare(reader config.Reader) (core.Enablement, error) {
 	if _, err := readSettings(reader); err != nil {
 		return core.Enablement{}, err
@@ -341,12 +257,9 @@ func (g *gateway) expandGuarded(router speedhttp.Router) ([]string, error) {
 	names := slices.Clone(g.settings.endpoints)
 	for _, name := range names {
 		if _, err := router.Endpoint(name); err != nil {
-			// Told apart the way the registration check tells them apart.
-			// Router is an interface, and its contract says a name that was
-			// never declared wraps ErrUnknownEndpoint — not that nothing else
-			// can go wrong. Folding every failure into "correct the name"
-			// would send a reader to a configuration key that is already
-			// right.
+			// Only ErrUnknownEndpoint means the name is wrong; Router's contract
+			// does not say nothing else can fail, and folding every error into
+			// "correct the name" would point at a key already correct.
 			if errors.Is(err, speedhttp.ErrUnknownEndpoint) {
 				return nil, fmt.Errorf("%w: %s.%s names the endpoint %q, which the entry point "+
 					"does not have. Correct the name, or declare that endpoint in the entry "+
@@ -361,10 +274,8 @@ func (g *gateway) expandGuarded(router speedhttp.Router) ([]string, error) {
 	return names, nil
 }
 
-// wire runs in Init: it expands the guarded endpoints, builds the dispatch
-// table, registers the middleware on every guarded endpoint, registers the
-// credential redaction rules that depend on the table, and registers the
-// conclusion counter with the metric capability.
+// wire runs in Init: it expands the guarded endpoints, builds the dispatch table,
+// then registers the middleware, the redaction rules and the conclusion counter.
 func (g *gateway) wire(reg *core.Registry) error {
 	router, err := core.Resolve[speedhttp.Router](reg)
 	if err != nil {
@@ -414,10 +325,8 @@ func (g *gateway) wire(reg *core.Registry) error {
 			"own routes are mounted: %w", diagnosticPrefix, err)
 	}
 
-	// The layers are registered only now. Each is built from the dispatch
-	// table — the challenge it answers a refusal with names the schemes in
-	// it — so the table has to exist first. Registering earlier reads as
-	// harmless and is not: it takes the table while it is still nil.
+	// The layers are registered only now: each names the table's schemes, so it
+	// has to exist first, and registering earlier takes the table while it is nil.
 	for _, name := range g.guarded {
 		endpoint, err := router.Endpoint(name)
 		if err != nil {
@@ -437,10 +346,9 @@ func (g *gateway) wire(reg *core.Registry) error {
 	return nil
 }
 
-// diagnose writes what Init settled to the startup diagnostics: the endpoints
-// that are guarded, the backends and what each takes, and the endpoints an
-// impersonating identity can reach. Naming the guarded endpoints is what makes a
-// missing guard a missing exemption, and the direction of that is refusal.
+// diagnose writes what Init settled to the startup diagnostics: the guarded
+// endpoints, the backends and what each takes, and the endpoints an impersonating
+// identity can reach without a route registered for it.
 func (g *gateway) diagnose() {
 	for _, b := range g.table.backends {
 		g.logger.Info(diagnosticPrefix+"a credential-verifying backend taking part",
@@ -462,19 +370,9 @@ func (g *gateway) diagnose() {
 
 const hostCookiePrefix = cookiename.HostPrefix
 
-// warnUnprefixedCookies writes one Warn line for each cookie name a backend takes
-// that does not carry the __Host- prefix. Such a cookie can be set by a page on a
-// sibling subdomain, and the gateway has no defence against that beyond refusing
-// a request that carries two cookies of the name: a request that carries only the
-// planted one is indistinguishable from an honest one. The line is the
-// relaxation said out loud, one per name, and it changes nothing the gateway does.
-//
-// On an http public URL the cookies carry no prefix and are not Secure by
-// design, because WebKit refuses a prefixed cookie set over http even on a
-// loopback host and WebKit on Linux refuses any Secure one there. Startup admits
-// an http public URL only on a loopback host, whose traffic never leaves the
-// machine and for which nothing but a process on the machine can set a cookie.
-// One Info line says so instead.
+// warnUnprefixedCookies writes one Warn per cookie a backend takes without the
+// __Host- prefix: a sibling subdomain can plant it, and only a two-cookie request
+// is refused. An http URL gets one Info instead, since WebKit refuses Secure there.
 func (g *gateway) warnUnprefixedCookies() {
 	if cookiename.HTTP(g.settings.mount.PublicURL) {
 		g.logger.Info(diagnosticPrefix+"the public URL is http, so the cookies on this origin carry no "+
@@ -525,19 +423,8 @@ func describeAccounts(prefix string) string {
 }
 
 // takeLogger takes up the logging capability for the startup diagnostics and
-// registers the credential redaction rule that needs the dispatch table.
-//
-// Logging is optional for this module. The account and the backend are bound as
-// correlation fields through log.WithAttrs, a package-level function that goes
-// nowhere near the registry; only registering the rules needs the capability's
-// instance, and registering them changes no authentication behaviour, so their
-// absence changes none either. The key rules and the rule over value shapes are
-// registered earlier, in New. The rule over a scheme's value has to wait until
-// Init, because which schemes are in play is what the backends declared and the
-// declarations are read there. That is weaker
-// than the timing the log module offers a module for its own bindings: a logger
-// that took attributes before the rule was registered keeps them unmasked
-// however late the record is written.
+// registers the credential redaction rule over schemes, which can only run in Init;
+// a logger that bound attributes earlier keeps them unmasked however late it writes.
 func (g *gateway) takeLogger(reg *core.Registry) error {
 	delivered, err := core.Resolve[log.Logger](reg)
 	if err != nil {
@@ -574,10 +461,9 @@ func (g *gateway) freeze(reg *core.Registry) error {
 	return nil
 }
 
-// registrationAttrs renders one kind of the frozen tables for the diagnostics,
-// one attribute per endpoint, listing its routes as method and path. It is
-// written unconditionally on the success path: a route that is public is worth
-// saying out loud once at startup, whether or not anyone registered one.
+// registrationAttrs renders one kind of the frozen tables for the diagnostics, one
+// attribute per endpoint, listing its routes as method and path; it is written
+// unconditionally, so a public route is said out loud even when none registered.
 func registrationAttrs(routes map[string]map[route]access, has func(access) bool, what, none string) []any {
 	var attrs []any
 	for _, endpoint := range sortedKeys(routes) {
@@ -599,42 +485,9 @@ const (
 	systemMountItem  = mountEndpointsItem + ".system"
 )
 
-// checkMount holds every endpoint the capability's routes are mounted on to the
-// rules this module can judge, in the direction each scope's policy domain
-// requires.
-//
-// The ordinary and platform-management routes are decided outside the tenant's
-// domain: the gateway has to guard their endpoint, and neither tenant layer may
-// cover it. The admission layer answers an impersonating request with no tenant
-// context 404, which would leave an impersonating caller unable even to end the
-// impersonation, and the resolution layer answers a global account's request,
-// which carries no tenant name, the same way. The tenant-administration routes
-// are the reverse: they carry a tenant in their path and are decided in that
-// tenant's policy domain, so their endpoint has to be one both tenant layers
-// cover, or the route would serve a non-member with no membership check.
-//
-// The endpoints judged are the ones the routes actually go on. A written value
-// is judged whether or not any module mounts routes. The default and system
-// endpoints fall back to the entry point's only endpoint when unwritten, and
-// only when a module that mounts routes is in the assembly (g.mounted): a
-// command that mounts nothing has no endpoint of that kind, and judging the only
-// endpoint it has would refuse one whose tenant resolution is perfectly in
-// order. The tenant endpoint has no fallback, and its check runs only when the
-// key is written: an unwritten key leaves the scope unmountable, and the module
-// that mounts routes refuses a tenant-scoped registration on it. The module that
-// mounts routes settles the empty default in its own Init and reports an entry
-// point it cannot settle on (ErrRoutesUnconfigured) there, before this runs; the
-// same rule is read again here, so an implementation that did not check still
-// gets the same answer. An only endpoint is always one this gateway guards, the
-// guarded set being a non-empty subset of the declared endpoints, so the guard
-// check cannot fail for the defaulted case and is not special-cased.
-//
-// The tenant resolution layer's endpoint list is another module's, read when its
-// shape can be read at all: for the ordinary surfaces a shape that cannot be
-// decoded is a line of warning and not a failed startup, since the routes are
-// safe on an endpoint nobody showed to be resolved on. For the tenant scope the
-// requirement is coverage, so a list that cannot be read fails the startup: the
-// routes would otherwise rest on an assumption this module cannot verify.
+// checkMount holds each mount endpoint to its scope's rules: ordinary and system
+// endpoints must be guarded and uncovered by a tenant layer, the tenant-administration
+// endpoint covered by both; an empty default falls back only when routes are mounted.
 func (g *gateway) checkMount(reg *core.Registry) error {
 	configured := g.settings.mount.Endpoints
 	if configured.Default == "" && configured.Tenants == "" && configured.System == "" && !g.mounted {
@@ -703,10 +556,9 @@ func (g *gateway) checkSurface(reg *core.Registry, item, where, endpoint string)
 	return nil
 }
 
-// checkTenantScope holds the tenant-administration scope's mount endpoint to the
-// two layers that must cover it: its routes are decided in the tenant's policy
-// domain, and an endpoint outside those layers would serve them with no tenant
-// and no membership check.
+// checkTenantScope holds the tenant-administration mount endpoint to the two layers
+// that must cover it; outside them its routes would be served with no membership
+// check.
 func (g *gateway) checkTenantScope(reg *core.Registry, where, endpoint string) error {
 	if err := g.checkMountEndpoint(tenantsMountItem, endpoint); err != nil {
 		return err
@@ -765,13 +617,9 @@ const (
 	resolutionEndpointsItem = "endpoints"
 )
 
-// resolutionEndpoints reads the tenant resolution layer's endpoint list. The
-// second result is false when the list cannot be read at all: no reader was
-// handed to the registry, or the shape is not one this module can decode. A list
-// nobody wrote reads as empty and is readable, since nothing is resolved on any
-// endpoint. A decoding failure is a line of warning; whether that is enough is
-// the caller's to decide, because the ordinary surfaces and the tenant scope
-// make opposite requirements of the same list.
+// resolutionEndpoints reads the tenant resolution layer's endpoint list; false means
+// it cannot be read at all, while a list nobody wrote reads as empty and readable,
+// and the caller decides what an unreadable list means for its scope.
 func (g *gateway) resolutionEndpoints(reg *core.Registry) ([]string, bool) {
 	if reg == nil {
 		return nil, false
@@ -788,10 +636,9 @@ func (g *gateway) resolutionEndpoints(reg *core.Registry) ([]string, bool) {
 	}
 	if err := reader.Decode(resolutionNamespace, &shape); err != nil {
 		if errors.Is(err, config.ErrMissingRequired) {
-			// The layer is in the assembly and nobody wrote its endpoint
-			// list: it resolves a tenant on no endpoint, so no mount
-			// endpoint is one of them. That is a configuration read, not
-			// a shape this module could not read.
+			// The layer is present and nobody wrote its list: it resolves on no
+			// endpoint, which is a configuration read, not a shape that could not
+			// be read.
 			return nil, true
 		}
 		g.logger.Warn(diagnosticPrefix+"could not read the tenant resolution layer's endpoint "+
@@ -809,15 +656,9 @@ func (g *gateway) stop() {
 	g.callsMu.Unlock()
 }
 
-// drain runs in Close: it waits for the calls already inside a backend, bounded
-// by the call budget, which is the longest any one of them should still take.
-//
-// The waiter below outlives this function when the bound is reached, and that is
-// the best available answer rather than an oversight: a WaitGroup cannot be
-// abandoned, and the only alternative is to keep Close waiting on a backend that
-// has stopped answering, which would hold the whole shutdown open. The goroutine
-// ends when those calls end, and Close runs once per process, so nothing
-// accumulates.
+// drain runs in Close: it waits for calls already inside a backend, bounded by the
+// call budget. The waiter outlives it when the bound is reached, which is deliberate:
+// a WaitGroup cannot be abandoned, and the goroutine ends with those calls.
 func (g *gateway) drain(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {

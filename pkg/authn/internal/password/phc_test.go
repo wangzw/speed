@@ -21,9 +21,8 @@ var (
 	salt8  = []byte("8 bytes!")
 )
 
-// pbkdf2Literal writes a PBKDF2 PHC entry the way the design states it, from the
-// standard library's derivation and the encoding package, so that a case reading
-// it does not go through this package's own writer.
+// pbkdf2Literal writes a PBKDF2 PHC entry from the standard library's derivation,
+// so a case reading it does not go through this package's own writer.
 func pbkdf2Literal(t *testing.T, plaintext string, salt []byte, iterations, length int) string {
 	t.Helper()
 	key, err := pbkdf2.Key(sha256.New, plaintext, salt, iterations, length)
@@ -34,9 +33,8 @@ func pbkdf2Literal(t *testing.T, plaintext string, salt []byte, iterations, leng
 		base64.RawStdEncoding.EncodeToString(salt) + "$" + base64.RawStdEncoding.EncodeToString(key)
 }
 
-// TestAnEntryIsReadBackAtTheParametersItWasWrittenWith holds the round trip
-// for each algorithm, and holds that the entry verifies the password it was
-// made from and no other.
+// TestAnEntryIsReadBackAtTheParametersItWasWrittenWith holds the round trip for
+// each algorithm and that the entry verifies only its own password.
 func TestAnEntryIsReadBackAtTheParametersItWasWrittenWith(t *testing.T) {
 	for _, p := range []Params{
 		cheapArgon2id,
@@ -72,9 +70,7 @@ func TestAnEntryIsReadBackAtTheParametersItWasWrittenWith(t *testing.T) {
 	}
 }
 
-// TestTwoEntriesOfOnePasswordDiffer holds the salt: without a fresh one, two
-// accounts sharing a password would hold the same entry, and anybody who could
-// read the table would learn which share one without breaking either.
+// TestTwoEntriesOfOnePasswordDiffer holds that each entry draws a fresh salt.
 func TestTwoEntriesOfOnePasswordDiffer(t *testing.T) {
 	for _, p := range []Params{cheapArgon2id, {Algorithm: PBKDF2SHA256, PBKDF2Iterations: 2}} {
 		first, err := p.Hash("shared")
@@ -203,9 +199,8 @@ func TestTheStoredFormatIsTheOneTheDesignStates(t *testing.T) {
 	})
 }
 
-// TestWhatCannotBeAnEntryIsRefusedWhenItIsRead holds the shapes Parse turns
-// away, each of which would otherwise reach a derivation or be accepted on
-// the leniency of a decoder.
+// TestWhatCannotBeAnEntryIsRefusedWhenItIsRead holds the shapes Parse turns away,
+// each of which would otherwise reach a derivation or be accepted by a decoder.
 func TestWhatCannotBeAnEntryIsRefusedWhenItIsRead(t *testing.T) {
 	good64 := base64.RawStdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32))
 	good16 := base64.RawStdEncoding.EncodeToString(salt16)
@@ -300,8 +295,6 @@ func TestWhatCannotBeAnEntryIsRefusedWhenItIsRead(t *testing.T) {
 			}
 		})
 	}
-	// The control for the table: the shapes it spoils, left whole, are read, so
-	// that every refusal above is the spoiling and not the frame around it.
 	for _, whole := range []string{
 		argon("m=64,t=1,p=1"),
 		argon("m=" + strconv.Itoa(MaxMemoryKiB) + ",t=" + strconv.Itoa(MaxIterations) + ",p=" + strconv.Itoa(MaxParallelism)),
@@ -317,8 +310,7 @@ func TestWhatCannotBeAnEntryIsRefusedWhenItIsRead(t *testing.T) {
 }
 
 // TestAnEntryIsHeldToItsBoundsFromBothSides holds each bound at the value just
-// inside it and the one just outside, which is where a bound that drifted by one
-// either refuses a legitimate entry or lets a hostile one through.
+// inside it and the one just outside.
 func TestAnEntryIsHeldToItsBoundsFromBothSides(t *testing.T) {
 	good := base64.RawStdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32))
 	salt := func(n int) string { return base64.RawStdEncoding.EncodeToString(bytes.Repeat([]byte{1}, n)) }
@@ -396,9 +388,8 @@ func TestReadingAnEntryNeverEchoesIt(t *testing.T) {
 	}
 }
 
-// TestAHostileEntryIsRefusedBeforeAnythingIsDerived holds the reason the
-// bounds come before the derivation: an entry's own numbers must not decide
-// what one check costs.
+// TestAHostileEntryIsRefusedBeforeAnythingIsDerived holds that the bounds are
+// checked before any derivation runs.
 func TestAHostileEntryIsRefusedBeforeAnythingIsDerived(t *testing.T) {
 	good := base64.RawStdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32))
 	for _, hostile := range []string{
@@ -443,9 +434,8 @@ func TestTheWriterRefusesWhatNoReaderWouldAccept(t *testing.T) {
 	}
 }
 
-// TestTheFloorIsTheOneOWASPStates holds BelowFloor at each combination of the
-// OWASP minimums from both sides, and holds Weaker at the three ways one set of
-// parameters can be weaker than another.
+// TestTheFloorIsTheOneOWASPStates holds BelowFloor at each OWASP minimum and
+// Weaker at each way one parameter set can be weaker than another.
 func TestTheFloorIsTheOneOWASPStates(t *testing.T) {
 	a := func(m, ti uint32, p uint8) Params {
 		return Params{Algorithm: Argon2id, MemoryKiB: m, Iterations: ti, Parallelism: p}
@@ -561,8 +551,6 @@ func TestASaltThisProcessCannotDeriveWithIsRefusedWhenItIsRead(t *testing.T) {
 				err, ErrMalformedHash)
 			continue
 		}
-		// The derivation's own refusal rides along as a second cause, which is
-		// what tells the operator why the entry is unusable here.
 		var joined interface{ Unwrap() []error }
 		if !errors.As(err, &joined) || len(joined.Unwrap()) != 2 {
 			t.Errorf("the failure for an 8-byte salt carries %v, want both %v and the derivation's own error", err, ErrMalformedHash)

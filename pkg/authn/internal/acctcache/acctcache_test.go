@@ -44,10 +44,8 @@ func mustMiss(t *testing.T, c *Cache[string], key string) {
 	}
 }
 
-// TestAnEntryIsServedUntilItsLifetimeIsFullyElapsed holds the edge on both
-// sides: one tick before the lifetime ends the entry is served, at the
-// instant it ends it is not, and the miss removes the entry rather than
-// leaving it to occupy a slot.
+// TestAnEntryIsServedUntilItsLifetimeIsFullyElapsed serves an entry until the
+// instant its lifetime ends, then misses.
 func TestAnEntryIsServedUntilItsLifetimeIsFullyElapsed(t *testing.T) {
 	clk := newStepClock()
 	c := New[string](4, time.Minute, clk.now)
@@ -67,9 +65,8 @@ func TestAnEntryIsServedUntilItsLifetimeIsFullyElapsed(t *testing.T) {
 	mustMiss(t, c, "a")
 }
 
-// TestAHitDoesNotExtendTheLifetime holds that the lifetime runs from the store,
-// not from the last read: a cache that renewed on a hit would let a busy
-// account keep a stale snapshot for ever.
+// TestAHitDoesNotExtendTheLifetime keeps the lifetime anchored at the store, not
+// renewed on a read.
 func TestAHitDoesNotExtendTheLifetime(t *testing.T) {
 	clk := newStepClock()
 	c := New[string](4, time.Minute, clk.now)
@@ -186,9 +183,8 @@ func TestPurgeRemovesEverythingAndTheCacheStaysUsable(t *testing.T) {
 	mustHit(t, c, "e", "5")
 }
 
-// TestPutOnAKnownKeyReplacesTheValueAndRestartsTheLifetime holds both halves of
-// a refresh: the value read afterwards is the new one, the lifetime counts from
-// the second store, and the entry is not duplicated in the bound.
+// TestPutOnAKnownKeyReplacesTheValueAndRestartsTheLifetime replaces the value and
+// restarts the lifetime from the second store.
 func TestPutOnAKnownKeyReplacesTheValueAndRestartsTheLifetime(t *testing.T) {
 	clk := newStepClock()
 	c := New[string](2, time.Minute, clk.now)
@@ -196,7 +192,7 @@ func TestPutOnAKnownKeyReplacesTheValueAndRestartsTheLifetime(t *testing.T) {
 	c.Put("a", "old")
 	clk.advance(50 * time.Second)
 	c.Put("a", "new")
-	clk.advance(50 * time.Second) // 100s after the first store, 50s after the second
+	clk.advance(50 * time.Second)
 
 	mustHit(t, c, "a", "new")
 	if got := c.Len(); got != 1 {
@@ -220,9 +216,7 @@ func TestARepeatedPutRefreshesRecency(t *testing.T) {
 	mustHit(t, c, "a", "1'")
 }
 
-// TestACapacityBelowOneIsRaisedToOne holds the documented disposition of an
-// impossible size: the cache holds exactly one entry, rather than none or an
-// unbounded number.
+// TestACapacityBelowOneIsRaisedToOne holds exactly one entry for a capacity below one.
 func TestACapacityBelowOneIsRaisedToOne(t *testing.T) {
 	for _, capacity := range []int{0, -5} {
 		t.Run(fmt.Sprint(capacity), func(t *testing.T) {
@@ -296,10 +290,8 @@ func TestConcurrentUseIsRaceFree(t *testing.T) {
 	}
 }
 
-// TestAReadInFlightDuringAnInvalidationIsNotStored holds the fence a read-through
-// needs: a reader that took its epoch, read the source of truth, and then lost
-// the race to an Invalidate must not store what it read, or the change it
-// missed would be served until the lifetime ends.
+// TestAReadInFlightDuringAnInvalidationIsNotStored keeps a value read before an
+// invalidation from being stored.
 func TestAReadInFlightDuringAnInvalidationIsNotStored(t *testing.T) {
 	for name, change := range map[string]func(c *Cache[string]){
 		"Invalidate of the key":   func(c *Cache[string]) { c.Invalidate("acct") },
@@ -310,7 +302,7 @@ func TestAReadInFlightDuringAnInvalidationIsNotStored(t *testing.T) {
 			c := New[string](4, time.Minute, nil)
 			mustMiss(t, c, "acct")
 			epoch := c.Epoch()
-			snapshot := "active" // read from the database before the change
+			snapshot := "active"
 			change(c)
 			if c.PutIfEpoch("acct", snapshot, epoch) {
 				t.Error("PutIfEpoch stored a value read before the change")
@@ -320,9 +312,8 @@ func TestAReadInFlightDuringAnInvalidationIsNotStored(t *testing.T) {
 	}
 }
 
-// TestAReadWithNoInvalidationInBetweenIsStored is the other side: with the
-// epoch unmoved the conditional put is a put, and a later read takes the epoch
-// anew and stores.
+// TestAReadWithNoInvalidationInBetweenIsStored stores a value read when the epoch
+// has not moved.
 func TestAReadWithNoInvalidationInBetweenIsStored(t *testing.T) {
 	c := New[string](4, time.Minute, nil)
 	if !c.PutIfEpoch("acct", "active", c.Epoch()) {
@@ -338,9 +329,8 @@ func TestAReadWithNoInvalidationInBetweenIsStored(t *testing.T) {
 	mustHit(t, c, "acct", "disabled")
 }
 
-// TestAnInvalidateOfAKeyThatIsNotThereStillMovesTheEpoch holds that the fence
-// does not depend on the entry having been stored: the racing reader's miss is
-// exactly the case where there was nothing to remove.
+// TestAnInvalidateOfAKeyThatIsNotThereStillMovesTheEpoch moves the epoch even
+// when no entry was stored.
 func TestAnInvalidateOfAKeyThatIsNotThereStillMovesTheEpoch(t *testing.T) {
 	c := New[string](4, time.Minute, nil)
 	before := c.Epoch()

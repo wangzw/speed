@@ -444,9 +444,8 @@ func TestRevokeAccountKeepsTheExceptionAndLeavesServiceSessions(t *testing.T) {
 	})
 }
 
-// TestRevocableSessionsIsTheSetRevokeAccountEnds holds the two halves of one
-// contract: the identifiers a caller reads to name the sessions and the
-// identifiers the statement reports having ended are one set.
+// TestRevocableSessionsIsTheSetRevokeAccountEnds checks that the sessions
+// RevocableSessions names and the ones RevokeAccount reports ending are one set.
 func TestRevocableSessionsIsTheSetRevokeAccountEnds(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -565,8 +564,6 @@ func TestEvictionRevokesTheLeastRecentlyUsed(t *testing.T) {
 		second := f.create(newBrowser(alice))
 		f.clock.Advance(time.Second)
 		bobs := f.create(newBrowser(bob))
-		// The first session is used after the second was made, so the second is
-		// the one least recently used.
 		f.exec("UPDATE "+tableName+" SET last_seen_at = ? WHERE id = ?", f.clock.Now().UTC(), string(first.ID))
 		f.clock.Advance(time.Second)
 
@@ -689,8 +686,6 @@ func TestElevateRecordsTheStepUpAndRotates(t *testing.T) {
 			t.Errorf("the token from before the step-up is %s", got)
 		}
 
-		// An IdP's declaration needs the multi-factor level and the session's
-		// provider; and a method set the gateway would refuse is refused.
 		for name, e := range map[string]authn.Elevation{
 			"an IdP level on a local session": {Methods: stepUp.Methods, Assurance: authn.AssuranceMulti, IDPAssured: true, AuthTime: f.clock.Now()},
 			"no methods":                      {Assurance: authn.AssuranceMulti, AuthTime: f.clock.Now()},
@@ -1007,9 +1002,6 @@ func TestAPayloadOverTheBoundIsRefused(t *testing.T) {
 		if err := storeAdapterCommit(f, strings.Repeat("x", maxDataBytes+1)); !errors.Is(err, authn.ErrInvalidArgument) {
 			t.Errorf("the adapter's commit = %v, want ErrInvalidArgument", err)
 		}
-		// Ten times the bound of the shortest key an attribute may have cannot
-		// reach 8 KiB through the checks, so the largest payload a caller can
-		// make is far under it.
 		in := newBrowser(alice)
 		in.Methods = []authn.Method{
 			authn.MethodPassword, authn.MethodSMS, authn.MethodTOTP, authn.MethodWebAuthn,
@@ -1031,9 +1023,8 @@ func storeAdapterCommit(f *fixture, blob string) error {
 	return storeAdapter{p: f.p}.CommitCtx(context.Background(), "key", []byte(blob), f.clock.Now())
 }
 
-// Eviction never revokes the session it was called for, even when that session
-// is the least recently used one: the call just made it, so it is the one to
-// keep.
+// TestEvictionNeverRevokesTheSessionJustMade keeps the session just created even
+// when it is the least recently used.
 func TestEvictionNeverRevokesTheSessionJustMade(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)

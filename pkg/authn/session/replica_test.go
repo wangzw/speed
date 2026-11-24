@@ -9,8 +9,7 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// A revocation on one replica reaches another only through the event: until then
-// the second keeps serving what it cached, and the event clears it at once.
+// TestARevocationReachesAnotherReplicaThroughTheEvent holds a revocation reaching another replica through the event.
 func TestARevocationReachesAnotherReplicaThroughTheEvent(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		a := newFixture(t, d)
@@ -36,8 +35,7 @@ func TestARevocationReachesAnotherReplicaThroughTheEvent(t *testing.T) {
 	})
 }
 
-// Without the event the second replica learns of the revocation when its cache
-// entry runs out, which is check-ttl at the latest.
+// TestARevocationReachesAnotherReplicaWhenItsEntryRunsOut holds a revocation reaching another replica when its cache entry runs out.
 func TestARevocationReachesAnotherReplicaWhenItsEntryRunsOut(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		a := newFixture(t, d)
@@ -60,9 +58,7 @@ func TestARevocationReachesAnotherReplicaWhenItsEntryRunsOut(t *testing.T) {
 	})
 }
 
-// A status change on one replica reaches another through the event, which repeats
-// the cleanup the hook does, so a hook that was missed still does not leave the
-// session usable on the other replica.
+// TestAStatusChangeReachesAnotherReplicaThroughTheEvent holds a status change reaching another replica through the event.
 func TestAStatusChangeReachesAnotherReplicaThroughTheEvent(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		a := newFixture(t, d)
@@ -73,8 +69,6 @@ func TestAStatusChangeReachesAnotherReplicaThroughTheEvent(t *testing.T) {
 		if got := outcomeOf(b.verify(issued.Token)); got.String() != "authenticated" {
 			t.Fatalf("the second replica answered %s for a live session", got)
 		}
-		// The account is disabled; the hook to this replica was missed and only
-		// the event arrives.
 		a.disable(alice)
 
 		b.bus.deliver(event.Event{ID: "st-1", Type: authn.EventAccountStatusChanged, Payload: authn.AccountStatusChanged{
@@ -90,9 +84,7 @@ func TestAStatusChangeReachesAnotherReplicaThroughTheEvent(t *testing.T) {
 	})
 }
 
-// An impersonation record that ends on one replica reaches another through the
-// event, which clears the cached answer, so the next request is the
-// administrator's own identity.
+// TestAnEndedImpersonationReachesAnotherReplicaThroughTheEvent holds an ended impersonation reaching another replica through the event.
 func TestAnEndedImpersonationReachesAnotherReplicaThroughTheEvent(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		a := newFixture(t, d)

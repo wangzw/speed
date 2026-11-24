@@ -13,9 +13,8 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// watched are the settings this module watches, with the direction each relaxes
-// in. They are written out here rather than read from the table so the test
-// names the keys the design lists, not whatever the table happens to hold.
+// watched are the settings this module watches, with the direction each relaxes in,
+// named here rather than read from the table.
 var watched = []struct {
 	key    string
 	before string
@@ -39,10 +38,8 @@ func feedChangeAt(r *rig, tenant string, change settings.Change) {
 	})
 }
 
-// assertRelaxed holds the whole observable of one relaxing change: exactly one
-// Warn naming the key and the direction, and exactly one audit row with the
-// relaxed action, the key as its object, the relaxed outcome and the direction
-// under the change detail.
+// assertRelaxed holds the whole observable of one relaxing change: exactly one Warn
+// naming the key and the direction, and exactly one audit row with the relaxed action.
 func assertRelaxed(t *testing.T, r *rig, key string) {
 	t.Helper()
 	logs := r.logs.String()
@@ -67,9 +64,8 @@ func assertRelaxed(t *testing.T, r *rig, key string) {
 	}
 }
 
-// TestEachWatchedSettingThatRelaxesWritesAWarnAndAnAuditRow holds the
-// visibility for every watched key: a move in its relaxing direction writes one
-// Warn and one best-effort audit row, and nothing else.
+// TestEachWatchedSettingThatRelaxesWritesAWarnAndAnAuditRow holds that a relaxing
+// move on every watched key writes one Warn and one audit row, and nothing else.
 func TestEachWatchedSettingThatRelaxesWritesAWarnAndAnAuditRow(t *testing.T) {
 	for _, c := range watched {
 		t.Run(c.key, func(t *testing.T) {
@@ -80,9 +76,8 @@ func TestEachWatchedSettingThatRelaxesWritesAWarnAndAnAuditRow(t *testing.T) {
 	}
 }
 
-// TestATighteningOrUnwatchedChangeWritesNothing holds the other directions: a
-// move that checks more, a move that keeps the value the same and a key this
-// module does not watch are all left alone.
+// TestATighteningOrUnwatchedChangeWritesNothing holds that a tightening, an unchanged
+// value and an unwatched key all write nothing.
 func TestATighteningOrUnwatchedChangeWritesNothing(t *testing.T) {
 	r := newRig(t)
 	for _, c := range watched {
@@ -98,9 +93,8 @@ func TestATighteningOrUnwatchedChangeWritesNothing(t *testing.T) {
 	}
 }
 
-// TestASensitiveChangeIsSkippedEntirely holds the filter against a change whose
-// values were withheld: it is dropped before the relaxation test, so a withheld
-// change that would relax writes no Warn and no audit row.
+// TestASensitiveChangeIsSkippedEntirely holds that a change with withheld values
+// writes no Warn and no audit row even when it would relax.
 func TestASensitiveChangeIsSkippedEntirely(t *testing.T) {
 	r := newRig(t)
 	feedChange(r, settings.Change{Key: accessTTLPath, Old: "10m0s", New: "20m0s", Sensitive: true})
@@ -112,19 +106,16 @@ func TestASensitiveChangeIsSkippedEntirely(t *testing.T) {
 	}
 }
 
-// TestADeleteThatFallsBackToAMorePermissiveDefaultIsReported holds the
-// reading of a layer that held no row: a delete reverses to the declared
-// default, and when that default checks less than the value it replaced the
-// change is a relaxation.
+// TestADeleteThatFallsBackToAMorePermissiveDefaultIsReported holds that a delete
+// reversing to a default that checks less than the value it replaced is a relaxation.
 func TestADeleteThatFallsBackToAMorePermissiveDefaultIsReported(t *testing.T) {
 	r := newRig(t)
 	feedChange(r, settings.Change{Key: leewayPath, Old: "0s", Deleted: true})
 	assertRelaxed(t, r, leewayPath)
 }
 
-// TestAnAuditWriteFailureOfARelaxedChangeIsCounted holds the best-effort
-// direction: the change is still reported and the module carries on, and the
-// failed audit write is counted on the audit-write-failures instrument.
+// TestAnAuditWriteFailureOfARelaxedChangeIsCounted holds that a failed audit write is
+// counted on the audit-write-failures instrument and the change is still reported.
 func TestAnAuditWriteFailureOfARelaxedChangeIsCounted(t *testing.T) {
 	r := newRig(t)
 	collected := r.tokenMeter()
@@ -140,9 +131,8 @@ func TestAnAuditWriteFailureOfARelaxedChangeIsCounted(t *testing.T) {
 	}
 }
 
-// TestNoSettingsWatchWithoutAStore holds the wiring guard: the settings watch
-// needs the store the settings live in, so without one the bus carries the
-// cache-clearing subscriptions alone and never the settings watch.
+// TestNoSettingsWatchWithoutAStore holds that without a settings store the bus
+// carries the cache-clearing subscriptions alone and never the settings watch.
 func TestNoSettingsWatchWithoutAStore(t *testing.T) {
 	r := newRig(t)
 	r.p.settings.store = nil
@@ -169,9 +159,8 @@ func TestNoSettingsWatchWithoutABus(t *testing.T) {
 	}
 }
 
-// TestTheHandlerDoesNotPanicWithoutABusOrStore holds the inert case: a product
-// with neither a bus nor a store is never subscribed, and the handler invoked on
-// its own returns without panicking and without an audit seam to write to.
+// TestTheHandlerDoesNotPanicWithoutABusOrStore holds that the handler with neither
+// a bus nor a store returns without panicking.
 func TestTheHandlerDoesNotPanicWithoutABusOrStore(t *testing.T) {
 	p := &product{logger: (&logBuffer{}).logger()}
 	if err := p.onSettingsChanged(context.Background(), event.Event{

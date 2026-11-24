@@ -299,10 +299,9 @@ func (p *product) RevocableSessions(ctx context.Context, account authn.AccountID
 		"SELECT id FROM "+tableName+" WHERE "+revocableCondition, string(account))
 }
 
-// RevokeAccount revokes the account's browser and token sessions in one
-// statement, keeping the one named by except, and reports the identifiers it
-// revoked. The statement returns them itself, so what a caller is told and what
-// the statement changed are one set rather than two readings of the table.
+// RevokeAccount revokes the account's browser and token sessions in one statement,
+// keeping the one named by except, and reports the identifiers the statement
+// itself returned.
 func (p *product) RevokeAccount(ctx context.Context, account authn.AccountID, except authn.SessionID, reason string) ([]authn.SessionID, error) {
 	if !authn.ValidPayloadReasonClass(reason) {
 		return nil, fmt.Errorf("%w: the reason is not one of the closed classes", authn.ErrInvalidArgument)
@@ -352,11 +351,9 @@ func (p *product) Elevate(ctx context.Context, id authn.SessionID, e authn.Eleva
 	return issued, err
 }
 
-// SetImpersonation sets the impersonation record attached to the session, the
-// empty string ending it. Attaching a record gives a browser session a new
-// token; ending one only clears the marker, and the token and its expiry stay,
-// so a request still in flight with the token when the record ends is not
-// refused.
+// SetImpersonation sets the impersonation record, the empty string ending it.
+// Attaching a record gives a browser session a new token; ending one only clears
+// the marker, so a request still in flight with the token is not refused.
 func (p *product) SetImpersonation(ctx context.Context, id authn.SessionID, grantID string) (authn.Issued, error) {
 	if len(grantID) > maxGrantIDLen || strings.IndexFunc(grantID, unicode.IsControl) >= 0 {
 		return authn.Issued{}, fmt.Errorf("%w: the record identifier is not well formed", authn.ErrInvalidArgument)
@@ -364,17 +361,15 @@ func (p *product) SetImpersonation(ctx context.Context, id authn.SessionID, gran
 	return p.change(ctx, id, change{rotate: grantID != "", impersonation: &grantID})
 }
 
-// change is one conditional update of a session row, with a new token for a
-// browser session when it asks for one. The update names the token it replaces
-// and the row's not being revoked, so a revocation or another change that comes
-// first leaves the row as it was and the call reads the row again to say why.
+// change is one conditional update of a session row, with a new token for a browser
+// session when asked. A revocation or another change that comes first leaves the
+// row as it was, and the call reads the row again to say why.
 type change struct {
 	rotate        bool
 	elevation     *authn.Elevation
 	impersonation *string
 }
 
-// apply is what the change comes to for the row it is applied to.
 func (c change) changesRow() bool { return c.elevation != nil || c.impersonation != nil }
 
 func (p *product) change(ctx context.Context, id authn.SessionID, c change) (authn.Issued, error) {
@@ -485,10 +480,8 @@ func (p *product) ForCredential(ctx context.Context, account authn.AccountID, cr
 	if credentialID == "" || len(credentialID) > maxGrantIDLen || strings.IndexFunc(credentialID, unicode.IsControl) >= 0 {
 		return "", fmt.Errorf("%w: the credential identifier is not well formed", authn.ErrInvalidArgument)
 	}
-	// The account is read from the store and not from the cache: the instant
-	// after which a session is void decides whether the row is renewed, and a
-	// snapshot older than that would leave a restored client with a row that
-	// still fails the check.
+	// The account is read from the store, not the cache: a stale snapshot of the
+	// instant after which sessions are void would renew a row that still fails.
 	acct, err := p.accounts.Get(ctx, account)
 	if err != nil {
 		return "", accountError(err)
@@ -546,10 +539,9 @@ func (p *product) ForCredential(ctx context.Context, account authn.AccountID, cr
 	return "", errChanged
 }
 
-// renewService updates the expiry of a live service row to the secret's current
-// one and, when the row is older than the instant after which a session is void,
-// sets its creation time to now. It never touches revoked_at, and a revoked row
-// is not changed.
+// renewService sets a live service row's expiry to the secret's current one and,
+// when the row predates the account's valid-after instant, its creation time to
+// now. It never touches revoked_at.
 func (p *product) renewService(ctx context.Context, id string, exp, validAfter, now time.Time) (int64, error) {
 	if validAfter.IsZero() {
 		return p.exec(ctx, "renewing a service session",
@@ -595,12 +587,8 @@ func (p *product) ClearCookie(w http.ResponseWriter) {
 	p.sm.WriteSessionCookie(p.cookieCtx, w, "", time.Time{})
 }
 
-// clearingCookie is the cookie a reply operation attaches with WithCookies, built
-// as a value because a reply has no response writer to hand. cookiename.Cookie
-// builds it from the same configuration the manager's cookie comes from, so it
-// names the cookie the manager wrote, with no value and Max-Age=0, which a
-// browser acts on ahead of any Expires, as it does for the flow and reset
-// cookies' clears.
+// clearingCookie is the cookie a reply attaches with WithCookies: the manager's own
+// cookie, with no value and Max-Age=0, which a browser acts on ahead of Expires.
 func (p *product) clearingCookie() *http.Cookie {
 	return p.cookie.cookie("", -1)
 }

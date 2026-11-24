@@ -317,9 +317,8 @@ func TestAVerificationWithTheWrongKeyFails(t *testing.T) {
 	}
 }
 
-// TestTheAccessTokenTypeIsTheRFC9068Literal holds the typ value the design
-// fixes, both as the constant and as what the signed header actually carries, so
-// a change to the constant is caught and not only compared with itself.
+// TestTheAccessTokenTypeIsTheRFC9068Literal holds the typ constant and the signed
+// header both carry at+jwt.
 func TestTheAccessTokenTypeIsTheRFC9068Literal(t *testing.T) {
 	if accessTokenType != "at+jwt" {
 		t.Errorf("the access token typ is %q, want at+jwt", accessTokenType)
@@ -364,9 +363,8 @@ func TestANonP256KeyIsRefused(t *testing.T) {
 	}
 }
 
-// TestAGroupReadablePrivateKeyIsWarned holds the permission caution's mask: a
-// private key readable by the owner's group, though not by others, is still a
-// caution.
+// TestAGroupReadablePrivateKeyIsWarned holds that a group-readable private key is
+// still a caution, not a failure.
 func TestAGroupReadablePrivateKeyIsWarned(t *testing.T) {
 	pemBytes, err := GenerateKey(algES256)
 	if err != nil {
@@ -407,9 +405,8 @@ func rfc7638Thumbprint(t *testing.T, pub *ecdsa.PublicKey) string {
 	return enc.EncodeToString(sum[:])
 }
 
-// TestTheKidIsTheRFC7638Thumbprint holds the kid's derivation: it is the
-// base64url SHA-256 JWK thumbprint of the key, which an outside verifier can
-// recompute, not a name from anywhere.
+// TestTheKidIsTheRFC7638Thumbprint holds the kid as the base64url SHA-256 JWK
+// thumbprint of the key.
 func TestTheKidIsTheRFC7638Thumbprint(t *testing.T) {
 	path := generatedKey(t, algES256)
 	set, _, err := loadKeySet(resolved{algorithm: algES256, signingFile: path})
@@ -425,9 +422,8 @@ func TestTheKidIsTheRFC7638Thumbprint(t *testing.T) {
 	}
 }
 
-// TestAVerifyOnlyKeyFromAPublicPEM holds that a bare public-key PEM is a usable
-// verification file: it becomes an entry with no signer and produces no
-// caution.
+// TestAVerifyOnlyKeyFromAPublicPEM holds that a bare public-key PEM loads as a
+// verify-only entry with no caution.
 func TestAVerifyOnlyKeyFromAPublicPEM(t *testing.T) {
 	signSet, _, err := loadKeySet(resolved{algorithm: algES256, signingFile: generatedKey(t, algES256)})
 	if err != nil {
@@ -456,10 +452,8 @@ func TestAVerifyOnlyKeyFromAPublicPEM(t *testing.T) {
 	}
 }
 
-// TestSigningWithAVerifyOnlyKeyIsRefused holds the nil-signer guard: an entry
-// with a public half and no private one, which is what a public-key verify file
-// loads as, refuses to sign with a message that names the missing half rather
-// than reaching the library with nothing to sign with.
+// TestSigningWithAVerifyOnlyKeyIsRefused holds that an entry with no private half
+// refuses to sign and names the missing half.
 func TestSigningWithAVerifyOnlyKeyIsRefused(t *testing.T) {
 	signSet, _, err := loadKeySet(resolved{algorithm: algES256, signingFile: generatedKey(t, algES256)})
 	if err != nil {

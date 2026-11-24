@@ -20,10 +20,8 @@ func reserved(t *testing.T, th *Throttle, key string) *Attempt {
 	return a
 }
 
-// TestAttemptsThatArriveTogetherAreAdmittedNoMoreThanTheFreeOnesAndOne holds the
-// reservation under concurrency: with nothing settled, the free attempts and the
-// one beyond them are admitted however many arrive at once, and every other
-// attempt is told to wait.
+// TestAttemptsThatArriveTogetherAreAdmittedNoMoreThanTheFreeOnesAndOne admits the
+// free attempts and one more under concurrent reservation.
 func TestAttemptsThatArriveTogetherAreAdmittedNoMoreThanTheFreeOnesAndOne(t *testing.T) {
 	th := throttleAt(newClock(), defaultParams)
 	const arriving = 64
@@ -54,9 +52,8 @@ func TestAttemptsThatArriveTogetherAreAdmittedNoMoreThanTheFreeOnesAndOne(t *tes
 	}
 }
 
-// TestAnAttemptSettledAsAPassGivesBackItsOwnReservationAndNothingElse holds the
-// edge both ways: the failures that stood before the attempt are still there
-// after it, and the attempt itself no longer counts.
+// TestAnAttemptSettledAsAPassGivesBackItsOwnReservationAndNothingElse refunds the
+// attempt alone and keeps the failures before it.
 func TestAnAttemptSettledAsAPassGivesBackItsOwnReservationAndNothingElse(t *testing.T) {
 	th := throttleAt(newClock(), defaultParams)
 	failN(t, th, "k", 5)
@@ -79,9 +76,8 @@ func TestAnAttemptSettledAsAPassGivesBackItsOwnReservationAndNothingElse(t *test
 	}
 }
 
-// TestAPassDoesNotRestartTheAgingOfTheFailuresBeforeIt holds that only a failure
-// moves the time the count ages from: a reservation that is given back leaves
-// it where it was.
+// TestAPassDoesNotRestartTheAgingOfTheFailuresBeforeIt leaves the aging of earlier
+// failures where a refund found it.
 func TestAPassDoesNotRestartTheAgingOfTheFailuresBeforeIt(t *testing.T) {
 	clock := newClock()
 	th := throttleAt(clock, defaultParams)
@@ -91,8 +87,6 @@ func TestAPassDoesNotRestartTheAgingOfTheFailuresBeforeIt(t *testing.T) {
 	reserved(t, th, "k").Refund()
 	clock.advance(90 * time.Second)
 
-	// Fifteen minutes and thirty seconds after the last failure the three have
-	// aged away, so five more are free and the sixth engages.
 	for i := 1; i <= 5; i++ {
 		if reserved(t, th, "k").Fail() {
 			t.Fatalf("failure %d engaged the back-off: the pass restarted the aging of the failures before it", i)
@@ -103,17 +97,14 @@ func TestAPassDoesNotRestartTheAgingOfTheFailuresBeforeIt(t *testing.T) {
 	}
 }
 
-// TestTheWaitRunsFromTheAttemptInFlightAndThenFromTheFailure holds what an
-// attempt that is held back is told: the delay of the count that includes the
-// attempts in flight, from the latest of them, and from the failure once it is
-// recorded.
+// TestTheWaitRunsFromTheAttemptInFlightAndThenFromTheFailure times the wait from
+// the latest attempt in flight, then from the recorded failure.
 func TestTheWaitRunsFromTheAttemptInFlightAndThenFromTheFailure(t *testing.T) {
 	clock := newClock()
 	th := throttleAt(clock, defaultParams)
 	failN(t, th, "k", 5)
 
 	clock.advance(time.Hour)
-	// The five have aged away, so six in a row are admitted before one is held.
 	var open []*Attempt
 	for range 6 {
 		open = append(open, reserved(t, th, "k"))
@@ -156,9 +147,8 @@ func TestAnAttemptIsSettledOnce(t *testing.T) {
 	}
 }
 
-// TestAKeyThatIsNotFixedIsForgottenWhenItsOnlyAttemptIsGivenBack holds the table
-// against a caller who has attempts reserved and given back under any number of
-// names, while a fixed key stays.
+// TestAKeyThatIsNotFixedIsForgottenWhenItsOnlyAttemptIsGivenBack forgets an
+// unfixed key once its only attempt is refunded and keeps a fixed one.
 func TestAKeyThatIsNotFixedIsForgottenWhenItsOnlyAttemptIsGivenBack(t *testing.T) {
 	fixed := Key{Scope: authn.ScopeIdentifier, Key: "fixed"}
 	th := NewThrottle(func() ThrottleParams { return defaultParams }, newClock().now, fixed)
@@ -197,10 +187,8 @@ func TestAKeyWithAnAttemptInFlightIsNotSweptAndASpentOneIs(t *testing.T) {
 	}
 }
 
-// TestAnAttemptWhoseKeyWasPushedOutStillCountsItsFailure holds what happens to a
-// reservation that a full table dropped: giving it back does nothing, and
-// keeping it records the failure under the key again, so the pass-through of a
-// spray of names does not let an attempt fail uncounted.
+// TestAnAttemptWhoseKeyWasPushedOutStillCountsItsFailure records the failure of a
+// dropped reservation under the key again.
 func TestAnAttemptWhoseKeyWasPushedOutStillCountsItsFailure(t *testing.T) {
 	th := throttleAt(newClock(), defaultParams)
 	failed := reserved(t, th, "pushed")
@@ -225,9 +213,8 @@ func TestAnAttemptWhoseKeyWasPushedOutStillCountsItsFailure(t *testing.T) {
 	}
 }
 
-// TestSucceedLeavesAnAttemptInFlightCounting holds the interface's Succeed
-// against a reservation made before it: the failures that stood are cleared, and
-// the attempt that is still in flight is not.
+// TestSucceedLeavesAnAttemptInFlightCounting clears the earlier failures and keeps
+// the attempt still in flight.
 func TestSucceedLeavesAnAttemptInFlightCounting(t *testing.T) {
 	th := throttleAt(newClock(), defaultParams)
 	failN(t, th, "k", 5)
@@ -247,13 +234,10 @@ func TestSucceedLeavesAnAttemptInFlightCounting(t *testing.T) {
 	}
 }
 
-// TestTheTableBoundIsTheNumberTheDesignStates holds the number of keys the
-// in-process back-off remembers, written out: the bound is not the constant but
-// the number.
+// TestTheTableBoundIsTheNumberTheDesignStates holds the back-off table at 16384
+// keys.
 func TestTheTableBoundIsTheNumberTheDesignStates(t *testing.T) {
 	th := throttleAt(newClock(), ThrottleParams{FreeAttempts: 1, Window: time.Hour, MaxBackoff: time.Hour})
-	// Two failures each, so that a key that is remembered waits and one that is
-	// forgotten does not.
 	for i := range 16384 {
 		failN(t, th, "k"+strconv.Itoa(i), 2)
 	}
@@ -277,9 +261,8 @@ func TestTheTableBoundIsTheNumberTheDesignStates(t *testing.T) {
 	}
 }
 
-// TestGivingBackAnAttemptWhoseKeyWasPushedOutLeavesTheKeysNewState holds that a
-// reservation the table dropped does not reach the state the key has since been
-// given: failures recorded under the key after it was pushed out stay.
+// TestGivingBackAnAttemptWhoseKeyWasPushedOutLeavesTheKeysNewState keeps failures
+// recorded under the key after its old reservation was dropped.
 func TestGivingBackAnAttemptWhoseKeyWasPushedOutLeavesTheKeysNewState(t *testing.T) {
 	th := throttleAt(newClock(), defaultParams)
 	dropped := reserved(t, th, "k")
@@ -296,9 +279,8 @@ func TestGivingBackAnAttemptWhoseKeyWasPushedOutLeavesTheKeysNewState(t *testing
 	}
 }
 
-// TestAReservationAloneReclaimsKeysThatWentAWholeWindow holds that a key whose
-// count has aged away is reclaimed by the next reservation, whatever key it is
-// for.
+// TestAReservationAloneReclaimsKeysThatWentAWholeWindow reclaims an aged key on
+// the next reservation for any key.
 func TestAReservationAloneReclaimsKeysThatWentAWholeWindow(t *testing.T) {
 	clock := newClock()
 	th := throttleAt(clock, defaultParams)

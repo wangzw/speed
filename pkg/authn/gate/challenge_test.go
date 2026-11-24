@@ -20,10 +20,8 @@ func challengeOf(t *testing.T, g *gateway, endpoint string, edit func(*nethttp.R
 	return w.Header().Get(challengeHeader)
 }
 
-// TestARefusalTellsTheCallerWhatCredentialToSend holds the challenge each 401
-// carries and the realm it is written with: the schemes the backends take, each
-// as the scheme is conventionally written, once, in order, with the endpoint's
-// own name as the realm.
+// TestARefusalTellsTheCallerWhatCredentialToSend writes each 401's challenge
+// from the schemes the backends take, in order, with the endpoint as realm.
 func TestARefusalTellsTheCallerWhatCredentialToSend(t *testing.T) {
 	g := testGateway(t, []string{"admin", "public"},
 		basicBackend("static", "static."), schemeBackend("token", "bearer"))
@@ -39,9 +37,8 @@ func TestARefusalTellsTheCallerWhatCredentialToSend(t *testing.T) {
 	}
 }
 
-// TestBasicIsOfferedOnlyWhenABackendTakesIt holds the one scheme that makes a
-// browser open a password prompt: offering it where no backend reads it would
-// prompt for a password that is refused unread.
+// TestBasicIsOfferedOnlyWhenABackendTakesIt offers Basic only where a backend
+// reads it.
 func TestBasicIsOfferedOnlyWhenABackendTakesIt(t *testing.T) {
 	g := testGateway(t, []string{"public"}, schemeBackend("token", "bearer", "dpop"))
 	sealed(t, g, routerWith("public"))
@@ -55,10 +52,8 @@ func TestBasicIsOfferedOnlyWhenABackendTakesIt(t *testing.T) {
 	}
 }
 
-// TestACookieOnlyAssemblyAnswersWithTheCookieChallenge holds the one new case
-// of the challenge: RFC 9110 requires a 401 to carry at least one, and with no
-// scheme taken the gateway writes the cookie convention, which no standard
-// client knows and which opens no password prompt.
+// TestACookieOnlyAssemblyAnswersWithTheCookieChallenge answers a cookie-only
+// assembly with the Cookie challenge.
 func TestACookieOnlyAssemblyAnswersWithTheCookieChallenge(t *testing.T) {
 	g := testGateway(t, []string{"public"}, cookieBackend("session", "sid"))
 	sealed(t, g, routerWith("public"))
@@ -75,9 +70,8 @@ func TestACookieOnlyAssemblyAnswersWithTheCookieChallenge(t *testing.T) {
 	}
 }
 
-// TestABackendWritesItsOwnPartOfTheChallenge holds the Challenger: its strings
-// replace the backend's default challenge, they are given the endpoint's realm
-// already escaped, and the rest of the challenge is as it was.
+// TestABackendWritesItsOwnPartOfTheChallenge replaces the backend's part of the
+// challenge, with the realm already escaped.
 func TestABackendWritesItsOwnPartOfTheChallenge(t *testing.T) {
 	var realms []string
 	var flags []bool
@@ -109,10 +103,8 @@ func TestABackendWritesItsOwnPartOfTheChallenge(t *testing.T) {
 	}
 }
 
-// TestARejectedCredentialGetsTheRejectedChallengeOfItsBackendAlone holds when
-// the rejected form is used: a 401 on a request whose credential reached a
-// backend and was refused carries that backend's rejected challenge, and
-// every other 401 carries the plain one.
+// TestARejectedCredentialGetsTheRejectedChallengeOfItsBackendAlone uses the
+// rejected form only for a credential a backend refused.
 func TestARejectedCredentialGetsTheRejectedChallengeOfItsBackendAlone(t *testing.T) {
 	var cleared atomic.Int64
 	token := challengingVerifier{
@@ -180,10 +172,8 @@ func TestARejectedCredentialGetsTheRejectedChallengeOfItsBackendAlone(t *testing
 	}
 }
 
-// TestAChallengerThatWritesNothingOrWritesABadLineDoesNotBreakTheResponse holds
-// what the gateway does with what a backend wrote: empty strings are dropped, a
-// line ending would be the start of a second header and is dropped, and a 401
-// never goes out with no challenge at all.
+// TestAChallengerThatWritesNothingOrWritesABadLineDoesNotBreakTheResponse drops
+// empty and line-ending lines and never sends a 401 with no challenge.
 func TestAChallengerThatWritesNothingOrWritesABadLineDoesNotBreakTheResponse(t *testing.T) {
 	for name, given := range map[string][]string{
 		"nothing":           nil,
@@ -236,9 +226,8 @@ func TestARealmCannotBreakOutOfTheChallenge(t *testing.T) {
 	}
 }
 
-// TestTheChallengeIsBuiltOncePerEndpointInInit holds that the request path does
-// not call the backends' Challenger: it is called when the layer is built, for
-// the plain and the rejected form, and never again however many requests come.
+// TestTheChallengeIsBuiltOncePerEndpointInInit builds the challenge once per
+// endpoint, never on the request path.
 func TestTheChallengeIsBuiltOncePerEndpointInInit(t *testing.T) {
 	var calls atomic.Int64
 	token := challengingVerifier{

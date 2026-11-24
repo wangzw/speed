@@ -19,10 +19,8 @@ type routeIndependenceRequest struct {
 	path   string
 }
 
-// replyHeaders renders a reply's headers without Date. Date is the one header
-// outside the comparison: two requests made at different moments may legitimately
-// straddle a second. Same-name values keep the order the server wrote them in,
-// because Set-Cookie is the header where that order is the value's meaning.
+// replyHeaders renders a reply's headers without Date, and keeps same-name
+// values in the order the server wrote them.
 func replyHeaders(r reply) string {
 	names := make([]string, 0, len(r.header))
 	for name := range r.header {
@@ -89,10 +87,8 @@ func asUntrustedOrigin(r *nethttp.Request) {
 	r.Header.Set("Origin", "https://evil.example")
 }
 
-// TestTheRefusalDoesNotDependOnTheMatchedRoute holds the gateway's promise
-// against the real entry point on a real socket: five shapes of
-// unauthenticated request, each with three kinds of credential, all answered
-// identically.
+// TestTheRefusalDoesNotDependOnTheMatchedRoute answers five shapes of
+// unauthenticated request, each with three credentials, identically.
 func TestTheRefusalDoesNotDependOnTheMatchedRoute(t *testing.T) {
 	cookie := cookieBackend("session", "__Host-gate-probe")
 	cookieName := cookie.accepts.Cookies[0]
@@ -154,8 +150,6 @@ func TestTheRefusalDoesNotDependOnTheMatchedRoute(t *testing.T) {
 		unsafeNowhere = l.send("public", nethttp.MethodPost, "/nowhere", asCookie(cookieName, "invalid"), asUntrustedOrigin)
 	})
 
-	// The reference is the request no route matched: the answer that cannot
-	// depend on a route at all.
 	reference := classes[1].name
 	for _, cred := range credentials {
 		want := replies[cred.name][reference]
@@ -169,9 +163,6 @@ func TestTheRefusalDoesNotDependOnTheMatchedRoute(t *testing.T) {
 		}
 	}
 
-	// The cookie half is not vacuous only if the backend was reached: the clear
-	// is written by the backend that judged the cookie, and no anonymous refusal
-	// carries it.
 	for _, class := range classes {
 		requireClearsCookie(t, class.name+" with an invalid cookie", replies[invalidCookie][class.name], cookieName)
 	}
@@ -187,9 +178,6 @@ func TestTheRefusalDoesNotDependOnTheMatchedRoute(t *testing.T) {
 		replies[invalidCookie][reference], "GET /catalog", optionalCookie, true)
 	requireClearsCookie(t, "an optional route with an invalid cookie", optionalCookie, cookieName)
 
-	// An unsafe request carrying a cookie and an untrusted Origin is refused by
-	// the cross-origin check before any backend is asked, so it is the same on a
-	// registered route and on a path no route carries, and it clears nothing.
 	requireStatus(t, "POST /orders with a cookie and an untrusted Origin", unsafeRoute, nethttp.StatusUnauthorized)
 	requireStatus(t, "POST /nowhere with a cookie and an untrusted Origin", unsafeNowhere, nethttp.StatusUnauthorized)
 	requireSameReply(t, "an unsafe request with a cookie and an untrusted Origin",

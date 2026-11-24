@@ -23,10 +23,9 @@ var specialV4 = prefixes(
 	"240.0.0.0/4",
 )
 
-// specialV6 holds the IPv6 blocks that are not public unicast and that the
-// rules in [Permitted] do not already refuse. Several entries are redundant
-// with the 2000::/3 requirement and are listed anyway, so the table reads as
-// the registry does.
+// specialV6 holds the IPv6 blocks that are not public unicast and that
+// [Permitted] does not already refuse; entries redundant with the 2000::/3
+// requirement are listed anyway so the table reads as the registry does.
 var specialV6 = prefixes(
 	"::/128",
 	"::1/128",
@@ -71,13 +70,9 @@ func within(addr netip.Addr, blocks []netip.Prefix) bool {
 	return false
 }
 
-// Permitted reports whether a connection to addr is allowed: whether it is a
-// public unicast address. The zero Addr is not permitted.
-//
-// allowLoopback is the development switch. It admits 127.0.0.0/8 and ::1 (an
-// IPv4-mapped loopback address included, since it is that IPv4 address) and
-// nothing else; a loopback address carried inside a NAT64 or 6to4 address is
-// still refused, because the packet leaves the machine.
+// Permitted reports whether a connection to addr is allowed: a public unicast
+// address, and with allowLoopback 127.0.0.0/8 and ::1 too; a loopback address
+// inside NAT64 or 6to4 stays refused. The zero Addr is not permitted.
 func Permitted(addr netip.Addr, allowLoopback bool) bool {
 	if !addr.IsValid() {
 		return false

@@ -15,13 +15,9 @@ import (
 
 const typePrefix = "urn:speed:authn:"
 
-// The problem codes, the closed set of what a handler of this capability
-// answers with in Problem.Type, after typePrefix. The set only grows; a code is
-// never renamed or reused. Each code belongs to one status, which Status reads,
-// so that a handler names the code and cannot pair it with another status. The
-// exception is invitation-target-invalid: the issuing face refuses a target with
-// 400 and the acceptance face refuses a caller with 403, each by naming the code
-// in a handler fault, so Status reports the issuing face's 400.
+// The problem codes: the closed set a handler writes in Problem.Type after
+// typePrefix. It only grows and a code is never renamed or reused, and each code
+// has one status except invitation-target-invalid, which Status reports as 400.
 const (
 	CodeBadRequest                     = "bad-request"                      // 400
 	CodeUsernameReserved               = "username-reserved"                // 400
@@ -135,9 +131,8 @@ func problem(c *gin.Context, status int, code string) {
 }
 
 // mustCode returns the status of code, or panics when it is not one of the codes
-// or its status is not among allowed. A wrong code is a defect of the handler
-// that wrote it, and the panic ends in the entry point's fallback 500 and its log
-// line, where a quiet pass would write an answer the design does not have.
+// or its status is not among allowed: a wrong code is a handler defect and the
+// panic ends in the entry point's fallback 500 and log line.
 func mustCode(fn, code string, allowed ...int) int {
 	status, ok := statusOf[code]
 	if !ok {
@@ -151,32 +146,25 @@ func mustCode(fn, code string, allowed ...int) int {
 	panic(fmt.Sprintf("authn/mount: %s: the code %q is answered with %d, which %s does not write", fn, code, status, fn))
 }
 
-// Fail writes the problem code in its status. It is for the codes that carry no
-// challenge and no header of their own: the 400s, 404, 409 and 415. A 401 is
-// written with Unauthorized or StepUpRequired, a 403 with Forbidden, a 429 with
-// Throttled and a 503 with Unavailable or Busy. A string that is not one of the
-// codes, or a code of another kind, panics.
+// Fail writes a code that carries no challenge or header of its own: the 400s,
+// 404, 409 and 415. A 401 goes through Unauthorized or StepUpRequired, a 403
+// through Forbidden, a 429 through Throttled, a 503 through Unavailable; anything else panics.
 func Fail(c *gin.Context, code string) {
 	problem(c, mustCode("Fail", code,
 		http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusUnsupportedMediaType), code)
 }
 
-// challenge is the WWW-Authenticate value of a 401 on realm. It offers Bearer
-// and Cookie and never Basic: a page's fetch that is answered with Basic makes
-// the browser open its own password prompt, and these answers do not ask for a
-// Basic credential. The realm is escaped, because a quote or a backslash in it
-// would end the quoted string early.
+// challenge is the WWW-Authenticate value of a 401 on realm, offering Bearer and
+// Cookie and never Basic, which would make a page's fetch open the browser's
+// password prompt; the realm is escaped so a quote cannot end the string early.
 func challenge(realm string) string {
 	q := QuoteRealm(realm)
 	return `Bearer realm="` + q + `", Cookie realm="` + q + `"`
 }
 
 // Unauthorized writes a 401 whose challenge offers Bearer and Cookie and never
-// Basic. realm is the endpoint's name; see challenge for what is written.
-//
-// code is login-failed, flow-invalid or link-required, written as the problem's
-// type; the empty string writes none, which is the shape of the gateway's own 401
-// and of the 401 of a failed cross-origin check. Any other code panics.
+// Basic. code is login-failed, flow-invalid or link-required, or empty for none;
+// insufficient_user_authentication and any other code panic.
 func Unauthorized(c *gin.Context, realm, code string) {
 	if code != "" {
 		mustCode("Unauthorized", code, http.StatusUnauthorized)
@@ -192,21 +180,9 @@ func Unauthorized(c *gin.Context, realm, code string) {
 // no requirement of the route and nothing of the account.
 const stepUpDescription = "A stronger or more recent authentication is required"
 
-// StepUpRequired writes the 401 of an identity that does not meet a requirement:
-// the problem type insufficient_user_authentication and, in WWW-Authenticate,
-// the scheme the identity authenticated with, which is id.Challenge(), then
-// error, error_description, acr_values with the level's number and max_age with
-// the requirement's MaxAge in whole seconds, rounded up. A requirement with no
-// MaxAge, or a negative one, writes no max_age. The scheme of a zero identity,
-// or one that is not a token, is Bearer.
-//
-// RFC 9470 defines the parameters for Bearer; carrying them on Cookie and Basic
-// is this capability's convention.
-//
-// This is the answer that asks an already-authenticated caller to prove itself
-// again, not one that refused a credential. speedhttp.Fail marks it by its
-// problem type, so every path that writes the type is marked, this one
-// included, and a layer charging a source by outcome keeps the two apart.
+// StepUpRequired writes the 401 that asks an authenticated caller to prove
+// itself again, not a refused credential: type insufficient_user_authentication
+// with a challenge naming id.Challenge(), acr_values, and max_age when positive.
 func StepUpRequired(c *gin.Context, id authn.Identity, r authn.Requirement) {
 	var b strings.Builder
 	b.WriteString(challengeScheme(id.Challenge()))
@@ -224,13 +200,9 @@ func StepUpRequired(c *gin.Context, id authn.Identity, r authn.Requirement) {
 	problem(c, http.StatusUnauthorized, CodeInsufficientUserAuthentication)
 }
 
-// Forbidden writes a 403. code is method-disabled, account-unavailable,
-// impersonation-restricted, factor-not-seasoned, forbidden, signup-closed,
-// contact-required, phone-required, human-verification-required,
-// password-reset-closed, password-reset-unavailable, invitation-email-unproved
-// or invitation-role-protected, the thirteen that this
-// capability's own handlers may answer: the gateway and the admission layer
-// never write a 403. Any other code panics.
+// Forbidden writes a 403. code is one of the 403 codes this capability's own
+// handlers answer; the gateway and the admission layer never write a 403, and
+// any other code panics.
 func Forbidden(c *gin.Context, code string) {
 	problem(c, mustCode("Forbidden", code, http.StatusForbidden), code)
 }
@@ -275,9 +247,7 @@ func QuoteRealm(name string) string {
 }
 
 // challengeScheme returns scheme when it is an RFC 9110 token, and Bearer
-// otherwise. The gateway stamps Identity.Challenge, so an odd value is a zero
-// identity or a defect, and neither may put a character into a header that
-// ends the field.
+// otherwise, so a defect cannot put a character into the header that ends the field.
 func challengeScheme(scheme string) string {
 	if scheme == "" {
 		return "Bearer"

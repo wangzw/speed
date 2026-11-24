@@ -18,9 +18,8 @@ func layered(r *fakeRouter) map[string]int {
 	return out
 }
 
-// TestWithNoEndpointsKeyTheGatewayGuardsEveryEndpointTheEntryPointDeclares
-// holds the default the design settled on: guard everything, and narrow by
-// writing names.
+// TestWithNoEndpointsKeyTheGatewayGuardsEveryEndpointTheEntryPointDeclares holds
+// the default of guarding everything and narrowing by writing names.
 func TestWithNoEndpointsKeyTheGatewayGuardsEveryEndpointTheEntryPointDeclares(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -53,10 +52,8 @@ func TestWithNoEndpointsKeyTheGatewayGuardsEveryEndpointTheEntryPointDeclares(t 
 	}
 }
 
-// TestTheWildcardIsExpandedAtInitAgainstTheEndpointsDeclaredThen holds where
-// the expansion happens: in Init, against the set the entry point has by
-// then, so that the default does not depend on which names were written
-// anywhere.
+// TestTheWildcardIsExpandedAtInitAgainstTheEndpointsDeclaredThen holds that the
+// wildcard is expanded in Init against the endpoints declared by then.
 func TestTheWildcardIsExpandedAtInitAgainstTheEndpointsDeclaredThen(t *testing.T) {
 	var guarded []string
 	router := routerWith("a", "b", "c")
@@ -115,9 +112,8 @@ func TestTheWildcardIsExpandedAtInitAgainstTheEndpointsDeclaredThen(t *testing.T
 	}
 }
 
-// TestAnEntryPointThatDeclaresNoEndpointCannotBeGuarded holds the one failure of
-// the default: the wildcard of an entry point with nothing declared guards
-// nothing, and a gateway that guards nothing is not a gateway that started.
+// TestAnEntryPointThatDeclaresNoEndpointCannotBeGuarded holds that a gateway
+// guarding nothing fails to start.
 func TestAnEntryPointThatDeclaresNoEndpointCannotBeGuarded(t *testing.T) {
 	err := assembly{
 		body:     `{}`,
@@ -129,10 +125,8 @@ func TestAnEntryPointThatDeclaresNoEndpointCannotBeGuarded(t *testing.T) {
 	}
 }
 
-// TestAnExplicitEmptyListFailsThePrepareOfTheDescriptor holds the empty list
-// through the descriptor and not only through resolve: the drive fails with the
-// sentinel and the key, so a host that wrote [] is told, and nothing is
-// registered.
+// TestAnExplicitEmptyListFailsThePrepareOfTheDescriptor holds that an explicit
+// empty list fails the drive and registers nothing.
 func TestAnExplicitEmptyListFailsThePrepareOfTheDescriptor(t *testing.T) {
 	router := routerWith("public")
 	err := assembly{
@@ -151,9 +145,8 @@ func TestAnExplicitEmptyListFailsThePrepareOfTheDescriptor(t *testing.T) {
 	}
 }
 
-// TestTheGuardedEndpointsAreWrittenToTheStartupDiagnostics holds the diagnostic
-// that makes a missing guard a missing exemption: the expanded list of endpoints
-// that are guarded, and what each backend takes.
+// TestTheGuardedEndpointsAreWrittenToTheStartupDiagnostics holds the startup
+// record listing the guarded endpoints and what each backend takes.
 func TestTheGuardedEndpointsAreWrittenToTheStartupDiagnostics(t *testing.T) {
 	logs := liveAssembly{
 		endpoints: []string{"public", "admin"},

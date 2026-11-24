@@ -135,9 +135,8 @@ func TestTheSweepWorksOffMoreThanOneBatchInARun(t *testing.T) {
 	}
 }
 
-// A row exactly at the retention boundary is kept: the sweep deletes a browser
-// or token row whose absolute period ended strictly before the cutoff, and a
-// service row strictly so revoked.
+// TestTheSweepKeepsWhatIsExactlyAtRetention keeps a row exactly at the
+// retention boundary, which the sweep deletes only strictly past.
 func TestTheSweepKeepsWhatIsExactlyAtRetention(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)

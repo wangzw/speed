@@ -12,10 +12,8 @@ import (
 
 const wrapPublicURL = "https://app.example.com"
 
-// wrapped is an engine with routes registered the way a Mounter registers them:
-// each handler goes through Wrap with the given check. calls counts how many times
-// a handler ran, and panickedHeader is the Cache-Control the recovery read while a
-// panicking handler ran.
+// wrapped is an engine whose routes go through Wrap; calls counts handler runs
+// and panickedHeader is the Cache-Control the recovery read during a panic.
 type wrapped struct {
 	engine         *gin.Engine
 	calls          map[string]int
@@ -30,11 +28,9 @@ func newWrapped(t *testing.T, trusted ...string) *wrapped {
 		t.Fatal(err)
 	}
 	w := &wrapped{engine: gin.New(), calls: map[string]int{}, csrf: csrf}
-	// The recovery ends a handler's panic in a 500 so a test that drives one gets
-	// a response. It reads the header the wrapper set while the handler ran: the
-	// panic's response is the entry point's fallback's to write, and the
+	// The recovery reads the header the wrapper set while the handler ran: the
 	// fallback's default shape drops the representation headers, Cache-Control
-	// among them, so the header is not on the response this recovery produces.
+	// among them, so it is not on the response this recovery produces.
 	w.engine.Use(gin.CustomRecoveryWithWriter(io.Discard, func(c *gin.Context, _ any) {
 		w.panickedHeader = c.Writer.Header().Get("Cache-Control")
 		c.AbortWithStatus(http.StatusInternalServerError)
@@ -59,9 +55,8 @@ func (w *wrapped) do(method, path string, hdr map[string]string) *httptest.Respo
 	return rec
 }
 
-// TestEveryResponseCarriesNoStore holds the header on each kind of response
-// the wrapper produces or lets through: a success, a problem the handler
-// wrote, a 204, and the 401 of a refused cross-origin check.
+// TestEveryResponseCarriesNoStore checks every response kind the wrapper produces
+// or lets through carries Cache-Control: no-store.
 func TestEveryResponseCarriesNoStore(t *testing.T) {
 	w := newWrapped(t)
 	w.engine.GET("/ok", Wrap(w.csrf, "main", func(c *gin.Context) { c.String(http.StatusOK, "x") }))
@@ -81,10 +76,8 @@ func TestEveryResponseCarriesNoStore(t *testing.T) {
 	}
 }
 
-// TestAHandlerThatPanickedRanWithTheHeaderOn holds the wrapper's part of a
-// panic: it puts the header on before the handler, so the header is on the
-// response while the handler runs and a panic leaves it there, which the
-// recovery reads as the handler unwinds.
+// TestAHandlerThatPanickedRanWithTheHeaderOn checks the header is set before the
+// handler and survives a panic.
 func TestAHandlerThatPanickedRanWithTheHeaderOn(t *testing.T) {
 	w := newWrapped(t)
 	w.engine.GET("/panic", Wrap(w.csrf, "main", func(*gin.Context) { panic("boom") }))
@@ -110,9 +103,8 @@ func TestAHandlerMayReplaceTheCacheHeaderItself(t *testing.T) {
 	}
 }
 
-// TestACrossSiteUnsafeRequestIsRefusedBeforeTheHandler holds the check on each
-// of the four unsafe methods: 401, the Bearer and Cookie challenge, no Basic, and
-// a handler that was never called.
+// TestACrossSiteUnsafeRequestIsRefusedBeforeTheHandler checks each unsafe method
+// is refused with a 401 challenge before the handler runs.
 func TestACrossSiteUnsafeRequestIsRefusedBeforeTheHandler(t *testing.T) {
 	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
 		w := newWrapped(t)
@@ -133,11 +125,8 @@ func TestACrossSiteUnsafeRequestIsRefusedBeforeTheHandler(t *testing.T) {
 	}
 }
 
-// TestTheCrossOriginVectors holds the cases of the standard check as the wrapper
-// uses it: same-origin and none and no header at all pass, same-site and
-// cross-site are refused unless the origin is trusted, a missing
-// Sec-Fetch-Site falls back to Origin against Host, and a safe method is not
-// checked.
+// TestTheCrossOriginVectors checks the standard check's cases as the wrapper uses
+// it.
 func TestTheCrossOriginVectors(t *testing.T) {
 	trusted := "https://admin.example.com"
 	for _, c := range []struct {
@@ -181,10 +170,8 @@ func TestTheCrossOriginVectors(t *testing.T) {
 	}
 }
 
-// TestACallbackBypassHoldsForTheRegisteredPatternAlone holds the bypass on the
-// Mounter's own check: a cross-site POST to the registered callback path gets
-// through, and a cross-site POST to anywhere else, to a longer path, with another
-// method, or on another instance of the check is refused.
+// TestACallbackBypassHoldsForTheRegisteredPatternAlone checks only the registered
+// method and path bypass the check.
 func TestACallbackBypassHoldsForTheRegisteredPatternAlone(t *testing.T) {
 	w := newWrapped(t)
 	AllowCallback(w.csrf, []string{http.MethodPost}, "/api/v1/auth/callback/:provider")
@@ -239,9 +226,8 @@ func TestACallbackBypassHoldsForTheRegisteredPatternAlone(t *testing.T) {
 	}
 }
 
-// TestACallbackPatternReadsTheEntryPointsWildcards holds the translation of a
-// route written the entry point's way into the form the check matches, for a
-// parameter and for a catch-all.
+// TestACallbackPatternReadsTheEntryPointsWildcards checks a route's wildcards
+// translate to the form the check matches.
 func TestACallbackPatternReadsTheEntryPointsWildcards(t *testing.T) {
 	for _, c := range []struct{ in, want string }{
 		{"/api/v1/auth/callback/:provider", "/api/v1/auth/callback/{provider}"},

@@ -15,13 +15,9 @@ const (
 	accessTokenTypeAlt = "application/at+jwt"
 )
 
-// The characters and bounds of the reserved claim names. All of them are ASCII
-// and short, so the closed set below is written as its members.
-//
-// reservedClaims is the closed set of claim names an access token carries. A
-// ClaimsContributor that returns any of them is refused with ErrReservedClaim:
-// the standard claims are the module's to fill, and a contributor that could
-// write one could overwrite who the token is for.
+// reservedClaims is the closed set of claim names an access token carries; a
+// ClaimsContributor that returns any of them is refused with ErrReservedClaim,
+// since the standard claims are the module's to fill.
 var reservedClaims = map[string]struct{}{
 	"iss":        {},
 	"sub":        {},
@@ -45,14 +41,9 @@ type actorClaim struct {
 	Subject string `json:"sub"`
 }
 
-// tokenClaims is the claim set of an access token. The fields carry the
-// standard claims the module fills; a ClaimsContributor's claims are merged in
-// beside them after their names have been held to reservedClaims.
-//
-// It is a struct rather than a map so that the issuing path cannot drop a
-// required claim by forgetting a key: every field is written explicitly, and
-// the JSON tags fix the wire names. Extra carries what the contributors added
-// and is never filled by the module itself.
+// tokenClaims is the claim set of an access token: the standard claims the
+// module fills, with a contributor's claims merged in beside them. A struct
+// rather than a map, so a required claim cannot be dropped by a missing key.
 type tokenClaims struct {
 	Issuer    string   `json:"iss"`
 	Subject   string   `json:"sub"`
@@ -92,10 +83,9 @@ func checkContributorClaims(extra map[string]any) error {
 	return nil
 }
 
-// marshal writes the token's claims as JSON, with the contributors' claims
-// merged in beside the standard ones. The reserved names are held out here as
-// well as by checkContributorClaims, so a merge that would overwrite a standard
-// claim is refused rather than silently winning.
+// marshal writes the token's claims as JSON with the contributors' claims merged
+// in beside the standard ones, refusing a reserved name here too so a merge
+// never overwrites a standard claim.
 func (c tokenClaims) marshal() ([]byte, error) {
 	standard, err := json.Marshal(c)
 	if err != nil {

@@ -12,11 +12,9 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// recorder stands in for the *testing.T a test handed to Context, so that the
-// failing paths can be driven without failing the test that drives them. Only
-// the two methods Context is allowed to call are given: any other call reaches
-// the nil embedded interface and panics, which keeps Context from growing a
-// dependency on the handle that this case would not notice.
+// recorder stands in for the *testing.T a test handed to Context; only the two
+// methods Context is allowed to call are given, so any other call reaches the
+// nil embedded interface and panics.
 type recorder struct {
 	testing.TB
 	failed  bool
@@ -51,10 +49,8 @@ const (
 )
 
 // attributesOf returns sixteen attributes whose keys and values together are
-// exactly size bytes, with each key three bytes and each value within its own
-// bound, so that the total is the only bound a case near 4 KiB can cross. The
-// values alone stay below the total even at 4096, which makes a count that
-// leaves the keys out come up short.
+// exactly size bytes, each key three bytes, so the total is the only bound a
+// case near 4 KiB can cross.
 func attributesOf(size int) map[string]string {
 	const entries = 16
 	m := make(map[string]string, entries)
@@ -165,9 +161,7 @@ func TestEachOptionIsReadBackThroughTheRootPackage(t *testing.T) {
 	}
 }
 
-// TestAnImpersonationIsKeyedByItsActor is the design's named assertion, held
-// once more where a consumer meets it: the key is the actor, and it is not
-// the account.
+// TestAnImpersonationIsKeyedByItsActor holds that the key is the actor, not the account.
 func TestAnImpersonationIsKeyedByItsActor(t *testing.T) {
 	id, _ := mustBuild(t,
 		authntest.WithAccount("acct-user"),
@@ -236,10 +230,8 @@ func TestUnsaidFieldsTakeTheDocumentedDefaults(t *testing.T) {
 	}
 }
 
-// TestAssuranceNoneReadsAsSingleAsItDoesAtTheGateway holds the one place the
-// stamped identity differs from what was asked: a principal that leaves the
-// level unstated is stamped single, so an identity that read none would be one
-// no request can carry.
+// TestAssuranceNoneReadsAsSingleAsItDoesAtTheGateway holds that an identity asked
+// for no assurance reads as single.
 func TestAssuranceNoneReadsAsSingleAsItDoesAtTheGateway(t *testing.T) {
 	id, _ := mustBuild(t, authntest.WithAssurance(authn.AssuranceNone))
 	if id.Assurance() != authn.AssuranceSingle {
@@ -247,10 +239,8 @@ func TestAssuranceNoneReadsAsSingleAsItDoesAtTheGateway(t *testing.T) {
 	}
 }
 
-// TestAContextOutsideAuthntestCarriesNobody is the control for everything
-// above: a context that went through neither authntest nor the gateway reads as
-// no identity and an unknown access level, so the positive cases are not
-// satisfied by a reader that finds something in every context.
+// TestAContextOutsideAuthntestCarriesNobody holds that a bare context reads as no
+// identity and an unknown access level.
 func TestAContextOutsideAuthntestCarriesNobody(t *testing.T) {
 	bare := context.Background()
 	if _, ok := authn.FromContext(bare); ok {
@@ -263,9 +253,8 @@ func TestAContextOutsideAuthntestCarriesNobody(t *testing.T) {
 
 type ctxKey struct{}
 
-// TestContextKeepsWhatWasAlreadyInTheContext holds that the identity is added
-// to the given context, not built into a fresh one: a test's own deadline or
-// values have to survive.
+// TestContextKeepsWhatWasAlreadyInTheContext holds that values of the given
+// context survive.
 func TestContextKeepsWhatWasAlreadyInTheContext(t *testing.T) {
 	parent := context.WithValue(context.Background(), ctxKey{}, "kept")
 	ctx := authntest.Context(t, parent)
@@ -274,10 +263,8 @@ func TestContextKeepsWhatWasAlreadyInTheContext(t *testing.T) {
 	}
 }
 
-// TestWhatTheCallerHandedOverIsCopied holds that an option does not keep a
-// reference to the map or the slice it was given: a test that builds its
-// options once and edits the literal before the context is made must not see
-// the edit in the identity.
+// TestWhatTheCallerHandedOverIsCopied holds that an option copies the map or
+// slice it was given.
 func TestWhatTheCallerHandedOverIsCopied(t *testing.T) {
 	attrs := map[string]string{"region": "eu"}
 	methods := []authn.Method{authn.MethodPassword, authn.MethodTOTP}
@@ -296,9 +283,8 @@ func TestWhatTheCallerHandedOverIsCopied(t *testing.T) {
 	}
 }
 
-// TestAnIdentityItMakesSatisfiesWhatItsFieldsSay holds that the identity is a
-// real one: Satisfies, which reads the assurance and the time, answers from
-// the fields the options set.
+// TestAnIdentityItMakesSatisfiesWhatItsFieldsSay holds that Satisfies answers
+// from the fields the options set.
 func TestAnIdentityItMakesSatisfiesWhatItsFieldsSay(t *testing.T) {
 	now := authntest.DefaultAuthTime().Add(time.Minute)
 	single, _ := mustBuild(t)
@@ -316,11 +302,8 @@ func TestAnIdentityItMakesSatisfiesWhatItsFieldsSay(t *testing.T) {
 	}
 }
 
-// TestACombinationTheGatewayWouldRefuseFailsTheTest holds the other half of
-// "an identity the gateway would stamp": every shape the gateway's exit check
-// refuses fails the asking test through Fatalf, and what comes back carries no
-// identity, so a test that continues past a failure finds nobody rather than a
-// malformed somebody.
+// TestACombinationTheGatewayWouldRefuseFailsTheTest holds that a shape the
+// gateway's exit check refuses fails the asking test and leaves no identity.
 func TestACombinationTheGatewayWouldRefuseFailsTheTest(t *testing.T) {
 	longID := authn.AccountID(strings.Repeat("a", 65))
 	tooMany := map[string]string{}
@@ -409,10 +392,8 @@ func TestACombinationTheGatewayWouldRefuseFailsTheTest(t *testing.T) {
 	}
 }
 
-// TestTheNeighbouringAdmissibleCombinationsPass is the control for the case
-// above: each refusal there has a nearby shape that has to go through, so the
-// refusals come from the rule they are named for and not from Context failing
-// whatever it is given.
+// TestTheNeighbouringAdmissibleCombinationsPass holds that each refusal above has
+// a nearby shape that passes.
 func TestTheNeighbouringAdmissibleCombinationsPass(t *testing.T) {
 	boundary := map[string]string{}
 	for i := range 32 {
@@ -437,11 +418,6 @@ func TestTheNeighbouringAdmissibleCombinationsPass(t *testing.T) {
 		}},
 		{"a dotted backend name", []authntest.Option{authntest.WithBackend("corp.ldap")}},
 		{"32 attributes within the byte bound", []authntest.Option{authntest.WithAttributes(boundary)}},
-		// The prefixes idp. and authn. are reserved to the authentication
-		// capability's own writers. The gateway cannot tell which backend is one
-		// of them, so it does not look at a key's prefix at the stamp and the
-		// prefix is kept by whoever writes an attribute; authntest restates the
-		// check as the gateway makes it, and so admits both.
 		{"an attribute under the idp prefix", []authntest.Option{authntest.WithAttributes(map[string]string{"idp.group": "eng"})}},
 		{"attributes of 4096 bytes together", []authntest.Option{authntest.WithAttributes(attributesOf(4096))}},
 		{"an attribute key of 64 bytes", []authntest.Option{authntest.WithAttributes(map[string]string{strings.Repeat("k", 64): "v"})}},
@@ -471,9 +447,7 @@ func TestTheNeighbouringAdmissibleCombinationsPass(t *testing.T) {
 	}
 }
 
-// TestALaterOptionOverridesAnEarlierOne holds the last-wins rule the Option
-// doc states, which a consumer building a base list and adding one override
-// relies on.
+// TestALaterOptionOverridesAnEarlierOne holds that the last option wins.
 func TestALaterOptionOverridesAnEarlierOne(t *testing.T) {
 	id, _ := mustBuild(t, authntest.WithAccount("first"), authntest.WithAccount("second"))
 	if id.Account() != "second" {
@@ -481,9 +455,8 @@ func TestALaterOptionOverridesAnEarlierOne(t *testing.T) {
 	}
 }
 
-// TestAnAnonymousContextCarriesTheLevelAndNobody holds the two shapes the
-// gateway leaves on a request that has no identity and has decided something
-// about the route: an exempt route and an optional one with no credential.
+// TestAnAnonymousContextCarriesTheLevelAndNobody holds that an anonymous context
+// carries the level and no identity.
 func TestAnAnonymousContextCarriesTheLevelAndNobody(t *testing.T) {
 	for name, level := range map[string]authn.Access{"open": authn.AccessOpen, "optional": authn.AccessOptional} {
 		t.Run(name, func(t *testing.T) {
@@ -508,10 +481,8 @@ func TestAnAnonymousContextKeepsWhatWasAlreadyInTheContext(t *testing.T) {
 	}
 }
 
-// TestALevelNoAnonymousRequestHasFailsTheTest holds that Anonymous is not a way
-// to build a pairing the gateway never produces: a guarded route refuses a
-// request with no credential before any handler runs, and the unknown level is
-// what a context the gateway never touched already reads as.
+// TestALevelNoAnonymousRequestHasFailsTheTest holds that Anonymous refuses a level
+// no anonymous request can carry.
 func TestALevelNoAnonymousRequestHasFailsTheTest(t *testing.T) {
 	for name, level := range map[string]authn.Access{
 		"required":  authn.AccessRequired,
@@ -534,9 +505,8 @@ func TestALevelNoAnonymousRequestHasFailsTheTest(t *testing.T) {
 	}
 }
 
-// TestTheChallengeDefaultsToBearerAndTheLastOptionWins holds that the
-// challenge stays Bearer unless WithChallenge says otherwise, and that the
-// option replaces it.
+// TestTheChallengeDefaultsToBearerAndTheLastOptionWins holds that the challenge
+// stays Bearer unless an option replaces it, and the last option wins.
 func TestTheChallengeDefaultsToBearerAndTheLastOptionWins(t *testing.T) {
 	id, _ := mustBuild(t, authntest.WithChallenge("Basic"), authntest.WithChallenge("Cookie"))
 	if id.Challenge() != "Cookie" {

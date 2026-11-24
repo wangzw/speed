@@ -47,9 +47,8 @@ func (p *product) cached(cs *cacheSet, key string) (*sessionEntry, bool) {
 }
 
 // served is the status of a cached entry for a caller: a copy, with the absolute
-// period judged again at this instant. The cached status was valid when it was
-// read, and the absolute expiry is fixed, so it is the one condition a cached
-// answer can be told stale by without a read.
+// period judged again at this instant, the one condition a cached answer can be
+// told stale by without a read.
 func (p *product) served(e *sessionEntry) authn.SessionStatus {
 	st := e.status.Clone()
 	if st.Active && !st.ExpiresAt.IsZero() && !p.now().Before(st.ExpiresAt) {
@@ -127,9 +126,6 @@ func inactive(st authn.SessionStatus) authn.SessionStatus {
 	}
 }
 
-// accountPermits reports whether an account may hold a session created at the
-// given instant: it is enabled, and the session is not older than the instant
-// after which sessions are void.
 func accountPermits(a authn.Account, created time.Time) bool {
 	return a.Status == authn.StatusActive && !created.Before(a.ValidAfter)
 }
@@ -171,8 +167,7 @@ func (p *product) accountFor(ctx context.Context, cs *cacheSet, id authn.Account
 
 // mergeAttributes is the attribute set of an identity: the account's, and the
 // idp.* entries of the session payload. An entry of the account's under a
-// reserved prefix is dropped, because the two prefixes belong to whoever writes
-// them: this module is the one that writes idp.* into an identity.
+// reserved prefix is dropped.
 func mergeAttributes(account, idp map[string]string) map[string]string {
 	out := make(map[string]string, len(account)+len(idp))
 	for k, v := range account {

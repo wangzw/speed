@@ -10,13 +10,10 @@ import (
 )
 
 // The bounds the exit check holds a principal to. They are constants of the
-// gateway, not input items: a deployment that could widen them could widen what
-// a backend is believed about.
+// gateway, not input items.
 const (
-	// authTimeSkew is how far ahead of the gateway's clock a principal's
-	// AuthTime may be. It allows for two hosts whose clocks differ a little and
-	// no more; an authentication that claims to be further ahead has not
-	// happened yet.
+	// authTimeSkew is how far ahead of the gateway's clock a principal's AuthTime
+	// may be, allowing for two hosts whose clocks differ a little and no more.
 	authTimeSkew      = 120 * time.Second
 	maxMethods        = 8
 	maxAttributes     = 32
@@ -25,22 +22,9 @@ const (
 	maxAttributeKey   = 64
 )
 
-// checkPrincipal holds what a backend claimed about a caller to the shapes,
-// bounds and declarations the gateway accepts, and returns the principal to
-// stamp an identity from. The second result is empty when every check held and
-// otherwise names the first one that did not, without echoing any value the
-// backend put there.
-//
-// The principal comes back with its assurance settled: the zero value reads as
-// not stated, which is stamped as a single factor, the lowest a verified
-// credential can have.
-//
-// The backend decides nothing here: what it may claim is what it declared in
-// Accepts. An account must lie in the namespace it declared, and an actor, an
-// impersonation scope, an SSO provider and an assurance an IdP declared are
-// facts only a backend that declared the capability could assert. A scope
-// belongs to an impersonation: one named with no actor is a state no backend
-// has a reason to produce, and it is refused rather than read as a narrowing.
+// checkPrincipal holds a principal to the shapes, bounds and declarations the
+// gateway accepts, settles a zero assurance at single, and returns the first
+// failed check as a reason that echoes no value the backend put there.
 func checkPrincipal(p authn.Principal, now time.Time, b *backend, d *dispatch) (authn.Principal, string) {
 	if !validBackendName(b.name) {
 		return p, "the backend's name is not the shape a backend name has"
@@ -114,8 +98,7 @@ func isHexDigit(c byte) bool {
 
 // uuidShape reports whether s is UUID text in its canonical form: 32 lower-case
 // hex digits in the 8-4-4-4-12 grouping. It is not uuid.Parse, which also takes
-// braces, a urn prefix, no dashes and capitals: a provider identifier is
-// compared as a string wherever it is read, so one value has one spelling.
+// braces, a urn prefix, no dashes and capitals.
 func uuidShape(s string) bool {
 	if len(s) != 36 {
 		return false

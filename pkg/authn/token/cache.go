@@ -19,14 +19,8 @@ type grantEntry struct {
 }
 
 // cacheSet is the two process-local caches the verifying backend reads through,
-// built for one value of check-ttl. A change of the setting builds a new set and
-// leaves the old one to whoever still holds it.
-//
-// The account cache is keyed by the account identifier and the impersonation
-// cache by the identifier of the record; neither key holds a token. The session
-// a token names is not cached here: Sessions.Status is itself cached by the
-// session module for the same check-ttl, and the token backend reads it through
-// that seam.
+// built for one value of check-ttl. The session a token names is not cached
+// here; the token backend reads it through the session module's own cache.
 type cacheSet struct {
 	ttl      time.Duration
 	accounts *acctcache.Cache[authn.Account]
@@ -41,10 +35,8 @@ func newCacheSet(ttl time.Duration, now func() time.Time) *cacheSet {
 	}
 }
 
-// caches is the cache set for the current value of check-ttl. A change of the
-// setting replaces the set, so a lifetime that was lowered takes effect at once
-// and one that was raised does not keep serving from entries made under the
-// shorter one.
+// caches is the cache set for the current value of check-ttl; a change of the
+// setting replaces the set, so a lowered lifetime takes effect at once.
 func (p *product) caches() *cacheSet {
 	ttl := p.settings.checkTTL()
 	for {
@@ -60,9 +52,8 @@ func (p *product) caches() *cacheSet {
 }
 
 // accountFor reads the account snapshot through the cache. A miss reads the
-// store and keeps what it read with the epoch taken before the read, so a
-// snapshot that predates a change is not stored. A failure is not cached, so a
-// database that cannot be reached fails a cold read rather than serving nothing.
+// store and keeps what it read with the epoch taken before the read; a failure
+// is not cached.
 func (p *product) accountFor(ctx context.Context, id authn.AccountID) (authn.Account, error) {
 	cs := p.caches()
 	if a, ok := cs.accounts.Get(string(id)); ok {

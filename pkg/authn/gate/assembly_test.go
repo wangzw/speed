@@ -21,16 +21,9 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// assembly is one drive of a real registry through this module's descriptor:
-// the gateway, each backend registered as a module of its own, the
-// configuration reader supplied to the config module the way a host supplies
-// it, the router supplied to a stand-in for the entry point, and whatever else a
-// case takes part.
-//
-// The cases elsewhere in this package build a gateway by hand, which is what
-// lets them reach one state at a time. What they cannot reach is the descriptor
-// itself — which callback runs which step, and what each one takes up from the
-// registry — and that is what a case built on this holds.
+// assembly is one drive of a real registry through this module's descriptor: the
+// gateway, each backend as a module of its own, the config reader and router the
+// way a host supplies them, and whatever else a case takes part.
 type assembly struct {
 	// body is the whole configuration, JSON.
 	body string
@@ -65,10 +58,8 @@ type supply struct {
 
 const routerModule = "stand-in.router"
 
-// standIn is a module that declares the capability token names and nothing
-// else. An instance a case supplies has to belong to a registered module, and
-// the modules that deliver such a capability in a real assembly are not ones
-// these cases bring in.
+// standIn is a module that declares the capability token names and nothing else;
+// an instance a case supplies must belong to a registered module.
 func standIn(name string, token core.Token) core.Module {
 	return core.Module{Name: name, Provides: []core.Provision{{Token: token}}}
 }
@@ -127,13 +118,10 @@ func guarding(endpoints ...string) string {
 	return `{"authn":{"gate":{"endpoints":["` + strings.Join(endpoints, `","`) + `"]}}}`
 }
 
-// nothing is an action that only lets the drive arrive.
 func nothing(context.Context, *core.Registry) error { return nil }
 
 // TestTheDescriptorRegistersTheLayerOnEveryGuardedEndpointAndNowhereElse holds
-// what Init does with the endpoints list: one layer on each endpoint named, and
-// none on an endpoint left out of it — which is the one place a missing entry in
-// that list could ever show up.
+// that Init puts one layer on each named endpoint and none on any other.
 func TestTheDescriptorRegistersTheLayerOnEveryGuardedEndpointAndNowhereElse(t *testing.T) {
 	router := routerWith("public", "admin", "ops")
 	err := assembly{
@@ -167,9 +155,8 @@ func TestTheDescriptorRegistersTheLayerOnEveryGuardedEndpointAndNowhereElse(t *t
 	}
 }
 
-// TestInitRefusesWhatTheCommandIsMissing holds the two sentinels Init reports
-// for a command that left something out, and the one it reports for a name
-// that does not exist.
+// TestInitRefusesWhatTheCommandIsMissing holds the sentinels Init reports for a
+// command that left something out and for a name that does not exist.
 func TestInitRefusesWhatTheCommandIsMissing(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -264,10 +251,8 @@ func TestARouterFailureOtherThanAnUnknownNameIsCarriedOutAsItStands(t *testing.T
 	}
 }
 
-// TestAfterStopNoRequestReachesABackend holds the Stop callback through the
-// descriptor: the layer the drive registered goes on existing after shutdown,
-// because a draining entry point can still hand it a request, and every such
-// request ends as an outage charged to the gateway, never as a pass.
+// TestAfterStopNoRequestReachesABackend holds that a request after Stop ends as
+// an outage without reaching a backend.
 func TestAfterStopNoRequestReachesABackend(t *testing.T) {
 	router := routerWith("public")
 	var asked countingVerifier
@@ -344,12 +329,8 @@ func TestTheCallbacksPassByAnInstanceSuppliedForTheGateway(t *testing.T) {
 	}
 }
 
-// TestTheRedactionRulesReachTheLoggingModulesOwnOutput holds the redaction
-// registration end to end: Init takes the logging capability up, registers the
-// rules there, and a record written afterwards through that module's chain
-// reaches its destination with the credential masked — under a credential key,
-// and inside the free text of any other value — while a refusal cause that only
-// talks about a scheme arrives as it was written.
+// TestTheRedactionRulesReachTheLoggingModulesOwnOutput holds that a credential
+// written through the log chain is masked while a refusal cause stays as written.
 func TestTheRedactionRulesReachTheLoggingModulesOwnOutput(t *testing.T) {
 	const cause = "the bearer token names no live session"
 	path := filepath.Join(t.TempDir(), "log.json")
@@ -398,10 +379,8 @@ func TestTheRedactionRulesReachTheLoggingModulesOwnOutput(t *testing.T) {
 	}
 }
 
-// TestTheKeyAndShapeRulesGovernAnAttributeBoundBeforeInit holds the effect of
-// registering those rules before Init: a module constructed after the
-// gateway, and before Init, binds attributes carrying a credential under a
-// key name and as a bare JWT, and the destination gets neither.
+// TestTheKeyAndShapeRulesGovernAnAttributeBoundBeforeInit holds that an attribute
+// bound after the gateway's rules are registered carries no credential.
 func TestTheKeyAndShapeRulesGovernAnAttributeBoundBeforeInit(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "log.json")
 	body := `{"authn":{"gate":{"endpoints":["public"]}},` +
@@ -409,9 +388,6 @@ func TestTheKeyAndShapeRulesGovernAnAttributeBoundBeforeInit(t *testing.T) {
 	const early = "early record written in New"
 	earlyWriter := core.Module{
 		Name: "stand-in.early",
-		// Requiring the gateway's capability and logging puts this module's New
-		// after the gateway's and after logging's, which is the moment between
-		// the two registrations that the case is about.
 		Requires: []core.Requirement{
 			{Token: (*authn.Gate)(nil)},
 			{Token: (*log.Logger)(nil)},
@@ -421,11 +397,8 @@ func TestTheKeyAndShapeRulesGovernAnAttributeBoundBeforeInit(t *testing.T) {
 			if err != nil {
 				return nil, err
 			}
-			// The attributes are bound with With, which judges them once, when
-			// they are bound: a rule registered after this line never sees them.
-			// Written on the record itself they would be judged when the record
-			// is written, and a destination that is not open yet would hide the
-			// difference.
+			// With judges its attributes when they are bound, so a rule
+			// registered after this line never sees them.
 			logging.Named("early").With(
 				"token", "token-secret-1",
 				"Password", "password-secret-2",
@@ -460,9 +433,8 @@ func TestTheKeyAndShapeRulesGovernAnAttributeBoundBeforeInit(t *testing.T) {
 	}
 }
 
-// TestWithNoLoggingModuleNoRuleIsRegisteredAndNothingFails holds the absence of
-// the optional dependency: the gateway builds and runs, and registering the
-// rules is a no-op rather than an error.
+// TestWithNoLoggingModuleNoRuleIsRegisteredAndNothingFails holds that the gateway
+// runs with no logging module and that registering the rules is a no-op.
 func TestWithNoLoggingModuleNoRuleIsRegisteredAndNothingFails(t *testing.T) {
 	if err := registerNewRules(core.New()); err != nil {
 		t.Errorf("registering the rules with no logging in the registry failed: %v", err)
@@ -500,10 +472,8 @@ func (r rulesRecorder) AddPattern(name string, _ log.Matcher) {
 	*r.events = append(*r.events, "pattern:"+name)
 }
 
-// TestTheRulesAreRegisteredAsKeysThenShapesThenTheSchemeRule holds what
-// reaches the logging capability and in which order: the credential key
-// names, then the value shapes, then the rule over the value that follows a
-// scheme, which needs the backends' declarations.
+// TestTheRulesAreRegisteredAsKeysThenShapesThenTheSchemeRule holds what reaches
+// the logging capability and in which order.
 func TestTheRulesAreRegisteredAsKeysThenShapesThenTheSchemeRule(t *testing.T) {
 	var mu sync.Mutex
 	var events, keys []string
@@ -514,9 +484,6 @@ func TestTheRulesAreRegisteredAsKeysThenShapesThenTheSchemeRule(t *testing.T) {
 			return rulesRecorder{mu: &mu, events: &events, keys: &keys}, nil
 		},
 	}
-	// A module that records the moment the gateway's New has run: it requires
-	// nothing of the gateway, so what is held is the gateway's own declared
-	// dependency on logging and not an ordering this case arranged.
 	err := assembly{
 		body:     `{}`,
 		backends: []authn.Verifier{basicBackend("static", "static.")},
@@ -588,9 +555,7 @@ func TestTheKeyAndShapeRulesAreInPlaceWhenTheNextModuleIsBuilt(t *testing.T) {
 }
 
 // TestTheGatewayRequiresLoggingAsOptionalAndNothingElse holds the descriptor's
-// one dependency: logging, and optional, so that the key rules are in place
-// before any logger binds an attribute without the gateway forcing a logging
-// module into a command that has none.
+// one dependency: optional logging.
 func TestTheGatewayRequiresLoggingAsOptionalAndNothingElse(t *testing.T) {
 	m := Module()
 	if len(m.Requires) != 1 || m.Requires[0].Token != core.Token((*log.Logger)(nil)) || !m.Requires[0].Optional {

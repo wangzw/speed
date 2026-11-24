@@ -179,7 +179,7 @@ func TestTheConclusionCounterIsDescribedAndUnitised(t *testing.T) {
 	t.Fatal("the counter was not collected")
 }
 
-// TestTheLayerStageIsTheValueTheDesignPromises holds the stage the design promises as the anchor other layers place themselves by.
+// TestTheLayerStageIsTheValueTheDesignPromises holds the stage other layers place themselves by.
 func TestTheLayerStageIsTheValueTheDesignPromises(t *testing.T) {
 	g := testGateway(t, []string{"public"}, basicBackend("static", "static."))
 	if got := g.middlewareFor("public").Stage; got != speedhttp.StageIdentify {
@@ -228,8 +228,7 @@ func TestStartupDiagnosticsNameWhatIsOpenedAndWhatImpersonationReaches(t *testin
 var fieldName = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z0-9]+)*$`)
 
 // TestEveryFieldTheStartupDiagnosticsWriteIsNamedInTheDesignsStyle holds the
-// field names of the lines the gateway writes at startup to the one style the
-// design fixes for log fields.
+// startup lines' field names to lower case words joined by underscores.
 func TestEveryFieldTheStartupDiagnosticsWriteIsNamedInTheDesignsStyle(t *testing.T) {
 	logs := liveAssembly{
 		backends: []authn.Verifier{basicBackend("static", "static.")},

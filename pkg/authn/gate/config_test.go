@@ -99,9 +99,8 @@ func TestAConfigurationThisGatewayCannotRunOnIsRefused(t *testing.T) {
 	}
 }
 
-// TestASoundConfigurationResolves keeps the cases above honest: each of them has
-// to fail for its own mutation, not for the shape they all start from, and the
-// edges of what is admitted are admitted.
+// TestASoundConfigurationResolves holds that each refused case fails for its own
+// mutation and the admitted edges pass.
 func TestASoundConfigurationResolves(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -163,9 +162,8 @@ func TestASoundConfigurationResolves(t *testing.T) {
 	}
 }
 
-// TestTheDefaultsAreTheDesignsAndGuardEverything holds what a gateway is
-// worth with no configuration file at all: it guards every endpoint, with a
-// five second budget, a width of 64 and the base path /api/v1/auth.
+// TestTheDefaultsAreTheDesignsAndGuardEverything holds what a gateway guards and
+// counts with no configuration file.
 func TestTheDefaultsAreTheDesignsAndGuardEverything(t *testing.T) {
 	reader := authntest.ConfigReader(t, Module(), `{}`)
 	set, err := readSettings(reader)
@@ -186,9 +184,8 @@ func TestTheDefaultsAreTheDesignsAndGuardEverything(t *testing.T) {
 	}
 }
 
-// TestAGatewayToldToGuardNothingRefusesToStart holds the only answer this
-// module has when the configuration writes an empty list: a startup failure
-// naming the key.
+// TestAGatewayToldToGuardNothingRefusesToStart holds that an empty endpoint list
+// fails startup naming the key.
 func TestAGatewayToldToGuardNothingRefusesToStart(t *testing.T) {
 	_, err := prepare(authntest.ConfigReader(t, Module(), `{"authn":{"gate":{"endpoints":[]}}}`))
 	if err == nil {
@@ -211,9 +208,8 @@ func TestAGatewayToldToGuardNothingRefusesToStart(t *testing.T) {
 	}
 }
 
-// TestTheEndpointListAndTheMountKeysAreReadFromConfiguration holds the new keys
-// through the real loader: the list in its three forms, and the mount section
-// with each key.
+// TestTheEndpointListAndTheMountKeysAreReadFromConfiguration reads every gate key
+// through the real loader.
 func TestTheEndpointListAndTheMountKeysAreReadFromConfiguration(t *testing.T) {
 	body := `{"authn":{"gate":{
 		"endpoints":["public","admin"],
@@ -245,9 +241,8 @@ func TestTheEndpointListAndTheMountKeysAreReadFromConfiguration(t *testing.T) {
 	}
 }
 
-// TestTheKeysThatDecideWhatIsGuardedTakeTheMainSourceAlone holds the origins
-// of the two items that decide the guard: the endpoint list and the trusted
-// origins.
+// TestTheKeysThatDecideWhatIsGuardedTakeTheMainSourceAlone holds that the guard's
+// two keys take the primary source only.
 func TestTheKeysThatDecideWhatIsGuardedTakeTheMainSourceAlone(t *testing.T) {
 	items := schema().Items
 	for _, key := range []string{endpointsItem, trustedOriginsItem} {
@@ -278,8 +273,8 @@ func TestTheKeysThatDecideWhatIsGuardedTakeTheMainSourceAlone(t *testing.T) {
 	}
 }
 
-// TestWhereAHostWritesThisModulesInputs pins the two names that are easy to
-// swap for one another, because both are spelled out of the same two words.
+// TestWhereAHostWritesThisModulesInputs pins the two names a host writes, which
+// are easy to swap.
 func TestWhereAHostWritesThisModulesInputs(t *testing.T) {
 	if ConfigNamespace != ModuleName {
 		t.Errorf("the configuration namespace is %q while the module is %q, so a host writing "+
@@ -290,9 +285,8 @@ func TestWhereAHostWritesThisModulesInputs(t *testing.T) {
 	}
 }
 
-// TestARefusedOriginIsNotCopiedIntoTheFailure holds the entries a refusal must
-// not quote: a trusted origin or a public URL written with a password where none
-// belongs is named by its position, and the refusal's text carries nothing of it.
+// TestARefusedOriginIsNotCopiedIntoTheFailure holds that a refusal never quotes an
+// origin's password.
 func TestARefusedOriginIsNotCopiedIntoTheFailure(t *testing.T) {
 	const secret = "hunter2-do-not-print"
 	for _, c := range []struct {

@@ -9,9 +9,8 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestTheBackoffActsOnTheDefaultsWhenItsParametersAreOutsideTheirDomains: parameters outside their domain read as the defaults when the back-off
-// uses them, in the check and in the failure alike, and a nil reader is the
-// defaults.
+// TestTheBackoffActsOnTheDefaultsWhenItsParametersAreOutsideTheirDomains holds
+// that an out-of-domain parameter reads as its default.
 func TestTheBackoffActsOnTheDefaultsWhenItsParametersAreOutsideTheirDomains(t *testing.T) {
 	for name, build := range map[string]func(*clockAt) *Throttle{
 		"the zero value": func(c *clockAt) *Throttle {

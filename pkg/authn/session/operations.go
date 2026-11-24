@@ -16,9 +16,7 @@ const (
 )
 
 // The routes as the fragment writes them: relative to the module's API root,
-// which is the mounter's base less the part this capability owns. The mounter
-// registration resolves the same declaration against its base, so the path is
-// written once.
+// which is the mounter's base less the part this capability owns.
 const (
 	sessionPath  = "/auth/session"
 	logoutPath   = "/auth/logout"
@@ -96,11 +94,8 @@ type revokeOneInput struct {
 	ID string `path:"id" description:"The public session identifier, as returned in the session listing. It names the row and is not a credential."`
 }
 
-// challengeHeader declares the header every 401 on this module's routes
-// carries: the gateway writes the endpoint's challenge when it refuses the
-// request first, and a handler that answers 401 itself returns it in the fault's
-// headers. Either way the exchange is a challenge, so the response declares the
-// header and a handler's fault may write it.
+// challengeHeader is the header every 401 on this module's routes carries: the
+// gateway's challenge when it refuses first, or a handler's own fault.
 var challengeHeader = speedhttp.Header{
 	Name:        "WWW-Authenticate",
 	Description: "The capability's challenge: the Bearer and Cookie schemes, never Basic.",
@@ -112,10 +107,9 @@ func unauthorized(description string) speedhttp.Response {
 	return response
 }
 
-// commonFailures are the answers every route on this module's mounter shares:
-// the gateway refuses a request that carries no usable credential before the
-// handler runs. A route with an answer of its own replaces the common entry of
-// the same status.
+// commonFailures are the answers every route shares: the gateway's refusal of a
+// request with no usable credential. A route's own answer for a status replaces
+// the common entry for it.
 var commonFailures = []speedhttp.Response{
 	unauthorized("No usable credential"),
 }
@@ -142,9 +136,6 @@ var sessionOperation = speedhttp.NewOperation[struct{}, AuthnSessionView](
 	speedhttp.Optional(),
 )
 
-// logoutOperation declares the route that revokes the request's own session.
-// The handler builds the answer because the success answer clears the session
-// cookie, which the simple form cannot write.
 var logoutOperation = speedhttp.NewReplyOperation[struct{}](
 	"authn.session.logout",
 	http.MethodPost,
@@ -169,7 +160,6 @@ var logoutOperation = speedhttp.NewReplyOperation[struct{}](
 	),
 )
 
-// listOperation declares the route that lists the caller's own live sessions.
 var listOperation = speedhttp.NewOperation[struct{}, AuthnSessionList](
 	"authn.session.list",
 	http.MethodGet,
@@ -190,8 +180,6 @@ var listOperation = speedhttp.NewOperation[struct{}, AuthnSessionList](
 	),
 )
 
-// revokeOthersOperation declares the route that revokes every session of the
-// caller's but the current one.
 var revokeOthersOperation = speedhttp.NewOperation[struct{}, AuthnSessionRevoked](
 	"authn.session.revokeOthers",
 	http.MethodDelete,
@@ -213,9 +201,6 @@ var revokeOthersOperation = speedhttp.NewOperation[struct{}, AuthnSessionRevoked
 	),
 )
 
-// revokeOneOperation declares the route that revokes one of the caller's own
-// sessions. The handler builds the answer because revoking the current session
-// also clears the cookie.
 var revokeOneOperation = speedhttp.NewReplyOperation[revokeOneInput](
 	"authn.session.revokeOne",
 	http.MethodDelete,

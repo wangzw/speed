@@ -14,9 +14,8 @@ func (c *clockAt) advance(d time.Duration) { c.t = c.t.Add(d) }
 
 func newClock() *clockAt { return &clockAt{t: time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)} }
 
-// TestACheckThatHeldIsRemembered holds the cache from the three sides a key is
-// made of: the same subject, entry and password hit, and a change in any one of
-// them does not.
+// TestACheckThatHeldIsRemembered holds that a check hits only for the same
+// subject, entry and password.
 func TestACheckThatHeldIsRemembered(t *testing.T) {
 	clock := newClock()
 	c := NewCache(16, clock.now)
@@ -43,9 +42,8 @@ func TestACheckThatHeldIsRemembered(t *testing.T) {
 	}
 }
 
-// TestTheKeyDoesNotRunSubjectAndPasswordTogether holds the framing of the key:
-// two subject and password pairs whose concatenations are equal do not share a
-// check.
+// TestTheKeyDoesNotRunSubjectAndPasswordTogether holds that two subject and
+// password pairs whose concatenations are equal do not share a check.
 func TestTheKeyDoesNotRunSubjectAndPasswordTogether(t *testing.T) {
 	c := NewCache(16, newClock().now)
 	e := parsed(t, cheapPBKDF2, "x")
@@ -56,10 +54,8 @@ func TestTheKeyDoesNotRunSubjectAndPasswordTogether(t *testing.T) {
 	}
 }
 
-// TestTheKeyHoldsNeitherThePasswordNorTheSubject holds that what is stored is
-// not the password and not something reversible from it: the key is a fixed
-// width digest and carries neither string, and two caches, which draw different
-// secrets, do not share a hit.
+// TestTheKeyHoldsNeitherThePasswordNorTheSubject holds that the key is a fixed
+// width digest carrying neither string, drawn per cache.
 func TestTheKeyHoldsNeitherThePasswordNorTheSubject(t *testing.T) {
 	e := parsed(t, cheapPBKDF2, "hunter2-hunter2")
 	first, second := NewCache(4, nil), NewCache(4, nil)
@@ -83,10 +79,8 @@ func TestTheKeyHoldsNeitherThePasswordNorTheSubject(t *testing.T) {
 	}
 }
 
-// TestACheckExpiresWithTheLifetimeInForce holds the lifetime from both sides at
-// the boundary, and holds that a lifetime lowered while entries are stored takes
-// effect on them: the lifetime is read when the check is looked up, not when it
-// was stored.
+// TestACheckExpiresWithTheLifetimeInForce holds the boundary, and that the
+// lifetime is read at lookup, so a lowered one takes effect on stored entries.
 func TestACheckExpiresWithTheLifetimeInForce(t *testing.T) {
 	clock := newClock()
 	c := NewCache(16, clock.now)

@@ -24,10 +24,9 @@ const (
 	pathRevoke   = "/auth/token/revoke"
 )
 
-// tokenSpec is the API root this module's fragment and routes hang off. Its
-// prefix and version are the common ones; the fragment writes the capability's
-// own segment, so a route's declared path begins with the part of the mounter's
-// base that lies below this root.
+// tokenSpec is the API root this module's fragment and routes hang off; the
+// fragment writes the capability's own segment, so a route's declared path begins
+// below this root.
 var tokenSpec = speedhttp.Spec{
 	Endpoint: defaultEndpoint,
 	Prefix:   "api",
@@ -35,28 +34,18 @@ var tokenSpec = speedhttp.Spec{
 	Document: tokenFragment,
 }
 
-// The routes as the mounter takes them, derived from the declared paths. They
-// are package variables, not constants, because they are computed from the
-// declaration: a change to a declared path moves the registered route with it.
-// The three are a stable closed set: a reader outside the module writes them
-// down.
-//
-// The declared path is resolved against the Spec's API root and reduced by the
-// capability's default base. The base path is a configuration item, and the
-// design moves the routes with it without moving the contract: what a
-// deployment configures is the segment below the API root, so the part this
-// capability owns is the default base less that root, not whatever base a
-// deployment configured.
+// The routes as the mounter takes them, derived from the declared paths: package
+// variables so a change to a declared path moves the registered route with it.
+// The three are a stable closed set a reader outside the module writes down.
 var (
 	jwksPath   = mountRel(pathJWKS)
 	tokenPath  = mountRel(pathIssuance)
 	revokePath = mountRel(pathRevoke)
 )
 
-// mountRel translates one declared route into the relative path the mounter
-// joins to its base. A declared route that does not begin with the capability's
-// mounted path is a declaration defect, not something to mount at a guessed
-// path.
+// mountRel translates one declared route into the relative path the mounter joins
+// to its base; a declared route that does not begin with the capability's mounted
+// path panics.
 func mountRel(declared string) string {
 	rel, err := mount.RelativePath(mount.DefaultBasePath, tokenSpec.ResolvePath(declared))
 	if err != nil {
@@ -65,10 +54,9 @@ func mountRel(declared string) string {
 	return rel
 }
 
-// The form media type the two POST endpoints read, and the keys their bodies
-// declare. The entry point binds a form body through these tags; routes.go
-// reduces the body to the same key set before the binding runs, so the
-// endpoint's own lenient reading of a form is preserved.
+// formMediaType is the form media type the two POST endpoints read; routes.go
+// reduces the body to the keys declared here before binding, preserving the
+// endpoint's lenient reading of a form.
 const formMediaType = "application/x-www-form-urlencoded"
 
 // AuthnTokenResponse is the success body of POST /auth/token, per RFC 6749
@@ -132,13 +120,9 @@ type AuthnTokenOAuthError struct {
 	Error string "json:\"error\" required:\"true\" enum:\"invalid_request,invalid_client,invalid_grant,unsupported_grant_type,temporarily_unavailable\" description:\"The machine-readable failure code, one of `invalid_request`, `invalid_client`, `invalid_grant`, `unsupported_grant_type` and `temporarily_unavailable`.\""
 }
 
-// tokenIssueInput is the declaration's input for POST /auth/token: the closed
-// set of form fields the two grants read. Every field is optional to the binder
-// because the endpoint answers the missing ones in its own RFC 6749 §5.2 shape
-// rather than with the entry point's 422. The client credential an
-// Authorization: Basic header carries is not a declared parameter: the endpoint
-// reads the header before the form, and the routing layer folds a usable one
-// into client_id and client_secret the way it has always been read.
+// tokenIssueInput is the declared form of POST /auth/token: every field is
+// optional to the binder because the endpoint answers a missing one in its own
+// RFC 6749 §5.2 shape; a Basic credential is read from the header, not the form.
 type tokenIssueInput struct {
 	GrantType    string "form:\"grant_type\" enum:\"client_credentials,refresh_token\" description:\"The grant to perform, one of `client_credentials` and `refresh_token`. Required; any other value answers `unsupported_grant_type`.\""
 	RefreshToken string "form:\"refresh_token\" description:\"The refresh token to rotate, read only for the `refresh_token` grant, where a missing value answers `invalid_request`. The response carries the rotated replacement.\""
@@ -152,12 +136,9 @@ type revokeInput struct {
 	Token string `form:"token" description:"The token to revoke: a refresh token, an access token, or any unrecognised string. The response does not reveal which kind it was or whether it existed."`
 }
 
-// The request bodies. The 8 KiB cap and the lenient reading of the form are the
-// endpoint's own and are applied before binding; the declaration publishes the
-// media type and the closed field set a client may send. Neither body is
-// required: an absent or unreadable body is normalized to an empty form and
-// answered in the endpoint's own RFC 6749 §5.2 / RFC 7009 shape, so the entry
-// point must let the handler run rather than refuse the request first.
+// tokenRequest and revokeRequest publish the media type and the closed field set
+// a client may send. Neither is required: an absent or unreadable body is answered
+// by the endpoint in its own RFC 6749 §5.2 / RFC 7009 shape.
 var (
 	tokenRequest = &speedhttp.RequestBody{
 		MediaType:   formMediaType,
@@ -174,9 +155,8 @@ var challengeHeader = speedhttp.Header{
 	Description: "The Basic challenge of the client-authentication failure.",
 }
 
-// oauthErrorResponse is one RFC 6749 §5.2 answer: a JSON object whose only
-// member is error. Its structure is the declaration's, so the entry point
-// checks the body the handler builds against the contract.
+// oauthErrorResponse is one RFC 6749 §5.2 answer: a JSON object whose only member
+// is error. Its structure is the declaration's, so the entry point checks the body.
 func oauthErrorResponse(status int, description string) speedhttp.Response {
 	return speedhttp.Response{
 		Status:      status,
@@ -189,17 +169,14 @@ func oauthErrorResponse(status int, description string) speedhttp.Response {
 }
 
 // invalidClientResponse is the 401 of a client that did not authenticate: the
-// RFC 6749 §5.2 body and the Basic challenge the scheme asks for. The
-// challenge's value is written by the handler, because the header belongs to
-// the answer rather than to the declaration.
+// RFC 6749 §5.2 body plus the Basic challenge. The handler writes the challenge's
+// value.
 var invalidClientResponse = func() speedhttp.Response {
 	response := oauthErrorResponse(http.StatusUnauthorized, "invalid_client, in the RFC 6749 §5.2 body")
 	response.Headers = []speedhttp.Header{challengeHeader}
 	return response
 }()
 
-// jwksOperation declares GET /auth/jwks.json. Its handler builds the answer
-// because the body's media type is not JSON, which the simple form cannot write.
 var jwksOperation = speedhttp.NewReplyOperation[struct{}](
 	"authn.token.jwks",
 	http.MethodGet,
@@ -230,10 +207,8 @@ var jwksOperation = speedhttp.NewReplyOperation[struct{}](
 	speedhttp.Public(),
 )
 
-// tokenOperation declares POST /auth/token: the RFC 6749 token endpoint. Its
-// handler builds every answer because the failures are the RFC 6749 §5.2 body,
-// never a problem document, and because a 401 carries a challenge and
-// sometimes Retry-After.
+// The handler builds the RFC 6749 §5.2 failures and the 401 challenge; the
+// simple form writes problem documents.
 var tokenOperation = speedhttp.NewReplyOperation[tokenIssueInput](
 	"authn.token.issue",
 	http.MethodPost,
@@ -270,9 +245,8 @@ var tokenOperation = speedhttp.NewReplyOperation[tokenIssueInput](
 	speedhttp.Public(),
 )
 
-// revokeOperation declares POST /auth/token/revoke: the RFC 7009 revocation
-// endpoint. Its handler builds the answer because the success answer has no
-// body while the failure is the RFC 6749 §5.2 shape.
+// The handler builds the RFC 6749 §5.2 failure; the simple form writes problem
+// documents.
 var revokeOperation = speedhttp.NewReplyOperation[revokeInput](
 	"authn.token.revoke",
 	http.MethodPost,

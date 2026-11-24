@@ -6,8 +6,7 @@ import (
 	"time"
 )
 
-// TestNowIsInUTCWhateverTheLocalZoneIs holds the property the package exists
-// for.
+// TestNowIsInUTCWhateverTheLocalZoneIs holds that Now is in UTC whatever the local zone is.
 func TestNowIsInUTCWhateverTheLocalZoneIs(t *testing.T) {
 	newYork, err := time.LoadLocation("America/New_York")
 	if err != nil {
@@ -25,8 +24,7 @@ func TestNowIsInUTCWhateverTheLocalZoneIs(t *testing.T) {
 	}
 }
 
-// TestTheZeroSourceReadsTheSystemClock holds that a consumer which was never
-// handed a source still gets a real time, not the zero time.
+// TestTheZeroSourceReadsTheSystemClock holds that a consumer never handed a source still gets a real time.
 func TestTheZeroSourceReadsTheSystemClock(t *testing.T) {
 	var s Source
 
@@ -39,11 +37,10 @@ func TestTheZeroSourceReadsTheSystemClock(t *testing.T) {
 	}
 }
 
-// TestASourceInAnotherZoneYieldsTheSameInstantInUTC holds that normalising a
-// reading neither shifts the instant nor leaves the zone as it came.
+// TestASourceInAnotherZoneYieldsTheSameInstantInUTC holds that normalising a reading keeps the instant.
 func TestASourceInAnotherZoneYieldsTheSameInstantInUTC(t *testing.T) {
 	zone := time.FixedZone("UTC-5", -5*60*60)
-	at := time.Date(2026, 10, 11, 7, 0, 0, 0, zone) // 12:00Z
+	at := time.Date(2026, 10, 11, 7, 0, 0, 0, zone)
 
 	got := Source(func() time.Time { return at }).Now()
 
@@ -58,9 +55,7 @@ func TestASourceInAnotherZoneYieldsTheSameInstantInUTC(t *testing.T) {
 	}
 }
 
-// TestUTCConvertsANonUTCTimeAndKeepsTheZeroTimeZero holds both halves of the
-// helper: a set time moves to UTC, an unset one is not turned into something
-// that no longer reads as unset.
+// TestUTCConvertsANonUTCTimeAndKeepsTheZeroTimeZero holds that a set time moves to UTC and an unset one stays zero.
 func TestUTCConvertsANonUTCTimeAndKeepsTheZeroTimeZero(t *testing.T) {
 	zone := time.FixedZone("UTC+8", 8*60*60)
 	at := time.Date(2026, 1, 2, 3, 4, 5, 6, zone)
@@ -78,8 +73,7 @@ func TestUTCConvertsANonUTCTimeAndKeepsTheZeroTimeZero(t *testing.T) {
 	}
 }
 
-// TestASourceReturningTheZeroTimeStaysZero holds that a consumer which treats
-// the zero time as "unset" is not given a different value by the source.
+// TestASourceReturningTheZeroTimeStaysZero holds that a source returning the zero time keeps it zero.
 func TestASourceReturningTheZeroTimeStaysZero(t *testing.T) {
 	got := Source(func() time.Time { return time.Time{} }).Now()
 	if !got.IsZero() {
@@ -87,9 +81,8 @@ func TestASourceReturningTheZeroTimeStaysZero(t *testing.T) {
 	}
 }
 
-// TestAReadingIsAWallClockInstant holds what the package documentation tells a
-// consumer: the reading has no monotonic part, whereas time.Now has one, so
-// in-memory lifetimes must not be measured with it.
+// TestAReadingIsAWallClockInstant holds that a reading has no monotonic part,
+// so in-memory lifetimes must not be measured with it.
 func TestAReadingIsAWallClockInstant(t *testing.T) {
 	const monotonic = "m="
 	if !strings.Contains(time.Now().String(), monotonic) {
