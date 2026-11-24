@@ -5,16 +5,14 @@ import (
 	"testing"
 )
 
-// TestTheDeclaredGlobalIssueLimitIsTheProductDefault holds the value a
-// deployment that configures nothing runs on.
+// TestTheDeclaredGlobalIssueLimitIsTheProductDefault checks that the declared global issue limit is the product default.
 func TestTheDeclaredGlobalIssueLimitIsTheProductDefault(t *testing.T) {
 	if DefaultGlobalIssueLimit != 600 {
 		t.Errorf("the default global issuance limit is %d, want 600", DefaultGlobalIssueLimit)
 	}
 }
 
-// TestTheGlobalIssueLimitDomain holds the declared range: one to a million
-// challenges a window, inclusive.
+// TestTheGlobalIssueLimitDomain checks the global issue limit domain.
 func TestTheGlobalIssueLimitDomain(t *testing.T) {
 	for _, value := range []int{GlobalIssueLimitMin, 600, GlobalIssueLimitMax} {
 		if !globalIssueLimitInDomain(value) {
@@ -28,17 +26,14 @@ func TestTheGlobalIssueLimitDomain(t *testing.T) {
 	}
 }
 
-// TestTheFullKeyPathIsTheNamespacedOne holds the read path to the key the
-// schema declares, since a store names an item by its full path and a relative
-// key would read as an unknown item and silently fall back to the default.
+// TestTheFullKeyPathIsTheNamespacedOne checks that the full key path is the namespaced one.
 func TestTheFullKeyPathIsTheNamespacedOne(t *testing.T) {
 	if globalIssueLimitPath != "authn.humanverify.captcha.global-issue-limit" {
 		t.Errorf("globalIssueLimitPath = %q", globalIssueLimitPath)
 	}
 }
 
-// TestTheSchemaDeclaresTheItem holds the declaration's shape: the namespace the
-// key lives under, the item, and the mounted default.
+// TestTheSchemaDeclaresTheItem checks that the schema declares the item.
 func TestTheSchemaDeclaresTheItem(t *testing.T) {
 	s := Schema()
 	if s.Namespace != Namespace {
@@ -59,9 +54,7 @@ func TestTheSchemaDeclaresTheItem(t *testing.T) {
 	}
 }
 
-// TestAnUnreadableOrOutOfDomainSettingFallsBackToTheDefault holds the read
-// direction: a store that cannot answer, and a value outside the domain, both
-// read as the declared default rather than blocking issuance.
+// TestAnUnreadableOrOutOfDomainSettingFallsBackToTheDefault checks that an unreadable or out-of-domain setting falls back to the default.
 func TestAnUnreadableOrOutOfDomainSettingFallsBackToTheDefault(t *testing.T) {
 	for _, reader := range []captchaSettings{
 		{err: errors.New("the snapshot is not loaded")},

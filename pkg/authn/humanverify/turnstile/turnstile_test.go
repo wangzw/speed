@@ -32,22 +32,16 @@ const (
 	testRemoteIP = "203.0.113.7"
 )
 
-// answer is one response the mock siteverify serves.
 type answer struct {
 	status int
 	body   string
 }
 
-// recorded is what the server saw of one call.
 type recorded struct {
 	method string
 	form   url.Values
 }
 
-// siteverify serves the answers a case names, one per call in order; the last
-// answer repeats once the list is exhausted. It serves over TLS because the
-// provider reaches it through the restricted egress client, which admits
-// loopback only when told to and trusts the server's own certificate.
 func siteverify(t *testing.T, answers ...answer) (*httptest.Server, *x509.CertPool, func() []recorded) {
 	t.Helper()
 	if len(answers) == 0 {
@@ -82,16 +76,11 @@ func siteverify(t *testing.T, answers ...answer) (*httptest.Server, *x509.CertPo
 	}
 }
 
-// providerFor builds a provider pointed at the mock server through the
-// restricted client, with the case's own changes applied and a fresh claim
-// store.
 func providerFor(t *testing.T, srv *httptest.Server, pool *x509.CertPool, change func(*Options)) *Provider {
 	t.Helper()
 	return providerWithStore(t, srv, pool, newClaimStore(), change)
 }
 
-// providerWithStore is providerFor over a store the case keeps, so a case can
-// inspect the claim or arm a fault.
 func providerWithStore(t *testing.T, srv *httptest.Server, pool *x509.CertPool,
 	store kv.KV, change func(*Options),
 ) *Provider {
@@ -116,8 +105,6 @@ func providerWithStore(t *testing.T, srv *httptest.Server, pool *x509.CertPool,
 	return p
 }
 
-// claimStore is an in-memory kv.KV for the claim cases: it records each claim's
-// value and expiry and can be armed to fail the set-if-absent.
 type claimStore struct {
 	mu     sync.Mutex
 	values map[string][]byte
@@ -180,7 +167,6 @@ func (s *claimStore) SetIfAbsent(_ context.Context, key string, value []byte, tt
 	return true, nil
 }
 
-// keys lists the claims the store holds.
 func (s *claimStore) keys() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -191,12 +177,9 @@ func (s *claimStore) keys() []string {
 	return out
 }
 
-// accepted is a siteverify answer accepting a proof from the expected hostname
-// and action.
 const accepted = `{"success":true,"hostname":"` + testHostname + `","action":"` + testAction + `","challenge_ts":"2026-10-25T10:00:00Z"}`
 
-// A proof the provider accepts passes, and the call carries the secret, the
-// token and the source address in its body.
+// TestAValidProofPasses checks that a valid proof passes.
 func TestAValidProofPasses(t *testing.T) {
 	srv, pool, calls := siteverify(t, answer{http.StatusOK, accepted})
 	p := providerFor(t, srv, pool, nil)
@@ -220,9 +203,7 @@ func TestAValidProofPasses(t *testing.T) {
 	}
 }
 
-// A false success is an invalid proof, which the surface answers with 403 and a
-// human-verification code. The provider's error codes reach the log at Warn and
-// never the error the client sees.
+// TestAFalseSuccessIsRefusedAsAMissingProof checks that a false success is refused as a missing proof.
 func TestAFalseSuccessIsRefusedAsAMissingProof(t *testing.T) {
 	const code = "invalid-input-response"
 	srv, pool, _ := siteverify(t, answer{http.StatusOK, `{"success":false,"error-codes":["` + code + `"]}`})
@@ -250,9 +231,7 @@ func TestAFalseSuccessIsRefusedAsAMissingProof(t *testing.T) {
 	}
 }
 
-// A refusal the provider states about the proof itself -- missing, invalid,
-// expired or already spent -- is an invalid proof, whatever code of that class
-// it names.
+// TestProofRefusalsAreHumanVerificationRequired checks that proof refusals answer human verification required.
 func TestProofRefusalsAreHumanVerificationRequired(t *testing.T) {
 	for _, code := range []string{"missing-input-response", "invalid-input-response", "timeout-or-duplicate"} {
 		t.Run(code, func(t *testing.T) {
@@ -270,11 +249,7 @@ func TestProofRefusalsAreHumanVerificationRequired(t *testing.T) {
 	}
 }
 
-// A refusal the provider states about its own side -- an internal error, a
-// misconfigured secret or widget, or a code this package does not know -- is an
-// outage: the proof was not judged, so nothing is sent. It must not read as the
-// caller's proof being invalid, and the error the client sees carries neither
-// the token nor the secret.
+// TestProviderFaultsAreUnavailable checks that provider faults are unavailable.
 func TestProviderFaultsAreUnavailable(t *testing.T) {
 	codes := []string{
 		"internal-error",
@@ -308,8 +283,7 @@ func TestProviderFaultsAreUnavailable(t *testing.T) {
 	}
 }
 
-// An answer that accepted the proof for another hostname is not trusted: the
-// provider fails closed with the outage answer.
+// TestAHostnameMismatchIsUnavailable checks that a hostname mismatch is unavailable.
 func TestAHostnameMismatchIsUnavailable(t *testing.T) {
 	srv, pool, _ := siteverify(t, answer{
 		http.StatusOK,
@@ -326,7 +300,7 @@ func TestAHostnameMismatchIsUnavailable(t *testing.T) {
 	}
 }
 
-// An answer that accepted the proof for another action is not trusted either.
+// TestAnActionMismatchIsUnavailable checks that an answer that accepted the proof for another action is not trusted either.
 func TestAnActionMismatchIsUnavailable(t *testing.T) {
 	srv, pool, _ := siteverify(t, answer{
 		http.StatusOK,
@@ -343,9 +317,7 @@ func TestAnActionMismatchIsUnavailable(t *testing.T) {
 	}
 }
 
-// The action is required: a provider built without one cannot compare the
-// answer's action, so New refuses it rather than accepting a token obtained
-// under any action.
+// TestAnEmptyActionIsRefused checks that an empty action is refused.
 func TestAnEmptyActionIsRefused(t *testing.T) {
 	srv, pool, _ := siteverify(t, answer{http.StatusOK, accepted})
 
@@ -366,8 +338,7 @@ func TestAnEmptyActionIsRefused(t *testing.T) {
 	}
 }
 
-// A non-2xx answer is an outage: the provider could not be reached for a
-// verdict, so the request is refused without sending.
+// TestANonSuccessStatusIsUnavailable checks that a non-success status is unavailable.
 func TestANonSuccessStatusIsUnavailable(t *testing.T) {
 	srv, pool, _ := siteverify(t, answer{http.StatusInternalServerError, `{"success":true}`})
 	p := providerFor(t, srv, pool, nil)
@@ -381,8 +352,7 @@ func TestANonSuccessStatusIsUnavailable(t *testing.T) {
 	}
 }
 
-// A body that is not the provider's response is an outage, not a refusal: the
-// answer cannot be judged at all.
+// TestABrokenBodyIsUnavailable checks that a broken body is unavailable.
 func TestABrokenBodyIsUnavailable(t *testing.T) {
 	srv, pool, _ := siteverify(t, answer{http.StatusOK, `{"success":`})
 	p := providerFor(t, srv, pool, nil)
@@ -393,8 +363,7 @@ func TestABrokenBodyIsUnavailable(t *testing.T) {
 	}
 }
 
-// A token is single-use. The provider treats the duplicate code as an invalid
-// proof, so a token accepted once is refused when it is presented again.
+// TestAReusedTokenIsRefused checks that a reused token is refused.
 func TestAReusedTokenIsRefused(t *testing.T) {
 	srv, pool, _ := siteverify(t,
 		answer{http.StatusOK, accepted},
@@ -414,8 +383,7 @@ func TestAReusedTokenIsRefused(t *testing.T) {
 	}
 }
 
-// An empty proof is a caller that presented nothing and is refused before any
-// call is made.
+// TestAnEmptyProofIsRefused checks that an empty proof is refused.
 func TestAnEmptyProofIsRefused(t *testing.T) {
 	srv, pool, calls := siteverify(t, answer{http.StatusOK, accepted})
 	p := providerFor(t, srv, pool, nil)
@@ -429,7 +397,7 @@ func TestAnEmptyProofIsRefused(t *testing.T) {
 	}
 }
 
-// An over-long proof is a malformed request (400), refused before any call.
+// TestAnOverlongProofIsHumanProofTooLong checks that an over-long proof is a malformed request (400), refused before any call.
 func TestAnOverlongProofIsHumanProofTooLong(t *testing.T) {
 	srv, pool, calls := siteverify(t, answer{http.StatusOK, accepted})
 	p := providerFor(t, srv, pool, nil)
@@ -443,7 +411,7 @@ func TestAnOverlongProofIsHumanProofTooLong(t *testing.T) {
 	}
 }
 
-// The provider reports the seam's answers about the deployment.
+// TestTheProviderReportsItsNameSiteKeyAndRequirement checks that the provider reports the seam's answers about the deployment.
 func TestTheProviderReportsItsNameSiteKeyAndRequirement(t *testing.T) {
 	srv, pool, _ := siteverify(t, answer{http.StatusOK, accepted})
 	p := providerFor(t, srv, pool, nil)
@@ -459,7 +427,7 @@ func TestTheProviderReportsItsNameSiteKeyAndRequirement(t *testing.T) {
 	}
 }
 
-// A provider that cannot be reached is an outage, not a refusal.
+// TestAnUnreachableProviderIsUnavailable checks that a provider that cannot be reached is an outage, not a refusal.
 func TestAnUnreachableProviderIsUnavailable(t *testing.T) {
 	srv, pool, _ := siteverify(t, answer{http.StatusOK, accepted})
 	srv.Close()
@@ -471,11 +439,7 @@ func TestAnUnreachableProviderIsUnavailable(t *testing.T) {
 	}
 }
 
-// A token is refused locally on its second presentation even when siteverify
-// answers success both times. This is what the local claim buys: single use
-// does not depend on the upstream refusing the duplicate. The second call is
-// made against the upstream -- its answer is success -- and the refusal is the
-// local claim's.
+// TestAReplayedTokenIsRefusedEvenWhenTheUpstreamAcceptsIt checks that a replayed token is refused even when the upstream accepts it.
 func TestAReplayedTokenIsRefusedEvenWhenTheUpstreamAcceptsIt(t *testing.T) {
 	srv, pool, calls := siteverify(t, answer{http.StatusOK, accepted})
 	p := providerFor(t, srv, pool, nil)
@@ -495,8 +459,7 @@ func TestAReplayedTokenIsRefusedEvenWhenTheUpstreamAcceptsIt(t *testing.T) {
 	}
 }
 
-// Two concurrent presentations of one token are resolved by the store's
-// set-if-absent: exactly one is accepted, whatever the upstream answers.
+// TestConcurrentClaimsAdmitExactlyOne checks that concurrent claims admit exactly one.
 func TestConcurrentClaimsAdmitExactlyOne(t *testing.T) {
 	srv, pool, _ := siteverify(t, answer{http.StatusOK, accepted})
 	p := providerFor(t, srv, pool, nil)
@@ -529,8 +492,7 @@ func TestConcurrentClaimsAdmitExactlyOne(t *testing.T) {
 	}
 }
 
-// The store is a requirement: a provider built without one has only the
-// upstream's duplicate refusal, not this deployment's single-use guarantee.
+// TestAnEmptyStoreIsRefused checks that an empty store is refused.
 func TestAnEmptyStoreIsRefused(t *testing.T) {
 	srv, pool, _ := siteverify(t, answer{http.StatusOK, accepted})
 	_, err := New(Options{
@@ -550,8 +512,7 @@ func TestAnEmptyStoreIsRefused(t *testing.T) {
 	}
 }
 
-// A store that cannot record the claim is an outage: the proof was judged but
-// not recorded, and accepting it would leave it replayable.
+// TestAClaimFaultIsUnavailable checks that a claim fault is unavailable.
 func TestAClaimFaultIsUnavailable(t *testing.T) {
 	srv, pool, _ := siteverify(t, answer{http.StatusOK, accepted})
 	store := newClaimStore()
@@ -567,9 +528,7 @@ func TestAClaimFaultIsUnavailable(t *testing.T) {
 	}
 }
 
-// The claim is the token's digest under the spent prefix, with the whole token
-// nowhere in the store, and it carries the lifetime that covers the token's
-// validity.
+// TestTheClaimStoresTheTokenDigestAndItsLifetime checks that the claim stores the token digest and its lifetime.
 func TestTheClaimStoresTheTokenDigestAndItsLifetime(t *testing.T) {
 	srv, pool, _ := siteverify(t, answer{http.StatusOK, accepted})
 	store := newClaimStore()

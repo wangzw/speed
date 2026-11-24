@@ -19,8 +19,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// fakeClock is the clock a case drives, so an expiry is reached by advancing the
-// time rather than by sleeping.
 type fakeClock struct {
 	mu  sync.Mutex
 	now time.Time
@@ -40,11 +38,8 @@ func (c *fakeClock) advance(d time.Duration) {
 	c.now = c.now.Add(d)
 }
 
-// errKV is the fault a case arms the store with.
 var errKV = errors.New("the key-value store is unavailable")
 
-// fakeKV is an in-memory kv.KV over a case's clock, with faults it can arm one
-// operation at a time.
 type fakeKV struct {
 	mu     sync.Mutex
 	clock  *fakeClock
@@ -176,7 +171,6 @@ func (k *fakeKV) IncrByFloatWithTTL(_ context.Context, key string, delta float64
 	return current, nil
 }
 
-// keys lists the live keys the store holds, sorted.
 func (k *fakeKV) keys() []string {
 	k.mu.Lock()
 	defer k.mu.Unlock()
@@ -188,8 +182,6 @@ func (k *fakeKV) keys() []string {
 	return out
 }
 
-// settingsStub is the settings reader a case scripts. A zero global limit is
-// outside the domain and therefore reads as the declared default.
 type settingsStub struct {
 	difficulty int
 	ttl        time.Duration
@@ -226,7 +218,6 @@ func (s settingsStub) Get(_ settings.Layer, key string, target any) error {
 	return nil
 }
 
-// newTestProvider builds the provider over a fake store and a clock.
 func newTestProvider(t *testing.T, cfg settingsStub) (*Provider, *fakeKV, *fakeClock) {
 	t.Helper()
 	clock := newClock()
@@ -238,8 +229,6 @@ func newTestProvider(t *testing.T, cfg settingsStub) (*Provider, *fakeKV, *fakeC
 	return p, store, clock
 }
 
-// hashZeros is the work a proof has to show: the hash of the decoded challenge
-// and the nonce in big-endian, read as a count of leading zero bits.
 func hashZeros(t *testing.T, challenge string, nonce uint64) int {
 	t.Helper()
 	raw, err := base64.RawURLEncoding.DecodeString(challenge)
@@ -263,7 +252,6 @@ func hashZeros(t *testing.T, challenge string, nonce uint64) int {
 	return zeros
 }
 
-// solve finds a nonce that reaches difficulty.
 func solve(t *testing.T, challenge string, difficulty int) string {
 	t.Helper()
 	for nonce := uint64(0); nonce < 1<<24; nonce++ {
@@ -275,7 +263,6 @@ func solve(t *testing.T, challenge string, difficulty int) string {
 	return ""
 }
 
-// insufficient finds a nonce that falls short of difficulty.
 func insufficient(t *testing.T, challenge string, difficulty int) string {
 	t.Helper()
 	for nonce := uint64(0); nonce < 1<<20; nonce++ {
@@ -287,8 +274,6 @@ func insufficient(t *testing.T, challenge string, difficulty int) string {
 	return ""
 }
 
-// solveBetween finds a nonce whose work reaches atLeast but not below, so a
-// case can prove that a threshold was raised.
 func solveBetween(t *testing.T, challenge string, atLeast, below int) string {
 	t.Helper()
 	for nonce := uint64(0); nonce < 1<<24; nonce++ {
@@ -311,7 +296,6 @@ func mustIssue(t *testing.T, p *Provider, address string) Challenge {
 	return c
 }
 
-// storedRecord is the value a challenge key holds, encoded as Issue writes it.
 func storedRecord(t *testing.T, rec record) []byte {
 	t.Helper()
 	encoded, err := json.Marshal(rec)
@@ -321,9 +305,7 @@ func storedRecord(t *testing.T, rec record) []byte {
 	return encoded
 }
 
-// TestACorrectNonceIsAcceptedOnce is the single-use contract: the proof that a
-// challenge and its solved nonce make is accepted once, and the same proof
-// presented again is refused rather than accepted twice.
+// TestACorrectNonceIsAcceptedOnce checks that a correct nonce is accepted once.
 func TestACorrectNonceIsAcceptedOnce(t *testing.T) {
 	p, _, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
 	c := mustIssue(t, p, "203.0.113.7")
@@ -338,9 +320,7 @@ func TestACorrectNonceIsAcceptedOnce(t *testing.T) {
 	}
 }
 
-// TestOneProofCannotPassTwiceConcurrently holds the seam's concurrency promise:
-// two requests presenting one proof at the same time cannot both pass, which is
-// what the compare-and-swap that spends the challenge buys.
+// TestOneProofCannotPassTwiceConcurrently checks that one proof cannot pass twice concurrently.
 func TestOneProofCannotPassTwiceConcurrently(t *testing.T) {
 	p, _, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
 	c := mustIssue(t, p, "203.0.113.7")
@@ -374,9 +354,7 @@ func TestOneProofCannotPassTwiceConcurrently(t *testing.T) {
 	}
 }
 
-// TestAShortProofIsRefused holds the difficulty: a nonce whose hash carries
-// fewer leading zero bits than the challenge was issued with is refused even
-// though it names a live challenge.
+// TestAShortProofIsRefused checks that a short proof is refused.
 func TestAShortProofIsRefused(t *testing.T) {
 	p, _, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
 	c := mustIssue(t, p, "203.0.113.7")
@@ -391,8 +369,7 @@ func TestAShortProofIsRefused(t *testing.T) {
 	}
 }
 
-// TestAnExpiredChallengeIsRefused holds the TTL: once the store stops serving
-// the challenge, a proof that names it is refused as an invalid one.
+// TestAnExpiredChallengeIsRefused checks that an expired challenge is refused.
 func TestAnExpiredChallengeIsRefused(t *testing.T) {
 	p, _, clock := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
 	c := mustIssue(t, p, "203.0.113.7")
@@ -405,8 +382,7 @@ func TestAnExpiredChallengeIsRefused(t *testing.T) {
 	}
 }
 
-// TestAKVFaultAnswersUnavailable holds the outage half of the contract on every
-// read and write the check performs.
+// TestAKVFaultAnswersUnavailable checks that a key-value fault answers unavailable.
 func TestAKVFaultAnswersUnavailable(t *testing.T) {
 	t.Run("reading the challenge", func(t *testing.T) {
 		p, store, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
@@ -448,9 +424,7 @@ func TestAKVFaultAnswersUnavailable(t *testing.T) {
 	})
 }
 
-// TestAnOverLongProofIsRefusedAsHumanProofTooLong holds the 400 of the seam's
-// three failures: a proof longer than the provider admits is a bad request, not
-// an invalid proof and not an outage.
+// TestAnOverLongProofIsRefusedAsHumanProofTooLong checks that an over-long proof is refused as human proof too long.
 func TestAnOverLongProofIsRefusedAsHumanProofTooLong(t *testing.T) {
 	p, _, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
 	err := p.Verify(t.Context(), authn.HumanProof{Token: strings.Repeat("a", maxProofLen+1)}, authn.HumanScopeOther)
@@ -462,8 +436,7 @@ func TestAnOverLongProofIsRefusedAsHumanProofTooLong(t *testing.T) {
 	}
 }
 
-// TestAMalformedProofIsRefused holds the proof's grammar: anything that is not
-// a base64url challenge, a dot and a decimal nonce is an invalid proof.
+// TestAMalformedProofIsRefused checks that a malformed proof is refused.
 func TestAMalformedProofIsRefused(t *testing.T) {
 	p, _, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
 	for _, token := range []string{
@@ -482,9 +455,7 @@ func TestAMalformedProofIsRefused(t *testing.T) {
 	}
 }
 
-// TestTheStoredDifficultyDecidesTheThreshold holds that the difficulty a
-// challenge was issued with is the one its proof is checked against, and that a
-// stored value outside the domain is refused rather than trusted.
+// TestTheStoredDifficultyDecidesTheThreshold checks that the stored difficulty decides the threshold.
 func TestTheStoredDifficultyDecidesTheThreshold(t *testing.T) {
 	t.Run("a stored value outside the domain", func(t *testing.T) {
 		p, store, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
@@ -514,9 +485,7 @@ func TestTheStoredDifficultyDecidesTheThreshold(t *testing.T) {
 	})
 }
 
-// TestIssueStoresTheChallengeUnderItsDigest holds the storage shape: the key is
-// the digest of the challenge, the value is the record of the surface and the
-// difficulty, and the entry carries the configured lifetime.
+// TestIssueStoresTheChallengeUnderItsDigest checks that Issue stores the challenge under its digest.
 func TestIssueStoresTheChallengeUnderItsDigest(t *testing.T) {
 	p, store, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: 2 * time.Minute})
 	c := mustIssue(t, p, "203.0.113.7")
@@ -548,9 +517,7 @@ func TestIssueStoresTheChallengeUnderItsDigest(t *testing.T) {
 	}
 }
 
-// TestAProofIsBoundToItsScope holds the scope binding: a proof issued for one
-// surface is refused on the other, and the refusal consumes nothing, so the
-// proof is still accepted on the surface it was issued for.
+// TestAProofIsBoundToItsScope checks that a proof is bound to its scope.
 func TestAProofIsBoundToItsScope(t *testing.T) {
 	p, _, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
 	c, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, RemoteIP: "203.0.113.7"})
@@ -568,8 +535,7 @@ func TestAProofIsBoundToItsScope(t *testing.T) {
 	}
 }
 
-// TestAnUnknownScopeIsRefused holds that a challenge can only be issued for one
-// of the two surfaces the gate serves.
+// TestAnUnknownScopeIsRefused checks that an unknown scope is refused.
 func TestAnUnknownScopeIsRefused(t *testing.T) {
 	p, _, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
 	if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScope("email"), RemoteIP: "203.0.113.7"}); !errors.Is(err, ErrUnknownScope) {
@@ -577,9 +543,7 @@ func TestAnUnknownScopeIsRefused(t *testing.T) {
 	}
 }
 
-// TestTheIssuanceCapBoundsOneSource holds the anti-fill bound: one address may
-// hold a limited number of challenges at a time, and another address is not
-// affected by it.
+// TestTheIssuanceCapBoundsOneSource checks that the issuance cap bounds one source.
 func TestTheIssuanceCapBoundsOneSource(t *testing.T) {
 	p, _, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
 	for i := 0; i < issueLimit; i++ {
@@ -595,10 +559,7 @@ func TestTheIssuanceCapBoundsOneSource(t *testing.T) {
 	}
 }
 
-// TestTheGlobalIssuanceCapBoundsAllSources holds the whole-deployment bound: a
-// set of source addresses cannot issue more challenges together than the
-// configured limit, however far below their per-source allowances each stays,
-// and the bound lifts when its window expires.
+// TestTheGlobalIssuanceCapBoundsAllSources checks that the global issuance cap bounds all sources.
 func TestTheGlobalIssuanceCapBoundsAllSources(t *testing.T) {
 	const limit = 3
 	p, _, clock := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute, global: limit})
@@ -619,9 +580,7 @@ func TestTheGlobalIssuanceCapBoundsAllSources(t *testing.T) {
 	}
 }
 
-// TestTheGlobalCounterCoversTheSameWindowAsTheSourceOne holds the counter's
-// expiry: after the window passes, an exhausted global counter admits issuance
-// again without the process restarting.
+// TestTheGlobalCounterCoversTheSameWindowAsTheSourceOne checks that the global counter covers the same window as the source one.
 func TestTheGlobalCounterCoversTheSameWindowAsTheSourceOne(t *testing.T) {
 	const limit = 2
 	p, store, clock := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute, global: limit})
@@ -655,7 +614,6 @@ func TestTheProviderAnswersTheSeamContract(t *testing.T) {
 	}
 }
 
-// hexString is the lowercase hexadecimal form of raw.
 func hexString(raw []byte) string {
 	const digits = "0123456789abcdef"
 	var b strings.Builder
@@ -667,7 +625,6 @@ func hexString(raw []byte) string {
 	return b.String()
 }
 
-// challengeKeyFor is the storage key a challenge is kept under.
 func challengeKeyFor(challenge string) string {
 	sum := sha256.Sum256([]byte(challenge))
 	return challengeKeyPrefix + hexString(sum[:])

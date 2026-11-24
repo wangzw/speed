@@ -6,24 +6,18 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// settingsOptions is the carrier struct the settings module reads the declared
-// defaults off. It never receives a value.
 type settingsOptions struct {
 	Difficulty       int           `config:"difficulty"`
 	ChallengeTTL     time.Duration `config:"challenge-ttl"`
 	GlobalIssueLimit int           `config:"global-issue-limit"`
 }
 
-// settingDefaults is what each item reads as when no settings store answers.
 var settingDefaults = settingsOptions{
 	Difficulty:       DefaultDifficulty,
 	ChallengeTTL:     DefaultChallengeTTL,
 	GlobalIssueLimit: DefaultGlobalIssueLimit,
 }
 
-// difficultyInDomain and challengeTTLInDomain are the declared ranges. A read
-// outside one is served as the declared default, since a row stored before the
-// domain was declared, or written around the store, is handed out as it is.
 func difficultyInDomain(value int) bool {
 	return value >= DifficultyMin && value <= DifficultyMax
 }
@@ -63,15 +57,12 @@ func Schema() settings.Schema {
 	}
 }
 
-// The full key paths, as the settings store names them: the namespace the
-// schema declares joined to the item's own key.
 const (
 	difficultyPath       = Namespace + "." + DifficultyKey
 	challengeTTLPath     = Namespace + "." + ChallengeTTLKey
 	globalIssueLimitPath = Namespace + "." + GlobalIssueLimitKey
 )
 
-// difficulty is the configured difficulty, or the declared default.
 func (p *Provider) difficulty() int {
 	if p.settings == nil {
 		return settingDefaults.Difficulty
@@ -86,7 +77,6 @@ func (p *Provider) difficulty() int {
 	return value
 }
 
-// challengeTTL is the configured lifetime, or the declared default.
 func (p *Provider) challengeTTL() time.Duration {
 	if p.settings == nil {
 		return settingDefaults.ChallengeTTL
@@ -101,8 +91,6 @@ func (p *Provider) challengeTTL() time.Duration {
 	return value
 }
 
-// globalIssueLimit is the configured whole-deployment bound, or the declared
-// default.
 func (p *Provider) globalIssueLimit() int {
 	if p.settings == nil {
 		return settingDefaults.GlobalIssueLimit

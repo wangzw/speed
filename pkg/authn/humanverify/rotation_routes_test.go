@@ -8,15 +8,9 @@ import (
 	"testing"
 )
 
-// routeRotationRounds is how many requests a route rotation case makes from
-// distinct sources. With a two-form rotation the chance that one form never
-// appears is 2^-(rounds-1).
 const routeRotationRounds = 48
 
-// TestTheCaptchaChallengeRouteRotatesInsteadOfHonouringAForm holds the policy at
-// the route: image, slider and an absent form are not a client's choice, so
-// repeating any of those requests covers both rotating forms, and audio is never
-// drawn unless it was asked for.
+// TestTheCaptchaChallengeRouteRotatesInsteadOfHonouringAForm checks that the captcha challenge route rotates instead of honouring a form.
 func TestTheCaptchaChallengeRouteRotatesInsteadOfHonouringAForm(t *testing.T) {
 	for _, requested := range []string{"", "image", "slider"} {
 		name := requested
@@ -34,9 +28,6 @@ func TestTheCaptchaChallengeRouteRotatesInsteadOfHonouringAForm(t *testing.T) {
 					target += "&form=" + requested
 				}
 				request := httptest.NewRequest(http.MethodPost, target, nil)
-				// A distinct source per request keeps the per-source issuance
-				// bound out of the sample; the form value is what the case
-				// varies across subtests.
 				request.RemoteAddr = fmt.Sprintf("198.51.100.%d:1234", i+1)
 				recorder := rig.mounter.Do(request)
 				if recorder.Code != http.StatusOK {

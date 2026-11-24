@@ -8,8 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestTheDeclaredDefaultsAreTheProductDefaults holds the values a deployment
-// that configures nothing runs on.
+// TestTheDeclaredDefaultsAreTheProductDefaults checks that the declared defaults are the product defaults.
 func TestTheDeclaredDefaultsAreTheProductDefaults(t *testing.T) {
 	if DefaultDifficulty != 20 {
 		t.Errorf("the default difficulty is %d, want 20", DefaultDifficulty)
@@ -28,8 +27,7 @@ func TestTheDeclaredDefaultsAreTheProductDefaults(t *testing.T) {
 	}
 }
 
-// TestTheGlobalIssueLimitDomain holds the declared range: one to a million
-// challenges a window, inclusive.
+// TestTheGlobalIssueLimitDomain checks the global issue limit domain.
 func TestTheGlobalIssueLimitDomain(t *testing.T) {
 	for _, value := range []int{GlobalIssueLimitMin, 600, GlobalIssueLimitMax} {
 		if !globalIssueLimitInDomain(value) {
@@ -43,8 +41,7 @@ func TestTheGlobalIssueLimitDomain(t *testing.T) {
 	}
 }
 
-// TestTheDifficultyDomain holds the declared range: eighteen to twenty-two
-// leading zero bits, inclusive.
+// TestTheDifficultyDomain checks the difficulty domain.
 func TestTheDifficultyDomain(t *testing.T) {
 	for _, value := range []int{DifficultyMin, 20, DifficultyMax} {
 		if !difficultyInDomain(value) {
@@ -58,8 +55,7 @@ func TestTheDifficultyDomain(t *testing.T) {
 	}
 }
 
-// TestTheChallengeTTLDomain holds the declared range: one minute to fifteen
-// minutes, inclusive.
+// TestTheChallengeTTLDomain checks the challenge TTL domain.
 func TestTheChallengeTTLDomain(t *testing.T) {
 	for _, value := range []time.Duration{ChallengeTTLMin, 5 * time.Minute, ChallengeTTLMax} {
 		if !challengeTTLInDomain(value) {
@@ -73,9 +69,7 @@ func TestTheChallengeTTLDomain(t *testing.T) {
 	}
 }
 
-// TestTheFullKeyPathsAreTheNamespacedOnes holds the read paths to the keys the
-// schema declares, since a store names an item by its full path and a relative
-// key would read as an unknown item and silently fall back to the default.
+// TestTheFullKeyPathsAreTheNamespacedOnes checks that the full key paths are the namespaced ones.
 func TestTheFullKeyPathsAreTheNamespacedOnes(t *testing.T) {
 	if difficultyPath != "authn.humanverify.pow.difficulty" {
 		t.Errorf("difficultyPath = %q", difficultyPath)
@@ -88,8 +82,7 @@ func TestTheFullKeyPathsAreTheNamespacedOnes(t *testing.T) {
 	}
 }
 
-// TestTheSchemaDeclaresTheThreeItems holds the declaration's shape: the
-// namespace the keys live under, the three items, and the mounted defaults.
+// TestTheSchemaDeclaresTheThreeItems checks that the schema declares the three items.
 func TestTheSchemaDeclaresTheThreeItems(t *testing.T) {
 	s := Schema()
 	if s.Namespace != Namespace {
@@ -118,11 +111,7 @@ func TestTheSchemaDeclaresTheThreeItems(t *testing.T) {
 	}
 }
 
-// TestAnUnreadableOrOutOfDomainSettingFallsBackToTheDefault holds the read
-// direction: a store that cannot answer, and a value outside the domain, both
-// read as the declared default rather than blocking the gate. The other item
-// is still read from the store, so one defective value does not discard the
-// pair.
+// TestAnUnreadableOrOutOfDomainSettingFallsBackToTheDefault checks that an unreadable or out-of-domain setting falls back to the default.
 func TestAnUnreadableOrOutOfDomainSettingFallsBackToTheDefault(t *testing.T) {
 	for _, c := range []struct {
 		name       string
@@ -162,8 +151,7 @@ func TestAnUnreadableOrOutOfDomainSettingFallsBackToTheDefault(t *testing.T) {
 	}
 }
 
-// TestAConfiguredSettingIsUsed holds the read direction the other way: what the
-// store answers is what the challenge carries.
+// TestAConfiguredSettingIsUsed checks that a configured setting is used.
 func TestAConfiguredSettingIsUsed(t *testing.T) {
 	p, _, _ := newTestProvider(t, settingsStub{difficulty: 19, ttl: 3 * time.Minute})
 	c, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopeOther, RemoteIP: "203.0.113.7"})

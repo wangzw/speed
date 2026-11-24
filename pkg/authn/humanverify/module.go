@@ -1,30 +1,4 @@
-// Package humanverify is the human-verification gate of the authentication
-// capability: the object a send asks, before it spends a budget, whether the
-// request came from a person.
-//
-// A deployment chooses one mechanism per surface with this module's mode and
-// phone-mode: off, a self-hosted proof of work, a self-hosted captcha, or
-// Cloudflare Turnstile. The other surface runs the proof of work and the phone
-// surface runs the captcha by default, and the seam is delivered exclusively, so
-// a command names this module or supplies its own authn.HumanVerifier; two
-// exclusive providers in one run fail the startup.
-//
-// The module holds no send state and sends nothing. A send checks the seam
-// before it spends anything, and the token's single-use property belongs to the
-// provider behind the seam. The off mechanism accepts every proof. The
-// proof-of-work mechanism issues a challenge on POST
-// /api/v1/auth/human/challenge and spends it when the proof is accepted. The
-// captcha mechanism issues a challenge on POST
-// /api/v1/auth/human/captcha/challenge and serves its image, background, piece
-// and audio on the routes under that path. The turnstile mechanism posts the
-// proof to Cloudflare's siteverify endpoint, accepts it once the answer names
-// the deployment's hostname and action, and records the token's digest in the
-// key-value store so a replay is refused even if the upstream would accept it.
-//
-// Every mechanism that needs the key-value store states that need as optional
-// on the descriptor, because the off gate needs none: a run with the gate off
-// starts without the store. A run whose configuration selects a mechanism that
-// needs it fails in New, naming the absent capability.
+// Package humanverify is the human-verification gate: the seam a send asks before spending a budget. A deployment selects off, proof of work, captcha or Turnstile per surface, and the capability is delivered exclusively.
 package humanverify
 
 import (
@@ -53,22 +27,13 @@ const ModuleName = "authn.humanverify"
 // ConfigNamespace is where this module's input items are mounted.
 const ConfigNamespace = ModuleName
 
-// defaultEndpoint is the endpoint this module's own OpenAPI fragment declares
-// its route for. The endpoint the route is actually mounted on is the one the
-// mounter resolves; the fragment is a static declaration written before that is
-// known, so it carries the conventional name.
 const defaultEndpoint = "account"
 
-// humanverifyFragment is this module's OpenAPI fragment, describing the
-// challenge route.
+// humanverifyFragment is this module's OpenAPI fragment.
 //
 //go:embed openapi/humanverify.json
 var humanverifyFragment []byte
 
-// humanverifySpec is the API root this module's fragment and route hang off.
-// Its prefix and version are the common ones; the fragment writes the
-// capability's own segment, so the route's declared path begins with the part of
-// the mounter's base that lies below this root.
 var humanverifySpec = speedhttp.Spec{
 	Endpoint: defaultEndpoint,
 	Prefix:   "api",
@@ -76,32 +41,9 @@ var humanverifySpec = speedhttp.Spec{
 	Document: humanverifyFragment,
 }
 
-// init registers this module with the process registry, so a host that imports
-// the package has the gate available to name on a command tree.
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// Module is the descriptor a host registers.
-//
-// The human-verification capability is delivered exclusively: two gates in one
-// run could require different proofs, and a send would be answered differently
-// depending on which object it reached. A deployment that wants a mechanism this
-// module does not bundle supplies its own authn.HumanVerifier and leaves this
-// module out.
-//
-// The key-value store, the settings store, the route mounter and logging are
-// required as optional only: the off gate needs none of them, so an assembly
-// that leaves the gate off starts without them. The proof-of-work and captcha
-// modes need the store their challenges live in and a mounter to serve the
-// challenge route; Turnstile needs the store it claims spent tokens in. New or
-// Init names the missing one when the mode asks for it. The turnstile mode
-// registers its secret as a literal redaction rule when a logging capability is
-// present.
-//
-// Prepare states StateEnabled in every mode, including the default proof of
-// work: a mode
-// the configuration refused stops the startup there, and a command that takes
-// this module in gets a verifier that states whether it requires a proof. The
-// mode alone decides the answer, so the module has no stand-down of its own.
+// Module is the descriptor a host registers. It delivers authn.HumanVerifier exclusively; the key-value store, settings store, mounter and logger are optional because the off gate needs none, and a mode that needs one names it when absent. Prepare states enabled in every mode.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -175,11 +117,6 @@ func Module() core.Module {
 	}
 }
 
-// dependencies takes up what the resolved modes need. The off gate needs
-// nothing, so a run that carries neither the store nor the mounter still starts
-// with both surfaces off. The key-value store is taken up when a surface runs a
-// self-hosted mechanism or Turnstile. The settings store is taken up only when
-// a surface runs a self-hosted mechanism, which reads its issuance limits there.
 func dependencies(cfg resolved, reg *core.Registry) (deps, error) {
 	var taken deps
 	if cfg.needsStore() {
@@ -202,19 +139,12 @@ func dependencies(cfg resolved, reg *core.Registry) (deps, error) {
 	case err == nil:
 		taken.settings = settingsStore
 	case errors.Is(err, core.ErrMissingProvider):
-		// The provider falls back to the declared defaults.
 	default:
 		return deps{}, fmt.Errorf("%s: taking up the settings store: %w", ModuleName, err)
 	}
 	return taken, nil
 }
 
-// registerSecret registers the Turnstile secret as a literal redaction rule, so
-// it is masked wherever it turns up in a log line. A secret has no shape to
-// match, so the only thing known about it is the value. The registration runs in
-// New, before any logger binds an attribute, which is the timing a redaction
-// rule needs. With no logging capability there is no log to protect, and the
-// absence is told apart from a failed lookup by the sentinel.
 func registerSecret(reg *core.Registry, secret string) error {
 	delivered, err := core.Resolve[log.Logger](reg)
 	switch {
@@ -228,9 +158,6 @@ func registerSecret(reg *core.Registry, secret string) error {
 	return nil
 }
 
-// readerOf takes up the configuration reader. Its absence is the host's omission
-// and is carried out as it stands: the mode has a default, but a run with no
-// reader never had a chance to state one.
 func readerOf(reg *core.Registry) (config.Reader, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {

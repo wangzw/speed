@@ -14,8 +14,7 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The descriptor claims the human-verification seam exclusively, so a command
-// names this module or a verifier of its own, never both.
+// TestTheDescriptorDeliversTheHumanVerifierExclusively checks that the descriptor delivers the human verifier exclusively.
 func TestTheDescriptorDeliversTheHumanVerifierExclusively(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName {
@@ -50,8 +49,7 @@ func TestTheDescriptorDeliversTheHumanVerifierExclusively(t *testing.T) {
 	}
 }
 
-// A run that also holds another verifier claiming the seam exclusively fails
-// the resolution rather than letting two gates stand.
+// TestASecondExclusiveVerifierFailsTheResolution checks that a second exclusive verifier fails resolution.
 func TestASecondExclusiveVerifierFailsTheResolution(t *testing.T) {
 	reg := registryWithReader(t, body(t, nil))
 	reg.Register(Module())
@@ -72,7 +70,6 @@ func TestASecondExclusiveVerifierFailsTheResolution(t *testing.T) {
 	}
 }
 
-// otherVerifier is a stand-in carrying the other exclusive claim.
 type otherVerifier struct{}
 
 func (otherVerifier) Required(authn.HumanScope) bool   { return true }
@@ -83,11 +80,8 @@ func (otherVerifier) Verify(context.Context, authn.HumanProof, authn.HumanScope)
 	return nil
 }
 
-// The logging capability's stand-in, with which the Turnstile secret is
-// registered as a redaction rule.
 const logStandIn = "stand-in.log"
 
-// standInLog declares the logging capability the way the log module does.
 func standInLog() core.Module {
 	return core.Module{
 		Name:     logStandIn,
@@ -95,8 +89,6 @@ func standInLog() core.Module {
 	}
 }
 
-// recordingLogger is a logging capability that records the redaction rules
-// registered with it.
 type recordingLogger struct {
 	patterns map[string]log.Matcher
 }
@@ -110,15 +102,11 @@ func (l *recordingLogger) Redaction() log.Redaction              { return l }
 func (l *recordingLogger) AddKeys(...string)                     {}
 func (l *recordingLogger) AddPattern(name string, m log.Matcher) { l.patterns[name] = m }
 
-// The Turnstile secret is registered with the logging capability as a literal
-// rule, so it is masked wherever it turns up in a log line, and a build with no
-// logging capability still starts.
+// TestTheTurnstileSecretIsRegisteredAsARedactionRule checks that the Turnstile secret is registered as a literal redaction rule.
 func TestTheTurnstileSecretIsRegisteredAsARedactionRule(t *testing.T) {
 	const secret = "turnstile-secret-2f7a91c4"
 	section := turnstileSection()
 	section["secret-key"] = secret
-	// Turnstile needs the key-value store it records spent tokens in, so the
-	// case supplies one; the secret is what the case is about.
 	section[phoneModeItem] = ModeOff
 
 	recorder := newRecordingLogger()
@@ -150,8 +138,7 @@ func TestTheTurnstileSecretIsRegisteredAsARedactionRule(t *testing.T) {
 	}
 }
 
-// An assembly with no logging capability still starts the Turnstile mode, with
-// nothing to register the secret with.
+// TestTurnstileStartsWithNoLoggingCapability checks that Turnstile starts without a logging capability.
 func TestTurnstileStartsWithNoLoggingCapability(t *testing.T) {
 	v := driveVerifier(t, body(t, turnstileSection()))
 	if v.Provider(authn.HumanScopeOther) != ModeTurnstile {

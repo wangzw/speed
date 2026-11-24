@@ -17,8 +17,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// store is an in-memory kv.KV with a clock a case advances, so an expiry is
-// exercised without waiting for one.
 type store struct {
 	mu     sync.Mutex
 	now    time.Time
@@ -91,8 +89,6 @@ func (s *store) IncrByFloatWithTTL(_ context.Context, key string, delta float64,
 	var expires time.Time
 	if v, ok := s.live(key); ok {
 		current, _ = strconv.ParseFloat(string(v.body), 64)
-		// A live key keeps the expiry it already has; ttl is ignored, as the
-		// interface requires, so a fixed window does not slide forward.
 		expires = v.expires
 	} else if ttl > 0 {
 		expires = s.now.Add(ttl)
@@ -130,7 +126,6 @@ func (s *store) SetIfAbsent(_ context.Context, key string, body []byte, ttl time
 	return true, nil
 }
 
-// newProvider builds a provider over a fresh store.
 func newProvider(t *testing.T) (*Provider, *store) {
 	t.Helper()
 	s := newStore()
@@ -141,7 +136,6 @@ func newProvider(t *testing.T) (*Provider, *store) {
 	return p, s
 }
 
-// readRecord reads the stored record of a challenge.
 func readRecord(t *testing.T, s *store, id string) record {
 	t.Helper()
 	raw, present, err := s.Get(t.Context(), challengeKey(id))
@@ -155,7 +149,6 @@ func readRecord(t *testing.T, s *store, id string) record {
 	return rec
 }
 
-// decodeRecord reads a stored record.
 func decodeRecord(raw []byte) (record, error) {
 	var rec record
 	if err := json.Unmarshal(raw, &rec); err != nil {
@@ -164,15 +157,8 @@ func decodeRecord(raw []byte) (record, error) {
 	return rec, nil
 }
 
-// source is the address the provider's tests issue challenges from.
 const source = "203.0.113.7"
 
-// issue draws a challenge of one particular form for the test source. Audio is
-// requested the way a client requests it; the two rotating forms are pinned
-// through the provider's rotation seam, because the case is about that form's
-// look, answer or storage rather than about the rotation itself. The audio
-// issuance counter is cleared first: the cases that use this helper are about
-// the form's semantics, and audio's own per-source bound has its own cases.
 func issue(t *testing.T, p *Provider, form Form) Challenge {
 	t.Helper()
 	if form != FormAudio {
@@ -187,9 +173,6 @@ func issue(t *testing.T, p *Provider, form Form) Challenge {
 	return issued
 }
 
-// solveDigits recovers the answer of an image or audio challenge by trying the
-// five-digit space against the stored digest. The answer space is small; the
-// one-time deletion is what keeps that from being a way in.
 func solveDigits(t *testing.T, s *store, id string) string {
 	t.Helper()
 	rec := readRecord(t, s, id)
@@ -206,16 +189,12 @@ func solveDigits(t *testing.T, s *store, id string) string {
 	return ""
 }
 
-// solveSlider recovers the cut position of a slider challenge from the stored
-// digests. It returns the lowest accepted offset, which is an answer the server
-// accepts.
 func solveSlider(t *testing.T, s *store, id string) int {
 	t.Helper()
 	min, _ := sliderRange(t, s, id)
 	return min
 }
 
-// sliderRange reads the lowest and highest offsets the stored digests accept.
 func sliderRange(t *testing.T, s *store, id string) (min, max int) {
 	t.Helper()
 	rec := readRecord(t, s, id)
@@ -234,25 +213,17 @@ func sliderRange(t *testing.T, s *store, id string) (min, max int) {
 	return min, max
 }
 
-// outsideSlider is one offset beyond an accepted range.
 func outsideSlider(t *testing.T, s *store, id string) int {
 	t.Helper()
 	_, max := sliderRange(t, s, id)
-	// max+1 is never one of the stored digests, so the server rejects it. At the
-	// top of the cut range max is already the piece's rightmost position and
-	// max+1 lies past the drawable range; naming that offset is still enough,
-	// because all this helper has to produce is an offset outside the tolerance.
 	return max + 1
 }
 
-// proof is the token a client presents.
 func proof(id, answer string) authn.HumanProof {
 	return authn.HumanProof{Token: id + "." + answer}
 }
 
-// TestAGeneratedChallengeVerifiesExactlyOnce holds the one-time property for
-// every form: the answer that was drawn is accepted once, and the same proof is
-// refused when it is presented again.
+// TestAGeneratedChallengeVerifiesExactlyOnce checks that a generated challenge verifies exactly once.
 func TestAGeneratedChallengeVerifiesExactlyOnce(t *testing.T) {
 	for _, form := range []Form{FormImage, FormSlider, FormAudio} {
 		t.Run(string(form), func(t *testing.T) {
@@ -269,8 +240,7 @@ func TestAGeneratedChallengeVerifiesExactlyOnce(t *testing.T) {
 	}
 }
 
-// TestAnExpiredChallengeIsRefused holds the five-minute lifetime for every
-// hardened form.
+// TestAnExpiredChallengeIsRefused checks that an expired challenge is refused.
 func TestAnExpiredChallengeIsRefused(t *testing.T) {
 	for _, form := range []Form{FormImage, FormSlider, FormAudio} {
 		t.Run(string(form), func(t *testing.T) {
@@ -285,9 +255,7 @@ func TestAnExpiredChallengeIsRefused(t *testing.T) {
 	}
 }
 
-// TestAProofIsBoundToItsScope holds the scope binding: a proof issued for one
-// surface is refused on the other, and the refusal consumes nothing, so the
-// proof is still accepted on the surface it was issued for.
+// TestAProofIsBoundToItsScope checks that a proof is bound to its scope.
 func TestAProofIsBoundToItsScope(t *testing.T) {
 	p, s := newProvider(t)
 	p.rotate = func() (Form, error) { return FormImage, nil }
@@ -305,8 +273,7 @@ func TestAProofIsBoundToItsScope(t *testing.T) {
 	}
 }
 
-// TestAnUnknownScopeIsRefused holds that a challenge can only be issued for one
-// of the two surfaces the gate serves.
+// TestAnUnknownScopeIsRefused checks that an unknown scope is refused.
 func TestAnUnknownScopeIsRefused(t *testing.T) {
 	p, _ := newProvider(t)
 	if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScope("email"), Form: FormImage, RemoteIP: source}); !errors.Is(err, ErrUnknownScope) {
@@ -314,8 +281,7 @@ func TestAnUnknownScopeIsRefused(t *testing.T) {
 	}
 }
 
-// TestAWrongAnswerSpendsTheChallenge holds that a failed attempt is the only
-// attempt: the correct answer no longer works once a wrong one was presented.
+// TestAWrongAnswerSpendsTheChallenge checks that a wrong answer spends the challenge.
 func TestAWrongAnswerSpendsTheChallenge(t *testing.T) {
 	p, s := newProvider(t)
 	issued := issue(t, p, FormImage)
@@ -332,9 +298,7 @@ func TestAWrongAnswerSpendsTheChallenge(t *testing.T) {
 	}
 }
 
-// TestEachFormAcceptsItsAnswerAndRefusesAnother holds both directions for every
-// form. The slider accepts offsets within its tolerance and refuses one outside
-// it.
+// TestEachFormAcceptsItsAnswerAndRefusesAnother checks that each form accepts its answer and refuses another.
 func TestEachFormAcceptsItsAnswerAndRefusesAnother(t *testing.T) {
 	for _, form := range []Form{FormImage, FormSlider, FormAudio} {
 		t.Run(string(form), func(t *testing.T) {
@@ -353,8 +317,7 @@ func TestEachFormAcceptsItsAnswerAndRefusesAnother(t *testing.T) {
 	}
 }
 
-// TestTheSliderAcceptsAnOffsetWithinItsTolerance holds the tolerance the server
-// allows a client that lands near, but not on, the cut position.
+// TestTheSliderAcceptsAnOffsetWithinItsTolerance checks that the slider accepts an offset within its tolerance.
 func TestTheSliderAcceptsAnOffsetWithinItsTolerance(t *testing.T) {
 	p, s := newProvider(t)
 	issued := issue(t, p, FormSlider)
@@ -370,9 +333,7 @@ func TestTheSliderAcceptsAnOffsetWithinItsTolerance(t *testing.T) {
 	}
 }
 
-// TestTheSliderToleranceIsTwoPixels holds the declared tolerance and the
-// accepted offsets it produces: the cut position plus and minus two pixels,
-// five offsets in all. One pixel outside the range on either side is refused.
+// TestTheSliderToleranceIsTwoPixels checks that the slider tolerance is two pixels.
 func TestTheSliderToleranceIsTwoPixels(t *testing.T) {
 	if sliderTolerance != 2 {
 		t.Fatalf("the slider tolerance is %d, want 2", sliderTolerance)
@@ -399,10 +360,7 @@ func TestTheSliderToleranceIsTwoPixels(t *testing.T) {
 	}
 }
 
-// TestTheSliderToleranceHoldsAtTheTopOfTheCutRange pins the cut to the top of
-// the range its drawer is given and holds the same five accepted offsets there
-// as anywhere else. The offset-count check above only sees a cut at the edge
-// when a random draw lands there; this case reaches the edge every time.
+// TestTheSliderToleranceHoldsAtTheTopOfTheCutRange checks that the slider tolerance holds at the top of the cut range.
 func TestTheSliderToleranceHoldsAtTheTopOfTheCutRange(t *testing.T) {
 	const salt = "cut-range-edge"
 	images, err := newSliderWithDrawer(salt, func(_, max int) (int, error) {
@@ -427,15 +385,12 @@ func TestTheSliderToleranceHoldsAtTheTopOfTheCutRange(t *testing.T) {
 		t.Errorf("with the cut at the top of its range the slider accepts %d offsets in [%d, %d], want %d",
 			got, low, high, 2*sliderTolerance+1)
 	}
-	// The window is flush with the right edge: the top accepted offset is the
-	// rightmost position the piece can occupy.
 	pieceSize, _ := pngSize(t, images.piece)
 	if want := sliderWidth - pieceSize; high != want {
 		t.Errorf("with the cut at the top of its range the accepted offsets end at %d, want the rightmost position %d", high, want)
 	}
 }
 
-// answerOf recovers the answer a challenge was drawn with.
 func answerOf(t *testing.T, s *store, issued Challenge) string {
 	t.Helper()
 	switch issued.Form {
@@ -446,14 +401,12 @@ func answerOf(t *testing.T, s *store, issued Challenge) string {
 	}
 }
 
-// wrongAnswerOf builds an answer that is not accepted.
 func wrongAnswerOf(t *testing.T, s *store, issued Challenge) string {
 	t.Helper()
 	switch issued.Form {
 	case FormSlider:
 		return strconv.Itoa(outsideSlider(t, s, issued.ID))
 	default:
-		// The drawn answer is five digits; the next one in the space is wrong.
 		right, err := strconv.Atoi(solveDigits(t, s, issued.ID))
 		if err != nil {
 			t.Fatalf("the drawn answer is not a number: %v", err)
@@ -462,9 +415,7 @@ func wrongAnswerOf(t *testing.T, s *store, issued Challenge) string {
 	}
 }
 
-// TestMediaIsStoredForEachForm holds that every media object a challenge names
-// is stored with a media type and the signature of its format, and that an
-// object the form does not carry is absent.
+// TestMediaIsStoredForEachForm checks that media is stored for each form.
 func TestMediaIsStoredForEachForm(t *testing.T) {
 	cases := []struct {
 		form    Form
@@ -507,8 +458,7 @@ func TestMediaIsStoredForEachForm(t *testing.T) {
 	}
 }
 
-// TestMediaRefusesUnknownIDs holds the route's other half: an id this provider
-// did not draw, and one that is not even the right shape, are not found.
+// TestMediaRefusesUnknownIDs checks that media refuses unknown ids.
 func TestMediaRefusesUnknownIDs(t *testing.T) {
 	p, _ := newProvider(t)
 	for _, id := range []string{"", "not-an-id", "aaaaaaaaaaaaaaaaaaaaaa"} {
@@ -518,9 +468,7 @@ func TestMediaRefusesUnknownIDs(t *testing.T) {
 	}
 }
 
-// TestTheRecordDoesNotCarryTheAnswerInPlainText holds the protection on the
-// stored answer: the record carries a salted digest, not the solution and not
-// the answer's bare SHA-256.
+// TestTheRecordDoesNotCarryTheAnswerInPlainText checks that the record does not carry the answer in plain text.
 func TestTheRecordDoesNotCarryTheAnswerInPlainText(t *testing.T) {
 	for _, form := range []Form{FormImage, FormAudio} {
 		t.Run(string(form), func(t *testing.T) {
@@ -546,8 +494,7 @@ func TestTheRecordDoesNotCarryTheAnswerInPlainText(t *testing.T) {
 	}
 }
 
-// TestAProofOverTheLimitIsRefused holds the field bound: a body sent in place
-// of a proof is the too-long error, not a challenge lookup.
+// TestAProofOverTheLimitIsRefused checks that a proof over the limit is refused.
 func TestAProofOverTheLimitIsRefused(t *testing.T) {
 	p, _ := newProvider(t)
 	long := make([]byte, maxProofLen+1)
@@ -567,8 +514,7 @@ func TestAnUnknownFormIsRefused(t *testing.T) {
 	}
 }
 
-// TestTwoProvidersShareOneChallenge holds the multi-replica property: a
-// challenge issued by one provider over a store is verified by another.
+// TestTwoProvidersShareOneChallenge checks that two providers share one challenge.
 func TestTwoProvidersShareOneChallenge(t *testing.T) {
 	s := newStore()
 	first, err := New(s, nil)
@@ -586,8 +532,7 @@ func TestTwoProvidersShareOneChallenge(t *testing.T) {
 	}
 }
 
-// TestOneProofCannotBeSpentTwiceConcurrently holds the compare-and-swap: of
-// several presentations of one correct proof at once, exactly one is accepted.
+// TestOneProofCannotBeSpentTwiceConcurrently checks that one proof cannot be spent twice concurrently.
 func TestOneProofCannotBeSpentTwiceConcurrently(t *testing.T) {
 	p, s := newProvider(t)
 	issued := issue(t, p, FormImage)
@@ -616,10 +561,7 @@ func TestOneProofCannotBeSpentTwiceConcurrently(t *testing.T) {
 	}
 }
 
-// TestTheIssuanceCapBoundsOneSource holds the anti-fill bound for the forms the
-// rotation draws: one source may hold a limited number of visual challenges at a
-// time, and a source that asks for more is refused while another source is not
-// affected.
+// TestTheIssuanceCapBoundsOneSource checks that the issuance cap bounds one source.
 func TestTheIssuanceCapBoundsOneSource(t *testing.T) {
 	for _, form := range []Form{FormImage, FormSlider} {
 		t.Run(string(form), func(t *testing.T) {
@@ -640,10 +582,7 @@ func TestTheIssuanceCapBoundsOneSource(t *testing.T) {
 	}
 }
 
-// TestTheAudioIssuanceCapIsStricterThanTheVisualOne holds that audio carries its
-// own per-source budget: it is the accessibility alternative a client may ask
-// for, so one source may hold only one audio challenge in the window, while the
-// visual forms keep their larger bound and neither counter spends the other.
+// TestTheAudioIssuanceCapIsStricterThanTheVisualOne checks that the audio issuance cap is stricter than the visual one.
 func TestTheAudioIssuanceCapIsStricterThanTheVisualOne(t *testing.T) {
 	p, _ := newProvider(t)
 	audio := IssueOptions{Scope: authn.HumanScopePhone, Form: FormAudio, RemoteIP: source}
@@ -653,7 +592,6 @@ func TestTheAudioIssuanceCapIsStricterThanTheVisualOne(t *testing.T) {
 	if _, err := p.Issue(t.Context(), audio); !errors.Is(err, ErrIssuanceLimited) {
 		t.Fatalf("a second audio challenge resolved with %v, want ErrIssuanceLimited", err)
 	}
-	// The refused audio request spent no visual allowance.
 	for i := 0; i < issueLimit; i++ {
 		if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, Form: FormImage, RemoteIP: source}); err != nil {
 			t.Fatalf("visual issue %d after the audio cap: %v", i+1, err)
@@ -662,13 +600,11 @@ func TestTheAudioIssuanceCapIsStricterThanTheVisualOne(t *testing.T) {
 	if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, Form: FormImage, RemoteIP: source}); !errors.Is(err, ErrIssuanceLimited) {
 		t.Fatalf("the visual cap resolved with %v, want ErrIssuanceLimited", err)
 	}
-	// The exhausted visual counter did not spend another source's audio budget.
 	if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, Form: FormAudio, RemoteIP: "203.0.113.8"}); err != nil {
 		t.Fatalf("another source was refused with the first source's caps: %v", err)
 	}
 }
 
-// captchaSettings is the settings reader a case scripts.
 type captchaSettings struct {
 	global int
 	err    error
@@ -689,10 +625,7 @@ func (s captchaSettings) Get(_ settings.Layer, key string, target any) error {
 	return nil
 }
 
-// TestTheGlobalIssuanceCapBoundsAllSources holds the whole-deployment bound: a
-// set of source addresses cannot issue more challenges together than the
-// configured limit, however far below their per-source allowances each stays,
-// and the bound lifts when its window expires.
+// TestTheGlobalIssuanceCapBoundsAllSources checks that the global issuance cap bounds all sources.
 func TestTheGlobalIssuanceCapBoundsAllSources(t *testing.T) {
 	const limit = 3
 	s := newStore()
@@ -720,9 +653,7 @@ func TestTheGlobalIssuanceCapBoundsAllSources(t *testing.T) {
 	}
 }
 
-// TestTheGlobalCounterCoversEveryForm holds that the counter is the provider's,
-// not the form's: an audio challenge and a visual one from two different sources
-// still share one bound.
+// TestTheGlobalCounterCoversEveryForm checks that the global counter covers every form.
 func TestTheGlobalCounterCoversEveryForm(t *testing.T) {
 	const limit = 1
 	s := newStore()
@@ -744,9 +675,7 @@ func TestTheGlobalCounterCoversEveryForm(t *testing.T) {
 	}
 }
 
-// TestAMalformedIssueDoesNotSpendTheCap pins validate-then-count: a request that
-// cannot be drawn is refused before the source's issuance counter is spent, so
-// it neither consumes a slot nor brings the cap closer.
+// TestAMalformedIssueDoesNotSpendTheCap checks that a malformed issue does not spend the cap.
 func TestAMalformedIssueDoesNotSpendTheCap(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -782,9 +711,7 @@ func TestAMalformedIssueDoesNotSpendTheCap(t *testing.T) {
 	}
 }
 
-// TestTheStoredDigestIsSalted holds that the stored digest is not the bare
-// SHA-256 of the answer: a leaked digest alone must not let an offline
-// enumerator reverse a five-digit answer.
+// TestTheStoredDigestIsSalted checks that the stored digest is salted.
 func TestTheStoredDigestIsSalted(t *testing.T) {
 	p, s := newProvider(t)
 	issued := issue(t, p, FormImage)
@@ -799,8 +726,7 @@ func TestTheStoredDigestIsSalted(t *testing.T) {
 	}
 }
 
-// TestTheSaltIsDrawnPerChallenge holds that two challenges do not share a salt,
-// so one digest table does not answer for another challenge.
+// TestTheSaltIsDrawnPerChallenge checks that the salt is drawn per challenge.
 func TestTheSaltIsDrawnPerChallenge(t *testing.T) {
 	p, s := newProvider(t)
 	first := issue(t, p, FormImage)
@@ -818,8 +744,7 @@ func TestTheSaltIsDrawnPerChallenge(t *testing.T) {
 	}
 }
 
-// TestARecordWithoutItsSaltIsRefused holds that a record this provider did not
-// draw, which carries no salt, is not usable rather than checked unsalted.
+// TestARecordWithoutItsSaltIsRefused checks that a record without its salt is refused.
 func TestARecordWithoutItsSaltIsRefused(t *testing.T) {
 	p, s := newProvider(t)
 	issued := issue(t, p, FormImage)
@@ -838,8 +763,7 @@ func TestARecordWithoutItsSaltIsRefused(t *testing.T) {
 	}
 }
 
-// TestAnUnsupportedAudioLanguageIsRefused holds that the provider does not
-// silently draw an unsupported language in English.
+// TestAnUnsupportedAudioLanguageIsRefused checks that an unsupported audio language is refused.
 func TestAnUnsupportedAudioLanguageIsRefused(t *testing.T) {
 	p, _ := newProvider(t)
 	if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, Form: FormAudio, Lang: "klingon", RemoteIP: source}); !errors.Is(err, ErrUnknownAudioLanguage) {
@@ -847,8 +771,7 @@ func TestAnUnsupportedAudioLanguageIsRefused(t *testing.T) {
 	}
 }
 
-// TestASupportedAudioLanguageIsAccepted holds that the primary subtag of a BCP
-// 47 tag selects the language the library pronounces.
+// TestASupportedAudioLanguageIsAccepted checks that a supported audio language is accepted.
 func TestASupportedAudioLanguageIsAccepted(t *testing.T) {
 	for _, tc := range []struct {
 		tag  string

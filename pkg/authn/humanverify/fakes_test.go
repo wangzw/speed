@@ -10,12 +10,8 @@ import (
 	"github.com/vislake/speed/pkg/kv"
 )
 
-// errStubKV is the fault a case arms the store with.
 var errStubKV = errors.New("the key-value store is unavailable")
 
-// stubKV is an in-memory kv.KV for the module's own tests. It keeps no expiry
-// logic: the cases that exercise an expiry run at the provider's level over a
-// clock-driven store.
 type stubKV struct {
 	mu     sync.Mutex
 	m      map[string][]byte

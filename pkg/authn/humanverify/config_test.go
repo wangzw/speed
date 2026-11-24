@@ -12,10 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/internal/configtest"
 )
 
-// body renders a whole configuration document holding this module's section. An
-// empty section is left out: the loader refuses an empty object at a declared
-// section path, and a deployment that states nothing omits the section as well,
-// leaving the mounted defaults in force.
 func body(t *testing.T, s map[string]any) string {
 	t.Helper()
 	doc := map[string]any{}
@@ -29,9 +25,6 @@ func body(t *testing.T, s map[string]any) string {
 	return string(encoded)
 }
 
-// readBody loads a document with the real configuration loader and decodes this
-// module's section, returning the configuration the module runs on or the error
-// the loader refused the startup with.
 func readBody(t *testing.T, document string) (resolved, error) {
 	t.Helper()
 	reader := configtest.Reader(t, document, Module())
@@ -42,9 +35,6 @@ func readBody(t *testing.T, document string) (resolved, error) {
 	return cfg.resolve()
 }
 
-// turnstileSection is a Turnstile section complete enough to resolve: the mode,
-// the site key, the secret, the expected hostname and the action its provider
-// requires. A case removes one to see it refused.
 func turnstileSection() map[string]any {
 	return map[string]any{
 		"mode":       ModeTurnstile,
@@ -55,10 +45,7 @@ func turnstileSection() map[string]any {
 	}
 }
 
-// The default deployment runs the proof of work on the other surface and the
-// self-hosted captcha on the phone surface. Both need no credential, so a
-// deployment that states nothing gates every send without reaching a third
-// party.
+// TestTheDefaultMechanismsArePoWOnTheOtherSurfaceAndCaptchaOnThePhoneSurface checks that the default mechanisms are proof of work on the other surface and captcha on the phone surface.
 func TestTheDefaultMechanismsArePoWOnTheOtherSurfaceAndCaptchaOnThePhoneSurface(t *testing.T) {
 	cfg, err := readBody(t, body(t, nil))
 	if err != nil {
@@ -72,8 +59,7 @@ func TestTheDefaultMechanismsArePoWOnTheOtherSurfaceAndCaptchaOnThePhoneSurface(
 	}
 }
 
-// Every mode in the closed set resolves on either surface, independently of the
-// other surface's default.
+// TestEveryModeInTheClosedSetResolves checks that every mode in the closed set resolves.
 func TestEveryModeInTheClosedSetResolves(t *testing.T) {
 	for _, item := range []string{modeItem, phoneModeItem} {
 		t.Run(item, func(t *testing.T) {
@@ -119,8 +105,7 @@ func TestEveryModeInTheClosedSetResolves(t *testing.T) {
 	}
 }
 
-// The two surfaces are chosen independently: turning the phone surface off does
-// not turn the other surface off.
+// TestTheSurfacesResolveIndependently checks that the surfaces resolve independently.
 func TestTheSurfacesResolveIndependently(t *testing.T) {
 	cfg, err := readBody(t, body(t, map[string]any{
 		modeItem:      ModeOff,
@@ -134,11 +119,7 @@ func TestTheSurfacesResolveIndependently(t *testing.T) {
 	}
 }
 
-// Turning the other surface off leaves the phone surface on its default captcha.
-// The two modes are independent, so a deployment that writes only mode=off is
-// still gated on the phone surface and still needs the store and the route
-// mounter the captcha runs on. This is the migration a deployment that only
-// knew the former single mode must follow to turn the whole gate off.
+// TestTurningTheOtherSurfaceOffLeavesThePhoneSurfaceOnCaptcha checks that turning the other surface off leaves the phone surface on captcha.
 func TestTurningTheOtherSurfaceOffLeavesThePhoneSurfaceOnCaptcha(t *testing.T) {
 	cfg, err := readBody(t, body(t, map[string]any{modeItem: ModeOff}))
 	if err != nil {
@@ -155,9 +136,7 @@ func TestTurningTheOtherSurfaceOffLeavesThePhoneSurfaceOnCaptcha(t *testing.T) {
 	}
 }
 
-// Selecting Turnstile on the other surface leaves the phone surface on its
-// default captcha, so the deployment still needs the key-value store and the
-// route mounter even though Turnstile itself needs neither.
+// TestTurnstileOnTheOtherSurfaceLeavesThePhoneSurfaceOnCaptcha checks that Turnstile on the other surface leaves the phone surface on captcha.
 func TestTurnstileOnTheOtherSurfaceLeavesThePhoneSurfaceOnCaptcha(t *testing.T) {
 	cfg, err := readBody(t, body(t, turnstileSection()))
 	if err != nil {
@@ -174,8 +153,7 @@ func TestTurnstileOnTheOtherSurfaceLeavesThePhoneSurfaceOnCaptcha(t *testing.T) 
 	}
 }
 
-// A Turnstile section carries the endpoint and timeout defaults without naming
-// them, so a deployment supplies only what identifies it.
+// TestTurnstileDefaultsTheVerifyEndpointAndTimeout checks that Turnstile defaults the verify endpoint and timeout.
 func TestTurnstileDefaultsTheVerifyEndpointAndTimeout(t *testing.T) {
 	cfg, err := readBody(t, body(t, turnstileSection()))
 	if err != nil {
@@ -189,8 +167,7 @@ func TestTurnstileDefaultsTheVerifyEndpointAndTimeout(t *testing.T) {
 	}
 }
 
-// The Turnstile mode cannot run without the site key, the secret, the expected
-// hostname and the action, and the failure names the item to supply.
+// TestTurnstileNeedsItsSiteKeySecretHostnameAndAction checks that Turnstile needs its site key, secret, hostname and action.
 func TestTurnstileNeedsItsSiteKeySecretHostnameAndAction(t *testing.T) {
 	for _, item := range []string{"site-key", "secret-key", "hostname", "action"} {
 		t.Run(item, func(t *testing.T) {
@@ -207,10 +184,7 @@ func TestTurnstileNeedsItsSiteKeySecretHostnameAndAction(t *testing.T) {
 	}
 }
 
-// The Turnstile credential rule holds per surface: the phone surface selecting
-// the mechanism without its site key, secret, hostname or action stops the
-// startup naming the item, exactly as the other surface's selection does. The
-// surfaces share the one set, so a phone-only selection is held to all four.
+// TestTurnstileOnThePhoneSurfaceNeedsItsCredentials checks that Turnstile on the phone surface needs its credentials.
 func TestTurnstileOnThePhoneSurfaceNeedsItsCredentials(t *testing.T) {
 	for _, item := range []string{siteKeyItem, secretKeyItem, hostnameItem, actionItem} {
 		t.Run(item, func(t *testing.T) {
@@ -244,9 +218,7 @@ func TestTurnstileOnThePhoneSurfaceNeedsItsCredentials(t *testing.T) {
 	})
 }
 
-// The action is part of the check, not an optional refinement: a surface that
-// selects Turnstile without one would accept a token obtained under any action,
-// so the startup stops naming the item.
+// TestTurnstileNeedsItsAction checks that Turnstile needs its action.
 func TestTurnstileNeedsItsAction(t *testing.T) {
 	section := turnstileSection()
 	delete(section, actionItem)
@@ -259,9 +231,7 @@ func TestTurnstileNeedsItsAction(t *testing.T) {
 	}
 }
 
-// The action the deployment configures is the action the surface reports to a
-// client, so the widget is rendered with the one the provider's answer is
-// checked against.
+// TestTurnstileCarriesItsActionToTheSurface checks that Turnstile carries its action to the surface.
 func TestTurnstileCarriesItsActionToTheSurface(t *testing.T) {
 	cfg, err := readBody(t, body(t, turnstileSection()))
 	if err != nil {
@@ -272,9 +242,7 @@ func TestTurnstileCarriesItsActionToTheSurface(t *testing.T) {
 	}
 }
 
-// The siteverify endpoint is an https URL: the restricted egress client speaks
-// https alone, and a plain-http endpoint would turn every verification into an
-// outage discovered at the first send.
+// TestTurnstileVerifyURLMustBeHTTPS checks that the Turnstile verify URL must be https.
 func TestTurnstileVerifyURLMustBeHTTPS(t *testing.T) {
 	for _, value := range []string{"http://challenges.cloudflare.com/turnstile/v0/siteverify", "not a URL"} {
 		t.Run(value, func(t *testing.T) {
@@ -291,8 +259,7 @@ func TestTurnstileVerifyURLMustBeHTTPS(t *testing.T) {
 	}
 }
 
-// The whole-verification timeout is bounded: a value outside the declared range
-// stops the startup rather than bounding every send unreasonably.
+// TestTurnstileTimeoutIsBounded checks that the Turnstile timeout is bounded.
 func TestTurnstileTimeoutIsBounded(t *testing.T) {
 	for _, value := range []string{"0s", "31s"} {
 		t.Run(value, func(t *testing.T) {
@@ -309,16 +276,14 @@ func TestTurnstileTimeoutIsBounded(t *testing.T) {
 	}
 }
 
-// A boot that names the proof-of-work mode needs none of the Turnstile items:
-// the mode decides which mechanism's configuration is required.
+// TestAProofOfWorkModeNeedsNoneOfTheTurnstileItems checks that a proof-of-work mode needs none of the Turnstile items.
 func TestAProofOfWorkModeNeedsNoneOfTheTurnstileItems(t *testing.T) {
 	if _, err := readBody(t, body(t, map[string]any{"mode": ModePoW})); err != nil {
 		t.Fatalf("resolving the proof-of-work mode: %v", err)
 	}
 }
 
-// A mode outside the closed set is refused on either surface, and the failure
-// names the key to correct rather than silently running the gate off.
+// TestAnUnknownModeIsRefusedNamingTheKey checks that an unknown mode is refused naming the key.
 func TestAnUnknownModeIsRefusedNamingTheKey(t *testing.T) {
 	for _, item := range []string{modeItem, phoneModeItem} {
 		t.Run(item, func(t *testing.T) {
@@ -340,9 +305,7 @@ func TestAnUnknownModeIsRefusedNamingTheKey(t *testing.T) {
 	}
 }
 
-// The declaration carries the module's items under its own namespace and mounts
-// the defaults, so a section that omits an item runs on the declared value and
-// the secret is kept out of logs and help output.
+// TestTheSchemaDeclaresTheItemsUnderTheNamespace checks that the schema declares the items under the namespace.
 func TestTheSchemaDeclaresTheItemsUnderTheNamespace(t *testing.T) {
 	s, ok := Module().Resources[0].(config.Schema)
 	if !ok {
