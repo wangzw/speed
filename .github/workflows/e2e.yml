@@ -1,31 +1,3 @@
-# The end-to-end journey tier, on a schedule.
-#
-# The specs drive the built demo binary through Chromium, and one journey also
-# through WebKit, against a real sqlite file and real HTTP (see
-# starters/demo/web/e2e/README.md). The tier is not part of `make check`: it
-# needs Chromium, WebKit and a built backend, and it is slower than the commit
-# gate, so this is the periodic leg that runs it. Without it a committed journey
-# would only run when a person remembered `make e2e`.
-#
-# Chromium and WebKit are not part of the .mise.toml toolchain, so the setup
-# action installs them with their system libraries. The command list stays in
-# the Makefile (`make e2e`), exactly as ci.yml's does. The global setup builds
-# the front end into the git-ignored starters/demo/server/dist-e2e in the
-# checkout, because the e2e-tagged binaries embed it, and builds the binaries
-# into the run's own /tmp directory.
-#
-# The run's directory is /tmp/speed-e2e-<SPEED_E2E_RUN_ID>. The id has to match
-# the shape starters/demo/web/e2e/fixtures/retention.ts sweeps and removes,
-# which is <digits>-<base36>-<eight hex digits>: the run id and the attempt
-# make it unique, and the last part exists only to complete the shape. A
-# passing run removes its directory; a failing one keeps it, and this workflow
-# uploads what is worth reading from it: the HTML report and Playwright's
-# per-test output (traces, screenshots, the attached process log). The
-# harness directory beside them holds the built binaries and is left out. A run
-# that fails before any test starts has neither directory, so the upload
-# tolerates finding nothing.
-#
-# The cron is off the hour on purpose, like integration.yml's and browser.yml's.
 
 name: e2e
 
@@ -46,8 +18,6 @@ defaults:
     shell: bash
 
 env:
-  # The hosted runner's four cores, as ci.yml sets it; the setup action's
-  # frontend install takes its width from here.
   GATE_JOBS: "4"
 
 jobs:

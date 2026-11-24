@@ -1,48 +1,3 @@
-# The demo program's deployment to Fly.io.
-#
-# It runs only when dispatched by hand on main. A dispatch ships the commit it
-# was dispatched on (github.sha), and only after that commit's `check` workflow
-# has concluded successfully: `decide` reads that commit's runs through the
-# Actions API and accepts a successful run made by a push to main or by a
-# dispatch of the check workflow on main, since both test the commit itself. A
-# pull-request run tests the merge commit, not this one, and never counts. A
-# request made on any other ref fails in the `refuse` job with an error naming
-# the ref: a dispatch that would deploy nothing is a failed run, not a skipped
-# one.
-#
-# Nothing deploys on a push. A tip whose check failed, was cancelled or was
-# replaced stays undeployed until a check run of it succeeds, whether by
-# re-running the push run or by dispatching the check workflow on main. A
-# commit pushed with [skip ci] gets no push run at all; dispatching the check
-# workflow on main for it supplies the verdict, and the deploy is dispatched
-# afterwards.
-#
-# Three jobs. `refuse` fails a dispatch outside main and has no other effect.
-# `decide` resolves the commit, requires a successful check run for it, and
-# compares it with the tip of main, which it reads from the public origin with
-# git ls-remote, so that comparison needs no credential of its own. The Actions
-# API read uses the workflow's automatic token, which is why the `decide` job
-# alone asks for `actions: read`. `decide` declares no concurrency group, no
-# environment and no deploy secret, so its runs do not queue behind one
-# another and none of them can touch the deployment. `deploy` needs it and runs
-# only when the commit is the tip; a commit that main has moved past is skipped
-# with a notice. An older tree must not replace a newer one when runs queue up.
-#
-# The deploy job runs in the `production` environment, and FLY_API_TOKEN is a
-# secret of that environment. GitHub creates the environment the first time the
-# deploy job starts; the secret is added to it by hand. A deploy job that
-# reaches the token check while FLY_API_TOKEN is not set fails there, with an
-# error that says where to add the secret, instead of letting flyctl fail on a
-# missing credential. The token is in the environment of the one step that
-# deploys.
-#
-# The work is one Makefile target (`make fly`); this file installs the one tool
-# that target calls. flyctl is deployment machinery rather than a build input, so
-# .mise.toml does not pin it and this file does. The image is built by Fly's
-# remote builder, so the runner needs no Docker daemon. The setup action installs
-# go alone: the Makefile runs `go work edit` while it is parsed, and nothing else
-# the Makefile pins is used by `make fly`. The app, its volume and the three secrets the entrypoint reads are
-# created once, by hand (starters/demo/AGENTS.md, "Deploying to Fly.io").
 
 name: deploy
 
@@ -71,8 +26,6 @@ jobs:
 
   decide:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
-    # The Actions API read is the only thing in this workflow that needs more
-    # than the contents of the repository.
     permissions:
       contents: read
       actions: read
@@ -100,12 +53,6 @@ jobs:
             echo "is_tip=false" >> "${GITHUB_OUTPUT}"
           fi
 
-      # The commit is immutable, but its verdict is not: the commit may have no
-      # check run at all, that run may still be running, or it may have
-      # concluded anything but success. Only a successful run made by a push to
-      # main or by a dispatch of the check workflow on main deploys the tree;
-      # a pull-request run tests the merge commit and is not a verdict on this
-      # one.
       - name: Refuse a commit whose check did not succeed
         if: steps.tip.outputs.is_tip == 'true'
         env:
@@ -133,25 +80,10 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 45
     environment: production
-    # Deploys replace one Machine at a time; two overlapping runs would race for
-    # the same volume, and the group does not cancel a running deploy. The group
-    # is on this job rather than on the workflow or on `decide` because a run
-    # that enters the group replaces the run waiting there even with
-    # cancel-in-progress false. Only a run whose commit `decide` found at main's
-    # tip may enter: a run that `decide` skipped, or that found main past its
-    # commit, does not start this job and so does not evict a waiting deploy.
     concurrency:
       group: deploy
       cancel-in-progress: false
     steps:
-      # This job may have waited in the group behind a deploy that was running,
-      # and main may point at another commit by then, so the tip is read again
-      # before anything is set up or deployed. The check verdict is not read
-      # again: `decide` read the runs as they stood when it ran, and a re-run of
-      # a check run keeps its run id, so its conclusion changes with the latest
-      # attempt. A verdict that changes after `decide` is therefore not seen
-      # here; that trade-off keeps the deploy from re-querying the API and from
-      # stopping once it has started.
       - name: Check that the commit is still the tip of main
         id: tip
         env:
@@ -192,9 +124,6 @@ jobs:
         with:
           tools: go
 
-      # Tag 1.6 has no GitHub Release: the latest release, 1.5, declares the
-      # node20 runtime and 1.6 declares node24. The major tag v1 points at the
-      # same commit as 1.6.
       - name: Set up flyctl
         if: steps.tip.outputs.is_tip == 'true'
         uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6

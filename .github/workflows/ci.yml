@@ -1,82 +1,6 @@
-# The commit gate.
-#
-# This file installs the toolchain and calls the repository's own entry point.
-# It carries no command list of its own: every check lives in the Makefile,
-# which derives the module set from go.work, so a check added there runs here
-# without this file changing, and CI never needs to know a module name or a
-# tool version. The toolchain comes from .mise.toml through the local setup
-# action.
-#
-# The gate is split across jobs so its slow legs overlap. Each check leg runs
-# through `make`, and the legs the jobs run together are exactly the
-# segments `make check` runs: tools/check_ci_jobs.py holds the two sets equal,
-# read from this file and the Makefile, so a segment added to `check` without
-# a job here fails `make repo-check`. A leg narrowed with `MODULES=` is split
-# further, and that gate holds the union of the narrowed rosters to the
-# modules go.work lists. The frontend's three phases run in two jobs: static
-# and build share one, because the build phase reads the dependency install
-# the static phase performs, and test runs in a job of its own that installs
-# what it needs.
-#
-# GATE_JOBS is the CPU width each job's tools take, set to the hosted
-# runner's four cores; no tool detects the host's count. GOFLAGS=-count=1
-# reuses compiled artifacts from the caches below but never replays a test
-# result. Each Go writer stores its own cache entry: go-test writes
-# go-<os>-<hash>-<sha> with the non-race build outputs, the static job only
-# restores that entry, and each race job writes its own
-# go-race-<job>-<os>-<hash>-<sha> with its race build outputs. The race jobs
-# keep separate keys because -race builds different object IDs, so without a
-# race cache each run re-instruments the standard library and every
-# dependency. Every Go key is hashed over go.work, the module sums, the
-# toolchain pin and the commit, with a prefix fallback to the newest matching
-# entry, so each writer follows the history instead of freezing at the first
-# save. All three save only on a push to main: a pull request writes no Go
-# entry, so the 10 GB budget is not spent on one entry per pull-request
-# commit, and a pull
-# request reads main's entries through its base ref. golangci-lint's
-# cache is keyed by its configuration and the same sources and carries no
-# commit suffix: a hit means the entry already matches those inputs and the
-# run saves nothing, so it is populated by the first run after a change rather
-# than refreshed every run. The pnpm store is keyed by the frontend lockfile
-# and saved by the static-build job only; the test job restores it, so the two
-# never race to reserve one key.
-#
-# Concurrency. The group is keyed by the event name and then by the pull request
-# number, or by the ref when there is none, so a run started by one event does
-# not replace a run started by another. In particular a check dispatched by hand
-# on main sits in a group of its own, apart from the push runs: dispatching a
-# check does not replace a pending push run, so that commit still gets its own
-# verdict.
-#
-# cancel-in-progress is on for every ref but main. On main the group does not
-# cancel a run while it executes, because cancelling a push run would leave its
-# commit without a verdict. For a pull request (ref refs/pull/<n>/merge) and
-# for a dispatch from another branch, the next run of the same event for the
-# same pull request or branch cancels the one in progress.
-#
-# cancel-in-progress governs only a running run. A group holds one running run
-# and one waiting run, and a run that is still waiting is replaced by the next
-# run queued in the group. When pushes to main arrive faster than the gate
-# finishes, the commits between the running push run and the newest get no
-# verdict. The newest push run can be replaced too: a re-run of an older main
-# commit's push run keeps the event push and the ref refs/heads/main, so it
-# enters the same group and replaces a waiting push run of main's tip.
-#
-# Nothing deploys on a push. The deploy workflow is dispatched by hand on main,
-# and it refuses a commit whose check did not succeed: a run concludes
-# successfully only when no job failed or was cancelled, and the deploy counts a
-# push run or a run of this workflow dispatched on main, both of which test the
-# commit itself. A tip whose push run failed, was cancelled or was replaced
-# therefore stays undeployed until a check run of it succeeds, either by
-# re-running that push run or by dispatching this workflow on main for that
-# commit. A commit pushed with [skip ci] gets no push run at all; a dispatch on
-# main supplies the verdict it needs.
 
 name: check
 
-# A draft pull request runs no job; marking it ready runs them, and a
-# workflow_dispatch on its branch runs them by hand. merge_group serves a
-# merge queue where the repository has one.
 on:
   push:
     branches: [main]
@@ -88,6 +12,9 @@ on:
 permissions:
   contents: read
 
+# Do not cancel a run on main: a cancelled push run leaves its commit without a
+# verdict. The group also keys on the event and the PR number or ref, so a run
+# dispatched by hand does not replace a push run.
 concurrency:
   group: check-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -97,10 +24,7 @@ defaults:
     shell: bash
 
 env:
-  # The hosted runner's four cores. A job in a container would set this to the
-  # CPU limit it was given; no tool reads the host's count.
   GATE_JOBS: "4"
-  # Reuse the compiled packages in the Go caches, never a recorded test result.
   GOFLAGS: -count=1
 
 jobs:
@@ -113,7 +37,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # The fold check compares origin/main..HEAD, so it needs the history.
           fetch-depth: 0
 
       - name: Set up the toolchain
@@ -137,10 +60,6 @@ jobs:
             go-${{ runner.os }}-${{ hashFiles('go.work', '**/go.sum', '.mise.toml') }}-
             go-${{ runner.os }}-
 
-      # The key has no per-commit suffix. A hit means the stored entry already
-      # matches these inputs, so the run saves nothing and keeps reusing it;
-      # the trade-off is that the entry is refreshed only by the first run
-      # after a change, not every run.
       - name: Restore the golangci-lint cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -149,8 +68,6 @@ jobs:
           restore-keys: |
             golangci-${{ runner.os }}-
 
-      # The compile-only vet legs emit nothing and cost little; they belong to
-      # the job whose failure is cheapest to read, not to the Go test job.
       - name: Run the static checks
         env:
           GOLANGCI_LINT_CACHE: ${{ runner.temp }}/golangci-lint
@@ -190,10 +107,6 @@ jobs:
       - name: Run the Go build and unit tests
         run: make build test
 
-      # Each writer stores its own key, so no two jobs reserve the same one.
-      # This one holds the non-race build outputs; the race jobs keep theirs
-      # under keys of their own. It is saved only on a push to main, so a pull
-      # request leaves no entry per commit in the 10 GB budget.
       - name: Save the Go caches
         if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache-restore.outcome == 'success' && steps.go-cache-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -203,14 +116,6 @@ jobs:
             ${{ steps.go-cache.outputs.buildcache }}
           key: go-${{ runner.os }}-${{ hashFiles('go.work', '**/go.sum', '.mise.toml') }}-${{ github.sha }}
 
-  # The race detector runs per module, so the two modules' runs overlap. Each
-  # job names its module through MODULES=; check_ci_jobs.py holds the union of
-  # the two to the roster go.work lists. Each race job stores its race build
-  # outputs under go-race-<job>-<os>-<hash>-<sha>, falling back to its own hash
-  # prefix, then its own OS prefix, then go-test's go-<os>-<hash>- entry,
-  # which still carries the module cache without the race outputs. A key per
-  # job keeps the two from reserving the same one, and both save only on a
-  # push to main, so pull requests do not fill the cache budget.
   go-race-pkg:
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ubuntu-26.04
@@ -237,6 +142,9 @@ jobs:
           path: |
             ${{ steps.go-cache.outputs.modcache }}
             ${{ steps.go-cache.outputs.buildcache }}
+          # -race builds different object IDs, so each race job keeps its own
+          # go-race-<job>-... key; the plain go-... key is a last-resort restore
+          # only, since reusing it re-instruments the standard library each run.
           key: go-race-pkg-${{ runner.os }}-${{ hashFiles('go.work', '**/go.sum', '.mise.toml') }}-${{ github.sha }}
           restore-keys: |
             go-race-pkg-${{ runner.os }}-${{ hashFiles('go.work', '**/go.sum', '.mise.toml') }}-
@@ -299,9 +207,6 @@ jobs:
             ${{ steps.go-cache.outputs.buildcache }}
           key: go-race-demo-${{ runner.os }}-${{ hashFiles('go.work', '**/go.sum', '.mise.toml') }}-${{ github.sha }}
 
-  # Two jobs run the frontend gate. The static phase installs the dependencies
-  # and the build phase reads that same install, so the two stay together; the
-  # static-build job also saves the pnpm store.
   web-static-build:
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ubuntu-26.04
@@ -347,8 +252,6 @@ jobs:
         id: pnpm-store
         run: echo "path=$(pnpm store path)" >> "${GITHUB_OUTPUT}"
 
-      # This job restores the store and never saves it: the static-build job
-      # writes the one entry, so two jobs do not race to reserve the same key.
       - name: Restore the pnpm store
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -357,16 +260,6 @@ jobs:
           restore-keys: |
             pnpm-${{ runner.os }}-
 
-      # The test job installs what it needs: jobs run on separate runners, so
-      # it cannot read the static job's install. It calls pnpm directly rather
-      # than a make target, because `make -j check` runs the test and build
-      # segments at once and an install target shared by both would install
-      # into one web/node_modules from two recipes. The Makefile keeps the
-      # install in the static phase, which both segments order themselves
-      # after. The width is the Makefile's: the workspace shares one lockfile,
-      # so --workspace-concurrency does not apply to the install;
-      # --child-concurrency caps that single installation's child processes at
-      # GATE_JOBS, and both flags only write the width out explicitly.
       - name: Install the frontend dependencies
         run: pnpm -C web install --frozen-lockfile --workspace-concurrency=1 --child-concurrency="${GATE_JOBS}"
 

@@ -1,24 +1,3 @@
-# The integration cases, on a schedule.
-#
-# They need PostgreSQL, Redis, NATS and memcached, which the compose file at the
-# repository root declares. `make test-integration` brings that stack up itself,
-# on ports it allocates for this checkout, and then runs every module's tagged
-# cases. That is why this file carries no command list of its own, exactly as
-# ci.yml does not: the entry points live in the Makefile, and a leg added there
-# runs here without this file changing. A hosted runner provides docker with the
-# compose plugin.
-#
-# They are not part of `make check`, and so not part of what gates a commit:
-# they are slower by orders of magnitude, and every case that needs no server is
-# already run by the commit gate. This workflow is the periodic leg that covers
-# the rest.
-#
-# The race leg runs even after the first leg failed, so a red leg does not hide
-# a red one beneath it; only a cancellation stops it. After a failure the
-# backends' logs are dumped, because the containers are gone with the runner.
-# The last step takes the stack down however the job ended.
-#
-# The cron is off the hour on purpose, like e2e.yml's and browser.yml's.
 
 name: integration
 
@@ -58,9 +37,6 @@ jobs:
         if: ${{ !cancelled() }}
         run: make test-integration-race
 
-      # tools/backends.py records the compose project it started in the state
-      # file make's TEST_BACKENDS_STATE names; the logs are read from that
-      # project and from no other.
       - name: Dump the backends' logs
         if: failure()
         run: |
