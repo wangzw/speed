@@ -22,13 +22,8 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// TestTheAccessLogRecordsTheContentPathWithoutTheToken runs the real entry point
-// with the real content route and reads the log it writes. The token is a
-// credential, so the property that matters is that the access log's path field
-// is the bare /content and the token appears nowhere in the log at all.
-//
-// The content endpoint carries no gateway, which is what a browser loading an
-// image requires: the token is the credential.
+// TestTheAccessLogRecordsTheContentPathWithoutTheToken runs the real entry point with the real
+// content route and reads the log it writes.
 func TestTheAccessLogRecordsTheContentPathWithoutTheToken(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		dir := t.TempDir()
@@ -64,9 +59,6 @@ func TestTheAccessLogRecordsTheContentPathWithoutTheToken(t *testing.T) {
 			t.Fatalf("writing the primary config source: %v", writeErr)
 		}
 
-		// A probe that depends on both the entry point and the metadata seam runs
-		// its Serve after both are served, so the channel is the point at which
-		// the module is wired and the listener is bound.
 		ready := make(chan struct{})
 		probe := core.Module{
 			Name: "probe.served",
@@ -163,9 +155,6 @@ func TestTheAccessLogRecordsTheContentPathWithoutTheToken(t *testing.T) {
 	})
 }
 
-// waitForListenerAddress reads the bound address out of the log the entry point
-// wrote. The configured address asked for port zero, so the log is the only
-// place the bound one is known.
 func waitForListenerAddress(t *testing.T, path string) string {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -194,8 +183,6 @@ func waitForListenerAddress(t *testing.T, path string) string {
 	return ""
 }
 
-// waitForAccessLog waits until the access log carries the content path and then
-// holds that the token appears nowhere in the file.
 func waitForAccessLog(t *testing.T, path, token string) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)

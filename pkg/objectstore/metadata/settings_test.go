@@ -22,9 +22,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The runtime tunables this module is expected to declare, written out here
-// rather than read from a constant so that the cases name the keys the design
-// lists.
 const (
 	uploadWindowSetting = "objectstore.metadata.upload-window"
 	objectTTLSetting    = "objectstore.metadata.object-ttl"
@@ -32,10 +29,8 @@ const (
 	sweepIntervalKey    = "objectstore.metadata.sweep-interval"
 )
 
-// TestTheTunablesInTheStoreDriveTheNextCreateAndComplete holds that the upload
-// window is read at each Create and the object lifetime at each Complete: a
-// value written while the process runs is what the next call records, not the
-// value the process started with.
+// TestTheTunablesInTheStoreDriveTheNextCreateAndComplete checks that a changed upload window and
+// object lifetime take effect on the next Create and Complete without a restart.
 func TestTheTunablesInTheStoreDriveTheNextCreateAndComplete(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{withSettings: true})
@@ -45,7 +40,6 @@ func TestTheTunablesInTheStoreDriveTheNextCreateAndComplete(t *testing.T) {
 			store := settingsStoreOf(t, reg)
 			body := []byte("body")
 
-			// The upload window follows a write made before the declaration.
 			writeSetting(t, store, uploadWindowSetting, 3*time.Hour)
 			first, before, after := createObject(t, tctx, objects, "first", body)
 			uploadExpiry, expires := expiriesOf(t, reg, first)
@@ -54,8 +48,6 @@ func TestTheTunablesInTheStoreDriveTheNextCreateAndComplete(t *testing.T) {
 				t.Errorf("a completed-so-far object carries the expiry %v, want none", msTime(*expires))
 			}
 
-			// The object lifetime follows a write made before the completion,
-			// and only the second value is what it records.
 			writeSetting(t, store, objectTTLSetting, 2*time.Hour)
 			before, after = uploadAndComplete(t, tctx, objects, first, body)
 			_, expires = expiriesOf(t, reg, first)
@@ -64,8 +56,6 @@ func TestTheTunablesInTheStoreDriveTheNextCreateAndComplete(t *testing.T) {
 			}
 			assertDeadline(t, "the first object's lifetime", *expires, before, after, 2*time.Hour)
 
-			// A second declaration and completion see the newer values, so the
-			// reads happen per call rather than once at construction.
 			writeSetting(t, store, uploadWindowSetting, time.Hour)
 			second, before, after := createObject(t, tctx, objects, "second", body)
 			uploadExpiry, _ = expiriesOf(t, reg, second)
@@ -83,10 +73,8 @@ func TestTheTunablesInTheStoreDriveTheNextCreateAndComplete(t *testing.T) {
 	})
 }
 
-// TestTheModuleDeclaresExactlyItsRuntimeTunables holds the line the design
-// draws: the upload window, the object lifetime and the URL lifetime are
-// settings, while the sweep interval sizes the startup ticker and stays a
-// configuration item that a change requires a restart to pick up.
+// TestTheModuleDeclaresExactlyItsRuntimeTunables checks that exactly the upload window, object
+// lifetime and URL lifetime are settings, and sweep-interval is not.
 func TestTheModuleDeclaresExactlyItsRuntimeTunables(t *testing.T) {
 	declared := declaredSettings(t)
 	for _, key := range []string{uploadWindowSetting, objectTTLSetting, urlTTLSetting} {
@@ -106,10 +94,8 @@ func TestTheModuleDeclaresExactlyItsRuntimeTunables(t *testing.T) {
 	}
 }
 
-// TestAConfigurationCarryingARemovedTunableFailsStartup holds the move out of
-// configuration: a configuration file that still carries the upload window or the
-// object lifetime is an unknown key and refuses the startup, naming the key. The
-// sweep interval is the control: it stays a configuration item and loads.
+// TestAConfigurationCarryingARemovedTunableFailsStartup checks that a configuration carrying one of
+// the moved tunables fails as ErrUnknownKey naming it, while sweep-interval still loads.
 func TestAConfigurationCarryingARemovedTunableFailsStartup(t *testing.T) {
 	for _, c := range []struct {
 		item, value, key string
@@ -137,9 +123,8 @@ func TestAConfigurationCarryingARemovedTunableFailsStartup(t *testing.T) {
 	})
 }
 
-// TestTheContentConfigurationItemsHoldAndTheOldEndpointsKeyIsGone holds the
-// configuration move: content-endpoints and public-url load, and the endpoints
-// key this module used to read is an unknown key that refuses the startup.
+// TestTheContentConfigurationItemsHoldAndTheOldEndpointsKeyIsGone checks that content-endpoints and
+// public-url load while the removed endpoints key fails as ErrUnknownKey.
 func TestTheContentConfigurationItemsHoldAndTheOldEndpointsKeyIsGone(t *testing.T) {
 	if err := loadMetadataConfiguration(t, map[string]any{
 		"content-endpoints": []string{"content"},
@@ -157,10 +142,8 @@ func TestTheContentConfigurationItemsHoldAndTheOldEndpointsKeyIsGone(t *testing.
 	}
 }
 
-// TestTheDeclaredTunablesApplyWithNoStoredRow pins the values a run acts on when
-// the settings store holds no row: a fifteen minute upload window and no expiry
-// on a completed object. The store answers the declared default for a key with no
-// row, so these literals are the ones the design fixes.
+// TestTheDeclaredTunablesApplyWithNoStoredRow pins the values a run acts on when the settings
+// store holds no row: a fifteen minute upload window and no expiry on a completed object.
 func TestTheDeclaredTunablesApplyWithNoStoredRow(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{withSettings: true})
@@ -178,10 +161,8 @@ func TestTheDeclaredTunablesApplyWithNoStoredRow(t *testing.T) {
 	})
 }
 
-// TestAMetadataTunableReadFaultFallsBackToItsDeclaredDefault holds the other
-// direction of a read: a setting that cannot be read, and one whose stored value
-// is outside its domain, each answers the declared default and writes one Error
-// naming the setting.
+// TestAMetadataTunableReadFaultFallsBackToItsDeclaredDefault checks that an unreadable or
+// out-of-domain tunable falls back to its declared default and the report names each key.
 func TestAMetadataTunableReadFaultFallsBackToItsDeclaredDefault(t *testing.T) {
 	var report bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&report, nil))
@@ -212,12 +193,8 @@ func TestAMetadataTunableReadFaultFallsBackToItsDeclaredDefault(t *testing.T) {
 	}
 }
 
-// TestASubMillisecondMetadataTunableIsRefused holds the boundary the domains
-// draw: both millisecond-valued settings are stored and read in whole
-// milliseconds, so a positive value shorter than one millisecond, which would
-// truncate to zero, is refused at the write. The URL lifetime shares the refusal
-// for a value below its one-second lower bound even though its reason is
-// different.
+// TestASubMillisecondMetadataTunableIsRefused checks that every metadata tunable refuses a value
+// below a millisecond as ErrInvalidValue.
 func TestASubMillisecondMetadataTunableIsRefused(t *testing.T) {
 	for _, key := range []string{uploadWindowPath, objectTTLPath, urlTTLPath} {
 		t.Run(key, func(t *testing.T) {
@@ -237,9 +214,8 @@ func TestASubMillisecondMetadataTunableIsRefused(t *testing.T) {
 	}
 }
 
-// TestTheURLTTLDomainSpansOneSecondToSevenDays holds the exact bounds the design
-// fixes for url-ttl: one second and seven days are accepted, and a value just
-// outside either end is refused.
+// TestTheURLTTLDomainSpansOneSecondToSevenDays checks the URL lifetime's domain at both bounds and
+// just outside them, both in the helper and through the settings store.
 func TestTheURLTTLDomainSpansOneSecondToSevenDays(t *testing.T) {
 	for _, c := range []struct {
 		label string
@@ -258,7 +234,6 @@ func TestTheURLTTLDomainSpansOneSecondToSevenDays(t *testing.T) {
 		})
 	}
 
-	// The domain is also what the store holds a write to.
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{withSettings: true})
 		h.drive(t, func(ctx context.Context, reg *core.Registry) error {
@@ -288,8 +263,6 @@ func TestTheURLTTLDomainSpansOneSecondToSevenDays(t *testing.T) {
 	})
 }
 
-// tunableStore is a settings store over named rows with one key made to fail its
-// read, so a case can drive the three tunables without the settings module.
 type tunableStore struct {
 	values  map[string]any
 	failKey string
@@ -333,8 +306,6 @@ func (s tunableStore) Read(key string, reads ...settings.LayerRead) ([]settings.
 	return results, nil
 }
 
-// declaredSettings returns the items of this module's settings declaration, or
-// stops the case when it makes none.
 func declaredSettings(t *testing.T) map[string]settings.Item {
 	t.Helper()
 	for _, resource := range Module().Resources {
@@ -346,7 +317,6 @@ func declaredSettings(t *testing.T) map[string]settings.Item {
 	return nil
 }
 
-// settingsStoreOf resolves the settings store of the assembled run.
 func settingsStoreOf(t *testing.T, reg *core.Registry) settings.Store {
 	t.Helper()
 	store, err := core.Resolve[settings.Store](reg)
@@ -356,8 +326,6 @@ func settingsStoreOf(t *testing.T, reg *core.Registry) settings.Store {
 	return store
 }
 
-// writeSetting writes one value into the running settings store. A refusal is
-// fatal: the case exists to hold that the key is declared as a setting.
 func writeSetting(t *testing.T, store settings.Store, key string, value any) {
 	t.Helper()
 	write := settings.Write{Layer: settings.Global(), Key: key, Value: value, Actor: "test"}
@@ -366,8 +334,6 @@ func writeSetting(t *testing.T, store settings.Store, key string, value any) {
 	}
 }
 
-// createObject declares one object and returns its identifier together with the
-// instants the call was made between, so an expiry can be judged against them.
 func createObject(t *testing.T, ctx context.Context, objects objectstore.Objects, name string, body []byte) (string, time.Time, time.Time) {
 	t.Helper()
 	before := time.Now()
@@ -379,8 +345,6 @@ func createObject(t *testing.T, ctx context.Context, objects objectstore.Objects
 	return obj.ID, before, after
 }
 
-// uploadAndComplete uploads an object's bytes and completes it, returning the
-// instants the completion was made between.
 func uploadAndComplete(t *testing.T, ctx context.Context, objects objectstore.Objects, id string, body []byte) (time.Time, time.Time) {
 	t.Helper()
 	if err := objects.Upload(ctx, id, bytes.NewReader(body), int64(len(body))); err != nil {
@@ -393,7 +357,6 @@ func uploadAndComplete(t *testing.T, ctx context.Context, objects objectstore.Ob
 	return before, time.Now()
 }
 
-// expiriesOf reads one object row's upload deadline and lifetime expiry.
 func expiriesOf(t *testing.T, reg *core.Registry, id string) (int64, *int64) {
 	t.Helper()
 	var upload int64
@@ -409,8 +372,6 @@ func expiriesOf(t *testing.T, reg *core.Registry, id string) (int64, *int64) {
 	return upload, nil
 }
 
-// assertDeadline holds that a written instant is about now plus want, judged
-// between the two instants the call was made in.
 func assertDeadline(t *testing.T, what string, got int64, before, after time.Time, want time.Duration) {
 	t.Helper()
 	slack := time.Second
@@ -422,10 +383,6 @@ func assertDeadline(t *testing.T, what string, got int64, before, after time.Tim
 	}
 }
 
-// loadMetadataConfiguration runs the real loader over a JSON primary source
-// holding an objectstore.metadata section, returning what loading it answered.
-// Unlike the harness it does not stop the case on a refusal: the refusal is what
-// the case asserts.
 func loadMetadataConfiguration(t *testing.T, section map[string]any) error {
 	t.Helper()
 	document := map[string]any{"objectstore": map[string]any{"metadata": section}}

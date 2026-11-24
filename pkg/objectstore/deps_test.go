@@ -7,20 +7,10 @@ import (
 	"testing"
 )
 
-// moduleImportPath is this repository's pkg module path. Every package of it is
-// inside the budget below: a package here is imported as a module of this
-// repository.
 const moduleImportPath = "github.com/vislake/speed/pkg"
 
-// objectstoreRootPath is the capability's own root package, whose non-test
-// dependency face a host compiles by importing it.
 const objectstoreRootPath = moduleImportPath + "/objectstore"
 
-// upperLayerPrefixes are the feature directories the root package must not
-// reach: it carries the byte seam, the metadata seam, the common types and the
-// backend factory, and none of the storage, authorization, tenant or HTTP
-// surfaces belongs to it. The metadata module takes those up, not the interface
-// package a caller and a backend both import.
 var upperLayerPrefixes = []string{
 	moduleImportPath + "/authz",
 	moduleImportPath + "/db",
@@ -28,31 +18,15 @@ var upperLayerPrefixes = []string{
 	moduleImportPath + "/tenant",
 }
 
-// TestRootClosureHoldsNoObjectStoreSDK is the executable form of the
-// capability's dependency-direction boundary: the root package carries the
-// interfaces and reaches a backend only through the module factory, so no object
-// storage SDK is in what a host compiles by importing this package — it is bound
-// by the backend subpackage that deploys on it — and no upper-layer feature
-// directory is reached either.
-//
-// Nothing holds that split at compile time: a backend subpackage and the root
-// package are one module. This case is the gate that keeps it. The observation
-// is the root package's own non-test dependency face; the closure of a package a
-// case imports is not what a host pays for.
+// TestRootClosureHoldsNoObjectStoreSDK checks that the root package's dependency closure stays
+// within the standard library, this repository and the config, core and log budget.
 func TestRootClosureHoldsNoObjectStoreSDK(t *testing.T) {
 	root := dependenciesOf(t, ".")
-	// The positive control: this package reaches pkg/core, so a listing that
-	// lost it came from a load that did not happen and every negative assertion
-	// below would pass on an empty list.
 	if !root[moduleImportPath+"/core"] {
 		t.Fatalf("the root package's dependency list does not hold pkg/core: what is checked below is " +
 			"not this package's dependency face")
 	}
 
-	// The budget is the standard library, this repository's modules, and the
-	// closures of the packages the root package legitimately takes up — config
-	// for reading a backend's values, core for the registry, log for the
-	// optional logging capability. A backend SDK is anything outside that.
 	budget := map[string]bool{}
 	for _, pkg := range []string{moduleImportPath + "/config", moduleImportPath + "/core", moduleImportPath + "/log"} {
 		for reached := range dependenciesOf(t, pkg) {
@@ -65,14 +39,9 @@ func TestRootClosureHoldsNoObjectStoreSDK(t *testing.T) {
 	}
 }
 
-// TestTheGuardReportsASDKAndAnUpperLayer holds the case above to be a guard: a
-// listing carrying an object-storage SDK or an upper-layer feature directory is
-// reported, while one carrying only the standard library, this repository's
-// packages and the budget closures is not. Without it the assertion above could
-// pass on a listing it never actually read.
+// TestTheGuardReportsASDKAndAnUpperLayer checks that offenders reports an object-storage SDK and an
+// upper-layer directory once each while accepting budgeted packages.
 func TestTheGuardReportsASDKAndAnUpperLayer(t *testing.T) {
-	// A budget entry standing for a third-party package the root legitimately
-	// takes up through one of the packages named above.
 	const budgeted = "github.com/spf13/viper"
 	budget := map[string]bool{budgeted: true}
 
@@ -103,10 +72,6 @@ func TestTheGuardReportsASDKAndAnUpperLayer(t *testing.T) {
 	}
 }
 
-// offenders lists, without repetition and in order, the packages in a dependency
-// listing the root package must not hold: an upper-layer feature directory, or a
-// package that is neither the standard library, this repository, nor a package
-// of a budget closure.
 func offenders(reached, budget map[string]bool) []string {
 	var out []string
 	for pkg := range reached {
@@ -123,7 +88,6 @@ func offenders(reached, budget map[string]bool) []string {
 	return out
 }
 
-// reason says why the root package must not hold a package.
 func reason(pkg string) string {
 	if underAny(pkg, upperLayerPrefixes) {
 		return "an upper-layer feature directory belongs to the module that takes it up, not to the " +
@@ -133,14 +97,12 @@ func reason(pkg string) string {
 		"compiling this package carries no backend but the one it deploys on"
 }
 
-// underAny reports whether path is one of the roots or sits under one.
 func underAny(path string, roots []string) bool {
 	return slices.ContainsFunc(roots, func(root string) bool {
 		return path == root || strings.HasPrefix(path, root+"/")
 	})
 }
 
-// dependenciesOf lists the packages a `go list -deps` target reaches.
 func dependenciesOf(t *testing.T, target string) map[string]bool {
 	t.Helper()
 	out, err := exec.Command("go", "list", "-deps", target).CombinedOutput()
@@ -159,8 +121,6 @@ func dependenciesOf(t *testing.T, target string) map[string]bool {
 	return reached
 }
 
-// stdlibPackage reports whether a package path names a package of the standard
-// library, whose first path element never carries a dot.
 func stdlibPackage(pkg string) bool {
 	first, _, _ := strings.Cut(pkg, "/")
 	return !strings.Contains(first, ".")

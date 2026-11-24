@@ -20,8 +20,6 @@ import (
 	"github.com/vislake/speed/pkg/objectstore"
 )
 
-// The values a case drives the store with. The two credentials are the ones the
-// module is configured with and then kept out of everything it produces.
 const (
 	testBucket    = "objects"
 	testAccessKey = "test-access-key-id"
@@ -29,7 +27,6 @@ const (
 	testKey       = "object-key-1"
 )
 
-// requestRecord is what a case reads back about the one request the SDK produced.
 type requestRecord struct {
 	method string
 	path   string
@@ -38,18 +35,8 @@ type requestRecord struct {
 	body   []byte
 }
 
-// lastModified is the fixed timestamp a GET and a HEAD answer carries, which is
-// what the SDK's Stat reads the object's age from.
 const lastModified = "Wed, 21 Oct 2015 07:28:00 GMT"
 
-// recorder builds a handler that records the request and answers it with status
-// and body, so a case can hold the request shape the real SDK produced.
-//
-// A GET or HEAD answer carries an explicit Content-Length and Last-Modified,
-// which is what the SDK's Stat reads the object's size and age from; a HEAD
-// answer carries no body, as the method requires. A 200 PUT or DELETE answer
-// carries the ETag an S3 service returns, so the SDK reads the call as the
-// success it is.
 func recorder(rec *requestRecord, status int, body string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var read []byte
@@ -81,11 +68,6 @@ func recorder(rec *requestRecord, status int, body string) http.HandlerFunc {
 	}
 }
 
-// chunkedPayload extracts the object's bytes from an aws-chunked body, the
-// streaming SigV4 framing the SDK sends a PUT in by default: a size in hex and a
-// chunk signature, the chunk's bytes, and a final zero-sized chunk. It is what a
-// case reads to hold that the bytes that reached the service are what Put was
-// handed.
 func chunkedPayload(t *testing.T, body []byte) []byte {
 	t.Helper()
 	var out []byte
@@ -110,24 +92,14 @@ func chunkedPayload(t *testing.T, body []byte) []byte {
 	}
 }
 
-// noSuchKey is the error body an S3-compatible service answers a GET for an
-// object it does not hold with. It carries no object key, so a case can hold that
-// the key is not in what this backend reports.
 const noSuchKey = `<?xml version="1.0" encoding="UTF-8"?>` +
 	`<Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message></Error>`
 
-// storeOver builds the module's product against the given endpoint, the way the
-// module's own Open does: the endpoint carries the scheme the transport is
-// derived from, and the bucket and credentials are the configured ones. It
-// discards the call lines, which the logging cases drive through
-// storeOverWithLogger instead.
 func storeOver(t *testing.T, endpoint string) *store {
 	t.Helper()
 	return storeOverWithLogger(t, endpoint, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
-// storeOverWithLogger builds the product over endpoint with logger as the module
-// logger the factory would have named.
 func storeOverWithLogger(t *testing.T, endpoint string, logger *slog.Logger) *store {
 	t.Helper()
 	s, err := open(t.Context(), &moduleConfig{
@@ -144,12 +116,12 @@ func storeOverWithLogger(t *testing.T, endpoint string, logger *slog.Logger) *st
 	return s.(*store)
 }
 
-// endpointOf is the endpoint a case points the store at for a loopback server,
-// carrying the http scheme the store derives the transport from.
 func endpointOf(server *httptest.Server) string {
 	return "http://" + server.Listener.Addr().String()
 }
 
+// TestTheStoreReportsTheS3Name checks that the store names itself s3 and the module is
+// objectstore.s3.
 func TestTheStoreReportsTheS3Name(t *testing.T) {
 	if got := (&store{}).Name(); got != "s3" {
 		t.Errorf("Name() = %q, want s3", got)
@@ -159,12 +131,8 @@ func TestTheStoreReportsTheS3Name(t *testing.T) {
 	}
 }
 
-// TestPutSendsTheBytesWithTheMethodPathHostAndSignature holds the request shape a
-// Put produces: a PUT of the object key under the bucket, to the configured host,
-// signed with SigV4. The SDK sends the payload in its streaming SigV4 framing by
-// default, so the body is aws-chunked; the case decodes it and holds that the
-// bytes that reached the service are what Put was handed, and that the
-// Content-Length is the framed body's length.
+// TestPutSendsTheBytesWithTheMethodPathHostAndSignature holds the request shape a Put produces: a
+// PUT of the object key under the bucket, to the configured host, signed with SigV4.
 func TestPutSendsTheBytesWithTheMethodPathHostAndSignature(t *testing.T) {
 	var rec requestRecord
 	server := httptest.NewServer(recorder(&rec, http.StatusOK, ""))
@@ -196,9 +164,8 @@ func TestPutSendsTheBytesWithTheMethodPathHostAndSignature(t *testing.T) {
 	}
 }
 
-// TestOpenReadsTheBytesBack holds that Open returns a stream over the object's
-// bytes: the request is a GET of the key under the bucket and the caller reads
-// back exactly what the service holds.
+// TestOpenReadsTheBytesBack holds that Open returns a stream over the object's bytes: the request
+// is a GET of the key under the bucket and the caller reads back exactly what the service holds.
 func TestOpenReadsTheBytesBack(t *testing.T) {
 	var rec requestRecord
 	const payload = "bytes the caller reads back"
@@ -227,10 +194,8 @@ func TestOpenReadsTheBytesBack(t *testing.T) {
 	}
 }
 
-// TestOpenOnAMissingObjectAnswersAnError holds that an object the bucket does not
-// hold is reported from Open, not left to surface on the first read, and that the
-// service's own not-found error is what is handed back — wrapped so errors.As
-// still reaches it, and carrying no object key.
+// TestOpenOnAMissingObjectAnswersAnError checks that Open surfaces the service's NoSuchKey error and
+// does not carry the internal key in its text.
 func TestOpenOnAMissingObjectAnswersAnError(t *testing.T) {
 	server := httptest.NewServer(recorder(&requestRecord{}, http.StatusNotFound, noSuchKey))
 	defer server.Close()
@@ -253,9 +218,8 @@ func TestOpenOnAMissingObjectAnswersAnError(t *testing.T) {
 	}
 }
 
-// TestDeleteIsIdempotentOnAMissingObject holds the idempotence the seam promises:
-// an S3-compatible service answers 204 for a delete whether or not the object
-// exists, so the backend reports success, and a repeat delete does too.
+// TestDeleteIsIdempotentOnAMissingObject checks that Delete succeeds twice with no error and issues
+// a DELETE to the bucket path.
 func TestDeleteIsIdempotentOnAMissingObject(t *testing.T) {
 	var rec requestRecord
 	server := httptest.NewServer(recorder(&rec, http.StatusNoContent, ""))
@@ -275,9 +239,8 @@ func TestDeleteIsIdempotentOnAMissingObject(t *testing.T) {
 	}
 }
 
-// TestAServiceFailureIsReported holds that a call the service refuses is reported
-// rather than swallowed, on each of the three byte operations, with the service's
-// own error kept reachable.
+// TestAServiceFailureIsReported holds that a call the service refuses is reported rather than
+// swallowed, on each of the three byte operations, with the service's own error kept reachable.
 func TestAServiceFailureIsReported(t *testing.T) {
 	const denied = `<?xml version="1.0" encoding="UTF-8"?>` +
 		`<Error><Code>AccessDenied</Code><Message>Access Denied.</Message></Error>`
@@ -294,9 +257,6 @@ func TestAServiceFailureIsReported(t *testing.T) {
 			},
 		},
 		{
-			// Open forces a Stat before it hands back a stream, and the SDK's
-			// Stat is a HEAD, so this is the one request Open makes when it
-			// cannot open the object.
 			name:   "Open",
 			method: http.MethodHead,
 			drive: func(_ *testing.T, s *store) error {
@@ -338,12 +298,8 @@ func TestAServiceFailureIsReported(t *testing.T) {
 	}
 }
 
-// TestAMissingBucketErrorIsPassedThrough holds the premise the module takes on
-// trust — the bucket is there — and what a byte operation does when it is not:
-// the service's own NoSuchBucket error is handed back untouched, and the backend
-// invents none of the capability's sentinels, which the metadata module is what
-// raises. The bucket is not probed at startup, so a missing one surfaces at the
-// first operation rather than failing construction.
+// TestAMissingBucketErrorIsPassedThrough checks that Put passes the service's NoSuchBucket error
+// through without translating it to a capability sentinel.
 func TestAMissingBucketErrorIsPassedThrough(t *testing.T) {
 	const noSuchBucket = `<?xml version="1.0" encoding="UTF-8"?>` +
 		`<Error><Code>NoSuchBucket</Code><Message>The specified bucket does not exist.</Message></Error>`
@@ -369,9 +325,8 @@ func TestAMissingBucketErrorIsPassedThrough(t *testing.T) {
 	}
 }
 
-// TestTheStoreServesCallersConcurrently holds that one store is safe to use from
-// many goroutines: it holds no caller's state, so a Put, an Open and a Delete on
-// distinct keys run together. Run under -race it is the gate on that promise.
+// TestTheStoreServesCallersConcurrently holds that one store is safe to use from many goroutines:
+// it holds no caller's state, so a Put, an Open and a Delete on distinct keys run together.
 func TestTheStoreServesCallersConcurrently(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -417,9 +372,8 @@ func TestTheStoreServesCallersConcurrently(t *testing.T) {
 	wg.Wait()
 }
 
-// TestStatSendsAHeadAndMapsTheSize holds the shape Stat produces: a HEAD of the
-// object key under the bucket, whose answer's length is what the capability
-// reports.
+// TestStatSendsAHeadAndMapsTheSize holds the shape Stat produces: a HEAD of the object key under
+// the bucket, whose answer's length is what the capability reports.
 func TestStatSendsAHeadAndMapsTheSize(t *testing.T) {
 	var rec requestRecord
 	const payload = "twelve bytes"
@@ -442,9 +396,8 @@ func TestStatSendsAHeadAndMapsTheSize(t *testing.T) {
 	}
 }
 
-// TestStatOnAMissingObjectWrapsContentMissing holds the shape the completion
-// step reads: an object the bucket does not hold reports an error wrapping
-// ErrContentMissing, and the text carries no object key.
+// TestStatOnAMissingObjectWrapsContentMissing checks that Stat of a missing object wraps
+// ErrContentMissing and does not carry the internal key.
 func TestStatOnAMissingObjectWrapsContentMissing(t *testing.T) {
 	server := httptest.NewServer(recorder(&requestRecord{}, http.StatusNotFound, noSuchKey))
 	defer server.Close()
@@ -459,9 +412,8 @@ func TestStatOnAMissingObjectWrapsContentMissing(t *testing.T) {
 	}
 }
 
-// TestEveryNotFoundAnswerMapsToContentMissing holds the classification from the
-// service's side: either not-found code and a plain 404 report the bytes as
-// missing, while a refusal does not.
+// TestEveryNotFoundAnswerMapsToContentMissing holds the classification from the service's side:
+// either not-found code and a plain 404 report the bytes as missing, while a refusal does not.
 func TestEveryNotFoundAnswerMapsToContentMissing(t *testing.T) {
 	for _, resp := range []minio.ErrorResponse{
 		{Code: "NoSuchKey"},
@@ -477,16 +429,13 @@ func TestEveryNotFoundAnswerMapsToContentMissing(t *testing.T) {
 	}
 }
 
-// presignStore is a store that makes no request when it signs, so a presign case
-// needs no listener.
 func presignStore(t *testing.T) *store {
 	t.Helper()
 	return storeOver(t, "http://127.0.0.1:1")
 }
 
-// TestPresignReadSignsTheMediaTypeAndFileNameOverrides holds the read address:
-// a GET carrying a signature and an expiry, with the media type and file name as
-// response overrides so the bucket serves the bytes as the caller asked.
+// TestPresignReadSignsTheMediaTypeAndFileNameOverrides checks that a presigned read carries a GET,
+// the TTL, the signature, the response media type and an inline disposition with the file name.
 func TestPresignReadSignsTheMediaTypeAndFileNameOverrides(t *testing.T) {
 	const ttl = 5 * time.Minute
 	s := presignStore(t)
@@ -525,9 +474,8 @@ func TestPresignReadSignsTheMediaTypeAndFileNameOverrides(t *testing.T) {
 	}
 }
 
-// TestPresignWriteSignsAPutAndNoResponseOverride holds the write address: a PUT
-// carrying a signature and an expiry, and none of the read side's response
-// overrides.
+// TestPresignWriteSignsAPutAndNoResponseOverride holds the write address: a PUT carrying a
+// signature and an expiry, and none of the read side's response overrides.
 func TestPresignWriteSignsAPutAndNoResponseOverride(t *testing.T) {
 	const ttl = 5 * time.Minute
 	s := presignStore(t)
@@ -557,10 +505,8 @@ func TestPresignWriteSignsAPutAndNoResponseOverride(t *testing.T) {
 	}
 }
 
-// TestPresignRefusesALifetimeOutsideTheBounds holds the lifetime bounds both
-// signing calls keep: shorter than a second or longer than seven days is refused
-// with the capability's unavailable sentinel rather than handed to the SDK, while
-// both boundary values are honoured.
+// TestPresignRefusesALifetimeOutsideTheBounds checks that a lifetime below one second or above seven
+// days fails as ErrURLUnavailable at both ends of both presign calls, while the boundaries succeed.
 func TestPresignRefusesALifetimeOutsideTheBounds(t *testing.T) {
 	s := presignStore(t)
 	for _, ttl := range []time.Duration{0, 500 * time.Millisecond, 8 * 24 * time.Hour} {
@@ -581,10 +527,8 @@ func TestPresignRefusesALifetimeOutsideTheBounds(t *testing.T) {
 	}
 }
 
-// TestTheSchemeOfTheEndpointChoosesTheTransport holds the endpoint parsing the
-// module runs on when it builds the client: an explicit http or https scheme
-// chooses the transport and is stripped, a scheme-less endpoint is https, and a
-// scheme the backend does not know is a configuration it cannot run on.
+// TestTheSchemeOfTheEndpointChoosesTheTransport checks that the endpoint's scheme picks secure or
+// plain transport, a bare host is secure, and an unknown scheme fails as ErrInvalidConfig.
 func TestTheSchemeOfTheEndpointChoosesTheTransport(t *testing.T) {
 	cases := []struct {
 		endpoint string

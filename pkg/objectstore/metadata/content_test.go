@@ -27,10 +27,8 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// mountedRoute is one (method, path) a registration recorded.
 type mountedRoute struct{ method, path string }
 
-// recordingEndpoint records the routes registered on it.
 type recordingEndpoint struct {
 	mu     sync.Mutex
 	routes []mountedRoute
@@ -52,7 +50,6 @@ func (e *recordingEndpoint) registered() []mountedRoute {
 	return append([]mountedRoute(nil), e.routes...)
 }
 
-// recordingRouter is a stand-in http.Router over a fixed set of endpoints.
 type recordingRouter struct {
 	mu        sync.Mutex
 	endpoints map[string]*recordingEndpoint
@@ -90,7 +87,6 @@ func (r *recordingRouter) endpoint(name string) *recordingEndpoint {
 	return r.endpoints[name]
 }
 
-// contentEngine mounts this module's content routes on a gin engine.
 func contentEngine(p *product) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -100,12 +96,10 @@ func contentEngine(p *product) *gin.Engine {
 	return engine
 }
 
-// serveContent sends one request through a content engine.
 func serveContent(engine *gin.Engine, method, target string, body io.Reader) *httptest.ResponseRecorder {
 	return serveContentWith(engine, method, target, body, nil)
 }
 
-// serveContentWith sends one request and lets the case adjust it first.
 func serveContentWith(engine *gin.Engine, method, target string, body io.Reader, edit func(*http.Request)) *httptest.ResponseRecorder {
 	request := httptest.NewRequest(method, target, body)
 	if edit != nil {
@@ -116,20 +110,17 @@ func serveContentWith(engine *gin.Engine, method, target string, body io.Reader,
 	return recorder
 }
 
-// contentToken mints one address and answers its token.
 func contentToken(t *testing.T, objects objectstore.Objects, ctx context.Context, id string, access objectstore.URLAccess) string {
 	t.Helper()
 	return tokenOf(t, mintURL(t, objects, ctx, id, access, 0).URL)
 }
 
-// targetFor builds the path a token is used through.
 func targetFor(token string) string {
 	return contentPath + "?" + contentTokenParam + "=" + token
 }
 
-// TestTheContentReadServesTheObjectBytes holds the successful read: the bytes,
-// the recorded media type, the RFC 6266 disposition, the safety headers, a HEAD
-// with no body, and a range answered as 206.
+// TestTheContentReadServesTheObjectBytes checks that a read returns the bytes with the declared media
+// type and inline disposition, the safety headers, HEAD metadata and a 206 range.
 func TestTheContentReadServesTheObjectBytes(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		store := newFakeStore()
@@ -206,8 +197,8 @@ func TestTheContentReadServesTheObjectBytes(t *testing.T) {
 	})
 }
 
-// TestTheContentReadFallsBackToOctetStream holds that a completed row with no
-// recorded MIME is served as application/octet-stream.
+// TestTheContentReadFallsBackToOctetStream holds that a completed row with no recorded MIME is
+// served as application/octet-stream.
 func TestTheContentReadFallsBackToOctetStream(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{store: newFakeStore(), router: newRecordingRouter("public")})
@@ -232,9 +223,8 @@ func TestTheContentReadFallsBackToOctetStream(t *testing.T) {
 	})
 }
 
-// TestTheContentReadCopiesWhenTheStreamCannotSeek holds the branch for a backend
-// whose stream does not implement io.ReadSeeker: a full copy with an explicit
-// length and no range support.
+// TestTheContentReadCopiesWhenTheStreamCannotSeek holds the branch for a backend whose stream does
+// not implement io.ReadSeeker: a full copy with an explicit length and no range support.
 func TestTheContentReadCopiesWhenTheStreamCannotSeek(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		store := newFakeStore()
@@ -263,9 +253,8 @@ func TestTheContentReadCopiesWhenTheStreamCannotSeek(t *testing.T) {
 	})
 }
 
-// TestTheContentReadRefusesWhatItCannotServe walks the read refusals: a wrong or
-// unknown token, the wrong direction, an expired grant, a deleted object,
-// missing bytes and an unreachable backend.
+// TestTheContentReadRefusesWhatItCannotServe checks that a bad or expired token, a deleted object,
+// missing bytes, an unreachable backend and a disabled tenant each get their own refusal.
 func TestTheContentReadRefusesWhatItCannotServe(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		store := newFakeStore()
@@ -285,7 +274,6 @@ func TestTheContentReadRefusesWhatItCannotServe(t *testing.T) {
 				t.Errorf("an unknown token answered %d, want 404", got)
 			}
 
-			// A token minted for the other direction names no read grant.
 			pending, err := objects.Create(tctx, objectstore.Declaration{Size: 4, ContentType: "text/plain"})
 			if err != nil {
 				t.Fatalf("declaring: %v", err)
@@ -295,8 +283,6 @@ func TestTheContentReadRefusesWhatItCannotServe(t *testing.T) {
 				t.Errorf("a write token on a read answered %d, want 404", got)
 			}
 
-			// An expired grant is 410, and its object is still readable with a
-			// fresh one: the grant, not the object, expired.
 			expiredID := declare(t, tctx, objects, "expiring", "body")
 			expiredToken := contentToken(t, objects, tctx, expiredID, objectstore.URLAccessRead)
 			if setErr := dbHandle(t, reg).Exec(
@@ -308,7 +294,6 @@ func TestTheContentReadRefusesWhatItCannotServe(t *testing.T) {
 				t.Errorf("an expired grant answered %d, want 410", got)
 			}
 
-			// A deleted object is 404, even though its grant has not expired.
 			deletedID := declare(t, tctx, objects, "gone", "body")
 			deletedToken := contentToken(t, objects, tctx, deletedID, objectstore.URLAccessRead)
 			if delErr := objects.Delete(tctx, deletedID); delErr != nil {
@@ -318,7 +303,6 @@ func TestTheContentReadRefusesWhatItCannotServe(t *testing.T) {
 				t.Errorf("a deleted object answered %d, want 404", got)
 			}
 
-			// A row that says completed while the backend holds no bytes is 404.
 			missingID := declare(t, tctx, objects, "missing", "body")
 			missingToken := contentToken(t, objects, tctx, missingID, objectstore.URLAccessRead)
 			missingRow, err := objects.Get(tctx, missingID)
@@ -332,7 +316,6 @@ func TestTheContentReadRefusesWhatItCannotServe(t *testing.T) {
 				t.Errorf("missing bytes answered %d, want 404", got)
 			}
 
-			// An unreachable backend is 503.
 			unreachableID := declare(t, tctx, objects, "unreachable", "body")
 			unreachableToken := contentToken(t, objects, tctx, unreachableID, objectstore.URLAccessRead)
 			store.mu.Lock()
@@ -345,7 +328,6 @@ func TestTheContentReadRefusesWhatItCannotServe(t *testing.T) {
 			store.openErr = nil
 			store.mu.Unlock()
 
-			// A tenant the roster will not enter is 404.
 			suspended := tenantCtx(t, reg, "suspended")
 			suspendedObj, err := objects.Create(suspended, objectstore.Declaration{Size: 4, ContentType: "text/plain"})
 			if err != nil {
@@ -373,9 +355,8 @@ func TestTheContentReadRefusesWhatItCannotServe(t *testing.T) {
 	})
 }
 
-// TestTheContentWriteStoresTheBytes holds the successful PUT: 204, the bytes
-// behind the seam, the row uploaded with the observed values, and a completion
-// that follows.
+// TestTheContentWriteStoresTheBytes holds the successful PUT: 204, the bytes behind the seam, the
+// row uploaded with the observed values, and a completion that follows.
 func TestTheContentWriteStoresTheBytes(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		store := newFakeStore()
@@ -419,10 +400,8 @@ func TestTheContentWriteStoresTheBytes(t *testing.T) {
 	})
 }
 
-// TestTheContentWriteRefusesWhatItCannotStore walks the write refusals: 411, 400
-// on a length mismatch (with no byte stored), 410 on a closed window, 409 on a
-// completed object, and 400 on a declared-checksum mismatch (with the bytes
-// removed).
+// TestTheContentWriteRefusesWhatItCannotStore checks that a write refuses an unmeasured body, a
+// length mismatch, a closed window and a checksum mismatch without leaving bytes behind.
 func TestTheContentWriteRefusesWhatItCannotStore(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		store := newFakeStore()
@@ -432,7 +411,6 @@ func TestTheContentWriteRefusesWhatItCannotStore(t *testing.T) {
 			tctx := tenantCtx(t, reg, "acme")
 			engine := contentEngine(productOfAssembly(t, reg))
 
-			// A request that names no length cannot be checked.
 			pending, err := objects.Create(tctx, objectstore.Declaration{Size: 4, ContentType: "text/plain"})
 			if err != nil {
 				t.Fatalf("declaring: %v", err)
@@ -444,8 +422,6 @@ func TestTheContentWriteRefusesWhatItCannotStore(t *testing.T) {
 				t.Errorf("a body with no Content-Length answered %d, want 411", unmeasured.Code)
 			}
 
-			// A length that differs from the declaration is 400 and stores
-			// nothing.
 			mismatch := serveContent(engine, http.MethodPut, targetFor(writeToken), strings.NewReader("toolong"))
 			if mismatch.Code != http.StatusBadRequest {
 				t.Errorf("a mismatched length answered %d, want 400", mismatch.Code)
@@ -454,7 +430,6 @@ func TestTheContentWriteRefusesWhatItCannotStore(t *testing.T) {
 				t.Error("a refused write left bytes behind the seam")
 			}
 
-			// A closed upload window is 410.
 			closed, err := objects.Create(tctx, objectstore.Declaration{Size: 4, ContentType: "text/plain"})
 			if err != nil {
 				t.Fatalf("declaring: %v", err)
@@ -465,8 +440,6 @@ func TestTheContentWriteRefusesWhatItCannotStore(t *testing.T) {
 				t.Errorf("a closed window answered %d, want 410", got)
 			}
 
-			// A declared checksum that the bytes do not match is 400, and the
-			// bytes are removed.
 			other := sha256.Sum256([]byte("other"))
 			checksummed, err := objects.Create(tctx, objectstore.Declaration{
 				Size: 4, ContentType: "text/plain", ChecksumSHA256: hex.EncodeToString(other[:]),
@@ -487,10 +460,8 @@ func TestTheContentWriteRefusesWhatItCannotStore(t *testing.T) {
 	})
 }
 
-// TestAContentTokenCannotCrossTenants holds both halves of the tenant rule: the
-// tenant is taken from the grant rather than from whatever context the request
-// arrives in, and a grant that names one tenant cannot reach another tenant's
-// object.
+// TestAContentTokenCannotCrossTenants checks that a token read under another tenant's context still
+// serves its own tenant's bytes, while a grant moved to another tenant is not found.
 func TestAContentTokenCannotCrossTenants(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{store: newFakeStore(), router: newRecordingRouter("public")})
@@ -503,7 +474,6 @@ func TestAContentTokenCannotCrossTenants(t *testing.T) {
 			token := contentToken(t, objects, acme, acmeID, objectstore.URLAccessRead)
 			engine := contentEngine(productOfAssembly(t, reg))
 
-			// An ambient tenant does not change whose object the token names.
 			read := serveContentWith(engine, http.MethodGet, targetFor(token), nil, func(r *http.Request) {
 				*r = *r.WithContext(globex)
 			})
@@ -512,7 +482,6 @@ func TestAContentTokenCannotCrossTenants(t *testing.T) {
 					read.Code, read.Body.String())
 			}
 
-			// A grant whose tenant does not own the object reaches nothing.
 			if err := dbHandle(t, reg).Exec(
 				"UPDATE object_grants SET tenant_id = ? WHERE token_hash = ?",
 				"globex", hashToken(token)).Error; err != nil {
@@ -527,8 +496,8 @@ func TestAContentTokenCannotCrossTenants(t *testing.T) {
 	})
 }
 
-// TestTheContentWriteOnACompletedObjectIsConflict holds the 409 branch: a grant
-// minted while the object was writable is used after the object completed.
+// TestTheContentWriteOnACompletedObjectIsConflict holds the 409 branch: a grant minted while the
+// object was writable is used after the object completed.
 func TestTheContentWriteOnACompletedObjectIsConflict(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{store: newFakeStore(), router: newRecordingRouter("public")})
@@ -556,8 +525,7 @@ func TestTheContentWriteOnACompletedObjectIsConflict(t *testing.T) {
 	})
 }
 
-// TestTheContentWriteRefusesTheOtherDirection holds that a read token names no
-// write grant.
+// TestTheContentWriteRefusesTheOtherDirection holds that a read token names no write grant.
 func TestTheContentWriteRefusesTheOtherDirection(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{store: newFakeStore(), router: newRecordingRouter("public")})
@@ -576,12 +544,8 @@ func TestTheContentWriteRefusesTheOtherDirection(t *testing.T) {
 	})
 }
 
-// TestTheContentTokenTravelsOnlyInTheQuery holds the property the access log
-// depends on: the token is in the query string, and the request's path is the
-// bare content path. pkg/http's access log records r.URL.Path and no part of the
-// query string, so this is what keeps a credential out of the log.
-//
-// It also holds that no line this module writes carries the token.
+// TestTheContentTokenTravelsOnlyInTheQuery holds the property the access log depends on: the token
+// is in the query string, and the request's path is the bare content path.
 func TestTheContentTokenTravelsOnlyInTheQuery(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		store := newFakeStore()
@@ -606,8 +570,6 @@ func TestTheContentTokenTravelsOnlyInTheQuery(t *testing.T) {
 				t.Error("the token appears in the path the access log records")
 			}
 
-			// The request the route sees carries the same shape: path only, token
-			// in the query.
 			request := httptest.NewRequest(http.MethodGet, issued.URL, nil)
 			if request.URL.Path != contentPath || strings.Contains(request.URL.Path, token) {
 				t.Errorf("the served request's path is %q, which is not the token-free %q",
@@ -617,8 +579,6 @@ func TestTheContentTokenTravelsOnlyInTheQuery(t *testing.T) {
 				t.Error("the served request does not carry the token in its query")
 			}
 
-			// This module writes no line carrying the token, not even on a
-			// failing backend.
 			capture := &lineCapture{}
 			productOfAssembly(t, reg).logger = slog.New(capture)
 			store.mu.Lock()
@@ -638,8 +598,6 @@ func TestTheContentTokenTravelsOnlyInTheQuery(t *testing.T) {
 	})
 }
 
-// lineCapture keeps every record written through it as one line of message and
-// attributes.
 type lineCapture struct {
 	mu    sync.Mutex
 	wrote []string

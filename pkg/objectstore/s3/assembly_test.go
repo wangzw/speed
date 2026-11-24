@@ -20,8 +20,6 @@ import (
 	"github.com/vislake/speed/pkg/objectstore"
 )
 
-// bufferLogger is a logging capability whose Named logger writes into buf with
-// the module name bound, the way the factory's own logger does.
 type bufferLogger struct{ buf *bytes.Buffer }
 
 func (l bufferLogger) Named(name string) *slog.Logger {
@@ -35,10 +33,6 @@ type noRedaction struct{}
 func (noRedaction) AddKeys(...string)              {}
 func (noRedaction) AddPattern(string, log.Matcher) {}
 
-// registryWithReader builds the minimal assembly this module's own config
-// reading needs: a real configuration loader over a JSON primary source holding
-// body, with this module registered so its declared items are known, supplied
-// under the config module's name and registered so the descriptor can be driven.
 func registryWithReader(t *testing.T, body string) *core.Registry {
 	t.Helper()
 
@@ -70,7 +64,6 @@ func registryWithReader(t *testing.T, body string) *core.Registry {
 	return reg
 }
 
-// completeBody is the configuration body a working assembly is built from.
 func completeBody(endpoint string) string {
 	return `{"objectstore":{"s3":{` +
 		`"endpoint":` + mustJSON(endpoint) + `,` +
@@ -81,8 +74,6 @@ func completeBody(endpoint string) string {
 		`"use-path-style":true}}}`
 }
 
-// mustJSON encodes one JSON string, so an endpoint carrying a scheme still
-// produces a valid body.
 func mustJSON(s string) string {
 	b, err := json.Marshal(s)
 	if err != nil {
@@ -91,10 +82,8 @@ func mustJSON(s string) string {
 	return string(b)
 }
 
-// TestTheDescriptorDeliversTheByteSeamExclusively holds the shape the design
-// names: the objectstore.Store seam and the objectstore.DirectURL capability
-// claimed for this module alone, so a command names exactly one backend, and the
-// logging capability taken up optionally.
+// TestTheDescriptorDeliversTheByteSeamExclusively checks that the descriptor delivers both seams
+// exclusively, requires only optional logging and declares one input schema.
 func TestTheDescriptorDeliversTheByteSeamExclusively(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName {
@@ -130,8 +119,8 @@ func TestTheDescriptorDeliversTheByteSeamExclusively(t *testing.T) {
 	}
 }
 
-// TestPrepareStatesEnabledForARunnableConfiguration holds that a complete
-// configuration lets the module state it runs.
+// TestPrepareStatesEnabledForARunnableConfiguration holds that a complete configuration lets the
+// module state it runs.
 func TestPrepareStatesEnabledForARunnableConfiguration(t *testing.T) {
 	reg := registryWithReader(t, completeBody("https://s3.example.com"))
 	got, err := Module().Prepare(t.Context(), reg)
@@ -143,9 +132,8 @@ func TestPrepareStatesEnabledForARunnableConfiguration(t *testing.T) {
 	}
 }
 
-// TestTheModuleDeliversTheStoreThroughTheRegistry drives a real registry through
-// this module's descriptor to Init, resolves the byte seam and the direct-URL
-// capability from the one product and names it.
+// TestTheModuleDeliversTheStoreThroughTheRegistry checks that both seams resolve to the same
+// backend instance through a drive.
 func TestTheModuleDeliversTheStoreThroughTheRegistry(t *testing.T) {
 	server := httptest.NewServer(recorder(&requestRecord{}, http.StatusOK, "ok"))
 	defer server.Close()
@@ -179,9 +167,8 @@ func TestTheModuleDeliversTheStoreThroughTheRegistry(t *testing.T) {
 	}
 }
 
-// TestTheCredentialsAreRegisteredAsRedactionRules holds that the module hands
-// its credentials to the factory's secrets hook, which is where they are
-// registered as literal redaction rules before the client is built.
+// TestTheCredentialsAreRegisteredAsRedactionRules checks that secrets returns exactly the
+// configured access key and secret key.
 func TestTheCredentialsAreRegisteredAsRedactionRules(t *testing.T) {
 	got := secrets(&moduleConfig{AccessKey: "the-key", SecretKey: "the-secret"})
 	want := map[string]bool{"the-key": true, "the-secret": true}
@@ -195,12 +182,8 @@ func TestTheCredentialsAreRegisteredAsRedactionRules(t *testing.T) {
 	}
 }
 
-// TestTheStoreReportsThroughTheLoggerNamedAfterTheModule drives the factory's
-// New with a logging capability supplying a logger that binds the name it is
-// given, and holds that a byte operation's line arrives on that logger with the
-// module attribute: this is the logger the factory takes up and hands to Open,
-// which is what makes a background sweep's Delete reach the configured
-// destinations.
+// TestTheStoreReportsThroughTheLoggerNamedAfterTheModule checks that a store call is logged with the
+// module, operation, outcome and a hashed key, not the key.
 func TestTheStoreReportsThroughTheLoggerNamedAfterTheModule(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)

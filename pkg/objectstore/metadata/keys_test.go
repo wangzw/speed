@@ -9,10 +9,8 @@ import (
 	"github.com/vislake/speed/pkg/objectstore"
 )
 
-// TestInternalKeyIsTwoRandomSegments holds that the key is a shard and a name of
-// fixed widths, joined by the separator, both lowercase hexadecimal. The widths
-// are what the design fixes: eight hex characters of shard and thirty-two of
-// name, the latter carrying the whole 128 bits of randomness.
+// TestInternalKeyIsTwoRandomSegments holds that the key is a shard and a name of fixed widths,
+// joined by the separator, both lowercase hexadecimal.
 func TestInternalKeyIsTwoRandomSegments(t *testing.T) {
 	key, err := internalKey()
 	if err != nil {
@@ -41,9 +39,7 @@ func TestInternalKeyIsTwoRandomSegments(t *testing.T) {
 	}
 }
 
-// TestInternalKeysDifferAndCarryNoIdentifier holds the two properties the random
-// grammar exists for: every mint is distinct, and the key carries neither the
-// object identifier nor a tenant identifier it could have been given.
+// TestInternalKeysDifferAndCarryNoIdentifier checks that 64 minted keys are all distinct.
 func TestInternalKeysDifferAndCarryNoIdentifier(t *testing.T) {
 	seen := make(map[string]struct{}, 64)
 	for i := 0; i < 64; i++ {
@@ -58,9 +54,8 @@ func TestInternalKeysDifferAndCarryNoIdentifier(t *testing.T) {
 	}
 }
 
-// TestSegmentCaps holds the caps a minted key is held to: a segment at the cap
-// is admitted and one above it, an empty one, and one carrying the separator are
-// refused.
+// TestSegmentCaps holds the caps a minted key is held to: a segment at the cap is admitted and one
+// above it, an empty one, and one carrying the separator are refused.
 func TestSegmentCaps(t *testing.T) {
 	t.Run("a segment at the cap", func(t *testing.T) {
 		if err := checkSegment(strings.Repeat("a", keySegmentMax)); err != nil {
@@ -84,9 +79,8 @@ func TestSegmentCaps(t *testing.T) {
 	})
 }
 
-// TestCursorRoundTrips holds that a cursor decodes back to the instant and
-// identifier it was encoded from, and that a cursor this module did not write is
-// refused.
+// TestCursorRoundTrips holds that a cursor decodes back to the instant and identifier it was
+// encoded from, and that a cursor this module did not write is refused.
 func TestCursorRoundTrips(t *testing.T) {
 	cursor := encodeCursor(1728000000000, "obj-1")
 	ms, id, err := decodeCursor(cursor)
