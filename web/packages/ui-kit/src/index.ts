@@ -1,54 +1,7 @@
 /**
- * Public entry of @speed/ui-kit.
- *
- * Two kinds of things ship here: the theme factory (createAppTheme,
- * AppThemeProvider) that turns @speed/tokens into a MUI v9 theme, and the
- * fully controlled components (PageLayout, PageHeader, SectionCard, EmptyState,
- * ConfirmDialog, SidePanel, FormField, FormLayout, PhoneNumberField,
- * DataTable, FileUploader, InlineError, InlineSuccess,
- * WriteFeedbackRegion, AnnouncementRegion, ListSkeleton, AsyncSection,
- * HumanVerification) with
- * their ui-kit-namespace translations (UI_KIT_NAMESPACE + uiKitResources)
- * for the host to register —
- * FileUploader renders the queue the host owns as `rows` props while
- * uploads run in the host's own transport code. The form family's zod
- * bridge (zodFormResolver) ships beside the components so a host drives
- * RHF validation from one zod schema. The cross-surface state
- * primitives ship beside them: InlineError + errorCodeOf (the
- * whole-attempt failure banner), InlineSuccess (its success twin, the
- * mount-empty-then-fill role="status" notice), useWriteFeedback +
- * WriteFeedbackRegion (one feedback scope's slot and the region that
- * renders it), AnnouncementRegion (a status-or-alert region that inserts
- * each change empty and writes its text on a later frame),
- * useActivationGuard (swallows a focusable control's
- * activation while its write is in flight or its precondition is unmet),
- * ListSkeleton and AsyncSection (the pending/error/empty/
- * content branches of an async read, with `staleState` marking a failed
- * refresh that kept its data) and
- * visuallyHiddenSx (the clip recipe for hidden live regions and file
- * inputs) and touchTargetSx (the coarse-pointer 44px floor for an
- * interactive target the theme's own control overrides cannot reach).
- * The refresh pair (RefreshButton + usePageRefresh) re-reads a surface's
- * own reads through the handles the host passes; the clipboard and
- * hand-off pair (CopyButton + OneTimeValuePanel) covers a value handed
- * out once; the TOTP enrolment pair (TotpQrCode + TotpEnrollmentPanel)
- * draws the symbol, the manual secret and the code field from values the
- * caller parsed and translated, reading no bundle of its own; the two
- * display contexts (DisplayTimeZoneProvider,
- * PhoneCountryDefaultProvider) carry a host preference read by surfaces
- * that fall back to their own defaults when it is absent; and
- * SectionSurfaceProvider tells the sections below it whether the
- * enclosing surface already supplies the card, so a nested section can
- * contribute its content alone; and ActionRow + ActionButton are the one
- * right-aligned action row, with the button's weight, colour and size
- * derived from the row's emphasis, tone and size rather than from a
- * call-site variant; and focusPageLanding is the page-change hand-off
- * rule -- the new page's first level-one heading inside its main
- * landmark, else that landmark -- which a shell or host calls when an
- * authentication flip replaces the page, while @speed/route-kit keeps
- * the same rule privately for in-app navigation.
- * Everything else stays internal: helpers shared between components live
- * in src/internal/ and are deliberately not exported.
+ * Public entry of @speed/ui-kit: the theme factory and the controlled
+ * components, their bilingual resources, the form-validation bridge and the
+ * shared state primitives. Helpers under `src/internal/` are not exported.
  */
 
 export { UI_KIT_NAMESPACE, uiKitResources } from './resources.js'

@@ -1,11 +1,3 @@
-/**
- * zodFormResolver contract: a passing schema yields no errors; a missing
- * value maps to the 'form.required' key and any other failure to
- * 'form.invalid'; zod issues fold into react-hook-form's nested error
- * object by path; and -- the point of the bridge -- FormField renders
- * those keys as the active language's text through the form family's
- * validation-error contract.
- */
 
 import userEvent from '@testing-library/user-event'
 import { useForm } from 'react-hook-form'

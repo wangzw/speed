@@ -1,10 +1,3 @@
-/**
- * Phone-number composition: the country a locale starts on, the parts a
- * pasted E.164 number yields, the E.164 string the parts assemble to,
- * the as-you-type grouping, and the two validation verdicts. The
- * country-aware data is libphonenumber-js's; these cases pin how its
- * answers surface here.
- */
 
 import { describe, expect, it } from 'vitest'
 import {
@@ -46,8 +39,6 @@ describe('country data', () => {
   })
 
   it('names a country through Intl.DisplayNames', () => {
-    // Two locales for one country: the name follows the requested locale,
-    // and neither expectation is a literal sentence of ours.
     expect(phoneCountryName('DE', 'de-DE')).toBe('Deutschland')
     expect(phoneCountryName('DE', 'en-US')).toBe('Germany')
     expect(phoneCountryName('US', 'en-US')).toBe('United States')
@@ -102,8 +93,6 @@ describe('validation and assembly', () => {
   })
 
   it('calls a legal-length number with an impossible number plan invalid', () => {
-    // Eleven digits is a possible CN length, but no CN number plan starts
-    // 12; a US number typed under CN is likewise impossible there.
     expect(validatePhoneNumber('CN', '12345678901')).toBe('invalid')
     expect(validatePhoneNumber('CN', '4155552671')).toBe('invalid')
     expect(toE164('CN', '12345678901')).toBeNull()

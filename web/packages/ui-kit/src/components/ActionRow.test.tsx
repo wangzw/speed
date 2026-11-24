@@ -1,10 +1,3 @@
-/**
- * ActionRow and ActionButton contract: the row is one right-aligned group
- * whose adjacent controls sit exactly one spacing unit apart, the button
- * takes its weight and colour from `emphasis`/`tone`, and its size from
- * the enclosing row unless given directly. The assertions read the theme
- * spacing value from the shipped tokens rather than inlining it.
- */
 
 import { describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
@@ -30,8 +23,6 @@ describe('ActionRow', () => {
       .getByRole('button', { name: 'Save' })
       .closest('[data-action-row]')
     expect(row).not.toBeNull()
-    // The row is marked so tests and call sites can find it as a row
-    // rather than treating one action's parent as the row.
     expect(row).toHaveAttribute('data-action-row', '')
     expect(row).toHaveStyle({
       display: 'flex',
@@ -56,9 +47,6 @@ describe('ActionRow', () => {
   })
 
   it('has no axe violations', async () => {
-    // Rendered under a real page h1: page-has-heading-one is determinate
-    // in jsdom now, and a widget-only document would fail it rather than
-    // pass by indeterminacy.
     renderWithProviders(
       <div>
         <h1>Members</h1>
@@ -246,9 +234,6 @@ describe('ActionButton busy and unavailable states', () => {
     save.focus()
     expect(save).toHaveFocus()
 
-    // The reason's presence must not decide the button's place in the
-    // tree: switching availability states reconciles this element, it
-    // never replaces it, so the focused button keeps focus.
     const states: readonly Availability[] = [
       'available',
       'busy',
@@ -295,8 +280,6 @@ describe('ActionButton busy and unavailable states', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
-    // Swallowing the activation must not swallow the event: a host that
-    // listens on an ancestor still sees the click.
     expect(onClick).not.toHaveBeenCalled()
     expect(onAncestorClick).toHaveBeenCalledTimes(1)
   })
@@ -408,9 +391,6 @@ describe('ActionButton busy and unavailable states', () => {
   })
 })
 
-/** Shape-drift guards: each must keep erroring as long as the pinned
- * constraint holds. The @ts-expect-error comment turns a guard that
- * silently stops erroring into a typecheck failure. */
 // @ts-expect-error -- guard: ActionButton no longer accepts disabled
 const disabledButton = <ActionButton disabled>Save</ActionButton>
 // @ts-expect-error -- guard: ActionButton no longer accepts loading

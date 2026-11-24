@@ -1,9 +1,3 @@
-/**
- * DisplayTimeZoneProvider contract: the context carries the host's IANA
- * time zone, or undefined when no provider supplies one. Nothing is
- * validated here -- a value the runtime cannot use is the consumer's
- * concern, and the pure validators live in @speed/i18n.
- */
 
 import type { ReactNode } from 'react'
 import { describe, expect, it } from 'vitest'
@@ -33,8 +27,6 @@ describe('DisplayTimeZoneProvider', () => {
   })
 
   it('passes an unvalidated value through verbatim', () => {
-    // Validation is the i18n package's, not this context's: an unusable
-    // value reaches the consumer unchanged.
     const { result } = renderHook(() => useDisplayTimeZone(), {
       wrapper: wrapperOf('Not/AZone'),
     })

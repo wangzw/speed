@@ -1,8 +1,3 @@
-/**
- * The page baseline contract: the body paints the page surface and
- * carries the two optional page values (typography glow and canvas
- * gradient) for the active mode, alongside the other component layers.
- */
 
 import { describe, expect, it } from 'vitest'
 import { render } from '@testing-library/react'
@@ -16,7 +11,6 @@ import { POINTER_COARSE_QUERY, TOUCH_TARGET_MIN_PX } from '../internal/pointer.j
 
 type BodyStyle = Record<string, unknown>
 
-/** The body declarations the baseline emits, read through its callback. */
 function bodyStyle(theme: Theme): BodyStyle {
   const overrides = theme.components?.MuiCssBaseline?.styleOverrides
   if (typeof overrides !== 'function') {
@@ -118,8 +112,6 @@ describe('page baseline', () => {
     const { theme } = createAppTheme({
       typography: { textGlow: '0 0 2px #4ADE80' },
     })
-    // The touch floor is static on the slot and the unavailable appearance
-    // is a callback; the merge composes both into one callback.
     const buttonRoot = theme.components?.MuiButton?.styleOverrides?.root as
       | ((props: { theme: Theme }) => unknown[])
       | undefined
@@ -131,8 +123,6 @@ describe('page baseline', () => {
         minHeight: TOUCH_TARGET_MIN_PX,
       },
     })
-    // The focus ring composes with the static touch floor into one
-    // callback on the shared slot.
     expect(theme.components?.MuiButtonBase?.styleOverrides?.root).toBeTypeOf(
       'function',
     )

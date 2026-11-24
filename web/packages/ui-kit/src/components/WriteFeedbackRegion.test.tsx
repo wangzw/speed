@@ -1,11 +1,3 @@
-/**
- * WriteFeedbackRegion contract: one slot rendered as the scope's result
- * area -- a failure code through the caller's resolver and the success
- * message through the always-mounted status region. A rendered banner
- * carries one default top margin on the region's root; an empty slot's
- * root takes no height, so the resident live region never widens its
- * control group's rhythm. The caller's `sx` applies after the margin.
- */
 
 import { useState } from 'react'
 import userEvent from '@testing-library/user-event'
@@ -26,7 +18,6 @@ const CLIPPED = {
   height: '1px',
 } as const
 
-/** A host holding the slot, so the region re-renders in place. */
 function RegionHost() {
   const [outcome, setOutcome] = useState<WriteOutcome | null>(null)
   return (
@@ -68,7 +59,6 @@ function RegionHost() {
   )
 }
 
-/** A host settling the slot with the empty string through the hook. */
 function EmptyMessageHost() {
   const feedback = useWriteFeedback()
   return (
@@ -92,13 +82,6 @@ function normalizeMargin(element: Element): string {
   return value === '' || value === '0' ? '0px' : value
 }
 
-/**
- * Renders one outcome twice -- without caller `sx` and with `marginTop: 2`
- * -- and checks that only the root's spacing moved. A caller's `sx` copied
- * into a banner would add its margin to the root's own and double the gap.
- * The default margin belongs to a rendered outcome; an empty slot starts
- * at zero.
- */
 function expectCallerSxToStayOnRoot(outcome: WriteOutcome | null): void {
   const plain = renderWithProviders(
     <WriteFeedbackRegion outcome={outcome} resolve={resolve} />,
@@ -123,10 +106,7 @@ function expectCallerSxToStayOnRoot(outcome: WriteOutcome | null): void {
       sx={{ marginTop: 2 }}
     />,
   )
-  // The caller's spacing lands on the root ...
   expect(styled.container.firstElementChild).toHaveStyle({ marginTop: '16px' })
-  // ... and on nothing inside it: the status region (silent or filled) and
-  // the failure alert keep exactly the margin they had without caller `sx`.
   expect(getComputedStyle(styled.getByRole('status')).marginTop).toBe(
     plainStatusMargin,
   )
@@ -163,8 +143,6 @@ describe('WriteFeedbackRegion', () => {
     expect(view.getByRole('alert')).toHaveTextContent(
       'resolved:tenant.not_found',
     )
-    // The success region stays mounted (empty and clipped) so the next
-    // message fills a region the screen reader already knows.
     expect(view.getByRole('status')).toHaveTextContent('')
   })
 
@@ -174,7 +152,6 @@ describe('WriteFeedbackRegion', () => {
     )
     expect(view.container).toHaveTextContent('')
     expect(view.queryByRole('alert')).toBeNull()
-    // The always-mounted region is still present for the next message.
     expect(view.getByRole('status')).toBeInTheDocument()
   })
 
@@ -191,8 +168,6 @@ describe('WriteFeedbackRegion', () => {
         resolve={resolve}
       />,
     )
-    // The failure occupies the slot through its alert; the success region
-    // beside it is silent and clipped.
     expect(failure.getByRole('status')).toHaveStyle(CLIPPED)
     expect(failure.getByRole('alert')).not.toHaveStyle(CLIPPED)
     failure.unmount()
@@ -243,8 +218,6 @@ describe('WriteFeedbackRegion', () => {
     const failureRoot = failure.container.firstElementChild
     expect(failureRoot).toHaveStyle({ marginTop: '8px' })
     expect(failureRoot).toContainElement(failure.getByRole('alert'))
-    // The two banners add the same (zero) spacing of their own: the one gap
-    // is the root's default margin in both states.
     expect(getComputedStyle(failure.getByRole('alert')).marginTop).toBe(
       successSpacing,
     )
@@ -256,8 +229,6 @@ describe('WriteFeedbackRegion', () => {
     )
     const emptyRoot = empty.container.firstElementChild
     expect(emptyRoot).not.toBeNull()
-    // The live region stays mounted, but the empty slot adds no gap: the
-    // margin belongs to a banner that actually renders.
     expect(normalizeMargin(emptyRoot as Element)).toBe('0px')
     expect(empty.getByRole('status')).toBeInTheDocument()
     empty.unmount()
@@ -316,8 +287,6 @@ describe('WriteFeedbackRegion', () => {
     )
     const root = view.container.firstElementChild
     expect(root).not.toBeNull()
-    // The caller's spacing wins over the default, and the success banner
-    // renders inside that root.
     expect(root).toHaveStyle({ marginTop: '16px' })
     expect(root).toContainElement(view.getByRole('status'))
   })
@@ -339,8 +308,6 @@ describe('WriteFeedbackRegion', () => {
     expect(view.getByRole('status')).toHaveStyle(CLIPPED)
 
     await userEvent.click(view.getByRole('button', { name: 'succeed empty' }))
-    // `''` is a settled success, not silent: the region drops the clip and
-    // paints an empty banner, exactly as a direct `InlineSuccess` does.
     const status = view.getByRole('status')
     expect(status).toHaveTextContent('')
     expect(status).not.toHaveStyle(CLIPPED)
@@ -357,12 +324,10 @@ describe('WriteFeedbackRegion', () => {
     expect(view.getByRole('status')).toBe(status)
     expect(status).toHaveTextContent('first success')
 
-    // Another success replaces the text on the same node.
     await userEvent.click(view.getByRole('button', { name: 'second success' }))
     expect(view.getByRole('status')).toBe(status)
     expect(status).toHaveTextContent('second success')
 
-    // A failure fills the alert beside the same, now clipped, status node.
     await userEvent.click(view.getByRole('button', { name: 'failure' }))
     expect(view.getByRole('status')).toBe(status)
     expect(status).toHaveTextContent('')
@@ -396,8 +361,6 @@ describe('WriteFeedbackRegion', () => {
   })
 })
 
-/** A resolver that spells out both the code and the wait it was handed,
- * so a test can tell the live sentence from the stable one. */
 const waitResolver = (code: string, seconds?: number): string =>
   seconds === undefined ? `${code}:no-wait` : `${code}:${seconds}s`
 
@@ -421,13 +384,9 @@ describe('WriteFeedbackRegion wait countdown', () => {
       />,
     )
     const alert = view.getByRole('alert')
-    // The sentence assistive technology reads is fixed at the stated wait,
-    // clipped from view.
     const [stable] = within(alert).getAllByText('authn.throttled:3s')
     expect(stable).not.toHaveAttribute('aria-hidden')
     expect(stable).toHaveStyle(CLIPPED)
-    // The painted sentence is hidden from assistive technology and follows
-    // the remaining time.
     const visible = alert.querySelector('span[aria-hidden="true"]')
     expect(visible).toHaveTextContent('authn.throttled:3s')
 
@@ -435,8 +394,6 @@ describe('WriteFeedbackRegion wait countdown', () => {
       vi.advanceTimersByTime(1_000)
     })
     expect(visible).toHaveTextContent('authn.throttled:2s')
-    // The accessible text did not change with the tick: the same node, same
-    // sentence, so role="alert" does not re-announce every second.
     expect(within(alert).getByText('authn.throttled:3s')).toBe(stable)
   })
 
@@ -462,8 +419,6 @@ describe('WriteFeedbackRegion wait countdown', () => {
       vi.advanceTimersByTime(2_000)
     })
     expect(visible).toHaveTextContent('authn.throttled:no-wait')
-    // The banner is not auto-cleared: only a new attempt or a context change
-    // replaces the result, never a timer.
     expect(view.getByRole('alert')).toBe(alert)
     expect(within(alert).getByText('authn.throttled:2s')).toBe(stable)
   })

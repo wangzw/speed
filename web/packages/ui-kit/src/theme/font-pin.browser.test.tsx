@@ -1,15 +1,3 @@
-/**
- * The browser tier's font pin, as the theme's components see it.
- *
- * The tier's setup (web/test-utils/src/browser-setup.ts) pins every
- * element's text to a metric-stable family so the geometry cases measure the
- * same widths on macOS and on the CI image. The theme declares its own font
- * stack on MUI's component classes -- a table cell, a chip, a button -- and a
- * declared value beats an inherited one, so a pin that only reaches the
- * body's inherited family leaves exactly the text those cases measure in each
- * platform's own system font. This case renders those components under the
- * speed theme and holds that each resolves to the pinned family.
- */
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import Button, { buttonClasses } from '@mui/material/Button'
@@ -33,7 +21,6 @@ const COLUMNS: readonly DataTableColumn<Row>[] = [
   { id: 'actions', header: 'Actions', cell: () => <Button size="small">{ACTION}</Button> },
 ]
 
-/** The first family of a computed `font-family`, unquoted. */
 function firstFamily(element: Element): string {
   const [first = ''] = getComputedStyle(element).fontFamily.split(',')
   return first.trim().replace(/^"|"$/g, '')

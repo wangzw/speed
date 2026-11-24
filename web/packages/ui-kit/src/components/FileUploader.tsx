@@ -1,61 +1,7 @@
 /**
- * FileUploader: the file queue rendered from host-owned rows.
- *
- * Ownership contract: FileUploader is fully controlled, like every other
- * component in this package. `rows` describes the queue the host wants
- * shown right now -- each row's status and progress are props, never
- * widget state -- and every interaction reports up through a callback
- * (`onSelectFiles` for a pick or drop, `onCancel` / `onRetry` / `onRemove`
- * keyed by row id). The component never fetches, never executes an upload,
- * never holds a File longer than the event handler that received it, and
- * keeps no record of rows that are not in the current `rows` prop: an
- * upload in flight is host state, running against host transport code.
- *
- * Announcements: when a row leaves `uploading` for `succeeded` or
- * `failed` -- or joins the queue already settled, its transfer having run
- * entirely in host code before an `uploading` commit ever rendered -- the
- * component announces the settle once in a single polite live region
- * (role="status"), stored structurally and rendered in the language
- * active at render time. Rows the host seeds on mount, rows appended as
- * `uploading`, progress-only changes and rows a host heals directly from
- * `failed` to `succeeded` stay quiet. Two repeat paths stay audible in
- * the region, whose text is the only thing a screen reader hears: a
- * retry (a `failed` row returning to `uploading`) clears the region
- * first, and a settle whose announcement text equals the standing one (a
- * second same-name row reaching the same outcome) empties the region and
- * re-announces a tick later -- identical text is not a change, and a
- * live region only speaks about changes. The announced row is never a
- * ghost: when `rows` stops carrying it (the Remove button's host
- * response dropping a settled row while the queue continues), the
- * announcement retires with the commit that dropped it, and the rendered
- * text additionally derives only from rows the current `rows` prop still
- * carries, so the region never points at a file the queue has let go.
- * The deferred re-announcement honours the same rule at fire time: a
- * host rows update can land between the commit that armed it and its
- * 0ms timer (a microtask-ordered update overtakes the timer), so the
- * re-announcement re-checks its target row against the latest committed
- * rows -- still present and still settled in the announced state -- and
- * stays silent when the row was retried or removed in the meantime,
- * instead of resurrecting stale text over the row's new fate.
- *
- * Render shape: rows render as one real list (a `ul` with the explicit
- * `role="list"` -- WebKit strips list semantics from a list-style-none
- * `ul` -- whose items are the queue cards) below the trigger once the
- * queue has content; an empty `rows` renders no queue at all. Each row's action-
- * button group (Cancel while uploading; Retry/Remove once settled) is a
- * responsive `flexWrap: 'wrap'` flex row, purely additive CSS, so a long
- * file name plus several action buttons cannot overflow a narrow queue
- * card regardless of name length. Those per-row action buttons carry the
- * shared touch-target floor through the theme's component overrides (see
- * theme/touch-floor.ts): a finger-driven device gets a 44px-minimum hit area
- * on each, a precise pointer the stock control size. The selection affordance is one drop zone: a labelled,
- * dashed surface whose text states the action (the built-in bilingual
- * text unless `chooseFilesLabel` overrides it) and whose hidden file
- * input is visually hidden but focusable inside it, so the whole zone is
- * one click target and the input stays the control's one tab stop. With
- * `allowDrop` the same zone accepts a drag and reports it through the
- * same callback -- the keyboard path never depends on it. `disabled`
- * renders the affordance inert and ignores picks and drops.
+ * The file queue rendered from host-owned rows: every interaction reports up
+ * through a callback, and the component never fetches, uploads or holds a
+ * File past the handler that received it. Each settle is announced once.
  */
 
 import { forwardRef, useEffect, useRef, useState } from 'react'
@@ -82,10 +28,8 @@ export interface FileUploaderRow {
   /** The row's transfer state. */
   readonly status: FileUploaderRowStatus
   /**
-   * Upload progress within [0, 1]. An uploading row with no `progress`
-   * shows an indeterminate bar; with one, a determinate bar whose value
-   * folds out-of-range and non-finite fractions into [0, 1] at render
-   * time. Ignored once the row settles.
+   * Upload progress within [0, 1]: absent renders an indeterminate bar, and
+   * out-of-range fractions are clamped. Ignored once the row settles.
    */
   readonly progress?: number
   /** The failed row's error text, host-written and host-translated; rendered verbatim when present. */
@@ -96,10 +40,8 @@ export interface FileUploaderProps extends RootStyleProps {
   /** The queue to render, owned by the host. Uploads run in host code. */
   readonly rows: readonly FileUploaderRow[]
   /**
-   * Reports one pick or drop's files (in order, never held by the
-   * component after the call). Its presence renders the selection zone
-   * and, with `allowDrop`, makes that same zone accept a drop; without it
-   * the component is a pure queue view.
+   * Reports one pick or drop's files in order. Its presence renders the
+   * selection zone; without it the component is a pure queue view.
    */
   readonly onSelectFiles?: (files: readonly File[]) => void
   /** Cancels the named row's transfer (an abort is the host's to perform). */
@@ -110,9 +52,9 @@ export interface FileUploaderProps extends RootStyleProps {
   readonly onRemove?: (rowId: string) => void
   /** Pick several files per selection; false by default (native input). */
   readonly multiple?: boolean
-  /** Forwarded to the picker (advisory only — real validation is the host's upload code). */
+  /** Forwarded to the picker as an advisory filter; real validation is the host's. */
   readonly accept?: string
-  /** Also accept drag-and-drop; false by default. The keyboard path never depends on it. */
+  /** Also accept drag-and-drop; the keyboard path never depends on it. */
   readonly allowDrop?: boolean
   /** Renders the affordances inert and ignores picks and drops. */
   readonly disabled?: boolean
@@ -121,31 +63,18 @@ export interface FileUploaderProps extends RootStyleProps {
 }
 
 /**
- * The file input itself: visually hidden through the package's clip
- * recipe (see src/visually-hidden.ts) -- clipped, never `display: none`
- * -- so it stays focusable and keeps its place in the tab order. It sits
- * inside the selection zone's <label>, so an activation anywhere in the
- * zone opens the native picker; the label carries no role and is removed
- * from the tab order (`tabIndex={-1}`), leaving the input as the
- * control's single tab stop. While the input is focused the zone shows a
- * visible focus indicator through the label's :focus-within rule.
+ * Clipped, never `display: none`, so the input stays focusable and is the
+ * zone's single tab stop.
  */
 const HiddenFileInput = styled('input')(visuallyHiddenSx)
 
-/**
- * The last settle, for the live region. Rendered at render time in the
- * active language. `rowId` distinguishes two rows that announce the same
- * text (same name, same outcome): the region itself cannot re-speak
- * identical text, so the settle logic uses the row identity to decide
- * when a clear-then-reannounce is owed.
- */
+/** The last settle. `rowId` lets two rows with identical announcement text still re-announce. */
 type Announcement = {
   readonly kind: 'uploaded' | 'failed'
   readonly name: string
   readonly rowId: string
 } | null
 
-/** One commit's announcement effect, derived by diffing `rows` against the previous render's. */
 type AnnouncementChange =
   | { readonly type: 'clear' }
   | {
@@ -156,7 +85,6 @@ type AnnouncementChange =
     }
   | null
 
-/** Clamp a progress fraction to [0, 1] and scale it to a percent for MUI. */
 function toPercent(fraction: number): number {
   if (Number.isNaN(fraction)) {
     return 0
@@ -186,28 +114,16 @@ function FileUploaderInner(
   const previousRowsRef = useRef<readonly FileUploaderRow[] | null>(null)
   const [dragDepth, setDragDepth] = useState(0)
 
-  // Mirror of the announcement state for the diff effect below: that
-  // effect must compare an incoming settle against the announcement the
-  // previous commit rendered, and it must not re-run on every
-  // announcement change (its deps stay `[rows]`, or re-running would
-  // re-arm its timers). A pure per-render copy of this component's own
-  // state written during render.
+  // A render-time mirror: the diff effect's deps stay `[rows]`, so it must not re-run per announcement.
   const announcementRef = useRef<Announcement>(null)
   announcementRef.current = announcement
-  // Mirror of the latest committed rows for the deferred re-announcement
-  // (see the diff effect): that 0ms timer can fire after commits that
-  // changed its target row's fate, and only the latest rows say what is
-  // still true at fire time. Written during render, like announcementRef.
+  // The deferred re-announcement reads this at fire time, after later commits.
   const rowsRef = useRef<readonly FileUploaderRow[] | null>(null)
   rowsRef.current = rows
-  // The deferred re-announcement of a settle whose text repeats the
-  // standing one (see the diff effect). Owned across effect instances;
-  // cleared only when superseded, when the queue empties, or on unmount.
+  // Owned across effect instances; cleared only when superseded, emptied or unmounted.
   const reannounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Unmount backstop: a pending re-announcement must never setState on an
-  // unmounted component. The mount-only shape keeps this cleanup from
-  // running between the effect's own re-runs.
+  // A pending re-announcement must never setState after unmount.
   useEffect(() => {
     return () => {
       if (reannounceTimerRef.current !== null) {
@@ -217,23 +133,11 @@ function FileUploaderInner(
     }
   }, [])
 
-  // Diff the rows against the previous commit to find settles: a row
-  // leaving `uploading` announces; a row appended already settled (its
-  // transfer ran entirely in host code, so no uploading commit ever
-  // rendered) announces too -- only rows the host seeds on mount (the
-  // first commit, previous === null) and rows appended as `uploading`
-  // stay quiet. An empty commit clears any standing announcement; a row
-  // returning to `uploading` (a retry) clears it so an identical later
-  // failure re-announces; the last settle in list order wins a commit
-  // with several; every other flip (a host healing a failed row straight
-  // to succeeded) is not a transfer settle and announces nothing.
-  //
-  // A settle whose announcement text equals the standing one (a second
-  // same-name row reaching the same outcome) empties the region and
-  // re-announces on the next tick: a live region only speaks when its
-  // text changes, so identical text sitting on top of identical text
-  // would otherwise be silent -- the same clear-then-refill the retry
-  // path relies on.
+  // Diff the rows against the previous commit: a row leaving `uploading`
+  // announces, as does one appended already settled. Seeded rows, progress
+  // changes and a failed-to-succeeded heal stay quiet. A settle whose text
+  // repeats the standing one clears first and re-announces a tick later,
+  // because a live region only speaks about text changes.
   useEffect(() => {
     const previous = previousRowsRef.current
     previousRowsRef.current = rows
@@ -277,13 +181,7 @@ function FileUploaderInner(
       }
     }
     if (change === null) {
-      // The queue can lose a row with no settle in the same commit — the
-      // ordinary Remove path, the host dropping a settled row while the
-      // queue continues. If the standing announcement belongs to that
-      // departed row, it must retire with it: the region may only speak
-      // of rows the current `rows` prop still carries (the same rule the
-      // rendered text below also enforces), or a sighted user is left
-      // reading a status that points at a file the queue has let go.
+      // A departed row's announcement retires: the region may only speak of rows still in `rows`.
       const standing = announcementRef.current
       if (standing !== null && !rows.some((row) => row.id === standing.rowId)) {
         setAnnouncement(null)
@@ -307,13 +205,8 @@ function FileUploaderInner(
       }
       reannounceTimerRef.current = setTimeout(() => {
         reannounceTimerRef.current = null
-        // A host rows update can land between this commit and the 0ms
-        // fire (a microtask-ordered update overtakes the timer). Only
-        // refill when the row this re-announcement speaks of is still in
-        // the latest committed rows AND still settled in the announced
-        // state: if it was removed or retried in the meantime, its stale
-        // settle text must not be resurrected -- the commit that changed
-        // its fate already decided what the region should say.
+        // A later rows commit can overtake the timer, so re-check the row is
+        // still present and still in the announced state before refilling.
         const target = rowsRef.current?.find(
           (row) => row.id === nextChange.rowId,
         )
@@ -348,10 +241,7 @@ function FileUploaderInner(
     if (disabled) {
       return
     }
-    // Snapshot the selection before resetting the input: a real browser's
-    // FileList is live, so clearing the input's `value` would empty a
-    // captured reference that was only read afterwards (jsdom's snapshot
-    // semantics hide the difference).
+    // Snapshot first: a browser's FileList is live, so clearing `value` would empty it.
     const input = event.currentTarget
     const picked = input.files === null ? [] : Array.from(input.files)
     input.value = ''
@@ -367,14 +257,12 @@ function FileUploaderInner(
   }
 
   const handleDragOver = (event: ReactDragEvent<HTMLElement>): void => {
-    // preventDefault is what permits the drop to land here.
     event.preventDefault()
   }
 
   const handleDragLeave = (event: ReactDragEvent<HTMLElement>): void => {
     event.preventDefault()
-    // Enter/leave pairs fire per child crossing; the depth counter keeps
-    // the armed state true until the drag leaves the surface for good.
+    // Enter/leave pairs fire per child crossing, so a depth counter tracks the drag.
     setDragDepth((depth) => Math.max(0, depth - 1))
   }
 
@@ -392,12 +280,7 @@ function FileUploaderInner(
     onSelectFiles?.(dropped)
   }
 
-  // The announcement the region may actually speak: only a settle whose
-  // row the current `rows` prop still carries. A departed row's
-  // announcement is retired by the diff effect on the commit that drops
-  // it; this derivation is the render-time half of the same rule, so the
-  // region can never display a row the queue has dropped — not even for
-  // the render between that commit and its effect.
+  // The render-time half of the same rule: never speak of a row `rows` no longer carries.
   const liveAnnouncement =
     announcement !== null &&
     rows.some((row) => row.id === announcement.rowId)
@@ -426,9 +309,7 @@ function FileUploaderInner(
       )}
     >
       {pickerRendered ? (
-        /* One selection zone: the click target and the drop target are the
-           same labelled surface, which carries the instruction once. The
-           file input inside it stays the control's single tab stop. */
+        /* One labelled surface is both the click and the drop target. */
         <Box
           component="label"
           tabIndex={-1}
@@ -471,10 +352,7 @@ function FileUploaderInner(
         </Box>
       ) : null}
       {rows.length > 0 ? (
-        /* The rows are one real list: a screen-reader user hears each
-           file as one item of a list with a boundary between rows,
-           never a flat div stack. role="list" keeps the list semantics
-           under WebKit, which strips them from a list-style-none ul. */
+        /* role="list" keeps list semantics under WebKit, which strips them from a list-style-none ul. */
         <Box
           component="ul"
           role="list"
@@ -602,8 +480,5 @@ function FileUploaderInner(
   )
 }
 
-/**
- * The queue renderer: host-owned `rows`, optional pick/drop reporting and
- * per-row action callbacks, and the announcement live region.
- */
+/** The queue renderer: host-owned rows, pick/drop reporting, per-row actions and the live region. */
 export const FileUploader = forwardRef(FileUploaderInner)

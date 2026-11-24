@@ -1,29 +1,4 @@
-/**
- * Phone-number composition for PhoneNumberField, the mobile-number (SMS)
- * control.
- *
- * `validatePhoneNumber` and `toE164` read libphonenumber-js's `mobile`
- * metadata: their verdicts are mobile number-plan verdicts, so a number
- * of a legal length but no possible mobile plan is refused rather than
- * handed to an SMS channel.
- *
- * A phone number is edited as two parts -- a country/region and a local
- * number -- and submitted as one E.164 string. Everything country-aware
- * here is libphonenumber-js's, not a table of our own: its "mobile"
- * metadata build supplies the country set, the calling codes, the
- * as-you-type grouping and the per-country number-plan validation, so
- * a number of a legal length but an impossible plan is refused rather
- * than sent. Country names are not data of ours either: they come from
- * `Intl.DisplayNames` at render time, so they follow the active language
- * without a translation key per region.
- *
- * The two validation verdicts are deliberately distinct:
- * `incomplete` (a number that is still shorter than any number of that
- * country can be), and `invalid` (the length is plausible but the
- * number's own pattern is not). The field renders a different message
- * for each, naming the calling code, so a viewer is told what is wrong
- * rather than that something is.
- */
+/** Phone-number composition for the mobile-number control, backed by libphonenumber-js's `mobile` metadata. */
 
 import {
   formatIncompletePhoneNumber,
@@ -67,9 +42,8 @@ export function phoneCountryCallingCode(country: string): string | null {
 }
 
 /**
- * The country's display name in `locale`, from `Intl.DisplayNames`. A
- * locale or region the runtime cannot name falls back to the ISO code,
- * so the selector never shows an empty entry.
+ * The country's display name in `locale`, from `Intl.DisplayNames`. Falls
+ * back to the ISO code when the runtime cannot name it.
  */
 export function phoneCountryName(country: string, locale: string): string {
   try {
@@ -80,10 +54,9 @@ export function phoneCountryName(country: string, locale: string): string {
 }
 
 /**
- * The country a browser locale starts on: the locale's own region when
- * the phone metadata covers it (zh-CN -> CN, en-US -> US), the region
- * the language maximizes to when the tag names none (en -> US, zh -> CN),
- * and US otherwise. A malformed tag never throws on this path.
+ * The country a browser locale starts on: the locale's own region when the
+ * phone metadata covers it, else the maximized region, else US. A malformed
+ * tag does not throw.
  */
 export function defaultPhoneCountry(locale?: string): string {
   const tag =
@@ -106,10 +79,8 @@ export function nationalNumberDigits(value: string): string {
 }
 
 /**
- * Parse a value that starts with `+` into its country and local part.
- * `null` while the input is still too short to identify (a lone `+`, or
- * a partial calling code), which lets the field keep showing what was
- * typed until enough of it exists to switch countries.
+ * Parses a value that starts with `+` into its country and local part.
+ * `null` while the input is too short to identify.
  */
 export function parseInternationalPhoneNumber(
   value: string,
@@ -127,9 +98,7 @@ export function parseInternationalPhoneNumber(
 
 /**
  * The local number as the viewer sees it while typing: the library's
- * as-you-type grouping with every separator folded to a space, so the
- * field reads the same way in every country ("415 555 2671", not
- * "(415) 555-2671").
+ * as-you-type grouping with every separator folded to a space.
  */
 export function formatNationalPhoneNumber(
   country: string,

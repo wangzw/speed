@@ -1,16 +1,3 @@
-/**
- * AsyncSection contract: the four states of an async read map to the
- * four fixed renderings -- loading announcement, retryable error
- * placeholder, empty placeholder, content -- with the absent payload
- * taking precedence over the empty decision, the empty placeholder
- * requiring its copy, the content callback receiving the narrowed
- * payload, and the placeholders' titles rendering at the passed heading
- * level (h2, the section-title level, by default). A settled branch may
- * also carry the stale marker: the settled rendering -- the content, or
- * the empty placeholder when the payload is empty -- keeps rendering
- * while a warning alert with the retry action renders above it, so the
- * marker appearing or withdrawing never remounts the settled node.
- */
 
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -51,11 +38,6 @@ function staleStateOf(onRetry: () => void): AsyncSectionStaleState {
   }
 }
 
-/**
- * A host holding the stale marker as state: its retry withdraws the
- * marker, and a later failed retry supplies it again -- the caller-side
- * lifecycle `staleState` documents.
- */
 function StaleSectionHost() {
   const [stale, setStale] = useState<AsyncSectionStaleState | undefined>(() =>
     staleStateOf(() => {
@@ -91,7 +73,6 @@ function StaleSectionHost() {
   )
 }
 
-/** The settled content, holding state a remount would lose. */
 function StatefulContent() {
   const [count, setCount] = useState(0)
   return (
@@ -110,7 +91,6 @@ function StatefulContent() {
   )
 }
 
-/** A settled section whose host flips the stale marker on and off. */
 function StatefulStaleHost() {
   const [stale, setStale] = useState<AsyncSectionStaleState | undefined>(() =>
     staleStateOf(vi.fn()),
@@ -142,7 +122,6 @@ function StatefulStaleHost() {
   )
 }
 
-/** A settled EMPTY section whose host flips the stale marker on and off. */
 function EmptyPayloadStaleHost({
   onRetry,
 }: {
@@ -233,7 +212,6 @@ describe('AsyncSection', () => {
     )
     expect(screen.getByText(EMPTY_STATE.title)).toBeInTheDocument()
     expect(screen.getByText(EMPTY_STATE.description)).toBeInTheDocument()
-    // The content callback is never built for the placeholder branches.
     expect(children).not.toHaveBeenCalled()
   })
 
@@ -320,8 +298,6 @@ describe('AsyncSection', () => {
         {(items: readonly string[]) => <p>content {items.join(',')}</p>}
       </AsyncSection>,
     )
-    // The empty placeholder carries no heading; the whole placeholder is one
-    // role="status" region instead. The error level is untouched.
     expect(
       screen.queryByRole('heading', { name: EMPTY_STATE.title }),
     ).not.toBeInTheDocument()
@@ -348,13 +324,10 @@ describe('AsyncSection', () => {
         </AsyncSection>
       </div>,
     )
-    // The earlier data stays on screen; the alert rides above it.
     const content = screen.getByText('content alpha,beta')
     expect(content).toBeInTheDocument()
     const alert = screen.getByRole('alert')
     expect(alert).toHaveTextContent(STALE_DESCRIPTION)
-    // The notice precedes the content and does not wrap it: it is a
-    // sibling above the settled node, not a container around it.
     expect(
       alert.compareDocumentPosition(content) &
         Node.DOCUMENT_POSITION_FOLLOWING,
@@ -388,13 +361,9 @@ describe('AsyncSection', () => {
       </div>,
     )
     const alert = screen.getByRole('alert')
-    // The notice is a warning: a refresh failed but the shown data keeps
-    // its meaning. Error and info severities are not this state.
     expect(alert).toHaveClass(alertClasses.colorWarning)
     expect(alert.className).not.toMatch(new RegExp(alertClasses.colorError))
     expect(alert.className).not.toMatch(new RegExp(alertClasses.colorInfo))
-    // Two spacing units (8px each) separate the notice from the content
-    // rendered beneath it.
     expect(alert).toHaveStyle({ marginBottom: '16px' })
   })
 
@@ -417,8 +386,6 @@ describe('AsyncSection', () => {
         {(items) => <p>content {items.join(',')}</p>}
       </AsyncSection>,
     )
-    // An empty description does not dissolve the state marker: the alert
-    // stands (announcing the state change) and the retry stays available.
     const alert = screen.getByRole('alert')
     expect(alert).toBeInTheDocument()
     const retry = screen.getByRole('button', { name: STALE_RETRY_LABEL })
@@ -432,16 +399,12 @@ describe('AsyncSection', () => {
     const firstAlert = screen.getByRole('alert')
     expect(firstAlert).toHaveTextContent(STALE_DESCRIPTION)
 
-    // The retry is issued: the host withdraws staleState and the alert
-    // unmounts while the read is in flight, content still on screen.
     await userEvent.click(
       screen.getByRole('button', { name: STALE_RETRY_LABEL }),
     )
     expect(screen.queryByRole('alert')).toBeNull()
     expect(view.getByText('content alpha')).toBeInTheDocument()
 
-    // The retry failed again: the host re-supplies staleState; the alert
-    // mounts anew (a new node, so role="alert" announces again).
     await userEvent.click(
       screen.getByRole('button', { name: 'retry failed' }),
     )
@@ -459,9 +422,6 @@ describe('AsyncSection', () => {
     expect(content).toHaveTextContent('1')
     expect(view.getByRole('alert')).toBeInTheDocument()
 
-    // The notice withdraws: the content node is the same node and keeps its
-    // local state -- it is not unmounted and remounted by the tree-shape
-    // change.
     await userEvent.click(view.getByRole('button', { name: 'toggle stale' }))
     expect(view.queryByRole('alert')).toBeNull()
     expect(view.getByTestId('settled-content')).toBe(content)
@@ -470,7 +430,6 @@ describe('AsyncSection', () => {
       'draft text',
     )
 
-    // The notice returns: still the same content node, still its state.
     await userEvent.click(view.getByRole('button', { name: 'toggle stale' }))
     expect(view.getByRole('alert')).toBeInTheDocument()
     expect(view.getByTestId('settled-content')).toBe(content)
@@ -542,8 +501,6 @@ describe('AsyncSection', () => {
         {(items) => <p>content {items.length}</p>}
       </AsyncSection>,
     )
-    // No empty placeholder to take over: the content callback still renders
-    // the settled payload, with the stale notice above it.
     expect(screen.getByText('content 0')).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent(STALE_DESCRIPTION)
   })
@@ -585,16 +542,12 @@ describe('AsyncSection', () => {
     expect(placeholder).not.toBeNull()
     expect(view.queryByText(/content/)).not.toBeInTheDocument()
 
-    // The placeholder carries the EMPTY variant's icon, not the error
-    // placeholder's: mutating the variant must fail here.
     const icon = placeholder!.querySelector('svg')
     expect(icon).not.toBeNull()
     expect(icon!.outerHTML).toBe(
       render(<EmptyBoxIcon />).container.innerHTML,
     )
 
-    // The notice stands above the placeholder, as a sibling rather than a
-    // container around it.
     const alert = view.getByRole('alert')
     expect(alert).toHaveTextContent(STALE_DESCRIPTION)
     expect(
@@ -603,8 +556,6 @@ describe('AsyncSection', () => {
     ).toBeTruthy()
     expect(alert).not.toContainElement(placeholder!)
 
-    // Withdrawing the marker unmounts the notice and leaves the same
-    // placeholder node -- and the same icon -- in place.
     await userEvent.click(view.getByRole('button', { name: 'toggle stale' }))
     expect(view.queryByRole('alert')).toBeNull()
     const withdrawnTitle = view.getByText(EMPTY_STATE.title)
@@ -613,8 +564,6 @@ describe('AsyncSection', () => {
       icon!.outerHTML,
     )
 
-    // Re-supplying it mounts the notice anew; the placeholder is still the
-    // same node.
     await userEvent.click(view.getByRole('button', { name: 'toggle stale' }))
     expect(view.getByRole('alert')).toHaveTextContent(STALE_DESCRIPTION)
     expect(view.getByText(EMPTY_STATE.title).parentElement).toBe(placeholder)
@@ -628,8 +577,6 @@ describe('AsyncSection', () => {
 
     await userEvent.keyboard('{Enter}')
 
-    // The notice withdraws and the content stays; focus must not fall back
-    // to the document body, or a keyboard user would tab in from the top.
     expect(view.queryByRole('alert')).toBeNull()
     expect(document.activeElement).not.toBe(document.body)
     expect(document.activeElement).toHaveTextContent('content alpha')
@@ -645,8 +592,6 @@ describe('AsyncSection', () => {
     expect(view.getByRole('alert')).toContainElement(retry)
     await userEvent.click(retry)
     expect(onRetry).toHaveBeenCalledTimes(1)
-    // The marker is the host's state: clicking the retry does not
-    // dissolve it on its own.
     expect(view.getByRole('alert')).toBeInTheDocument()
   })
 
@@ -668,9 +613,6 @@ describe('AsyncSection', () => {
         </AsyncSection>
       </div>,
     )
-    // The caller decided the read was refused: the no-permission
-    // placeholder takes the content's place, and nothing offers a retry
-    // that could only be refused again.
     expect(screen.getByText(REFUSED_STATE.title)).toBeInTheDocument()
     expect(screen.getByText(REFUSED_STATE.description)).toBeInTheDocument()
     expect(screen.queryByText('content')).not.toBeInTheDocument()
@@ -711,8 +653,6 @@ describe('AsyncSection', () => {
         {(items: readonly string[]) => <p>content {items.join(',')}</p>}
       </AsyncSection>,
     )
-    // A refusal is not a load failure: the retryable error placeholder and
-    // its retry action are replaced too.
     expect(screen.getByText(REFUSED_STATE.title)).toBeInTheDocument()
     expect(screen.queryByText(ERROR_STATE.title)).not.toBeInTheDocument()
     expect(
@@ -752,7 +692,6 @@ describe('AsyncSection', () => {
         {(items) => <p>content {items.join(',')}</p>}
       </AsyncSection>,
     )
-    // A read in flight shows the loading announcement, not stale data.
     expect(screen.getByText('loading node')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).toBeNull()
     pendingView.unmount()
@@ -770,8 +709,6 @@ describe('AsyncSection', () => {
         {(items: readonly string[]) => <p>content {items.join(',')}</p>}
       </AsyncSection>,
     )
-    // A settled read with no payload takes the error placeholder; stale
-    // marking belongs to the branch whose data is still on screen.
     expect(screen.getByText(ERROR_STATE.title)).toBeInTheDocument()
     expect(screen.queryByRole('alert')).toBeNull()
   })

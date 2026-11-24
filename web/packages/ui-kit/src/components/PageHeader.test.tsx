@@ -1,11 +1,3 @@
-/**
- * PageHeader contract: the page title renders as the single h1 in the
- * heading-4 role, description and actions render when given, and the
- * breadcrumb trail renders above the title inside a navigation
- * landmark whose accessible name comes from the ui-kit namespace --
- * asserted against the bundles, never against inlined language text.
- * Visible crumb labels are caller content.
- */
 
 import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, within } from '@testing-library/react'
@@ -45,10 +37,6 @@ describe('PageHeader', () => {
   })
 
   it('wraps the title/actions row instead of squeezing them under a narrow container', () => {
-    // A property assertion, not a rendering proof: jsdom does no real
-    // layout, so this cannot show the row actually wrapping at a real
-    // narrow width -- it proves the flexWrap CSS is wired onto the row,
-    // guarding against a refactor silently dropping it.
     const { getByRole } = renderWithProviders(
       <PageHeader title="Members" actions={<button type="button">Invite</button>} />,
     )
@@ -63,7 +51,6 @@ describe('PageHeader', () => {
       <PageHeader title="Settings" />,
     )
     expect(getByRole('heading', { level: 1 })).toHaveTextContent('Settings')
-    // No empty action gutter or description paragraph materializes.
     expect(getByRole('heading').closest('header')).toBeInTheDocument()
     expect(queryByRole('paragraph')).not.toBeInTheDocument()
     expect(queryByText('', { selector: 'button' })).not.toBeInTheDocument()
@@ -79,7 +66,6 @@ describe('PageHeader', () => {
     expect(crumbs.getByText('Workspaces')).toBeInTheDocument()
     expect(crumbs.getByText('Dental Care')).toBeInTheDocument()
     expect(crumbs.getByText('Members')).toBeInTheDocument()
-    // The trail comes before the page title inside the header element.
     const heading = getByRole('heading', { level: 1 })
     const header = heading.closest('header')
     expect(header).not.toBeNull()
@@ -109,7 +95,6 @@ describe('PageHeader', () => {
   })
 
   it('marks a plain-text last crumb as the current page too', () => {
-    // The current-page semantics must not depend on the crumb being a link.
     const { getByRole, container } = renderWithProviders(
       <PageHeader title="Overview" breadcrumbs={[{ label: 'Workspaces', href: '/workspaces' }, { label: 'Overview' }]} />,
     )
@@ -129,9 +114,6 @@ describe('PageHeader', () => {
           {
             label: 'Workspaces',
             href: '/workspaces',
-            // A host's SPA interception handler prevents the default
-            // navigation (router push instead); without preventDefault
-            // jsdom reports an unimplemented document navigation.
             onClick: (event) => {
               event.preventDefault()
               onCrumbClick()

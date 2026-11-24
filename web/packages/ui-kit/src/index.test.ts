@@ -1,28 +1,3 @@
-/**
- * The entry's export surface, guarded two ways.
- *
- * The package's public surface is exactly what src/index.ts re-exports.
- * The first assertion is a mechanism: it walks the entry's own
- * export-from declarations, enumerates each resolved source module's
- * exported symbols with the TypeScript compiler API, and asserts the
- * entry re-exports every one of them. A public name declared in a module
- * the entry already exposes and forgotten in the entry fails here.
- *
- * The mechanism is deliberately one-directional: the module list derives
- * from the entry's own declarations, so deleting a whole export block --
- * or a whole module the entry does not expose -- is invisible to it. The
- * second assertion pins the entry's exported name list against a fixed
- * list, so a lost export of either kind (a value, or a type-only name
- * such as WriteOutcome) fails here too.
- *
- * The third assertion guards the module augmentations (`declare module
- * '@mui/material/styles'`): a consumer that compiles against this
- * package's emitted declarations loads only the modules the entry's
- * `.d.ts` graph reaches, so an augmentation declared in an internal
- * module never applies there and the property it adds reads as unknown.
- * Every augmentation therefore has to live in a module the entry
- * re-exports from.
- */
 
 import { readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
@@ -32,7 +7,6 @@ import ts from 'typescript'
 
 const srcDir = resolve(dirname(fileURLToPath(import.meta.url)))
 
-/** The entry's relative from-specifiers (`export { ... } from './x.js'`). */
 function exportFromSpecifiers(source: ts.SourceFile): string[] {
   const specifiers: string[] = []
   for (const statement of source.statements) {
@@ -47,7 +21,6 @@ function exportFromSpecifiers(source: ts.SourceFile): string[] {
   return specifiers
 }
 
-/** All exported symbol names of one source file (values and types alike). */
 function exportedNames(program: ts.Program, source: ts.SourceFile): string[] {
   const checker = program.getTypeChecker()
   const moduleSymbol = checker.getSymbolAtLocation(source)
@@ -78,7 +51,7 @@ function createEntryProgram(): {
     indexPath,
     readFileSync(indexPath, 'utf8'),
     ts.ScriptTarget.ES2022,
-    /* setParentNodes */ true,
+    true,
     ts.ScriptKind.TS,
   )
   const moduleHost: ts.ModuleResolutionHost = {
@@ -113,7 +86,6 @@ function createEntryProgram(): {
   }
 }
 
-/** Every name a consumer can import from the package entry. */
 const PUBLIC_EXPORTS = [
   'ActionButton',
   'ActionButtonProps',

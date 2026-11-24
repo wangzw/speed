@@ -1,9 +1,3 @@
-/**
- * The email-address rule: the server's normalization rule restated, so a
- * refused address is refused for the same reason the server would give.
- * The cases pin each clause -- trimming, printable ASCII, exactly one @
- * with a part on each side, and the 254-byte bound -- in both directions.
- */
 
 import { describe, expect, it } from 'vitest'
 import {

@@ -1,11 +1,3 @@
-/**
- * The validation-error text contract, in isolation: no error yields
- * null, a message that names a ui-kit-namespace key renders as its
- * translation, anything else renders verbatim. (The language-switch
- * half of the contract -- the same key resolving to a different text
- * after a switch -- is proven through FormField, which owns the render
- * time of the resolution.)
- */
 
 import { describe, expect, it } from 'vitest'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
@@ -45,8 +37,6 @@ describe('resolveValidationError', () => {
   })
 
   it('passes through a message that names a key of a namespace it does not own', () => {
-    // 'greeting.title' exists nowhere in ui-kit -- it must not resolve
-    // against some guessed namespace or fall back silently.
     expect(resolveValidationError('greeting.title', lookup(['form.required']))).toBe(
       'greeting.title',
     )

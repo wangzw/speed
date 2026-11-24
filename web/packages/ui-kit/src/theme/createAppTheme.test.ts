@@ -1,11 +1,3 @@
-/**
- * Theme-factory contract tests: the token-to-MUI mapping (every mapped
- * surface pinned against the default tokens), the three-layer override
- * semantics (later layers win per key, untouched branches stay shared),
- * copy-on-write (no input ever mutates), and hostile-override inertness.
- *
- * These run without a DOM: createAppTheme is a pure function.
- */
 
 import { describe, expect, it } from 'vitest'
 import { defaultTokens } from '@speed/tokens'
@@ -14,12 +6,8 @@ import { createAppTheme } from './createAppTheme.js'
 import { REDUCED_MOTION_QUERY } from './reduced-motion.js'
 
 const DEFAULT_BEFORE = JSON.stringify(defaultTokens)
-// Pristine snapshot taken at module load: the shared-branch enforcement
-// tests prove the assembled defaults stay byte-identical no matter what a
-// merged result's consumer tries to write through them.
 const PRISTINE_ERROR_MAIN = defaultTokens.color.semantic.error.main
 
-/** The six semantic roles every color-mode assertion sweeps. */
 const SEMANTIC_ROLES = [
   'primary',
   'secondary',
@@ -49,12 +37,10 @@ describe('createAppTheme token-to-theme mapping', () => {
     for (const tone of [50, 100, 200, 300, 400, 500, 600, 700, 800, 900] as const) {
       expect(theme.palette.grey[tone]).toBe(neutral[tone])
     }
-    // MUI's own aliasing: A-tones repeat the same-number step.
     expect(theme.palette.grey.A100).toBe(neutral[100])
     expect(theme.palette.grey.A200).toBe(neutral[200])
     expect(theme.palette.grey.A400).toBe(neutral[400])
     expect(theme.palette.grey.A700).toBe(neutral[700])
-    // Tone 950 has no MUI slot; it stays token-only.
     expect(Object.hasOwn(theme.palette.grey, 950)).toBe(false)
   })
 
@@ -149,12 +135,10 @@ describe('createAppTheme token-to-theme mapping', () => {
     expect(shadows[8]).toBe(tokenShadows[8])
     expect(shadows[16]).toBe(tokenShadows[16])
     expect(shadows[24]).toBe(tokenShadows[24])
-    // Unlisted elevations floor onto the nearest token slot at or below.
     expect(shadows[3]).toBe(tokenShadows[2])
     expect(shadows[5]).toBe(tokenShadows[4])
     expect(shadows[9]).toBe(tokenShadows[8])
     expect(shadows[20]).toBe(tokenShadows[16])
-    // The ramp never dips: elevation growth is monotonic.
     for (let i = 2; i < shadows.length; i += 1) {
       expect(shadows[i]).not.toBe('none')
     }
@@ -168,8 +152,6 @@ describe('createAppTheme reduced motion', () => {
   })
 
   it('stops the skeleton at its root under reduced motion', () => {
-    // Skeleton animates through keyframes rather than transitions, so the
-    // theme states the gate on the component root as well as on motion.
     const { theme } = createAppTheme()
     const root = theme.components?.MuiSkeleton?.styleOverrides?.root as
       | Record<string, unknown>
@@ -201,22 +183,14 @@ describe('createAppTheme color modes', () => {
     expect(theme.palette.text.secondary).toBe(neutral[300])
     expect(theme.palette.text.disabled).toBe(neutral[500])
     expect(theme.palette.divider).toBe(neutral[700])
-    // The semantic roles read their tonal family from the other end in
-    // dark mode: main is the role's light tone (meant for dark surfaces)
-    // and the label flips to the neutral ramp's dark end.
     for (const role of SEMANTIC_ROLES) {
       expect(theme.palette[role].main).toBe(defaultTokens.color.semantic[role].light)
       expect(theme.palette[role].contrastText).toBe(neutral[900])
     }
-    // The neutral ramp maps onto grey identically in both modes.
     expect(theme.palette.grey[100]).toBe(neutral[100])
   })
 })
 
-/**
- * WCAG 2 relative luminance of an sRGB hex color, per the WCAG definition
- * (channels linearized, then weighted 0.2126/0.7152/0.0722).
- */
 function relativeLuminance(hex: string): number {
   const value = hex.slice(1)
   const linear = (offset: number): number => {
@@ -228,7 +202,6 @@ function relativeLuminance(hex: string): number {
   return 0.2126 * linear(0) + 0.7152 * linear(2) + 0.0722 * linear(4)
 }
 
-/** WCAG contrast ratio between two hex colors, from 1:1 to 21:1. */
 function contrastRatio(a: string, b: string): number {
   const brighter = Math.max(relativeLuminance(a), relativeLuminance(b))
   const darker = Math.min(relativeLuminance(a), relativeLuminance(b))
@@ -236,10 +209,6 @@ function contrastRatio(a: string, b: string): number {
 }
 
 describe('createAppTheme dark-mode contrast', () => {
-  // Every semantic role, measured against the surfaces it actually lands
-  // on: a role's main is a fill/border/icon on the dark paper (non-text,
-  // 3:1 floor) and its contrastText is the label inside that fill (text,
-  // 4.5:1 floor).
   const { theme } = createAppTheme(undefined, undefined, 'dark')
   const paper = theme.palette.background.paper
 
@@ -257,13 +226,9 @@ describe('createAppTheme dark-mode contrast', () => {
   })
 
   it('keeps every filled-control label readable on the hover fill MUI paints', () => {
-    // MUI's contained controls (Button, filled Chip, Fab) swap the fill to
-    // palette[role].dark on hover while the same contrastText label stays
-    // on top, so the dark slot is measured too, not just main.
     for (const role of SEMANTIC_ROLES) {
       const { main, dark, contrastText } = theme.palette[role]
       expect(contrastRatio(contrastText, dark)).toBeGreaterThanOrEqual(4.5)
-      // The hover fill still steps away from the resting fill.
       expect(relativeLuminance(dark)).toBeGreaterThan(relativeLuminance(main))
     }
   })
@@ -287,7 +252,6 @@ describe('createAppTheme layering', () => {
     expect(theme.palette.primary.main).toBe('#333333')
     expect(theme.palette.secondary.main).toBe('#222222')
     expect(theme.spacing(1)).toBe('4px')
-    // Untouched branches keep the defaults.
     expect(theme.palette.error.main).toBe(defaultTokens.color.semantic.error.main)
   })
 
@@ -311,11 +275,6 @@ describe('createAppTheme layering', () => {
     const project: TokensOverride = { color: { semantic: { primary: { main: '#123456' } } } }
     const first = createAppTheme(project)
     expect(first.theme.palette.primary.main).toBe('#123456')
-    // Branches the project layer rebuilt (primary here) are plain objects
-    // owned by this result alone: a write there is local, unlike a write
-    // through a shared branch, which the deep-frozen defaults refuse (see
-    // the shared-branch write enforcement suite below). Prove the sources
-    // stay byte-identical.
     const merged = first.tokens as unknown as {
       color: { semantic: { primary: { main: string } } }
     }
@@ -329,10 +288,7 @@ describe('createAppTheme layering', () => {
     const { tokens } = createAppTheme(hostile)
     expect(Object.getPrototypeOf(tokens)).toBe(Object.prototype)
     expect(({} as Record<string, unknown>).polluted).toBeUndefined()
-    // The hostile key landed as an own property, neither dropped nor
-    // merged into the prototype chain.
     expect(Object.prototype.hasOwnProperty.call(tokens, '__proto__')).toBe(true)
-    // The theme itself stays sane.
     expect(JSON.stringify(defaultTokens)).toBe(DEFAULT_BEFORE)
   })
 })
@@ -342,17 +298,9 @@ describe('createAppTheme shared-branch write enforcement', () => {
     const { tokens } = createAppTheme({
       color: { semantic: { primary: { main: '#123456' } } },
     })
-    // Writable view: the cast stands in for the JS-consumer trigger channel
-    // that bypasses the type layer's readonly seal (the same idiom the
-    // "never mutates its inputs" control test uses).
     const writable = tokens as unknown as {
       color: { semantic: { error: { main: string } } }
     }
-    // The project layer rebuilt only the primary branch; the error branch
-    // of the result is still the defaultTokens node (copy-on-write
-    // sharing), which is deep-frozen at assembly -- so a write through it
-    // must throw in strict mode, not silently pollute the shared default
-    // tree every later tenant merge starts from.
     const writeUntouchedBranch = (): void => {
       writable.color.semantic.error.main = '#DEADBEEF'
     }
@@ -368,16 +316,10 @@ describe('createAppTheme shared-branch write enforcement', () => {
     }
     let attemptThrew = false
     try {
-      // The branch tenant A never overrode: the write must not land
-      // anywhere shared. Refusing loudly is the deep freeze's job (pinned
-      // by the throws-when test above); this test pins the outcome.
       writable.color.semantic.error.main = '#DEADBEEF'
     } catch {
       attemptThrew = true
     }
-    // No pollution: the branch the write aimed at still holds the pristine
-    // value, and the assembled defaults are byte-identical to the snapshot
-    // taken at module load.
     expect(defaultTokens.color.semantic.error.main).toBe(PRISTINE_ERROR_MAIN)
     expect(JSON.stringify(defaultTokens)).toBe(DEFAULT_BEFORE)
     expect(attemptThrew).toBe(true)
@@ -396,8 +338,6 @@ describe('createAppTheme shared-branch write enforcement', () => {
     } catch {
       attemptThrew = true
     }
-    // No leak: a later factory call for tenant B reads its own override
-    // and pristine defaults -- never the value tenant A tried to write.
     const tenantB = createAppTheme({ zIndex: { values: { modal: 1600 } } })
     expect(tenantB.tokens.zIndex.values.modal).toBe(1600)
     expect(tenantB.tokens.color.semantic.error.main).toBe(PRISTINE_ERROR_MAIN)

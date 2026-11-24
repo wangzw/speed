@@ -1,13 +1,3 @@
-/**
- * focusPageLanding: the rule that hands focus to the new page after a
- * page change.
- *
- * The suite pins the lookup order -- landmark heading, then the landmark,
- * then a loose heading, then nothing -- the suppression test over hidden,
- * aria-hidden and inert subtrees, and the focus handling: a target with no
- * tabindex gets a temporary `-1` that the first blur removes, while a
- * target that already carries one is left alone.
- */
 
 import { afterEach, describe, expect, it } from 'vitest'
 import { focusPageLanding } from './page-landing.js'
@@ -155,9 +145,6 @@ describe('focusPageLanding', () => {
   })
 
   it('stops the suppression walk at the scope', () => {
-    // The scope is the authority on what is visible: a suppressed ancestor
-    // above the scope is outside it, so the scope's own heading still
-    // counts -- the main-landmark scope route-kit's private copy uses.
     mount('<div aria-hidden="true"><main><h1>Account</h1></main></div>')
     const main = element('main')
     const heading = element('h1')
@@ -167,10 +154,6 @@ describe('focusPageLanding', () => {
   })
 
   it('returns null and clears the temporary tabindex when the target cannot take focus', () => {
-    // A display:none subtree is not a suppressed subtree under the rule,
-    // so the landmark is the target; the focus call cannot land, and the
-    // rule must undo its temporary attribute and report no landing so the
-    // caller can fall back.
     mount(
       '<div style="display: none"><main><h2>Section</h2></main></div><button type="button">Before</button>',
     )

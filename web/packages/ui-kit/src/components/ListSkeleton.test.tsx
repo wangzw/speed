@@ -1,9 +1,3 @@
-/**
- * ListSkeleton contract: one role="status" region carrying the passed
- * label with aria-busy set -- the single loading announcement, no fake
- * heading -- and one envelope row per entry with the shared spacing and
- * the divider between rows (never above the first).
- */
 
 import { createRef } from 'react'
 import { describe, expect, it } from 'vitest'

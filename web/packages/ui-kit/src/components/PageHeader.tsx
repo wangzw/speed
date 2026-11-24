@@ -1,20 +1,7 @@
 /**
- * PageHeader: the single page-level heading block.
- *
- * Renders the page title as a semantic h1 (one PageHeader per page --
- * the h1 contract is the caller's; this component just makes it easy)
- * in the heading typography role, an optional breadcrumb trail above
- * the title, an optional description in secondary body text, and an
- * optional action area (buttons, menus) on the end.
- *
- * Visible text here is caller content -- it renders the host's own
- * translations, so every crumb label, title and description is the
- * host's translation surface. The only built-in strings are
- * accessibility glue taken from the ui-kit namespace: the accessible
- * name of the breadcrumb navigation landmark, and the label of the
- * collapse-expand button MUI's Breadcrumbs shows once a trail exceeds
- * eight crumbs (MUI's stock label there is an English literal, so it
- * must never ship unreplaced).
+ * The single page-level heading block. Visible text is host content; the
+ * only built-in strings are the breadcrumb landmark's name and the
+ * collapse-expand label, which MUI would otherwise ship as an English literal.
  */
 
 import type { MouseEventHandler, ReactNode } from 'react'
@@ -27,14 +14,8 @@ import { useUiKitTranslation } from '../internal/translation.js'
 import { ActionRow } from './ActionRow.js'
 
 /**
- * One breadcrumb step: a label plus optional link behaviour.
- *
- * The label is host content -- render it already translated. A crumb
- * with `href` renders as a link (attach navigation-interception
- * handlers through `onClick`); a crumb without `href` renders as
- * plain text and is never interactive. The last crumb stands for the
- * current page and is marked `aria-current="page"` whether it links
- * or not.
+ * One breadcrumb step. A crumb with `href` renders as a link, without it as
+ * plain text; the last crumb is marked `aria-current="page"` either way.
  */
 export interface PageHeaderBreadcrumb {
   /** The crumb's text; host content, already translated. */
@@ -53,12 +34,7 @@ export interface PageHeaderProps {
   readonly title: ReactNode
   /** Optional supporting paragraph under the title. */
   readonly description?: ReactNode
-  /**
-   * Optional breadcrumb trail, from the top level down to the current
-   * page, rendered above the title inside a navigation landmark whose
-   * accessible name comes from the ui-kit namespace (see
-   * PageHeaderBreadcrumb for the link contract).
-   */
+  /** Optional breadcrumb trail above the title, inside a named navigation landmark. */
   readonly breadcrumbs?: readonly PageHeaderBreadcrumb[]
   /** Optional trailing actions (primary buttons, menus). */
   readonly actions?: ReactNode
@@ -66,10 +42,7 @@ export interface PageHeaderProps {
   readonly sx?: SxProps<Theme>
 }
 
-/**
- * The page heading block: optional breadcrumb trail, then title,
- * optional description and trailing actions on one baseline-spaced row.
- */
+/** The page heading block: breadcrumbs, title, description and trailing actions. */
 export function PageHeader({ title, description, actions, breadcrumbs, sx }: PageHeaderProps) {
   const { t } = useUiKitTranslation()
   const crumbs = breadcrumbs ?? []
@@ -79,8 +52,7 @@ export function PageHeader({ title, description, actions, breadcrumbs, sx }: Pag
       {crumbs.length > 0 && (
         <Breadcrumbs
           aria-label={t('pageHeader.breadcrumbNav')}
-          // The namespace wording keeps the collapse-expand button
-          // bilingual; MUI's stock 'Show path' literal never ships.
+          // MUI's stock 'Show path' literal must never ship.
           expandText={t('pageHeader.showFullPath')}
           sx={{ marginBottom: 1.5 }}
         >

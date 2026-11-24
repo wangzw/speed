@@ -1,48 +1,7 @@
 /**
- * RefreshButton: the shared control that re-reads a page's own data.
- *
- * The control re-reads the surface's own data: outlined, small, with a
- * visible text label and the same busy and disabled rules everywhere.
- * Only its position differs -- a surface whose body is addressed by a
- * selector renders it beside that selector, every other surface keeps it
- * in the page header.
- *
- * It is unavailable while it cannot do its job: the scope the surface is
- * addressed by is still empty, or a write in the surface's scopes is in
- * flight. The two unavailable reasons are kept apart, because they explain
- * different things. An empty scope explains itself: the tooltip repeats
- * the surface's existing "choose a tenant/account first" text (the
- * caller passes that same translation), and `aria-describedby` points at
- * the one copy the surface already renders. A write in flight does not:
- * the operator already chose the scope, and a control claiming otherwise
- * would be wrong. Only `disabled` applies the description and the
- * tooltip; `writePending` renders the control unavailable without either.
- *
- * While the read itself is in flight the control stays focusable and
- * reports `aria-busy`, with the spinner in place of an icon. None of these
- * states renders the control natively disabled: a natively disabled button
- * stops holding focus, browsers differ in when and how they move it, and
- * an operator who pressed Enter would lose their place until the read
- * settles, with the read putting it nowhere. Every such state keeps the
- * control focusable, carries `aria-disabled` where appropriate, and
- * swallows activation through a guard, so a second activation issues no
- * second request and queues none.
- *
- * Because the control is never natively disabled, the tooltip attaches to
- * the button directly instead of a wrapper span. An enabled control
- * carries neither the tooltip nor the description.
- *
- * A surface whose refresh re-reads a named object passes `ariaLabel`:
- * the visible text stays the shared label, while the accessible name
- * names what is re-read. The caller's label must begin with that visible
- * text, so a speech-input user can still say what is on screen; callers
- * that re-read nothing more specific than the surface omit it.
- *
- * `label` is the visible text. Callers pass their own package's existing
- * translation so the control keeps their wording; the ui-kit namespace's
- * `refreshButton.label` is the default.
- *
- * The console renders this control; the package keeps no copy of its own.
+ * The shared control that re-reads a page's own data. It is never natively
+ * disabled: busy and unavailable states stay focusable and swallow
+ * activation. Only `disabled` carries the empty-scope explanation.
  */
 
 import { forwardRef, useId } from 'react'
@@ -57,16 +16,9 @@ import { useActivationGuard } from '../activation-guard.js'
 export interface RefreshButtonProps extends RootStyleProps {
   /** Whether the read it re-reads is in flight. */
   readonly busy: boolean
-  /**
-   * Whether the scope the surface is addressed by is still empty. This
-   * state carries the "choose a scope first" description and tooltip.
-   */
+  /** The surface's scope is still empty; carries the "choose a scope first" explanation. */
   readonly disabled?: boolean
-  /**
-   * Whether a write in the surface's scopes is in flight. It renders the
-   * control unavailable, without the empty-scope description: the scope is
-   * chosen, and re-reading mid-write would race the write.
-   */
+  /** A write is in flight: unavailable, without an explanation, since re-reading would race it. */
   readonly writePending?: boolean
   /** Starts the read. Not called while busy or unavailable. */
   readonly onClick: () => void
@@ -74,16 +26,9 @@ export interface RefreshButtonProps extends RootStyleProps {
   readonly describedBy?: string
   /** That same text, shown in the disabled control's tooltip. */
   readonly disabledReason?: string
-  /**
-   * The accessible name, when the re-read object is more specific than
-   * the surface. Must begin with the visible text.
-   */
+  /** The accessible name when the re-read object is more specific; must begin with the visible text. */
   readonly ariaLabel?: string
-  /**
-   * The visible button text. Callers pass their package's existing
-   * translation; the default is the ui-kit namespace's
-   * `refreshButton.label`.
-   */
+  /** The visible text; defaults to the ui-kit `refreshButton.label`. */
   readonly label?: string
 }
 
@@ -103,14 +48,11 @@ function RefreshButtonInner(
   ref: Ref<HTMLButtonElement>,
 ) {
   const { t } = useUiKitTranslation()
-  // The spinner is named by the button's own text: the button carries the
-  // id while it is busy, and the progressbar is labelled by it (the same
-  // wiring MUI's own loading indicator uses).
+  // The spinner is labelled by the button's own text, so the button carries an id while busy.
   const loadingId = useId()
   const text = label ?? t('refreshButton.label')
   const unavailable = disabled || writePending
-  // Activation is swallowed while the read is in flight or the control is
-  // unavailable, without turning the button natively disabled.
+  // Activation is swallowed without turning the button natively disabled.
   const handleClick = useActivationGuard(onClick, { busy, unavailable })
   const button = (
     <Button
@@ -139,13 +81,8 @@ function RefreshButtonInner(
       {text}
     </Button>
   )
-  // Every state returns the tooltip wrapper: an enabled control or a
-  // write-pending one passes an empty title, which MUI never opens, while
-  // the button stays a child of the same wrapper in every state and React
-  // reconciles it in place. Returning the bare button in some states and a
-  // wrapped one in others changes the root element's type, unmounts the
-  // button, and drops a focused control's focus exactly when its
-  // availability changes.
+  // Every state returns the wrapper, so the button reconciles in place and
+  // never loses focus when its availability changes. An empty title never opens.
   return (
     <Tooltip
       title={disabled && disabledReason !== undefined ? disabledReason : ''}
@@ -156,10 +93,5 @@ function RefreshButtonInner(
   )
 }
 
-/**
- * The shared refresh control (see the file header), rendered by the
- * console's pages. `sx`, `className` and the ref apply to the button
- * itself in both of its renderings; the tooltip attaches to the button
- * directly.
- */
+/** `sx`, `className` and the ref apply to the button itself; the tooltip attaches to it directly. */
 export const RefreshButton = forwardRef(RefreshButtonInner)

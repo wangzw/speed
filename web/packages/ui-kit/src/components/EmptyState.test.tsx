@@ -1,10 +1,3 @@
-/**
- * EmptyState contract: every variant carries bilingual built-in title
- * and description from the ui-kit namespace (asserted against the
- * bundles, never against inlined language text), title/description/
- * action/icon are host overrides, and a key missing from the namespace
- * renders as the key itself -- never another language's text.
- */
 
 import { act } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
@@ -96,14 +89,6 @@ describe('EmptyState', () => {
   })
 
   it('passes axe over every variant', async () => {
-    // The full-scan assertion needs the page-heading context a real
-    // page supplies: page-has-heading-one is determinate in jsdom now
-    // (see the axe helper header), so a document with no h1 fails the
-    // scan instead of passing by indeterminacy. Each variant renders
-    // the way a caller that sets headingLevel would -- under the page's
-    // h1 and declaring the headingLevel that continues the page order;
-    // the stock h6 default under a real h1 is a genuine heading-order
-    // skip, which the two regression tests below pin.
     for (const variant of ['empty', 'noPermission', 'error'] as const) {
       renderWithProviders(
         <div>
@@ -116,34 +101,11 @@ describe('EmptyState', () => {
   })
 
   it('fails the axe scan when the document has no page heading instead of passing by indeterminacy', async () => {
-    // The variants scan above works around the axe helper's
-    // heading-order handling by supplying the h1 itself.
-    // page-has-heading-one reports "incomplete" under jsdom (its modal
-    // probe needs document APIs jsdom lacks) and the axe helper checks
-    // only violations, so a component rendered with no h1 anywhere in
-    // the scan's document would pass by indeterminacy. The helper's
-    // modal-probe handling restores determinacy (see test-utils/axe.ts),
-    // so the isolated render FAILS the scan with the rule's real answer
-    // instead of silently passing.
     renderWithProviders(<EmptyState headingLevel="h2" />)
     await expect(expectNoAxeViolations()).rejects.toThrow(/page-has-heading-one/)
   })
 
-  // The title defaults to Typography variant="h6" -- a REAL <h6> DOM
-  // element whatever its visual style -- unless the caller passes
-  // headingLevel. Real pages render EmptyState under real heading
-  // ancestors (an h1 page title, an h2 section header a hidden-header
-  // empty/error branch stands in for), so the default h6 skips from
-  // h1/h2 straight to h6: a genuine axe heading-order violation the
-  // package's own component-level axe run above can never see, since it
-  // renders EmptyState in total isolation with no ancestor heading at
-  // all. This test supplies the ancestor itself so the skip is actually
-  // reachable.
   it('does not skip a heading level under a real h1/h2 ancestor', async () => {
-    // The default is h6: a caller that does not pass headingLevel under
-    // a real h1 ancestor skips straight to h6 -- the skip axe's
-    // heading-order rule flags. The test pins both halves: the default
-    // skips, an explicit headingLevel does not.
     renderWithProviders(
       <div>
         <h1>Page title</h1>
@@ -178,9 +140,6 @@ describe('EmptyState', () => {
         <EmptyState headingLevel="none" />
       </div>,
     )
-    // No heading element enters the outline -- the placeholder is a status,
-    // not a section -- and the whole placeholder is one role="status" region
-    // carrying the title.
     expect(container.querySelector('h6')).toBeNull()
     expect(container.querySelectorAll('h1, h2, h3, h4, h5, h6')).toHaveLength(1)
     const status = container.querySelector('[role="status"]')

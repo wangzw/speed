@@ -1,20 +1,3 @@
-/**
- * HumanVerification: the presentational block of the human-verification
- * gate.
- *
- * Pins the mechanisms -- off renders nothing, Turnstile renders the
- * provider widget and reports its token (and resets once the host
- * consumes it), proof of work shows the work and offers a retry, and the
- * self-hosted captcha renders the image, slider and audio forms, reports
- * the answer it collected, offers the one audio accessibility entry, and
- * shows the wait a refusal states -- plus the per-surface selection, the
- * audio player's focus and language, and the accessibility of the states
- * a viewer waits on. It also pins the block as one named group, the
- * announcement it inserts a frame after it appears, and the two states
- * its own buttons take: `busy` for the action in flight, `unavailable`
- * with the page's explanatory text for a precondition that is unmet.
- * Text expectations read the bundle values, never inline language.
- */
 
 import { useState } from 'react'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
@@ -36,7 +19,6 @@ afterEach(() => {
 
 const OFF: HumanVerificationGate = { required: false, provider: 'off' }
 
-/** A whole gate: `phone` as given, `other` off unless supplied. */
 function gateSet(
   phone: HumanVerificationGate,
   other: HumanVerificationGate = OFF,
@@ -44,7 +26,6 @@ function gateSet(
   return { phone, other }
 }
 
-/** One issued captcha challenge of the named form. */
 function captcha(
   form: HumanCaptchaChallenge['form'],
 ): HumanCaptchaChallenge {
@@ -76,20 +57,17 @@ function captcha(
 const COPY = zhCN.humanVerification
 const CAPTCHA_COPY = COPY.captcha
 
-/** The block's one group, named for what it asks the viewer to do. */
 function group(): HTMLElement {
   return screen.getByRole('group', { name: COPY.groupLabel })
 }
 
-/** The announcement region the block mounts: the group's first live status. */
 function announcement(): HTMLElement {
   const region = group().querySelector<HTMLElement>('[role="status"]')
   expect(region).not.toBeNull()
   return region as HTMLElement
 }
 
-/** Give the slider's two images the decoded sizes jsdom does not report: a
- * 320x160 background and a 48x48 piece, so the range takes 272 steps. */
+// jsdom reports no natural image size; the slider's 320x160 background and 48x48 piece are stated here.
 function loadSliderImages(container: HTMLElement): void {
   const images = container.querySelectorAll('img')
   expect(images).toHaveLength(2)
@@ -146,8 +124,6 @@ describe('HumanVerification', () => {
         onToken={() => {}}
       />,
     )
-    // The phone surface runs the proof of work, not the other surface's
-    // widget.
     expect(fake.widgets).toHaveLength(0)
     expect(screen.getByText(COPY.working)).toBeInTheDocument()
     fake.restore()
@@ -288,7 +264,6 @@ describe('HumanVerification', () => {
       />,
     )
     expect(screen.getByText(COPY.working)).toBeInTheDocument()
-    // A failed issue offers the retry.
     rerender(
       <HumanVerification
         scope="phone"
@@ -369,7 +344,6 @@ describe('HumanVerification', () => {
     expect(audio).toHaveAccessibleDescription(
       CAPTCHA_COPY.audioWait.replace('{{seconds}}', '42'),
     )
-    // The refresh control is not the refused one and stays available.
     expect(
       screen.getByRole('button', { name: CAPTCHA_COPY.refresh }),
     ).not.toHaveAttribute('aria-disabled')
@@ -386,11 +360,6 @@ describe('HumanVerification', () => {
           onRefreshCaptcha={() => {}}
         />,
       )
-      // The server chooses between the image and slider forms; the client
-      // cannot force either one. The only form-naming control is the audio
-      // accessibility entry, and the refresh takes no form. The image form
-      // also carries its answer's submit; the slider submits on release,
-      // so it has no separate confirm button.
       expect(
         screen.getByRole('button', { name: CAPTCHA_COPY.useAudio }),
       ).toBeInTheDocument()
@@ -414,8 +383,6 @@ describe('HumanVerification', () => {
         onRefreshCaptcha={() => {}}
       />,
     )
-    // The audio alternative is where the switches end, so with audio on
-    // screen none is shown; the refresh control remains.
     expect(
       screen.queryByRole('button', { name: CAPTCHA_COPY.useAudio }),
     ).not.toBeInTheDocument()
@@ -443,8 +410,6 @@ describe('HumanVerification', () => {
       'src',
       '/api/v1/auth/human/captcha/audio/1',
     )
-    // The digits are spoken in the active locale, so the player names it
-    // and receives focus when the alternative appears.
     expect(audio).toHaveAttribute('lang', 'zh-CN')
     expect(document.activeElement).toBe(audio)
     await userEvent
@@ -454,8 +419,6 @@ describe('HumanVerification', () => {
       .setup()
       .click(screen.getByRole('button', { name: CAPTCHA_COPY.submit }))
     expect(onToken).toHaveBeenCalledWith('challenge-1.67890')
-    // The audio alternative is where the switches end: no visual control
-    // is offered, and the audio entry itself is gone.
     for (const name of [CAPTCHA_COPY.useAudio]) {
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
     }
@@ -477,14 +440,10 @@ describe('HumanVerification', () => {
     expect(range).toHaveAttribute('type', 'range')
     await waitFor(() => expect(range).toHaveAttribute('max', '272'))
     fireEvent.change(range, { target: { value: '140' } })
-    // Moving the control is not submitting it: the offset travels on
-    // release, not on every change the browser reports while dragging.
     expect(onToken).not.toHaveBeenCalled()
     fireEvent.pointerUp(range)
     expect(onToken).toHaveBeenCalledTimes(1)
     expect(onToken).toHaveBeenCalledWith('challenge-1.140')
-    // The slider was the server's rotation: the client offers no control
-    // to ask for it, only the audio accessibility entry and the refresh.
     expect(
       screen.getByRole('button', { name: CAPTCHA_COPY.useAudio }),
     ).toBeInTheDocument()
@@ -508,9 +467,6 @@ describe('HumanVerification', () => {
     loadSliderImages(container)
     const range = screen.getByLabelText(CAPTCHA_COPY.sliderLabel)
     await waitFor(() => expect(range).toHaveAttribute('max', '272'))
-    // A native range moves on the arrow keys and the browser reports each
-    // move as a change; the component itself submits on Enter, and only
-    // the offset in force when it is pressed travels.
     fireEvent.change(range, { target: { value: '80' } })
     fireEvent.change(range, { target: { value: '210' } })
     expect(onToken).not.toHaveBeenCalled()
@@ -573,7 +529,6 @@ describe('HumanVerification', () => {
             onToken={() => {}}
           />,
         )
-        // The commit that inserted the region left it empty.
         expect(announcement().textContent).toBe('')
         await waitFor(() =>
           expect(announcement()).toHaveTextContent(COPY.required),
@@ -640,9 +595,6 @@ describe('HumanVerification', () => {
     expect(onToken).not.toHaveBeenCalled()
     expect(onRefresh).not.toHaveBeenCalled()
     expect(onRequestAudio).not.toHaveBeenCalled()
-    // A write in flight takes the form's input to read-only, not to a
-    // native disable: the field stays focusable, and the block's ADR gives
-    // inputs the read-only treatment rather than the disabled one.
     const answer = screen.getByLabelText(CAPTCHA_COPY.answerLabel)
     expect(answer).toHaveAttribute('readonly')
     expect(answer).not.toBeDisabled()
@@ -651,10 +603,6 @@ describe('HumanVerification', () => {
   })
 
   it('keeps the slider focusable and inert while the host send is in flight', async () => {
-    // A native range has no read-only semantics -- `readonly` is ignored on
-    // it -- so the slider reports the held state with `aria-disabled` and
-    // swallows the interactions itself instead of taking the native
-    // disable that would drop focus.
     const onToken = vi.fn()
     const { container } = renderWithProviders(
       <HumanVerification
@@ -760,8 +708,6 @@ describe('HumanVerification', () => {
     expect(audio).toHaveAttribute('aria-disabled', 'true')
     expect(audio).not.toHaveAttribute('aria-busy')
     expect(screen.getByText(COPY.working)).toBeInTheDocument()
-    // The refresh button and its sibling swallow activation while the swap
-    // is in flight.
     await user.click(refresh)
     await user.click(audio)
     expect(onRefresh).toHaveBeenCalledTimes(1)
@@ -811,9 +757,6 @@ describe('HumanVerification', () => {
   })
 
   it('does not mark the refresh control busy when the retry asked for the swap', async () => {
-    // A refresh whose request fails leaves no swap in flight. The retry
-    // that asks for the next attempt is the action in flight, so the
-    // refresh control is not busy.
     const onRefresh = vi.fn()
     const onRetry = vi.fn()
     const props = {
@@ -832,7 +775,6 @@ describe('HumanVerification', () => {
     expect(
       screen.getByRole('button', { name: CAPTCHA_COPY.refresh }),
     ).toHaveAttribute('aria-busy', 'true')
-    // The refresh failed; the retry now asks for the next attempt.
     rerender(<HumanVerification {...props} captcha={null} status="failed" />)
     await user.click(screen.getByRole('button', { name: COPY.retry }))
     rerender(<HumanVerification {...props} captcha={null} status="working" />)
@@ -841,10 +783,6 @@ describe('HumanVerification', () => {
     expect(
       screen.getByRole('button', { name: CAPTCHA_COPY.refresh }),
     ).not.toHaveAttribute('aria-busy')
-    // The failed request cleared the refresh's pending action, so the retry
-    // started this swap and the refresh did not: it is unavailable, not
-    // busy, and activating it must not add a second request to the one in
-    // flight.
     const refresh = screen.getByRole('button', { name: CAPTCHA_COPY.refresh })
     expect(refresh).toHaveAttribute('aria-disabled', 'true')
     await user.click(refresh)
@@ -852,8 +790,6 @@ describe('HumanVerification', () => {
   })
 
   it('does not mark the refresh control busy when the host refetches after a proof', async () => {
-    // The host consumed the proof and asks for the next challenge on its
-    // own: no entry started the swap, so neither entry is busy.
     const props = {
       scope: 'phone' as const,
       gate: gateSet({ required: true, provider: 'captcha' }),
@@ -880,10 +816,6 @@ describe('HumanVerification', () => {
   })
 
   it('holds the refresh control during a swap neither entry started', async () => {
-    // The host refetches on its own, so neither entry is the author of the
-    // swap in flight. The refresh has nothing to ask for until the swap
-    // lands, and the audio entry already reports the hold; the refresh must
-    // report it too, or a second request can be layered onto the first.
     const onRefresh = vi.fn()
     const props = {
       scope: 'phone' as const,
@@ -905,12 +837,6 @@ describe('HumanVerification', () => {
   })
 
   it('does not claim focus after the viewer left the block and their new target disappeared', async () => {
-    // The escaped-focus record has no other reachable host path: the viewer
-    // moves from the block to a field beside it, the host removes that
-    // field (focus falls to the body), and only then the block's own state
-    // change removes the control that last held focus inside. Without the
-    // record this is exactly the case that would pull focus back into the
-    // group; with it, focus stays on the body.
     function Host({
       showOther,
       proof,
@@ -940,12 +866,8 @@ describe('HumanVerification', () => {
     const other = screen.getByLabelText('Other field')
     other.focus()
     expect(document.activeElement).toBe(other)
-    // The host removes the field the viewer moved to.
     rerender(<Host showOther={false} proof={null} />)
     expect(document.activeElement).toBe(document.body)
-    // The proof arrives and replaces the answer field with the verified
-    // state. The block's own control left the document, but the viewer was
-    // not in the block any more: focus must not move.
     rerender(<Host showOther={false} proof="proof-1" />)
     expect(screen.getByText(COPY.verified)).toBeInTheDocument()
     expect(document.activeElement).toBe(document.body)

@@ -1,12 +1,3 @@
-/**
- * FormLayout contract: owns the RHF form skeleton around the host's
- * useForm instance -- FormProvider context (FormField children need no
- * control prop), the <form> element with handleSubmit wired and native
- * validation off, the vertical field flow with uniform spacing, the
- * right-aligned actions row. No onSubmit renders a bare field flow
- * without a form element. Validation errors surface through the
- * FormField children and follow the language like everything else.
- */
 
 import { createRef } from 'react'
 import { act } from '@testing-library/react'
@@ -36,8 +27,6 @@ function FullForm({
   onSubmit: SubmitHandler<MemberFormValues>
   defaultValues?: MemberFormValues
 }) {
-  // Define every field's initial value: an undefined one renders the
-  // control uncontrolled and flips it when RHF writes the first value.
   const form = useForm<MemberFormValues>({
     mode: 'onSubmit',
     defaultValues: defaultValues ?? { name: '', email: '' },
@@ -199,23 +188,10 @@ describe('FormLayout', () => {
       const { container } = renderWithProviders(<TwoColumnForm />)
       const form = container.querySelector('form')
       expect(form).toHaveStyle({ display: 'grid' })
-      // The responsive gridTemplateColumns is a container-query-keyed sx
-      // value (1fr at the container's narrow end, two equal tracks from
-      // its `sm`/600px up), and jsdom evaluates neither real layout nor
-      // container queries, so getComputedStyle cannot resolve which side
-      // is "active" -- there is no real container for either side to be
-      // active at. Reading the generated CSS text instead proves both
-      // declarations were wired into the render: a property/snapshot
-      // assertion, not a proof that either layout renders correctly at a
-      // real container width.
       const css = emittedStyleText()
       expect(css).toMatch(/grid-template-columns:1fr/)
       expect(css).toMatch(/@container \(min-width:600px\)/)
       expect(css).toMatch(/grid-template-columns:repeat\(2,\s*1fr\)/)
-      // The actions row spans every column track in grid mode. jsdom's
-      // CSS engine does not resolve the `grid-column: 1 / -1` shorthand
-      // through getComputedStyle, so this too is a generated-CSS-text
-      // assertion rather than a toHaveStyle computed-style one.
       expect(css).toMatch(/grid-column:1\/-1/)
     })
 
@@ -233,15 +209,8 @@ describe('FormLayout', () => {
         )
       }
       renderWithProviders(<TwoColumnForm />)
-      // The failure mode the layout design records: without
-      // `container-type` on an ancestor of the grid, its `@container`
-      // rule matches nothing and the form never collapses. The wrapper
-      // FormLayout renders carries the declaration, so the proof is that
-      // it reached the generated CSS.
       const css = emittedStyleText()
       expect(css).toMatch(/container-type:inline-size/)
-      // And the grid's rule is a container query, not a viewport one:
-      // keyed on the viewport it would be blind to a narrow panel.
       expect(css).not.toContain('@media (min-width:600px)')
     })
 
@@ -286,10 +255,6 @@ describe('FormLayout', () => {
 
   it('passes axe over a labeled form', async () => {
     const onSubmit = vi.fn<SubmitHandler<MemberFormValues>>()
-    // Rendered under a real page h1: page-has-heading-one is determinate
-    // in jsdom now (see the axe helper header), so a scan document
-    // without an h1 fails instead of passing by indeterminacy -- the h1
-    // is the page context a real host page supplies.
     const utils = renderWithProviders(
       <div>
         <h1>Members</h1>

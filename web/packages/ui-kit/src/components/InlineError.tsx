@@ -1,35 +1,7 @@
 /**
- * InlineError: the shared failure banner for whole-attempt failures.
- *
- * A failed attempt resolves to one error code and renders it through
- * this banner instead of laying out per-field error text (field errors
- * belong to the fields; whole-attempt failures belong to one alert).
- * The banner itself is namespace-agnostic: the text comes from the
- * `resolve` prop, so each surface family binds its own namespace's
- * resolver and the English fallback an API returns for log triage can
- * never reach a user.
- *
- * errorCodeOf is the companion classifier: an ApiError-shaped failure
- * keeps its code, and anything else -- a bug-shaped throw, an
- * un-normalized answer, a value whose `code` read throws (a throwing
- * getter, a revoked proxy) -- collapses to a code that no resolver
- * lists, so the family renders its unknown fallback. The pair is
- * fail-closed: an operation that throws at all always has a code to
- * show, and classifying it never throws.
- *
- * httpStatusOf is the status-reading companion: callers that decide a
- * branch from an HTTP status (a refusal, a missing record) read it
- * structurally instead of re-implementing the two shapes
- * (`error.status`, or the `client.http.<n>` code) at every call site.
- *
- * A refusal that states a wait renders as two sentences. The sentence
- * resolved with the stated wait (`retryAfterSeconds`) stays in the
- * accessibility tree but is clipped from view, so a screen reader
- * announces the refusal once; the painted sentence is `aria-hidden`,
- * follows `liveRetryAfterSeconds` (the remaining seconds the host counts
- * down), and at zero resolves the code without a wait -- only the number
- * is dropped, the result stays. Omitting the live value keeps the painted
- * sentence on the stated wait.
+ * The shared failure banner for whole-attempt failures, namespace-agnostic:
+ * the text comes from `resolve`, `errorCodeOf` classifies the throw and
+ * `httpStatusOf` reads a status structurally.
  */
 
 import { forwardRef } from 'react'
@@ -49,8 +21,7 @@ export function errorCodeOf(error: unknown): string {
   try {
     code = (error as { code?: unknown }).code
   } catch {
-    // A throwing getter or a revoked proxy is still a failure with no
-    // readable code: classify it as unknown rather than let the read throw.
+    // A throwing getter or revoked proxy is still a failure with no readable code.
     return UNKNOWN_FAILURE_CODE
   }
   return typeof code === 'string' && code.length > 0
@@ -59,21 +30,15 @@ export function errorCodeOf(error: unknown): string {
 }
 
 /**
- * The collapse target of a failure that is not an ApiError-shaped
- * answer. Not a code @speed/api-client ever emits (its failures are
- * client.network / client.timeout / client.protocol / client.http.*),
- * so a resolver treats it as unknown and renders its fallback.
+ * The collapse target of a non-ApiError failure. @speed/api-client never
+ * emits it, so a resolver renders its unknown fallback.
  */
 const UNKNOWN_FAILURE_CODE = 'client.unknown'
 
 /**
- * The wait an error states the caller must observe before retrying, in
- * whole seconds: the api-client's `retryAfterMs` (set from a 429 or 503
- * answer's Retry-After header) rounded up, or undefined when the error
- * carries none. Read the same defensive way as `errorCodeOf`, so a
- * throwing getter or a revoked proxy reads as "no wait" instead of
- * throwing. A surface that renders a refusal passes this to its
- * resolver, which turns it into the wait the sentence names.
+ * The wait an error states before retrying, in whole seconds: the
+ * api-client's `retryAfterMs` rounded up, or `undefined`. Read defensively,
+ * so a throwing getter or revoked proxy reads as no wait.
  */
 export function retryAfterSecondsOf(error: unknown): number | undefined {
   if (typeof error !== 'object' || error === null) {
@@ -92,20 +57,9 @@ export function retryAfterSecondsOf(error: unknown): number | undefined {
 }
 
 /**
- * The HTTP status an error carries, read structurally: a numeric
- * `status` property holding a valid HTTP status (an integer in 100-599),
- * or else a `code` of the bare-HTTP shape `client.http.<n>`. Returns
- * `null` when neither names a status -- a transport failure (whose
- * `status` is 0), a bug-shaped throw, or a value whose reads throw (a
- * throwing getter, a revoked proxy).
- *
- * The helper is structural like its companion `errorCodeOf`: it imports
- * nothing from the transport and recognizes no envelope of its own. A
- * valid numeric `status` wins over a code when both are present, because
- * the answer's own field is the direct statement; the code is the
- * synthesized fallback a transport writes when the response carried no
- * readable envelope. An out-of-range number (0 on a transport failure)
- * names no status, so the code is still tried.
+ * The HTTP status an error carries, read structurally: an integer `status`
+ * in 100-599, else a `client.http.<n>` code. Returns `null` otherwise; a
+ * valid numeric status wins over a code when both are present.
  */
 export function httpStatusOf(error: unknown): number | null {
   if (typeof error !== 'object' || error === null) {
@@ -141,46 +95,26 @@ export function httpStatusOf(error: unknown): number | null {
 export interface InlineErrorProps extends RootStyleProps {
   /** The code to render, or null for no error (renders nothing). */
   readonly code: string | null
-  /**
-   * Resolves a code to its current-language text. The surface family
-   * binds its own namespace's resolver; the banner never guesses a
-   * namespace or falls back across languages.
-   */
+  /** Resolves a code to its current-language text; the caller binds its own namespace. */
   readonly resolve: (code: string, retryAfterSeconds?: number) => string
   /**
-   * The wait a throttled answer stated, in whole seconds. Given, the
-   * resolver renders the sentence that names it; a resolver that ignores
-   * the argument keeps its own text. This value is the sentence's fixed
-   * starting point: it is the text assistive technology reads, so the
-   * alert's announcement does not change while the wait runs down.
+   * The stated wait in whole seconds. This is the fixed sentence assistive
+   * technology reads, so the announcement does not change while it runs down.
    */
   readonly retryAfterSeconds?: number
   /**
-   * The wait still remaining, in whole seconds, when the host counts the
-   * stated wait down. The visible sentence follows this value; at zero it
-   * resolves the code without a wait, so no stale "0 seconds" remains.
-   * Omitted, the visible sentence carries the initial wait unchanged.
+   * The remaining seconds the host counts down. The visible sentence follows
+   * it; at zero it resolves without a wait, dropping only the number.
    */
   readonly liveRetryAfterSeconds?: number
-  /**
-   * Content rendered inside the alert, below the resolved sentence. A
-   * failure that names something -- the address a refusal collided on --
-   * goes here rather than beside the banner, so the name is part of the
-   * one region announced when the alert appears.
-   */
+  /** Content rendered inside the alert, below the sentence, so it is announced with it. */
   readonly detail?: ReactNode
 }
 
 /**
- * The whole-attempt failure banner, one role="alert" per error. With no
- * error nothing renders, so a host ref stays unattached.
- *
- * A stated wait renders as two sentences: the stable one, resolved with
- * the wait the answer stated, is present in the accessibility tree but
- * clipped from view; the painted one is `aria-hidden` and follows the
- * remaining seconds, dropping the number once the wait ends. The alert's
- * accessible text therefore never changes as the countdown ticks, so a
- * screen reader announces the failure once instead of every second.
+ * The failure banner, one `role="alert"` per error; with no error nothing
+ * renders. A stated wait renders two sentences: the clipped one is stable in
+ * the accessibility tree, the painted `aria-hidden` one counts down.
  */
 export const InlineError = forwardRef<HTMLDivElement, InlineErrorProps>(
   function InlineError(

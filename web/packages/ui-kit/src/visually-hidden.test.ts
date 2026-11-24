@@ -1,10 +1,3 @@
-/**
- * The visually-hidden recipe's shape, pinned: every hidden element in
- * the kit and in the consuming packages takes exactly this property
- * set, so each property a hidden element needs is decided here once --
- * clipping that keeps the element in the accessibility tree (never
- * display:none), the 1x1 out-of-flow box, and the margin reset.
- */
 
 import { describe, expect, it } from 'vitest'
 import { visuallyHiddenSx } from './visually-hidden.js'
@@ -14,8 +7,6 @@ describe('visuallyHiddenSx', () => {
     expect(visuallyHiddenSx).toEqual({
       clip: 'rect(0 0 0 0)',
       clipPath: 'inset(50%)',
-      // Strings, not bare numbers: MUI's sizing transform reads a number at
-      // or below 1 as a fraction, so `height: 1` would render as 100%.
       height: '1px',
       width: '1px',
       overflow: 'hidden',

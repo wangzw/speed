@@ -1,17 +1,3 @@
-/**
- * The unavailable-appearance contract: the stylesheet a control carrying
- * `aria-disabled="true"` emits, and the by-slot merge with the layers
- * already on the same components.
- *
- * MUI paints its disabled face from the `.Mui-disabled` state class, so
- * jsdom can prove the theme wired the same declarations onto the
- * attribute only by reading the emitted CSS (see
- * @speed/test-utils/emitted-css). The declarations are the values read
- * from the built theme; a real browser comparison against a natively
- * disabled twin lives in `unavailable.browser.test.tsx`, because jsdom
- * computes no layout, no `:has()` result through a real cascade, and no
- * `:hover`.
- */
 
 import { describe, expect, it } from 'vitest'
 import type { ReactNode } from 'react'
@@ -36,7 +22,6 @@ interface FlatRule {
   readonly declarations: string
 }
 
-/** The top-level `selector { declarations }` pairs of the emitted CSS. */
 function flatRules(css: string): FlatRule[] {
   const rules: FlatRule[] = []
   let cursor = 0
@@ -59,26 +44,22 @@ function flatRules(css: string): FlatRule[] {
   return rules
 }
 
-/** A rule's declarations without whitespace, for value comparison. */
 function declarationsOf(rule: FlatRule): string {
   return rule.declarations.replace(/\s+/g, '')
 }
 
-/** Whether a rule declares exactly `property: value`, whitespace-insensitive. */
 function declares(rule: FlatRule, property: string, value: string): boolean {
   return declarationsOf(rule).includes(
     `${property}:${value}`.replace(/\s+/g, ''),
   )
 }
 
-/** The unavailable rules the theme emitted for the render. */
 function unavailableRules(): FlatRule[] {
   return flatRules(emittedStyleText()).filter((rule) =>
     rule.selector.includes('[aria-disabled="true"]'),
   )
 }
 
-/** Rules whose selector names one of `element`'s classes. */
 function rulesForClass(
   element: Element,
   rules: readonly FlatRule[],
@@ -90,7 +71,6 @@ function rulesForClass(
   )
 }
 
-/** Rules whose selector (with no pseudo-class state) matches `element`. */
 function rulesMatching(
   element: Element,
   rules: readonly FlatRule[],
@@ -139,8 +119,6 @@ describe('theme unavailable appearance', () => {
     })
     const icon = screen.getByRole('button', { name: 'unavailable icon' })
 
-    // The resting face matches MUI's disabled declarations, and the
-    // pointer keeps the control but loses its clickable feedback.
     const textRules = rulesMatching(text, rules)
     expect(
       textRules.some((rule) => declares(rule, 'color', action.disabled)),
@@ -195,8 +173,6 @@ describe('theme unavailable appearance', () => {
       true,
     )
 
-    // The control keeps pointer events (an unavailable reason shows in a
-    // tooltip on hover), and nothing here touches the focus ring.
     for (const rule of rules) {
       expect(declarationsOf(rule)).not.toContain('pointer-events')
       expect(declarationsOf(rule)).not.toContain('outline')
@@ -218,8 +194,6 @@ describe('theme unavailable appearance', () => {
     const { action } = theme.palette
     const item = screen.getByRole('button', { name: 'unavailable item' })
 
-    // The resting face matches a disabled control, and the pointer keeps the
-    // item but loses its hover fill.
     const itemRules = rulesMatching(item, rules)
     expect(
       itemRules.some((rule) => declares(rule, 'color', action.disabled)),
@@ -235,7 +209,6 @@ describe('theme unavailable appearance', () => {
       ),
     ).toBe(true)
 
-    // A selected item keeps neither the selected fill nor its hover fill.
     const selected = screen.getByRole('button', {
       name: 'unavailable selected item',
     })
@@ -318,7 +291,6 @@ describe('theme unavailable appearance', () => {
     expect(track).not.toBeNull()
     expect(switchBase).not.toBeNull()
 
-    // Unchecked: the grey disabled thumb and the track's disabled opacity.
     expect(
       rulesMatching(thumb as Element, rules).some((rule) =>
         declares(rule, 'color', grey[100]),
@@ -339,7 +311,6 @@ describe('theme unavailable appearance', () => {
       ),
     ).toBe(true)
 
-    // Checked: the lightened primary tone, as MUI's disabled switch uses.
     const checkedInput = screen.getByRole('switch', {
       name: 'unavailable checked switch',
     })

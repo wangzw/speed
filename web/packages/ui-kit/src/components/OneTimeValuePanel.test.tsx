@@ -1,10 +1,3 @@
-/**
- * OneTimeValuePanel contract: a presentation-only panel for a value handed
- * out once -- the caller's message, the value itself, a copy control
- * named by the caller, and an explicit close control whose accessible name
- * is the caller's. The panel holds no state: closing it is the caller's
- * state change.
- */
 
 import { createRef } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -61,8 +54,6 @@ describe('OneTimeValuePanel', () => {
     )
     expect(utils.getByText(MESSAGE)).toBeInTheDocument()
     expect(utils.getByText(VALUE)).toBeInTheDocument()
-    // The panel root is the live region that announces the hand-off; the
-    // copy control carries its own nested announcement region.
     const panel = utils.container.querySelector(':scope > [role="status"]')
     expect(panel).not.toBeNull()
     expect(panel).toHaveTextContent(MESSAGE)
@@ -105,8 +96,6 @@ describe('OneTimeValuePanel', () => {
       />,
     )
 
-    // Every detail renders its label and its complete value inside the
-    // panel's one live region, so the hand-off is announced as a whole.
     const panel = container.querySelector(':scope > [role="status"]')
     expect(panel).not.toBeNull()
     for (const detail of DETAILS) {
@@ -117,8 +106,6 @@ describe('OneTimeValuePanel', () => {
       ).toBeInTheDocument()
     }
 
-    // Each copy control hands over exactly its own value, not the primary
-    // value and not another detail's.
     await user.click(screen.getByRole('button', { name: DETAILS[0].copyLabel }))
     await waitForCondition(() =>
       expect(writeText).toHaveBeenLastCalledWith(DETAILS[0].value),
@@ -140,14 +127,11 @@ describe('OneTimeValuePanel', () => {
         onClose={onClose}
       />,
     )
-    // The message is the whole hand-off; there is no empty value line and no
-    // control that would copy nothing.
     expect(container.querySelector(':scope > [role="status"]')).toHaveTextContent(
       MESSAGE,
     )
     expect(screen.queryByRole('button', { name: COPY_LABEL })).toBeNull()
     expect(screen.queryByText(VALUE)).toBeNull()
-    // The close control remains.
     await user.click(screen.getByRole('button', { name: CLOSE_ARIA }))
     expect(onClose).toHaveBeenCalledTimes(1)
   })

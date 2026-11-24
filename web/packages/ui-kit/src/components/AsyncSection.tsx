@@ -1,54 +1,7 @@
 /**
- * AsyncSection: the four-state branch of a section backed by an
- * asynchronous read.
- *
- * A read that has not answered yet, a settled read that delivered
- * nothing, a settled read that is empty and a settled read with content
- * are the same four states on every list-bearing surface, and each one
- * has a fixed rendering: the loading announcement, a retryable error
- * placeholder, an empty placeholder, or the caller's content. This
- * component owns that mapping, so the surfaces cannot drift into
- * rendering the same state differently.
- *
- * The states are passed in already derived -- `pending` (no answer
- * yet), the settled `payload` (undefined: a failed load, or an answer
- * whose body omitted it) and `empty` (the settled payload counts as
- * empty) -- because only the caller knows how its query's pending flag
- * folds cached data, and which emptiness counts. The content is a
- * render callback receiving the narrowed payload, not a node: a
- * caller's content expression typically maps the payload, which must
- * neither be evaluated nor re-narrowed while the payload is absent.
- * The error and empty placeholders are `EmptyState` with the section's
- * own copy and heading level: a surface whose section header hides
- * while its placeholder shows passes the header's level, so the page's
- * heading order never skips.
- *
- * `staleState` marks a refresh that failed while earlier data is still
- * on screen: the settled rendering -- the content, or the empty
- * placeholder when the payload is empty -- keeps rendering and an alert
- * with a retry action renders above it. The caller supplies it only for
- * that state -- the latest refresh failed, the data is still on screen
- * and no read is in flight -- and withdraws it when the retry starts,
- * which unmounts the alert; a retry that fails again re-supplies it, so
- * the alert mounts anew and its `role="alert"` announces again. When the
- * notice withdraws while one of its controls holds focus -- the retry was
- * activated by keyboard, or an automatic re-read started while the focus
- * sat on the notice -- focus moves to the settled content that stays on
- * screen, instead of falling back to the document body and forcing a
- * keyboard user to tab in from the top again. The settled branches always
- * return the same fragment shape, so the notice appearing or withdrawing
- * never unmounts the node beneath it and never loses the state that node
- * holds. A refusal such as HTTP 403 does not
- * use `staleState`: it makes the older data meaningless, so the caller
- * replaces the content with the no-permission placeholder instead.
- *
- * `refusedState` is that replacement as a prop: the caller decides a
- * read was refused (ui-kit inspects no status and knows no permission
- * semantics), and while the section is not pending the no-permission
- * placeholder takes the place of everything else -- content, empty and
- * error branches alike. It carries no retry, because a refusal can only
- * be answered with a refusal again. Omitting it renders the previous
- * behaviour unchanged.
+ * The four-state branch of a section backed by an asynchronous read. Both
+ * settled branches keep the same fragment shape, so the stale notice coming
+ * and going never remounts the settled node.
  */
 
 import { forwardRef, useLayoutEffect, useRef } from 'react'
@@ -83,11 +36,7 @@ export interface AsyncSectionEmptyState {
   readonly description: string
 }
 
-/**
- * The refusal placeholder's copy: the caller decided the read was
- * refused (a permission answer, a policy decision). The placeholder
- * replaces the content and offers no retry.
- */
+/** The refusal placeholder's copy; it replaces the content and offers no retry. */
 export interface AsyncSectionRefusedState {
   /** The no-permission placeholder's title. */
   readonly title: string
@@ -95,11 +44,7 @@ export interface AsyncSectionRefusedState {
   readonly description: string
 }
 
-/**
- * The stale-data marker: a refresh failed while the rendered data stayed
- * on screen. The caller supplies it exactly while that is the state and
- * withdraws it when the retry starts.
- */
+/** Marks a failed refresh that kept its data; the caller withdraws it when the retry starts. */
 export interface AsyncSectionStaleState {
   /** The caller's notice; states that the shown content may be outdated. */
   readonly description: string
@@ -130,41 +75,26 @@ export interface AsyncSectionProps<Payload> extends RootStyleProps {
    * 'h2', the section-title level the placeholders stand in for. */
   readonly headingLevel?: EmptyStateHeadingLevel
   /**
-   * The empty placeholder's own heading element, or `'none'` to render it
-   * headerless as one `role="status"` region (the error placeholder keeps
-   * `headingLevel`). An empty placeholder under a page heading that
-   * already names the space passes `'none'` so the placeholder does not
-   * re-enter the heading outline as a redundant chapter; defaults to
-   * `headingLevel`.
+   * The empty placeholder's own heading element, or `'none'` for a
+   * headerless `role="status"` region; defaults to `headingLevel`.
    */
   readonly emptyHeadingLevel?: EmptyStateHeadingLevel | EmptyStateNoHeading
   /**
-   * Marks a failed refresh whose earlier data is still on screen: the
-   * settled rendering (the content, or the empty placeholder when the
-   * payload is empty) keeps rendering with this alert above it.
-   * Omitted in every other state, including a refusal (403), which the
-   * caller renders as the no-permission placeholder instead.
+   * Marks a failed refresh whose earlier data is still on screen: the settled
+   * rendering keeps rendering with this alert above it.
    */
   readonly staleState?: AsyncSectionStaleState
   /**
-   * The no-permission placeholder, supplied when the caller decided the
-   * read was refused. While the section is not pending it replaces the
-   * content, the empty placeholder and the error branch alike, and
-   * offers no retry: a refusal can only be refused again. ui-kit makes
-   * no status or permission check of its own -- the caller decides, and
-   * omitting the prop keeps every previous branch unchanged.
+   * The no-permission placeholder. While the section is not pending it
+   * replaces every other branch and offers no retry; ui-kit makes no status
+   * or permission check of its own.
    */
   readonly refusedState?: AsyncSectionRefusedState
   /** The settled content, built from the narrowed payload. */
   readonly children: (payload: Payload) => ReactNode
 }
 
-/**
- * The four-state branch of a section backed by an asynchronous read.
- * Every branch renders inside one root box when the host passes `sx`,
- * `className` or a ref; with none of them the branch renders exactly the
- * node it always did, so a fragment keeps its children's identities.
- */
+/** Every branch renders inside one root box only when the host passes `sx`, `className` or a ref. */
 function AsyncSectionInner<Payload>(
   {
     pending,
@@ -183,9 +113,7 @@ function AsyncSectionInner<Payload>(
   }: AsyncSectionProps<Payload>,
   ref: Ref<HTMLDivElement>,
 ): ReactElement | null {
-  // The content that stays on screen is the fallback focus target when the
-  // stale notice withdraws: the retry button inside it is about to be
-  // removed, and focus would otherwise land on the document body.
+  // The content that stays on screen is the focus target when the notice withdraws.
   const settledRef = useRef<HTMLDivElement>(null)
   const noticeHeldFocus = useRef(false)
   useLayoutEffect(() => {
@@ -196,17 +124,13 @@ function AsyncSectionInner<Payload>(
       return
     }
     noticeHeldFocus.current = false
-    // Focus is only recovered when the removed notice left it on the
-    // body; a reader who moved focus elsewhere has already chosen a new
-    // resting place.
+    // Only recover focus the removed notice left on the body.
     if (document.activeElement === document.body) {
       settledRef.current?.focus()
     }
   }, [staleState])
 
-  // The host's root props exist only when asked for: an omitted prop must
-  // not add an element around the branch (a wrapped fragment would change
-  // its children's layout context).
+  // An omitted prop must not add an element: a wrapper would change the layout context.
   const withRoot = (node: ReactNode): ReactElement | null =>
     sx === undefined && className === undefined && ref == null ? (
       (node as ReactElement | null)
@@ -220,8 +144,6 @@ function AsyncSectionInner<Payload>(
     return withRoot(loading)
   }
   if (refusedState !== undefined) {
-    // A refusal replaces whatever was on screen: the older data no longer
-    // means anything, and there is no retry that could change the answer.
     return withRoot(
       <EmptyState
         variant="noPermission"
@@ -257,10 +179,6 @@ function AsyncSectionInner<Payload>(
     ) : (
       children(payload)
     )
-  // Both settled branches keep one wrapper element: the stale notice
-  // mounts and unmounts as the fragment's first child, so the settled node
-  // keeps its identity and its local state across the notice's lifecycle.
-  // The wrapper is the focus target the withdrawing notice hands off to.
   return withRoot(
     <>
       {staleState === undefined ? null : (
@@ -288,10 +206,8 @@ function AsyncSectionInner<Payload>(
 }
 
 /**
- * The four-state branch (see `AsyncSectionInner`). The generic signature
- * is preserved across `forwardRef` by the cast below: React 18 forwards a
- * ref only through `forwardRef`, which erases the component's own type
- * parameters.
+ * The four-state branch. `forwardRef` erases the component's type
+ * parameters, so the cast below restores the generic signature.
  */
 export const AsyncSection = forwardRef(AsyncSectionInner) as <Payload>(
   props: AsyncSectionProps<Payload> & {

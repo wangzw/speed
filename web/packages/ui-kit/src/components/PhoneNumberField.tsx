@@ -1,37 +1,7 @@
 /**
- * PhoneNumberField: the two-part mobile-number (SMS) control of the form
- * family.
- *
- * The control exists for numbers an SMS can reach: its metadata is
- * libphonenumber-js's `mobile` build, so the validation below (and
- * `validatePhoneNumber` / `toE164` in src/phone-number.ts) apply mobile
- * number-plan metadata, not the fixed-line union. A number of a legal
- * length but an impossible mobile plan is refused rather than sent to the
- * SMS channel.
- *
- * A number is edited as a country/region selector and a local
- * number, and reaches the host as the two parts; `toE164` in
- * src/phone-number.ts joins them for submission. The selector is a
- * searchable combobox over the countries the phone metadata covers --
- * each option shows its flag, its name in the active language
- * (`Intl.DisplayNames`) and its calling code, and the search matches the
- * name, the ISO code and the calling code. The closed control shows the
- * flag and the calling code so it stays narrow at phone widths.
- *
- * The local field is `type=tel` with `inputMode=tel`, grouped with spaces
- * as the viewer types. Typing or pasting a value that starts with `+`
- * parses it: once enough of it exists to name a country the selector
- * switches and the local part is filled, so a pasted E.164 number needs no
- * country pick first. Until then the raw text stays visible, so typing a
- * `+`-number by hand does not lose its leading sign.
- *
- * Validation is per country, through libphonenumber-js: a number too short
- * for the country reads "incomplete under +<code>", an implausible one
- * reads "invalid under +<code>". The message appears after the field is
- * left or after a submit asked for it (`showValidationError`), and the
- * empty-at-submit case reads the form's required message. The host keeps
- * the parts and decides when to submit; this component never sends
- * anything.
+ * The two-part mobile-number control: a country/region selector and a local
+ * number, validated per country against libphonenumber-js's `mobile`
+ * metadata. The host owns both parts and does the sending.
  */
 
 import { forwardRef, useId, useMemo, useState } from 'react'
@@ -87,39 +57,24 @@ export type PhoneNumberFieldProps = RootStyleProps & {
   readonly numberHelperText?: string
   /** Disables both controls. */
   readonly disabled?: boolean
-  /**
-   * Keeps both parts focusable but unchangeable -- the state a host uses
-   * while a write that includes this number is in flight.
-   */
+  /** Keeps both parts focusable but unchangeable, for a write in flight. */
   readonly readOnly?: boolean
   /** The number field's autocomplete token. */
   readonly autoComplete?: string
-  /**
-   * Show the validation message. The host sets this after a submit that
-   * could not assemble a number, so a viewer is not scolded mid-typing.
-   */
+  /** Show the validation message; the host sets it after a failed submit. */
   readonly showValidationError?: boolean
   /**
-   * Country codes to list first, in the given order -- a host serving one
-   * market puts its own countries at the top of the selector. A code the
-   * phone metadata does not cover is skipped, and the remaining countries
-   * keep their usual order. Omitting it keeps the current order
-   * byte-identically.
+   * Country codes to list first, in order; a code the metadata does not
+   * cover is skipped. Omitting it keeps the usual order.
    */
   readonly preferredCountries?: readonly string[]
 }
 
-/**
- * The selector fits its flag-and-calling-code content: 96px at phone
- * widths and 112px from sm, rather than a share of the row. The number
- * field takes the remaining width.
- */
+/** The selector fits its flag-and-calling-code content; the number field takes the rest. */
 const COUNTRY_WIDTH_SX: SxProps<Theme> = (theme) => ({
   width: { xs: theme.spacing(12), sm: theme.spacing(14) },
   flexShrink: 0,
-  // The floating label keeps its natural width. MUI caps it at
-  // `calc(133% - 32px)`, which ellipsizes "Country/region" at the 96px
-  // phone width even though the scaled text fits inside the field.
+  // MUI caps the floating label at `calc(133% - 32px)`, which ellipsizes it in this width.
   '& .MuiInputLabel-root.MuiInputLabel-shrink': { maxWidth: 'none' },
 })
 
@@ -143,14 +98,12 @@ function PhoneNumberFieldInner(
   ref: Ref<HTMLDivElement>,
 ) {
   const { t, i18n } = useUiKitTranslation()
-  // A disabled control is natively unchangeable already; read-only only adds
-  // the focusable-but-frozen state, so disabled wins when both are set.
+  // A disabled control is unchangeable already, so disabled wins when both are set.
   const readOnlyEffective = readOnly && !disabled
   const countryFieldId = useId()
   const numberFieldId = useId()
   const numberHelpId = `${numberFieldId}-help`
-  // A value that starts with `+` but is still too short to name a country
-  // stays on screen verbatim; the parsed parts replace it once they can.
+  // A `+` value too short to name a country stays on screen verbatim.
   const [internationalDraft, setInternationalDraft] = useState<string | null>(
     null,
   )
@@ -168,9 +121,7 @@ function PhoneNumberFieldInner(
     if (preferredCountries === undefined || preferredCountries.length === 0) {
       return sorted
     }
-    // The preferred codes move to the front in the caller's order; a code
-    // the metadata does not cover is skipped. Deleting from the map leaves
-    // the rest in their usual sorted order.
+    // Deleting from the map leaves the rest in their usual sorted order.
     const remaining = new Map(sorted.map((option) => [option.code, option]))
     const first: CountryOption[] = []
     for (const code of preferredCountries) {
@@ -201,8 +152,7 @@ function PhoneNumberFieldInner(
       : validatePhoneNumber(country, nationalNumber)
 
   const messageKey =
-    // A draft still names no country, so naming the selected one would
-    // point the viewer at a country the value does not belong to.
+    // A draft names no country, so naming the selected one would be wrong.
     internationalDraft !== null
       ? 'phoneNumber.incompleteInternational'
       : validation === 'incomplete'
@@ -227,9 +177,7 @@ function PhoneNumberFieldInner(
       const parts = parseInternationalPhoneNumber(raw)
       if (parts === null) {
         setInternationalDraft(raw)
-        // The draft replaces the number on screen, so the value the host
-        // holds must go with it: otherwise a submit would send the
-        // previous number while the viewer reads the new, unfinished one.
+        // The host value must follow the screen, or a submit would send the previous number.
         onNationalNumberChange('')
         return
       }
@@ -268,9 +216,6 @@ function PhoneNumberFieldInner(
       <Autocomplete<CountryOption, false, true, false, 'div', string>
         id={countryFieldId}
         options={options}
-        // The selection is the country code itself, which is exactly the
-        // value the host holds: options carry the labels, the selection
-        // carries the code.
         getOptionValue={(option) => option.code}
         value={selected?.code ?? undefined}
         onChange={(_event, code) => {
@@ -335,11 +280,8 @@ function PhoneNumberFieldInner(
               ...params.slotProps,
               htmlInput: {
                 ...params.slotProps.htmlInput,
-                // The field holds the selected label; selecting it on
-                // focus makes the next keystroke a search rather than an
-                // append to that label. The slot's own focus handler must
-                // keep running: it is what marks the control focused, and
-                // an unfocused control resets its input on every render.
+                // The slot's own handler must run: it marks the control focused,
+                // and an unfocused control resets its input on every render.
                 onFocus: (event: FocusEvent<HTMLInputElement>) => {
                   params.slotProps.htmlInput.onFocus?.(event)
                   event.target.select()
@@ -353,8 +295,7 @@ function PhoneNumberFieldInner(
         readOnly={readOnlyEffective}
         slotProps={{
           popper: {
-            // The field is deliberately narrow; the list widens to the
-            // option text instead of clipping names to the field width.
+            // Widen the list to the option text instead of clipping names to the field.
             style: { width: 'max-content', maxWidth: 'calc(100vw - 2rem)' },
           },
         }}
@@ -393,9 +334,5 @@ function PhoneNumberFieldInner(
   )
 }
 
-/**
- * The two-part mobile-number control (see the file header). `sx`,
- * `className` and the ref reach the field as a whole: the row that holds the
- * country selector and the local number, and the help line under it.
- */
+/** `sx`, `className` and the ref reach the field as a whole, help line included. */
 export const PhoneNumberField = forwardRef(PhoneNumberFieldInner)

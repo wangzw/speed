@@ -1,14 +1,3 @@
-/**
- * TotpEnrollmentPanel in a real browser: axe's label-content-name-mismatch
- * (WCAG 2.5.3 Label in Name) over the manual-entry disclosure.
- *
- * The rule reads a control's visible text through the canvas text
- * measurement API, which jsdom answers with null; the unit suite's scan
- * therefore cannot decide it, and this case is that unit case's deciding
- * verdict (see @speed/test-utils/axe's BROWSER_DETERMINATIONS). The copy
- * control's visible text and its accessible name are the panel's own
- * strings, so the settled disclosure must satisfy the rule.
- */
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { describe, it } from 'vitest'
@@ -37,7 +26,6 @@ const PANEL_PROPS = {
   codeLabel: 'Six-digit code',
 }
 
-/** The panel with just enough caller state to exercise the code field. */
 function Harness(): ReactNode {
   const [code, setCode] = useState('')
   return (

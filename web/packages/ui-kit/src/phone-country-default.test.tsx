@@ -1,9 +1,3 @@
-/**
- * PhoneCountryDefaultProvider contract: the host's preferred starting
- * country wins when it supplies one, and the hook falls back to the
- * existing `defaultPhoneCountry()` answer otherwise. No validation is
- * applied here.
- */
 
 import type { ReactNode } from 'react'
 import { describe, expect, it } from 'vitest'
@@ -43,7 +37,6 @@ describe('PhoneCountryDefaultProvider', () => {
   })
 
   it('passes a value the phone metadata does not cover through unchanged', () => {
-    // The country set is the phone helpers' authority, not this context's.
     const { result } = renderHook(() => usePhoneCountryDefault(), {
       wrapper: wrapperOf('ZZ'),
     })

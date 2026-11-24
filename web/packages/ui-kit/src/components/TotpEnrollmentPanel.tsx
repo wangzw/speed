@@ -1,18 +1,7 @@
 /**
- * TotpEnrollmentPanel: the authenticator-app enrolment block.
- *
- * A surface that enrols a TOTP factor needs four things in one place: the
- * scannable symbol, the base32 secret for hand entry, the six-digit code
- * field, and the row that submits the code. The panel lays them out and
- * owns none of the wording: every sentence and accessible name is a prop,
- * because the enrolling surface translates its own copy and owns the
- * `otpauth://` parse. It draws no symbol and shows no manual block unless
- * the caller supplies the URI and the parsed secret and parameters, and it
- * performs no network or storage work.
- *
- * The disclosure's open state is interaction-local: it resets when the
- * panel unmounts and the caller never reads it. The code, the busy flag and
- * both actions are controlled by the caller.
+ * The authenticator-app enrolment block: symbol, manual secret, code field
+ * and action row. Every sentence and accessible name is a prop; the caller
+ * owns the `otpauth://` parse and both actions.
  */
 
 import { useId, useState } from 'react'
@@ -77,11 +66,8 @@ export type TotpEnrollmentPanelProps = {
 }
 
 /**
- * Renders the enrolment block. The symbol is a content block of its own,
- * the manual entry opens on request, and the code field stays a block whose
- * label sits above the input. The caller's primary action closes the action
- * row at the right edge; a secondary action sits ahead of it in the same
- * group.
+ * The manual entry opens on request; the primary action closes the action row
+ * at the right edge, with a secondary action ahead of it.
  */
 export function TotpEnrollmentPanel({
   otpauthUri,
@@ -225,9 +211,7 @@ export function TotpEnrollmentPanel({
           onChange={(event) => onCodeChange(event.target.value)}
           slotProps={{
             htmlInput: {
-              // A write in flight locks the value without taking focus
-              // away: a natively disabled field stops holding focus, while a
-              // read-only one stays reachable and selectable.
+              // Read-only, not disabled: a disabled field would stop holding focus.
               readOnly: busy,
               inputMode: 'numeric',
               autoComplete: 'one-time-code',

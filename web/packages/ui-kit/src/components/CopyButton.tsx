@@ -1,30 +1,7 @@
 /**
- * CopyButton: the clipboard control for a value that must be handed over
- * exactly.
- *
- * The control writes `value` to the clipboard and announces the copy
- * through a polite live region, so a value clipped on screen (an
- * identifier past the scroll edge, a one-time token) stays reachable by
- * keyboard and touch. It is silent rather than failing when the Clipboard
- * API is unavailable (an insecure context has no `navigator.clipboard`),
- * and a refused write leaves the control silent too: copying is a
- * convenience, never a page-blocking action.
- *
- * Two faces share the behaviour. Without `visibleLabel` it is the
- * icon-sized control the DataTable renders beside a `cellFullValue`
- * (copy icon, then the copied icon for a short feedback window). With
- * `visibleLabel` it is a small outlined text button, for a hand-off
- * panel whose reader should see the action named.
- *
- * `label` is the accessible name and `copiedLabel` is the announcement
- * text; both default to the ui-kit namespace's `copyButton.*` strings
- * interpolated with the value. A caller that already owns wording for its
- * own surface passes its own.
- *
- * `pinned` refuses to shrink the control. The DataTable sets it inside a
- * cell capped by `contentMaxWidth`, where the cap must leave the control
- * its full width; without the cap the prior flex behaviour stays
- * byte-identical.
+ * The clipboard control: writes its value and announces the copy. Silent,
+ * never failing, when the Clipboard API is unavailable or the write is
+ * refused.
  */
 
 import { forwardRef, useEffect, useState } from 'react'
@@ -44,27 +21,13 @@ const COPY_FEEDBACK_MS = 2000
 export interface CopyButtonProps extends RootStyleProps {
   /** The complete value written to the clipboard. */
   readonly value: string
-  /**
-   * The control's accessible name; defaults to the ui-kit
-   * `copyButton.copyLabel` string interpolated with the value.
-   */
+  /** The accessible name; defaults to the ui-kit `copyButton.copyLabel` string. */
   readonly label?: string
-  /**
-   * The post-copy announcement; defaults to the ui-kit
-   * `copyButton.copiedLabel` string interpolated with the value.
-   */
+  /** The post-copy announcement; defaults to the ui-kit `copyButton.copiedLabel` string. */
   readonly copiedLabel?: string
-  /**
-   * Renders a small outlined text button carrying this visible label
-   * instead of the icon control. The accessible name still comes from
-   * `label` (or the default).
-   */
+  /** Renders a small outlined text button instead of the icon control. */
   readonly visibleLabel?: string
-  /**
-   * Whether the control refuses to shrink (a cell capped by
-   * `contentMaxWidth`). Without it the control keeps the prior flex
-   * behaviour.
-   */
+  /** Refuses to shrink inside a cell capped by `contentMaxWidth`. */
   readonly pinned?: boolean
 }
 
@@ -101,8 +64,7 @@ function CopyButtonInner(
   const accessibleName = label ?? t('copyButton.copyLabel', { value })
   const announcement = copiedLabel ?? t('copyButton.copiedLabel', { value })
   const shrinkSx = pinned ? { flexShrink: 0 } : undefined
-  // The pinned rule stays first, so a host rule wins an overlap; with no
-  // host sx the control renders the exact style value it always did.
+  // The pinned rule stays first, so a host rule wins an overlap.
   const controlSx =
     sx === undefined ? shrinkSx : layerSx(shrinkSx ?? {}, sx)
 
@@ -142,8 +104,7 @@ function CopyButtonInner(
 }
 
 /**
- * The clipboard control (see the file header). `sx`, `className` and the
- * ref apply to the copy control itself, not to the hidden live region
- * that renders beside it.
+ * The clipboard control. `sx`, `className` and the ref apply to the control
+ * itself, not to the hidden live region beside it.
  */
 export const CopyButton = forwardRef(CopyButtonInner)

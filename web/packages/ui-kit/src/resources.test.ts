@@ -1,17 +1,3 @@
-/**
- * The ui-kit resource bundle must satisfy the same discipline every
- * resource-carrying package does: canonical language keys, full coverage
- * of the instance's supported set, identical leaf key sets across
- * languages -- and that discipline lives in @speed/i18n's
- * registerNamespace, so this test proves the bundle by registering it on
- * a fresh instance. A key added to one language file and forgotten in the
- * other fails here before any component can ship it.
- *
- * Language text is asserted against the shipped JSON bundles (the
- * repo-authorized home of CJK), never inline: a rendering test compares
- * t() output to the bundle value, which keeps sources and tests
- * CJK-free while proving the registered bundle is what renders.
- */
 
 import { describe, expect, it } from 'vitest'
 import { createI18n, registerNamespace } from '@speed/i18n'

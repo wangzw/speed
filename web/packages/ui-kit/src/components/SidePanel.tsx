@@ -1,41 +1,7 @@
 /**
- * SidePanel: the controlled modal side panel that hosts a secondary task
- * inside a page -- a list row's detail, a create form wider than a
- * dialog.
- *
- * Everything is props-driven: `open` shows it, `onClose` reports every
- * close request (the close button, Escape, a backdrop click) and
- * `onExited` reports the end of the exit transition. The component never
- * flips `open` itself, so the host may refuse a close (unsaved content,
- * a confirmation first) simply by calling onClose and doing nothing.
- * While `busy` is true all three close paths are inert: the close button
- * is unavailable -- focusable, `aria-disabled`, its activation swallowed
- * -- and Escape and backdrop clicks do not call onClose. The close button
- * keeps its focus while the panel turns busy; a natively disabled control
- * stops holding focus, and inside the panel's focus trap the browser lands
- * it on the paper.
- *
- * MUI's temporary Drawer supplies the dialog semantics on its paper:
- * `role="dialog"`, `aria-modal` and `tabIndex={-1}`. This component adds
- * only the accessible name (`aria-labelledby` at the title, an `h2`
- * because the page header owns the `h1`) and, when a description is
- * given, `aria-describedby`. Focus behaviour is MUI's: opening focuses
- * the paper, Tab loops inside the panel, and closing restores focus to
- * the element that opened it; a host whose opener has left the document
- * places focus itself in `onExited`.
- *
- * The panel stacks at `theme.zIndex.modal`: a temporary Drawer's root
- * defaults to `zIndex.drawer`, which sits under the AppShell AppBar
- * (`zIndex.drawer + 1`) and would put the panel's header behind the top
- * bar. Dialogs use the same `zIndex.modal` and, mounting later, sit
- * above an open panel.
- *
- * Layout: the paper fills the viewport height, its header stays fixed
- * and the content area is the panel's only scrolling layer. An optional
- * `actions` footer sits below that layer, fixed in turn, and renders as
- * one right-aligned action row. The width is the size tier's fixed width
- * from the viewport's `sm` up and the full viewport width below it -- the
- * panel is a viewport-anchored overlay, not a box in the content flow.
+ * The controlled modal side panel anchored to the right edge. The host owns
+ * `open` and may refuse a close; while `busy` all three close paths are
+ * inert. It stacks at `theme.zIndex.modal` so the AppBar does not cover it.
  */
 
 import { forwardRef, useId } from 'react'
@@ -60,40 +26,21 @@ export type SidePanelProps = RootStyleProps & {
   readonly open: boolean
   /** The panel heading, rendered as an `h2` and used as the dialog's name. */
   readonly title: ReactNode
-  /**
-   * Optional supporting paragraph under the title. Given, it becomes the
-   * dialog's accessible description.
-   */
+  /** Optional paragraph under the title; it becomes the dialog's description. */
   readonly description?: ReactNode
   /** Width tier; `'medium'` (36rem) unless `'wide'` (52rem) is passed. */
   readonly size?: SidePanelSize
-  /**
-   * Busy state of the task inside the panel. While true the close button
-   * is unavailable (focusable, `aria-disabled`) and Escape and backdrop
-   * clicks do not call onClose.
-   */
+  /** The panel's task is in flight; all three close paths are inert. */
   readonly busy?: boolean
   /** Accessible name of the close control; defaults to the namespace label. */
   readonly closeLabel?: string
-  /**
-   * Optional actions for the panel's fixed footer -- the task's own submit
-   * and cancel. They render as one right-aligned action row below the
-   * content, outside the scroll layer, so they stay reachable while the
-   * body scrolls.
-   */
+  /** The fixed footer's actions, outside the scroll layer. */
   readonly actions?: ReactNode
   /** The panel body. */
   readonly children?: ReactNode
-  /**
-   * Fired on every close request -- the close button, Escape or a
-   * backdrop click -- never on open. The host decides whether to close.
-   */
+  /** Fired on every close request; the host decides whether to close. */
   readonly onClose: () => void
-  /**
-   * Fired once when the exit transition ends: the page behind is
-   * reachable again and the panel is still in the document; the content
-   * unmounts in the render commit immediately after.
-   */
+  /** Fired once when the exit transition ends; the content unmounts in the next commit. */
   readonly onExited: () => void
 }
 
@@ -131,9 +78,7 @@ function SidePanelInner(
     }
     onClose()
   }
-  // The close button refuses activation while busy without becoming
-  // natively disabled: a natively disabled control stops holding focus,
-  // and the panel's focus trap then lands it on the paper.
+  // Never natively disabled: the focus trap would land the focus on the paper.
   const handleCloseClick = useActivationGuard(requestClose, { busy })
 
   return (
@@ -150,8 +95,7 @@ function SidePanelInner(
           'aria-labelledby': titleId,
           ...(hasDescription ? { 'aria-describedby': descriptionId } : {}),
           sx: {
-            // The content box below is the panel's only scroll layer; the
-            // paper's own overflow would scroll the fixed header too.
+            // The content box is the only scroll layer; the paper's own overflow would scroll the header.
             overflowY: 'hidden',
             width: { xs: '100%', sm: SIZE_WIDTH[size] },
           },
@@ -225,10 +169,7 @@ function SidePanelInner(
 }
 
 /**
- * The controlled modal side panel: an `h2`-named dialog anchored to the
- * right edge, with a fixed header, a single scrolling content area and
- * close paths the host can refuse. `sx`, `className` and the ref reach
- * the drawer's root element; the host's styles merge after the panel's
- * own stacking rule.
+ * `sx`, `className` and the ref reach the drawer's root; the host's styles
+ * merge after the panel's stacking rule.
  */
 export const SidePanel = forwardRef(SidePanelInner)
