@@ -12,8 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// stageBacklog stages n events in one transaction and returns their
-// identifiers in the order staged.
 func stageBacklog(t *testing.T, database db.Database, r *relay, n int) []string {
 	t.Helper()
 	var ids []string
@@ -33,7 +31,6 @@ func stageBacklog(t *testing.T, database db.Database, r *relay, n int) []string 
 	return ids
 }
 
-// dueUnclaimed counts the rows no relay holds that are due now.
 func dueUnclaimed(t *testing.T, database db.Database, r *relay) int64 {
 	t.Helper()
 	var n int64
@@ -44,8 +41,6 @@ func dueUnclaimed(t *testing.T, database db.Database, r *relay) int64 {
 	return n
 }
 
-// stopDuring stops r while its bus holds the publish under way, and lets that
-// publish go once the stop stage has begun.
 func stopDuring(t *testing.T, r *relay, hold chan struct{}) {
 	t.Helper()
 	stopped := make(chan error, 1)
@@ -59,13 +54,8 @@ func stopDuring(t *testing.T, r *relay, hold chan struct{}) {
 	}
 }
 
-// The stop stage lets the publish under way finish, publishes nothing more, and
-// gives every row the relay still held back, due at once: the next relay
-// publishes them without waiting for a claim to run out, and every staged event
-// is published once.
-//
-// The stopping relay claims for an hour, so the next relay publishes the rest
-// within the case only because they were given back.
+// The stop stage lets the publish under way finish, publishes nothing
+// more, and gives every row the relay still held back, due at once.
 func TestTheRelayStopsWithoutLosingStagedRows(t *testing.T) {
 	onEachEngine(t, func(t *testing.T, e engine, dsn string) {
 		database := migrated(t, e, dsn)
@@ -112,9 +102,8 @@ func TestTheRelayStopsWithoutLosingStagedRows(t *testing.T) {
 	})
 }
 
-// The stop stage gives back the rows the stopping relay holds and no other
-// relay's: a row another replica's relay is publishing stays claimed by it and
-// not due, so no relay takes it over and publishes it a second time.
+// The stop stage gives back the rows the stopping relay holds and no
+// other relay's.
 func TestTheStopStageGivesBackTheRelaysOwnRowsAlone(t *testing.T) {
 	onEachEngine(t, func(t *testing.T, e engine, dsn string) {
 		database := migrated(t, e, dsn)
@@ -163,10 +152,8 @@ func TestTheStopStageGivesBackTheRelaysOwnRowsAlone(t *testing.T) {
 	})
 }
 
-// A publish still under way when the stop stage's grace runs out is cancelled,
-// and the stop reports it; the event stays staged, due at once and with no
-// refusal counted against it or recorded as one — the bus refused nothing —
-// and the next relay publishes it.
+// A publish cut off by the stop stage's grace is cancelled and reported, the
+// event stays staged, and the next relay publishes it.
 func TestAPublishCutShortAtTheStopStageLeavesItsEventStaged(t *testing.T) {
 	onEachEngine(t, func(t *testing.T, e engine, dsn string) {
 		database := migrated(t, e, dsn)
@@ -217,9 +204,8 @@ func TestAPublishCutShortAtTheStopStageLeavesItsEventStaged(t *testing.T) {
 	})
 }
 
-// A relay that never started stops and closes without complaint, and stopping
-// twice is stopping once. What it staged before it stopped stays staged for the
-// next relay.
+// A relay that never started stops and closes without complaint, and
+// stopping twice is stopping once.
 func TestARelayThatNeverStartedStopsCleanly(t *testing.T) {
 	onEachEngine(t, func(t *testing.T, e engine, dsn string) {
 		database := migrated(t, e, dsn)

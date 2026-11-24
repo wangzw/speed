@@ -1,20 +1,6 @@
 // Package relay is the transactional outbox: it keeps the events transactions
-// stage in a table of the delivered database, and relays each one to the event
-// bus once the transaction that staged it has committed.
-//
-// It registers the module event.outbox.relay, which delivers the capability
-// pkg/event/outbox declares, exclusively. The module depends on the database
-// capability, whose delivered database holds the table and whose migrations
-// build it, and on the event bus, which it publishes on; both are constructed
-// before it and stopped after it, so the relay starts once the bus accepts
-// publishes and ends before the bus refuses them.
-//
-// A relay runs on every replica, and the replicas share the table. A relay
-// claims the rows it is about to publish for a bounded time, publishes each
-// outside any transaction, and removes a row once the bus accepted its event or
-// gives it back, due again after a growing delay, when the bus refused it. The
-// claim is what keeps two relays from publishing one row; its bound is what
-// hands a row held by a replica that died back to the others.
+// stage in a table of the delivered database, and relays each to the bus once
+// its transaction commits.
 package relay
 
 import (
@@ -44,17 +30,12 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// ModuleName is this module's name in the registry. A host writes it into the
-// run-level inclusions of every command whose modules stage events, and — like
-// every module with a table — into the static-level inclusions of the command
-// that applies migrations.
+// ModuleName is this module's name in the registry.
 const ModuleName = "event.outbox.relay"
 
 //go:embed migrations
 var migrationRoot embed.FS
 
-// migrationsFS is migrationRoot with the wrapping directory removed, so the
-// tree the database module reads has one directory per dialect at its root.
 var migrationsFS = func() fs.FS {
 	sub, err := fs.Sub(migrationRoot, "migrations")
 	if err != nil {
@@ -65,27 +46,9 @@ var migrationsFS = func() fs.FS {
 	return sub
 }()
 
-// The module registers itself. Importing this package is what puts the
-// transactional outbox in a binary's available set.
 func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.
-//
-// The capability is delivered exclusively: two relays in one assembly would be
-// two tables a staged event could go to, and which one a publisher reached is
-// not something anything could resolve. The stance is StateEnabled, never
-// StateAuto, since an exclusive provider stating StateAuto is the cell
-// resolution disables. Nothing can be missing — the module reads no input
-// items — so a command that takes it in gets a relay.
-//
-// The database and the bus are hard requirements. The table is in the
-// delivered database, and a relay with no bus has nothing to hand an event to;
-// a run missing either fails its resolution rather than staging events nothing
-// will publish. Logging is optional, as it is for the bus.
-//
-// An instance the host supplies for this module stands where the relay would be,
-// and the start, stop and close callbacks act on a relay and on nothing else: any
-// other instance is left alone, and what it holds is the host's to release.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -157,8 +120,6 @@ func loggerOf(reg *core.Registry) (*slog.Logger, error) {
 	return delivered.Named(ModuleName), nil
 }
 
-// relay is the module's product. It delivers outbox.Outbox, and its loop
-// relays what was staged.
 type relay struct {
 	handle *gorm.DB
 	pool   *sql.DB
@@ -166,11 +127,7 @@ type relay struct {
 	bus    event.Bus
 	logger *slog.Logger
 	timing timing
-	// token names this relay in the rows it claims. It is unique to the
-	// instance, so a relay recognises its own claims and no other's, and it
-	// leads with the host and the process, which is what an operator looking
-	// at a claimed row wants to know.
-	token string
+	token  string
 	// nudges carries word that a row was staged here. It holds one, so a
 	// staging never waits and a burst of them wakes the loop once.
 	nudges chan struct{}
@@ -179,20 +136,17 @@ type relay struct {
 	// than pausing for a while and hoping it did. Only the loop writes it.
 	passes atomic.Int64
 
-	mu      sync.Mutex
-	started bool
-	stopped bool
-	// stopping is closed at the stop stage: the loop claims nothing more.
+	mu       sync.Mutex
+	started  bool
+	stopped  bool
 	stopping chan struct{}
-	// done is closed when the loop has ended and given back what it held.
-	done chan struct{}
+	done     chan struct{}
 	// work is the context the loop's statements and publishes run on, and
 	// cancelWork ends it once the stop stage's grace is spent.
 	work       context.Context
 	cancelWork context.CancelFunc
 }
 
-// newRelay builds the product on the delivered database.
 func newRelay(database db.Database, bus event.Bus, logger *slog.Logger, t timing) (*relay, error) {
 	stmts, err := statementsFor(database.Dialect())
 	if err != nil {
@@ -221,8 +175,6 @@ func newRelay(database db.Database, bus event.Bus, logger *slog.Logger, t timing
 	return r, nil
 }
 
-// newToken names one relay instance: the host and the process it runs in, and
-// an identifier no other instance carries.
 func newToken() string {
 	host, err := os.Hostname()
 	if err != nil || host == "" {
@@ -231,7 +183,6 @@ func newToken() string {
 	return host + "/" + strconv.Itoa(os.Getpid()) + "/" + event.NewID()
 }
 
-// Stage records evt in the transaction tx is in; see outbox.Outbox.
 func (r *relay) Stage(tx *gorm.DB, evt event.Event) error {
 	if err := r.judge(tx); err != nil {
 		return err
@@ -242,13 +193,9 @@ func (r *relay) Stage(tx *gorm.DB, evt event.Event) error {
 	}
 	evt = dispatch.Stamp(evt)
 	// The tracing context is fixed here, in the caller's transaction, so the
-	// subscriber's span is a child of the span this write was in rather than of
-	// the relay's later publish. An event that already carries one keeps it; the
-	// rule is shared with the bus, through dispatch.StampTraceContext.
+	// subscriber's span is a child of the span this write was in rather than
+	// of the relay's later publish.
 	evt.TraceContext = dispatch.StampTraceContext(evt.TraceContext, tx.Statement.Context, tracing.Propagator())
-	// A session of its own on the caller's connection: NewDB drops whatever
-	// conditions the caller left on tx, and the transaction underneath is not
-	// one of them.
 	session := tx.Session(&gorm.Session{NewDB: true, Context: tx.Statement.Context})
 	if err := session.Exec(r.sql.stage, evt.ID, evt.Type, evt.TenantID, string(payload),
 		dispatch.EncodeTraceContext(evt.TraceContext)).Error; err != nil {
@@ -258,15 +205,6 @@ func (r *relay) Stage(tx *gorm.DB, evt event.Event) error {
 	return nil
 }
 
-// judge refuses a session Stage cannot write into: one that is not in a
-// transaction, or one whose transaction is on another database.
-//
-// Being in a transaction is read the way GORM reads it: the session's
-// connection is one that commits. The database is told by the connection pool
-// the transaction was begun from, which is the delivered one for a transaction
-// on the delivered handle — through Transaction, Begin, or a session pinned by
-// db.Connection — and another pool for every other handle, whatever database
-// it happens to reach.
 func (r *relay) judge(tx *gorm.DB) error {
 	if tx == nil || tx.Statement == nil {
 		return fmt.Errorf("%w: Stage was handed no session", outbox.ErrNoTransaction)
@@ -285,14 +223,11 @@ func (r *relay) judge(tx *gorm.DB) error {
 	return nil
 }
 
-// isNilPointer reports whether an interface holds a typed nil pointer, which a
-// nil comparison does not catch.
 func isNilPointer(v any) bool {
 	rv := reflect.ValueOf(v)
 	return rv.Kind() == reflect.Pointer && rv.IsNil()
 }
 
-// nudge tells the loop that a row was staged here, without waiting for it.
 func (r *relay) nudge() {
 	select {
 	case r.nudges <- struct{}{}:
@@ -315,12 +250,9 @@ func (r *relay) start(ctx context.Context) {
 	go r.run()
 }
 
-// stop ends the loop: nothing more is claimed, a publish under way is given the
-// grace to finish, and every row the relay still holds is given back, due at
-// once, for the next relay to take. A row the bus accepted and the relay had
-// not yet removed stays staged too, and is published again.
-//
-// It is idempotent, and it tolerates a relay that never started.
+// stop ends the loop: nothing more is claimed, a publish under way is
+// given the grace to finish, and every row the relay still holds is given
+// back, due at once, for the next relay to take.
 func (r *relay) stop(ctx context.Context) error {
 	r.mu.Lock()
 	if r.stopped {

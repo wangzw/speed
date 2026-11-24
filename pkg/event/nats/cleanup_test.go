@@ -17,8 +17,6 @@ import (
 	"github.com/vislake/speed/pkg/internal/natstest"
 )
 
-// inspect is a JetStream handle of the case's own, for reading the server
-// after the bus has closed its connection.
 func inspect(t *testing.T, url string) jetstream.JetStream {
 	t.Helper()
 	nc, err := nats.Connect(url)
@@ -33,8 +31,6 @@ func inspect(t *testing.T, url string) jetstream.JetStream {
 	return js
 }
 
-// consumerOf reads a durable consumer's configuration, reporting false when
-// the server has no such consumer, or no such stream.
 func consumerOf(t *testing.T, js jetstream.JetStream, stream, name string) (jetstream.ConsumerConfig, bool) {
 	t.Helper()
 	c, err := js.Consumer(context.Background(), stream, name)
@@ -47,11 +43,6 @@ func consumerOf(t *testing.T, js jetstream.JetStream, stream, name string) (jets
 	return c.CachedInfo().Config, true
 }
 
-// consumerDrained reports whether name has taken and acknowledged every message
-// the stream holds: nothing pending, nothing awaiting an acknowledgement, and
-// its acknowledgement floor at the stream's last sequence. A delivery still to
-// come would leave the count above zero, so a case that waits on this judges
-// its count after the source of deliveries has nothing left to hand over.
 func consumerDrained(t *testing.T, js jetstream.JetStream, stream, name string) bool {
 	t.Helper()
 	ctx := context.Background()
@@ -80,13 +71,8 @@ func consumerDrained(t *testing.T, js jetstream.JetStream, stream, name string) 
 	return info.NumPending == 0 && info.NumAckPending == 0 && info.AckFloor.Stream >= state.State.LastSeq
 }
 
-// TestClosingRemovesTheProcesssOwnConsumer pins what a process leaves on the
-// server once it is gone. A durable named after the process is read by that
-// process alone, so one left behind is never read again, and every start —
-// each replica of a rolling deploy, each command that takes the bus in — would
-// add one more to every stream it subscribes to. A process that never reaches
-// its close leaves its durables to the server, which removes each once no one
-// has pulled from it for the inactivity threshold.
+// TestClosingRemovesTheProcesssOwnConsumer pins what a process leaves on
+// the server once it is gone.
 func TestClosingRemovesTheProcesssOwnConsumer(t *testing.T) {
 	url := natstest.URL(t)
 	eventType := nextType()
@@ -113,9 +99,7 @@ func TestClosingRemovesTheProcesssOwnConsumer(t *testing.T) {
 	}
 }
 
-// TestClosingKeepsAConfiguredConsumer is the other side: a durable the host
-// named is shared with the other replicas, or resumes where it left off
-// across a restart, so neither closing nor inactivity removes it.
+// TestClosingKeepsAConfiguredConsumer is the other side.
 func TestClosingKeepsAConfiguredConsumer(t *testing.T) {
 	url := natstest.URL(t)
 	eventType := nextType()
@@ -141,12 +125,8 @@ func TestClosingKeepsAConfiguredConsumer(t *testing.T) {
 	}
 }
 
-// TestReadRecoversWhenTheConsumerIsGone pins the recovery from a durable that
-// vanished under a running reader — an operator's delete, or the server's own
-// after a long enough outage. A reader that only retries its fetch against
-// the missing consumer logs a failure every fetch wait and delivers nothing
-// for this type for the rest of the process's life, while Publish keeps
-// returning nil.
+// TestReadRecoversWhenTheConsumerIsGone pins recovery when the durable
+// vanished under a running reader.
 func TestReadRecoversWhenTheConsumerIsGone(t *testing.T) {
 	url := natstest.URL(t)
 	ctx := context.Background()
@@ -180,12 +160,8 @@ func TestReadRecoversWhenTheConsumerIsGone(t *testing.T) {
 	bussuite.WaitFor(t, "the event to arrive after the consumer came back", func() bool { return seen.Load() == 1 })
 }
 
-// TestAPublishCreatesAGoneStreamAgain pins the recovery from a stream that
-// vanished under a running bus — an operator's delete, or a server restarted
-// without its storage. A bus that only remembered having created the stream
-// would fail every publish of the type from then on, until the process
-// restarted. The bus here subscribes to nothing, so no reader of its own
-// creates the stream again first.
+// TestAPublishCreatesAGoneStreamAgain pins recovery when the stream vanished
+// under a running bus.
 func TestAPublishCreatesAGoneStreamAgain(t *testing.T) {
 	url := natstest.URL(t)
 	ctx := context.Background()
@@ -206,8 +182,7 @@ func TestAPublishCreatesAGoneStreamAgain(t *testing.T) {
 }
 
 // TestAReaderCreatesAGoneStreamAgain is the same recovery on the reading
-// side: the reader's durable goes with its stream, and a reader that only
-// took an existing durable would never deliver again.
+// side.
 func TestAReaderCreatesAGoneStreamAgain(t *testing.T) {
 	url := natstest.URL(t)
 	ctx := context.Background()

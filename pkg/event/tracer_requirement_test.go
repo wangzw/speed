@@ -11,21 +11,8 @@ import (
 	"github.com/vislake/speed/pkg/observability"
 )
 
-// TestEveryImplementationDeclaresTheOptionalTracerRequirement holds the
-// descriptor of each implementation to the edge the design puts there: an
-// optional requirement on the telemetry provider, appended by the implementation
-// because the root package cannot name the telemetry interface type without
-// importing it.
-//
-// The edge is the one thing that orders the assembler ahead of the bus. Without
-// it the two modules are ordered by name alone, Trace resolves no provider and
-// falls back to the one that exports nothing, and the bus starts and stops
-// exporting no span while saying nothing — the silent loss this requirement
-// exists to prevent. A requirement that is missing, carries another token, or is
-// not optional are the three ways it goes wrong.
-//
-// The four implementations are held in one place because the requirement is a
-// property of the seam each of them shares, not of the backend it binds.
+// TestEveryImplementationDeclaresTheOptionalTracerRequirement checks that each
+// implementation's descriptor requires the optional tracer provider.
 func TestEveryImplementationDeclaresTheOptionalTracerRequirement(t *testing.T) {
 	want := core.Token((*observability.TracerProvider)(nil))
 	for _, m := range []core.Module{

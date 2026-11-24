@@ -16,8 +16,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// openBusTracing builds a bus over url whose delivery spans are recorded on
-// tracer.
 func openBusTracing(t *testing.T, url string, tracer event.TracerProvider) *bus {
 	t.Helper()
 	opened, err := open(context.Background(), &Config{URL: url, Timeout: 10 * time.Second}, log.Default(), tracer)
@@ -29,10 +27,8 @@ func openBusTracing(t *testing.T, url string, tracer event.TracerProvider) *bus 
 	return local
 }
 
-// TestDeliveryContinuesThePublishersTrace is the cross-replica case for this
-// backend: an event published inside a span by one replica carries that span's
-// tracing context through the NATS stream, and the other replica's subscriber
-// records its span as a child of it — the same trace id, not a trace of its own.
+// TestDeliveryContinuesThePublishersTrace is the cross-replica case for
+// this backend.
 func TestDeliveryContinuesThePublishersTrace(t *testing.T) {
 	url := natstest.URL(t)
 	rec := &recordingTracer{}

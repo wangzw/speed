@@ -1,17 +1,5 @@
-// Package bussuite holds the contract every implementation of pkg/event must
-// satisfy.
-//
-// It is written once and run by each backend, so "an implementation meets the
-// capability's promises" is a single statement a backend either passes or does
-// not.
-//
-// What is deliberately not here: the shape of delivery across replicas —
-// broadcast or load-balanced — durability, ordering, and exactly-once. Those
-// are properties of a backend rather than of the capability, and the
-// capability promises none of them; a backend that does promise one tests it
-// where its own machinery lives. What a bus carrying events between replicas
-// owes whatever its shape — the one identifier on every replica, the reading
-// position fixed by the start stage — is in AssertReplicated.
+// Package bussuite holds the contract every implementation of pkg/event
+// must satisfy.
 package bussuite
 
 import (
@@ -25,27 +13,14 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// Factory builds a fresh bus for one subtest, with an open subscription table
-// and no relation to the buses built before it, and returns a function that
-// puts it into service: the implementation's start stage, run on the context
-// it is handed, which stands for the drive's.
-//
-// The second result is why this is not a plain constructor. The subscription
-// table freezes and the bus opens to publishing at the start stage, and one
-// that reads from a transport cannot deliver until its readers are running —
-// which cannot happen before the table is complete, after the case has
-// subscribed. A case therefore subscribes and then calls the function.
-//
-// A factory's buses also carry the stop stage every implementation has, as a
-// Stop method; the cases that end a bus's service reach it there.
+// Factory builds a fresh bus for one subtest and returns a function that puts it
+// into service at the start stage.
 type Factory func(t *testing.T) (bus event.Bus, start func(ctx context.Context))
 
-// stopper is the stop stage an implementation's product carries.
 type stopper interface {
 	Stop(ctx context.Context) error
 }
 
-// stopOf returns the bus's stop stage, and fails the case when it has none.
 func stopOf(t *testing.T, b event.Bus) stopper {
 	t.Helper()
 	s, ok := b.(stopper)
@@ -56,22 +31,10 @@ func stopOf(t *testing.T, b event.Bus) stopper {
 }
 
 // WaitFor polls until cond holds, and fails the case if it never does.
-//
-// The polling is what lets one contract cover both delivery paths: a
-// process-local bus has run every handler by the time Publish returns, while a
-// bus backed by a transport delivers after it has. A case may not assume
-// either, so it waits instead.
-//
-// It is exported so that a backend's own cases — the ones that go past the
-// suite into what its backend does — wait the same way, at the same pace. A
-// copy with a longer bound would let a case pass here that the suite's own
-// bound would fail, which is how the pace drifted once already.
 func WaitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	// The bound is generous because delivery through a transport can take
-	// seconds on a loaded machine — the cross-replica cases wait on another
-	// process's reader — and a case that is genuinely broken still fails, just
-	// later.
+	// The bound is generous because delivery through a transport can take seconds
+	// on a loaded machine.
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		if cond() {
@@ -82,7 +45,6 @@ func WaitFor(t *testing.T, what string, cond func() bool) {
 	t.Fatalf("timed out waiting for %s", what)
 }
 
-// receive waits for one value on ch, and fails the case if none arrives.
 func receive[T any](t *testing.T, ch <-chan T) T {
 	t.Helper()
 	select {
@@ -95,13 +57,8 @@ func receive[T any](t *testing.T, ch <-chan T) T {
 	}
 }
 
-// AssertReplicated runs the part of the contract that only a bus carrying
-// events between replicas can be held to, against pairs of buses the factory
-// builds: every bus a factory builds is a replica of the others, reaching the
-// same backend.
-//
-// The in-process implementation does not run it, having no second replica to
-// reach.
+// AssertReplicated runs the part of the contract only a bus carrying events
+// between replicas can be held to, against pairs of buses the factory builds.
 func AssertReplicated(t *testing.T, newBus Factory) {
 	t.Helper()
 
@@ -119,10 +76,9 @@ func AssertReplicated(t *testing.T, newBus Factory) {
 		})
 		startPublisher(context.Background())
 		startOther(context.Background())
-		// Broadcast hands one event to every replica, so a consumer whose
-		// effect is shared between replicas — one row, one webhook — acts on
-		// it once only by recognising the second arrival. The identifier is
-		// what it recognises it by, and it has to be the same on each.
+		// Broadcast hands one event to every replica, so a consumer whose effect
+		// is shared between replicas — one row, one webhook — acts on it once
+		// only by recognising the second arrival.
 		for _, published := range []event.Event{{Type: "t"}, {ID: "set-by-the-publisher", Type: "t"}} {
 			if err := publisher.Publish(context.Background(), published); err != nil {
 				t.Fatalf("Publish: %v", err)
@@ -151,11 +107,6 @@ func AssertReplicated(t *testing.T, newBus Factory) {
 		})
 		startPublisher(context.Background())
 		startOther(context.Background())
-		// The tracing context is one value for one event, like the identifier: a
-		// carrier the publisher fixed — a relay staging an event whose trace began
-		// where the fact was produced — has to reach every replica's subscriber as
-		// it was, or the trace that began at the fact breaks at whichever replica
-		// dropped or rewrote it.
 		carried := map[string]string{"traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}
 		if err := publisher.Publish(context.Background(), event.Event{Type: "t", TraceContext: carried}); err != nil {
 			t.Fatalf("Publish: %v", err)
@@ -213,7 +164,6 @@ func AssertConforms(t *testing.T, newBus Factory) {
 			return nil
 		})
 		start(context.Background())
-		// Neither a prefix nor a different case may reach it.
 		for _, other := range []string{"order", "order.placed.extra", "Order.Placed", ""} {
 			if err := b.Publish(context.Background(), event.Event{Type: other}); err != nil {
 				t.Fatalf("Publish(%q): %v", other, err)
@@ -267,9 +217,6 @@ func AssertConforms(t *testing.T, newBus Factory) {
 			if evt.Type != want.Type || evt.TenantID != want.TenantID {
 				t.Fatalf("the event arrived as %+v, want %+v", evt, want)
 			}
-			// The payload is read through the helpers rather than compared as a
-			// value: a transport delivers the decoded shape, not the
-			// publisher's own.
 			s, ok := event.PayloadString(evt.Payload, "k")
 			if !ok || s != "carried" {
 				t.Fatalf("reading the payload through its helpers gave (%q, %v)", s, ok)
@@ -281,10 +228,6 @@ func AssertConforms(t *testing.T, newBus Factory) {
 
 	t.Run("the event's tracing context arrives as it was published", func(t *testing.T) {
 		b, start := newBus(t)
-		// The tracing context a publisher fixed — a relay republishing an event
-		// whose trace began where the fact was produced — is carried through the
-		// backend and reaches the subscriber unchanged. A dropped carrier and one
-		// overwritten with the delivery's own span are the two ways it goes wrong.
 		carried := map[string]string{"traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}
 		got := make(chan map[string]string, 1)
 		b.Subscribe("t", "suite", func(_ context.Context, evt event.Event) error {
@@ -328,9 +271,6 @@ func AssertConforms(t *testing.T, newBus Factory) {
 		if err := b.Publish(context.Background(), event.Event{Type: "t", Payload: want}); err != nil {
 			t.Fatalf("Publish: %v", err)
 		}
-		// Identifiers and amounts in cents are the integers a subscriber
-		// decodes, and a value rounded on the way reads back with no error: the
-		// typed path has to give what an in-process publish gives.
 		select {
 		case w := <-got:
 			if w != want {
@@ -358,9 +298,6 @@ func AssertConforms(t *testing.T, newBus Factory) {
 		if err := b.Publish(context.Background(), event.Event{Type: "t"}); err != nil {
 			t.Fatalf("Publish: %v", err)
 		}
-		// The typed path is the one that surfaces a failure, so an event that
-		// carries nothing is reported as such in every shape it arrives in,
-		// rather than decoding into a zero value with no error.
 		if err := receive(t, got); !errors.Is(err, event.ErrNoPayload) {
 			t.Fatalf("decoding the payload of an event published without one: %v, want ErrNoPayload", err)
 		}
@@ -428,10 +365,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 		})
 		start(context.Background())
 		// The contract says Publish's error is about handing the event over,
-		// never about a subscriber. An implementation that knows the result —
-		// the process-local one does — must still keep it out of this value,
-		// or a publisher cannot tell "not accepted" from "accepted and
-		// mishandled".
+		// never about a subscriber.
 		if err := b.Publish(context.Background(), event.Event{Type: "t"}); err != nil {
 			t.Fatalf("Publish reported a subscriber's failure: %v", err)
 		}
@@ -467,10 +401,8 @@ func AssertConforms(t *testing.T, newBus Factory) {
 			return nil
 		})
 		start(context.Background())
-		// A panic is a subscriber's failure like any other: it must not come
-		// back through Publish, which on an in-process bus runs the handlers on
-		// the publisher's own goroutine, and it must not keep the subscriber
-		// after it from running.
+		// A panic is a subscriber's failure like any other: it must not come back
+		// through Publish or keep the next subscriber from running.
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -536,8 +468,6 @@ func AssertConforms(t *testing.T, newBus Factory) {
 		drive, cancel := context.WithCancel(context.Background())
 		start(drive)
 		cancel()
-		// Past the longest read a transport blocks in, so a reader that ended
-		// with the drive's context has had every chance to be gone.
 		time.Sleep(2500 * time.Millisecond)
 		if err := b.Publish(context.Background(), event.Event{Type: "t"}); err != nil {
 			t.Fatalf("Publish after the drive's context was cancelled: %v", err)

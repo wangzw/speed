@@ -21,12 +21,7 @@ import (
 )
 
 // TestTheListeningConnectionGoesWhereThePoolGoes pins that the listening
-// session reaches the same database as every publish, whatever whitespace the
-// connection string carries. Secrets and env files routinely end in a newline;
-// the pool normalises the string, and a listening connection parsed from the
-// raw text again would fail the startup on a trailing newline, and on leading
-// whitespace would go to the libpq defaults instead — a different server or
-// database, where the notifications a publish sends never arrive.
+// session reaches the same database as every publish, whatever the whitespace.
 func TestTheListeningConnectionGoesWhereThePoolGoes(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	for _, given := range []string{dsn + "\n", "  " + dsn, "\t" + dsn + " \r\n"} {
@@ -46,19 +41,8 @@ func TestTheListeningConnectionGoesWhereThePoolGoes(t *testing.T) {
 	}
 }
 
-// TestARoleThatMayOnlyWriteRowsStartsOnAPreparedDatabase pins the deployment
-// that splits the credentials: the tables created once by a role that may create
-// them, the service run by one that may only read and write rows. Every start
-// prepares the tables, and with the tables already there that preparation has
-// nothing to change — so it must not need a privilege that changes anything.
-// PostgreSQL checks CREATE on the schema before it looks for the table an
-// IF NOT EXISTS names, so a start that issues the statement regardless fails on
-// the role that has everything it will use.
-//
-// The role is then held to the whole round a replica makes — publish, read,
-// mark, and the retention pass — so a start that succeeds is not followed by a
-// first event that fails on a grant the deployment could not have known it
-// needed.
+// TestARoleThatMayOnlyWriteRowsStartsOnAPreparedDatabase pins the
+// deployment that splits the credentials.
 func TestARoleThatMayOnlyWriteRowsStartsOnAPreparedDatabase(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := context.Background()
@@ -94,11 +78,8 @@ func TestARoleThatMayOnlyWriteRowsStartsOnAPreparedDatabase(t *testing.T) {
 	}
 }
 
-// TestARoleThatMayOnlyWriteRowsIsToldWhatIsMissing is the other side of the
-// same deployment: a database whose tables were never created. The start has to
-// create them, cannot, and fails saying which one it was creating and carrying
-// the server's refusal, so the failure says what the owning role has to create
-// and that a privilege is what stopped it.
+// TestARoleThatMayOnlyWriteRowsIsToldWhatIsMissing is the other side of
+// the same deployment: a database whose tables were never created.
 func TestARoleThatMayOnlyWriteRowsIsToldWhatIsMissing(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	roleDSN := pgtest.DMLRole(t, dsn)
@@ -116,17 +97,10 @@ func TestARoleThatMayOnlyWriteRowsIsToldWhatIsMissing(t *testing.T) {
 	}
 }
 
-// insufficientPrivilege is the SQLSTATE the server refuses a statement with
-// when the role lacks a privilege it needs.
 const insufficientPrivilege = "42501"
 
-// TestReplicasStartingTogetherOnANewDatabaseAllStart pins what a rollout of
-// several replicas onto an empty database needs: every one of them starts.
-// CREATE TABLE IF NOT EXISTS run by several sessions at once is not safe — the
-// sessions that lose fail on the catalog's unique indexes — so without the
-// creation serialised, all replicas but the first would fail their startup.
-//
-// Each round is a fresh database, because only the first creation races.
+// TestReplicasStartingTogetherOnANewDatabaseAllStart pins what a rollout
+// of several replicas onto an empty database needs.
 func TestReplicasStartingTogetherOnANewDatabaseAllStart(t *testing.T) {
 	const rounds, replicas = 5, 4
 	for range rounds {

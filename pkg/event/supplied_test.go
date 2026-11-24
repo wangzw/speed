@@ -43,15 +43,11 @@ func (b *hostBus) asked() []string {
 	return slices.Clone(b.calls)
 }
 
-// bareHostBus is a bus the host built with no stop stage and nothing to close.
 type bareHostBus struct{}
 
 func (bareHostBus) Subscribe(string, string, event.Handler)    {}
 func (bareHostBus) Publish(context.Context, event.Event) error { return nil }
 
-// implementations are the modules that deliver the event capability. Each has a
-// start function of its own, so a case about what the start stage does with a bus
-// the host supplied is run over every one of them.
 var implementations = []struct {
 	name   string
 	module func() core.Module
@@ -62,18 +58,8 @@ var implementations = []struct {
 	{eventnats.ModuleName, eventnats.Module},
 }
 
-// TestASuppliedBusIsRefusedAtTheStartStage pins where a bus the host supplied for
-// an implementation stops being usable: the start stage freezes and starts the
-// product its own Open builds, and a bus built elsewhere has none of that state,
-// so a drive that carries it there fails while a drive that stops at Init does
-// not. The refusal says what was refused and what to supply instead.
-//
-// Every implementation is held to it, and none needs its server: the supplied bus
-// stands where the one Open would have connected, so nothing connects.
-//
-// No reading face is supplied. The module's Prepare and New, which read one, do
-// not run for a supplied instance, so the shallow drive passing is also what shows
-// they did not.
+// TestASuppliedBusIsRefusedAtTheStartStage pins where a bus the host
+// supplied for an implementation stops being usable.
 func TestASuppliedBusIsRefusedAtTheStartStage(t *testing.T) {
 	depths := []struct {
 		name  string
@@ -120,9 +106,6 @@ func TestASuppliedBusIsRefusedAtTheStartStage(t *testing.T) {
 	}
 }
 
-// builtByNew is a bus the in-process implementation's own New builds in a
-// registry of the host's making, which is one of the two things the refusal tells
-// a host to supply instead.
 func builtByNew(t *testing.T) event.Bus {
 	t.Helper()
 	reg := core.New()
@@ -139,11 +122,8 @@ func builtByNew(t *testing.T) event.Bus {
 	return bus
 }
 
-// TestABusBuiltByTheModulesOwnNewIsTakenUpWhenSupplied backs the first way out the
-// refusal names. The bus the module's own New built is supplied for the module in
-// the registry that is driven, and the start stage takes it up: the drive goes as
-// deep as Start and publishes from its action, which a bus the start stage had
-// not opened to publishing would refuse.
+// TestABusBuiltByTheModulesOwnNewIsTakenUpWhenSupplied backs the first
+// way out the refusal names.
 func TestABusBuiltByTheModulesOwnNewIsTakenUpWhenSupplied(t *testing.T) {
 	reg := core.New()
 	reg.Register(memory.Module())
@@ -163,10 +143,8 @@ func TestABusBuiltByTheModulesOwnNewIsTakenUpWhenSupplied(t *testing.T) {
 	}
 }
 
-// TestAPlaceholderModuleCarriesAStandInThroughTheStartStage backs the other way
-// out. The stand-in is supplied for a module that declares only the capability,
-// which has no start stage to refuse it, and the drive goes past the stage at
-// which an implementation's own module would have.
+// TestAPlaceholderModuleCarriesAStandInThroughTheStartStage backs the
+// other way out.
 func TestAPlaceholderModuleCarriesAStandInThroughTheStartStage(t *testing.T) {
 	const placeholder = "case.bus"
 	stand := &hostBus{}
@@ -190,9 +168,8 @@ func TestAPlaceholderModuleCarriesAStandInThroughTheStartStage(t *testing.T) {
 	}
 }
 
-// TestASuppliedBusIsStoppedAndClosedByTheDrive pins that the stop and close
-// stages treat a bus the host supplied as they treat the one Open builds: through
-// the methods it has, Stop before Close.
+// TestASuppliedBusIsStoppedAndClosedByTheDrive pins that stop and close treat a
+// host-supplied bus like one Open builds.
 func TestASuppliedBusIsStoppedAndClosedByTheDrive(t *testing.T) {
 	supplied := &hostBus{}
 	reg := core.New()
@@ -208,9 +185,7 @@ func TestASuppliedBusIsStoppedAndClosedByTheDrive(t *testing.T) {
 	}
 }
 
-// TestASuppliedBusWithNoStopOrCloseIsLeftAlone is the other half: a bus that has
-// neither method is not an error at the stop and close stages, and the drive
-// that carried it ends cleanly.
+// TestASuppliedBusWithNoStopOrCloseIsLeftAlone is the other half.
 func TestASuppliedBusWithNoStopOrCloseIsLeftAlone(t *testing.T) {
 	reg := core.New()
 	reg.Register(memory.Module())

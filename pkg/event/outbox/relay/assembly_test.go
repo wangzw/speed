@@ -22,15 +22,12 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// stack is the database and the bus an assembled case runs on.
 type stack struct {
 	database core.Module
 	bus      core.Module
-	// section is the configuration: the db and event namespaces.
-	section map[string]any
+	section  map[string]any
 }
 
-// sqliteStack is the SQLite engine and the in-process bus.
 func sqliteStack(t *testing.T) stack {
 	return stack{
 		database: sqlite.Module(),
@@ -41,14 +38,12 @@ func sqliteStack(t *testing.T) stack {
 	}
 }
 
-// ordersModule stands for a host's module: it keeps the orders table, stages
-// its announcements through the outbox, and subscribes to them on the bus.
+// ordersModule is a host's module that stages announcements through the outbox and reads them back.
 type ordersModule struct {
 	mu       sync.Mutex
 	received []event.Event
 }
 
-// module is the descriptor.
 func (m *ordersModule) module() core.Module {
 	return core.Module{
 		Name: "orders",
@@ -77,19 +72,12 @@ func (m *ordersModule) module() core.Module {
 	}
 }
 
-// events is what the subscriber received.
 func (m *ordersModule) events() []event.Event {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]event.Event(nil), m.received...)
 }
 
-// assembled drives a real registry to Start and runs action there: the stack's
-// engine and bus, the log module, this module and the orders module, each
-// through its own descriptor, with the configuration loaded the way a host
-// loads it and supplied as the instance of the config module. The engine
-// applies this module's migrations; the drive stops every module once the
-// action returns.
 func assembled(t *testing.T, s stack, orders *ordersModule, action func(ctx context.Context, reg *core.Registry) error) {
 	t.Helper()
 	dir := t.TempDir()
@@ -141,13 +129,10 @@ func assembled(t *testing.T, s stack, orders *ordersModule, action func(ctx cont
 	}
 }
 
-// errCaseFailed ends a drive whose case has already reported what went wrong.
 var errCaseFailed = errors.New("the case failed")
 
-// In an assembled host an order's announcement reaches its subscriber once the
-// order commits, under the identifier it was staged under and with its amount
-// exact, and an abandoned order's never does. The engine built this module's
-// table from the migrations the module declares.
+// In an assembled host a committed order's announcement reaches its subscriber
+// with its staged identifier and exact amount, and an abandoned order's never does.
 func TestAnAssembledHostAnnouncesACommittedWriteThroughTheOutbox(t *testing.T) {
 	orders := &ordersModule{}
 	assembled(t, sqliteStack(t), orders, func(ctx context.Context, reg *core.Registry) error {
@@ -176,8 +161,7 @@ func TestAnAssembledHostAnnouncesACommittedWriteThroughTheOutbox(t *testing.T) {
 		}
 		// The outbox is the source: once it holds no row and no relay holds a
 		// claim, every event it staged has been published and none is still on
-		// its way. An announcement the abandoned order should never have staged
-		// would be published as part of that settling, not after a pause.
+		// its way.
 		waitSettled(t, database)
 		got := orders.events()
 		if len(got) != 1 || got[0].ID != kept || got[0].TenantID != "acme" {

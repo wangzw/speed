@@ -23,12 +23,7 @@ import (
 // cannot see each other's streams.
 var eventTypeSerial atomic.Int32
 
-// runToken keeps those names apart across test processes as well. A stream
-// outlives the process that made it on the shared server, and so does a durable
-// consumer with a fixed name: a type named by a counter alone is the same type
-// in the next run, or in another checkout running at the same moment, and a
-// case sharing a consumer would be handed every event that earlier run left in
-// the stream.
+// runToken keeps those names apart across test processes as well.
 var runToken = func() string {
 	var b [6]byte
 	_, _ = rand.Read(b[:])
@@ -39,14 +34,11 @@ func nextType() string {
 	return fmt.Sprintf("case.%s.%d", runToken, eventTypeSerial.Add(1))
 }
 
-// openBus builds a bus over the shared server, with a consumer name of its own
-// unless one is given.
 func openBus(t *testing.T, url string, name string) *bus {
 	t.Helper()
 	return openBusIn(t, url, name, "")
 }
 
-// openBusIn is openBus with the namespace named too.
 func openBusIn(t *testing.T, url string, name string, namespace string) *bus {
 	t.Helper()
 	opened, err := open(context.Background(), &Config{
@@ -60,10 +52,8 @@ func openBusIn(t *testing.T, url string, name string, namespace string) *bus {
 	return local
 }
 
-// TestTwoAssembliesOnOneServerDoNotSeeEachOther covers what the namespace is
-// for. Everything about these two buses is identical — same server, same event
-// type, a consumer name of its own each — and the only thing keeping them apart
-// is the namespace they were given.
+// TestTwoAssembliesOnOneServerDoNotSeeEachOther covers what the namespace
+// is for.
 func TestTwoAssembliesOnOneServerDoNotSeeEachOther(t *testing.T) {
 	url := natstest.URL(t)
 	ctx := context.Background()
@@ -92,11 +82,9 @@ func TestTwoAssembliesOnOneServerDoNotSeeEachOther(t *testing.T) {
 	}
 	js := inspect(t, url)
 	bussuite.WaitFor(t, "the publishing assembly's subscriber to run", func() bool { return gotSecond.Load() == 1 })
-	// The first assembly's own consumer is the source of its deliveries: once it
-	// has taken and acknowledged everything its stream holds, anything it was
-	// going to deliver has arrived. On a stream of its own that stream is empty;
-	// a bus that read the other assembly's stream would instead have the event
-	// to deliver before this condition holds.
+	// The first assembly's own consumer is the source of its deliveries: once
+	// it has taken and acknowledged everything its stream holds, anything it
+	// was going to deliver has arrived.
 	bussuite.WaitFor(t, "the receiving assembly's consumer to drain its stream",
 		func() bool { return consumerDrained(t, js, first.streamName(eventType), first.consumer) })
 	if n := gotFirst.Load(); n != 0 {
@@ -105,14 +93,6 @@ func TestTwoAssembliesOnOneServerDoNotSeeEachOther(t *testing.T) {
 	}
 }
 
-// factoryOn builds buses over one server, each with a durable consumer of its
-// own: replicas of one assembly.
-//
-// They share a namespace of this test process's own. The suite names its
-// event types by hand, the same names in every run, and the server is shared
-// with every other checkout running the suite at the same moment: in the
-// default namespace, each of those runs would publish onto the streams this
-// one reads, and a case counting deliveries would count theirs.
 func factoryOn(url string) bussuite.Factory {
 	namespace := "suite_" + runToken
 	return func(t *testing.T) (event.Bus, func(context.Context)) {
@@ -125,20 +105,18 @@ func factoryOn(url string) bussuite.Factory {
 	}
 }
 
+// TestConforms runs the bus contract suite against the NATS backend.
 func TestConforms(t *testing.T) {
 	bussuite.AssertConforms(t, factoryOn(natstest.URL(t)))
 }
 
+// TestReplicated runs the cross-replica contract against the NATS backend.
 func TestReplicated(t *testing.T) {
 	bussuite.AssertReplicated(t, factoryOn(natstest.URL(t)))
 }
 
-// TestEveryReplicaReceivesEveryEvent is what this backend is for, and what a
-// consumer name of its own buys: JetStream balances a stream between consumers
-// sharing a name, so two instances sharing one would split the events.
-//
-// The event is published through the second bus, so the first can only have
-// seen it by reading the stream.
+// TestEveryReplicaReceivesEveryEvent is what this backend is for, and
+// what a consumer name of its own buys.
 func TestEveryReplicaReceivesEveryEvent(t *testing.T) {
 	url := natstest.URL(t)
 	ctx := context.Background()
@@ -169,9 +147,8 @@ func TestEveryReplicaReceivesEveryEvent(t *testing.T) {
 	bussuite.WaitFor(t, "the other replica's subscriber to run", func() bool { return gotFirst.Load() == 1 })
 }
 
-// TestTwoInstancesSharingAConsumerSplitTheEvents is the other side of the same
-// fact, asserted rather than assumed: it is what makes the default name
-// load-bearing.
+// TestTwoInstancesSharingAConsumerSplitTheEvents is the other side of the
+// same fact, asserted rather than assumed.
 func TestTwoInstancesSharingAConsumerSplitTheEvents(t *testing.T) {
 	url := natstest.URL(t)
 	ctx := context.Background()
@@ -198,10 +175,9 @@ func TestTwoInstancesSharingAConsumerSplitTheEvents(t *testing.T) {
 	}
 	js := inspect(t, url)
 	bussuite.WaitFor(t, "one of the two to take the event", func() bool { return total.Load() >= 1 })
-	// The shared consumer is the source of these deliveries: once it has taken
-	// and acknowledged everything the stream holds, no further delivery is
-	// coming, so the count taken afterwards is final. If the two instances were
-	// each handed the event, both acknowledgements would already be in.
+	// The shared consumer is the source of these deliveries: once it has
+	// taken and acknowledged everything the stream holds, no further delivery
+	// is coming, so the count taken afterwards is final.
 	bussuite.WaitFor(t, "the shared consumer to drain the stream",
 		func() bool { return consumerDrained(t, js, first.streamName(eventType), shared) })
 	if n := total.Load(); n != 1 {
@@ -210,6 +186,8 @@ func TestTwoInstancesSharingAConsumerSplitTheEvents(t *testing.T) {
 	}
 }
 
+// TestAnUnserializablePayloadIsRefused checks that Publish refuses a payload
+// that cannot be serialized.
 func TestAnUnserializablePayloadIsRefused(t *testing.T) {
 	url := natstest.URL(t)
 	ctx := context.Background()
@@ -222,6 +200,8 @@ func TestAnUnserializablePayloadIsRefused(t *testing.T) {
 	}
 }
 
+// TestAClosedBusRefusesPublishes checks that Publish after Close returns
+// ErrClosed.
 func TestAClosedBusRefusesPublishes(t *testing.T) {
 	url := natstest.URL(t)
 	ctx := context.Background()
@@ -237,11 +217,8 @@ func TestAClosedBusRefusesPublishes(t *testing.T) {
 	}
 }
 
-// TestAReaderOpensWhatIsMissing pins that a reader does not depend on begin
-// having left its stream and durable in place: it opens both itself, and
-// again whenever it finds them gone. A reader that only took an existing
-// durable would, on the first one missing, leave its event type undelivered
-// for the rest of the process's life while Publish kept returning nil.
+// TestAReaderOpensWhatIsMissing pins that a reader does not depend on
+// begin having left its stream and durable in place.
 func TestAReaderOpensWhatIsMissing(t *testing.T) {
 	url := natstest.URL(t)
 	ctx := context.Background()
@@ -253,9 +230,6 @@ func TestAReaderOpensWhatIsMissing(t *testing.T) {
 		return nil
 	})
 
-	// Neither the stream nor the durable exists. begin is not called — what
-	// it creates is exactly what this case withholds — so what it does
-	// besides is done here.
 	b.table.Freeze(ctx)
 	b.table.Go(func(reading, handling context.Context) { b.read(reading, handling, eventType) })
 

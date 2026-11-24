@@ -19,18 +19,12 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// recordedDelivery is one span the dispatch layer started for a subscriber: the
-// name it was recorded under, the parent it was handed and the attributes it
-// carried.
 type recordedDelivery struct {
 	name   string
 	parent trace.SpanContext
 	attrs  map[string]string
 }
 
-// recordingTracer keeps every span the dispatch layer starts, so a case can
-// hold a delivery's parent and attributes to what the design fixes without an
-// exporter.
 type recordingTracer struct {
 	mu    sync.Mutex
 	spans []recordedDelivery
@@ -47,7 +41,6 @@ type deliveredSpan struct{}
 
 func (deliveredSpan) End(error) {}
 
-// deliveriesOf lists every span started for the named subscriber.
 func (r *recordingTracer) deliveriesOf(name string) []recordedDelivery {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -60,16 +53,12 @@ func (r *recordingTracer) deliveriesOf(name string) []recordedDelivery {
 	return out
 }
 
-// spanContext is a valid span context with the given identifiers, so a case can
-// name the span a delivery is expected to be parented on.
 func spanContext(traceID trace.TraceID, spanID trace.SpanID) trace.SpanContext {
 	return trace.NewSpanContext(trace.SpanContextConfig{
 		TraceID: traceID, SpanID: spanID, TraceFlags: trace.FlagsSampled,
 	})
 }
 
-// openBusTracing builds a bus over the given database whose delivery spans are
-// recorded on tracer.
 func openBusTracing(t *testing.T, dsn string, tracer event.TracerProvider) *bus {
 	t.Helper()
 	opened, err := open(context.Background(), &pgpool.Config{DSN: dsn, MaxConns: 4}, log.Default(), tracer)
@@ -81,10 +70,8 @@ func openBusTracing(t *testing.T, dsn string, tracer event.TracerProvider) *bus 
 	return local
 }
 
-// TestDeliveryContinuesThePublishersTrace is the cross-replica case for this
-// backend: an event published inside a span by one replica carries that span's
-// tracing context through the outbox table, and the other replica's subscriber
-// records its span as a child of it — the same trace id, not a trace of its own.
+// TestDeliveryContinuesThePublishersTrace is the cross-replica case for
+// this backend.
 func TestDeliveryContinuesThePublishersTrace(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	rec := &recordingTracer{}
@@ -129,13 +116,7 @@ func TestDeliveryContinuesThePublishersTrace(t *testing.T) {
 	}
 }
 
-// TestAnEventPublishedOutsideAnySpanDeliversAsARoot pins the empty case: an
-// event published with no tracing context stores the empty value in
-// trace_context, and the subscriber's span is then a trace of its own. The
-// delivery runs under a context that carries a span — exactly the reader's
-// handling context, which the start stage derives from the context it is handed —
-// so the parent has to be taken from the event, which carries none, and not from
-// the span the handler happens to run under.
+// TestAnEventPublishedOutsideAnySpanDeliversAsARoot pins the empty case.
 func TestAnEventPublishedOutsideAnySpanDeliversAsARoot(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	rec := &recordingTracer{}
@@ -172,10 +153,8 @@ func TestAnEventPublishedOutsideAnySpanDeliversAsARoot(t *testing.T) {
 	}
 }
 
-// TestOpeningAddsTheTraceContextColumnToAnOlderOutbox pins the upgrade of a
-// table built before the tracing column existed: opening the bus adds it, and
-// the rows already there keep the default empty value rather than failing the
-// read.
+// TestOpeningAddsTheTraceContextColumnToAnOlderOutbox pins the upgrade of
+// a table built before the tracing column existed.
 func TestOpeningAddsTheTraceContextColumnToAnOlderOutbox(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := context.Background()
@@ -201,7 +180,6 @@ func TestOpeningAddsTheTraceContextColumnToAnOlderOutbox(t *testing.T) {
 	if _, err := conn.Exec(ctx, `INSERT INTO `+table+` (type, payload) VALUES ('t', '{}')`); err != nil {
 		t.Fatalf("writing a row before the column existed: %v", err)
 	}
-	// Opening the bus prepares the tables, adding what the older one lacks.
 	b := openBus(t, dsn)
 	var present bool
 	if err := b.pool.QueryRow(ctx, columnPresent, table, "trace_context").Scan(&present); err != nil {

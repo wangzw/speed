@@ -10,10 +10,8 @@ import (
 	"github.com/vislake/speed/pkg/internal/pgpool"
 )
 
-// TestStanceFailsWithoutAConnectionString pins the enablement rule at this
-// backend's own precondition: a module taken in at run level has to start, so an
-// implementation the host did not point at a database fails the startup naming
-// the item. It is not a stance that lets the run continue without an event bus.
+// TestStanceFailsWithoutAConnectionString pins the enablement rule at
+// this backend's own precondition.
 func TestStanceFailsWithoutAConnectionString(t *testing.T) {
 	_, err := stance(&pgpool.Config{})
 	if err == nil {
@@ -24,6 +22,8 @@ func TestStanceFailsWithoutAConnectionString(t *testing.T) {
 	}
 }
 
+// TestStanceEnablesOnceAConnectionStringIsGiven checks that a given connection
+// string states StateEnabled.
 func TestStanceEnablesOnceAConnectionStringIsGiven(t *testing.T) {
 	got, err := stance(&pgpool.Config{DSN: "postgres://localhost/x"})
 	if err != nil {
@@ -34,10 +34,8 @@ func TestStanceEnablesOnceAConnectionStringIsGiven(t *testing.T) {
 	}
 }
 
-// TestRetireRunsAtMostOncePerInterval pins the pacing of the retention pass: a
-// pass at the end of every drain would be two large DELETEs at the poll
-// interval, per replica, one of them an anti-join over the delivered table — a
-// standing load for a window a day wide.
+// TestRetireRunsAtMostOncePerInterval pins the pacing of the retention
+// pass.
 func TestRetireRunsAtMostOncePerInterval(t *testing.T) {
 	b := &bus{}
 	start := time.Now()
@@ -66,8 +64,7 @@ func TestRetireRunsAtMostOncePerInterval(t *testing.T) {
 }
 
 // TestAFailedRetireDoesNotBuyAnHour pins what a failed pass does to the
-// schedule: nothing. Recording the run before running it would leave a
-// transient DELETE failure with an hour of silence.
+// schedule: nothing.
 func TestAFailedRetireDoesNotBuyAnHour(t *testing.T) {
 	b := &bus{}
 	start := time.Now()

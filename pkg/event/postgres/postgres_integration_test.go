@@ -16,7 +16,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// openBus builds a bus over the given database.
 func openBus(t *testing.T, dsn string) *bus {
 	t.Helper()
 	opened, err := open(context.Background(), &pgpool.Config{DSN: dsn, MaxConns: 4}, log.Default(), tracing.Noop())
@@ -28,7 +27,6 @@ func openBus(t *testing.T, dsn string) *bus {
 	return local
 }
 
-// factoryOn builds buses over one database, each a replica of its own.
 func factoryOn(dsn string) bussuite.Factory {
 	return func(t *testing.T) (event.Bus, func(context.Context)) {
 		b := openBus(t, dsn)
@@ -40,19 +38,17 @@ func factoryOn(dsn string) bussuite.Factory {
 	}
 }
 
+// TestConforms runs the bus contract suite against the PostgreSQL backend.
 func TestConforms(t *testing.T) {
 	bussuite.AssertConforms(t, factoryOn(pgtest.Acquire(t)))
 }
 
+// TestReplicated runs the cross-replica contract against the PostgreSQL backend.
 func TestReplicated(t *testing.T) {
 	bussuite.AssertReplicated(t, factoryOn(pgtest.Acquire(t)))
 }
 
 // TestEveryReplicaReceivesEveryEvent is what this backend is for.
-//
-// The event is published through the second bus, so the first can only have seen
-// it by reading the table: nothing in this process hands an event to another
-// instance's subscribers.
 func TestEveryReplicaReceivesEveryEvent(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := context.Background()
@@ -82,13 +78,8 @@ func TestEveryReplicaReceivesEveryEvent(t *testing.T) {
 	bussuite.WaitFor(t, "the other replica's subscriber to run", func() bool { return gotFirst.Load() == 1 })
 }
 
-// TestAnEventPublishedWhileNothingWasListeningIsStillDelivered is the window
-// the outbox exists for, and it is asserted rather than assumed.
-//
-// The second bus is built before the event is published and put into service
-// only afterwards, so the notification was sent while it was not listening for
-// it — which is what NOTIFY cannot cover. The row is still there, and the
-// reader's own timeout is what finds it.
+// TestAnEventPublishedWhileNothingWasListeningIsStillDelivered is the
+// window the outbox exists for, and it is asserted rather than assumed.
 func TestAnEventPublishedWhileNothingWasListeningIsStillDelivered(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := context.Background()
@@ -118,6 +109,8 @@ func TestAnEventPublishedWhileNothingWasListeningIsStillDelivered(t *testing.T) 
 	bussuite.WaitFor(t, "the late replica to catch up", func() bool { return got.Load() == 1 })
 }
 
+// TestAnUnserializablePayloadIsRefused checks that Publish refuses a payload
+// that cannot be serialized.
 func TestAnUnserializablePayloadIsRefused(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := context.Background()
@@ -130,6 +123,8 @@ func TestAnUnserializablePayloadIsRefused(t *testing.T) {
 	}
 }
 
+// TestAClosedBusRefusesPublishes checks that Publish after Close returns
+// ErrClosed.
 func TestAClosedBusRefusesPublishes(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := context.Background()

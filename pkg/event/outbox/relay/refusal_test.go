@@ -10,7 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// funcBus is a bus whose every publish one function answers.
 type funcBus struct {
 	publish func(ctx context.Context, evt event.Event) error
 }
@@ -57,9 +56,8 @@ func TestABusThatPanicsHasRefusedTheEvent(t *testing.T) {
 	})
 }
 
-// A publish is bounded: the bus is handed a context that ends at the publish
-// bound, and a publish that ends with it has refused the event, which the
-// relay records before going on to the events staged after it.
+// A publish is bounded: a context ending at the publish bound refuses the
+// event, which the relay records before the events after it.
 func TestAPublishThatOutlastsItsBoundHasRefusedTheEvent(t *testing.T) {
 	onEachEngine(t, func(t *testing.T, e engine, dsn string) {
 		database := migrated(t, e, dsn)
@@ -99,12 +97,8 @@ func TestAPublishThatOutlastsItsBoundHasRefusedTheEvent(t *testing.T) {
 	})
 }
 
-// A refused row falls due again after a delay that starts at the retry and
-// doubles with every further refusal, up to its cap.
-//
-// The delays are hours, so the relay never reaches one within the case; the
-// case stands in for the clock, making the row due each time it has read the
-// delay.
+// A refused row falls due again after a delay that starts at the retry
+// and doubles with every further refusal, up to its cap.
 func TestARefusedEventFallsDueAfterADelayThatDoublesUpToItsCap(t *testing.T) {
 	onEachEngine(t, func(t *testing.T, e engine, dsn string) {
 		database := migrated(t, e, dsn)
@@ -137,10 +131,8 @@ func TestARefusedEventFallsDueAfterADelayThatDoublesUpToItsCap(t *testing.T) {
 	})
 }
 
-// A relay whose claim on a row ran out, and another relay took the row over,
-// leaves the other relay's claim alone when the bus refuses its publish: the
-// row stays claimed by the relay now holding it, with no refusal counted, so
-// it is not made due again while that relay is publishing it.
+// A relay whose claim ran out leaves the new relay's claim alone when the bus
+// refuses its publish.
 func TestARefusalAfterTheClaimWasTakenOverLeavesTheNewClaimAlone(t *testing.T) {
 	onEachEngine(t, func(t *testing.T, e engine, dsn string) {
 		database := migrated(t, e, dsn)

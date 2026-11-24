@@ -22,21 +22,12 @@ import (
 	"github.com/vislake/speed/pkg/internal/dbtest"
 )
 
-// engine opens the database capability on one engine, the way an assembly
-// delivers it. Each call on one locator is another assembly's pool on the same
-// database, which is what two replicas hold.
 type engine struct {
-	name string
-	// locate hands back a locator for a database of the case's own.
+	name   string
 	locate func(t *testing.T) string
-	// open delivers the capability over a locator.
-	open func(t *testing.T, dsn string) db.Database
+	open   func(t *testing.T, dsn string) db.Database
 }
 
-// engines are the engines the cases run on in this build. SQLite needs nothing
-// installed, so its leg is part of every run; the file behind the integration
-// tag appends PostgreSQL, whose leg reads and writes on the compose stack's
-// server.
 var engines = []engine{
 	{
 		name:   "sqlite",
@@ -45,7 +36,6 @@ var engines = []engine{
 	},
 }
 
-// onEachEngine runs a case on every engine, each with a database of its own.
 func onEachEngine(t *testing.T, run func(t *testing.T, e engine, dsn string)) {
 	t.Helper()
 	for _, e := range engines {
@@ -53,9 +43,6 @@ func onEachEngine(t *testing.T, run func(t *testing.T, e engine, dsn string)) {
 	}
 }
 
-// migrated delivers the capability over dsn and builds the table this module
-// declares, from the files it declares, together with the orders table the
-// cases write. Only the first delivery on a locator builds them.
 func migrated(t *testing.T, e engine, dsn string) db.Database {
 	t.Helper()
 	database := e.open(t, dsn)
@@ -86,7 +73,6 @@ func migrated(t *testing.T, e engine, dsn string) db.Database {
 	return database
 }
 
-// tablePresent counts the staged tables a dialect's catalogue holds.
 func tablePresent(dialect db.Dialect) string {
 	if dialect == db.Postgres {
 		return `SELECT count(*) FROM information_schema.tables WHERE table_name = '` + tableName + `'`
@@ -94,11 +80,8 @@ func tablePresent(dialect db.Dialect) string {
 	return `SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = '` + tableName + `'`
 }
 
-// createOrders is the table standing for a host's write.
 const createOrders = `CREATE TABLE orders (id TEXT PRIMARY KEY, note TEXT NOT NULL)`
 
-// quick is the timing the cases run by: the same shape as the module's, on a
-// scale a case can wait out.
 var quick = timing{
 	poll:      25 * time.Millisecond,
 	burst:     2 * time.Millisecond,
@@ -112,13 +95,10 @@ var quick = timing{
 	batch:     8,
 }
 
-// settle bounds how long a case waits for the relay to reach a state.
 const settle = 10 * time.Second
 
-// discard is a logger a case does not read.
 var discard = slog.New(slog.NewTextHandler(io.Discard, nil))
 
-// records keeps what a relay wrote to its logger.
 type records struct {
 	mu   sync.Mutex
 	kept []slog.Record
@@ -136,7 +116,6 @@ func (r *records) Handle(_ context.Context, rec slog.Record) error {
 func (r *records) WithAttrs([]slog.Attr) slog.Handler { return r }
 func (r *records) WithGroup(string) slog.Handler      { return r }
 
-// atLeast lists the messages of the records at level or above.
 func (r *records) atLeast(level slog.Level) []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -149,14 +128,11 @@ func (r *records) atLeast(level slog.Level) []string {
 	return out
 }
 
-// newQuick builds a relay on database by the quick timing, stopped when the
-// case ends.
 func newQuick(t *testing.T, database db.Database, bus event.Bus, tm timing) *relay {
 	t.Helper()
 	return newLogged(t, database, bus, tm, discard)
 }
 
-// newLogged is newQuick writing to logger.
 func newLogged(t *testing.T, database db.Database, bus event.Bus, tm timing, logger *slog.Logger) *relay {
 	t.Helper()
 	r, err := newRelay(database, bus, logger, tm)
@@ -171,19 +147,16 @@ func newLogged(t *testing.T, database db.Database, bus event.Bus, tm timing, log
 	return r
 }
 
-// ledger records what a bus accepted, across every bus that shares it.
 type ledger struct {
 	mu       sync.Mutex
 	accepted []delivery
 }
 
-// delivery is one event a bus accepted, and which bus accepted it.
 type delivery struct {
 	bus string
 	evt event.Event
 }
 
-// events is every event the ledger holds, in the order accepted.
 func (l *ledger) events() []event.Event {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -194,34 +167,27 @@ func (l *ledger) events() []event.Event {
 	return out
 }
 
-// deliveries is every delivery the ledger holds.
 func (l *ledger) deliveries() []delivery {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return append([]delivery(nil), l.accepted...)
 }
 
-// count is how many events the ledger holds.
 func (l *ledger) count() int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return len(l.accepted)
 }
 
-// recordingBus is a bus a case steers: it can refuse an event, hold a publish
-// until the case lets it go, and take a while over each one. What it accepts
-// goes into its ledger.
 type recordingBus struct {
 	name   string
 	ledger *ledger
-	// delay is how long each publish takes.
-	delay time.Duration
+	delay  time.Duration
 	// busy counts the publishes that have not returned yet, so a case can wait
 	// for the bus to have no delivery in hand before counting what it accepted.
 	busy atomic.Int32
 
-	mu sync.Mutex
-	// refuse decides whether an event is refused; nil accepts every one.
+	mu     sync.Mutex
 	refuse func(event.Event) error
 	// hold, when set, is waited on by every publish before it is accepted,
 	// or until its context ends; held is told each time one starts waiting.
@@ -229,7 +195,6 @@ type recordingBus struct {
 	held chan event.Event
 }
 
-// newRecordingBus builds a bus writing into l.
 func newRecordingBus(name string, l *ledger) *recordingBus {
 	return &recordingBus{name: name, ledger: l}
 }
@@ -266,20 +231,16 @@ func (b *recordingBus) Publish(ctx context.Context, evt event.Event) error {
 	return nil
 }
 
-// setRefuse replaces the refusal rule.
 func (b *recordingBus) setRefuse(refuse func(event.Event) error) {
 	b.mu.Lock()
 	b.refuse = refuse
 	b.mu.Unlock()
 }
 
-// inflight is how many publishes the bus has accepted but not yet returned.
 func (b *recordingBus) inflight() int32 { return b.busy.Load() }
 
-// errRefused is what a steered bus refuses with.
 var errRefused = errors.New("the bus refuses this event for now")
 
-// eventually polls cond until it holds or the settle bound runs out.
 func eventually(cond func() bool) bool {
 	deadline := time.Now().Add(settle)
 	for time.Now().Before(deadline) {
@@ -291,7 +252,6 @@ func eventually(cond func() bool) bool {
 	return cond()
 }
 
-// stagedRows counts the rows the table holds.
 func stagedRows(t *testing.T, database db.Database) int64 {
 	t.Helper()
 	var n int64
@@ -301,8 +261,6 @@ func stagedRows(t *testing.T, database db.Database) int64 {
 	return n
 }
 
-// claimedRows counts the staged rows a relay currently holds: rows it has taken
-// and has not yet published or given back.
 func claimedRows(t *testing.T, database db.Database) int64 {
 	t.Helper()
 	var n int64
@@ -313,13 +271,6 @@ func claimedRows(t *testing.T, database db.Database) int64 {
 	return n
 }
 
-// waitSettled waits, within the settle bound, for the table to hold nothing a
-// relay is still working on and for the given buses to have no publish in
-// hand: every staged row has been published and removed, no relay holds a
-// claim, and nothing accepted is still being delivered. It is the source-side
-// condition a count of what the bus accepted is judged on — once the table has
-// nothing left to relay and no delivery is under way, nothing more can be
-// published from it.
 func waitSettled(t *testing.T, database db.Database, buses ...*recordingBus) {
 	t.Helper()
 	quiet := func() bool {
@@ -355,18 +306,13 @@ func stopRelays(t *testing.T, relays ...*relay) {
 	}
 }
 
-// refusal is what one staged row records of the refusals it met, and of its
-// claim.
 type refusal struct {
 	attempts  int
 	lastError string
 	claimedBy string
-	// dueIn is how long until the row falls due, by the database's clock;
-	// zero or less when it is due now.
-	dueIn time.Duration
+	dueIn     time.Duration
 }
 
-// refusalOf reads the row staged under eventID.
 func refusalOf(t *testing.T, database db.Database, eventID string) refusal {
 	t.Helper()
 	stmts, err := statementsFor(database.Dialect())
@@ -389,13 +335,11 @@ func refusalOf(t *testing.T, database db.Database, eventID string) refusal {
 	return row
 }
 
-// order is one row of the orders table.
 type order struct {
 	ID   string `gorm:"column:id;primaryKey"`
 	Note string `gorm:"column:note"`
 }
 
-// placed is the payload the cases stage.
 type placed struct {
 	OrderID string `json:"order_id"`
 	// Amount is past what a float64 holds, so a payload that took a trip
@@ -403,11 +347,8 @@ type placed struct {
 	Amount int64 `json:"amount"`
 }
 
-// pastFloat is 2^53 + 1, which a float64 rounds to 2^53.
 const pastFloat int64 = 1<<53 + 1
 
-// placeOrder writes an order and stages its announcement in one transaction,
-// which then commits or, when abandon is set, rolls back.
 func placeOrder(ctx context.Context, database db.Database, o outboxStager, id, eventID string, abandon bool) error {
 	errAbandoned := errors.New("the caller abandoned the order")
 	err := database.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -431,12 +372,10 @@ func placeOrder(ctx context.Context, database db.Database, o outboxStager, id, e
 	return err
 }
 
-// outboxStager is what placeOrder stages through.
 type outboxStager interface {
 	Stage(tx *gorm.DB, evt event.Event) error
 }
 
-// idsOf lists the identifiers of events.
 func idsOf(events []event.Event) []string {
 	ids := make([]string, 0, len(events))
 	for _, evt := range events {
@@ -445,5 +384,4 @@ func idsOf(events []event.Event) []string {
 	return ids
 }
 
-// orderID names the i-th order of a case.
 func orderID(i int) string { return fmt.Sprintf("o%03d", i) }

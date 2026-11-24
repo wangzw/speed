@@ -18,9 +18,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// openBus builds a bus that has not been put into service, for the cases that
-// drive the stages themselves. It records no span: the cases here exercise the
-// stages, not tracing.
 func openBus(t *testing.T) event.Bus {
 	t.Helper()
 	b, err := open(context.Background(), &Config{Replicas: 1}, log.Default(), tracing.Noop())
@@ -30,8 +27,7 @@ func openBus(t *testing.T) event.Bus {
 	return b
 }
 
-// TestConforms runs the shared contract. Every implementation of the capability
-// runs this same suite.
+// TestConforms runs the shared contract.
 func TestConforms(t *testing.T) {
 	bussuite.AssertConforms(t, func(t *testing.T) (event.Bus, func(context.Context)) {
 		b := openBus(t)
@@ -45,6 +41,8 @@ func TestConforms(t *testing.T) {
 	})
 }
 
+// TestStanceIsAutoWhenOneReplicaSharesTheState checks that one replica states
+// StateAuto.
 func TestStanceIsAutoWhenOneReplicaSharesTheState(t *testing.T) {
 	got, err := stance(&Config{Replicas: 1})
 	if err != nil {
@@ -57,12 +55,8 @@ func TestStanceIsAutoWhenOneReplicaSharesTheState(t *testing.T) {
 	}
 }
 
-// TestStanceFailsTheStartupWhenSeveralReplicasShareTheState is the half of the
-// enablement rule this module owns: a module taken in at run level has to start,
-// and this one cannot start on a deployment of several replicas. The answer is a
-// failure naming the input, not a stance that lets the startup succeed with the
-// capability missing — a stand-down there is the silent loss of the bus the
-// premise exists to prevent.
+// TestStanceFailsTheStartupWhenSeveralReplicasShareTheState is the half
+// of the enablement rule this module owns.
 func TestStanceFailsTheStartupWhenSeveralReplicasShareTheState(t *testing.T) {
 	_, err := stance(&Config{Replicas: 2})
 	if err == nil {
@@ -75,9 +69,8 @@ func TestStanceFailsTheStartupWhenSeveralReplicasShareTheState(t *testing.T) {
 	}
 }
 
-// TestPublishAfterCloseIsRefused covers the one failure this implementation adds
-// to the hand-over step: a publish that arrives once the bus is closed is
-// refused rather than quietly reaching nobody.
+// TestPublishAfterCloseIsRefused covers the one failure this
+// implementation adds to the hand-over step.
 func TestPublishAfterCloseIsRefused(t *testing.T) {
 	b := openBus(t)
 	var ran atomic.Int32
@@ -96,9 +89,8 @@ func TestPublishAfterCloseIsRefused(t *testing.T) {
 	}
 }
 
-// TestStartFreezesTheSubscriptionTable covers the stage this implementation
-// adds: the table is built by every module's Init, and the first publish must
-// not race a subscription still arriving.
+// TestStartFreezesTheSubscriptionTable covers the stage this
+// implementation adds.
 func TestStartFreezesTheSubscriptionTable(t *testing.T) {
 	b := openBus(t)
 	b.Subscribe("before", "test", func(context.Context, event.Event) error { return nil })
@@ -114,11 +106,8 @@ func TestStartFreezesTheSubscriptionTable(t *testing.T) {
 	b.Subscribe("after", "test", func(context.Context, event.Event) error { return nil })
 }
 
-// TestSubscribeWithNoSubscriberNamePanics covers the other refusal at the call
-// site: a subscriber's name is required, since it is what the span of every
-// delivery to it is recorded under. An omitted one would leave those spans
-// unnamed with nothing in the signal to say so, and the subscriber already holds
-// its own identity, so the mistake is refused here rather than defaulted.
+// TestSubscribeWithNoSubscriberNamePanics covers the other refusal at the
+// call site.
 func TestSubscribeWithNoSubscriberNamePanics(t *testing.T) {
 	b := openBus(t)
 	defer func() {
@@ -131,9 +120,8 @@ func TestSubscribeWithNoSubscriberNamePanics(t *testing.T) {
 	b.Subscribe("t", "", func(context.Context, event.Event) error { return nil })
 }
 
-// TestPublishRunsHandlersBeforeReturning pins what this implementation adds over
-// the capability's floor, which the contract suite deliberately does not assert
-// because a transport-backed bus cannot offer it.
+// TestPublishRunsHandlersBeforeReturning pins that handlers finish before
+// Publish returns, an addition over the transport-backed floor.
 func TestPublishRunsHandlersBeforeReturning(t *testing.T) {
 	b := openBus(t)
 	var ran atomic.Int32
@@ -152,8 +140,6 @@ func TestPublishRunsHandlersBeforeReturning(t *testing.T) {
 	}
 }
 
-// recordedDelivery is what the dispatch layer started one delivery's span with:
-// its name, the parent it was given and the attributes it carried.
 type recordedDelivery struct {
 	name   string
 	parent trace.SpanContext
@@ -161,9 +147,6 @@ type recordedDelivery struct {
 	endErr error
 }
 
-// recordingTracer keeps every span the dispatch layer starts, so a case can hold
-// the parentage and the attributes to what the design fixes without standing up
-// an exporter.
 type recordingTracer struct {
 	mu    sync.Mutex
 	spans []recordedDelivery
@@ -185,8 +168,6 @@ func (r *recordingTracer) Start(ctx context.Context, name string, attrs map[stri
 	})
 }
 
-// only returns the one span a single delivery started, and fails the case when
-// the dispatch layer started any other number.
 func (r *recordingTracer) only(t *testing.T) recordedDelivery {
 	t.Helper()
 	r.mu.Lock()
@@ -197,24 +178,18 @@ func (r *recordingTracer) only(t *testing.T) recordedDelivery {
 	return r.spans[0]
 }
 
-// endFunc is a span whose End runs a function.
 type endFunc func(error)
 
 func (f endFunc) End(err error) { f(err) }
 
-// traceOf is a valid span context with the given identifiers, so a case can name
-// the span a delivery is expected to be parented on.
 func traceOf(traceID trace.TraceID, spanID trace.SpanID) trace.SpanContext {
 	return trace.NewSpanContext(trace.SpanContextConfig{
 		TraceID: traceID, SpanID: spanID, TraceFlags: trace.FlagsSampled,
 	})
 }
 
-// TestASubscribersSpanContinuesThePublishersTrace pins the parentage the design
-// fixes: a publisher inside a span leaves a tracing context on the event, and
-// the span of every delivery runs inside that publisher's trace rather than as a
-// trace of its own. It holds on the process-local bus here and on a
-// transport-backed one, whose subscriber context carries no publisher span.
+// TestASubscribersSpanContinuesThePublishersTrace checks that a subscriber's
+// span continues the publisher's trace.
 func TestASubscribersSpanContinuesThePublishersTrace(t *testing.T) {
 	rec := &recordingTracer{}
 	b, err := open(context.Background(), &Config{Replicas: 1}, log.Default(), rec)
@@ -233,8 +208,6 @@ func TestASubscribersSpanContinuesThePublishersTrace(t *testing.T) {
 	}
 	traceID := trace.TraceID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
 	spanID := trace.SpanID{1, 2, 3, 4, 5, 6, 7, 8}
-	// The publisher is inside a span, and leaves the event's tracing context
-	// empty so Publish writes it from this very context.
 	publishCtx := trace.ContextWithSpanContext(context.Background(), traceOf(traceID, spanID))
 	if err := b.Publish(publishCtx, event.Event{Type: "t"}); err != nil {
 		t.Fatalf("Publish: %v", err)
@@ -271,11 +244,7 @@ func TestASubscribersSpanContinuesThePublishersTrace(t *testing.T) {
 }
 
 // TestAFailedDeliveryEndsItsSpanWithTheError pins the failure half of a
-// delivery's span: a subscriber that returns an error, and one that panics, each
-// leave that delivery's span ended with a non-nil error, which is what marks it
-// failed. This is the observation that makes "did this subscriber handle the
-// event, and did it succeed" answerable from the trace, which is the whole point
-// of recording a span per delivery.
+// delivery's span.
 func TestAFailedDeliveryEndsItsSpanWithTheError(t *testing.T) {
 	sentinel := errors.New("this handler failed on purpose")
 	cases := []struct {
@@ -328,24 +297,15 @@ func TestAFailedDeliveryEndsItsSpanWithTheError(t *testing.T) {
 	}
 }
 
-// TestTheEventsTracingContextParentsTheSpanNotTheCallbacks pins which context
-// the parent comes from: the event's, never the one the delivery runs under.
-//
-// The delivery is made under a context that carries a span, which is exactly
-// what a transport's handling context is — Freeze derives it from the start
-// stage's context and keeps that context's values, a span among them. The parent
-// is the span the event carries; an event carrying none leaves the delivery a
-// root, not a child of the span the call itself is under. The bus a fact was
-// produced on is not the bus it is delivered on.
+// TestTheEventsTracingContextParentsTheSpanNotTheCallbacks pins which
+// context the parent comes from.
 func TestTheEventsTracingContextParentsTheSpanNotTheCallbacks(t *testing.T) {
 	callTrace := trace.TraceID{9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9}
 	callSpan := trace.SpanID{9, 9, 9, 9, 9, 9, 9, 9}
 	callCtx := trace.ContextWithSpanContext(context.Background(), traceOf(callTrace, callSpan))
 
-	// newDeliveringBus builds a frozen bus whose delivery spans are recorded, for
-	// a case that hands Deliver the context and event it wants directly — the
-	// stamping Publish performs would fill an event's tracing context from the
-	// publisher's own, hiding what the dispatch layer does with it.
+	// newDeliveringBus builds a frozen bus whose delivery spans are recorded,
+	// without Publish's stamping filling the tracing context first.
 	newDeliveringBus := func(t *testing.T) (*recordingTracer, *bus) {
 		t.Helper()
 		rec := &recordingTracer{}
@@ -389,12 +349,8 @@ func TestTheEventsTracingContextParentsTheSpanNotTheCallbacks(t *testing.T) {
 	})
 }
 
-// TestTheDeliverySpanCarriesExactlyTheFixedAttributes pins the attribute set the
-// design fixes on a delivery's span: the four messaging attributes and nothing
-// else. The tenant is deliberately not among them — its values are as many as
-// there are tenants, the reason a request's own instruments leave it out — so an
-// event that carries a tenant must not put it on the span. Both an attribute
-// added and one dropped are the ways the set goes wrong.
+// TestTheDeliverySpanCarriesExactlyTheFixedAttributes checks the attributes a
+// delivery's span carries.
 func TestTheDeliverySpanCarriesExactlyTheFixedAttributes(t *testing.T) {
 	rec := &recordingTracer{}
 	b, err := open(context.Background(), &Config{Replicas: 1}, log.Default(), rec)

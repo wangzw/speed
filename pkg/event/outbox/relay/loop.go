@@ -13,30 +13,15 @@ import (
 	"github.com/vislake/speed/pkg/event/internal/dispatch"
 )
 
-// timing is every duration and size the relay runs by.
 type timing struct {
-	// poll is how often the loop reads the table when nothing told it a row
-	// was staged: the longest a row staged on another replica, or given back
-	// by a relay that stopped, waits for this one.
 	poll time.Duration
 	// burst is how soon the loop reads the table after a row was staged here.
-	// The row is staged inside the caller's transaction and is visible from
-	// its commit on, which nothing reports, so the loop reads again after
-	// burst, twice burst, and so on until the interval reaches poll. A
-	// staging brings the next read forward to burst from then and never puts
-	// off one due sooner, so under a steady stream of stagings the loop
-	// still reads at least every burst.
 	burst time.Duration
-	// claim is how long a relay holds the rows it claimed. Another relay takes
-	// a row whose claim has run out, which is how the rows a replica held when
-	// it died are published at all.
 	claim time.Duration
 	// publish bounds one publish. It is shorter than claim, and a row is
 	// handed to the bus only while its claim still outlasts it, so a relay
 	// does not publish a row another relay may already have taken over.
-	publish time.Duration
-	// statement bounds one statement of the loop's own, so a database that
-	// stops answering stalls one pass rather than the relay.
+	publish   time.Duration
 	statement time.Duration
 	// retry is the delay after a row's first refusal. It doubles with every
 	// further refusal of that row, up to retryCap.
@@ -45,11 +30,9 @@ type timing struct {
 	// cutoff how much longer it waits for the loop once that publish is
 	// cancelled.
 	grace, cutoff time.Duration
-	// batch is how many rows one claim takes.
-	batch int
+	batch         int
 }
 
-// defaultTiming is what the module runs by.
 var defaultTiming = timing{
 	poll:      time.Second,
 	burst:     10 * time.Millisecond,
@@ -63,7 +46,6 @@ var defaultTiming = timing{
 	batch:     64,
 }
 
-// retryAfter is the delay after a row's attempts-th refusal.
 func (t timing) retryAfter(attempts int) time.Duration {
 	delay := t.retry
 	for i := 1; i < attempts && delay < t.retryCap; i++ {
@@ -72,7 +54,6 @@ func (t timing) retryAfter(attempts int) time.Duration {
 	return min(delay, t.retryCap)
 }
 
-// staged is one row a claim took.
 type staged struct {
 	id       int64
 	eventID  string
@@ -89,17 +70,12 @@ type staged struct {
 // lastErrorLimit bounds the refusal text a row keeps, in bytes.
 const lastErrorLimit = 2000
 
-// run is the loop. It reads the table at start; after a staging here, on the
-// burst schedule; when the next row falls due; and, while the table can be
-// read, at least every poll. On its way out it gives back every row it still
-// holds.
 func (r *relay) run() {
 	defer close(r.done)
 	defer r.releaseAll()
 
 	timer := time.NewTimer(0)
 	defer timer.Stop()
-	// due is when the timer fires, which is when the loop next reads.
 	due := time.Now()
 	var burst time.Duration
 	failures := 0
@@ -108,10 +84,8 @@ func (r *relay) run() {
 		case <-r.stopping:
 			return
 		case <-r.nudges:
-			// The row is not visible until its transaction commits, so the
-			// first read waits the burst rather than happening now. The
-			// read is brought forward and never put off: stagings closer
-			// together than the burst would otherwise put it off for good.
+			// The row is not visible until its transaction commits, so the first read
+			// waits the burst rather than happening now.
 			burst = r.timing.burst
 			if soon := time.Now().Add(burst); soon.Before(due) {
 				timer.Reset(burst)
@@ -148,10 +122,6 @@ func (r *relay) run() {
 	}
 }
 
-// pass relays every row that is due, and reports how long until the next one
-// falls due, zero when nothing more is staged or the relay is stopping. Every
-// return counts as a completed pass, so a case can tell that the loop has read
-// the table.
 func (r *relay) pass() (time.Duration, error) {
 	defer r.passes.Add(1)
 	for {
@@ -173,16 +143,12 @@ func (r *relay) pass() (time.Duration, error) {
 			return 0, err
 		}
 		if len(rows) == 0 {
-			// Every due row is being claimed by another relay at this moment,
-			// or was claimed between the two statements.
 			return r.timing.burst, nil
 		}
 		r.relayBatch(rows, claimedAt)
 	}
 }
 
-// nextDue reads how long until the earliest staged row falls due, and whether
-// any row is staged at all.
 func (r *relay) nextDue() (time.Duration, bool, error) {
 	ctx, cancel := context.WithTimeout(r.work, r.timing.statement)
 	defer cancel()
@@ -196,8 +162,6 @@ func (r *relay) nextDue() (time.Duration, bool, error) {
 	return time.Duration(wait.Int64) * time.Millisecond, true, nil
 }
 
-// claim takes up to one batch of due rows for this relay, in the order they
-// were staged.
 func (r *relay) claim() ([]staged, error) {
 	ctx, cancel := context.WithTimeout(r.work, r.timing.statement)
 	defer cancel()
@@ -224,15 +188,10 @@ func (r *relay) claim() ([]staged, error) {
 	return claimed, nil
 }
 
-// relayBatch publishes the rows one claim took, one at a time. It stops at the
-// stop stage, and gives the rest back when their claim no longer outlasts a
-// publish, so a row is never handed to the bus while another relay may be
-// taking it over.
 func (r *relay) relayBatch(rows []staged, claimedAt time.Time) {
 	lastStart := claimedAt.Add(r.timing.claim - r.timing.publish)
 	for _, row := range rows {
 		if r.isStopping() {
-			// The rest are given back on the way out.
 			return
 		}
 		if time.Now().After(lastStart) {
@@ -243,8 +202,6 @@ func (r *relay) relayBatch(rows []staged, claimedAt time.Time) {
 	}
 }
 
-// relayOne publishes one row, and removes it once the bus accepted its event
-// or gives it back, due after a delay, when the bus refused it.
 func (r *relay) relayOne(row staged) {
 	err := r.publish(row)
 	if err == nil {
@@ -258,9 +215,6 @@ func (r *relay) relayOne(row staged) {
 		return
 	}
 	if r.work.Err() != nil {
-		// The stop stage cancelled this publish, and nothing refused it: the
-		// row is given back on the way out as it was, with no refusal
-		// counted against it or recorded.
 		return
 	}
 	attempts := row.attempts + 1
@@ -275,11 +229,6 @@ func (r *relay) relayOne(row staged) {
 		"retry_in", delay, "err", err)
 }
 
-// publish hands one row's event to the bus, within the publish bound.
-//
-// A bus that panics has refused the event like any other failure: the loop is
-// the only thing relaying this table on this replica, and a panic let through
-// would end it with every staged row left where it is and nothing saying so.
 func (r *relay) publish(row staged) (err error) {
 	payload, err := dispatch.Payload([]byte(row.payload))
 	if err != nil {
@@ -292,27 +241,20 @@ func (r *relay) publish(row staged) (err error) {
 			err = fmt.Errorf("the bus panicked: %v", recovered)
 		}
 	}()
-	// The tracing context was fixed at staging: restoring it onto the event
-	// makes the subscriber's span a child of the span the write was in, not of
-	// any span this relay's publish runs under. The context here carries no
-	// span, so a bus that stamps an event left without one injects nothing.
+	// The tracing context was fixed at staging, so the delivery's span descends
+	// from the write's span, not from this relay's publish.
 	return r.bus.Publish(ctx, event.Event{
 		ID: row.eventID, Type: row.typ, TenantID: row.tenant,
 		TraceContext: dispatch.DecodeTraceContext(row.traceContext), Payload: payload,
 	})
 }
 
-// exec runs one statement of the loop's own, within the statement bound.
 func (r *relay) exec(statement string, args ...any) error {
 	ctx, cancel := context.WithTimeout(r.work, r.timing.statement)
 	defer cancel()
 	return r.handle.WithContext(ctx).Exec(statement, args...).Error
 }
 
-// releaseAll gives back every row this relay still holds, due at once. It
-// runs on a context of its own, since at the stop stage the loop's may already
-// be cancelled, and a row it cannot give back is taken over once its claim runs
-// out.
 func (r *relay) releaseAll() {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.work), r.timing.statement)
 	defer cancel()
@@ -322,7 +264,6 @@ func (r *relay) releaseAll() {
 	}
 }
 
-// isStopping reports whether the stop stage has begun.
 func (r *relay) isStopping() bool {
 	select {
 	case <-r.stopping:
@@ -332,7 +273,6 @@ func (r *relay) isStopping() bool {
 	}
 }
 
-// truncate cuts s to at most limit bytes, on a character boundary.
 func truncate(s string, limit int) string {
 	if len(s) <= limit {
 		return s

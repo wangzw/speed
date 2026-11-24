@@ -20,9 +20,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// recordingLogger is a Logger capability that keeps every record written
-// through the loggers it hands out, so a case can tell a record that went
-// through the assembly's logging from one that went anywhere else.
 type recordingLogger struct {
 	mu      sync.Mutex
 	records []string
@@ -34,9 +31,6 @@ func (l *recordingLogger) Named(name string) *slog.Logger {
 
 func (l *recordingLogger) Redaction() log.Redaction { return noopRedaction{} }
 
-// noopRedaction is a logging capability's registration face that keeps no rule.
-// A backend registers its connection credentials through it, and a stand-in
-// whose records nobody reads has nothing to mask.
 type noopRedaction struct{}
 
 func (noopRedaction) AddKeys(...string)              {}
@@ -76,8 +70,6 @@ func (h *recordingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 
 func (h *recordingHandler) WithGroup(string) slog.Handler { return h }
 
-// pointedAt is a reading face that points each transport at the server a case
-// acquired, and leaves every other value at the module's default.
 type pointedAt struct {
 	redisAddr string
 	redisDB   int
@@ -97,8 +89,6 @@ func (p pointedAt) Decode(_ string, target any) error {
 	return nil
 }
 
-// failingSubscriber is a module that subscribes a handler failing on purpose,
-// and publishes the event it fails on from the drive's action.
 func failingSubscriber() core.Module {
 	return core.Module{
 		Name:     "case.failing-subscriber",
@@ -116,8 +106,6 @@ func failingSubscriber() core.Module {
 	}
 }
 
-// loggingBackend is one implementation the failure-logging rule is held to,
-// with how a case points it at a bus.
 type loggingBackend struct {
 	module string
 	point  func(t *testing.T) pointedAt
@@ -131,20 +119,12 @@ var loggingBackends = []loggingBackend{
 }
 
 // TestASubscriberFailureIsWrittenThroughTheAssemblysLogging pins where a
-// subscriber's failure is reported on every backend: through the Logger
-// capability the assembly delivers, so the record obeys its configured
-// destinations, format and redaction, rather than through the process default
-// logger, which that capability never replaces.
+// subscriber's failure is reported on every backend.
 func TestASubscriberFailureIsWrittenThroughTheAssemblysLogging(t *testing.T) {
 	for _, c := range loggingBackends {
 		t.Run(c.module, func(t *testing.T) {
 			logger := &recordingLogger{}
 			reg := core.New()
-			// The reading face and the recorder are the instances of the config
-			// and log modules. The recorder stands where the log module's own
-			// product would: that module's Prepare and New do not run for it, and
-			// its Close, the only later callback the module declares, leaves an
-			// instance that is not its own alone.
 			reg.Register(config.Module())
 			reg.Supply(c.point(t), config.ModuleName)
 			reg.Register(log.Module())

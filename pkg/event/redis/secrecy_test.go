@@ -15,9 +15,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// secrecyReader builds the real configuration loader over a JSON primary source
-// holding body, with this module and the log module registered so their declared
-// items are known.
 func secrecyReader(t *testing.T, body string) config.Reader {
 	t.Helper()
 	locator := filepath.Join(t.TempDir(), "config.json")
@@ -40,15 +37,8 @@ func secrecyReader(t *testing.T, body string) config.Reader {
 	return reader
 }
 
-// TestThePasswordIsRegisteredAsARedactionRule holds the credential this backend
-// carries to being masked wherever it turns up in a log line, through the real
-// logging chain: the log module is driven beside this one writing JSON to a
-// file, and a record that carries the password is written through the delivered
-// capability.
-//
-// The assertion is that the destination shows the mask, not merely that it lacks
-// the password: it might never have reached the record at all, and an absence
-// alone would pass for the wrong reason.
+// TestThePasswordIsRegisteredAsARedactionRule holds that the password is
+// masked wherever it appears in a log line.
 func TestThePasswordIsRegisteredAsARedactionRule(t *testing.T) {
 	const secret = "event-redis-password-6e9b"
 	path := filepath.Join(t.TempDir(), "log.json")
@@ -65,18 +55,14 @@ func TestThePasswordIsRegisteredAsARedactionRule(t *testing.T) {
 		Participants: []string{log.ModuleName},
 		Action: func(_ context.Context, reg *core.Registry) error {
 			// This module registers its credential in New, before it reaches the
-			// server. The address need not answer for the rule to be in place, so
-			// the connection failure is set aside: what this case observes is the
-			// rule the registration left behind.
+			// server.
 			_, _ = Module().New(context.Background(), reg)
 			lg, err := core.Resolve[log.Logger](reg)
 			if err != nil {
 				return err
 			}
-			// The record carries the value as an independent attribute, which is
-			// the only shape the redaction layer judges. The write happens while
-			// the destination is open: the drive closes it after the action
-			// returns.
+			// The record carries the value as an independent attribute, which is the
+			// only shape the redaction layer judges.
 			lg.Named("probe").Info("a request carried a credential", "value", secret)
 			return nil
 		},

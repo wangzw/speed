@@ -14,15 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
-// deliveredMarked reports whether replica has recorded the outbox entry
-// carrying identifier as delivered to its subscribers. One drain reads the
-// entries it owes in the order they were staged — the outbox row id, not the
-// event identifier, whose UUIDv7 values within one millisecond are in no
-// particular order — and marks each after handing it over. The mark of the
-// entry staged last therefore means the pass that would have delivered every
-// row staged before it has ended. It is the source-side fact a case waits on:
-// the count taken afterwards cannot be changed by a delivery still to come
-// from that pass.
 func deliveredMarked(t *testing.T, ctx context.Context, b *bus, identifier string) bool {
 	t.Helper()
 	var marked bool
@@ -34,11 +25,8 @@ func deliveredMarked(t *testing.T, ctx context.Context, b *bus, identifier strin
 	return marked
 }
 
-// TestOpeningAReplicaWritesNothing pins what a replica costs to start: no rows.
-// A replica that marked every entry already in the outbox as delivered to
-// itself would write one row per outbox entry on each process start — every
-// command that takes the bus in, a short-lived one included — and those rows
-// would stay until their entries retired.
+// TestOpeningAReplicaWritesNothing pins what a replica costs to start: no
+// rows.
 func TestOpeningAReplicaWritesNothing(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := context.Background()
@@ -57,9 +45,8 @@ func TestOpeningAReplicaWritesNothing(t *testing.T) {
 	}
 }
 
-// TestEntriesPublishedBeforeAReplicaOpenedAreNotDelivered is the other half of
-// the same starting point: what was published before a replica opened is not
-// owed to its subscribers, and what is published after is.
+// TestEntriesPublishedBeforeAReplicaOpenedAreNotDelivered is the other
+// half of the same starting point.
 func TestEntriesPublishedBeforeAReplicaOpenedAreNotDelivered(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := context.Background()
@@ -85,11 +72,8 @@ func TestEntriesPublishedBeforeAReplicaOpenedAreNotDelivered(t *testing.T) {
 	if err := publisher.Publish(ctx, event.Event{ID: published, Type: "t"}); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	// The entry published after the replica opened is the last one it owes, so
-	// its delivered mark says the replica has finished that pass. A replica
-	// that also took the entries from before it opened would have delivered and
-	// marked them first, in the same pass; the count is therefore taken after
-	// the source has nothing left to hand over, not after an interval.
+	// The entry published after the replica opened is the last one it owes,
+	// so its delivered mark says the replica has finished that pass.
 	bussuite.WaitFor(t, "the late replica to settle the entry published after it opened",
 		func() bool { return deliveredMarked(t, ctx, late, published) })
 	if n := got.Load(); n != 1 {
@@ -98,13 +82,10 @@ func TestEntriesPublishedBeforeAReplicaOpenedAreNotDelivered(t *testing.T) {
 }
 
 // TestAnEntryThatCommitsAfterAReplicaOpenedIsDelivered pins the case the
-// delivery marks exist for. A transaction that was already running when the
-// replica opened — its entry's id handed out, its commit not yet made — commits
-// afterwards, and its entry is one published after the replica opened.
+// delivery marks exist for.
 func TestAnEntryThatCommitsAfterAReplicaOpenedIsDelivered(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := context.Background()
-	// A first replica creates the tables.
 	openBus(t, dsn)
 
 	writer, err := pgx.Connect(ctx, dsn)
@@ -136,10 +117,8 @@ func TestAnEntryThatCommitsAfterAReplicaOpenedIsDelivered(t *testing.T) {
 	bussuite.WaitFor(t, "the entry that committed after the replica opened", func() bool { return got.Load() == 1 })
 }
 
-// TestAnOutboxFromBeforeTheCurrentColumnsIsBroughtUpToDate covers a database
-// whose outbox was created before a column this implementation now reads
-// existed. CREATE TABLE IF NOT EXISTS leaves such a table as it is, so without
-// the column being added every read of it would fail.
+// TestAnOutboxFromBeforeTheCurrentColumnsIsBroughtUpToDate covers an outbox
+// created before a column this implementation reads existed.
 func TestAnOutboxFromBeforeTheCurrentColumnsIsBroughtUpToDate(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := context.Background()
