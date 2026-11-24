@@ -6,80 +6,42 @@ import (
 	"github.com/vislake/speed/pkg/config"
 )
 
-// Config is the set of input items an implementation of the database
-// capability accepts. Every implementation accepts the same ones, so the
-// carrier is declared once here rather than copied into each subpackage: the
-// items describe a connection and a key, neither of which is a property of the
-// engine behind them.
-//
-// What is not shared is where they hang. Each implementation mounts this
-// carrier under its own namespace, db.postgres or db.sqlite, and that
-// separation is load-bearing rather than tidy: the configuration manifest is
-// collected from every registered module, the ones this run does not enable
-// included, so two implementations declaring input items on one path conflict
-// as soon as a host imports both, and that conflict is raised before
-// exclusivity is resolved. Importing several implementations and naming one on
-// the command tree is the intended shape.
+// Config is the set of input items every implementation of the database
+// capability accepts, mounted under the implementation's own namespace.
 type Config struct {
 	// DSN is the connection locator, in the form this implementation's own
-	// driver reads. It is marked sensitive: it carries credentials, and both
-	// the logs and the help output would otherwise echo it.
+	// driver reads. It is marked sensitive: it carries credentials.
 	//
-	// It is not marked required, and the stance does not read the flag either
-	// way: the item is simply absent from an assembly that left this engine out
-	// of its command tree, which is the one way to run without it. An assembly
-	// that named this implementation has to give it a locator, and Prepare
-	// fails the startup naming this key when it does not.
+	// An assembly that names this implementation has to set it; Prepare fails
+	// the startup naming this key when it does not.
 	DSN string `config:"dsn"`
-	// MaxOpenConns is the largest number of connections the pool opens.
+	// MaxOpenConns is the largest number of connections the pool opens. Its
+	// default is 25.
 	MaxOpenConns int `config:"max-open-conns"`
-	// MaxIdleConns is how many idle connections the pool keeps.
+	// MaxIdleConns is how many idle connections the pool keeps. Its default is 5.
 	MaxIdleConns int `config:"max-idle-conns"`
 	// ConnMaxLifetime is how long one connection is reused before it is
-	// replaced.
-	//
-	// Its type is time.Duration rather than a count of seconds, which is what
-	// makes config refuse a bare number here: 1800 would be half an hour to a
-	// reader and 1.8 microseconds to the machine, and the two cannot be told
-	// apart once the unit has been dropped.
+	// replaced. Its default is 30 minutes.
 	ConnMaxLifetime time.Duration `config:"conn-max-lifetime"`
 	// EncryptionKey is the root key the field encryption and blind index
 	// subkeys are derived from. Marked sensitive.
 	//
-	// An absent key is not a startup failure: which models carry encrypted
-	// fields is not known until GORM parses them, which happens on first use,
-	// long after startup. Encryption and decryption then fail on the
-	// statement that reached one. A present key shorter than 14 bytes, or one
-	// of whitespace only, fails the assembly.
+	// An absent key is not a startup failure: encryption and decryption then
+	// fail on the statement that reaches an encrypted field. A present key
+	// shorter than 14 bytes, or one of whitespace only, fails the assembly.
 	EncryptionKey string `config:"encryption-key"`
 	// EncryptionRetiredKeys are root keys that are no longer written with but
 	// still decrypt what they wrote. Marked sensitive.
 	EncryptionRetiredKeys []string `config:"encryption-retired-keys"`
 }
 
-// lockingConfig is what an implementation that supplies a cross-process
-// migration mutex accepts: the common items plus the bound on waiting for that
-// mutex. The embedded carrier is inlined by config exactly as encoding/json
-// would inline it, so the items keep the paths they have without a mutex.
-//
-// The two carriers exist so that an implementation with no mutex does not
-// declare migration-lock-timeout. The mounted prototype is what config reads
-// the accepted keys out of, so mounting this one everywhere would give every
-// engine a dial that changes nothing, and a host setting it would be told
-// nothing.
 type lockingConfig struct {
 	Config
-	// MigrationLockTimeout bounds the wait for the migration mutex. Past it
-	// the startup fails with ErrMigrationLockTimeout rather than waiting on a
-	// replica that may never finish. It has to be positive, and the stance
-	// refuses one that is not: a bound of zero is no wait at all.
+	// MigrationLockTimeout bounds the wait for the migration mutex; past it the
+	// startup fails with ErrMigrationLockTimeout. It has to be positive.
 	MigrationLockTimeout time.Duration `config:"migration-lock-timeout"`
 }
 
-// The input item paths, relative to an implementation's namespace. They are
-// held as constants because they appear twice over: once in the declaration
-// and once in the text that names one to an operator, and a reason naming a
-// key that does not exist is worse than no reason at all.
 const (
 	dsnKey                   = "dsn"
 	maxOpenConnsKey          = "max-open-conns"
@@ -89,18 +51,11 @@ const (
 	encryptionRetiredKeysKey = "encryption-retired-keys"
 )
 
-// MigrationLockTimeoutKey is the input item bounding the wait for the
-// migration mutex, relative to an implementation's configuration namespace.
-//
-// This package synthesises the item into the schema of an implementation that
-// supplies a mutex, and declares it for no other, so the name belongs here. It
-// is exported because an implementation that supplies a mutex names the item
-// in its own timeout message, and a second spelling of it in a subpackage
-// would be free to drift from the one that is declared.
+// MigrationLockTimeoutKey is the input item bounding the wait for the migration
+// mutex, relative to an implementation's configuration namespace. It is
+// exported so a subpackage's timeout message can name the declared item.
 const MigrationLockTimeoutKey = "migration-lock-timeout"
 
-// The defaults of the pool parameters. They are the values the mounted
-// prototype carries, which is the only place config reads a default from.
 const (
 	defaultMaxOpenConns    = 25
 	defaultMaxIdleConns    = 5
@@ -108,13 +63,8 @@ const (
 )
 
 // defaults returns the carrier this implementation's items are declared with,
-// filled with the values an absent key takes.
-//
-// It is one function for two jobs: the prototype config reads the accepted
-// keys and the defaults out of, and the struct Decode writes into. Reading
-// them from one place is what keeps the pool parameters from landing on 0 —
-// unlimited connections and no lifetime cap — when a reader hands back nothing
-// for this section.
+// filled with the values an absent key takes. The pool parameters must not
+// land on 0: database/sql reads that as no limit.
 func (s Spec) defaults() lockingConfig {
 	return lockingConfig{
 		Config: Config{
@@ -126,13 +76,9 @@ func (s Spec) defaults() lockingConfig {
 	}
 }
 
-// schema is this implementation's input item declaration, mounted under its
-// own namespace.
-//
-// Every item takes the primary config source and the environment, the ordinary
-// combination, so none of them declares an origin. None takes a command-line
-// argument either: a connection locator and a root key are the two things a
-// host must not put in a process listing.
+// schema is this implementation's input item declaration, mounted under its own
+// namespace. No item takes a command-line argument: a locator and a root key
+// must not appear in a process listing.
 func (s Spec) schema() config.Schema {
 	proto := s.defaults()
 	mount := config.Mount{Value: &proto.Config}
@@ -179,13 +125,6 @@ func (s Spec) schema() config.Schema {
 	}
 }
 
-// read decodes this implementation's own section.
-//
-// The target is the locking carrier whichever implementation this is. Decode
-// walks the target and leaves a field no source gave a value for as it found
-// it, so an implementation that never declared migration-lock-timeout reads
-// back the zero its defaults put there, and it has no mutex to hand that value
-// to in the first place.
 func (s Spec) read(reader config.Reader) (lockingConfig, error) {
 	cfg := s.defaults()
 	if err := reader.Decode(s.ConfigNamespace, &cfg); err != nil {

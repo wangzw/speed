@@ -8,10 +8,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// constraintSchema is the pair of tables the constraint cases collide with, in
-// the SQL both engines accept. The later parent's foreign key is checked at
-// COMMIT rather than at the statement, so a refusal can be reported by the
-// commit alone.
+// constraintSchema is the pair of tables the constraint cases collide with. The
+// later parent's foreign key is checked at COMMIT, so a refusal can be reported
+// by the commit alone.
 var constraintSchema = []string{
 	`CREATE TABLE constraint_parents (id INTEGER PRIMARY KEY, code TEXT NOT NULL UNIQUE,
 		CHECK (code <> 'forbidden'))`,
@@ -20,7 +19,6 @@ var constraintSchema = []string{
 		later_parent_id INTEGER REFERENCES constraint_parents (id) DEFERRABLE INITIALLY DEFERRED)`,
 }
 
-// constraintParent is a row of constraint_parents.
 type constraintParent struct {
 	ID   uint
 	Code string
@@ -28,7 +26,6 @@ type constraintParent struct {
 
 func (constraintParent) TableName() string { return "constraint_parents" }
 
-// constraintChild is a row of constraint_children.
 type constraintChild struct {
 	ID            uint
 	ParentID      *uint
@@ -37,21 +34,13 @@ type constraintChild struct {
 
 func (constraintChild) TableName() string { return "constraint_children" }
 
-// ConstraintRefusals holds a handle an engine's module delivered to the error
-// contract the database capability states for a constraint refusal: a
-// statement a unique constraint refuses — a primary key's included — reports
-// an error in which errors.Is finds gorm.ErrDuplicatedKey, one a foreign key
-// refuses an error in which it finds gorm.ErrForeignKeyViolated, whether the
-// statement inserts, updates or deletes, and neither class is found in a
-// refusal of any other kind. The contract is the same on every engine, which
-// is what lets one check map a duplicate to a conflict whichever engine the
-// host deploys on, so every engine runs these cases.
+// ConstraintRefusals holds a handle an engine's module delivered to the contract
+// for a constraint refusal: a unique or primary key refusal reports an error
+// carrying gorm.ErrDuplicatedKey, a foreign key refusal one carrying
+// gorm.ErrForeignKeyViolated, and neither class appears on any other refusal.
 //
 // carriesDriverError reports whether an error still carries the engine's own
-// driver error, which the classification keeps beside the class.
-//
-// The handle must enforce foreign keys; SQLite does so only on a connection
-// that turned them on.
+// driver error. The handle must enforce foreign keys.
 func ConstraintRefusals(t *testing.T, handle *gorm.DB, carriesDriverError func(error) bool) {
 	t.Helper()
 	for _, statement := range constraintSchema {

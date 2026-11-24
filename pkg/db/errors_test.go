@@ -18,7 +18,6 @@ import (
 	"github.com/vislake/speed/pkg/db"
 )
 
-// sentinels is the table the design states, in the order it states it.
 var sentinels = map[string]error{
 	"ErrConnectFailed":        db.ErrConnectFailed,
 	"ErrPluginFailed":         db.ErrPluginFailed,
@@ -27,11 +26,7 @@ var sentinels = map[string]error{
 	"ErrForeignInstance":      db.ErrForeignInstance,
 }
 
-// TestSentinelsAreDistinct checks that the five classes are actually five. A
-// sentinel defined in terms of another, or two names bound to one value, would
-// collapse two classes a host is meant to tell apart — a locked migration and a
-// broken one call for different responses, and a refused instance calls for a
-// change to the host's supply where neither does.
+// TestSentinelsAreDistinct checks that the five classes are actually five.
 func TestSentinelsAreDistinct(t *testing.T) {
 	names := slices.Sorted(maps.Keys(sentinels))
 	for _, a := range names {
@@ -53,14 +48,7 @@ func TestSentinelsAreDistinct(t *testing.T) {
 	}
 }
 
-// TestSentinelTableHasNoSixthEntry reads the package's own source rather than
-// the list above, so that a sentinel added to the package without a ruling
-// behind it fails here instead of quietly widening the contract. Checking the
-// list against itself would observe nothing.
-//
-// Run-time failures of encryption and decryption are the case this guards: they
-// belong to the query that hit them, not to a startup classification table, and
-// a sentinel for them is the shape to reject.
+// TestSentinelTableHasNoSixthEntry reads the package's own source rather than the list above.
 func TestSentinelTableHasNoSixthEntry(t *testing.T) {
 	declared, err := exportedErrVars(".")
 	if err != nil {
@@ -72,9 +60,8 @@ func TestSentinelTableHasNoSixthEntry(t *testing.T) {
 	}
 }
 
-// TestSentinelMessagesStateTheirSubject checks that each message is usable on
-// its own in a startup diagnostic: prefixed with the package, and saying what
-// failed rather than only naming a category.
+// TestSentinelMessagesStateTheirSubject checks that each message is usable on its own in a startup
+// diagnostic: prefixed with the package, and saying what failed rather than only naming a category.
 func TestSentinelMessagesStateTheirSubject(t *testing.T) {
 	for name, sentinel := range sentinels {
 		msg := sentinel.Error()
@@ -88,8 +75,6 @@ func TestSentinelMessagesStateTheirSubject(t *testing.T) {
 }
 
 // TestWrappingKeepsTheChain is the executable form of the "%w everywhere" rule.
-// A %v leaves the text all but identical while making the sentinel unreachable,
-// so the text is not evidence and errors.Is has to be the observation.
 func TestWrappingKeepsTheChain(t *testing.T) {
 	cause := errors.New("dial tcp 127.0.0.1:5432: connection refused")
 	for name, sentinel := range sentinels {
@@ -103,8 +88,6 @@ func TestWrappingKeepsTheChain(t *testing.T) {
 	}
 }
 
-// exportedErrVars lists the exported package-level variables whose name starts
-// with Err, across the package's non-test files.
 func exportedErrVars(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -143,17 +126,8 @@ func exportedErrVars(dir string) ([]string, error) {
 	return names, nil
 }
 
-// TestCloseToleratesAHandleWithNothingToClose covers the two shapes Close meets
-// on a rollback path, where it runs on whatever a failed startup left behind.
-//
-// A nil handle is the instance that was never constructed, and it is not an
-// error: the rollback walks every module that entered construction, including
-// ones whose New never returned. A handle with no connection pool behind it is
-// an error, and the point of the assertion is that GORM's own reason survives
-// the wrap — a %v here would read the same and lose it.
-//
-// Reentrancy over a live pool needs a driver and is pinned alongside the
-// connection logic.
+// TestCloseToleratesAHandleWithNothingToClose covers the two shapes Close meets on a rollback path,
+// where it runs on whatever a failed startup left behind.
 func TestCloseToleratesAHandleWithNothingToClose(t *testing.T) {
 	if err := db.Close(nil); err != nil {
 		t.Errorf("closing a nil handle reported %v, want nil: the rollback path reaches instances that were never constructed", err)

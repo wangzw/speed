@@ -23,8 +23,7 @@ import (
 	"github.com/vislake/speed/pkg/db/internal/dbsuite"
 )
 
-// The values the cases below bind, each one a mark the records are searched
-// for.
+// The values the cases bind, each a mark the records are searched for.
 const (
 	slowValue   = "logged-value-slow"
 	failedValue = "logged-value-failed"
@@ -41,66 +40,45 @@ const (
 	silencedValue   = "logged-value-silenced"
 )
 
-// withheldText is what a record carries in place of the text of a statement
-// GORM's Scan finisher has filled its values into. It is written out here, not
-// read from the logger, so that rewording it is a change these cases see.
+// withheldText is written out here, not read from the logger, so rewording it is
+// a change these cases see.
 const withheldText = "statement withheld: GORM filled its values in before the logger saw it"
 
-// notSlow is a threshold no statement a case runs reaches, for the cases that
-// need a statement written as what it is and not as a slow one.
+// notSlow is a threshold no statement a case runs reaches.
 const notSlow = time.Hour
 
-// briefly is how long the cases that call Trace themselves say a statement that
-// ran as any other took: a positive time whatever the resolution of the clock,
-// which can report no time at all between two readings taken one after the
-// other, and short of every threshold a case sets.
+// briefly is how long a statement that ran as any other is said to have taken: a
+// positive time whatever the clock resolution.
 const briefly = time.Millisecond
 
-// began is when a statement that has taken the given time began.
 func began(took time.Duration) time.Time { return time.Now().Add(-took) }
 
-// thisFile is this file's path as the runtime reports it in a frame. Every call
-// the cases below make that reaches the logger is made from this file, so it is
-// the call site every record has to name.
+// thisFile is the call site every record has to name.
 var thisFile = func() string {
 	_, file, _, _ := runtime.Caller(0)
 	return file
 }()
 
-// nextLine is the line after the one it is called from: where the call a case
-// is about to make stands, when the case writes that call on the next line. It
-// is the expected call site of the record the call causes, taken from the
-// source and not from the logger.
+// nextLine is the expected call site of the call on the next line, taken from
+// the source and not from the logger.
 func nextLine() int {
 	_, _, line, _ := runtime.Caller(1)
 	return line + 1
 }
 
-// recordingHandler is the slog.Handler every case here writes through.
-//
-// It keeps a copy of each record it is handed, answers Enabled from a
-// predicate a case sets, and keeps a trail of what it was asked, in order: the
-// level of each Enabled, each rendering a case watches for (see statement and
-// probe), and each Handle.
-//
-// Handle does not judge the level. The handler behind the log module's level
-// layer does not either, which is why the logger has to ask Enabled before it
-// writes; a handler that gated again here would pass a logger that never asked.
+// recordingHandler keeps a copy of each record and a trail of what it was asked.
+// Handle does not judge the level, which is why the logger has to ask Enabled
+// before it writes.
 type recordingHandler struct {
-	mu sync.Mutex
-	// allows is the predicate Enabled answers from. Nil allows every level.
-	allows func(slog.Level) bool
-	// kept are the copies of the records Handle was handed.
-	kept []slog.Record
-	// trail is what the handler was asked and what a case rendered, in order.
-	trail []string
-	// asked and handled are the contexts Enabled and Handle were handed.
+	mu             sync.Mutex
+	allows         func(slog.Level) bool
+	kept           []slog.Record
+	trail          []string
 	asked, handled []context.Context
 }
 
 var _ slog.Handler = (*recordingHandler)(nil)
 
-// Enabled notes the question and answers it from the predicate.
 func (h *recordingHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -109,7 +87,6 @@ func (h *recordingHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	return h.allows == nil || h.allows(level)
 }
 
-// Handle keeps a copy of the record, whatever its level.
 func (h *recordingHandler) Handle(ctx context.Context, record slog.Record) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -119,57 +96,44 @@ func (h *recordingHandler) Handle(ctx context.Context, record slog.Record) error
 	return nil
 }
 
-// WithAttrs refuses: no case binds attributes to the logger it writes through,
-// and a handler that dropped them would hide their absence from the record.
 func (*recordingHandler) WithAttrs([]slog.Attr) slog.Handler {
 	panic("recordingHandler: no case binds attributes to the logger")
 }
 
-// WithGroup refuses for the reason WithAttrs gives.
 func (*recordingHandler) WithGroup(string) slog.Handler {
 	panic("recordingHandler: no case opens a group on the logger")
 }
 
-// allowFrom makes Enabled answer true from the given level up, as the log
-// module's level layer does.
 func (h *recordingHandler) allowFrom(level slog.Level) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.allows = func(asked slog.Level) bool { return asked >= level }
 }
 
-// written is a copy of the records the handler kept.
 func (h *recordingHandler) written() []slog.Record {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return slices.Clone(h.kept)
 }
 
-// events is a copy of the trail.
 func (h *recordingHandler) events() []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return slices.Clone(h.trail)
 }
 
-// reset forgets the records, the trail and the contexts, and leaves the
-// predicate as it is.
 func (h *recordingHandler) reset() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.kept, h.trail, h.asked, h.handled = nil, nil, nil, nil
 }
 
-// note adds an event to the trail.
 func (h *recordingHandler) note(event string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.trail = append(h.trail, event)
 }
 
-// statement is the function a Trace call is handed to render its statement. It
-// notes the rendering, so that a case can tell a statement that was rendered
-// from one that was only asked about.
 func (h *recordingHandler) statement(text string, rows int64) func() (string, int64) {
 	return func() (string, int64) {
 		h.note("render")
@@ -177,11 +141,8 @@ func (h *recordingHandler) statement(text string, rows int64) func() (string, in
 	}
 }
 
-// probe is a value a message is formatted with. Formatting it is the rendering
-// of a message, which the trail notes as it notes a statement's.
 func (h *recordingHandler) probe() fmt.Stringer { return renderProbe{h} }
 
-// renderProbe is what probe hands out.
 type renderProbe struct{ rec *recordingHandler }
 
 func (p renderProbe) String() string {
@@ -189,12 +150,9 @@ func (p renderProbe) String() string {
 	return "probed"
 }
 
-// vocabulary is what the logger says, by message: the level a record is written
-// at, the attributes it always carries, and those it carries only when it has
-// something to put in them. It is written out here and read from nowhere in the
-// logger, so that rewording a message, moving one to another level or renaming
-// an attribute is a change these cases see: the messages and the keys are what
-// an operator searches a destination for and what a handler's rules judge.
+// vocabulary is written out here and read from nowhere in the logger, so
+// rewording a message, moving one to another level or renaming an attribute is a
+// change these cases see.
 var vocabulary = map[string]struct {
 	level             slog.Level
 	always, sometimes []string
@@ -207,7 +165,6 @@ var vocabulary = map[string]struct {
 	"gorm error":       {slog.LevelError, []string{"detail", "caller"}, nil},
 }
 
-// attributeKinds is the kind of value each attribute carries.
 var attributeKinds = map[string]slog.Kind{
 	"classes":   slog.KindString,
 	"threshold": slog.KindDuration,
@@ -218,18 +175,9 @@ var attributeKinds = map[string]slog.Kind{
 	"detail":    slog.KindString,
 }
 
-// withoutSlowStatements is records with the "slow statement" records left out.
-//
-// A statement slower than the logger's threshold is written as "slow
-// statement" at Warn whatever else it did, and the threshold is a fixed couple
-// of hundred milliseconds: on a loaded machine an ordinary statement — a
-// CREATE TABLE, an INSERT — crosses it. A case that counts the records of
-// statements it expects to be unwritten, or to be exactly one failure, is not
-// about that record; a count that included it would pass or fail with the
-// machine's load. The slow statement's own emission has its cases, so this
-// helper only narrows a count. No assertion about what a record carries reads
-// its result: a slow statement's redaction is still asserted over every
-// record.
+// withoutSlowStatements leaves out the "slow statement" records, whose presence
+// depends on the machine's load. It only narrows a count; no assertion about what
+// a record carries reads its result.
 func withoutSlowStatements(records []slog.Record) []slog.Record {
 	kept := make([]slog.Record, 0, len(records))
 	for _, record := range records {
@@ -241,8 +189,6 @@ func withoutSlowStatements(records []slog.Record) []slog.Record {
 	return kept
 }
 
-// attributesOf is what a record carries, by key. A key carried twice, or a
-// group, fails the case: the logger writes each attribute once, and flat.
 func attributesOf(t *testing.T, record slog.Record) map[string]slog.Value {
 	t.Helper()
 	attrs := make(map[string]slog.Value, record.NumAttrs())
@@ -260,9 +206,6 @@ func attributesOf(t *testing.T, record slog.Record) map[string]slog.Value {
 	return attrs
 }
 
-// everything is all a record carries, as text: its message, and the key and
-// value of each attribute. What a case looks for is absent from the record when
-// it is absent from this.
 func everything(record slog.Record) string {
 	var text strings.Builder
 	text.WriteString(record.Message)
@@ -273,8 +216,6 @@ func everything(record slog.Record) string {
 	return text.String()
 }
 
-// textOf is the string attribute a record carries under key, and whether it
-// carries one.
 func textOf(attrs map[string]slog.Value, key string) (string, bool) {
 	value, carried := attrs[key]
 	if !carried || value.Kind() != slog.KindString {
@@ -283,8 +224,6 @@ func textOf(attrs map[string]slog.Value, key string) (string, bool) {
 	return value.String(), true
 }
 
-// durationOf is the duration attribute a record carries under key, and whether
-// it carries one.
 func durationOf(attrs map[string]slog.Value, key string) (time.Duration, bool) {
 	value, carried := attrs[key]
 	if !carried || value.Kind() != slog.KindDuration {
@@ -293,8 +232,7 @@ func durationOf(attrs map[string]slog.Value, key string) (time.Duration, bool) {
 	return value.Duration(), true
 }
 
-// countOf is the integer attribute a record carries under key, and whether it
-// carries one.
+// countOf is the integer attribute under key, and whether it is carried.
 func countOf(attrs map[string]slog.Value, key string) (int64, bool) {
 	value, carried := attrs[key]
 	if !carried || value.Kind() != slog.KindInt64 {
@@ -303,8 +241,6 @@ func countOf(attrs map[string]slog.Value, key string) (int64, bool) {
 	return value.Int64(), true
 }
 
-// siteOf is where a record's program counter resolves to, the way a handler that
-// adds the source to its output resolves it.
 func siteOf(record slog.Record) runtime.Frame {
 	if record.PC == 0 {
 		return runtime.Frame{}
@@ -313,16 +249,8 @@ func siteOf(record slog.Record) runtime.Frame {
 	return frame
 }
 
-// checkVocabulary holds a record to everything every record the logger writes
-// has in common, and returns what it carries by key: it says one of the
-// logger's own words, at that word's level, with a time; it carries the
-// attributes of its kind and none besides, each of the kind of value it is
-// meant to be; its elapsed time is a positive duration; it names no empty
-// statement; and its call site is this file, by its program counter and by its
-// caller attribute alike, and never the logger.
-//
-// Every case that reads records calls it on each one, so the vocabulary is held
-// on every path a statement or a message takes to the logger, not on one.
+// checkVocabulary holds a record to the vocabulary, the attribute kinds and the
+// call site every record shares, and returns its attributes by key.
 func checkVocabulary(t *testing.T, record slog.Record) map[string]slog.Value {
 	t.Helper()
 	attrs := attributesOf(t, record)
@@ -363,9 +291,6 @@ func checkVocabulary(t *testing.T, record slog.Record) map[string]slog.Value {
 	return attrs
 }
 
-// checkCallSite holds the call site a record names to this file, by its program
-// counter, resolved through runtime.CallersFrames, and by its caller attribute,
-// which has to be the same file and line: the logger is neither of them.
 func checkCallSite(t *testing.T, record slog.Record, attrs map[string]slog.Value) {
 	t.Helper()
 	frame := siteOf(record)
@@ -387,9 +312,6 @@ func checkCallSite(t *testing.T, record slog.Record, attrs map[string]slog.Value
 	}
 }
 
-// expectRecord holds a record to the vocabulary and to the message the case
-// expects of it. A line other than 0 is the line of the call that caused it,
-// which the record has to name as its call site.
 func expectRecord(t *testing.T, record slog.Record, message string, line int) map[string]slog.Value {
 	t.Helper()
 	attrs := checkVocabulary(t, record)
@@ -405,8 +327,6 @@ func expectRecord(t *testing.T, record slog.Record, message string, line int) ma
 	return attrs
 }
 
-// assertNoneCarries fails the case when any of the records carries one of the
-// values, in its message or in any attribute.
 func assertNoneCarries(t *testing.T, records []slog.Record, values ...string) {
 	t.Helper()
 	for _, record := range records {
@@ -419,7 +339,6 @@ func assertNoneCarries(t *testing.T, records []slog.Record, values ...string) {
 	}
 }
 
-// loggedEntry is a row of logged_entries.
 type loggedEntry struct {
 	ID    uint
 	Value string
@@ -427,9 +346,6 @@ type loggedEntry struct {
 
 func (loggedEntry) TableName() string { return "logged_entries" }
 
-// loggingOn is a handle whose statements log through a statementLogger writing
-// to rec with the threshold slow, on a database holding the table the cases
-// write.
 func loggingOn(t *testing.T, rec *recordingHandler, slow time.Duration) *gorm.DB {
 	t.Helper()
 	statements := newStatementLogger(slog.New(rec))
@@ -442,36 +358,23 @@ func loggingOn(t *testing.T, rec *recordingHandler, slow time.Duration) *gorm.DB
 	return handle
 }
 
-// directLogger is a statement logger writing through rec at the GORM level,
-// with the slow threshold, for the cases that call its methods themselves.
 func directLogger(rec *recordingHandler, level logger.LogLevel, slow time.Duration) logger.Interface {
 	statements := newStatementLogger(slog.New(rec))
 	statements.slow = slow
 	return statements.LogMode(level)
 }
 
-// emission is one way GORM reaches the logger, with the record the logger writes
-// for it. The six of them are every message the logger has, and between them
-// the four methods GORM calls.
+// emission is one way GORM reaches the logger, with the record written for it;
+// the six cover every message and all four methods GORM calls.
 type emission struct {
-	// name is what a failure calls it.
-	name string
-	// message and level are the record the logger writes for it.
-	message string
-	level   slog.Level
-	// needle is a word its statement or its message carries, and carrier is the
-	// attribute that holds it.
+	name            string
+	message         string
+	level           slog.Level
 	needle, carrier string
-	// issue sends it to the logger. The statements it sends are rendered through
-	// rec, and the messages are formatted with one of its probes.
-	issue func(ctx context.Context, l logger.Interface, rec *recordingHandler)
+	issue           func(ctx context.Context, l logger.Interface, rec *recordingHandler)
 }
 
 const (
-	// emissionThreshold is the slow threshold the cases that run the emissions
-	// set, and emissionTook how long the slow statement is said to have taken: a
-	// statement begun at once has taken no time to speak of, and the failed and
-	// the unremarkable statements are begun at once.
 	emissionThreshold = time.Hour
 	emissionTook      = 2 * time.Hour
 )
@@ -521,16 +424,8 @@ var emissions = []emission{
 	},
 }
 
-// TestEveryKindOfRecordCarriesExactlyItsAttributes holds the vocabulary the
-// logger writes in: each message, the level its record is written at, the
-// attributes the record carries as a set and the kind of value each one holds.
-// A key added, left out or renamed fails here, and so does a message reworded or
-// moved to another level, a duration written as a number or a count as text.
-//
-// The statement and GORM's own text are attributes and not the message because
-// the redaction layer judges attributes, and only attributes: a rule registered
-// for a key reaches what is in an attribute under it, and reaches nothing that
-// was written into a message.
+// TestEveryKindOfRecordCarriesExactlyItsAttributes holds each message to its level, attribute set
+// and attribute kinds.
 func TestEveryKindOfRecordCarriesExactlyItsAttributes(t *testing.T) {
 	refused := fmt.Errorf("%w: %w", gorm.ErrDuplicatedKey, quotingError{failedValue, "23505"})
 	cases := []struct {
@@ -613,12 +508,8 @@ func TestEveryKindOfRecordCarriesExactlyItsAttributes(t *testing.T) {
 	}
 }
 
-// TestTheLoggerWritesNoValueOnAnyPath holds the three ways a statement reaches
-// the logger — slower than the threshold, failed, and every statement of a
-// Debug session — to writing the statement's text and none of its values, and
-// the lookup that found no row to the same. The statements it issues are the
-// ones GORM renders for the logger; the ones the Scan finisher runs are held by
-// TestAStatementRunThroughScanIsWrittenWithoutItsText.
+// TestTheLoggerWritesNoValueOnAnyPath checks that no value a statement binds or reads reaches a
+// record on any of the three write paths.
 func TestTheLoggerWritesNoValueOnAnyPath(t *testing.T) {
 	rec := &recordingHandler{}
 	handle := loggingOn(t, rec, time.Nanosecond)
@@ -676,17 +567,8 @@ func everythingOf(records []slog.Record) string {
 	return strings.Join(lines, "\n")
 }
 
-// TestAStatementRunThroughScanIsWrittenWithoutItsText holds the logger to the
-// one path on which GORM never asks it for the values a statement binds: the
-// Scan finisher swaps the handle's logger for a recorder, whose ParamsFilter
-// hands every value back, runs the statement on the recorder, and gives the
-// handle's logger the finished text, values in, through Trace alone. The
-// logger's own ParamsFilter is not asked there, so what the logger can do is
-// withhold the text. Whichever way the statement reaches the logger — failed,
-// slower than the threshold, in a Debug session — and however it is built, its
-// record carries no value and has the withheld text where the statement would
-// be, and it carries what every record carries: the classes of the error,
-// the time, the rows and the call site.
+// TestAStatementRunThroughScanIsWrittenWithoutItsText checks that a statement the Scan finisher
+// runs is written with its text withheld on every path.
 func TestAStatementRunThroughScanIsWrittenWithoutItsText(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -775,13 +657,8 @@ func TestAStatementRunThroughScanIsWrittenWithoutItsText(t *testing.T) {
 	}
 }
 
-// TestAStatementRunThroughAnotherFinisherKeepsItsTextWhereScanWithholdsIt is
-// the control of the case above. Row, Rows and the generic interface's Scan,
-// unlike the Scan finisher, leave the handle's logger in place, so GORM asks the
-// logger's ParamsFilter for the values and in a Debug session the record names
-// the statement with its placeholder and carries no value. The text is withheld
-// only where it has to be. GORM counts no rows for a Row or a Rows, which is the
-// -1 the record leaves out.
+// TestAStatementRunThroughAnotherFinisherKeepsItsTextWhereScanWithholdsIt checks that Row, Rows and
+// the generic Scan leave the text in place, with its placeholders unfilled.
 func TestAStatementRunThroughAnotherFinisherKeepsItsTextWhereScanWithholdsIt(t *testing.T) {
 	const statement = "SELECT id FROM logged_entries WHERE value = ?"
 	cases := []struct {
@@ -858,13 +735,8 @@ func TestAStatementRunThroughAnotherFinisherKeepsItsTextWhereScanWithholdsIt(t *
 	}
 }
 
-// TestAScanThatRanNoStatementIsNotWrittenAsWithheld holds the withheld text to
-// the statements that exist. A Scan on a handle that already carries an error
-// runs nothing, and on a chain that has not built its statement yet — a Model
-// with a Where, no Raw — there is none to hand over: GORM gives the
-// logger the handle's error through Trace, with the empty text of a recorder
-// that saw no statement. That record has nothing to withhold, carries no
-// statement, and does not say it withheld one.
+// TestAScanThatRanNoStatementIsNotWrittenAsWithheld checks that a Scan that built no statement is
+// written without a statement attribute and without the withheld note.
 func TestAScanThatRanNoStatementIsNotWrittenAsWithheld(t *testing.T) {
 	rec := &recordingHandler{}
 	handle := loggingOn(t, rec, notSlow)
@@ -893,18 +765,8 @@ func TestAScanThatRanNoStatementIsNotWrittenAsWithheld(t *testing.T) {
 	}
 }
 
-// TestTheLoggerLeavesGORMsRecorderFilterAlone holds the rule that this package
-// sets no GORM package variable: the Scan statements are recognised inside the
-// logger, not by a change to what every handle in the process shares.
-// logger.RecorderParamsFilter is the variable that would tempt. It is how the
-// recorder each Scan runs on, a host's own handles' included, answers GORM's
-// request for the values a statement binds, and by default it hands them back.
-// A package that set it would take the values out of what every one of those
-// handles logs without a word, and a host that set it too would undo it. The
-// filter is called with a statement and one parameter once the package is
-// loaded, and again after the logger has written statements run through Scan
-// and a handle has been opened the way the module opens every one; each time it
-// must hand the parameter back unchanged.
+// TestTheLoggerLeavesGORMsRecorderFilterAlone checks that logger.RecorderParamsFilter still hands
+// the parameter back unchanged.
 func TestTheLoggerLeavesGORMsRecorderFilterAlone(t *testing.T) {
 	handsBack := func(when string) bool {
 		t.Helper()
@@ -983,16 +845,8 @@ type resultCodeError struct {
 func (e resultCodeError) Error() string { return fmt.Sprintf("UNIQUE constraint failed: %q", e.value) }
 func (e resultCodeError) Code() int     { return e.code }
 
-// TestAFailedStatementIsWrittenWithTheClassesOfItsError covers the error half:
-// the text of an error can quote what the statement bound or read, so the
-// logger writes the classes the error carries — the engine's code, GORM's
-// sentinels, a context's end — and never the text.
-//
-// The spelling is what the cases hold exactly, because it is what an operator
-// searches for and what the host's own checks match on: the text SQLSTATE
-// followed by the code, and result code followed by the number, with the
-// classes of one error joined by a comma and a space. An error that carries none
-// gives no classes attribute at all.
+// TestAFailedStatementIsWrittenWithTheClassesOfItsError checks that a failed statement writes the
+// error's classes, spelled as documented, and never its text.
 func TestAFailedStatementIsWrittenWithTheClassesOfItsError(t *testing.T) {
 	cases := []struct {
 		name string
@@ -1056,13 +910,8 @@ func TestAFailedStatementIsWrittenWithTheClassesOfItsError(t *testing.T) {
 	}
 }
 
-// TestTheStatementAndGORMsTextAreAttributesNeverTheMessage holds the text a
-// record is about to the attribute that carries it. The statement of a
-// statement record and the formatted text of one of GORM's own are in the
-// statement and detail attributes and nowhere else: the message is one of the
-// logger's own words, whatever is written. A message that carried the text
-// would take what the statement says past the redaction layer, which judges
-// attributes and not messages.
+// TestTheStatementAndGORMsTextAreAttributesNeverTheMessage checks that a statement's text and
+// GORM's formatted text stay in their attributes, never in the message.
 func TestTheStatementAndGORMsTextAreAttributesNeverTheMessage(t *testing.T) {
 	for _, e := range emissions {
 		t.Run(e.name, func(t *testing.T) {
@@ -1090,10 +939,8 @@ func TestTheStatementAndGORMsTextAreAttributesNeverTheMessage(t *testing.T) {
 	}
 }
 
-// TestElapsedIsTheTimeTheStatementTook holds the elapsed attribute to the time
-// since the statement began, as a duration, on each way a statement can be
-// written. A statement begun a while ago has taken at least that long, and a
-// duration of nothing is not a time anything took.
+// TestElapsedIsTheTimeTheStatementTook checks that elapsed is a positive duration matching the time
+// since the statement began.
 func TestElapsedIsTheTimeTheStatementTook(t *testing.T) {
 	const took = 90 * time.Second
 	cases := []struct {
@@ -1139,12 +986,8 @@ func TestElapsedIsTheTimeTheStatementTook(t *testing.T) {
 	})
 }
 
-// TestASlowStatementCarriesTheThresholdItExceeded holds the threshold attribute
-// of a slow statement to the threshold the logger runs at, a statement that
-// stays under it to being no slow statement, a statement that failed past it to
-// being written as a failure and not as a slow statement, and the threshold a
-// logger is built with to the 200ms of GORM's default logger, which is the
-// bound a slow statement is written past.
+// TestASlowStatementCarriesTheThresholdItExceeded checks that the threshold attribute is the
+// logger's own, and that only statements past it are written slow.
 func TestASlowStatementCarriesTheThresholdItExceeded(t *testing.T) {
 	t.Run("the threshold the logger runs at", func(t *testing.T) {
 		rec := &recordingHandler{}
@@ -1195,9 +1038,8 @@ func TestASlowStatementCarriesTheThresholdItExceeded(t *testing.T) {
 	})
 }
 
-// TestRowsAreLeftOutWhenGORMCountedNone holds the rows attribute to the count
-// GORM reports, and to being absent when GORM counted none, which it reports as
-// -1. A count of nothing is a count: 0 is written.
+// TestRowsAreLeftOutWhenGORMCountedNone checks that rows is the reported count and is absent only
+// when GORM reports -1.
 func TestRowsAreLeftOutWhenGORMCountedNone(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -1237,11 +1079,8 @@ func TestRowsAreLeftOutWhenGORMCountedNone(t *testing.T) {
 	}
 }
 
-// TestGORMsOwnMessagesGoToTheDetailAttribute holds what GORM says on its own —
-// a callback replaced, a model the migrator cannot parse — to being written as
-// GORM formats it: the message formatted with its data, without the newline
-// several of GORM's messages end in, in the detail attribute, under a message
-// that is the same whatever GORM says.
+// TestGORMsOwnMessagesGoToTheDetailAttribute checks that GORM's text, formatted with its data and
+// stripped of the trailing newline, goes to detail.
 func TestGORMsOwnMessagesGoToTheDetailAttribute(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -1294,13 +1133,8 @@ func TestGORMsOwnMessagesGoToTheDetailAttribute(t *testing.T) {
 	}
 }
 
-// TestGORMsOwnMessagesReachTheLoggerFromInsideGORM runs the three of GORM's own
-// messages a callback table produces through GORM itself, on a handle whose
-// root logger is the statement logger at Info: a callback replaced is an
-// informational message, one removed is a warning, and a registration the table
-// cannot order is an error. Each is a record with GORM's text formatted in and
-// the call site outside GORM, which here is the line that made the call, and
-// that is the same call site GORM's own text names in the first two.
+// TestGORMsOwnMessagesReachTheLoggerFromInsideGORM checks that a callback table's three messages
+// arrive at their levels, with the call site outside GORM.
 func TestGORMsOwnMessagesReachTheLoggerFromInsideGORM(t *testing.T) {
 	rec := &recordingHandler{}
 	root, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "messages.db")), &gorm.Config{
@@ -1364,12 +1198,8 @@ func TestGORMsOwnMessagesReachTheLoggerFromInsideGORM(t *testing.T) {
 	}
 }
 
-// TestADebugSessionIsWrittenAsInfoRecords holds the level of the statements a
-// Debug session asks for. GORM's Info is slog's Info, so a statement that ran as
-// any other is an Info record, and a held logger that writes from Info up, as
-// the log module's default level does, writes every one of them; a held logger
-// that writes from Warn up writes none of them, and writes the statement
-// that failed.
+// TestADebugSessionIsWrittenAsInfoRecords checks that a Debug session's statements are Info
+// records, subject to the held logger's level.
 func TestADebugSessionIsWrittenAsInfoRecords(t *testing.T) {
 	session := func(t *testing.T, from slog.Level) []slog.Record {
 		t.Helper()
@@ -1447,16 +1277,8 @@ func trailOf(wanted []string) []string {
 	return trail
 }
 
-// TestTheLoggerWritesByItsLevel holds the logger to GORM's levels: at the
-// default one it writes failed and slow statements and GORM's warnings and
-// errors, not its informational messages; at Error only failures; at Silent
-// nothing; at Info everything, a statement that ran as any other included.
-//
-// GORM's own level is judged first. A call it does not let through never asks
-// the held logger anything, so the trail of the handler is the records that were
-// written and nothing besides. A slow statement is written as one at Info as at
-// Warn, and not as the unremarkable statement an Info level would otherwise ask
-// for.
+// TestTheLoggerWritesByItsLevel checks which records each GORM level writes, with GORM's level
+// judged before the held logger is asked.
 func TestTheLoggerWritesByItsLevel(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -1498,13 +1320,8 @@ func TestTheLoggerWritesByItsLevel(t *testing.T) {
 	}
 }
 
-// TestASilencedHandleWritesNothing holds Silent to writing nothing from a real
-// handle, on the paths a statement takes to the logger: a statement that ran, a
-// statement that failed, a lookup that found no row, one run through Scan and one
-// through Row, on a handle whose threshold makes every statement slow. The
-// handler is not even asked. The same statements on the handle that is not
-// silenced are written, so a silence that came from the statements never
-// reaching the logger is not mistaken for the logger's.
+// TestASilencedHandleWritesNothing checks that a Silent handle writes nothing and does not even ask
+// the handler, while the same statements on an unsilenced handle are written.
 func TestASilencedHandleWritesNothing(t *testing.T) {
 	rec := &recordingHandler{}
 	handle := loggingOn(t, rec, time.Nanosecond)
@@ -1544,11 +1361,8 @@ func TestASilencedHandleWritesNothing(t *testing.T) {
 	assertNoneCarries(t, records, silencedValue)
 }
 
-// TestLogModeReturnsACopy holds LogMode to returning a logger at the level it is
-// given and leaving the one it was called on alone, with what the copy runs on
-// carried over: the logger it writes through and the slow threshold. GORM calls
-// it on every Debug and every Session, so a LogMode that changed the logger it
-// was called on would turn the handle's own logger up for every statement after.
+// TestLogModeReturnsACopy checks that LogMode returns a logger at the given level and leaves the
+// original and its settings alone.
 func TestLogModeReturnsACopy(t *testing.T) {
 	ctx := t.Context()
 	rec := &recordingHandler{}
@@ -1588,18 +1402,8 @@ func TestLogModeReturnsACopy(t *testing.T) {
 	}
 }
 
-// TestTheRecordNamesTheCallSiteNotTheLogger holds the call site of every record
-// to the line that made the call, by the record's program counter, which a
-// handler that adds the source resolves, and by its caller attribute, which the
-// log module's chain depends on because it never adds the source. The call site
-// is the first frame outside GORM: for GORM's own messages and statements the
-// line of the call into GORM, for a call the case makes itself the line that
-// makes it, and never the logger's own file, which every one of them passes
-// through.
-//
-// The lines are the ones the cases are written on, taken from the source with
-// nextLine and not from the logger. Each call stands on the line after the one
-// that records it.
+// TestTheRecordNamesTheCallSiteNotTheLogger checks that every record names the line that made the
+// call, by both its program counter and its caller attribute.
 func TestTheRecordNamesTheCallSiteNotTheLogger(t *testing.T) {
 	t.Run("a call the case makes itself", func(t *testing.T) {
 		ctx := t.Context()
@@ -1673,11 +1477,8 @@ func TestTheRecordNamesTheCallSiteNotTheLogger(t *testing.T) {
 	})
 }
 
-// TestARecordWithNoCallSiteCarriesNeitherMark holds the two marks of a call site
-// together where there is none to name. GORM's lookup reports no frame when it
-// finds none outside GORM, and a record built from that carries no program
-// counter and no caller attribute; a program counter without a caller, or a
-// caller without a program counter, would be one mark contradicting the other.
+// TestARecordWithNoCallSiteCarriesNeitherMark checks that a record with no call site carries
+// neither a program counter nor a caller attribute.
 func TestARecordWithNoCallSiteCarriesNeitherMark(t *testing.T) {
 	rec := &recordingHandler{}
 	statements := newStatementLogger(slog.New(rec))
@@ -1699,20 +1500,8 @@ func TestARecordWithNoCallSiteCarriesNeitherMark(t *testing.T) {
 	}
 }
 
-// TestARecordTheHeldLoggerWillNotWriteIsNeverRendered holds the order in which
-// the logger works, across what GORM's four methods do with the six records
-// they write: GORM's own level is judged first, and the logger it is held on is
-// asked whether it writes the record's level; only when it does is the
-// statement rendered, or the message formatted, and only then is the record
-// handed over. The handler here does not judge the level again, as the log
-// module's level layer does not, so a logger that skipped the question would
-// hand its records over all the same.
-//
-// The held logger is asked for each of the six, at the level the record would be
-// written at, whatever it answers; what it answers decides the rest. With a
-// level above everything it never sees a record and nothing is rendered; at
-// Info, a statement that ran as any other, which is written at Info, is the first
-// to go, then the warnings, and last the failures.
+// TestARecordTheHeldLoggerWillNotWriteIsNeverRendered checks that a record the held logger would
+// not write is never rendered and never handed over.
 func TestARecordTheHeldLoggerWillNotWriteIsNeverRendered(t *testing.T) {
 	cases := []struct {
 		name string
@@ -1755,15 +1544,8 @@ func TestARecordTheHeldLoggerWillNotWriteIsNeverRendered(t *testing.T) {
 // carry.
 type contextKey struct{}
 
-// TestANilContextIsTolerated holds all four methods GORM calls to accepting a
-// nil context, as GORM's own logger does, and to replacing it with
-// context.Background() before it reaches the handler: neither Enabled nor
-// Handle of a handler promises to accept a nil one. It holds a context that is
-// not nil to being handed on as it is, so the held logger's handler can read
-// what the caller put in it.
-//
-// The nil is a variable of the interface type and not the literal, which
-// staticcheck refuses as an argument.
+// TestANilContextIsTolerated checks that a nil context is replaced before it reaches the handler
+// and a non-nil one is handed on as it is.
 func TestANilContextIsTolerated(t *testing.T) {
 	run := func(t *testing.T, ctx context.Context) *recordingHandler {
 		t.Helper()
@@ -1808,13 +1590,8 @@ func TestANilContextIsTolerated(t *testing.T) {
 	})
 }
 
-// TestAStatementLoggerOverNoLoggerPanics holds the constructor to refusing a
-// nil logger with a message. A statement logger that wrote nowhere would let a
-// handle work and say nothing, and one that fell back to a logger of its own
-// would write where the host never configured; the one place that builds it is
-// handed a logger by every caller, so a nil one is a defect in this repository's
-// own code and is reported where it was made, not as a nil dereference at the
-// first statement.
+// TestAStatementLoggerOverNoLoggerPanics checks that the constructor refuses a nil logger with a
+// message.
 func TestAStatementLoggerOverNoLoggerPanics(t *testing.T) {
 	defer func() {
 		reported := recover()
@@ -1844,18 +1621,8 @@ func (refusingHandler) Handle(context.Context, slog.Record) error {
 func (h refusingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
 func (h refusingHandler) WithGroup(string) slog.Handler      { return h }
 
-// TestARecordTheHeldLoggerWillNotWriteCostsNoAllocation holds the point of
-// asking the held logger before the record is built: a statement or a message
-// that the held logger would not write costs the caller nothing. Reading the
-// call site and rendering the statement are what allocate, and both come after
-// the question. The handler refuses every level, and every method GORM calls is
-// run on each path that reaches the question: a statement that failed, one
-// slower than the threshold and one that ran as any other, and each of GORM's
-// three messages.
-//
-// The statement function and the data of a message are built once, outside the
-// measured calls, so that what is counted is the logger's own work. The
-// question is Enabled of the held logger and nothing is rendered to answer it.
+// TestARecordTheHeldLoggerWillNotWriteCostsNoAllocation checks that a record the held logger would
+// not write allocates nothing after the question is asked.
 func TestARecordTheHeldLoggerWillNotWriteCostsNoAllocation(t *testing.T) {
 	var (
 		ctx     = context.Background()
@@ -1904,13 +1671,8 @@ func attributeOrder(record slog.Record) []string {
 	return keys
 }
 
-// TestEveryKindOfRecordCarriesItsAttributesInOrder holds the order the
-// attributes of each record are written in, which a text destination shows as
-// the order of the pairs on a line: what distinguishes the record first (the
-// classes of a failure, the threshold a slow statement exceeded), then the time
-// the statement took, the rows it affected and the statement, and the call site
-// after all of them. A record with the call site first, or the rows before the
-// time, carries the same set of attributes and reads differently.
+// TestEveryKindOfRecordCarriesItsAttributesInOrder checks the order of each record's attributes:
+// distinguishing ones, then elapsed, rows and statement, then the call site.
 func TestEveryKindOfRecordCarriesItsAttributesInOrder(t *testing.T) {
 	refused := fmt.Errorf("%w: %w", gorm.ErrDuplicatedKey, quotingError{failedValue, "23505"})
 	cases := []struct {
@@ -1993,11 +1755,8 @@ func TestEveryKindOfRecordCarriesItsAttributesInOrder(t *testing.T) {
 	}
 }
 
-// TestTheClassesOfAnErrorAreWrittenInAFixedOrder holds the order the classes of
-// one error are joined in to the one the logger documents: GORM's sentinels,
-// then a context's end, then the engine's code, whatever order the error chain
-// itself lists them in. An error that carries all three kinds at once is the one
-// that shows it, because the classes of one kind alone have no order to keep.
+// TestTheClassesOfAnErrorAreWrittenInAFixedOrder checks that all three kinds of class are joined in
+// the documented order whatever order the chain lists them.
 func TestTheClassesOfAnErrorAreWrittenInAFixedOrder(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -2053,12 +1812,8 @@ func (h failingHandler) Handle(ctx context.Context, record slog.Record) error {
 	return h.err
 }
 
-// TestAStatementReportsTheSameToItsCallerWhetherOrNotItsRecordWasWritten holds
-// what a statement returns to its caller to being the statement's own result: a
-// handler that cannot write a record is the logger's trouble and nobody else's.
-// A statement that failed returns its error as it would have with no logger,
-// without the handler's error in its chain; one that succeeded returns none;
-// nothing panics; and the handler is asked once for the one record each writes.
+// TestAStatementReportsTheSameToItsCallerWhetherOrNotItsRecordWasWritten checks that a handler's
+// failure to write does not change what the statement reports.
 func TestAStatementReportsTheSameToItsCallerWhetherOrNotItsRecordWasWritten(t *testing.T) {
 	const (
 		failing = "INSERT INTO logged_missing (value) VALUES (?)"
@@ -2127,10 +1882,8 @@ func TestAStatementReportsTheSameToItsCallerWhetherOrNotItsRecordWasWritten(t *t
 	}
 }
 
-// TestAStatementIsWrittenAsGORMRenderedIt holds the statement attribute to the
-// text GORM rendered, whole: spread over lines, padded with space, and longer
-// than any cut a tidy-up might make. A migration file's text is written the same
-// way, and a log reader finds the statement it is after in it.
+// TestAStatementIsWrittenAsGORMRenderedIt checks that the statement attribute is GORM's text whole,
+// over several lines and uncut.
 func TestAStatementIsWrittenAsGORMRenderedIt(t *testing.T) {
 	text := "\n\t-- a migration file begins with its comments\nCREATE TABLE notes (\n  id INTEGER PRIMARY KEY,\n" +
 		"  body TEXT NOT NULL -- " + strings.Repeat("a long line of a migration ", 12) + "\n)  \n"
@@ -2167,10 +1920,8 @@ type panickingHandler struct{ *recordingHandler }
 
 func (panickingHandler) Handle(context.Context, slog.Record) error { panic("the handler cannot cope") }
 
-// TestAPanicInTheHandlerIsNotCaught holds the logger to what the documents say of
-// a handler that panics: nothing here recovers it, as nothing else that writes a
-// record through the same logger does, so it reaches the caller of the statement
-// and does not vanish into a record that was never written.
+// TestAPanicInTheHandlerIsNotCaught checks that a handler's panic reaches the caller of the
+// statement.
 func TestAPanicInTheHandlerIsNotCaught(t *testing.T) {
 	statements := newStatementLogger(slog.New(panickingHandler{&recordingHandler{}}))
 	statements.slow = notSlow

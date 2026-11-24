@@ -10,15 +10,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// These cases hold every write path GORM offers for a field to the promise the
-// design makes for it: a field marked serializer:encrypted is sealed before it
-// reaches the database, whatever shape the write took, or the write is refused.
-// A path that stored the plaintext would leave the column in clear and the row
-// unreadable through the model, and neither would be reported where it
-// happened.
-
-// writtenRow creates one row through the model, which is the path that has
-// always sealed, and returns it for the case to rewrite by another path.
 func writtenRow(t *testing.T, product *database) encryptedModel {
 	t.Helper()
 	nickname := "first-nickname"
@@ -51,11 +42,8 @@ func assertSealed(t *testing.T, product *database, id uint, want string) {
 	}
 }
 
-// TestEveryMapShapedWriteSealsTheField covers the writes whose values arrive as
-// a map rather than as the model: the shape a PATCH handler naturally builds.
-// GORM puts a map value into the statement as it is, without the field's
-// serializer, so each of these would store the plaintext unless this module
-// seals it.
+// TestEveryMapShapedWriteSealsTheField covers the writes whose values arrive as a map rather than
+// as the model: the shape a PATCH handler naturally builds.
 func TestEveryMapShapedWriteSealsTheField(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -115,10 +103,8 @@ func TestEveryMapShapedWriteSealsTheField(t *testing.T) {
 	}
 }
 
-// TestAMapWriteLeavesTheCallersValuesInPlainText pins what the sealing must not
-// do to the values the caller handed in. The map is the caller's, and so is the
-// model a Model(&row) update writes its assignments back into: a seal that
-// stayed in either would give the caller ciphertext where it put plaintext.
+// TestAMapWriteLeavesTheCallersValuesInPlainText pins what the sealing must not do to the values
+// the caller handed in.
 func TestAMapWriteLeavesTheCallersValuesInPlainText(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)
@@ -148,13 +134,8 @@ func TestAMapWriteLeavesTheCallersValuesInPlainText(t *testing.T) {
 	}
 }
 
-// TestAnUpdateMapSharedBetweenGoroutinesStaysReadOnly covers an assignment map
-// held as a value and handed to many updates at once — a fixed set of
-// redactions applied to whichever rows a request names. GORM only reads the map
-// an update is written from, so sharing one is safe, and the sealing must keep
-// it so: a seal written into the shared map would be read by a concurrent
-// update as the value to write, sealed a second time, and stored as a value
-// the model opens into ciphertext.
+// TestAnUpdateMapSharedBetweenGoroutinesStaysReadOnly covers an assignment map held as a value and
+// handed to many updates at once — a fixed set of redactions applied to whichever rows a request.
 func TestAnUpdateMapSharedBetweenGoroutinesStaysReadOnly(t *testing.T) {
 	const writers, rounds = 16, 4
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
@@ -203,8 +184,8 @@ func TestAnUpdateMapSharedBetweenGoroutinesStaysReadOnly(t *testing.T) {
 	}
 }
 
-// TestANullableFieldWrittenThroughAMap covers the pointer field: a value is
-// sealed, and nil stays the NULL it means rather than a seal over nothing.
+// TestANullableFieldWrittenThroughAMap covers the pointer field: a value is sealed, and nil stays
+// the NULL it means rather than a seal over nothing.
 func TestANullableFieldWrittenThroughAMap(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)
@@ -233,8 +214,8 @@ func TestANullableFieldWrittenThroughAMap(t *testing.T) {
 	}
 }
 
-// TestAnInsertFromAMapSealsTheField covers Create over a map and over a slice of
-// maps, which GORM binds as they are, like the updates above.
+// TestAnInsertFromAMapSealsTheField covers Create over a map and over a slice of maps, which GORM
+// binds as they are, like the updates above.
 func TestAnInsertFromAMapSealsTheField(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)
@@ -261,10 +242,6 @@ func TestAnInsertFromAMapSealsTheField(t *testing.T) {
 	}
 }
 
-// contactModel keeps a sealed field whose Go name and column differ by more
-// than letter case: ContactEmail, in contact_email. GORM resolves a map key or
-// a Select entry written with either name to the column, while a comparison of
-// the text alone finds the column only under its own name.
 type contactModel struct {
 	ID           uint
 	ContactEmail string `gorm:"serializer:encrypted"`
@@ -275,10 +252,6 @@ type contactModel struct {
 // that the column still holding something else shows the Select was in force.
 const leftOut = "left out"
 
-// assertContactSealed holds one row of contactModel to what a sealed write
-// leaves — a contact_email column without the plaintext, which the model reads
-// back as the plaintext — and to the Select the write ran under, which kept
-// leftOut out of the note column.
 func assertContactSealed(t *testing.T, product *database, id uint, want string) {
 	t.Helper()
 	var stored struct {
@@ -308,8 +281,6 @@ func assertContactSealed(t *testing.T, product *database, id uint, want string) 
 	}
 }
 
-// assembleContacts assembles a product with key material and brings
-// contactModel's table up on it.
 func assembleContacts(t *testing.T) *database {
 	t.Helper()
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
@@ -319,13 +290,8 @@ func assembleContacts(t *testing.T) *database {
 	return product
 }
 
-// TestAnUpdateNamingTheFieldByItsGoNameIsSealed covers the updates that name
-// the sealed column by its Go field name, in a map key or in a Select, and the
-// ones whose Select names it one way while the map names it the other. GORM
-// writes the value in each of them. What is sealed has to be decided on the
-// column GORM resolves the name to: a key read as the text it is misses the
-// column, and a Select entry held against the key as written leaves out a
-// value GORM writes, and either stores the plaintext.
+// TestAnUpdateNamingTheFieldByItsGoNameIsSealed covers the updates that name the sealed column by
+// its Go field name, in a map key or in a Select.
 func TestAnUpdateNamingTheFieldByItsGoNameIsSealed(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -379,9 +345,8 @@ func TestAnUpdateNamingTheFieldByItsGoNameIsSealed(t *testing.T) {
 	}
 }
 
-// TestAnInsertNamingTheFieldByItsGoNameIsSealed covers Create over maps that
-// name the sealed column by its Go field name, alone and under a Select that
-// names the columns either way, for the reason the update case gives.
+// TestAnInsertNamingTheFieldByItsGoNameIsSealed covers Create over maps that name the sealed column
+// by its Go field name, alone and under a Select that names the columns either way.
 func TestAnInsertNamingTheFieldByItsGoNameIsSealed(t *testing.T) {
 	const id = 7
 	cases := []struct {
@@ -416,9 +381,8 @@ func TestAnInsertNamingTheFieldByItsGoNameIsSealed(t *testing.T) {
 	}
 }
 
-// TestAnUpsertAssignmentSealsTheField covers ON CONFLICT DO UPDATE with the
-// assignments given as values, and keeps the form that copies the inserted
-// value working beside it.
+// TestAnUpsertAssignmentSealsTheField covers ON CONFLICT DO UPDATE with the assignments given as
+// values, and keeps the form that copies the inserted value working beside it.
 func TestAnUpsertAssignmentSealsTheField(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)
@@ -449,10 +413,8 @@ func TestAnUpsertAssignmentSealsTheField(t *testing.T) {
 	assertSealed(t, product, row.ID, "all@example.com")
 }
 
-// TestAWriteThisModuleCannotSealIsRefused covers the values that cannot be
-// sealed because they are not values: an SQL expression or a subquery is
-// evaluated by the database, after anything here could have encrypted it. The
-// write is refused, naming the field, and the column keeps what it held.
+// TestAWriteThisModuleCannotSealIsRefused covers the values that cannot be sealed because they are
+// not values: an SQL expression or a subquery is evaluated by the database.
 func TestAWriteThisModuleCannotSealIsRefused(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -508,29 +470,20 @@ func TestAWriteThisModuleCannotSealIsRefused(t *testing.T) {
 	}
 }
 
-// emailPatch is a struct an update can be written from that is not the model.
-// GORM reads its fields through its own schema, where the email carries no
-// serializer.
 type emailPatch struct {
 	Email string
 }
 
-// sealedEmailPatch is the same struct with the field marked the way the model
-// marks it.
 type sealedEmailPatch struct {
 	Email string `gorm:"serializer:encrypted"`
 }
 
-// indexPatch is a struct an update can be written from that reaches none of the
-// model's sealed columns.
 type indexPatch struct {
 	EmailIndex string
 }
 
-// TestAnUpdateFromAnotherStructMustCarryTheSerializer covers Updates with a
-// struct that is not the model. The values come through that struct's own
-// fields, so a field without the tag would put the plaintext in the model's
-// sealed column; that is refused, and the tagged form is sealed.
+// TestAnUpdateFromAnotherStructMustCarryTheSerializer covers Updates with a struct that is not the
+// model.
 func TestAnUpdateFromAnotherStructMustCarryTheSerializer(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)

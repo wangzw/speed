@@ -12,13 +12,8 @@ import (
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
-// TestOpenRefusesABlankLocatorWhateverTheEnvironmentSays pins Open to the
-// rule the delivered locator is held to. Handed an empty string, this engine's
-// driver does not fail: it assembles a locator out of the PG* variables of the
-// process environment, the local socket and the user the process runs as, and
-// connects to whatever that names — a caller whose replica locator was left
-// empty gets a handle on some other database with no error. Here the
-// environment names a database that answers, and Open still refuses.
+// TestOpenRefusesABlankLocatorWhateverTheEnvironmentSays pins Open to the rule the delivered
+// locator is held to.
 func TestOpenRefusesABlankLocatorWhateverTheEnvironmentSays(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	capability, err := runAssembly(t, dsn)

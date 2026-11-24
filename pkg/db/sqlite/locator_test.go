@@ -8,11 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/db"
 )
 
-// TestOpenRefusesABlankLocator pins Open to the rule the delivered locator is
-// held to. This engine's driver reads an empty locator as a temporary
-// database private to each connection, so over a pool a table created on one
-// connection is missing on the others; a caller that means an in-memory
-// database writes :memory:, and a blank one is refused.
+// TestOpenRefusesABlankLocator pins Open to the rule the delivered locator is held to.
 func TestOpenRefusesABlankLocator(t *testing.T) {
 	instance := deliver(t, filepath.Join(t.TempDir(), "delivered.db"))
 	for _, blank := range []string{"", "  "} {

@@ -18,12 +18,6 @@ import (
 	"github.com/vislake/speed/pkg/internal/dbtest"
 )
 
-// These cases supply an instance for this subpackage's module, named with the
-// constant the package exports, and drive it through the command tree the way a
-// program does.
-
-// hostDatabase is an implementation of db.Database that the host wrote: a handle
-// and the engine behind it. It is not a product of this module's New.
 type hostDatabase struct{ handle *gorm.DB }
 
 func (d *hostDatabase) DB() *gorm.DB                       { return d.handle }
@@ -36,19 +30,12 @@ func (d *hostDatabase) Open(context.Context, string) (*gorm.DB, error) {
 
 var _ db.Database = (*hostDatabase)(nil)
 
-// catalog declares the migration the cases look for in the database: applied
-// behind an instance the run accepts, absent behind one it refuses.
 func catalog() core.Module {
 	return core.Module{Name: "catalog", Resources: []any{db.Migrations{FS: fstest.MapFS{
 		"sqlite/0001_create_widgets.sql": &fstest.MapFile{Data: []byte(createWidgets)},
 	}}}}
 }
 
-// builtByNew builds this module's product the way the design directs a host that
-// wants to supply one: by this module's own New, in a registry made for the
-// purpose, over a configuration naming the database at dsn. The reading face is
-// loaded from that configuration and supplied to the config module of the
-// registry, which is where New takes it from.
 func builtByNew(t *testing.T, dsn string) db.Database {
 	t.Helper()
 	module := sqlite.Module()
@@ -75,15 +62,6 @@ func builtByNew(t *testing.T, dsn string) db.Database {
 	return database
 }
 
-// execute runs the registry as one command that takes every registered module in
-// and drives the whole lifecycle, and returns the capability the probe took up
-// once the run has reached Init, which is after the migrations are applied. A
-// startup that failed returns the error it ended with. A run that started is shut
-// down when the case ends.
-//
-// The command line is the process's, and a test binary carries arguments of its
-// own, so they are taken away while the tree reads them; the cases here
-// therefore do not run in parallel.
 func execute(t *testing.T, reg *core.Registry, p *probe) (db.Database, error) {
 	t.Helper()
 	previous := os.Args
@@ -122,17 +100,8 @@ func execute(t *testing.T, reg *core.Registry, p *probe) (db.Database, error) {
 	return instance, nil
 }
 
-// TestASuppliedInstanceThisModulesNewBuiltIsMigratedAndDelivered supplies the
-// instance this module's own New built, under the name this package exports, and
-// runs the assembly over a configuration that names no locator at all. The
-// instance comes from either place a host gets one: a New run in a registry of
-// its own making, and the shared test fixture, which runs it the same way.
-//
-// A Prepare that ran for the module would have failed the startup on the missing
-// locator, and a New would have opened a database nobody configured: the run
-// getting to Init on the supplied database is what shows neither ran. The
-// dependant takes up that instance, and the migration the catalog declares is
-// applied through its handle.
+// TestASuppliedInstanceThisModulesNewBuiltIsMigratedAndDelivered supplies the instance this
+// module's own New built, under the name this package exports.
 func TestASuppliedInstanceThisModulesNewBuiltIsMigratedAndDelivered(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -164,11 +133,8 @@ func TestASuppliedInstanceThisModulesNewBuiltIsMigratedAndDelivered(t *testing.T
 	}
 }
 
-// TestAForeignInstanceSuppliedForThisModuleFailsTheStartup supplies an
-// implementation of db.Database the host wrote, under the name this package
-// exports: the assembly fails with db.ErrForeignInstance, no migration has been
-// applied to the database behind it, and the pool behind it is released by the
-// rollback.
+// TestAForeignInstanceSuppliedForThisModuleFailsTheStartup supplies an implementation of
+// db.Database the host wrote, under the name this package exports.
 func TestAForeignInstanceSuppliedForThisModuleFailsTheStartup(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "foreign.db")
 	handle := open(t, path)

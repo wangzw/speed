@@ -19,15 +19,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// These cases are about the instance a host supplies for this module in place of
-// the one its New builds. They live in package db because the check is made on
-// the unexported product type, and because a product of another implementation
-// can only be built from here.
-
-// plainSQLite opens the SQLite database at path the way a host that wrote its
-// own Database does: a plain GORM handle, with none of what this module installs
-// on the ones it opens. The pool is released when the case ends, whether or not
-// the drive under test released it first.
 func plainSQLite(t *testing.T, path string) *gorm.DB {
 	t.Helper()
 	handle, err := gorm.Open(sqlite.Open(path), &gorm.Config{Logger: logger.Discard})
@@ -44,9 +35,6 @@ func plainSQLite(t *testing.T, path string) *gorm.DB {
 	return handle
 }
 
-// statementCounter counts the statements that reach a handle on the native SQL
-// and the Row chains, the two every statement of the migration run takes: the
-// lookup of the record table, its creation, and each migration's body.
 type statementCounter struct{ seen atomic.Int64 }
 
 func (*statementCounter) Name() string { return "statement-counter" }
@@ -59,9 +47,6 @@ func (c *statementCounter) Initialize(handle *gorm.DB) error {
 	return handle.Callback().Row().Before("gorm:row").Register("statement-counter:row", count)
 }
 
-// counted installs a statementCounter on a handle. A case that finds it at zero
-// knows nothing was issued on the handle, which is more than that nothing
-// changed in the database behind it.
 func counted(t *testing.T, handle *gorm.DB) *statementCounter {
 	t.Helper()
 	counter := &statementCounter{}
@@ -71,8 +56,6 @@ func counted(t *testing.T, handle *gorm.DB) *statementCounter {
 	return counter
 }
 
-// sectionOf is the configuration naming the database at dsn, under the namespace
-// the Spec mounts its input items in.
 func sectionOf(spec Spec, dsn string) string {
 	body := fmt.Sprintf(`{"dsn":%q}`, dsn)
 	parts := strings.Split(spec.ConfigNamespace, ".")
@@ -82,12 +65,6 @@ func sectionOf(spec Spec, dsn string) string {
 	return body
 }
 
-// builtByNew builds a product the way a host does that wants to supply an
-// instance of its own making: it runs the module's own New, in a registry made
-// for the purpose, over a configuration naming the database at dsn. That
-// registry holds the config module with a reading face supplied to it, which is
-// what the New reads its section from, and the modules given, which is how a
-// case gives the New declared plugins to install.
 func builtByNew(t *testing.T, spec Spec, dsn string, modules ...core.Module) *database {
 	t.Helper()
 	module := NewModule(spec)
@@ -137,8 +114,6 @@ func driveCatching(t *testing.T, reg *core.Registry, drive core.Drive) error {
 	return reg.Drive(t.Context(), drive)
 }
 
-// declaredOn lists the plugins on a handle that some module declared, sorted:
-// the marks this package keeps in the same table are its own.
 func declaredOn(handle *gorm.DB) []string {
 	names := make([]string, 0, len(handle.Plugins))
 	for name := range handle.Plugins {
@@ -151,27 +126,12 @@ func declaredOn(handle *gorm.DB) []string {
 	return names
 }
 
-// pluginDeclarer is a module that declares one plugin and nothing else.
 func pluginDeclarer(name string, plugin gorm.Plugin) core.Module {
 	return core.Module{Name: name, Resources: []any{Plugin{Plugin: plugin}}}
 }
 
-// TestMigrateRefusesAnInstanceItsOwnNewDidNotBuild is the refusal itself, driven
-// the way a host meets it: an implementation of Database the host wrote, supplied
-// for this module, and a drive that goes as far as Migrate.
-//
-// Everything the refusal has to leave alone is observed on its own. The counter
-// on the handle says no statement was issued on it, which even the lookup of the
-// record table would break; the mutex is neither built nor taken; and a database
-// reopened afterwards holds neither the migration nor the record table. The
-// sentinel is ErrForeignInstance and not the one a failed migration reports,
-// because it is the host's supply that has to change and no migration file is at
-// fault. And the pool behind the instance is released by the rollback, because
-// once the drive has begun nothing else will.
-//
-// The registry has its reading face, so an implementation that went on past the
-// refusal would reach the run and leave its traces in each of those places, not
-// stop short of it for want of a configuration.
+// TestMigrateRefusesAnInstanceItsOwnNewDidNotBuild is the refusal itself, driven the way a host
+// meets it: an implementation of Database the host wrote, supplied for this module.
 func TestMigrateRefusesAnInstanceItsOwnNewDidNotBuild(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "foreign.db")
 	handle := plainSQLite(t, path)
@@ -229,19 +189,8 @@ func TestMigrateRefusesAnInstanceItsOwnNewDidNotBuild(t *testing.T) {
 	}
 }
 
-// TestTheRefusalIsTheDrivesResultWhenTheStandInCannotGiveItsHandle drives to
-// Migrate over a stand-in supplied for the module that has no handle to
-// release, and holds the drive to ending with the refusal and nothing beside it.
-//
-// One kind is what a test writes by embedding the interface and overriding only
-// the method it reads, so it is among the instances the refusal is most likely
-// to meet: its DB cannot answer. The other kind answers, with a placeholder
-// handle that has no pool behind it. The rollback that follows the refusal
-// reaches Close with either: a Close that called DB, or asked the handle for its
-// pool, unguarded would panic there, and the panic would leave the drive in
-// place of ErrForeignInstance, the one error that says what the host has to
-// change. Close may not report a failure of its own beside the refusal either,
-// since there is no pool for it to have failed on.
+// TestTheRefusalIsTheDrivesResultWhenTheStandInCannotGiveItsHandle drives to Migrate over a stand-
+// in supplied for the module that has no handle to release.
 func TestTheRefusalIsTheDrivesResultWhenTheStandInCannotGiveItsHandle(t *testing.T) {
 	for _, c := range []struct {
 		name     string
@@ -281,15 +230,8 @@ func TestTheRefusalIsTheDrivesResultWhenTheStandInCannotGiveItsHandle(t *testing
 	}
 }
 
-// TestMigrateRefusesEveryShapeOfInstanceItsOwnNewDidNotBuild holds the check to
-// each kind of instance that is not this module's own product, called on the
-// callback itself in a registry that has no reading face at all.
-//
-// That registry is what pins the order: the instance is judged before the
-// configuration is read, so a host that supplied a stand-in and no reader is
-// told about the stand-in, which is the mistake it has to undo. The cases that
-// are not pointers to a product are the ones an unguarded assertion would
-// dereference.
+// TestMigrateRefusesEveryShapeOfInstanceItsOwnNewDidNotBuild holds the check to each kind of
+// instance that is not this module's own product.
 func TestMigrateRefusesEveryShapeOfInstanceItsOwnNewDidNotBuild(t *testing.T) {
 	spec := sqliteSpec()
 	rival := rivalSpec()
@@ -324,16 +266,8 @@ func TestMigrateRefusesEveryShapeOfInstanceItsOwnNewDidNotBuild(t *testing.T) {
 	}
 }
 
-// TestMigrateAcceptsAnInstanceItsOwnNewBuilt is the other half, the instance the
-// design leaves a host who wants to supply a database: this module's own New run
-// in a registry of the host's making, and the product supplied for the module in
-// the registry that is driven.
-//
-// The migration is applied through the handle that product carries, and the
-// counter on it is the positive control for the one in the refusal case: a
-// counter that counted nothing would pass that case without observing anything.
-// The configuration of the driven registry names no locator, so a Prepare that
-// ran for the module would have failed the drive naming the key.
+// TestMigrateAcceptsAnInstanceItsOwnNewBuilt checks that an instance this module's own New built in
+// a registry of the host's making is accepted.
 func TestMigrateAcceptsAnInstanceItsOwnNewBuilt(t *testing.T) {
 	spec := sqliteSpec()
 	path := filepath.Join(t.TempDir(), "built.db")
@@ -367,16 +301,8 @@ func TestMigrateAcceptsAnInstanceItsOwnNewBuilt(t *testing.T) {
 	}
 }
 
-// TestTheCheckJudgesTheOriginAndNotThePluginsOnTheHandle pins the other thing
-// the design says the check is not: a comparison of the plugins on the handle
-// with what the run declares.
-//
-// The instance was built in a registry that declared one plugin, and the driven
-// registry declares another. Both differences go the way the design names — the
-// handle carries a plugin this run never declared, and lacks the one it does —
-// and the drive still succeeds, with the handle exactly as the New left it:
-// supplying installs nothing, and what is on the handle is the host's to answer
-// for.
+// TestTheCheckJudgesTheOriginAndNotThePluginsOnTheHandle pins that the check does
+// not compare the plugins on the handle with what the run declares.
 func TestTheCheckJudgesTheOriginAndNotThePluginsOnTheHandle(t *testing.T) {
 	spec := sqliteSpec()
 	product := builtByNew(t, spec, filepath.Join(t.TempDir(), "built.db"),
@@ -400,14 +326,8 @@ func TestTheCheckJudgesTheOriginAndNotThePluginsOnTheHandle(t *testing.T) {
 	}
 }
 
-// TestADriveThatStopsBeforeMigrateDoesNotJudgeTheInstance pins the cost the
-// design accepts: an instance the module's New did not build is refused at
-// Migrate and not before, so a drive that never gets there resolves it and ends
-// without an error.
-//
-// The stub is the very instance an action resolves, and the drive's shutdown
-// releases the pool behind it, which is the Close the instance gets in a drive
-// that went no further than New.
+// TestADriveThatStopsBeforeMigrateDoesNotJudgeTheInstance pins that an instance the
+// module's New did not build is refused at Migrate and not before.
 func TestADriveThatStopsBeforeMigrateDoesNotJudgeTheInstance(t *testing.T) {
 	handle := plainSQLite(t, filepath.Join(t.TempDir(), "foreign.db"))
 	stub := &stubDatabase{handle: handle, dialect: SQLite}
@@ -435,11 +355,7 @@ func TestADriveThatStopsBeforeMigrateDoesNotJudgeTheInstance(t *testing.T) {
 	}
 }
 
-// TestAPlaceholderModuleCarriesAStandInThroughAnyDepth backs the way out the
-// refusal names. The stand-in is supplied to a module that declares only the
-// capability, which has no Migrate to refuse it, and a dependant takes it up in
-// a drive that goes as deep as Init, past the stage at which the engine's own
-// module would have refused it.
+// TestAPlaceholderModuleCarriesAStandInThroughAnyDepth backs the way out the refusal names.
 func TestAPlaceholderModuleCarriesAStandInThroughAnyDepth(t *testing.T) {
 	const placeholder = "db.standin"
 	stub := &stubDatabase{dialect: SQLite}
@@ -469,16 +385,8 @@ func TestAPlaceholderModuleCarriesAStandInThroughAnyDepth(t *testing.T) {
 	}
 }
 
-// TestARollbackBeforeMigrateClosesWhateverWasSupplied drives to an end before
-// Migrate in the two ways one can — a failure in another module's Prepare, and a
-// drive whose depth is Prepare — with each kind of instance supplied for the
-// module, and holds the Close the drive then runs to what it has to do.
-//
-// It must not panic on an instance that has no handle to give, one whose DB
-// cannot answer included, or whose handle has no pool to give, since the panic
-// would replace the failure that started the rollback; it must not report an
-// error of its own, for the same reason; and it must release the pool behind an
-// instance that has one, even though the instance is not this module's product.
+// TestARollbackBeforeMigrateClosesWhateverWasSupplied drives to an end before Migrate in the two
+// ways one can — a failure in another module's Prepare.
 func TestARollbackBeforeMigrateClosesWhateverWasSupplied(t *testing.T) {
 	failure := errors.New("the module that stopped the startup")
 	failing := core.Module{

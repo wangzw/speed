@@ -13,154 +13,80 @@ import (
 	"github.com/vislake/speed/pkg/db"
 )
 
-// scenarioEnv names the scenario to run. It is read from the environment rather
-// than from a positional argument because the configuration loader rejects
-// positional arguments, and it stays outside the host's own prefix so that it is
-// not reported as an input item nobody reads.
+// scenarioEnv names the scenario to run. It is read from the environment because
+// the configuration loader rejects positional arguments, and it stays outside the
+// host's prefix so it is not reported as an input item nobody reads.
 const scenarioEnv = "SPEED_DB_E2E_CASE"
 
-// The scenarios. Each one is a whole run of the host: one process, one registry,
-// one assembly.
 const (
-	// caseFirstMigration is one replica's first start against an empty
-	// database, which two of them make at once under a rendezvous.
-	caseFirstMigration = "first-migration"
-	// caseSerializerRoundTrip writes and reads one encrypted field, in a
-	// process that has done nothing else with the database.
-	caseSerializerRoundTrip = "serializer-round-trip"
-	// caseOneEngineConfigured starts up with one of the two imported
-	// implementations configured.
-	caseOneEngineConfigured = "one-engine-configured"
-	// caseBothEnginesConfigured configures both of them, which is not an
-	// assembly this capability directory can serve.
+	caseFirstMigration        = "first-migration"
+	caseSerializerRoundTrip   = "serializer-round-trip"
+	caseOneEngineConfigured   = "one-engine-configured"
 	caseBothEnginesConfigured = "both-engines-configured"
-	// caseNoEngineConfigured names no engine, while a dependant requires the
-	// capability.
-	caseNoEngineConfigured = "no-engine-configured"
-	// caseMigrateSubcommand runs the migrate command, whose depth is the
-	// migration stage: the migrations are applied and nothing past them
-	// runs.
-	caseMigrateSubcommand = "migrate-subcommand"
-	// caseConnectRefused starts on a PostgreSQL server that refuses the
-	// login, so the startup ends in the database module's New.
-	caseConnectRefused = "connect-refused"
+	caseNoEngineConfigured    = "no-engine-configured"
+	caseMigrateSubcommand     = "migrate-subcommand"
+	caseConnectRefused        = "connect-refused"
 )
 
-// The variables that drive the concurrency scenario, and the paths they carry.
-// Like the scenario selector they stay outside the host's prefix, for the same
-// reason.
 const (
-	// roleEnv is what this replica goes by. It is also the name its locator
-	// gives the sessions it opens, which is what the applied-noop division is
-	// read off afterwards.
-	roleEnv = "SPEED_DB_E2E_ROLE"
-	// rendezvousEnv is the directory the replicas meet in: one file per
-	// replica, written on arrival and watched until every replica is there.
+	roleEnv       = "SPEED_DB_E2E_ROLE"
 	rendezvousEnv = "SPEED_DB_E2E_RENDEZVOUS"
 )
 
-// probeModuleName is the dependant's name in the registry. Nothing else takes
-// part in the migration record table under it, so a row keyed by it is this
-// run's own work.
 const probeModuleName = "probe"
 
-// The markers the concurrency case reads. Each carries the moment it was
-// reached, so that a run in which the replicas overlapped can be told from one
-// in which the second arrived after the first had finished — which is the
-// difference between a run that says something about the mutex and one that says
-// nothing.
+// The markers the concurrency case reads, each with the moment it was reached:
+// that is how a run whose replicas overlapped is told from one where the second
+// arrived after the first had finished.
 const (
-	// markStart is written when this replica has all but reached its
-	// migration stage.
-	markStart = "start"
-	// markApplied is written by the replica whose own session executed the
-	// migration.
+	markStart   = "start"
 	markApplied = "applied"
-	// markNoop is written by the replica that found the work already done.
-	markNoop = "noop"
+	markNoop    = "noop"
 )
 
-// roundTripMarker is written by the serializer scenario once the plaintext it
-// wrote has come back out of the encrypted column. It is written only after the
-// comparison, so the case cannot pass on a run that reached the write and
-// nothing else.
 const roundTripMarker = "dbhost: round-trip ok"
 
-// The two markers the migrate scenario is read by.
 const (
-	// recordedMarker opens the line reporting one row of the migration
-	// record table, the module and the file following it.
 	recordedMarker = "dbhost: recorded"
-	// servedMarker is written when the run reached the serving stage. The
-	// migrate command's depth is the migration stage, so the marker's
-	// absence is what says the depth held: a run that went all the way to
-	// serving applies the same migrations and leaves with the same status,
-	// and nothing else about it differs.
+	// servedMarker's absence is what says the migrate command stopped at the
+	// migration stage: a run that went further leaves the same status and the
+	// same record table.
 	servedMarker = "dbhost: served"
 )
 
-// recordTableName is the table the database module records applied migrations
-// in. The module keeps the name to itself, so the scenario that reads the
-// table back spells it here; the two are held together by the case, which
-// fails on a report that carries no rows.
+// recordTableName is the name the database module keeps to itself, spelled here
+// by the scenario that reads the table back.
 const recordTableName = "db_migrations"
 
-// appliersTable is where the migration records the application_name of the
-// session that executed it.
 const appliersTable = "dbhost_appliers"
 
-// replicas is how many processes the concurrency scenario starts, and
-// rendezvousTimeout bounds the wait for the last of them, so that a replica
-// which never starts fails the run rather than hanging it.
 const (
 	replicas          = 2
 	rendezvousTimeout = 60 * time.Second
 )
 
-// migrationFiles carries the migration set this host declares. The embedded
-// directory holds one subdirectory per dialect, which is the shape the
-// Migrations resource asks for: each file sits under the directory named after
-// the engine it is written for, named by the dialect rather than by any
-// constant this file could read, so a run configured on an engine with no
-// subdirectory here declares no migrations at all.
+// migrationFiles holds one subdirectory per dialect, the shape the Migrations
+// resource asks for.
 //
 //go:embed migrations
 var migrationFiles embed.FS
 
-// declaredMigrations is the declaration this host hands the database module.
-//
-// The declaration is unconditional and the dialect decides what it contributes:
-// a run reads the subdirectory named after the engine it was configured on, and
-// a run on an engine with no subdirectory here declares zero migrations for it
-// — which is how a module states that it does not support an engine, and is not
-// a failure.
-//
-// The subdirectory is reached rather than spelled into the resource because the
-// module reads the set relative to its own root: an FS whose top level is this
-// package's own directory would put every dialect one level too deep, and the
-// run would find no migrations at all and say nothing about it.
+// declaredMigrations reaches the migrations subdirectory rather than handing the
+// whole FS: the module reads the set relative to its root, so an FS rooted one
+// level too high would declare no migrations at all.
 func declaredMigrations() db.Migrations {
 	set, err := fs.Sub(migrationFiles, "migrations")
 	if err != nil {
-		// The tree is embedded in this package, so this is a defect in the
-		// file that names it rather than anything a run can meet. It is
-		// raised where it is written, the treatment this module gives a
-		// defective Spec, because a host would have nothing to handle.
 		panic("dbhost: the embedded migrations are not where this file puts them: " + err.Error())
 	}
 	return db.Migrations{FS: set}
 }
 
-// probe is the dependant's product, carrying what a scenario has to hand from
-// one stage to the next: the capability, and the name this replica's sessions go
-// by.
 type probe struct {
 	capability db.Database
 	identity   string
 }
 
-// probeNew takes up the capability and runs the part of a scenario that falls in
-// the construction stage.
 func probeNew(_ context.Context, reg *core.Registry) (any, error) {
 	capability, err := core.Resolve[db.Database](reg)
 	if err != nil {
@@ -180,9 +106,6 @@ func probeNew(_ context.Context, reg *core.Registry) (any, error) {
 	return p, nil
 }
 
-// probeMigrate reports what this replica did with the migration, which can only
-// be said once the migration has been applied — and a dependant's Migrate runs
-// after the one that applies them, by the dependency it declared.
 func probeMigrate(_ context.Context, _ *core.Registry, instance any) error {
 	p, ok := instance.(*probe)
 	if !ok || p == nil {
@@ -197,14 +120,9 @@ func probeMigrate(_ context.Context, _ *core.Registry, instance any) error {
 	return nil
 }
 
-// reportRecordedMigrations prints what the migration record table holds, one
-// line per row.
-//
-// It is the migrate command's whole observation of what that command did. A
-// dependant's Migrate runs after the one that applied them, so the table is
-// complete here, and naming the module and the file of each row is what lets
-// the case say this host's own declaration was applied rather than that some
-// migration or other ran.
+// reportRecordedMigrations prints the migration record table, one line per row,
+// naming module and file so the case can tell this host's own declaration from
+// some other migration.
 func (p *probe) reportRecordedMigrations() error {
 	var rows []struct {
 		Module string
@@ -221,14 +139,8 @@ func (p *probe) reportRecordedMigrations() error {
 }
 
 // joinReplicas meets the other replica at the rendezvous and marks the moment
-// this process has all but reached its migration stage.
-//
-// The marker is written here, in the construction stage, because that is the
-// last point of a run this host controls: the migration is the database
-// module's own callback, and a dependant's Migrate runs after it, once the mutex
-// has been given up. Every construction callback of every module runs before the
-// first Migrate callback, so a marker written here precedes this process's
-// migration — which is what the overlap assertion reads.
+// this process has all but reached its migration stage. Construction is the last
+// point of a run this host controls, so the marker precedes the migration.
 func (p *probe) joinReplicas() error {
 	identity, err := p.sessionIdentity()
 	if err != nil {
@@ -254,11 +166,8 @@ func (p *probe) joinReplicas() error {
 	return nil
 }
 
-// sessionIdentity reads the name this replica's connections go by.
-//
-// It is the session's own answer rather than a value this host remembers,
-// because that is what the migration records: both are set from the same locator
-// at connection time, and reading one back is what keeps the two from drifting.
+// sessionIdentity reads the name this replica's connections go by: the session's
+// own answer, which is what the migration records.
 func (p *probe) sessionIdentity() (string, error) {
 	var identity string
 	if err := p.capability.DB().Raw(`SELECT current_setting('application_name')`).Scan(&identity).Error; err != nil {
@@ -268,16 +177,8 @@ func (p *probe) sessionIdentity() (string, error) {
 }
 
 // reportWhoApplied prints the marker the concurrency case divides the replicas
-// by: applied when this replica's own session executed the migration, noop when
-// it found the work already done.
-//
-// The row the migration wrote is the whole of the evidence, and it has to be: a
-// replica that stood down sees the same widgets table, the same single row in
-// the record table and a timestamp no later than its own migration stage began.
-// Anything else either replica could observe after the fact is identical on both
-// sides, so a run with no mutex at all would produce the same picture as one that
-// serialised its replicas — except that both of them would have written this
-// row.
+// by. The row the migration wrote is the whole of the evidence: everything else
+// a replica could observe after the fact is identical on both sides.
 func (p *probe) reportWhoApplied() error {
 	var appliers []string
 	if err := p.capability.DB().Raw(`SELECT role FROM ` + appliersTable).Scan(&appliers).Error; err != nil {
@@ -297,30 +198,16 @@ func (p *probe) reportWhoApplied() error {
 	return nil
 }
 
-// roundTripPlaintext is what the serializer scenario writes into an encrypted
-// field and reads back.
 const roundTripPlaintext = "dbhost-e2e-plaintext"
 
-// secret is the model the round-trip travels through. Its only interesting
-// property is the serializer tag: GORM resolves the name against its
-// process-wide table the first time a model carrying it is parsed, and parsing
-// this model is the first thing in this process that needs the serializer to be
-// there.
 type secret struct {
 	ID    uint
 	Value string `gorm:"serializer:encrypted"`
 }
 
 // encryptedRoundTrip writes one model through the delivered handle and reads it
-// back.
-//
-// This process is the whole of the observation. The serializer lives in GORM's
-// process-wide table, so a test binary that had already run any other case would
-// find it there whatever the assembly did; in a process that has just started,
-// the table is empty until the database module puts the serializer in it. An
-// implementation that registered it after delivering the handle therefore fails
-// here, with the serializer unresolved, on the first statement that carries a
-// field marked with it.
+// back. The process is fresh, so a serializer registered after the handle was
+// delivered is unresolved here, on the first statement that carries it.
 func (p *probe) encryptedRoundTrip() error {
 	handle := p.capability.DB()
 	if err := handle.AutoMigrate(&secret{}); err != nil {
@@ -341,19 +228,16 @@ func (p *probe) encryptedRoundTrip() error {
 	return nil
 }
 
-// meetOtherReplicas blocks until every replica has reached this point, so that
-// they go for the migration mutex together rather than one after the other.
+// meetOtherReplicas blocks until every replica has reached this point, so they
+// go for the migration mutex together.
 func meetOtherReplicas(role string) error {
 	dir := os.Getenv(rendezvousEnv)
 	if dir == "" {
 		return fmt.Errorf("%s is not set, and this scenario needs the directory the replicas meet in",
 			rendezvousEnv)
 	}
-	// The directory is named by the process that started this one, so the file
-	// is created through a root that holds it rather than by joining the two
-	// pieces into a path: a name that tried to leave the directory — a
-	// separator or a parent reference in it — is refused here, and nothing this
-	// host is handed can put a file somewhere else.
+	// Opened as a root rather than joined into a path, so a role that tried to
+	// leave the directory is refused.
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return fmt.Errorf("opening the rendezvous directory %s: %w", dir, err)
@@ -387,14 +271,10 @@ func meetOtherReplicas(role string) error {
 		replicas, rendezvousTimeout)
 }
 
-// scenario reports which scenario this run was asked for.
 func scenario() string { return os.Getenv(scenarioEnv) }
 
-// mark prints a marker and the moment this process reached it.
-//
-// The moments are what the overlap assertion reads: without them a run in which
-// one replica arrived after the other had finished applying is
-// indistinguishable from one in which the two overlapped.
+// mark prints a marker and the moment this process reached it, which is what the
+// overlap assertion reads.
 func mark(name string) {
 	say(name + "\t" + time.Now().UTC().Format(time.RFC3339Nano))
 }

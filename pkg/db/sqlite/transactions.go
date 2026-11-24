@@ -10,17 +10,14 @@ import (
 	sqlitedriver "github.com/glebarez/sqlite"
 )
 
-// driverName is the database/sql driver every connection this engine opens
-// goes through: the pure-Go driver, with its transactions begun and ended by
-// this subpackage.
+// driverName is the database/sql driver every connection this engine opens goes
+// through: the pure-Go driver, with its transactions begun and ended here.
 const driverName = "speed-db-sqlite"
 
 func init() { sql.Register(driverName, transactionDriver{Driver: registeredDriver()}) }
 
-// registeredDriver is the driver the SQLite binding registers under its own
-// name. It is taken from the registration rather than built here, so the
-// functions a host registers with the driver package reach these connections
-// too.
+// registeredDriver is taken from the binding's own registration, so functions a
+// host registers with the driver package reach these connections too.
 func registeredDriver() driver.Driver {
 	pool, err := sql.Open(sqlitedriver.DriverName, "")
 	if err != nil {
@@ -31,31 +28,15 @@ func registeredDriver() driver.Driver {
 	return inner
 }
 
-// transactionDriver opens connections through the SQLite driver and hands each
-// one back with its transactions begun and ended here.
+// transactionDriver opens connections through the SQLite driver, beginning
+// transactions in the locator's mode.
 //
-// A transaction begins in the mode beginStatement gives the locator —
-// IMMEDIATE unless the locator names another — so that one reading before it
-// writes waits for a concurrent writer within the busy timeout instead of
-// being refused the write lock at once. On a connection whose query_only is
-// on, which SQLite refuses every BEGIN but a deferred one, it begins DEFERRED.
-//
-// SQLite keeps a transaction open when it refuses to commit it — a deferred
-// foreign key that the COMMIT finds violated is the ordinary case — so that
-// the application can repair it and commit again. database/sql does not know
-// that: once Commit returns, the transaction is over for it and the connection
-// goes back to the pool, still inside the transaction. Every later statement
-// that lands on that connection then reports success and is never committed —
-// another connection does not see it, and it is gone when the connection
-// closes — and the next transaction begun on it fails outright. A transaction
-// whose COMMIT was refused is therefore rolled back on its own connection
-// before the connection is released, which is what the failed commit reported
-// to the caller already says happened.
+// SQLite keeps a transaction open when it refuses to commit it, while
+// database/sql treats Commit as final and returns the connection to the pool
+// still inside it. A refused COMMIT is therefore rolled back on its own
+// connection before the connection is released.
 type transactionDriver struct{ driver.Driver }
 
-// Open opens one connection. A locator whose _txlock the driver does not know
-// is refused, and so is a connection that cannot run a statement under a
-// context: it is the one form this wrapper begins and ends transactions in.
 func (d transactionDriver) Open(name string) (driver.Conn, error) {
 	conn, err := d.Driver.Open(name)
 	if err != nil {
@@ -74,17 +55,13 @@ func (d transactionDriver) Open(name string) (driver.Conn, error) {
 }
 
 // transactionConn is one SQLite connection whose transactions begin in the
-// locator's mode and end on a refused COMMIT. Each interface database/sql looks
-// for on a connection is answered by the connection underneath; one the driver
-// does not implement is answered the way database/sql treats its absence.
+// locator's mode and end on a refused COMMIT.
 type transactionConn struct {
 	driver.Conn
 	execer  driver.ExecerContext
 	locator sqliteLocator
 }
 
-// The interfaces database/sql asserts on a connection, so a drift from them
-// is caught where the type is written.
 var (
 	_ driver.ConnBeginTx        = transactionConn{}
 	_ driver.ConnPrepareContext = transactionConn{}
@@ -93,23 +70,14 @@ var (
 	_ driver.Pinger             = transactionConn{}
 )
 
-// Begin begins a transaction. database/sql calls BeginTx on this connection;
-// Begin is here because driver.Conn requires it, and it takes the same path.
+// Begin is required by driver.Conn; it takes the same path as BeginTx.
 func (c transactionConn) Begin() (driver.Tx, error) {
 	return c.BeginTx(context.Background(), driver.TxOptions{})
 }
 
-// BeginTx begins a transaction with the statement beginStatement gives, run
-// under no context as the driver runs its own; database/sql rolls the
-// transaction back when ctx ends.
-//
-// SQLite begins an IMMEDIATE or EXCLUSIVE transaction on a database it opened
-// read-only as a read transaction, but refuses one outright on a connection
-// whose query_only is on. Such a connection writes nothing in any transaction,
-// so when that is why the BEGIN was refused, the transaction begins DEFERRED
-// instead, whatever mode the locator names. The connection is asked only then:
-// a locator's _pragma turns query_only on for every connection opened on it,
-// and a statement turns it on or off for the one it runs on.
+// BeginTx begins a transaction with the statement beginStatement gives. A
+// connection whose query_only is on refuses every BEGIN but a deferred one, so
+// that refusal is retried as DEFERRED whatever mode the locator names.
 func (c transactionConn) BeginTx(_ context.Context, opts driver.TxOptions) (driver.Tx, error) {
 	statement, err := beginStatement(c.locator, opts.ReadOnly)
 	if err != nil {
@@ -128,8 +96,7 @@ func (c transactionConn) BeginTx(_ context.Context, opts driver.TxOptions) (driv
 }
 
 // queryOnly reports whether the connection's query_only is on. A connection
-// that does not answer is taken for one whose query_only is off, so the BEGIN
-// it was refused is the error the caller gets.
+// that does not answer is taken for one whose query_only is off.
 func (c transactionConn) queryOnly() bool {
 	queryer, ok := c.Conn.(driver.QueryerContext)
 	if !ok {
@@ -148,7 +115,6 @@ func (c transactionConn) queryOnly() bool {
 	return ok && on != 0
 }
 
-// PrepareContext prepares a statement.
 func (c transactionConn) PrepareContext(ctx context.Context, query string) (driver.Stmt, error) {
 	if preparer, ok := c.Conn.(driver.ConnPrepareContext); ok {
 		return preparer.PrepareContext(ctx, query)
@@ -156,12 +122,10 @@ func (c transactionConn) PrepareContext(ctx context.Context, query string) (driv
 	return c.Prepare(query)
 }
 
-// ExecContext runs a statement that returns no rows.
 func (c transactionConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
 	return c.execer.ExecContext(ctx, query, args)
 }
 
-// QueryContext runs a statement that returns rows.
 func (c transactionConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
 	if queryer, ok := c.Conn.(driver.QueryerContext); ok {
 		return queryer.QueryContext(ctx, query, args)
@@ -169,7 +133,6 @@ func (c transactionConn) QueryContext(ctx context.Context, query string, args []
 	return nil, driver.ErrSkip
 }
 
-// Ping checks that the connection answers.
 func (c transactionConn) Ping(ctx context.Context) error {
 	if pinger, ok := c.Conn.(driver.Pinger); ok {
 		return pinger.Ping(ctx)
@@ -177,15 +140,11 @@ func (c transactionConn) Ping(ctx context.Context) error {
 	return nil
 }
 
-// transaction is a transaction transactionConn began, ended by its own
-// statements on the connection it runs on.
 type transaction struct{ execer driver.ExecerContext }
 
-// Commit commits the transaction, and rolls it back when the COMMIT is
-// refused. The refusal is what the caller is told; the rollback's own error is
-// not, because SQLite answers it with "no transaction is active" whenever the
-// refusal had ended the transaction already, and in every other case the
-// caller's statement has failed either way.
+// Commit rolls the transaction back when the COMMIT is refused, and reports
+// only the refusal: SQLite answers the rollback with "no transaction is active"
+// whenever the refusal had already ended the transaction.
 func (t transaction) Commit() error {
 	err := t.run("COMMIT")
 	if err != nil {
@@ -194,10 +153,8 @@ func (t transaction) Commit() error {
 	return err
 }
 
-// Rollback rolls the transaction back.
 func (t transaction) Rollback() error { return t.run("ROLLBACK") }
 
-// run runs one statement of the transaction's own.
 func (t transaction) run(statement string) error {
 	_, err := t.execer.ExecContext(context.Background(), statement, nil)
 	return err

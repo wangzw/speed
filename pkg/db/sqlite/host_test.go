@@ -16,29 +16,12 @@ import (
 	"github.com/vislake/speed/pkg/db/sqlite"
 )
 
-// hostIdentityPrefix names the environment variables a case's configuration
-// would come from. Each case writes its own JSON primary source; the prefix
-// keeps it from picking up a variable meant for another assembly.
 const hostIdentityPrefix = "SPEEDDBSQLITETEST"
 
-// createWidgets is a migration that fails loudly if it is ever applied twice:
-// there is no IF NOT EXISTS on it.
 const createWidgets = `CREATE TABLE widgets (id INTEGER NOT NULL, PRIMARY KEY (id))`
 
-// TestTheSQLiteModuleDeliversTheCapability starts a real assembly around this
-// subpackage's module and looks at what it delivered.
-//
-// Everything about it is real: the configuration loader over a JSON primary
-// source, the registry, the lifecycle driver and a dependant that resolves the
-// capability the way one does. Going through all of it is the point — a
-// descriptor whose callbacks are wired to each other, whose dialect names the
-// migration subdirectory and whose driver reads the configured locator cannot
-// be told from one that only looks right by any case that examines the
-// descriptor alone, and the difference shows up as tables that never appear.
-//
-// The migration is declared under the dialect's own subdirectory, so a module
-// reporting the wrong dialect applies nothing and is caught here rather than at
-// a host's first start.
+// TestTheSQLiteModuleDeliversTheCapability starts a real assembly around this subpackage's module
+// and looks at what it delivered.
 func TestTheSQLiteModuleDeliversTheCapability(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "delivered.db")
 	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q}}}`, dsn)
@@ -58,8 +41,6 @@ func TestTheSQLiteModuleDeliversTheCapability(t *testing.T) {
 	previous := os.Args
 	os.Args = []string{"sqlite.test"}
 
-	// One command taking every registered module in and driving the whole
-	// lifecycle, which is the tree a host with a single command writes.
 	app := config.NewApp(reg)
 	app.Root().IncludeAll()
 	app.Root().Do(core.StageServe, nil)
@@ -102,26 +83,11 @@ func TestTheSQLiteModuleDeliversTheCapability(t *testing.T) {
 	}
 }
 
-// load builds the reader a real assembly hands its modules: the actual
-// configuration loader over a JSON primary source holding body.
-//
-// It is the loader itself rather than a stand-in, because what the case above
-// it observes belongs to the loader — the manifest accepts exactly the keys the
-// module declares, and an undeclared one is refused there. A stand-in reader
-// handing back a struct the test wrote would agree with any declaration at all.
-//
-// It is the loading step on its own, with no lifecycle driven to reach it. The
-// command line is given as empty and the prefix is one no machine carries
-// variables under, so body is the whole of what a case configures and the
-// primary source is the only place an undeclared key can come from.
 func load(t *testing.T, body string, modules ...core.Module) (config.Reader, error) {
 	t.Helper()
 	return config.Load(t.Context(), assembly(t, body, modules...), nil)
 }
 
-// assembly builds the registry a case runs on: the config module the command
-// tree supplies the reader to, the transports the primary source arrives
-// through, the host identity that locates it, and the modules the case adds.
 func assembly(t *testing.T, body string, modules ...core.Module) *core.Registry {
 	t.Helper()
 	locator := filepath.Join(t.TempDir(), "config.json")
@@ -143,13 +109,6 @@ func assembly(t *testing.T, body string, modules ...core.Module) *core.Registry 
 	return reg
 }
 
-// probe is a module that takes up the database capability the way a dependant
-// does, and holds the lifecycle open while a case looks at what it took up.
-//
-// It takes the capability in its own New, which is where a dependant's first
-// use of it sits, and reports reaching Init: Init runs after Migrate, so a host
-// whose Init has been reached has its migrations applied, and a case that
-// looked earlier would be racing the stage it means to observe.
 type probe struct {
 	delivered chan db.Database
 	migrated  chan struct{}

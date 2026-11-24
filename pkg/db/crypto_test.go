@@ -9,9 +9,8 @@ import (
 	"testing"
 )
 
-// The root keys these cases derive from. They are values rather than secrets:
-// what is observed is that the material is a function of them, and of nothing
-// else.
+// The root keys these cases derive from. They are values rather than secrets: what is
+// observed is that the material is a function of them, and of nothing else.
 const (
 	firstRootKey  = "the-root-key-of-the-cases"
 	secondRootKey = "another-root-key"
@@ -28,13 +27,8 @@ func ringOver(t *testing.T, cfg Config) *keyRing {
 	return ring
 }
 
-// TestBlindIndexSubkeyDiffersFromEncryptionSubkey pins that one root key yields
-// two unrelated subkeys.
-//
-// The two purposes are what keeps a leak of one column from being a leak of the
-// other: a ciphertext and a digest of the same value are computed under keys
-// that share nothing but their origin. A derivation that answered both with one
-// material passes any single-purpose case and fails here.
+// TestBlindIndexSubkeyDiffersFromEncryptionSubkey pins that one root key yields two unrelated
+// subkeys.
 func TestBlindIndexSubkeyDiffersFromEncryptionSubkey(t *testing.T) {
 	encryption, err := deriveSubkey(firstRootKey, encryptionPurpose)
 	if err != nil {
@@ -62,13 +56,8 @@ func TestBlindIndexSubkeyDiffersFromEncryptionSubkey(t *testing.T) {
 	}
 }
 
-// TestTheSameRootKeyAlwaysDerivesTheSameSubkeys pins what makes a configured
-// root key usable across a deployment.
-//
-// Every replica, every restart and every build has to arrive at the same
-// material. A derivation that read anything else — a random salt, the process,
-// the clock — would produce a ring that opens only what it wrote itself, and
-// the failure is a read error on rows that were written correctly.
+// TestTheSameRootKeyAlwaysDerivesTheSameSubkeys pins what makes a configured root key usable across
+// a deployment.
 func TestTheSameRootKeyAlwaysDerivesTheSameSubkeys(t *testing.T) {
 	first := ringOver(t, Config{EncryptionKey: firstRootKey})
 	same := ringOver(t, Config{EncryptionKey: firstRootKey})
@@ -94,15 +83,8 @@ func TestTheSameRootKeyAlwaysDerivesTheSameSubkeys(t *testing.T) {
 	}
 }
 
-// TestDecryptionRefusesWhatNoKeyOpens pins the three shapes a column can take
-// without a key to open it.
-//
-// All three are data errors rather than process errors: a column another
-// deployment wrote, a value an edit or a truncation damaged, a column that was
-// never this module's. Each has to come back as an error on the read, because
-// the alternative — a panic, or a plaintext assembled from bytes that never
-// authenticated — turns a bad row into either an outage or a silent wrong
-// value.
+// TestDecryptionRefusesWhatNoKeyOpens pins the three shapes a column can take without a key to open
+// it.
 func TestDecryptionRefusesWhatNoKeyOpens(t *testing.T) {
 	ring := ringOver(t, Config{EncryptionKey: firstRootKey})
 	foreign := ringOver(t, Config{EncryptionKey: secondRootKey})
@@ -127,8 +109,6 @@ func TestDecryptionRefusesWhatNoKeyOpens(t *testing.T) {
 	}
 }
 
-// digestUnder is HMAC-SHA256 as one subkey computes it. A case needs it to name
-// the digest it expects the blind index not to be.
 func digestUnder(subkey []byte, plaintext string) string {
 	digest := hmac.New(sha256.New, subkey)
 	digest.Write([]byte(plaintext))

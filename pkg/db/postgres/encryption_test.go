@@ -15,14 +15,11 @@ import (
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
-// contact is a model with one sealed column, the shape a host's PII takes.
 type contact struct {
 	ID    uint
 	Email string `gorm:"serializer:encrypted"`
 }
 
-// encryptedAssembly starts a host on this engine with a root key configured
-// and the contacts table in place.
 func encryptedAssembly(t *testing.T) db.Database {
 	t.Helper()
 	capability, err := runAssemblyWith(t, context.Background(), map[string]any{
@@ -38,8 +35,6 @@ func encryptedAssembly(t *testing.T) db.Database {
 	return capability
 }
 
-// storedEmail reads the email column of one row with native SQL, which is the
-// only way to see what this engine holds rather than what the model makes of it.
 func storedEmail(t *testing.T, capability db.Database, id uint) sql.NullString {
 	t.Helper()
 	var stored sql.NullString
@@ -49,8 +44,6 @@ func storedEmail(t *testing.T, capability db.Database, id uint) sql.NullString {
 	return stored
 }
 
-// assertSealedOnThisEngine holds one row to a sealed column that reads back as
-// the plaintext through the model.
 func assertSealedOnThisEngine(t *testing.T, capability db.Database, id uint, want string) {
 	t.Helper()
 	if stored := storedEmail(t, capability, id); !stored.Valid || strings.Contains(stored.String, want) {
@@ -65,10 +58,8 @@ func assertSealedOnThisEngine(t *testing.T, capability db.Database, id uint, wan
 	}
 }
 
-// TestEncryptedWritesSealOnThisEngine runs the write paths the root package's
-// cases hold SQLite to against this engine, whose insert and upsert take a
-// RETURNING clause and a different conflict syntax: the two engines deliver one
-// capability and have to seal the same writes.
+// TestEncryptedWritesSealOnThisEngine runs the write paths the root package's cases hold SQLite to
+// against this engine.
 func TestEncryptedWritesSealOnThisEngine(t *testing.T) {
 	capability := encryptedAssembly(t)
 	handle := capability.DB()
@@ -122,8 +113,6 @@ func TestEncryptedWritesSealOnThisEngine(t *testing.T) {
 	assertSealedOnThisEngine(t, capability, row.ID, "upserted@example.com")
 }
 
-// assertRowsRefused holds Rows over a statement to the refusal a sealed column
-// read that way gets.
 func assertRowsRefused(t *testing.T, statement *gorm.DB) {
 	t.Helper()
 	rows, err := statement.Rows()
@@ -136,10 +125,8 @@ func assertRowsRefused(t *testing.T, statement *gorm.DB) {
 	t.Errorf("Rows over the model reading the sealed column went through (iteration ended with %v)", rows.Err())
 }
 
-// TestEncryptedReadsOnThisEngine holds the read side to the same rules: a
-// read that would hand back the ciphertext is refused, whether its destination
-// is on the statement or picked after it, and streaming rows of native SQL
-// with ScanRows on the delivered handle opens the field.
+// TestEncryptedReadsOnThisEngine holds the read side to the same rules: a read that would hand back
+// the ciphertext is refused, whether its destination is on the statement or picked after it.
 func TestEncryptedReadsOnThisEngine(t *testing.T) {
 	capability := encryptedAssembly(t)
 	handle := capability.DB()
@@ -178,12 +165,8 @@ func TestEncryptedReadsOnThisEngine(t *testing.T) {
 	}
 }
 
-// TestNamesThisEngineResolvesToTheSealedColumn holds the sealing to the column
-// PostgreSQL resolves a name to. GORM passes a name that arrives already in
-// double quotes through as it stands, and this engine folds an unquoted raw
-// name to lower case, so each of these reaches the sealed column; a raw column
-// written with a Unicode escape reaches it too, and nothing short of parsing
-// SQL can tell, so it is refused.
+// TestNamesThisEngineResolvesToTheSealedColumn holds the sealing to the column PostgreSQL resolves
+// a name to.
 func TestNamesThisEngineResolvesToTheSealedColumn(t *testing.T) {
 	capability := encryptedAssembly(t)
 	handle := capability.DB()
@@ -220,18 +203,12 @@ func TestNamesThisEngineResolvesToTheSealedColumn(t *testing.T) {
 	assertSealedOnThisEngine(t, capability, row.ID, "raw@example.com")
 }
 
-// caseSpelledContact declares, beside its sealed email, an unsealed field on
-// the column EMAIL. GORM quotes every column of a model, and this engine keeps
-// a quoted name as it is written, so the two fields are two columns of the
-// table here, where SQLite would read them as one.
 type caseSpelledContact struct {
 	ID     uint
 	Shadow string `gorm:"column:EMAIL"`
 	Email  string `gorm:"serializer:encrypted"`
 }
 
-// caseSpelledColumns reads both columns of one caseSpelledContact row with
-// native SQL.
 func caseSpelledColumns(t *testing.T, capability db.Database, id uint) (shadow, email string) {
 	t.Helper()
 	row := capability.DB().Raw(`SELECT "EMAIL", email FROM case_spelled_contacts WHERE id = ?`, id).Row()
@@ -241,9 +218,6 @@ func caseSpelledColumns(t *testing.T, capability db.Database, id uint) (shadow, 
 	return shadow, email
 }
 
-// assertCaseSpelled holds one caseSpelledContact row to what its two columns
-// should carry: EMAIL the plaintext of the unsealed field, email a seal the
-// model reads back as the plaintext.
 func assertCaseSpelled(t *testing.T, capability db.Database, id uint, wantShadow, wantEmail string) {
 	t.Helper()
 	shadow, email := caseSpelledColumns(t, capability, id)
@@ -262,13 +236,8 @@ func assertCaseSpelled(t *testing.T, capability db.Database, id uint, wantShadow
 	}
 }
 
-// TestColumnsThatDifferInLetterCaseAreTwoColumnsOnThisEngine covers a model
-// whose unsealed column differs from its sealed one only in letter case. On
-// this engine each field has a column of its own, so a write of the model
-// writes each column once and goes through; a value named by the unsealed
-// field or its column reaches that column in clear; and a raw column this
-// engine folds to lower case reaches the sealed one and is sealed. The reads
-// follow the same resolution.
+// TestColumnsThatDifferInLetterCaseAreTwoColumnsOnThisEngine covers a model whose unsealed column
+// differs from its sealed one only in letter case.
 func TestColumnsThatDifferInLetterCaseAreTwoColumnsOnThisEngine(t *testing.T) {
 	capability := encryptedAssembly(t)
 	handle := capability.DB()
@@ -340,14 +309,13 @@ func TestColumnsThatDifferInLetterCaseAreTwoColumnsOnThisEngine(t *testing.T) {
 	}
 }
 
-// longColumn is a column name longer than the 63 bytes this engine keeps of
-// an identifier; longSpelling is another name with the same first 63 bytes.
+// longColumn is a column name longer than the 63 bytes this engine keeps of an
+// identifier; longSpelling is another name with the same first 63 bytes.
 const (
 	longColumn   = "a_sealed_column_whose_name_runs_on_past_what_this_engine_keeps_of_it"
 	longSpelling = "a_sealed_column_whose_name_runs_on_past_what_this_engine_keeps_another_way"
 )
 
-// longNamedContact seals a column whose name this engine cuts short.
 type longNamedContact struct {
 	ID     uint
 	Secret string `gorm:"column:a_sealed_column_whose_name_runs_on_past_what_this_engine_keeps_of_it;serializer:encrypted"`
@@ -362,11 +330,8 @@ type longNamedView struct {
 	Secret string `gorm:"column:a_sealed_column_whose_name_runs_on_past_what_this_engine_keeps_;serializer:encrypted"`
 }
 
-// TestANameThisEngineCutsShortToTheSealedColumnIsSealed covers a name that
-// reaches the sealed column only because this engine keeps the first 63 bytes
-// of an identifier: GORM writes it as it stands, and the value would be stored
-// in clear under a name that only matches once cut short. A write under such a
-// name is sealed, and a read of it is judged as a read of the sealed column.
+// TestANameThisEngineCutsShortToTheSealedColumnIsSealed covers a name that reaches the sealed
+// column only because this engine keeps the first 63 bytes of an identifier.
 func TestANameThisEngineCutsShortToTheSealedColumnIsSealed(t *testing.T) {
 	if len(longColumn) <= 63 || len(longSpelling) <= 63 || longColumn[:63] != longSpelling[:63] {
 		t.Fatalf("the two names have to share their first 63 bytes and run past them")
@@ -405,16 +370,13 @@ func TestANameThisEngineCutsShortToTheSealedColumnIsSealed(t *testing.T) {
 	}
 }
 
-// lowerView takes the result column this engine names after an unaliased
-// function call.
 type lowerView struct {
 	ID    uint
 	Lower string
 }
 
-// TestAReadUnderAnotherNameOnThisEngine covers the renamed reads where this
-// engine's naming decides the receiving field: an unaliased call is named after
-// its function, so lower(email) lands in a field called Lower.
+// TestAReadUnderAnotherNameOnThisEngine covers the renamed reads where this engine's naming decides
+// the receiving field: an unaliased call is named after its function.
 func TestAReadUnderAnotherNameOnThisEngine(t *testing.T) {
 	capability := encryptedAssembly(t)
 	handle := capability.DB()

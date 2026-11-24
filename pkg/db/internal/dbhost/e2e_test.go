@@ -15,17 +15,6 @@ import (
 	"time"
 )
 
-// The cases run the host as a real child process. What they have to prove is
-// what a real assembly does: which of two imported implementations the
-// configuration selects, what a startup that cannot be served reports, whether a
-// dependant finds the serializer in place by the time it is constructed, and
-// whether two replicas starting at once against an empty database divide into
-// one applier and one no-op. None of that exists inside a test binary, and a
-// real assembly cannot be started in one at all — the configuration loader reads
-// os.Args[1:], which go test has already filled with arguments of its own.
-
-// hostBinary is the compiled host every case runs. It is built once, in
-// TestMain, because building it is by far the slowest thing here.
 var hostBinary string
 
 // runLimit bounds one run of the host. It is generous: exceeding it means the
@@ -34,10 +23,9 @@ var hostBinary string
 // attached.
 const runLimit = 90 * time.Second
 
-// buildLimit bounds the build of the host binary, which compiles this module's
-// dependencies on a cold cache.
 const buildLimit = 5 * time.Minute
 
+// TestMain builds the host binary every case drives and removes it afterwards.
 func TestMain(m *testing.M) {
 	built, err := buildHost()
 	if err != nil {
@@ -49,8 +37,6 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// buildHost compiles the host into a directory of its own and reports where it
-// put it.
 func buildHost() (string, error) {
 	dir, err := os.MkdirTemp("", "dbhost")
 	if err != nil {
@@ -67,16 +53,12 @@ func buildHost() (string, error) {
 	return dir, nil
 }
 
-// outcome is what one run of the host produced.
 type outcome struct {
 	stdout string
 	stderr string
 	code   int
 }
 
-// dbConfig is the configuration document a case writes, in the shape the
-// implementations' schemas declare: each mounts its items under a namespace of
-// its own, and a namespace with a dot in it is nested one level per segment.
 type dbConfig struct {
 	DB dbSection `json:"db"`
 }
@@ -89,11 +71,8 @@ type dbSection struct {
 // engineSection is one implementation's section. The keys are flat inside it,
 // which is what an inlined carrier struct decodes from.
 type engineSection struct {
-	DSN string `json:"dsn,omitempty"`
-	// MaxOpenConns is left out unless a case sets it, so that the default is
-	// what most cases run with.
-	MaxOpenConns int `json:"max-open-conns,omitempty"`
-	// EncryptionKey is left out unless a case needs the encryption paths.
+	DSN           string `json:"dsn,omitempty"`
+	MaxOpenConns  int    `json:"max-open-conns,omitempty"`
 	EncryptionKey string `json:"encryption-key,omitempty"`
 	// MigrationLockTimeout is declared by an implementation that supplies a
 	// mutex, and setting it on one that does not is a startup failure. Only
@@ -101,8 +80,6 @@ type engineSection struct {
 	MigrationLockTimeout string `json:"migration-lock-timeout,omitempty"`
 }
 
-// writeConfig writes a configuration document and returns the locator the file
-// transport serves it under.
 func writeConfig(t *testing.T, doc any) string {
 	t.Helper()
 	body, err := json.Marshal(doc)
@@ -143,8 +120,6 @@ func runHost(t *testing.T, scenarioName string, args ...string) outcome {
 	return outcome{stdout: stdout.String(), stderr: stderr.String(), code: code}
 }
 
-// requireSuccess asserts that the run left cleanly, printing both streams when
-// it did not.
 func requireSuccess(t *testing.T, got outcome) {
 	t.Helper()
 	if got.code != 0 {
@@ -152,7 +127,6 @@ func requireSuccess(t *testing.T, got outcome) {
 	}
 }
 
-// countOccurrences reports how many lines of a stream carry a piece of text.
 func countOccurrences(stream, text string) int {
 	n := 0
 	for line := range strings.SplitSeq(strings.TrimRight(stream, "\n"), "\n") {
@@ -163,14 +137,6 @@ func countOccurrences(stream, text string) int {
 	return n
 }
 
-// requireNoMentionOf asserts that no diagnostic line names the module.
-//
-// An engine the command never took in has no diagnostic line: it took no
-// stance, so it is not in the enabled set the diagnostics report, and leaving it
-// out was the host's own writing rather than a surprise the diagnostics exist to
-// catch. The failure text a startup ends with is a different stream, and it does
-// name the implementations claiming the capability exclusively — that is how the
-// host learns which ones it has to choose between.
 func requireNoMentionOf(t *testing.T, got outcome, module string) {
 	t.Helper()
 	want := `module "` + module + `"`
@@ -180,9 +146,8 @@ func requireNoMentionOf(t *testing.T, got outcome, module string) {
 	}
 }
 
-// The case that needs no engine of its own: an encrypted field written and read
-// back in a process that has done nothing else with the database.
-
+// TestSerializerIsRegisteredBeforeDelivery checks that an encrypted field written and read back in
+// a fresh process was sealed by a serializer registered before the handle was delivered.
 func TestSerializerIsRegisteredBeforeDelivery(t *testing.T) {
 	locator := writeConfig(t, dbConfig{DB: dbSection{SQLite: &engineSection{
 		DSN:           filepath.Join(t.TempDir(), "dbhost.sqlite"),
@@ -203,9 +168,8 @@ func TestSerializerIsRegisteredBeforeDelivery(t *testing.T) {
 	}
 }
 
-// The two cases about one import pair: both implementations are carried, and the
-// command tree names which of them runs.
-
+// TestBothImplementationsImportedOneConfigured checks that carrying both implementations and
+// configuring one starts on the configured engine.
 func TestBothImplementationsImportedOneConfigured(t *testing.T) {
 	locator := writeConfig(t, dbConfig{DB: dbSection{SQLite: &engineSection{
 		DSN: filepath.Join(t.TempDir(), "dbhost.sqlite"),
@@ -213,18 +177,6 @@ func TestBothImplementationsImportedOneConfigured(t *testing.T) {
 	got := runHost(t, caseOneEngineConfigured, "--config="+locator)
 	requireSuccess(t, got)
 
-	// The end-to-end form of what separate namespaces are for. Both
-	// implementations declare their input items, and the manifest is collected
-	// from every registered module, the ones this run does not enable included:
-	// had the two shared a namespace they would have conflicted while it was
-	// being collected, before exclusivity was ever resolved, and this run would
-	// have died there rather than starting on the engine the command named.
-	//
-	// The engine the command did not name is in neither half of the output. It
-	// was not taken in, so it took no stance and is not in the enabled set the
-	// diagnostics report — and being left out of the command is the host's own
-	// writing rather than a surprise, so it is not named there for that reason
-	// either.
 	requireNoMentionOf(t, got, "db.postgres")
 	// The other half: the configured engine has to be the one that ran. A run
 	// that named no engine would carry the same silence above and fail the
@@ -235,6 +187,8 @@ func TestBothImplementationsImportedOneConfigured(t *testing.T) {
 	}
 }
 
+// TestBothConfiguredIsExclusiveViolated checks that configuring both engines fails the startup as
+// an exclusive violation naming both.
 func TestBothConfiguredIsExclusiveViolated(t *testing.T) {
 	// Neither locator has to name a reachable database: two enabled providers
 	// are settled during resolution, and no connection is opened before that.
@@ -262,10 +216,9 @@ func TestBothConfiguredIsExclusiveViolated(t *testing.T) {
 	}
 }
 
+// TestNoEngineNamedIsMissingProvider checks that a command naming no engine fails the dependant's
+// requirement as a missing provider.
 func TestNoEngineNamedIsMissingProvider(t *testing.T) {
-	// A document that carries no database section at all, which is a legal
-	// assembly, beside a command that names no engine: whether a run needs a
-	// database is the run's decision, and this one's dependant makes it.
 	locator := writeConfig(t, struct{}{})
 	got := runHost(t, caseNoEngineConfigured, "--config="+locator)
 
@@ -285,24 +238,8 @@ func TestNoEngineNamedIsMissingProvider(t *testing.T) {
 	requireNoMentionOf(t, got, "db.postgres")
 }
 
-// The case about a command whose depth is not the serving stage.
-
-// TestTheMigrateCommandStopsAtTheMigrationStage is the end-to-end form of a
-// command that drives part of the lifecycle: `dbhost migrate` applies the
-// migrations and returns, where the root command of the same binary would go
-// on to serve.
-//
-// Two observations, because either on its own is met by the wrong
-// implementation. The record table says the migrations were applied — a
-// command that stopped short of the migration stage would leave it empty — and
-// the absent serving marker says the run went no further. A depth of the
-// serving stage applies exactly the same migrations, and the probe would then
-// cancel the run from its own Serve, so the exit status is 0 either way and
-// says nothing at all.
-//
-// It runs on SQLite, which needs no container: the depth belongs to the
-// command tree rather than to an engine, and a case gated on docker would be
-// unobserved wherever docker is absent.
+// TestTheMigrateCommandStopsAtTheMigrationStage is the end-to-end form of a command that drives
+// part of the lifecycle: `dbhost migrate` applies the migrations and returns.
 func TestTheMigrateCommandStopsAtTheMigrationStage(t *testing.T) {
 	locator := writeConfig(t, dbConfig{DB: dbSection{SQLite: &engineSection{
 		DSN: filepath.Join(t.TempDir(), "dbhost.sqlite"),

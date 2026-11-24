@@ -22,54 +22,33 @@ import (
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
-// The scenario a re-executed copy of this test binary runs instead of the
-// suite, and the inputs it takes.
-//
-// Two real processes are not a preference here. The failure the migration mutex
-// exists to prevent only happens between processes: replicas of one deployment
-// start at once, each finds the record table empty, and each runs the same
-// CREATE TABLE. Goroutines in one process share a connection pool and a
-// PostgreSQL session can hold an advisory lock re-entrantly, so a single
-// process cannot reproduce any of it — an implementation with no mutex at all
-// would pass a concurrent-goroutine case.
+// The scenario a re-executed copy of this test binary runs instead of the suite, and
+// the inputs it takes.
 const (
 	scenarioEnv           = "DB_POSTGRES_SCENARIO"
 	scenarioDSNEnv        = "DB_POSTGRES_SCENARIO_DSN"
 	scenarioRendezvousEnv = "DB_POSTGRES_SCENARIO_RENDEZVOUS"
 	scenarioRoleEnv       = "DB_POSTGRES_SCENARIO_ROLE"
 
-	// scenarioFirstMigration is one replica's first start against an empty
-	// database.
 	scenarioFirstMigration = "first-migration"
 )
 
 const (
-	// scenarioReplicas is how many processes the scenario starts.
 	scenarioReplicas = 2
 	// scenarioApplyDuration is how long the applying replica stays inside
 	// the migration's transaction. It is what gives the other replica time
 	// to reach its own acquisition while the first is still working, which
 	// is the whole of what this case needs to happen.
 	scenarioApplyDuration = 3 * time.Second
-	// scenarioLockTimeout is each replica's allowance. It is far above
-	// scenarioApplyDuration: a replica giving up here would be this case
-	// failing, not a timeout being exercised.
-	scenarioLockTimeout = 60 * time.Second
+	scenarioLockTimeout   = 60 * time.Second
 	// scenarioRendezvousTimeout bounds the wait for the other replica to
 	// arrive, so a replica that never started fails the run instead of
 	// hanging it.
 	scenarioRendezvousTimeout = 60 * time.Second
-	// scenarioRunTimeout bounds one replica's whole run.
-	scenarioRunTimeout = 3 * time.Minute
+	scenarioRunTimeout        = 3 * time.Minute
 )
 
 // The migration the scenario applies, and the record table it is recorded in.
-//
-// The statements are written out here rather than driven through the migration
-// engine because the engine's entry point is unexported and takes a registry:
-// reaching it would mean assembling one, and what this case is about is the
-// mutex the engine takes at the two ends of that run, not the run itself. These
-// are the same three statements the engine issues against an empty database.
 const (
 	probeModule       = "probe"
 	probeFile         = "0001_widgets.sql"
@@ -92,9 +71,7 @@ const (
 	markNoop    = "noop"
 )
 
-// TestMain runs the scenario when the environment selects it, and the ordinary
-// suite otherwise. A re-executed copy of this binary is how the case gets a
-// second process without building a separate host command.
+// TestMain runs the scenario when the environment selects it, and the ordinary suite otherwise.
 func TestMain(m *testing.M) {
 	if scenario, chosen := os.LookupEnv(scenarioEnv); chosen {
 		if err := runScenario(scenario); err != nil {
@@ -107,12 +84,6 @@ func TestMain(m *testing.M) {
 }
 
 // TestConcurrentFirstMigration is the hard gate on the cross-process mutex.
-//
-// Two processes meet on a rendezvous file and then go for the same empty
-// database at the same moment. Exactly one has to apply the migration, and the
-// other has to find the work already done — not fail on an object that already
-// exists, which is what happens with no mutex and is the failure a real
-// deployment hits on its first multi-replica start.
 func TestConcurrentFirstMigration(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	rendezvous := t.TempDir()
@@ -171,13 +142,6 @@ func TestConcurrentFirstMigration(t *testing.T) {
 		if !applier.marked(markApplied) || !noop.marked(markNoop) {
 			t.Skip("the replicas did not divide into one applier and one no-op, which the case above reports")
 		}
-		// Without this the gate is empty rather than merely weak. The
-		// fixture only guarantees that the applier is slow; nothing
-		// guarantees that the other replica was there while it was
-		// working. A cold stack, the second integration leg, a slow
-		// exec — any of them make the second replica late, and a late replica
-		// reads a complete record table and prints noop whether there is
-		// a mutex or not.
 		startedWaiting, err := noop.at(markStart)
 		if err != nil {
 			t.Fatalf("reading when %s reached the mutex: %v", noop.role, err)
@@ -204,13 +168,11 @@ type replicaRun struct {
 	startErr error
 }
 
-// marked reports whether the replica printed a marker.
 func (r replicaRun) marked(name string) bool {
 	_, err := r.at(name)
 	return err == nil
 }
 
-// at reads the moment the replica reached a marker.
 func (r replicaRun) at(name string) (time.Time, error) {
 	for _, line := range strings.Split(r.stdout, "\n") {
 		marker, stamp, found := strings.Cut(strings.TrimSpace(line), "\t")
@@ -227,7 +189,6 @@ func (r replicaRun) at(name string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("%s printed no %q marker", r.role, name)
 }
 
-// runReplica starts one replica as a separate process and collects what it did.
 func runReplica(binary, dsn, rendezvous, role string) replicaRun {
 	ctx, cancel := context.WithTimeout(context.Background(), scenarioRunTimeout)
 	defer cancel()
@@ -256,7 +217,6 @@ func runReplica(binary, dsn, rendezvous, role string) replicaRun {
 	return run
 }
 
-// runScenario is the body of a replica process.
 func runScenario(scenario string) error {
 	if scenario != scenarioFirstMigration {
 		return fmt.Errorf("no scenario named %q", scenario)
@@ -264,14 +224,6 @@ func runScenario(scenario string) error {
 	return firstMigration(os.Getenv(scenarioDSNEnv), os.Getenv(scenarioRendezvousEnv), os.Getenv(scenarioRoleEnv))
 }
 
-// firstMigration is one replica starting against the shared database: meet the
-// other replica, take the mutex, apply what is not applied, give the mutex up.
-//
-// One connection is borrowed and everything travels on it, which is what the
-// migration run does. The pool is held to that one connection, so a replica
-// that needed a second one for any part of this would stop here rather than
-// pass quietly — the whole run has to fit in the smallest pool a host can
-// configure.
 func firstMigration(dsn, rendezvous, role string) error {
 	handle, err := gorm.Open(postgres.Dialector(dsn), &gorm.Config{Logger: logger.Discard})
 	if err != nil {
@@ -329,9 +281,6 @@ func applyFirstMigration(ctx context.Context, conn *sql.Conn) error {
 		return nil
 	}
 	err := inTransaction(ctx, conn, func(tx *sql.Tx) error {
-		// The sleep is inside the transaction, so the window this
-		// replica holds the mutex for is a window in which the record
-		// table is still empty to anyone who could read it.
 		if _, err := tx.ExecContext(ctx, `SELECT pg_sleep($1)`, scenarioApplyDuration.Seconds()); err != nil {
 			return fmt.Errorf("widening the window: %w", err)
 		}
@@ -350,8 +299,6 @@ func applyFirstMigration(ctx context.Context, conn *sql.Conn) error {
 	return nil
 }
 
-// inTransaction runs body in one transaction on the borrowed connection, the
-// way a migration's execution and its record are held together.
 func inTransaction(ctx context.Context, conn *sql.Conn, body func(tx *sql.Tx) error) error {
 	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
@@ -363,8 +310,6 @@ func inTransaction(ctx context.Context, conn *sql.Conn, body func(tx *sql.Tx) er
 	return tx.Commit()
 }
 
-// meetOtherReplicas blocks until every replica has reached this point, so that
-// they go for the mutex together rather than one after the other.
 func meetOtherReplicas(rendezvous, role string) error {
 	if err := os.WriteFile(filepath.Join(rendezvous, "ready-"+role), nil, 0o600); err != nil {
 		return fmt.Errorf("announcing this replica at the rendezvous: %w", err)

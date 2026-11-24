@@ -19,52 +19,26 @@ import (
 
 // MigrationLock is the cross-process mutex the migration run is held under. An
 // implementation subpackage supplies one when its dialect appears in
-// multi-replica deployments; a dialect that does not supplies nothing and the
-// run proceeds without a mutex.
+// multi-replica deployments.
 //
-// What it defends against only happens on a first start against an empty
-// database, and never inside one process: several replicas start at once, each
-// reads the record table and finds nothing applied, each runs the same CREATE
-// TABLE, and every replica after the first fails because the object already
-// exists. A single-process test cannot reproduce it, which is why the seam is
-// here rather than folded into the engine.
+// Both halves take the connection the whole run is pinned to: a mutex of this
+// kind belongs to the session that took it, and taken on one connection and
+// given up on another it is never given up at all.
 //
-// Both halves are handed the connection the whole run is pinned to, and both
-// have to use it. A mutex of this kind belongs to the session that took it,
-// not to a transaction and not to a pool: taken on one connection and given up
-// on another, it is never given up at all. The run's own statements travel on
-// the same connection, so the mutex stays held across every BEGIN and COMMIT
-// between the two calls without any of them touching it.
-//
-// Acquire waits for the mutex and reports ErrMigrationLockTimeout, unwrapped
-// into no other sentinel, once the implementation's own deadline passes: a
-// replica stuck holding the mutex must not hang the rest forever, and the
-// response to a timeout — find out what the other replica is doing — differs
-// from the response to a migration that would not apply.
-//
-// The mutex is taken before the record table is created and released after the
-// last migration has been applied, so it never sits inside a single migration's
-// transaction: it orders processes against each other and does not change what
-// one migration's execution and its record are atomic with.
+// Acquire waits within the implementation's own deadline and reports
+// ErrMigrationLockTimeout once it passes. The mutex is taken before the record
+// table is created and released after the last migration has been applied.
 type MigrationLock interface {
-	// Acquire takes the mutex on conn, waiting for another process to
-	// release it.
+	// Acquire takes the mutex on conn, waiting for another process to release
+	// it.
 	Acquire(ctx context.Context, conn *sql.Conn) error
-	// Release gives the mutex up on conn, which is the connection it was
-	// taken on. It runs on the failing path too, so a migration that did not
-	// apply does not strand the other replicas.
+	// Release gives the mutex up on conn, the connection it was taken on. It
+	// runs on the failing path too.
 	Release(ctx context.Context, conn *sql.Conn) error
 }
 
-// recordTableName is the table that records which migrations have been applied.
-// A row per applied migration, keyed by the declaring module and the file name.
-//
-// It is created by an unconditionally reentrant statement, in any run that does
-// not find it, rather than by anyone's migration set: reading it is how the run
-// learns what is already applied, so it has no moment of its own that could be
-// tracked.
-// Nothing in the three statements below is dialect-specific, so they are not
-// split per dialect.
+// recordTableName is the table that records which migrations have been applied,
+// a row per applied migration keyed by the declaring module and the file name.
 const recordTableName = "db_migrations"
 
 const (
@@ -78,35 +52,21 @@ const (
 	insertRecord  = `INSERT INTO db_migrations (module, file, applied_at) VALUES (?, ?, ?)`
 )
 
-// migration is one file from one module's declaration, ready to apply.
 type migration struct {
 	module string
 	file   string
 	body   string
 }
 
-// recordKey identifies an applied migration the way the record table's primary
-// key does.
 type recordKey struct {
 	module string
 	file   string
 }
 
-// applyMigrations collects every declared migration set, applies what the
-// record table does not already list, and records what it applied.
-//
-// One connection is borrowed from the handle's pool and kept for the whole run.
-// Taking the mutex, creating the record table, applying each migration and
-// giving the mutex up all travel on it, and it goes back to the pool at the
-// end. A mutex an implementation supplies is scoped to a session, so it and the
-// statements it exists to order have to sit on the same connection; and being
-// on the same one, the run occupies one connection rather than two, which is
-// what makes a pool of one enough to start on.
-//
-// The whole run happens under lock when the dialect supplies one. The order is
-// the modules' dependency order, and file-name order within a module; only the
-// subdirectory named after the running dialect is read, and a declaration
-// without one contributes nothing rather than failing.
+// applyMigrations applies every declared migration the record table does not
+// list, recording each one. One connection is borrowed and kept for the whole
+// run, so the session-scoped mutex and the statements it orders sit on the same
+// connection and the run occupies one connection rather than two.
 func applyMigrations(ctx context.Context, reg *core.Registry, handle *gorm.DB, dialect Dialect, lock MigrationLock) (err error) {
 	pool, err := handle.DB()
 	if err != nil {
@@ -118,8 +78,8 @@ func applyMigrations(ctx context.Context, reg *core.Registry, handle *gorm.DB, d
 		return fmt.Errorf("%w: taking the connection to apply the %s migrations on failed: %w",
 			ErrMigrationFailed, dialect, err)
 	}
-	// Set when the mutex would not be given up: the connection is then
-	// thrown away rather than handed back. See discard.
+	// Set when the mutex would not be given up: the connection is then thrown
+	// away rather than handed back. See discard.
 	stranded := false
 	defer func() {
 		if stranded {
@@ -135,10 +95,8 @@ func applyMigrations(ctx context.Context, reg *core.Registry, handle *gorm.DB, d
 
 	if lock != nil {
 		if lockErr := lock.Acquire(ctx, conn); lockErr != nil {
-			// A timeout travels as it is. Wrapping it in
-			// ErrMigrationFailed would make both sentinels match and
-			// point the host at the migrations, when what it has to
-			// look at is the replica holding the mutex.
+			// A timeout travels as it is: wrapping it would make both
+			// sentinels match and point the host at the migrations.
 			if errors.Is(lockErr, ErrMigrationLockTimeout) {
 				return lockErr
 			}
@@ -146,8 +104,6 @@ func applyMigrations(ctx context.Context, reg *core.Registry, handle *gorm.DB, d
 				ErrMigrationFailed, dialect, lockErr)
 		}
 		defer func() {
-			// Read before the join below changes it: whether every
-			// migration went in is what the message has to say.
 			applied := err == nil
 			if releaseErr := lock.Release(ctx, conn); releaseErr != nil {
 				stranded = true
@@ -158,34 +114,17 @@ func applyMigrations(ctx context.Context, reg *core.Registry, handle *gorm.DB, d
 	return applyUnderLock(reg, pinned(ctx, handle, conn), dialect)
 }
 
-// pinned returns a session that issues every statement on one connection.
-//
-// GORM reaches the database through the connection pool on the statement, and a
-// *sql.Conn is one of those: pointing the session at the borrowed connection is
-// what keeps the run — and the session-scoped mutex around it — on that
-// connection instead of on whichever one the pool hands out next. Transactions
-// the session starts begin on it too.
+// pinned points the session's ConnPool at the borrowed connection, which keeps
+// the run and its session-scoped mutex off whichever connection the pool hands
+// out next.
 func pinned(ctx context.Context, handle *gorm.DB, conn *sql.Conn) *gorm.DB {
 	session := handle.WithContext(ctx)
 	session.Statement.ConnPool = conn
 	return session
 }
 
-// releaseFailed builds the error a run reports when the mutex would not be
-// given up.
-//
-// It says where the failure fell, because the sentinel alone does not. A run
-// whose migrations all applied and then could not release the mutex reads, from
-// ErrMigrationFailed on its own, as a migration that would not apply, and the
-// operator goes through migration files that have nothing wrong with them. The
-// other direction matters as much: after a run that had already failed, the
-// text must not claim the migrations went in.
-//
-// Either way the startup stops, and the reason is that the mutex belongs to a
-// session. A process that carried on would keep that session — for its whole
-// life, in the ordinary case — with every other replica waiting out its
-// allowance against it. Stopping ends the process, the session ends with it,
-// and the server releases the mutex.
+// releaseFailed says where the failure fell, because ErrMigrationFailed alone
+// would point the operator at migration files that are fine.
 func releaseFailed(dialect Dialect, applied bool, cause error) error {
 	if applied {
 		return fmt.Errorf("%w: every migration was applied and recorded, and what failed afterwards is "+
@@ -200,19 +139,12 @@ func releaseFailed(dialect Dialect, applied bool, cause error) error {
 		ErrMigrationFailed, dialect, cause)
 }
 
-// discard throws the run's connection away instead of handing it back to the
-// pool.
-//
-// It is what follows a mutex that could not be given up. The mutex belongs to
-// the session on that connection, so ending the session is the one remaining
-// way to release it: handing the connection back would keep the session alive,
-// with the mutex on it, and pass it to the next caller in that state.
+// discard throws the run's connection away instead of handing it back, because
+// ending the session is the one remaining way to release a mutex that could not
+// be given up.
 func discard(conn *sql.Conn) error {
-	// Raw reports the error the callback returned; ErrBadConn is what asks
-	// database/sql to drop the underlying connection rather than reuse it,
-	// so seeing it come back is the success case. ErrConnDone is the other
-	// success case: database/sql has already thrown the connection away,
-	// which is the same end — the session is over and the mutex with it.
+	// Raw reports the callback's error; ErrBadConn asks database/sql to drop
+	// the connection, so seeing it back is the success case, as is ErrConnDone.
 	err := conn.Raw(func(any) error { return driver.ErrBadConn })
 	if err != nil && !errors.Is(err, driver.ErrBadConn) && !errors.Is(err, sql.ErrConnDone) {
 		return fmt.Errorf("%w: dropping the migration run's connection failed, and the mutex stays held "+
@@ -224,16 +156,10 @@ func discard(conn *sql.Conn) error {
 	return nil
 }
 
-// applyUnderLock is the run itself, with the mutex already held, on the session
-// pinned to the connection the mutex was taken on.
-//
-// The record table is created only when it is not there. The statement that
-// creates it is reentrant, but PostgreSQL checks the privilege to create in the
-// schema before it looks for the table, so running it on every start would ask
-// every command for DDL privilege — the service's too, in a deployment that
-// applies migrations with one role and serves with another that may only read
-// and write rows. Looked up first, a run whose migrations are all applied reads
-// the record table and changes nothing, which is all such a role can do.
+// applyUnderLock is the run itself, with the mutex already held. The record
+// table is looked up before it is created: PostgreSQL checks the privilege to
+// create in the schema before it looks for the table, so creating it on every
+// start would demand DDL privilege of a read-only service role.
 func applyUnderLock(reg *core.Registry, session *gorm.DB, dialect Dialect) error {
 	if !session.Migrator().HasTable(recordTableName) {
 		if err := session.Exec(createRecordTable).Error; err != nil {
@@ -260,7 +186,6 @@ func applyUnderLock(reg *core.Registry, session *gorm.DB, dialect Dialect) error
 	return nil
 }
 
-// readRecords reads what the record table already lists.
 func readRecords(session *gorm.DB) (map[recordKey]struct{}, error) {
 	var rows []struct {
 		Module string
@@ -277,23 +202,10 @@ func readRecords(session *gorm.DB) (map[recordKey]struct{}, error) {
 	return applied, nil
 }
 
-// applyOne executes a migration and records it in one transaction.
-//
-// The two halves are inseparable: recorded but not executed would skip it
-// forever, executed but not recorded would run it again on the next start and
-// fail on an object that already exists — and that failure would surface on a
-// later startup rather than on the one that caused it. Holding them together
-// rests on the dialect putting DDL inside a transaction, which is an admission
-// condition every implementation subpackage has to meet.
-//
-// The file goes to the driver whole, with no bind variables, and the driver's
-// own path for a text of several statements executes all of them. A file may
-// hold more than one: creating a table and then its indexes is one migration,
-// and splitting it across two files only scatters one change. Splitting the
-// text here instead would mean parsing SQL — semicolons inside string literals
-// and function bodies have to come out right — and that is not this module's
-// work. Running a file of several statements is therefore the dialect's
-// admission condition too, alongside putting DDL inside a transaction.
+// applyOne executes a migration and records it in one transaction, so it is
+// neither recorded without running nor run twice. Holding the two together
+// rests on the dialect putting DDL inside a transaction, and the file goes to
+// the driver whole: splitting it here would mean parsing SQL.
 func applyOne(session *gorm.DB, m migration) error {
 	err := session.Transaction(func(tx *gorm.DB) error {
 		if execErr := tx.Exec(m.body).Error; execErr != nil {
@@ -314,53 +226,22 @@ func applyOne(session *gorm.DB, m migration) error {
 // collectMigrations turns the declared resources into the list to apply, in the
 // order to apply it.
 //
-// The set it collects from is the declaring set -- what this command took in,
-// at either level -- and the participating set narrows it rather than forming
-// it. Database structure outlives the command that applied it, so a module
-// reached for its declarations alone still gets its tables; one the command did
-// not take in at all does not, and which of the two a module is is the host's
-// own writing rather than a surprise. That is also what makes the binary's
-// migrations answerable without starting a database: the declaring set is
-// settled before anything is read. What the participating set decides is the
-// other reading, the one a module's own verdict belongs to: a module this
-// command runs and that resolution stood down has its tables withheld.
+// The declaring set forms the list and the participating set only narrows it;
+// the two must not be collapsed into one. Collected by participation alone, a
+// command that runs only the engine, whose tables belong to modules the closure
+// never reaches, applies no migration at all and exits successfully.
 //
-// The two are not one filter and must not be collapsed into one. Collected by
-// participation alone, a command whose work is applying migrations takes in
-// the engine and nothing else -- the modules that own the tables depend on the
-// engine rather than the other way round, so the closure never reaches them --
-// and it applies no migration at all while exiting successfully.
-//
-// Withholding a module's tables has a consequence that shows up later rather
-// than here: an enabled module's migration may reference a table that was not
-// created, and nothing reads the statements, so it cannot be caught at
-// declaration time. It surfaces as a migration that will not apply.
-//
-// The order is separate from all of that. It comes from dependencyRank over
-// every registered module, participating or not, so that the sequence a set of
-// migrations is applied in is the same whichever command applies them.
+// The order comes from dependencyRank over every registered module, so a set of
+// migrations is applied in the same sequence whichever command applies them.
 func collectMigrations(reg *core.Registry, dialect Dialect) ([]migration, error) {
 	rank := dependencyRank(reg)
 
 	byModule := make(map[string][]Migrations)
 	var modules []string
 	for _, declared := range core.Resources[Migrations](reg) {
-		// Two questions, and both have to be asked. The first is
-		// whether the declaration is within reach at all: a module this
-		// command did not take in, at either level, has its tables left
-		// to whichever command does take it in. The second applies only
-		// to a module the command runs, and is its own verdict: a
-		// module inside the participating set that resolution stood down
-		// has its tables withheld.
-		//
-		// Asking the second alone is the shape that migrates nothing. A
-		// command whose work is applying migrations runs the engine and
-		// reaches the tables through the first question; the modules
-		// that own them depend on the engine, the engine does not
-		// depend on them, and the closure therefore never reaches them
-		// -- so they are outside the participating set by construction,
-		// and a filter reading only that set applies none of them and
-		// reports success.
+		// Both questions: a module the command did not take in keeps no
+		// tables, and a participating module that resolution stood down has
+		// its tables withheld.
 		if !reg.Declaring(declared.Module) {
 			continue
 		}
@@ -374,9 +255,6 @@ func collectMigrations(reg *core.Registry, dialect Dialect) ([]migration, error)
 		}
 		byModule[declared.Module] = append(byModule[declared.Module], declared.Value)
 	}
-	// The same ordering the plugin declarations are installed in: the
-	// dependency order of the declaring modules, ties by module name. Both
-	// go through depsorder.go, so neither can drift from the other.
 	inDependencyOrder(rank, modules)
 
 	var planned []migration
@@ -391,8 +269,7 @@ func collectMigrations(reg *core.Registry, dialect Dialect) ([]migration, error)
 }
 
 // filesFor reads one module's migrations for the running dialect, in file-name
-// order. File name is therefore the whole of the order within a module, which
-// is what a 0001_ prefix exists to line up with the intended sequence.
+// order, which is the whole of the order within a module.
 func filesFor(module string, sets []Migrations, dialect Dialect) ([]migration, error) {
 	var files []migration
 	seen := make(map[string]struct{})
@@ -407,9 +284,8 @@ func filesFor(module string, sets []Migrations, dialect Dialect) ([]migration, e
 		}
 		entries, err := fs.ReadDir(dir, ".")
 		if err != nil {
-			// No subdirectory for this dialect is zero migrations for
-			// it, not a failure: that is how a module states it does
-			// not support this engine.
+			// No subdirectory for this dialect is zero migrations, not a
+			// failure.
 			if errors.Is(err, fs.ErrNotExist) {
 				continue
 			}
@@ -421,9 +297,8 @@ func filesFor(module string, sets []Migrations, dialect Dialect) ([]migration, e
 				return nil, err
 			}
 			if _, duplicate := seen[entry.Name()]; duplicate {
-				// The record table is keyed by module and file
-				// name, so the second one would be taken for the
-				// first and never applied.
+				// The record table is keyed by module and file name, so
+				// the second one would count as applied without running.
 				return nil, fmt.Errorf("%w: module %q declares %q twice among its %q migrations. "+
 					"The record table is keyed by module and file name, so the second one would "+
 					"count as applied without ever running",
@@ -442,24 +317,14 @@ func filesFor(module string, sets []Migrations, dialect Dialect) ([]migration, e
 	return files, nil
 }
 
-// migrationFileExtension is the only extension a migration file carries.
 const migrationFileExtension = ".sql"
 
 // admit reports why an entry of a dialect's migration directory cannot be
-// applied, or nil when it can.
-//
-// The directory holds regular .sql files and nothing else, and anything outside
-// that is an error rather than something to pass over. Both of the wider rules
-// hide a failure instead: applying every regular file sends a note left in
-// there to the database to be executed, and applying the .sql files while
-// ignoring the rest turns a migration whose name was typed wrong into a table
-// that is simply never created — found at run time, a long way from the start
-// that skipped it.
+// applied. The directory holds regular .sql files and nothing else; anything
+// else is an error rather than something to pass over.
 func admit(module string, dialect Dialect, entry fs.DirEntry) error {
 	switch {
 	case entry.IsDir():
-		// Nothing descends into it, so passing over it would drop
-		// whatever it holds without a word.
 		return fmt.Errorf("%w: module %q has a directory %q inside its %q migrations, and only %s files "+
 			"are applied. Move the migrations up into %q or drop the directory",
 			ErrMigrationFailed, module, entry.Name(), dialect, migrationFileExtension, dialect)

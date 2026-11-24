@@ -13,30 +13,18 @@ import (
 	"github.com/vislake/speed/pkg/core/coretest"
 )
 
-// These cases cover the reads that do not land a sealed column in a model field.
-// GORM applies a field's serializer only when it scans a column into a field of
-// a parsed struct, so a column read into anything else arrives as the text the
-// database holds — the ciphertext — with no error. Where the statement tells
-// this module what it is about to do, the read is refused instead of handing
-// the ciphertext back as if it were the value.
-
-// emailView is a struct a query can read into that is not the model, and
-// whose field for the sealed column carries no serializer.
 type emailView struct {
 	ID    uint
 	Email string
 }
 
-// sealedEmailView is the same struct with the field marked the way the model
-// marks it.
 type sealedEmailView struct {
 	ID    uint
 	Email string `gorm:"serializer:encrypted"`
 }
 
-// TestAReadThatWouldHandBackTheCiphertextIsRefused covers the finishers that
-// run a query whose destination is known before it runs: each one would fill
-// the destination with the stored text, and each is refused naming the field.
+// TestAReadThatWouldHandBackTheCiphertextIsRefused covers the finishers that run a query whose
+// destination is known before it runs: each one would fill the destination with the stored text.
 func TestAReadThatWouldHandBackTheCiphertextIsRefused(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)
@@ -101,10 +89,7 @@ func TestAReadThatWouldHandBackTheCiphertextIsRefused(t *testing.T) {
 	}
 }
 
-// TestAReadThatDoesNotReachTheSealedColumnGoesThrough keeps the refusal to the
-// reads it is about. A read that selects around the sealed column, one into a
-// struct that carries the serializer, and one whose destination cannot hold
-// text all go through, and the tagged struct reads the plaintext.
+// TestAReadThatDoesNotReachTheSealedColumnGoesThrough keeps the refusal to the reads it is about.
 func TestAReadThatDoesNotReachTheSealedColumnGoesThrough(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)
@@ -140,14 +125,8 @@ func TestAReadThatDoesNotReachTheSealedColumnGoesThrough(t *testing.T) {
 	}
 }
 
-// TestARowReadOverTheModelThatReachesTheSealedColumnIsRefused covers the
-// finishers that hand the result set to a destination chosen after the last
-// callback: Scan, Rows and Row. Nothing on the statement says where the
-// columns go, so a read into a string cannot be told from a read into the
-// model, and a statement over the model that reads a sealed column is refused
-// whatever it is scanned into. Scan into the model itself is among them: it is
-// the cost of refusing the others, and Find reads the same rows with the
-// destination in view.
+// TestARowReadOverTheModelThatReachesTheSealedColumnIsRefused covers the finishers that hand the
+// result set to a destination chosen after the last callback: Scan, Rows and Row.
 func TestARowReadOverTheModelThatReachesTheSealedColumnIsRefused(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)
@@ -205,11 +184,8 @@ func TestARowReadOverTheModelThatReachesTheSealedColumnIsRefused(t *testing.T) {
 	}
 }
 
-// TestARowOverTheModelThatReachesTheSealedColumnReportsTheRefusal covers Row,
-// which has no error of its own to return: what it hands back is the row, so
-// the row is where the refusal is reported — through its Scan and its Err, with
-// nothing scanned into the destination. GORM hands back no row at all when a
-// callback fails, and scanning that nil row panics without a word about why.
+// TestARowOverTheModelThatReachesTheSealedColumnReportsTheRefusal covers Row, which has no error of
+// its own to return: what it hands back is the row.
 func TestARowOverTheModelThatReachesTheSealedColumnReportsTheRefusal(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)
@@ -253,11 +229,8 @@ func TestARowOverTheModelThatReachesTheSealedColumnReportsTheRefusal(t *testing.
 	}
 }
 
-// TestARefusedRowTakesNoConnection holds the refused row to reaching no
-// database: it is answered before any connection is taken. On a pool of one
-// connection, a Row issued outside the transaction that holds it would
-// otherwise wait for that transaction, which waits for the Row, and the caller
-// would be told its context ran out rather than what was wrong with the read.
+// TestARefusedRowTakesNoConnection holds the refused row to reaching no database: it is answered
+// before any connection is taken.
 func TestARefusedRowTakesNoConnection(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem,
 		`"max-open-conns":1`, `"max-idle-conns":1`)
@@ -283,12 +256,8 @@ func TestARefusedRowTakesNoConnection(t *testing.T) {
 	}
 }
 
-// TestARowReadThatDoesNotReachTheSealedColumnGoesThrough keeps that refusal to
-// the statements it is about: one over the model that selects or omits around
-// the sealed columns, and one that names no model — native SQL, or a table
-// name alone — which this module has no schema to judge by. GORM's migrator
-// reads an existing table's columns through the row chain, so bringing the
-// model's table up a second time is among them.
+// TestARowReadThatDoesNotReachTheSealedColumnGoesThrough keeps that refusal to the statements it is
+// about: one over the model that selects or omits around the sealed columns.
 func TestARowReadThatDoesNotReachTheSealedColumnGoesThrough(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)
@@ -327,8 +296,6 @@ func TestARowReadThatDoesNotReachTheSealedColumnGoesThrough(t *testing.T) {
 	closedRows(t, tabled)
 }
 
-// closedRows drains and closes a result set a case opened only to see whether
-// it opened, and returns the columns it carried.
 func closedRows(t *testing.T, rows *sql.Rows) []string {
 	t.Helper()
 	if rows == nil {
@@ -351,11 +318,8 @@ func closedRows(t *testing.T, rows *sql.Rows) []string {
 	return columns
 }
 
-// TestScanRowsOnTheDeliveredHandleOpensTheField covers streaming a result set
-// the way GORM documents it: Rows on one statement, ScanRows on the handle,
-// over a result set this module let through — native SQL, or a table name
-// alone. The scan runs no callback chain, so the key reaches it only if the
-// handle itself carries it.
+// TestScanRowsOnTheDeliveredHandleOpensTheField covers streaming a result set the way GORM
+// documents it: Rows on one statement, ScanRows on the handle.
 func TestScanRowsOnTheDeliveredHandleOpensTheField(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)
@@ -401,10 +365,8 @@ func TestScanRowsOnTheDeliveredHandleOpensTheField(t *testing.T) {
 	}
 }
 
-// TestScanRowsOnAReplacedContextSaysWhatToDo covers the one shape of ScanRows
-// the key cannot reach: a handle whose context the caller replaced, on a call
-// that runs no callback. It still fails, and the failure says that, rather
-// than claiming the handle was never this module's.
+// TestScanRowsOnAReplacedContextSaysWhatToDo covers the one shape of ScanRows the key cannot reach:
+// a handle whose context the caller replaced, on a call that runs no callback.
 func TestScanRowsOnAReplacedContextSaysWhatToDo(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)

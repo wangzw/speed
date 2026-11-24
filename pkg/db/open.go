@@ -14,61 +14,24 @@ import (
 // openHandle opens one connection with an implementation's driver, sizes its
 // pool from the configuration, and checks that the database answers.
 //
-// Every connection this package hands out is opened here — the one the module
-// delivers, and each one a caller builds with Open — so one place decides how
-// a pool is sized, what a failed connection reports, and what a handle carries
-// before anyone can issue a statement on it. The dialector is the only part
-// that differs between engines.
+// The connectivity check is bound to ctx. GORM's own check on open takes no
+// context and would wait for a server that never answers, so it is switched off
+// and the check below is the one that runs.
 //
-// The connectivity check is bound to ctx, which is the ctx the stage received:
-// a host that wants a bound on how long a startup may wait for the database
-// sets it on the context it hands Run, because the driver's own timeouts are
-// written in the locator rather than declared here as input items. GORM's own
-// check on open takes no context, and against a host that accepts the
-// connection and never answers it waits for as long as the driver does —
-// without a timeout in the locator, for good — so it is switched off, and the
-// check below is the one that runs. On PostgreSQL that check is the first time
-// the connection is reached, because the driver connects on first use. The
-// SQLite dialector queries the library version as it opens, with no context;
-// that opens a local file, and nothing on it waits on a network.
+// A failure at any step reports ErrConnectFailed, naming the dialect and the
+// step and never the locator, which carries credentials.
 //
-// A failure reports ErrConnectFailed whatever the step — opening the driver,
-// reaching the pool behind the session, or the connectivity check — because
-// the host's response is the same for all three: look at the locator and at
-// the service behind it. The text names the dialect and the step that failed,
-// and never the locator itself: it carries credentials, and this error reaches
-// the startup diagnostics. The driver's own reason is kept, because it is the
-// diagnosis; on PostgreSQL it names the user, the database and the address it
-// tried, and never the password.
+// A locator whose database belongs to the connection that opens it, recognised
+// through Spec.ConnectionScoped, gets a pool of one connection that is never
+// replaced: over a larger pool each connection would open a database of its own
+// under the one handle.
 //
-// A locator whose database belongs to the connection that opens it, which the
-// implementation recognises through Spec.ConnectionScoped, gets a pool of one
-// connection that is never replaced, whatever the pool parameters say. Over a
-// larger pool every connection would open a database of its own under the one
-// handle: the migrations would land on one of them and a request on any other
-// would find no table.
-//
-// Every handle classifies the constraint refusals its driver reports, through
-// the implementation's Spec.ConstraintViolation: a statement a unique
-// constraint refused reports an error errors.Is finds gorm.ErrDuplicatedKey
-// in, one a foreign key refused an error it finds gorm.ErrForeignKeyViolated
-// in, and the driver's own error stays in the chain beside it. A host maps a
-// duplicate to a conflict the same way on either engine.
-//
-// Every handle also carries, in its plugin table, the engine behind it, which is
-// how a callback holding only a statement reads the statement's identifiers by
-// that engine's rules.
-//
-// Every handle logs through statementLogger over the logger it is handed: a
-// failed or slow statement, and every statement of a Debug session, is written
-// as a record of that logger, without a value the statement binds or reads, and
-// that logger's configuration decides where the record goes and from which
-// level. The logger is mandatory: a nil one is a defect in the caller, and
+// Every handle classifies the constraint refusals its driver reports through
+// Spec.ConstraintViolation, carries the engine marker in its plugin table, and
+// logs through statementLogger. A nil logger is a defect in the caller, and
 // openHandle panics on it before anything is opened.
 func openHandle(ctx context.Context, spec Spec, cfg lockingConfig, logger *slog.Logger) (*gorm.DB, error) {
-	// The locator is normalised once, and the dialector is the only reader:
-	// the stance judged the trimmed text, so the driver has to be handed the
-	// same one rather than the text with its surrounding whitespace intact.
+	// The stance judged the trimmed locator, so the driver gets the same text.
 	locator := strings.TrimSpace(cfg.DSN)
 	dialector := classifyingDialector{Dialector: spec.Dialector(locator), classify: spec.ConstraintViolation}
 	session, err := gorm.Open(dialector, &gorm.Config{
@@ -83,17 +46,14 @@ func openHandle(ctx context.Context, spec Spec, cfg lockingConfig, logger *slog.
 		return nil, fmt.Errorf("%w: the %s session came back without a connection pool to size: %w",
 			ErrConnectFailed, spec.Dialect, err)
 	}
-	// The three parameters travel together: database/sql reads 0 as no limit
-	// on the open connections and as a connection that is never replaced, so
-	// a handle that lost one of them does not fail, it opens as many
-	// connections as the load asks for and keeps each one for good.
+	// The three travel together: database/sql reads 0 as no limit and as a
+	// connection that is never replaced.
 	pool.SetMaxOpenConns(cfg.MaxOpenConns)
 	pool.SetMaxIdleConns(cfg.MaxIdleConns)
 	pool.SetConnMaxLifetime(cfg.ConnMaxLifetime)
 	if spec.ConnectionScoped != nil && spec.ConnectionScoped(locator) {
-		// The one connection is the database: it is kept idle rather than
-		// closed, and never retired for its age or its idleness, because
-		// retiring it discards everything written through the handle.
+		// Retiring this connection would discard everything written through
+		// the handle.
 		pool.SetMaxOpenConns(1)
 		pool.SetMaxIdleConns(1)
 		pool.SetConnMaxLifetime(0)
@@ -105,29 +65,20 @@ func openHandle(ctx context.Context, spec Spec, cfg lockingConfig, logger *slog.
 				ErrConnectFailed, spec.Dialect, err),
 			closeUnusablePool(pool))
 	}
-	// The encryption support is installed here rather than by the callers,
-	// because it is the section that decides it: the key material comes out
-	// of the same configuration the pool parameters do, and both callers of
-	// this function have only a section to hand. What the registry decides
-	// instead — the declared plugins — is installed by the callers, which
-	// are the sites that hold it.
 	if err := installEncryption(session, spec.ConfigNamespace, cfg.Config); err != nil {
 		return nil, errors.Join(err, Close(session))
 	}
 	if err := installRowClassification(session, spec.ConstraintViolation); err != nil {
 		return nil, errors.Join(err, Close(session))
 	}
-	// The marker goes on before either caller installs the declared plugins,
-	// so a plugin's Initialize already finds it.
+	// Before the callers install the declared plugins, so a plugin's
+	// Initialize already finds it.
 	if err := markEngine(session, spec); err != nil {
 		return nil, errors.Join(err, Close(session))
 	}
 	return session, nil
 }
 
-// closeUnusablePool releases a pool whose connection never answered, so the
-// failed attempt leaves nothing behind. The handle never leaves openHandle on
-// that path, so no caller could release it instead.
 func closeUnusablePool(pool *sql.DB) error {
 	if err := pool.Close(); err != nil {
 		return fmt.Errorf("db: closing the pool of a connection that never answered failed: %w", err)

@@ -11,40 +11,18 @@ import (
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
-// runAssembly runs a real host around the module this subpackage registers, and
-// returns the capability the dependant resolved.
-//
-// The configuration is written under this implementation's namespace. An
-// implementation that mounted its items somewhere else is therefore not
-// configured at all: it disables itself, and what the case reports is the
-// dependant's unmet requirement rather than a run that quietly did nothing. The
-// server behind the locator comes from the compose stack, so only an integration
-// run reaches this.
 func runAssembly(t *testing.T, dsn string) (db.Database, error) {
 	t.Helper()
 	return runAssemblyWith(t, context.Background(), map[string]any{"dsn": dsn})
 }
 
-// runAssemblyWith is runAssembly over a section the case writes in full, driven
-// under a context the case hands in: a deadline on it is a deadline on the
-// whole startup, the way a host bounds one.
 func runAssemblyWith(t *testing.T, parent context.Context, section map[string]any) (db.Database, error) {
 	t.Helper()
 	return runAssemblySupplying(t, parent, section, nil)
 }
 
-// TestTheRegisteredModuleAppliesThisEnginesMigrations runs the module this
-// subpackage registers, end to end, on a database of its own.
-//
-// The registration is the deliverable here, and this is what says it is worth
-// anything: a host that imports the package and configures the namespace this
-// implementation owns gets a capability, resolutions succeed against it, and
-// the migration sets declared for this engine are applied on it. What it pins
-// beyond the shape case is the wiring — the dialect that names the migration
-// subdirectory, the driver binding that opens that locator, and the migrate
-// stage that reaches both. The index in the record below is the engine's third
-// admission condition seen from here: the file holds two statements and the run
-// hands it over whole, without splitting the text.
+// TestTheRegisteredModuleAppliesThisEnginesMigrations runs the module this subpackage registers,
+// end to end, on a database of its own.
 func TestTheRegisteredModuleAppliesThisEnginesMigrations(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 

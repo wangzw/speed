@@ -14,77 +14,30 @@ import (
 	"strings"
 )
 
-// The two purposes one root key is split into.
-//
-// They are separate strings rather than two ranges of one derivation, and each
-// is the info parameter of its own derivation: the subkeys are unrelated to
-// each other. A ciphertext that leaks therefore says nothing about the digest
-// of the plaintext it hides, and giving one purpose a new derivation does not
-// move the other.
 const (
 	encryptionPurpose = "speed/db/field-encryption"
 	blindIndexPurpose = "speed/db/blind-index"
 )
 
-// minimumRootKeyBytes is the shortest current root key an assembly accepts:
-// 112 bits, the security strength NIST SP 800-131A sets as the floor and the
-// length hkdf.Key already demands of its secret in FIPS 140-only mode. Holding
-// every mode to it means a key that starts in one mode starts in the other.
+// minimumRootKeyBytes is the shortest current root key an assembly accepts: 112
+// bits, the floor NIST SP 800-131A sets.
 const minimumRootKeyBytes = 112 / 8
 
-// subkeyLength is how long each subkey is. It is the width AES-256 takes; for
-// HMAC-SHA256 it is the natural key width, and any key at or below the hash's
-// block length is used as it is.
+// subkeyLength is how long each subkey is: AES-256's width.
 const subkeyLength = 32
 
-// keySet is what one root key yields.
 type keySet struct {
-	// aead seals and opens the encrypted columns. GCM authenticates what it
-	// opens, so a value that was edited, truncated or written under another
-	// key does not come back as plaintext at all.
-	aead cipher.AEAD
-	// blindIndex is the HMAC key the digests are computed under.
+	aead       cipher.AEAD
 	blindIndex []byte
 }
 
-// keyRing is the material one assembled database works under: the subkeys of
-// the configured root key, and one subkey set per retired root key.
-//
-// Only the current set writes. The retired ones are what a rotation leaves
-// behind, and they open and never seal: rows written before the change stay
-// readable, and nothing written after it is sealed under a key on its way out.
+// keyRing is the material one assembled database works under. Only the current
+// set writes; the retired sets open and never seal.
 type keyRing struct {
 	current keySet
 	retired []keySet
 }
 
-// newKeyRing derives the material a section configures, keeping the retired
-// keys in the order they are listed.
-//
-// A section with no root key yields no ring and no error. That is the shape a
-// database nobody encrypts through has, and refusing it would fail a startup
-// over an ability the assembly may never ask for. What it must not do is
-// pretend to have key material: every use of a nil ring fails, where the
-// alternative — a subkey derived from nothing — writes columns nothing can
-// ever open, and writes them without an error anywhere near.
-//
-// A root key that cannot be used fails the assembly instead, and so does one
-// that is nothing but whitespace, and a current key shorter than
-// minimumRootKeyBytes. A key of whitespace derives, and is the key a template
-// that expanded to nothing leaves behind; a short one derives too, and can be
-// found by trying every key of its length. Either way everything sealed under
-// it opens for anyone who guesses it, while every write reports success. The
-// floor binds the current key only: a retired key opens and never seals, and
-// refusing a short one would strand the rows of a deployment moving off it.
-// In a program running in FIPS 140-only mode hkdf.Key refuses a short retired
-// key all the same, and that refusal fails the assembly naming the item rather
-// than leaving the rows it sealed to fail one by one.
-//
-// A key is otherwise used byte for byte, surrounding whitespace included.
-// Trimming it would change the subkeys of every deployment whose key has a
-// trailing newline, and every column already sealed under them would stop
-// opening; two replicas whose keys differ in one byte fail loudly instead, on
-// the first row one of them cannot open.
 func newKeyRing(namespace string, cfg Config) (*keyRing, error) {
 	if cfg.EncryptionKey == "" {
 		return nil, nil
@@ -123,13 +76,6 @@ func newKeyRing(namespace string, cfg Config) (*keyRing, error) {
 	return ring, nil
 }
 
-// digestFor is the blind index function an assembled product answers with, and
-// nil when the section configured no root key.
-//
-// The nil case is the state the product refuses to answer in. It is kept apart
-// from the derivation error here, where the caller can still tell them apart:
-// one is an assembly that never had a key, the other an assembly that was
-// given one and cannot use it, and they send an operator to different items.
 func digestFor(namespace string, cfg Config) (func(string) string, error) {
 	keys, err := newKeyRing(namespace, cfg)
 	if err != nil {
@@ -141,14 +87,8 @@ func digestFor(namespace string, cfg Config) (func(string) string, error) {
 	return keys.blindIndex, nil
 }
 
-// deriveKeySet turns one root key into its two subkeys.
-//
-// Both come out of HKDF with SHA-256 and no salt, which is what makes the
-// derivation deterministic — every replica and every build has to arrive at
-// the same subkeys, or a row one wrote would not open on another — and what
-// keeps the purposes apart, since the info parameter is the only thing that
-// differs between them. Nothing here is random and nothing here reads the
-// clock: the subkeys are a function of the root key and the purpose alone.
+// deriveKeySet turns one root key into its two subkeys. Every replica must
+// arrive at the same subkeys, so nothing here is random.
 func deriveKeySet(rootKey string) (keySet, error) {
 	encryption, err := deriveSubkey(rootKey, encryptionPurpose)
 	if err != nil {
@@ -158,11 +98,8 @@ func deriveKeySet(rootKey string) (keySet, error) {
 	if err != nil {
 		return keySet{}, err
 	}
-	// Neither call below can refuse a subkey this package derived: AES takes
-	// exactly the 32 bytes HKDF was asked for, and GCM takes any 128-bit
-	// block. Their errors travel back all the same, because the width of a
-	// subkey is written down once, above, and a change to it has to fail
-	// here rather than at the first statement that meets a short key.
+	// Neither call can refuse a subkey of subkeyLength, but their errors travel
+	// back so a change to that width fails here rather than on a statement.
 	block, err := aes.NewCipher(encryption)
 	if err != nil {
 		return keySet{}, err
@@ -174,37 +111,21 @@ func deriveKeySet(rootKey string) (keySet, error) {
 	return keySet{aead: aead, blindIndex: blindIndex}, nil
 }
 
-// deriveSubkey is one derivation. It is a function of its two arguments alone:
-// the same root key and the same purpose give the same subkey in every process
-// that runs it.
 func deriveSubkey(rootKey, purpose string) ([]byte, error) {
 	return hkdf.Key(sha256.New, []byte(rootKey), nil, purpose, subkeyLength)
 }
 
-// encrypt seals a plaintext under the current subkey and returns what the
-// column holds: the nonce followed by the sealed value, base64 encoded so that
-// it is text on every engine.
-//
-// The nonce is drawn fresh for every call, which is what makes one plaintext
-// land as two different columns on two writes, and what makes an equality
-// query on this column impossible — hence the blind index beside it.
+// encrypt returns what the column holds: the fresh nonce followed by the sealed
+// value, base64 encoded so that it is text on every engine.
 func (k *keyRing) encrypt(plaintext []byte) string {
 	nonce := make([]byte, k.current.aead.NonceSize())
-	// crypto/rand.Read fills the slice entirely and never returns an error:
-	// it crashes the process rather than reporting one. There is no failure
-	// here to handle or to report.
+	// crypto/rand.Read fills the slice entirely, or crashes the process.
 	rand.Read(nonce)
 	return base64.StdEncoding.EncodeToString(k.current.aead.Seal(nonce, nonce, plaintext, nil))
 }
 
-// decrypt opens a stored value, trying the current subkey and then each
-// retired one.
-//
-// Nothing in the column and nothing in the configuration says which key a
-// value was sealed under, and GCM refuses a key that is not the one: the
-// search is over the keys that authenticate, and the column keeps exactly the
-// shape the current key gives it. The price is one failed open per key that is
-// not the right one, on a read that already went to the database.
+// decrypt opens a stored value, trying the current subkey and then each retired
+// one: nothing in the column says which key sealed it.
 func (k *keyRing) decrypt(stored string) ([]byte, error) {
 	raw, err := base64.StdEncoding.DecodeString(stored)
 	if err != nil {
@@ -219,19 +140,14 @@ func (k *keyRing) decrypt(stored string) ([]byte, error) {
 		"that is neither the current one nor one of the retired ones")
 }
 
-// sets is the current subkey followed by the retired ones, in the order they
-// are tried.
 func (k *keyRing) sets() []keySet {
 	sets := make([]keySet, 0, 1+len(k.retired))
 	sets = append(sets, k.current)
 	return append(sets, k.retired...)
 }
 
-// open opens one sealed value with one subkey.
-//
-// A value too short to hold a nonce is refused here rather than sliced: an
-// unauthenticated column can hold anything, and a panic in a read path would
-// take the process down over a row it could have reported.
+// A value too short to hold a nonce is refused rather than sliced: the column
+// is unauthenticated and can hold anything.
 func (s keySet) open(raw []byte) ([]byte, error) {
 	if len(raw) < s.aead.NonceSize() {
 		return nil, errors.New("the value is shorter than a nonce, so it cannot be a sealed one")
@@ -239,19 +155,9 @@ func (s keySet) open(raw []byte) ([]byte, error) {
 	return s.aead.Open(nil, raw[:s.aead.NonceSize()], raw[s.aead.NonceSize():], nil)
 }
 
-// blindIndex returns the digest of one plaintext under the current subkey.
-//
-// HMAC-SHA256 over the string as it was given: no case folding, no trimming,
-// no canonicalisation of any kind. Two spellings of one address therefore have
-// two digests, and a caller that flattens on one side only writes a column
-// whose queries never match — which shows up as an empty result and not as an
-// error, which is why the obligation sits with the caller on both sides.
-//
-// Only the current subkey computes it. A digest is not a ciphertext: there is
-// nothing in it to open, so a retired key cannot help, and a rotation leaves
-// every stored digest stale until the rows are rewritten under the new key.
-// Rewriting them is the caller's, because what has to be rewritten is rows of
-// models this package does not know.
+// blindIndex returns the digest of the plaintext as given, under the current
+// subkey only: a retired key cannot help, and a rotation leaves stored digests
+// stale until the caller rewrites those rows.
 func (k *keyRing) blindIndex(plaintext string) string {
 	digest := hmac.New(sha256.New, k.current.blindIndex)
 	digest.Write([]byte(plaintext))

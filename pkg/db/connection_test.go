@@ -14,14 +14,8 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// These cases hold Connection to what it promises whatever the engine: the
-// refusals, fn's error, the pinned session, and the handles it takes a
-// connection from. What each engine does to a statement's lock wait, what a
-// panic in fn leaves behind, and a transaction's savepoints are held by that
-// engine's own cases, on the handle its module delivers.
-
-// TestConnectionRefusesAWaitThatIsNotPositive covers the bound itself: a wait
-// of zero or less would give up before waiting at all, and fn does not run.
+// TestConnectionRefusesAWaitThatIsNotPositive covers the bound itself: a wait of zero or less would
+// give up before waiting at all, and fn does not run.
 func TestConnectionRefusesAWaitThatIsNotPositive(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t))
 	for _, wait := range []time.Duration{0, -time.Second} {
@@ -36,8 +30,8 @@ func TestConnectionRefusesAWaitThatIsNotPositive(t *testing.T) {
 	}
 }
 
-// TestConnectionRefusesNoHandle covers a nil handle, which has no pool to take
-// a connection from and no session to run fn on.
+// TestConnectionRefusesNoHandle covers a nil handle, which has no pool to take a connection from
+// and no session to run fn on.
 func TestConnectionRefusesNoHandle(t *testing.T) {
 	ran := false
 	err := Connection(t.Context(), nil, time.Second, func(*gorm.DB) error { ran = true; return nil })
@@ -49,9 +43,8 @@ func TestConnectionRefusesNoHandle(t *testing.T) {
 	}
 }
 
-// TestConnectionTakesAConnectionOfAHandleThisModuleDidNotOpen covers a handle a
-// host opened itself with gorm.Open: Connection takes its connection from that
-// handle's pool, and fn's statements run on it.
+// TestConnectionTakesAConnectionOfAHandleThisModuleDidNotOpen covers a handle a host opened itself
+// with gorm.Open: Connection takes its connection from that handle's pool.
 func TestConnectionTakesAConnectionOfAHandleThisModuleDidNotOpen(t *testing.T) {
 	foreign, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "foreign.db")), &gorm.Config{})
 	if err != nil {
@@ -79,22 +72,14 @@ func TestConnectionTakesAConnectionOfAHandleThisModuleDidNotOpen(t *testing.T) {
 	}
 }
 
-// namingPool is a host's wrapper of its pool that names the pool it wraps
-// through gorm.GetDBConnector.
 type namingPool struct{ *sql.DB }
 
-// GetDBConn is the pool the wrapper wraps.
 func (p namingPool) GetDBConn() (*sql.DB, error) { return p.DB, nil }
 
-// opaquePool is a host's wrapper of its pool that names no pool.
 type opaquePool struct{ *sql.DB }
 
-// TestConnectionReadsAWrappedPoolOnlyWhenItNamesThePool covers a handle whose
-// ConnPool is a host's wrapper of a pool. One answering gorm.GetDBConnector is
-// a handle on the pool it names, and fn runs on a connection taken from it;
-// one answering neither that nor *sql.DB gives Connection no pool to take a
-// connection from, and fn runs on the handle itself, with nothing bounding the
-// wait for a connection.
+// TestConnectionReadsAWrappedPoolOnlyWhenItNamesThePool covers a handle whose ConnPool is a host's
+// wrapper of a pool.
 func TestConnectionReadsAWrappedPoolOnlyWhenItNamesThePool(t *testing.T) {
 	pool, err := sql.Open(sqlite.DriverName, filepath.Join(t.TempDir(), "wrapped.db"))
 	if err != nil {
@@ -128,8 +113,8 @@ func TestConnectionReadsAWrappedPoolOnlyWhenItNamesThePool(t *testing.T) {
 	}
 }
 
-// TestConnectionHandsFnsErrorBackAsItIs covers fn's own failure: a caller
-// classifies it as it would the statement's, so it arrives unwrapped.
+// TestConnectionHandsFnsErrorBackAsItIs covers fn's own failure: a caller classifies it as it would
+// the statement's, so it arrives unwrapped.
 func TestConnectionHandsFnsErrorBackAsItIs(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t))
 	failure := errors.New("the statement fn ran failed")
@@ -139,10 +124,8 @@ func TestConnectionHandsFnsErrorBackAsItIs(t *testing.T) {
 	}
 }
 
-// TestConnectionPinsTheSessionToTheConnectionItTook covers the session fn is
-// handed on a pool of one connection: its statements and a transaction begun
-// from it run on the connection Connection holds. A session that went back to
-// the pool would wait for that connection until its context ended.
+// TestConnectionPinsTheSessionToTheConnectionItTook covers the session fn is handed on a pool of
+// one connection.
 func TestConnectionPinsTheSessionToTheConnectionItTook(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), `"max-open-conns":1`, `"max-idle-conns":1`)
 	bounded, cancel := context.WithTimeout(t.Context(), 3*time.Second)
@@ -167,10 +150,8 @@ func TestConnectionPinsTheSessionToTheConnectionItTook(t *testing.T) {
 	}
 }
 
-// TestConnectionTakesFromThePoolBehindAnySessionOfTheHandle covers the
-// sessions a caller may hold instead of the handle itself — one with its own
-// context, one of its own settings — and a connection built with Open, whose
-// pool is its own: Connection takes a connection of the pool behind each.
+// TestConnectionTakesFromThePoolBehindAnySessionOfTheHandle covers the sessions a caller may hold
+// instead of the handle itself — one with its own context.
 func TestConnectionTakesFromThePoolBehindAnySessionOfTheHandle(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t))
 	opened, err := product.Open(t.Context(), filepath.Join(t.TempDir(), "opened.db"))
@@ -209,10 +190,8 @@ func TestConnectionTakesFromThePoolBehindAnySessionOfTheHandle(t *testing.T) {
 	}
 }
 
-// TestConnectionRunsFnOnTheSessionItPinned covers Connection handed fn's own
-// session: that session is on one connection already, the one Connection took,
-// so fn runs on it rather than waiting for a second connection of a pool that
-// may have none.
+// TestConnectionRunsFnOnTheSessionItPinned covers Connection handed fn's own session: that session
+// is on one connection already, the one Connection took.
 func TestConnectionRunsFnOnTheSessionItPinned(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), `"max-open-conns":1`, `"max-idle-conns":1`)
 	err := Connection(t.Context(), product.DB(), time.Second, func(outer *gorm.DB) error {
@@ -228,10 +207,7 @@ func TestConnectionRunsFnOnTheSessionItPinned(t *testing.T) {
 	}
 }
 
-// TestAStatementThroughConnectionRunsTheHandlesCallbacks covers what the
-// session carries: the callbacks installed on the handle — the declared
-// plugins' and this module's own — run on its statements, so a write through
-// it into a sealed column is sealed.
+// TestAStatementThroughConnectionRunsTheHandlesCallbacks covers what the session carries.
 func TestAStatementThroughConnectionRunsTheHandlesCallbacks(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)

@@ -20,21 +20,13 @@ import (
 	"github.com/vislake/speed/pkg/db/postgres"
 )
 
-// connectBound is how long the cases below give a startup or an Open whose
-// context carries a deadline of connectDeadline. It is far above that deadline:
-// a return inside it is the context doing its work, and a return only after it
-// is a connection attempt nothing bounded.
+// connectBound is how long the cases below give a startup or an Open whose context
+// carries a deadline of connectDeadline.
 const (
 	connectDeadline = time.Second
 	connectBound    = 15 * time.Second
 )
 
-// silentServer accepts TCP connections and never answers on them, which is
-// what an unresponsive database host looks like to a driver that has already
-// reached the port: the connection attempt waits on the first reply for as
-// long as nothing bounds it. It returns the locator of a database behind it
-// and the function that shuts it down, which also ends every attempt still
-// waiting on it.
 func silentServer(t *testing.T) (string, func()) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -67,13 +59,6 @@ func silentServer(t *testing.T) (string, func()) {
 	return fmt.Sprintf("postgres://user:secret@%s/silent?sslmode=disable", listener.Addr()), stop
 }
 
-// startupAgainst drives a whole host whose section is the one given, under
-// parent, and returns what the run ended with, or reports that it had not
-// ended within connectBound.
-//
-// Only the run itself goes to another goroutine, so a run that never returns
-// leaves nothing of the test's own behind it; stop is what ends it, and the
-// cleanup calls it before waiting for the run.
 func startupAgainst(t *testing.T, parent context.Context, section map[string]any, stop func()) (bool, error) {
 	t.Helper()
 	body, err := json.Marshal(map[string]any{"db": map[string]any{"postgres": section}})
@@ -119,12 +104,8 @@ func startupAgainst(t *testing.T, parent context.Context, section map[string]any
 	}
 }
 
-// TestTheStartupContextBoundsTheFirstConnection pins the one bound the design
-// gives a host on how long a startup waits for its database: the deadline on
-// the context the startup is driven under. Against a host that accepts the
-// connection and never answers, and a locator that sets no timeout of its own,
-// the startup has to end at that deadline with ErrConnectFailed rather than
-// wait for as long as the driver would.
+// TestTheStartupContextBoundsTheFirstConnection pins that the deadline on the
+// startup's context bounds how long it waits for its database.
 func TestTheStartupContextBoundsTheFirstConnection(t *testing.T) {
 	dsn, stop := silentServer(t)
 	ctx, cancel := context.WithTimeout(context.Background(), connectDeadline)

@@ -15,8 +15,6 @@ import (
 	"github.com/vislake/speed/pkg/db"
 )
 
-// readOnlyDatabase writes a database file holding one row in table t, closes
-// it, and returns its path.
 func readOnlyDatabase(t *testing.T, dir, name string) string {
 	t.Helper()
 	file := filepath.Join(dir, name)
@@ -37,14 +35,8 @@ func readOnlyDatabase(t *testing.T, dir, name string) string {
 	return file
 }
 
-// TestATransactionOnADatabaseItsConnectionsCannotWriteRuns holds every shape
-// of a locator whose connections cannot write to the transactions this engine
-// begins on it: each one runs and reads, and a write in it is refused by
-// SQLite as the connection refuses every write, rather than the BEGIN failing.
-// SQLite begins an IMMEDIATE transaction on a database it opened read-only —
-// mode=ro, immutable=1, a file the process may not write — as a read
-// transaction, and refuses one on a connection whose query_only is on, which
-// this engine therefore begins DEFERRED whatever mode the locator names.
+// TestATransactionOnADatabaseItsConnectionsCannotWriteRuns holds every shape of a locator whose
+// connections cannot write to the transactions this engine begins on it: each one runs and reads.
 func TestATransactionOnADatabaseItsConnectionsCannotWriteRuns(t *testing.T) {
 	dir := t.TempDir()
 	instance := deliver(t, filepath.Join(dir, "delivered.db"))
@@ -90,10 +82,8 @@ func TestATransactionOnADatabaseItsConnectionsCannotWriteRuns(t *testing.T) {
 	}
 }
 
-// TestATransactionOnAConnectionAStatementTurnedQueryOnlyRuns covers the one
-// shape no locator gives: a statement turning query_only on for the connection
-// it runs on. A transaction begun on that connection afterwards runs as one
-// on a locator turning it on does.
+// TestATransactionOnAConnectionAStatementTurnedQueryOnlyRuns covers the one shape no locator gives:
+// a statement turning query_only on for the connection it runs on.
 func TestATransactionOnAConnectionAStatementTurnedQueryOnlyRuns(t *testing.T) {
 	dir := t.TempDir()
 	instance := deliver(t, filepath.Join(dir, "delivered.db"))

@@ -10,11 +10,8 @@ import (
 	"testing"
 )
 
-// TestConnectionScopedReadsTheLocatorTheWayTheDriverDoes pins which locators
-// hold a handle to one connection. Reading one too narrowly leaves a private
-// database under a pool, where tables appear and vanish between connections;
-// reading one too widely takes the pool away from a database every connection
-// shares.
+// TestConnectionScopedReadsTheLocatorTheWayTheDriverDoes pins which locators hold a handle to one
+// connection.
 func TestConnectionScopedReadsTheLocatorTheWayTheDriverDoes(t *testing.T) {
 	cases := []struct {
 		dsn    string
@@ -31,47 +28,32 @@ func TestConnectionScopedReadsTheLocatorTheWayTheDriverDoes(t *testing.T) {
 		{"/var/lib/app/app.db", false},
 		{"/var/lib/app/app.db?_pragma=foreign_keys(1)", false},
 		{"file:/var/lib/app/app.db?mode=rwc", false},
-		// Outside a file: URI the parameters are the driver's, cut off
-		// before SQLite sees the name, so cache=shared shares nothing.
 		{":memory:?cache=shared", true},
-		// SQLite takes a parameter named twice from its last occurrence.
 		{"file:scratch?mode=rwc&mode=memory", true},
 		{"file:scratch?mode=memory&mode=rwc", false},
-		// It decodes escapes in the name, the parameters' names and their
-		// values, and ends any of them at an escaped NUL.
 		{"file:scratch?mod%65=memory", true},
 		{"file:scratch?mode=memor%79", true},
 		{"file:scratch?mode=memory%00rwc", true},
 		{"file:scratch?mode%00x=memory", true},
 		{"file:%3Amemory%3A", true},
 		{"file::memory:%00/var/lib/app/app.db", true},
-		// It ends the URI at a number sign.
 		{"file:scratch?mode=memory#&mode=rwc", true},
 		{"file:scratch?mode=memory&cache=shared#&cache=private", false},
 		{"file::memory:#/var/lib/app/app.db", true},
-		// The memdb VFS gives each connection a database of its own unless
-		// the name begins with a slash, whether the URI or the driver's own
-		// parameters name the VFS.
 		{"file:scratch?vfs=memdb", true},
 		{"file:/scratch?vfs=memdb", false},
 		{"file:scratch#?vfs=memdb", true},
 		{"scratch?vfs=memdb", true},
 		{"/scratch?vfs=memdb", false},
-		// A name shared under memdb is longer than one character, and begins
-		// with a backslash as well as with a slash.
 		{"file:/?vfs=memdb", true},
 		{"/?vfs=memdb", true},
 		{`\scratch?vfs=memdb`, false},
-		// The driver hands its VFS to SQLite as a C string, which ends at a
-		// NUL, escaped or not.
 		{"scratch?vfs=memdb%00", true},
 		{"scratch?vfs=memdb\x00", true},
 		{"file:scratch#?vfs=memdb%00", true},
 		{"/scratch?vfs=memdb%00", false},
-		// It hands a file: URI to SQLite as a C string too.
 		{"file:scratch?mode=memory\x00&mode=rwc", true},
 		{"file:scratch?mode=rwc\x00&mode=memory", false},
-		// A temporary database is its connection's even in shared-cache mode.
 		{"file:?cache=shared", true},
 	}
 	for _, c := range cases {
@@ -81,9 +63,8 @@ func TestConnectionScopedReadsTheLocatorTheWayTheDriverDoes(t *testing.T) {
 	}
 }
 
-// TestSharesCacheReadsTheLocatorTheWayTheDriverDoes pins which locators put
-// their connections in SQLite's shared-cache mode, which Dialector refuses.
-// Reading one too narrowly opens a database whose lock waits nothing bounds.
+// TestSharesCacheReadsTheLocatorTheWayTheDriverDoes pins which locators put their connections in
+// SQLite's shared-cache mode, which Dialector refuses.
 func TestSharesCacheReadsTheLocatorTheWayTheDriverDoes(t *testing.T) {
 	cases := []struct {
 		dsn    string
@@ -104,27 +85,18 @@ func TestSharesCacheReadsTheLocatorTheWayTheDriverDoes(t *testing.T) {
 		{"file:/var/lib/app/app.db", false},
 		{":memory:", false},
 		{"", false},
-		// Outside a file: URI the parameters are the driver's.
 		{":memory:?cache=shared", false},
 		{"/var/lib/app/app.db?cache=shared", false},
-		// SQLite ends the URI at a number sign, so what follows it neither
-		// adds to a value nor overrides one.
 		{"file:/var/lib/app/app.db?cache=shared#", true},
 		{"file:/var/lib/app/app.db?cache=shared#&cache=private", true},
 		{"file:/var/lib/app/app.db?cache=shared#x", true},
 		{"file:/var/lib/app/app.db#?cache=shared", false},
-		// The driver hands a file: URI to SQLite as a C string, which ends at
-		// a NUL: what follows one neither adds to a value nor overrides one.
 		{"file:/var/lib/app/app.db?cache=shared\x00x\x00y&cache=private", true},
 		{"file:/var/lib/app/app.db?cache=private\x00&cache=shared", false},
-		// A parameter with an empty name is skipped with its value.
 		{"file:/var/lib/app/app.db?=private&cache=shared", true},
-		// An authority of localhost is dropped; any other refuses the URI.
 		{"file://localhost/var/lib/app/app.db?cache=shared", true},
 		{"file:///var/lib/app/app.db?cache=shared", true},
-		// A temporary database is never shared.
 		{"file:?cache=shared", false},
-		// The memdb VFS's databases share a cache like any other.
 		{"file:/scratch?vfs=memdb&cache=shared", true},
 	}
 	for _, c := range cases {
@@ -134,17 +106,10 @@ func TestSharesCacheReadsTheLocatorTheWayTheDriverDoes(t *testing.T) {
 	}
 }
 
-// locatorNames numbers the in-memory names the case below opens: a named
-// in-memory database in shared-cache mode, and a memdb database whose name
-// begins with a slash, are one database for the whole process.
 var locatorNames atomic.Int64
 
-// TestTheLocatorReadingAgreesWithTheDriver holds connectionScoped and
-// sharesCache to what the driver and SQLite make of each locator, observed on
-// two connections of one pool: whether the second sees a table the first
-// created, and — where it does — whether it reads the first one's uncommitted
-// row under read_uncommitted, which only a connection sharing the first one's
-// cache can.
+// TestTheLocatorReadingAgreesWithTheDriver holds connectionScoped and sharesCache to what the
+// driver and SQLite make of each locator, observed on two connections of one pool.
 func TestTheLocatorReadingAgreesWithTheDriver(t *testing.T) {
 	dir := t.TempDir()
 	file := func(name string) string { return filepath.Join(dir, name) }
@@ -206,9 +171,6 @@ func TestTheLocatorReadingAgreesWithTheDriver(t *testing.T) {
 	}
 }
 
-// observeLocator opens a locator through the driver this engine opens every
-// connection with, and reports what two connections of one pool on it are to
-// each other.
 func observeLocator(t *testing.T, dsn string) (private, sharedCache bool) {
 	t.Helper()
 	ctx := context.Background()

@@ -20,10 +20,6 @@ import (
 	"github.com/vislake/speed/pkg/db/sqlite"
 )
 
-// deliver runs a real assembly around this subpackage's module, with the
-// widgets migration declared and the given items configured beside the
-// locator, and returns the capability once the migrations are applied. The
-// assembly is shut down when the case ends.
 func deliver(t *testing.T, dsn string, items ...string) db.Database {
 	t.Helper()
 	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q`, dsn)
@@ -75,8 +71,6 @@ func deliver(t *testing.T, dsn string, items ...string) db.Database {
 	return instance
 }
 
-// concurrentInserts writes rows into widgets from several goroutines at once,
-// which is how requests reach a pool, and returns the failures.
 func concurrentInserts(handle *gorm.DB, rows int) []error {
 	var (
 		wg       sync.WaitGroup
@@ -98,14 +92,8 @@ func concurrentInserts(handle *gorm.DB, rows int) []error {
 	return failures
 }
 
-// TestAnInMemoryLocatorIsOneDatabaseForTheWholeHandle pins what a locator
-// naming an in-memory database gives a host: one database. SQLite gives each
-// connection that opens such a locator a database of its own, so over a pool
-// the migrations land on the connection the run was pinned to and a request on
-// any other connection finds no table — the tables seem to come and go, and
-// rows written on one connection are missing on the next. The module holds
-// such a handle to one connection, which is the only shape in which the
-// locator means what it says.
+// TestAnInMemoryLocatorIsOneDatabaseForTheWholeHandle pins what a locator naming an in- memory
+// database gives a host: one database.
 func TestAnInMemoryLocatorIsOneDatabaseForTheWholeHandle(t *testing.T) {
 	const rows = 20
 	instance := deliver(t, ":memory:")
@@ -140,11 +128,8 @@ func TestAnInMemoryLocatorIsOneDatabaseForTheWholeHandle(t *testing.T) {
 	}
 }
 
-// TestAnInMemoryDatabaseOutlivesThePoolParameters pins the other half of one
-// connection: it is never replaced. A pool that retires a connection for its
-// age, or keeps none idle between statements, closes the in-memory database
-// with it and opens an empty one in its place, so the migrated table and the
-// rows in it are gone with no error until the next statement cannot find them.
+// TestAnInMemoryDatabaseOutlivesThePoolParameters pins the other half of one connection: it is
+// never replaced.
 func TestAnInMemoryDatabaseOutlivesThePoolParameters(t *testing.T) {
 	const lifetime = 20 * time.Millisecond
 	instance := deliver(t, ":memory:",
@@ -162,10 +147,8 @@ func TestAnInMemoryDatabaseOutlivesThePoolParameters(t *testing.T) {
 	}
 }
 
-// TestAShareableLocatorKeepsTheConfiguredPool keeps the single connection to
-// the locators that need it. A file is one database for every connection, so
-// the pool keeps the shape the configuration gave it, whether the file is named
-// as a path or as a file: URI.
+// TestAShareableLocatorKeepsTheConfiguredPool keeps the single connection to the locators that need
+// it.
 func TestAShareableLocatorKeepsTheConfiguredPool(t *testing.T) {
 	dir := t.TempDir()
 	instance := deliver(t, filepath.Join(dir, "shared.db"))
@@ -190,9 +173,6 @@ func TestAShareableLocatorKeepsTheConfiguredPool(t *testing.T) {
 	}
 }
 
-// sharedCacheLocators are locators that put their connections in SQLite's
-// shared-cache mode, an in-memory database and a file among them, by what each
-// one is.
 func sharedCacheLocators(dir string) map[string]string {
 	file := "file:" + filepath.Join(dir, "cached.db")
 	return map[string]string{
@@ -205,15 +185,8 @@ func sharedCacheLocators(dir string) map[string]string {
 	}
 }
 
-// TestALocatorInSharedCacheModeIsRefused pins what this engine does with a
-// locator that puts its connections in SQLite's shared-cache mode: it opens
-// nothing, as the delivered locator and through Open alike.
-//
-// In that mode a connection waiting for a table lock another connection of the
-// cache holds is held by the driver until that connection's transaction ends,
-// and neither the busy timeout nor the statement's context ends the wait: a
-// module's statement issued from inside its caller's transaction, on another
-// connection of the cache, waits for that caller for good.
+// TestALocatorInSharedCacheModeIsRefused pins what this engine does with a locator that puts its
+// connections in SQLite's shared-cache mode: it opens nothing.
 func TestALocatorInSharedCacheModeIsRefused(t *testing.T) {
 	dir := t.TempDir()
 	instance := deliver(t, filepath.Join(dir, "delivered.db"))
@@ -238,8 +211,6 @@ func TestALocatorInSharedCacheModeIsRefused(t *testing.T) {
 	}
 }
 
-// assemblingOver drives this engine's module through New over a delivered
-// locator, and returns what the drive returned.
 func assemblingOver(t *testing.T, dsn string) error {
 	t.Helper()
 	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q}}}`, dsn)

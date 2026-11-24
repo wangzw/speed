@@ -12,29 +12,24 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Connect is db.Connection, handed in by the engine's own cases: this package
-// does not import pkg/db (see the package comment).
+// Connect is db.Connection, handed in because this package does not import
+// pkg/db.
 type Connect func(ctx context.Context, handle *gorm.DB, wait time.Duration, fn func(session *gorm.DB) error) error
 
 // boundedWait is the bound the cases below give Connection, and answeredWithin
-// how soon it has to have answered: long enough for a loaded machine, and far
-// short of both the SQLite driver's default busy timeout and forever.
+// how soon it has to answer: far short of both the SQLite driver's default busy
+// timeout and forever.
 const (
 	boundedWait    = 300 * time.Millisecond
 	answeredWithin = 3 * time.Second
 )
 
 // ConnectionWait holds Connection, on a handle whose pool is held to one
-// connection, to its bound on waiting for a connection: taken while the
-// caller's own transaction holds that connection, it fails within its wait with
-// an error that wraps context.DeadlineExceeded, and fn does not run; taken once
-// that connection is free, fn runs on it and the connection goes back to the
-// pool.
-//
-// Without the bound the call would wait for the transaction, which waits for
-// the call, until the context ends — which, under context.Background, it never
-// does. So the call runs on a goroutine of its own, and a call still waiting
-// well past the bound fails the case rather than the test binary.
+// connection, to its bound: taken while the caller's transaction holds the
+// connection, it fails within its wait wrapping context.DeadlineExceeded and fn
+// does not run; taken once the connection is free, fn runs on it and the
+// connection goes back to the pool. It runs on its own goroutine so a call still
+// waiting well past the bound fails the case rather than the test binary.
 func ConnectionWait(t *testing.T, handle *gorm.DB, connect Connect) {
 	t.Helper()
 	var ran atomic.Bool
@@ -85,8 +80,8 @@ func ConnectionWait(t *testing.T, handle *gorm.DB, connect Connect) {
 	requireConnectionBack(t, handle)
 }
 
-// requireConnectionBack checks that a statement on the handle gets a connection
-// of its pool, which on a pool of one is the one Connection took.
+// requireConnectionBack checks that a statement on the handle gets the pool's
+// one connection back.
 func requireConnectionBack(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	settled, cancel := context.WithTimeout(t.Context(), answeredWithin)
@@ -97,15 +92,10 @@ func requireConnectionBack(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// LockWait holds a statement run through Connection, on a handle an engine's
-// module delivered, to the engine's own lock wait: while another connection
-// holds a lock the statement needs, the statement fails once the lock wait the
-// handle's locator sets, lockWait, has passed — not before it, and not after
-// the far longer wait Connection was given for its connection — and once the
-// lock is given up the same statement goes through.
-//
-// other is a second pool on the same database, whose transaction holds the
-// lock.
+// LockWait holds a statement run through Connection to the engine's own lock
+// wait: while another connection holds a lock, the statement fails once the
+// locator's lockWait has passed, and once the lock is given up the same
+// statement goes through. other is a second pool on the same database.
 func LockWait(t *testing.T, handle, other *gorm.DB, lockWait time.Duration, connect Connect) {
 	t.Helper()
 	for _, statement := range []string{
@@ -153,9 +143,8 @@ func LockWait(t *testing.T, handle, other *gorm.DB, lockWait time.Duration, conn
 		t.Fatalf("giving the lock up: %v", err)
 	}
 	if waiting {
-		// The call still waiting takes the lock the one below needs once it
-		// is given up, so it is let finish first, and it then holds the lock
-		// to itself: its update is expected to go through.
+		// The still-waiting call is let finish first: it takes the lock the
+		// next one needs.
 		if err := <-answer; err != nil {
 			t.Errorf("the statement left waiting, once the lock was given up: %v", err)
 		}
@@ -165,11 +154,9 @@ func LockWait(t *testing.T, handle, other *gorm.DB, lockWait time.Duration, conn
 	}
 }
 
-// OnATransaction holds Connection, handed a transaction on a handle whose pool
-// is held to one connection, to running fn on that transaction: fn reads what
-// the transaction wrote and nothing is waited for. The transaction holds the
-// pool's only connection, so a connection taken from the pool instead would be
-// waited for until the bound ran out.
+// OnATransaction holds Connection, handed a transaction on a one-connection
+// handle, to running fn on that transaction: fn reads what the transaction wrote
+// and nothing is waited for.
 func OnATransaction(t *testing.T, handle *gorm.DB, connect Connect) {
 	t.Helper()
 	if err := handle.Exec("CREATE TABLE on_tx_rows (id INTEGER PRIMARY KEY)").Error; err != nil {
@@ -199,20 +186,12 @@ func OnATransaction(t *testing.T, handle *gorm.DB, connect Connect) {
 	}
 }
 
-// errPanicked is what fn panics with in PanicReleasesTheConnection.
 var errPanicked = errors.New("fn panicked")
 
 // PanicReleasesTheConnection holds Connection to handing its connection back
-// when fn panics under a context that never ends, whatever fn left open on it —
-// the transaction GORM opens around a write, one fn began itself, a result set
-// it never closed: the panic comes out of Connection, what the transaction wrote
-// is rolled back, and the connection is back in the pool. Under a context that
-// never ends, database/sql itself would end none of them, and handing the
-// connection back would wait on them for good.
-//
-// The handle's pool must be held to one connection. On a database that belongs
-// to its one connection — SQLite's :memory: — the table the case created is
-// still there afterwards, so the connection was not dropped from the pool.
+// when fn panics under a context that never ends, whatever fn left open: the
+// panic comes out, what the transaction wrote is rolled back, and the connection
+// is back in the pool. The handle's pool must be held to one connection.
 func PanicReleasesTheConnection(t *testing.T, handle *gorm.DB, connect Connect) {
 	t.Helper()
 	if err := handle.Exec("CREATE TABLE panic_rows (id INTEGER PRIMARY KEY)").Error; err != nil {
@@ -290,14 +269,8 @@ func PanicReleasesTheConnection(t *testing.T, handle *gorm.DB, connect Connect) 
 
 // ReturnReleasesTheConnection holds Connection to handing its connection back
 // when fn returns normally under a context that never ends, whatever fn left
-// open on it — a transaction it began and did not end, a result set it never
-// closed: Connection comes back with fn's own answer, what the transaction
-// wrote is rolled back, and the connection is back in the pool. Under a
-// context that never ends, database/sql itself would end neither of them, and
-// handing the connection back would wait on them for good.
-//
-// The handle's pool must be held to one connection, as for
-// PanicReleasesTheConnection.
+// open: Connection comes back with fn's own answer, what the transaction wrote
+// is rolled back, and the connection is back in the pool.
 func ReturnReleasesTheConnection(t *testing.T, handle *gorm.DB, connect Connect) {
 	t.Helper()
 	if err := handle.Exec("CREATE TABLE return_rows (id INTEGER PRIMARY KEY)").Error; err != nil {
@@ -347,11 +320,8 @@ func ReturnReleasesTheConnection(t *testing.T, handle *gorm.DB, connect Connect)
 }
 
 // SavepointRecovers holds a transaction fn runs through Connection to GORM's
-// nested transactions: a nested transaction whose statement fails rolls back to
-// its savepoint, and the outer transaction carries on and commits. PostgreSQL
-// refuses every statement in a transaction a statement failed in until it is
-// rolled back to the savepoint, so any statement Connection put ahead of that
-// rollback would leave the outer transaction failed.
+// nested transactions: a nested transaction that fails rolls back to its
+// savepoint and the outer one carries on and commits.
 func SavepointRecovers(t *testing.T, handle *gorm.DB, connect Connect) {
 	t.Helper()
 	if err := handle.Exec("CREATE TABLE savepoint_rows (id INTEGER PRIMARY KEY)").Error; err != nil {
@@ -365,8 +335,8 @@ func SavepointRecovers(t *testing.T, handle *gorm.DB, connect Connect) {
 			}
 			nested := tx.Transaction(func(inner *gorm.DB) error {
 				failed := inner.Exec("INSERT INTO savepoint_rows (id) VALUES (1)").Error
-				// Time passes between the failure and the rollback to the
-				// savepoint, as it does in any caller that looks at the error.
+				// Time passes between the failure and the rollback, as it
+				// does in a caller that looks at the error.
 				time.Sleep(5 * time.Millisecond)
 				return failed
 			})
@@ -389,5 +359,4 @@ func SavepointRecovers(t *testing.T, handle *gorm.DB, connect Connect) {
 	}
 }
 
-// leaveOpen is where a result set goes that a case leaves open on purpose.
 func leaveOpen(*sql.Rows) {}

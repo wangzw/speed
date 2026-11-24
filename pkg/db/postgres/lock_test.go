@@ -17,11 +17,8 @@ import (
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
-// TestLockTimeoutIsErrMigrationLockTimeout holds the bounded wait to its
-// sentinel, and to the response that sentinel exists to direct.
-//
-// Nothing here is a race: one replica takes the mutex and keeps it, the other
-// is given an allowance of a second, and the outcome is the same on every run.
+// TestLockTimeoutIsErrMigrationLockTimeout holds the bounded wait to its sentinel, and to the
+// response that sentinel exists to direct.
 func TestLockTimeoutIsErrMigrationLockTimeout(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := t.Context()
@@ -64,11 +61,8 @@ func TestLockTimeoutIsErrMigrationLockTimeout(t *testing.T) {
 	}
 }
 
-// TestTheMutexIsReleasedAfterARun checks the ordinary path: the replica that
-// applied the migrations lets the next one in.
-//
-// The second replica is given a one-second allowance, so a mutex that was not
-// given up fails this case rather than slowing it down.
+// TestTheMutexIsReleasedAfterARun checks the ordinary path: the replica that applied the migrations
+// lets the next one in.
 func TestTheMutexIsReleasedAfterARun(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := t.Context()
@@ -90,16 +84,8 @@ func TestTheMutexIsReleasedAfterARun(t *testing.T) {
 	}
 }
 
-// TestTheMutexIsReleasedAfterARunThatWasCutShort is the failing path, and it
-// turns on the detail that path is easiest to get wrong.
-//
-// A migration run that failed arrives at the release with its context already
-// cancelled. An unlock issued on that context does not reach the server, and
-// handing the pinned connection back to the pool ends no session — so the lock
-// stays held, and every other replica waits out its whole allowance against a
-// process that has already given up. An implementation that passed the caller's
-// context straight through fails here and nowhere else: the ordinary path above
-// stays green.
+// TestTheMutexIsReleasedAfterARunThatWasCutShort is the failing path, and it turns on the detail
+// that path is easiest to get wrong.
 func TestTheMutexIsReleasedAfterARunThatWasCutShort(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := t.Context()
@@ -124,14 +110,8 @@ func TestTheMutexIsReleasedAfterARunThatWasCutShort(t *testing.T) {
 	}
 }
 
-// TestReleasingAMutexWhoseSessionDiedReportsIt covers the one path on which
-// the unlock cannot go through: the server dropped the session holding the
-// lock, so there is nothing left to unlock.
-//
-// It has to be reported rather than swallowed. Silently returning nil would
-// read, to everything upstream, exactly like a mutex that was given up
-// normally, and the connection carrying that dead session must not go back into
-// the pool for the next caller to pick up.
+// TestReleasingAMutexWhoseSessionDiedReportsIt covers the one path on which the unlock cannot go
+// through: the server dropped the session holding the lock, so there is nothing left to unlock.
 func TestReleasingAMutexWhoseSessionDiedReportsIt(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := t.Context()
@@ -166,10 +146,8 @@ func TestReleasingAMutexWhoseSessionDiedReportsIt(t *testing.T) {
 	}
 }
 
-// TestReleasingAMutexThatWasNeverTakenIsNotAnError covers the path a startup
-// that failed before the migration run takes. Acquire may never have run, and a
-// release that objected to that would replace the real startup failure with
-// noise about a mutex.
+// TestReleasingAMutexThatWasNeverTakenIsNotAnError covers the path a startup that failed before the
+// migration run takes.
 func TestReleasingAMutexThatWasNeverTakenIsNotAnError(t *testing.T) {
 	lock := newReplica(t, pgtest.Acquire(t), time.Second)
 	if err := lock.Release(t.Context()); err != nil {
@@ -177,10 +155,7 @@ func TestReleasingAMutexThatWasNeverTakenIsNotAnError(t *testing.T) {
 	}
 }
 
-// TestTakingTheMutexTwiceIsRefused pins the one case a single process can get
-// into on its own. The second acquisition would overwrite the pinned
-// connection, leaving the first session holding the lock with nothing left that
-// could give it up — a lock leaked for the lifetime of the process.
+// TestTakingTheMutexTwiceIsRefused pins the one case a single process can get into on its own.
 func TestTakingTheMutexTwiceIsRefused(t *testing.T) {
 	ctx := t.Context()
 	lock := newReplica(t, pgtest.Acquire(t), time.Second)
@@ -198,11 +173,6 @@ func TestTakingTheMutexTwiceIsRefused(t *testing.T) {
 }
 
 // TestTwoDatabasesDoNotBlockEachOther pins the scope the key relies on.
-//
-// PostgreSQL scopes an advisory lock to a database, so one fixed key serves
-// every deployment. Were it cluster-wide, two unrelated hosts on two databases
-// of one server would queue behind each other's migrations, and the fixed key
-// would have to become a derived one.
 func TestTwoDatabasesDoNotBlockEachOther(t *testing.T) {
 	ctx := t.Context()
 	here := newReplica(t, pgtest.Acquire(t), time.Second)
@@ -224,17 +194,8 @@ func TestTwoDatabasesDoNotBlockEachOther(t *testing.T) {
 	}
 }
 
-// TestAPoolOfOneConnectionCarriesTheMutexAndTheRun pins that the mutex costs no
-// connection of its own.
-//
-// max-open-conns is a published input item with no floor, so one is a value a
-// host may legitimately write. The mutex is taken on the connection the run has
-// already borrowed, which is what a session-scoped advisory lock needs anyway,
-// so that configuration starts. An implementation that pinned a second
-// connection for the mutex would take the only one there is, and every
-// statement of the run would then wait for a connection that cannot come free
-// until the run finishes — no error, no log line, a startup that simply stops.
-// The deadline below is what turns that into a failure this case can report.
+// TestAPoolOfOneConnectionCarriesTheMutexAndTheRun pins that the mutex costs no connection of its
+// own.
 func TestAPoolOfOneConnectionCarriesTheMutexAndTheRun(t *testing.T) {
 	only := replicaOnAPoolOf(t, pgtest.Acquire(t), time.Minute, 1)
 
@@ -255,29 +216,17 @@ func TestAPoolOfOneConnectionCarriesTheMutexAndTheRun(t *testing.T) {
 	}
 }
 
-// replica stands for one replica of a multi-replica deployment: its own
-// connection pool, its own borrowed connection, its own mutex. A separate
-// process is what it models, and a separate pool is as close as a test inside
-// one process gets.
-//
-// The connection is borrowed here because that is what a migration run does. It
-// keeps one connection for the whole run and hands it to both halves of the
-// mutex: an advisory lock belongs to the session that took it, so the lock and
-// the statements it orders have to be on the same one.
 type replica struct {
 	handle *gorm.DB
 	conn   *sql.Conn
 	lock   db.MigrationLock
 }
 
-// newReplica hands back a replica on a pool of the driver's default size.
 func newReplica(t *testing.T, dsn string, timeout time.Duration) *replica {
 	t.Helper()
 	return replicaOnAPoolOf(t, dsn, timeout, 0)
 }
 
-// replicaOnAPoolOf is newReplica with the pool size a host would have
-// configured. Zero leaves it as the driver set it.
 func replicaOnAPoolOf(t *testing.T, dsn string, timeout time.Duration, maxOpen int) *replica {
 	t.Helper()
 	handle := open(t, dsn)
@@ -298,13 +247,11 @@ func replicaOnAPoolOf(t *testing.T, dsn string, timeout time.Duration, maxOpen i
 	return &replica{handle: handle, conn: conn, lock: postgres.NewMigrationLock(timeout)}
 }
 
-// Acquire and Release put the mutex on this replica's borrowed connection, the
-// way the migration run does.
+// Acquire and Release put the mutex on this replica's borrowed connection, the way the
+// migration run does.
 func (r *replica) Acquire(ctx context.Context) error { return r.lock.Acquire(ctx, r.conn) }
 func (r *replica) Release(ctx context.Context) error { return r.lock.Release(ctx, r.conn) }
 
-// run issues a statement the way the migration run issues one: on the borrowed
-// connection, the one the mutex is on.
 func (r *replica) run(ctx context.Context, statement string) error {
 	_, err := r.conn.ExecContext(ctx, statement)
 	return err

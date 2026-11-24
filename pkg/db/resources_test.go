@@ -12,20 +12,7 @@ import (
 	"github.com/vislake/speed/pkg/db"
 )
 
-// TestUnrelatedEmbedFSIsNotCollectedAsMigrations is why Migrations is a struct
-// and not fs.FS.
-//
-// A resource query matches an interface target by assignability, so an fs.FS
-// target would collect every embedded asset in the process: an i18n bundle and
-// a template set are declared as embed.FS just like a migration set is. The
-// wrapper makes the declaration deliberate, and this test is the observation
-// that tells the two implementations apart — with the wrapper the unrelated
-// assets are invisible here, with an fs.FS target they are collected and this
-// module would try to apply them.
-//
-// The registry also holds one genuine Migrations declaration. Without it the
-// test would pass on a query that returns nothing at all, and "collected
-// nothing" would prove nothing.
+// TestUnrelatedEmbedFSIsNotCollectedAsMigrations is why Migrations is a struct and not fs.FS.
 func TestUnrelatedEmbedFSIsNotCollectedAsMigrations(t *testing.T) {
 	// The type is what the query matches on, and this is the very type an
 	// //go:embed declaration of an asset directory produces.
@@ -66,9 +53,6 @@ func TestUnrelatedEmbedFSIsNotCollectedAsMigrations(t *testing.T) {
 		t.Errorf("the collected set is not the one billing declared: %v", err)
 	}
 
-	// What the rejected design would have collected from this same registry.
-	// Without this, "collected only billing's" could be read as a property of
-	// the assets rather than of the resource type; here the hazard is visible.
 	byInterface := core.Resources[fs.FS](reg)
 	if len(byInterface) != 2 {
 		t.Errorf("an fs.FS target collects %d of these declarations, expected both unrelated assets: "+
@@ -76,17 +60,13 @@ func TestUnrelatedEmbedFSIsNotCollectedAsMigrations(t *testing.T) {
 	}
 }
 
-// probePlugin is a gorm.Plugin declared on its own, the way a module would
-// declare it if the resource type were the interface instead of the wrapper.
 type probePlugin struct{ name string }
 
 func (p probePlugin) Name() string              { return p.name }
 func (p probePlugin) Initialize(*gorm.DB) error { return nil }
 
-// TestBareGormPluginIsNotCollectedAsPluginResource is the same observation for
-// the other resource type. The strength differs — Initialize(*gorm.DB) error is
-// not a signature something satisfies by accident — but the declaration shape
-// is the contract, and a bare plugin value is not a declaration.
+// TestBareGormPluginIsNotCollectedAsPluginResource is the same observation for the other resource
+// type.
 func TestBareGormPluginIsNotCollectedAsPluginResource(t *testing.T) {
 	reg := core.New()
 	reg.Register(core.Module{
@@ -110,11 +90,8 @@ func TestBareGormPluginIsNotCollectedAsPluginResource(t *testing.T) {
 	}
 }
 
-// TestDialectValuesAreUsableAsMigrationSubdirectories pins the other half of
-// the Migrations contract: a dialect value is the name of the subdirectory its
-// files live in, so it has to be a legal single path element for io/fs. A value
-// like "PostgreSQL 17" or "engines/postgres" would compile and read fine and
-// then find no migrations at all.
+// TestDialectValuesAreUsableAsMigrationSubdirectories pins the other half of the Migrations
+// contract: a dialect value is the name of the subdirectory its files live in.
 func TestDialectValuesAreUsableAsMigrationSubdirectories(t *testing.T) {
 	cases := map[db.Dialect]string{
 		db.Postgres: "postgres",

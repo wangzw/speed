@@ -33,13 +33,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The cases in this file hold where the handles this package delivers write the
-// records of their statements: to the logger the log module delivers, named after
-// the database module, and to the process default logger when the assembly took
-// no log module in. They run through a host, the way a program meets the module,
-// because what they observe is which logger the module takes up and at what
-// point of the startup, and a callback called by itself shows neither.
-
 // providerName is the name of the module that delivers the log capability in the
 // cases that stand a recording logger in for the log module. It sorts after the
 // name of the database module on purpose: modules with no dependency between
@@ -47,16 +40,12 @@ import (
 // of the database only when the database module declares the dependency.
 const providerName = "zz-log-provider"
 
-// seen is one record a recording handler was handed: its level and message, and
-// every attribute it carries, those bound to the logger before it included.
 type seen struct {
 	level   slog.Level
 	message string
 	attrs   []slog.Attr
 }
 
-// text is the attribute the record carries under key, as text, and the empty
-// string when it carries none.
 func (s seen) text(key string) string {
 	for _, a := range s.attrs {
 		if a.Key == key {
@@ -66,8 +55,6 @@ func (s seen) text(key string) string {
 	return ""
 }
 
-// count is how many attributes the record carries under key, those bound to the
-// logger before it included.
 func (s seen) count(key string) int {
 	n := 0
 	for _, a := range s.attrs {
@@ -78,8 +65,6 @@ func (s seen) count(key string) int {
 	return n
 }
 
-// recorder keeps what the handlers over it are handed, in the order they are
-// handed it.
 type recorder struct {
 	mu      sync.Mutex
 	records []seen
@@ -126,8 +111,6 @@ func (recording) WithGroup(name string) slog.Handler {
 	panic(fmt.Sprintf("db_test: the logger under test opened the group %q, and the recording handler keeps none", name))
 }
 
-// recordingLogger is an implementation of the log capability over a recording
-// handler, and a count of the names it was asked to name a logger after.
 type recordingLogger struct {
 	into  *recorder
 	mu    sync.Mutex
@@ -138,8 +121,8 @@ var _ log.Logger = (*recordingLogger)(nil)
 
 func newRecordingLogger() *recordingLogger { return &recordingLogger{into: new(recorder)} }
 
-// Named hands out a logger carrying the attribute the log module's own Named
-// binds, so that a record reads the same through either.
+// Named hands out a logger carrying the attribute the log module's own Named binds, so
+// that a record reads the same through either.
 func (l *recordingLogger) Named(name string) *slog.Logger {
 	l.mu.Lock()
 	l.named = append(l.named, name)
@@ -169,15 +152,14 @@ func (l *recordingLogger) module(name string) core.Module {
 	}
 }
 
-// ignoredRules takes every redaction rule it is handed and keeps none.
 type ignoredRules struct{}
 
 func (ignoredRules) AddKeys(...string)              {}
 func (ignoredRules) AddPattern(string, log.Matcher) {}
 
-// The statements the cases issue. Every table name begins with the same word,
-// which tells a record of these statements from any other the module writes, and
-// every bound value is a mark of its own that no output may carry.
+// The statements the cases issue. Every table name begins with the same word, which
+// tells a record of these statements from any other the module writes, and every bound
+// value is a mark of its own that no output may carry.
 const (
 	createNotes   = "CREATE TABLE routing_notes (note TEXT NOT NULL)"
 	insertNote    = "INSERT INTO routing_notes (note) VALUES (?)"
@@ -190,20 +172,8 @@ const (
 	scannedValue = "routing-value-scanned"
 )
 
-// routingValues are the values the statements bind, none of which may reach any
-// destination.
 var routingValues = []string{failedValue, debugValue, slowValue, scannedValue}
 
-// issueStatements runs on handle one statement for each record the logger
-// writes, and binds a value of its own in each: an insert that fails, an insert
-// in a Debug session, an insert in a session that counts every statement as
-// slow, and a select that fails through GORM's Scan finisher. The table they
-// work on is created with the logger silenced, so that the setup is not among
-// the records. The threshold of the Debug session is raised to an hour, so that
-// a machine that stalls cannot turn its statement into a slow one.
-//
-// It returns the call site of each statement, in wantedRecords order: the line
-// that issued it, which is the site the record has to name.
 func issueStatements(t *testing.T, handle *gorm.DB) []string {
 	t.Helper()
 	ctx := t.Context()
@@ -232,21 +202,16 @@ func issueStatements(t *testing.T, handle *gorm.DB) []string {
 	return callers
 }
 
-// thisFile is this file's path as the runtime reports it in a frame.
 var thisFile = func() string {
 	_, file, _, _ := runtime.Caller(0)
 	return file
 }()
 
-// nextCallLine is the line of the call written on the next line, which is the
-// call site a record of that statement names.
 func nextCallLine() int {
 	_, _, line, _ := runtime.Caller(1)
 	return line + 1
 }
 
-// openedHandle builds a connection through the delivered capability, to a
-// database of its own, and releases its pool when the case ends.
 func openedHandle(t *testing.T, h *host) *gorm.DB {
 	t.Helper()
 	opened, err := h.Instance.Open(t.Context(), filepath.Join(t.TempDir(), "opened.db"))
@@ -262,8 +227,6 @@ func openedHandle(t *testing.T, h *host) *gorm.DB {
 	return opened
 }
 
-// failureOf is the one record the recording logger holds for the failed
-// statement, which the case has run exactly once.
 func failureOf(t *testing.T, provider *recordingLogger, statement string) seen {
 	t.Helper()
 	var found []seen
@@ -279,29 +242,14 @@ func failureOf(t *testing.T, provider *recordingLogger, statement string) seen {
 	return found[0]
 }
 
-// TestTheModuleRequiresTheLogCapabilityOptionally holds the descriptor the Spec
-// builds to one optional requirement, the log capability.
-//
-// Optional, because a database has to start in an assembly that never took
-// logging in; declared at all, because without the edge nothing orders the two
-// modules but their names, and the database would be constructed ahead of the
-// log module and find no logger. A different capability, or a requirement that
-// is not optional, is the other two ways the declaration goes wrong.
+// TestTheModuleRequiresTheLogCapabilityOptionally holds the descriptor the Spec builds to one
+// optional requirement, the log capability.
 func TestTheModuleRequiresTheLogCapabilityOptionally(t *testing.T) {
 	dbsuite.RequireOptionalLogging(t, "the module the Spec builds", db.NewModule(sqliteSpec()))
 }
 
-// TestAConstructedLogProviderIsTheLoggerTheStatementsAreWrittenThrough holds the
-// order the dependency exists for: a log provider the registry constructs is
-// constructed ahead of the database module, so a failed statement on the
-// delivered handle reaches it, under the database module's name, with the module
-// attribute bound to the logger once: what the recording handler is handed to
-// bind and what the record carries of its own count together.
-//
-// The provider's name sorts after the database module's, so only the declared
-// edge puts it first. Without the edge the database is constructed first, the
-// lookup finds no instance, the module falls back to the process default logger
-// without a sign, and the recording logger stays empty.
+// TestAConstructedLogProviderIsTheLoggerTheStatementsAreWrittenThrough holds the order the
+// dependency exists for.
 func TestAConstructedLogProviderIsTheLoggerTheStatementsAreWrittenThrough(t *testing.T) {
 	provider := newRecordingLogger()
 	h, err := startHost(t, sqliteSpec(), hostConfig(t), provider.module(providerName))
@@ -325,10 +273,8 @@ func TestAConstructedLogProviderIsTheLoggerTheStatementsAreWrittenThrough(t *tes
 	}
 }
 
-// TestAHostWithoutALogModuleStartsAndDeliversAWorkingHandle holds the other
-// half of the declaration being optional: with no provider of the log capability
-// in the registry the startup does not fail, the handle it delivers runs
-// statements and reports the errors of those that fail, and the host shuts down.
+// TestAHostWithoutALogModuleStartsAndDeliversAWorkingHandle holds the other half of the declaration
+// being optional.
 func TestAHostWithoutALogModuleStartsAndDeliversAWorkingHandle(t *testing.T) {
 	h, err := startHost(t, sqliteSpec(), hostConfig(t))
 	if err != nil {
@@ -350,16 +296,8 @@ func TestAHostWithoutALogModuleStartsAndDeliversAWorkingHandle(t *testing.T) {
 	h.finish(t)
 }
 
-// TestTwoProvidersOfTheLogCapabilityFailTheStartup holds that a failed lookup of
-// the logger which is not the capability's absence is not taken for it: two
-// providers that are not exclusive leave the single-valued lookup unable to
-// choose, and the startup fails with that error rather than sending the
-// statements to a logger the host did not mean.
-//
-// The error names the module whose lookup failed, and the startup fails with
-// nothing opened: the database file the configuration names does not exist
-// afterwards, which it would if the connection had been made ahead of the
-// lookup and left unreleased.
+// TestTwoProvidersOfTheLogCapabilityFailTheStartup holds that a failed lookup of the logger which
+// is not the capability's absence is not taken for it.
 func TestTwoProvidersOfTheLogCapabilityFailTheStartup(t *testing.T) {
 	first, second := newRecordingLogger(), newRecordingLogger()
 	path := filepath.Join(t.TempDir(), "never-opened.db")
@@ -377,13 +315,8 @@ func TestTwoProvidersOfTheLogCapabilityFailTheStartup(t *testing.T) {
 	}
 }
 
-// TestAHandleFromOpenWritesThroughTheDeliveredHandlesLogger holds that a
-// connection built with Open writes its statements through the logger the
-// delivered handle's module took up: a failure on it reaches the same recording
-// logger, under the same module name, and the logger was named once, for the
-// module, rather than once more for each connection built. The module attribute
-// is bound to each of the two loggers once: a connection that asked the logger
-// for its name again would carry it twice.
+// TestAHandleFromOpenWritesThroughTheDeliveredHandlesLogger holds that a connection built with Open
+// writes its statements through the logger the delivered handle's module took up.
 func TestAHandleFromOpenWritesThroughTheDeliveredHandlesLogger(t *testing.T) {
 	const (
 		failingOnDelivered = "INSERT INTO routing_delivered_missing (note) VALUES (?)"
@@ -419,18 +352,11 @@ func TestAHandleFromOpenWritesThroughTheDeliveredHandlesLogger(t *testing.T) {
 	}
 }
 
-// repeatedKeys lists the keys that appear more than once in one object of a JSON
-// document, found by walking its tokens. A decode into a map keeps one value
-// for a key and says nothing of the others, and a count of a substring takes a
-// value that happens to hold the key for a second key; the token stream shows
-// each key where the document has it.
 func repeatedKeys(line []byte) ([]string, error) {
 	type object struct {
-		// isObject is false for an array, whose elements are values only.
 		isObject bool
-		// atKey is whether the next token of an object is a key.
-		atKey bool
-		seen  map[string]bool
+		atKey    bool
+		seen     map[string]bool
 	}
 	var (
 		stack    []*object
@@ -476,11 +402,8 @@ func repeatedKeys(line []byte) ([]string, error) {
 	}
 }
 
-// TestRepeatedKeysFindsOnlyAKeyThatIsWrittenTwice holds the helper the cases
-// below read the log file with to what it claims: a key written twice in one
-// object is reported, wherever its two values are, and a value that holds the
-// key, the same key in another object, or in an array of objects, is not a
-// repetition.
+// TestRepeatedKeysFindsOnlyAKeyThatIsWrittenTwice holds the helper the cases below read the log
+// file with to what it claims: a key written twice in one object is reported.
 func TestRepeatedKeysFindsOnlyAKeyThatIsWrittenTwice(t *testing.T) {
 	for _, c := range []struct {
 		name, line string
@@ -507,9 +430,6 @@ func TestRepeatedKeysFindsOnlyAKeyThatIsWrittenTwice(t *testing.T) {
 	}
 }
 
-// requireEveryKeyOnce fails the case for each line of the log file in which an
-// object carries a key twice, and for a file with no statement record in it, in
-// which there would be nothing to hold.
 func requireEveryKeyOnce(t *testing.T, file logFile) {
 	t.Helper()
 	if len(file.statementRecords()) == 0 {
@@ -527,14 +447,8 @@ func requireEveryKeyOnce(t *testing.T, file logFile) {
 	}
 }
 
-// TestEveryKeyOfARecordIsWrittenOnce holds the file the real chain writes to one
-// occurrence of each key in each record, for the delivered handle and for a
-// handle from Open. A decode of the line into a map reads a key written twice
-// as one, so the bytes of the line are what is looked at.
-//
-// The module attribute is the one a logger bound twice would repeat: the log
-// module binds it when it names a logger, and neither the module that takes the
-// logger up nor Open derives its own from it with the attribute once more.
+// TestEveryKeyOfARecordIsWrittenOnce holds the file the real chain writes to one occurrence of each
+// key in each record, for the delivered handle and for a handle from Open.
 func TestEveryKeyOfARecordIsWrittenOnce(t *testing.T) {
 	for _, source := range []struct {
 		name   string
@@ -557,9 +471,6 @@ func TestEveryKeyOfARecordIsWrittenOnce(t *testing.T) {
 	}
 }
 
-// startLogged is startHost over the real log module writing JSON to a file of the
-// case's own, at level when one is given, and returns the host with the path of
-// the file.
 func startLogged(t *testing.T, level string, extra ...core.Module) (*host, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -577,8 +488,6 @@ func startLogged(t *testing.T, level string, extra ...core.Module) (*host, strin
 	return h, path
 }
 
-// logFile is a log file as read back: its text and one decoded record for each
-// of its lines.
 type logFile struct {
 	raw     string
 	records []map[string]any
@@ -607,26 +516,13 @@ func readLog(t *testing.T, path string) logFile {
 	return file
 }
 
-// str is the text a decoded record carries under key, and the empty string when
-// it carries none or not text.
 func str(record map[string]any, key string) string {
 	text, _ := record[key].(string)
 	return text
 }
 
-// statementMessages are the messages a statement is written under.
 var statementMessages = []string{"statement failed", "slow statement", "statement"}
 
-// statementRecords are the records of the log file that are written for the
-// statements issueStatements runs: those under a statement message whose call
-// site is a line of this file.
-//
-// The call site is what tells them from the statements the module runs on its
-// own, the migrations among them, whose call sites are in the module. A
-// statement-text test alone is not enough: the module's Scan statement is
-// written as a slow statement on a loaded machine, carries the withheld note
-// the case's own Scan statement carries, and would be counted as one of the
-// case's.
 func (f logFile) statementRecords() []map[string]any {
 	var own []map[string]any
 	for _, record := range f.records {
@@ -641,23 +537,13 @@ func (f logFile) statementRecords() []map[string]any {
 // wantedRecord is what the logger writes for one of the statements
 // issueStatements runs.
 type wantedRecord struct {
-	// what names the statement in a failure message.
-	what string
-	// level and message are the level, as the JSON handler spells it, and the
-	// message the record is written under.
-	level, message string
-	// statement is the text the record carries for the statement.
-	statement string
-	// failed, slow and counted say which of the attributes classes, threshold
-	// and rows the record carries beside the ones every statement record
-	// carries. Rows are left out when GORM counted none, and what they hold when
-	// counted is rows.
+	what                  string
+	level, message        string
+	statement             string
 	failed, slow, counted bool
 	rows                  float64
 }
 
-// wantedRecords are the records of the four statements issueStatements runs, in
-// the order it runs them.
 var wantedRecords = []wantedRecord{
 	{
 		what: "the failed insert", level: "ERROR", message: "statement failed", statement: insertMissing,
@@ -677,9 +563,6 @@ var wantedRecords = []wantedRecord{
 	},
 }
 
-// keys are the attributes a record is written with, the handler's own among
-// them: nothing beyond what the design lists, so that an error's text or a value
-// has no attribute to arrive in.
 func (w wantedRecord) keys() []string {
 	keys := []string{"time", "level", "msg", log.ModuleAttrKey, "elapsed", "statement", "caller"}
 	if w.failed {
@@ -695,23 +578,10 @@ func (w wantedRecord) keys() []string {
 	return keys
 }
 
-// callerOfTheCase is how a record names a statement issued from this file: the
-// call site is the first frame outside GORM.
 var callerOfTheCase = regexp.MustCompile(`logrouting_test\.go:\d+$`)
 
-// resultCode is the class an error of the SQLite driver is written under.
 var resultCode = regexp.MustCompile(`^result code \d+$`)
 
-// requireStatementRecords holds the log file to holding the records of the
-// statements issueStatements runs that kept, indexes into wantedRecords, and
-// those alone, each in the shape the design gives it, naming the line that
-// issued it, and to holding none of the values the statements bind anywhere.
-//
-// callers are the sites issueStatements issued the statements from, one per
-// wantedRecords entry. Comparing against them is what holds the caller
-// attribute to the statement's own line: the filter above already tells a
-// record of this case from the module's own, so a check on that same shape
-// would pass whatever line it named.
 func requireStatementRecords(t *testing.T, file logFile, callers []string, kept ...int) {
 	t.Helper()
 	for _, value := range routingValues {
@@ -759,13 +629,8 @@ func requireStatementRecords(t *testing.T, file logFile, callers []string, kept 
 	}
 }
 
-// TestTheRecordsOfTheStatementsReachTheConfiguredDestination holds the whole
-// chain from a statement to a file: with the real log module writing JSON, a
-// statement that fails, one in a Debug session, one slower than the threshold and
-// one that fails through the Scan finisher each write one record, at the level
-// and under the message the design gives them, naming the module, the caller and
-// the statement as it was written with its placeholders, and no value any of
-// them bound. A connection built with Open writes the same.
+// TestTheRecordsOfTheStatementsReachTheConfiguredDestination holds the whole chain from a statement
+// to a file: with the real log module writing JSON, a statement that fails.
 func TestTheRecordsOfTheStatementsReachTheConfiguredDestination(t *testing.T) {
 	for _, source := range []struct {
 		name   string
@@ -782,12 +647,7 @@ func TestTheRecordsOfTheStatementsReachTheConfiguredDestination(t *testing.T) {
 	}
 }
 
-// TestAMessageOfGORMsOwnIsWrittenWithItsDetail holds the other kind of record
-// the logger writes. A message GORM sends its logger with no statement behind it,
-// here the warning for a callback registered twice under one name, is written as
-// "gorm warning" at Warn: GORM's text with its data formatted in is the detail
-// attribute, without the newline GORM ends it with, beside the module and the
-// call site.
+// TestAMessageOfGORMsOwnIsWrittenWithItsDetail holds the other kind of record the logger writes.
 func TestAMessageOfGORMsOwnIsWrittenWithItsDetail(t *testing.T) {
 	h, path := startLogged(t, "")
 	create := h.Instance.DB().Callback().Create()
@@ -828,14 +688,9 @@ func TestAMessageOfGORMsOwnIsWrittenWithItsDetail(t *testing.T) {
 	}
 }
 
-// TestTheConfiguredLevelGovernsWhichStatementsAreWritten holds that the level
-// the log configuration gives decides which of the records are written: at warn
-// the Debug session's statement, which is an Info record, is gone and the failure
-// and the slow statement stay; at error the slow statement goes too.
+// TestTheConfiguredLevelGovernsWhichStatementsAreWritten holds that the level the log configuration
+// gives decides which of the records are written: at warn the Debug session's statement.
 func TestTheConfiguredLevelGovernsWhichStatementsAreWritten(t *testing.T) {
-	// Preparing the log module sets the level of the process default logger to
-	// the configured one, so the case ends by preparing it once more at the level
-	// a host that configures none gets.
 	defer func() {
 		startLogged(t, "info")
 		if !log.Default().Enabled(t.Context(), slog.LevelInfo) {
@@ -859,19 +714,13 @@ func TestTheConfiguredLevelGovernsWhichStatementsAreWritten(t *testing.T) {
 	}
 }
 
-// routingChild marks the copy of this test binary a case has started, to observe
-// what the process writes on its own streams.
 const routingChild = "SPEED_DB_ROUTING_CHILD"
 
-// inChild reports whether this is the copy a case started.
 func inChild() bool {
 	_, child := os.LookupEnv(routingChild)
 	return child
 }
 
-// rerun runs the calling test again, alone, in a copy of this test binary whose
-// environment says it is the copy, and returns what the copy wrote to its
-// standard output and to its standard error, apart.
 func rerun(t *testing.T) (stdout, stderr string) {
 	t.Helper()
 	child := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^"+t.Name()+"$", "-test.count=1")
@@ -884,7 +733,6 @@ func rerun(t *testing.T) (stdout, stderr string) {
 	return out.String(), errOut.String()
 }
 
-// requireNoValue fails the case for each of the bound values a stream carries.
 func requireNoValue(t *testing.T, name, stream string) {
 	t.Helper()
 	for _, value := range routingValues {
@@ -894,15 +742,8 @@ func requireNoValue(t *testing.T, name, stream string) {
 	}
 }
 
-// TestWithoutALogModuleTheStatementsGoToTheProcessLogger holds where the
-// statements of a database go in an assembly that took no log module in: to the
-// process default logger, which writes records to standard output, each stamped
-// with the database module's name because the messages are common words that
-// name no writer on their own.
-//
-// Only another process can read the standard output of this one, so the case
-// has the calling test run again in a copy of the test binary and reads what the
-// copy wrote.
+// TestWithoutALogModuleTheStatementsGoToTheProcessLogger holds where the statements of a database
+// go in an assembly that took no log module in: to the process default logger.
 func TestWithoutALogModuleTheStatementsGoToTheProcessLogger(t *testing.T) {
 	if inChild() {
 		h, err := startHost(t, sqliteSpec(), hostConfig(t))
@@ -932,12 +773,8 @@ func TestWithoutALogModuleTheStatementsGoToTheProcessLogger(t *testing.T) {
 	}
 }
 
-// quoted is an attribute as the text handler writes one whose value has a space
-// in it.
 func quoted(key, value string) string { return key + "=" + fmt.Sprintf("%q", value) }
 
-// requireOneLine fails the case unless the output holds exactly one line that
-// carries every one of marks.
 func requireOneLine(t *testing.T, what, output string, marks ...string) {
 	t.Helper()
 	var found []string
@@ -956,14 +793,8 @@ lines:
 	}
 }
 
-// TestAnEmptyOutputListLeavesTheStatementsUnwritten holds that the destinations
-// the log configuration names are the only ones: with the real log module given
-// an empty list of outputs, the statements the module writes go nowhere, on
-// either of the process's streams.
-//
-// The log module says out loud, on standard error, that the list is empty, and
-// the case holds the copy's standard error to that line, which shows the module
-// was assembled empty and that the stream was being read.
+// TestAnEmptyOutputListLeavesTheStatementsUnwritten holds that the destinations the log
+// configuration names are the only ones: with the real log module given an empty list of outputs.
 func TestAnEmptyOutputListLeavesTheStatementsUnwritten(t *testing.T) {
 	if inChild() {
 		body := fmt.Sprintf(`{"db":{"testhost":{"dsn":%q}},"log":{"outputs":[]}}`,
@@ -993,7 +824,6 @@ func TestAnEmptyOutputListLeavesTheStatementsUnwritten(t *testing.T) {
 	}
 }
 
-// occurrences are the spans of value that hold the marker.
 func occurrences(value, marker string) []log.Span {
 	var spans []log.Span
 	for from := 0; from < len(value); {
@@ -1008,16 +838,8 @@ func occurrences(value, marker string) []log.Span {
 	return spans
 }
 
-// TestRedactionJudgesTheStatementAttribute holds that the text of a statement is
-// an attribute of the record, so the redaction the log module applies reaches it:
-// a value-shape rule registered through the log capability masks its marker in
-// the statement attribute of a record whose statement carries the marker as a
-// literal, and leaves a literal no rule covers as it is.
-//
-// The rules of the log module are process-wide and only ever added to, so the
-// marker is one no other case writes. The redaction judges attributes and not the
-// message, so a statement written into the message would carry the marker to the
-// file.
+// TestRedactionJudgesTheStatementAttribute holds that the text of a statement is an attribute of
+// the record, so the redaction the log module applies reaches it.
 func TestRedactionJudgesTheStatementAttribute(t *testing.T) {
 	const (
 		marker  = "routing-redaction-marker-9f3a"
@@ -1064,14 +886,6 @@ func TestRedactionJudgesTheStatementAttribute(t *testing.T) {
 	}
 }
 
-// builtWithItsOwnLogging builds a product of the module's own New in a registry
-// of its own, in which the real log module writes JSON to the returned file,
-// and releases the product's pool and that log module when the case ends.
-//
-// The log module is constructed by hand and supplied to the registry, because
-// the New of the database module takes the logger up from the registry it is
-// handed, and a registry that only registers the log module holds no instance
-// of it yet.
 func builtWithItsOwnLogging(t *testing.T) (db.Database, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -1127,20 +941,8 @@ func builtWithItsOwnLogging(t *testing.T) (db.Database, string) {
 	return product, logPath
 }
 
-// TestASuppliedProductKeepsTheLoggerOfTheRegistryItWasBuiltIn holds where the
-// statements of a product go once it is supplied to another registry: to the log
-// destination of the registry whose New built it, and not to that of the one it
-// is supplied to. The product is built by the module's own New in a registry
-// with a log module writing to one file, and supplied for the module in a host
-// whose log module writes to another; a failed statement on the product and one
-// on a connection built by its Open each reach the first file and neither
-// reaches the second.
-//
-// What it pins is that the logger is taken up in New and carried by the
-// product: the lookup in New, and the handle's statement logger built over its
-// result. A product that took the logger of the registry it was supplied to, in
-// Migrate or anywhere after New, would write to the second file and leave the
-// first empty.
+// TestASuppliedProductKeepsTheLoggerOfTheRegistryItWasBuiltIn holds where the statements of a
+// product go once it is supplied to another registry.
 func TestASuppliedProductKeepsTheLoggerOfTheRegistryItWasBuiltIn(t *testing.T) {
 	const (
 		failingOnProduct = "INSERT INTO routing_supplied_missing (note) VALUES (?)"
@@ -1195,16 +997,12 @@ func TestASuppliedProductKeepsTheLoggerOfTheRegistryItWasBuiltIn(t *testing.T) {
 	}
 }
 
-// nilNaming is a provider of the log capability whose Named gives no logger.
 type nilNaming struct{ recordingLogger }
 
 func (*nilNaming) Named(string) *slog.Logger { return nil }
 
-// TestAProviderThatNamesNoLoggerFailsTheStartup holds the lookup to reporting a
-// provider that hands back no logger as an error naming the module, before any
-// connection is made. A panic in the statement logger's constructor is raised on
-// the startup's own goroutine, where this test cannot catch it, and ends the test
-// binary.
+// TestAProviderThatNamesNoLoggerFailsTheStartup holds the lookup to reporting a provider that hands
+// back no logger as an error naming the module, before any connection is made.
 func TestAProviderThatNamesNoLoggerFailsTheStartup(t *testing.T) {
 	provider := &nilNaming{*newRecordingLogger()}
 	path := filepath.Join(t.TempDir(), "never-opened.db")

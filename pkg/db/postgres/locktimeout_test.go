@@ -13,9 +13,8 @@ import (
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
-// TestANonPositiveMutexTimeoutFailsTheStartupOnThisEngine pins the refusal of
-// a timeout that would make the mutex a single attempt, on the module this
-// subpackage registers.
+// TestANonPositiveMutexTimeoutFailsTheStartupOnThisEngine pins the refusal of a timeout that would
+// make the mutex a single attempt, on the module this subpackage registers.
 func TestANonPositiveMutexTimeoutFailsTheStartupOnThisEngine(t *testing.T) {
 	// A startup that went ahead runs until its context ends, so the deadline
 	// here is what ends the run the refusal should have stopped.

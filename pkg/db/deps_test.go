@@ -6,45 +6,12 @@ import (
 	"testing"
 )
 
-// repoPrefix is this repository's own module path. Every module of it is inside
-// this package's budget: a module here is imported as a module of this
-// repository, and none of them reaches a driver.
 const repoPrefix = "github.com/vislake/speed/"
 
-// TestRootPackageImportsNoDriver is the executable form of the boundary the
-// packaging decision draws: the root package wraps GORM, and a dialect's driver
-// enters through the implementation subpackage that binds it.
-//
-// Nothing holds that split at compile time. An implementation subpackage and the
-// root package are one module, so the module's dependency list carries both
-// drivers whichever engine a host deploys on, and the split is a rule about
-// imports. This case is the gate that keeps it — the cost of having no compiler
-// support here is recorded in ADR-module-layout.
-//
-// The observation is the root package's own dependency face: what a host
-// compiles by importing this package, and no more. It is the non-test face,
-// because `go list -deps .` reports exactly that: the cases in this package
-// import a real driver to have an engine to run against, and an import a case
-// makes is not what a host pays for. Moving one of those imports into a
-// non-test file is the mistake this catches, and it is caught here.
-//
-// The budget is the standard library, this repository's modules, GORM's own
-// closure, and the closure of pkg/config. The last of those is what reading
-// configuration costs: this package takes its values up through pkg/config,
-// and pkg/config parses the command line and the config sources with
-// third-party libraries, which ADR-config-parsing records as the
-// price of that delegation. It is written as that package's current closure
-// rather than as a list of library names, so a parsing library swapped for
-// another there does not have to be spelled out again here.
-//
-// Anything outside the budget came in through this package, and a driver is
-// the shape that matters: it is the dependency a host would carry whichever
-// engine it picked.
+// TestRootPackageImportsNoDriver is the executable form of the boundary the packaging decision
+// draws: the root package wraps GORM.
 func TestRootPackageImportsNoDriver(t *testing.T) {
 	root := dependenciesOf(t, ".")
-	// The positive control. This package wraps GORM, so a listing that lost
-	// gorm.io/gorm came from a load that did not happen, and every negative
-	// assertion below would pass on an empty list.
 	if !root["gorm.io/gorm"] {
 		t.Fatalf("the root package's dependency list does not hold gorm.io/gorm, which is what this " +
 			"package wraps: what is checked below is not this package's dependency face")
@@ -66,7 +33,6 @@ func TestRootPackageImportsNoDriver(t *testing.T) {
 	}
 }
 
-// dependenciesOf lists the packages a `go list -deps` target reaches.
 func dependenciesOf(t *testing.T, target string) map[string]bool {
 	t.Helper()
 	out, err := exec.Command("go", "list", "-deps", target).CombinedOutput()

@@ -13,20 +13,13 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The credentials the case configures, none of them written by any other case,
-// so a record that carries one into the destination is unmistakable.
+// The credentials the case configures, none of them written by any other case, so a
+// record that carries one into the destination is unmistakable.
 const (
 	rootKeySecret    = "db-root-key-4b7e1c9a-2f5d-4a80-9c31-77a2e6d0b4f1"
 	retiredKeySecret = "db-retired-key-9c2e5a71-3b6d-4f08-a1e7-55c3b8d9f204"
 )
 
-// writingCredentialModule is a module that takes the database capability up — so
-// that it is constructed after the database module and its registration has run
-// — and writes one record per value through the assembly's logging capability,
-// each carrying that value.
-//
-// It writes in New, which the drive reaches before any module's Init, so the
-// records are on the destination before the case reads it.
 func writingCredentialModule(values ...string) core.Module {
 	return core.Module{
 		Name: "case.credential-writer",
@@ -40,8 +33,6 @@ func writingCredentialModule(values ...string) core.Module {
 				return nil, nil
 			}
 			for _, value := range values {
-				// The record carries the value as an independent attribute, which
-				// is the only shape the redaction layer judges.
 				lg.Named("probe").Info("a request carried a credential", "value", value)
 			}
 			return nil, nil
@@ -49,20 +40,10 @@ func writingCredentialModule(values ...string) core.Module {
 	}
 }
 
-// TestTheCredentialsAreRegisteredAsRedactionRules holds the connection locator,
-// the encryption key and the retired keys to being masked wherever they turn up
-// in a log line, through the real logging chain: the database module is driven
-// beside the log module writing JSON to a file, and a record that carries each
-// value is written through the delivered capability.
-//
-// The assertion is that the destination shows the mask for each value, not
-// merely that it lacks it: a value might never have reached the record at all,
-// and an absence alone would pass for the wrong reason.
+// TestTheCredentialsAreRegisteredAsRedactionRules holds the connection locator, the encryption key
+// and the retired keys to being masked wherever they turn up in a log line.
 func TestTheCredentialsAreRegisteredAsRedactionRules(t *testing.T) {
 	dir := t.TempDir()
-	// The locator of the sqlite handle this case opens: it is the connection
-	// locator the section carries, and the case writes it into a record of its
-	// own so that the registration covering it is observed rather than assumed.
 	dsn := filepath.Join(dir, "host.db")
 	path := filepath.Join(dir, "log.json")
 	body := fmt.Sprintf(`{"db":{"testhost":{"dsn":%q,"encryption-key":%q,"encryption-retired-keys":[%q]}},`+

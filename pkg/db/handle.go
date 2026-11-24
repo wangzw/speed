@@ -12,57 +12,17 @@ import (
 	"github.com/vislake/speed/pkg/config"
 )
 
-// database is an implementation's product: the connection this package opened,
-// with the capability's four queries answered from it.
-//
-// It keeps the Spec and the section it was assembled from, so that a second
-// connection a caller builds with Open is put together the same way the
-// delivered one was — same engine, same pool shape, same logger. The Spec is
-// also how a product says whose New built it: Migrate accepts an instance of
-// this type that carries the name of its own module, and no other. Everything
-// on it is fixed at construction and the handle underneath is safe for
-// concurrent use, so the product carries no lock of its own.
 type database struct {
-	spec   Spec
-	cfg    lockingConfig
-	handle *gorm.DB
-	// logger is what the statements of every handle this product opens are
-	// written through: the delivered one, and each one Open builds. It is the
-	// logger the registry gave the module when this product was built, named
-	// for the module, or the process default logger stamped with the module's
-	// name when the assembly has none; a product built in another registry
-	// keeps that registry's. Open hands it on rather than asking again, so that
-	// a statement run on a connection a caller moved to another database is
-	// written where the delivered handle's are.
-	logger *slog.Logger
-	// plugins is what the assembly declared, in the order it installs them.
-	// The product keeps the list rather than reading the registry again so
-	// that a connection built with Open carries the same set as the
-	// delivered handle: the declarations are a property of the assembly,
-	// and an install that consulted anything about the run would be free
-	// to deliver two handles that disagree.
+	spec    Spec
+	cfg     lockingConfig
+	handle  *gorm.DB
+	logger  *slog.Logger
 	plugins []pluginInstall
-	// digest computes the blind index of one plaintext, under the subkey
-	// derived from the configured root key. It is nil on a product
-	// assembled without that derivation — there is no subkey to compute
-	// with — and BlindIndex refuses rather than answering.
-	digest func(plaintext string) string
+	digest  func(plaintext string) string
 }
 
-// The product answers the capability the way the interface declares it, so a
-// drift between them is caught where it is written rather than at the startup
-// of every host that imports the implementation.
 var _ Database = (*database)(nil)
 
-// newDatabase reads this implementation's section, opens the connection it
-// names, installs the declared plugins on it, and assembles the product.
-//
-// It takes a config.Reader rather than the registry, so the descriptor's
-// callback does nothing but resolve and delegate; the plugins arrive collected,
-// because the collection is the descriptor's to make and this function's to
-// install, and the logger arrives taken up, because the lookup is the
-// descriptor's too: this function only hands it to every handle the product
-// opens.
 func (s Spec) newDatabase(ctx context.Context, reader config.Reader, plugins []pluginInstall,
 	logger *slog.Logger,
 ) (*database, error) {
@@ -74,22 +34,13 @@ func (s Spec) newDatabase(ctx context.Context, reader config.Reader, plugins []p
 	if err != nil {
 		return nil, err
 	}
-	// The blind index is answered from the product rather than from the
-	// connection, so it needs the subkey on its own. The same derivation
-	// assembled the connection, over the same section, so the two agree by
-	// construction instead of by a value travelling between them — and a
-	// root key this package cannot use has already failed the connection,
-	// so nothing is refused here that was not refused before it.
 	digest, err := digestFor(s.ConfigNamespace, cfg.Config)
 	if err != nil {
 		return nil, errors.Join(err, Close(handle))
 	}
-	// The plugins go on here, before the product exists: a handle without
-	// them never reaches a caller, so nobody can hold the capability and
-	// issue a statement the declarations were meant to reach.
+	// Before the product exists, so no caller can issue a statement the
+	// declared plugins were meant to reach without them.
 	if err := installPlugins(handle, plugins); err != nil {
-		// The handle does not leave this function on that path, so its
-		// pool is released here — no caller could release it instead.
 		return nil, errors.Join(err, Close(handle))
 	}
 	return &database{
@@ -102,21 +53,10 @@ func (s Spec) newDatabase(ctx context.Context, reader config.Reader, plugins []p
 	}, nil
 }
 
-// DB returns the handle the module delivers.
 func (d *database) DB() *gorm.DB { return d.handle }
 
-// Dialect reports the engine behind the handle.
 func (d *database) Dialect() Dialect { return d.spec.Dialect }
 
-// BlindIndex returns the digest of a plaintext under this product's blind
-// index subkey.
-//
-// Without that subkey there is no digest to return, and the two answers that
-// suggest themselves are both silent: an empty digest, or one computed under a
-// key nobody chose. Either way the caller writes the column, the write reports
-// no error, and the only thing that ever disagrees is an equality query that
-// finds no row — a long way from the write that produced it. So this refuses
-// instead, and the gap surfaces at the call rather than in the data.
 func (d *database) BlindIndex(plaintext string) string {
 	if d.digest == nil {
 		panic("db: BlindIndex was called on a database assembled without the key " +
@@ -125,39 +65,6 @@ func (d *database) BlindIndex(plaintext string) string {
 	return d.digest(plaintext)
 }
 
-// Open establishes another connection, to the database the locator names.
-//
-// The connection is assembled the way the delivered one is — same engine, same
-// pool parameters, the same logger for its statements, and the same declared
-// plugins installed before it is returned. A caller that moved a query to
-// another database would otherwise lose whatever the plugins do to it, and
-// losing tenant filtering or auditing is not something the query's result
-// shows. Each handle is installed into separately, so GORM calls every plugin's
-// Initialize once more on this one; the instances are the declared ones, and
-// the declaration is what this module installs.
-//
-// The logger is the delivered handle's own, so the statements of this
-// connection are written where that handle's are, under the same module name,
-// and without the values they bind: a query is not logged anywhere else, or
-// under another name, for having moved to another database.
-//
-// It also carries the one thing the delivered handle does not: a mark naming
-// the delivered handle it was opened from, which OpenedFrom reads. It goes on
-// before the declared plugins, so each of them can already see it. A plugin
-// that writes rows of a table of its own needs it, because no migration reaches
-// the database this connection names.
-//
-// It is the caller's: this package keeps no reference to it, does not apply
-// migrations to it, and does not close it. The caller closes it with the
-// package-level Close in its own Close stage, and leaking it leaks connections
-// that nothing here can release on its behalf.
-//
-// A blank locator is refused, the rule the delivered one is held to. Handed to
-// a driver, it does not mean "no database": PostgreSQL's driver fills it in from
-// the process environment and the local defaults and connects to whatever that
-// names, and SQLite's opens a temporary database private to each pooled
-// connection. Either way the caller holds a working handle on a database it
-// never named, which is the one outcome a missing locator must not have.
 func (d *database) Open(ctx context.Context, dsn string) (*gorm.DB, error) {
 	if strings.TrimSpace(dsn) == "" {
 		return nil, fmt.Errorf("%w: Open was handed a blank %s locator, and a connection this module "+
