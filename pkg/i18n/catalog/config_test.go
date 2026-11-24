@@ -8,7 +8,6 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// stubReader is a configuration reader a case scripts.
 type stubReader struct {
 	cfg moduleConfig
 	err error
@@ -24,16 +23,12 @@ func (s stubReader) Decode(_ string, target any) error {
 
 var _ config.Reader = stubReader{}
 
-// TestTheDefaultLocaleIsHeldToItsDomain holds the one-item configuration: a
-// well-shaped default resolves, a value that names no BCP 47 language tag is
-// refused as a configuration the module cannot run on, and the value decodes
-// through.
+// TestTheDefaultLocaleIsHeldToItsDomain checks that a well-shaped default
+// resolves and a value naming no BCP 47 tag is refused.
 func TestTheDefaultLocaleIsHeldToItsDomain(t *testing.T) {
 	if _, err := (moduleConfig{DefaultLocale: "en-US"}).resolve(); err != nil {
 		t.Errorf("the default was refused: %v", err)
 	}
-	// An empty value names no locale, so it is refused as well: a default that
-	// resolves nowhere cannot be the fallback every message relies on.
 	for _, bad := range []string{"", "en_US", "1234", "!"} {
 		if _, err := (moduleConfig{DefaultLocale: bad}).resolve(); !errors.Is(err, ErrInvalidConfig) {
 			t.Errorf("resolve(%q) = %v, want ErrInvalidConfig", bad, err)
@@ -53,9 +48,8 @@ func TestTheDefaultLocaleIsHeldToItsDomain(t *testing.T) {
 	}
 }
 
-// TestTheConfigSchemaNamesTheDefaultItem holds the declaration: the namespace is
-// the i18n namespace the SMS module also reads under, and the default-locale
-// item is declared there.
+// TestTheConfigSchemaNamesTheDefaultItem checks that the schema declares the
+// default-locale item under the i18n namespace.
 func TestTheConfigSchemaNamesTheDefaultItem(t *testing.T) {
 	s := schema()
 	if s.Namespace != i18n.ConfigNamespace {
@@ -66,10 +60,8 @@ func TestTheConfigSchemaNamesTheDefaultItem(t *testing.T) {
 	}
 }
 
-// TestTheCatalogsDirItemIsDeclaredAndCarried holds the second item: the schema
-// declares catalogs-dir beside default-locale, and its value resolves through
-// unchanged. The directory's existence is the engine's business at load, not the
-// configuration's, so resolve does not refuse a path that names nothing.
+// TestTheCatalogsDirItemIsDeclaredAndCarried checks that the schema declares
+// catalogs-dir and resolve carries its value unchanged.
 func TestTheCatalogsDirItemIsDeclaredAndCarried(t *testing.T) {
 	s := schema()
 	if _, ok := s.Items[catalogsDirItem]; !ok {

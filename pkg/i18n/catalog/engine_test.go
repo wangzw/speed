@@ -18,8 +18,6 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// The tags these cases write by name. The engine no longer exports them, so the
-// test names them itself.
 const (
 	localeEN i18n.Locale = "en-US"
 	localeZH i18n.Locale = "zh-CN"
@@ -28,7 +26,6 @@ const (
 	localeRU i18n.Locale = "ru-RU"
 )
 
-// mapFS builds an in-memory filesystem from file name to contents.
 func mapFS(files map[string]string) fstest.MapFS {
 	fsys := make(fstest.MapFS, len(files))
 	for name, data := range files {
@@ -37,7 +34,6 @@ func mapFS(files map[string]string) fstest.MapFS {
 	return fsys
 }
 
-// catalogOf declares one module's catalog: every file lives under "locales".
 func catalogOf(module string, files map[string]string) core.Resource[i18n.Catalog] {
 	return core.Resource[i18n.Catalog]{
 		Module: module,
@@ -45,32 +41,21 @@ func catalogOf(module string, files map[string]string) core.Resource[i18n.Catalo
 	}
 }
 
-// twoLocales carries English and Chinese, one distinct key each so the two
-// locales never share a key. A key shared across locales is a case of its own,
-// in TestLoadMultiLocaleCatalog; keeping it out of the shared fixture leaves the
-// rendering and negotiation cases independent of it.
 var twoLocales = catalogOf("app", map[string]string{
 	"locales/en-US.json": `{"app.en":"Hello"}`,
 	"locales/zh-CN.json": `{"app.zh":"你好"}`,
 })
 
-// mustEngine builds the engine with the unset configuration's default (en-US)
-// or fails the test.
 func mustEngine(t *testing.T, catalogs []core.Resource[i18n.Catalog], profiles []i18n.Profile) *engine {
 	t.Helper()
 	return mustEngineWithDefault(t, catalogs, profiles, localeEN)
 }
 
-// mustEngineWithDefault builds the engine over a named configured default, or
-// fails the test.
 func mustEngineWithDefault(t *testing.T, catalogs []core.Resource[i18n.Catalog], profiles []i18n.Profile, def i18n.Locale) *engine {
 	t.Helper()
 	return mustEngineWithOverlay(t, catalogs, profiles, "", def)
 }
 
-// mustEngineWithOverlay builds the engine over a named overlay directory and a
-// named configured default, or fails the test. An empty directory is the unset
-// configuration.
 func mustEngineWithOverlay(t *testing.T, catalogs []core.Resource[i18n.Catalog], profiles []i18n.Profile, dir string, def i18n.Locale) *engine {
 	t.Helper()
 	e, err := newEngine(catalogs, profiles, def, dir)
@@ -80,9 +65,6 @@ func mustEngineWithOverlay(t *testing.T, catalogs []core.Resource[i18n.Catalog],
 	return e
 }
 
-// overlayDir writes one {tag}.json file per entry under a fresh temporary
-// directory and returns the directory, standing in for a configured
-// catalogs-dir on disk.
 func overlayDir(t *testing.T, files map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -94,6 +76,7 @@ func overlayDir(t *testing.T, files map[string]string) string {
 	return dir
 }
 
+// TestLocalize checks the locale lookup and the default and key fallbacks.
 func TestLocalize(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{twoLocales}
 	tests := []struct {
@@ -118,6 +101,8 @@ func TestLocalize(t *testing.T) {
 	}
 }
 
+// TestTranslate checks that Translate renders the named locale and does not fall
+// back.
 func TestTranslate(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{twoLocales}
 	tests := []struct {
@@ -143,6 +128,8 @@ func TestTranslate(t *testing.T) {
 	}
 }
 
+// TestLocalizeInterpolates checks named placeholder substitution and that a
+// missing one is left as written.
 func TestLocalizeInterpolates(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/en-US.json": `{"app.greet":"Hello {{name}}, you have {{count}} messages"}`,
@@ -167,10 +154,8 @@ func TestLocalizeInterpolates(t *testing.T) {
 	}
 }
 
-// TestRender holds the pre-existing placeholder contract at the renderer: a
-// name with a value is interpolated, a name with none is left as written, and a
-// message with no placeholder is returned unchanged. It is the guard on the rule
-// that a missing parameter is visible rather than silent.
+// TestRender checks placeholder interpolation, the missing-parameter rule and a
+// message without a placeholder.
 func TestRender(t *testing.T) {
 	e := mustEngine(t, nil, nil)
 	tests := []struct {
@@ -198,12 +183,8 @@ func TestRender(t *testing.T) {
 	}
 }
 
-// TestMarkedRenderWritesATimeMarker holds the marked render mode: a
-// {{name, time, layout}} segment becomes a marker carrying the parameter name,
-// without reading the value or the context's zone, so a client can render the
-// instant in the viewer's own display zone. A string parameter has the marker
-// delimiters removed, so a value carrying a private-use character cannot be
-// mistaken for a marker by that client.
+// TestMarkedRenderWritesATimeMarker checks that a marked render writes a marker
+// for a time segment and strips the delimiters from a string parameter.
 func TestMarkedRenderWritesATimeMarker(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/en-US.json": `{"app.due":"Due {{at, time, 2006-01-02}}; {{name}}"}`,
@@ -222,16 +203,13 @@ func TestMarkedRenderWritesATimeMarker(t *testing.T) {
 	if got != want {
 		t.Errorf("marked render = %q, want %q", got, want)
 	}
-	// The value's forged delimiters are gone: only the genuine marker's two
-	// delimiters remain.
 	if open := strings.Count(got, "\uE000"); open != 1 {
 		t.Errorf("marked render = %q carries %d opening delimiters, want the genuine marker's one", got, open)
 	}
 }
 
-// TestMarkedRenderLeavesTheFormattedModeDefault holds that the zero mode is the
-// formatted render: a context that names no mode still expands the instant in
-// the zone it carries, so existing callers are unchanged.
+// TestMarkedRenderLeavesTheFormattedModeDefault checks that a context naming no
+// mode still formats the instant.
 func TestMarkedRenderLeavesTheFormattedModeDefault(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/en-US.json": `{"app.due":"Due {{at, time, 2006-01-02}}"}`,
@@ -245,9 +223,7 @@ func TestMarkedRenderLeavesTheFormattedModeDefault(t *testing.T) {
 	}
 }
 
-// TestTranslateStaysFormatted holds that Translate, which runs on a background
-// context, never writes a marker: it is the call a caller makes for a text it
-// renders itself, and has no viewer to resolve a marker.
+// TestTranslateStaysFormatted checks that Translate never writes a marker.
 func TestTranslateStaysFormatted(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/en-US.json": `{"app.due":"Due {{at, time, 2006-01-02}}"}`,
@@ -263,10 +239,8 @@ func TestTranslateStaysFormatted(t *testing.T) {
 	}
 }
 
-// TestPluralSelectsByCount holds that a plural segment selects its branch by the
-// count's CLDR category: an English message renders "one" for a count of one and
-// "other" for any other count, and # in the branch is the count, grouped for the
-// locale rather than written raw.
+// TestPluralSelectsByCount checks that a plural segment selects one or other by
+// the count and formats # for the locale.
 func TestPluralSelectsByCount(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/en-US.json": `{"app.items":"You have {{count, plural, one=# item, other=# items}}"}`,
@@ -292,10 +266,8 @@ func TestPluralSelectsByCount(t *testing.T) {
 	}
 }
 
-// TestPluralSelectsACategoryBeyondOneAndOther holds that the engine uses the
-// language's own CLDR rules and not an English-shaped one/other split: a Russian
-// message that carries one, few, many and other renders "few" for a count of
-// two and "many" for a count of five.
+// TestPluralSelectsACategoryBeyondOneAndOther checks that the engine uses the
+// language's own CLDR categories, not an English one/other split.
 func TestPluralSelectsACategoryBeyondOneAndOther(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/ru-RU.json": `{"app.items":"{{count, plural, one=# товар, few=# товара, many=# товаров, other=# товара}}"}`,
@@ -319,10 +291,7 @@ func TestPluralSelectsACategoryBeyondOneAndOther(t *testing.T) {
 	}
 }
 
-// TestPluralFallsBackToOther holds that a count whose language yields a category
-// the message does not carry falls back to the other branch: a Russian message
-// that carries only one and other renders the other branch for a count of two,
-// which is "few" in Russian.
+// TestPluralFallsBackToOther checks that a missing category falls back to other.
 func TestPluralFallsBackToOther(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/ru-RU.json": `{"app.items":"{{count, plural, one=# item, other=# items}}"}`,
@@ -333,10 +302,8 @@ func TestPluralFallsBackToOther(t *testing.T) {
 	}
 }
 
-// TestPluralWithNoIntegerValueIsLeftAsWritten holds that the plural rule follows
-// the missing-parameter rule: a plural segment whose parameter is absent, or
-// present but not an integer, is written back as it stood rather than rendering
-// a branch.
+// TestPluralWithNoIntegerValueIsLeftAsWritten checks that a plural segment with a
+// missing or non-integer parameter is written back as it stood.
 func TestPluralWithNoIntegerValueIsLeftAsWritten(t *testing.T) {
 	const raw = "{{count, plural, one=# item, other=# items}}"
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
@@ -352,12 +319,8 @@ func TestPluralWithNoIntegerValueIsLeftAsWritten(t *testing.T) {
 	}
 }
 
-// TestPluralNegativeCountSelectsByMagnitudeAndPrintsTheSign holds that a
-// negative count is legal input: CLDR defines the operand as the absolute value
-// of the source number, so -1 selects the "one" branch as 1 does while the
-// printed count keeps its sign — in the # token and in a plain interpolation
-// alike. Before the fix the signed count reached the rule engine, whose
-// inclusion-mask index n%modulus is negative in Go, panicking the request path.
+// TestPluralNegativeCountSelectsByMagnitudeAndPrintsTheSign checks that a negative
+// count selects by its magnitude and prints with its sign.
 func TestPluralNegativeCountSelectsByMagnitudeAndPrintsTheSign(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/en-US.json": `{"app.items":"{{count, plural, one=# item, other=# items}}","app.value":"{{value}}"}`,
@@ -380,17 +343,13 @@ func TestPluralNegativeCountSelectsByMagnitudeAndPrintsTheSign(t *testing.T) {
 			}
 		})
 	}
-	// A negative integer interpolated without a plural segment keeps its sign too.
 	if got := e.Localize(ctx, "app.value", i18n.Args{"value": i18n.Int(-1234567)}); got != "-1,234,567" {
 		t.Errorf("Localize(a negative integer) = %q, want %q", got, "-1,234,567")
 	}
 }
 
-// TestNumberIsFormattedForTheMessageLocale holds that an integer or a number
-// interpolated without a plural segment is formatted for the message's language
-// and not by fmt.Sprintf: the same value groups as 1,234,567 in en-US and
-// 1.234.567 in de-DE, and a decimal separates as 1,234.5 and 1.234,5, so the
-// same template in two locales renders differently.
+// TestNumberIsFormattedForTheMessageLocale checks that a number is grouped and
+// separated for the message's language.
 func TestNumberIsFormattedForTheMessageLocale(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/en-US.json": `{"app.total":"Total: {{total}}"}`,
@@ -418,11 +377,8 @@ func TestNumberIsFormattedForTheMessageLocale(t *testing.T) {
 	}
 }
 
-// TestLargeFloatRendersAGroupedDecimalNotAnExponent holds that a whole-valued
-// float at or above 1e6 is rendered as a grouped decimal and not in scientific
-// notation: the message.Printer's %v verb switches to "1×10⁰⁶" (en-US) and
-// "1·10⁰⁶" (de-DE) at 1e6, contradicting the criterion that a number is grouped
-// per the locale. number.Decimal keeps it decimal, asserted in two locales.
+// TestLargeFloatRendersAGroupedDecimalNotAnExponent checks that a float at or
+// above 1e6 renders as a grouped decimal.
 func TestLargeFloatRendersAGroupedDecimalNotAnExponent(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/en-US.json": `{"app.total":"Total: {{total}}"}`,
@@ -452,16 +408,13 @@ func TestLargeFloatRendersAGroupedDecimalNotAnExponent(t *testing.T) {
 	}
 }
 
-// TestTimeFormRendersInTheZoneOfTheContext holds that a {{name, time, layout}}
-// segment formats the instant with the layout the message carries, in the zone
-// the context names. The same instant read under two zone names renders
-// differently, so the zone is really applied and not ignored.
+// TestTimeFormRendersInTheZoneOfTheContext checks that a time segment formats the
+// instant in the zone the context names.
 func TestTimeFormRendersInTheZoneOfTheContext(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/en-US.json": `{"app.when":"At {{at, time, 2006-01-02 15:04:05}}"}`,
 	})}
 	e := mustEngine(t, catalogs, nil)
-	// One instant; its wall clock differs by the zone it is shown in.
 	instant := time.Date(2026, time.January, 2, 15, 4, 5, 0, time.UTC)
 	tests := []struct {
 		name string
@@ -482,19 +435,13 @@ func TestTimeFormRendersInTheZoneOfTheContext(t *testing.T) {
 	}
 }
 
-// TestTimeFormReadsAnUnsetOrUnloadableZoneAsUTC holds the two fallbacks: a
-// context that names no zone, and a zone name this process cannot load, both
-// render the instant as UTC rather than failing the render. The fixture instant
-// is built in a fixed +08:00 zone, so its wall clock there (15:04:05) differs
-// from its UTC wall clock (07:04:05); asserting the UTC clock is what fails if
-// the zone conversion is dropped — a fixture already in UTC would render the
-// same either way and would not discriminate the fallback from a no-op.
+// TestTimeFormReadsAnUnsetOrUnloadableZoneAsUTC checks that an unset or
+// unloadable zone renders as UTC.
 func TestTimeFormReadsAnUnsetOrUnloadableZoneAsUTC(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/en-US.json": `{"app.when":"{{at, time, 2006-01-02 15:04:05}}"}`,
 	})}
 	e := mustEngine(t, catalogs, nil)
-	// 2026-01-02 15:04:05 in +08:00 is 2026-01-02 07:04:05 in UTC.
 	instant := time.Date(2026, time.January, 2, 15, 4, 5, 0, time.FixedZone("Fake/Zone", 8*60*60))
 	const want = "2026-01-02 07:04:05"
 	if got := e.Localize(context.Background(), "app.when", i18n.Args{"at": i18n.Time(instant)}); got != want {
@@ -506,17 +453,8 @@ func TestTimeFormReadsAnUnsetOrUnloadableZoneAsUTC(t *testing.T) {
 	}
 }
 
-// TestTimeFormReadsTheGoLocalNameAsUTC holds the read path's own guard. "Local"
-// is one of Go's special location names: time.LoadLocation resolves it to the
-// host's own zone, so a context carrying "Local" would render user-visible text
-// in whatever zone the process happens to run in. The write side refuses the
-// name as a stored preference, but the accessor that writes a zone into a
-// context is exported and takes a value unexamined, so the engine answers UTC
-// rather than resolving it.
-//
-// The engine's own answer is asserted first because it does not depend on the
-// host: a host that runs in UTC would render the same text either way, and the
-// render assertion alone would not discriminate a leak from the guard.
+// TestTimeFormReadsTheGoLocalNameAsUTC checks that the engine answers Go's
+// "Local" name as UTC on the read path.
 func TestTimeFormReadsTheGoLocalNameAsUTC(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/en-US.json": `{"app.when":"{{at, time, 2006-01-02 15:04:05}}"}`,
@@ -526,7 +464,6 @@ func TestTimeFormReadsTheGoLocalNameAsUTC(t *testing.T) {
 		t.Errorf("location(%q) = %v, want UTC: the host's own zone must not be reachable from a name in a context",
 			"Local", loc)
 	}
-	// 2026-01-02 15:04:05 in +08:00 is 2026-01-02 07:04:05 in UTC.
 	instant := time.Date(2026, time.January, 2, 15, 4, 5, 0, time.FixedZone("Fake/Zone", 8*60*60))
 	ctx := i18n.WithTimeZone(context.Background(), "Local")
 	if got, want := e.Localize(ctx, "app.when", i18n.Args{"at": i18n.Time(instant)}), "2026-01-02 07:04:05"; got != want {
@@ -534,24 +471,21 @@ func TestTimeFormReadsTheGoLocalNameAsUTC(t *testing.T) {
 	}
 }
 
-// TestTimeFormLayoutMayContainAComma holds that the segment is not split on a
-// comma inside its layout: a Go layout like "Mon, 02 Jan 2006 15:04" is taken
-// whole after the second comma, so the weekday and the day-of-month both render.
+// TestTimeFormLayoutMayContainAComma checks that a comma inside the layout is not
+// treated as a separator.
 func TestTimeFormLayoutMayContainAComma(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/en-US.json": `{"app.when":"{{at, time, Mon, 02 Jan 2006 15:04}}"}`,
 	})}
 	e := mustEngine(t, catalogs, nil)
-	// 2 January 2026 is a Friday.
 	instant := time.Date(2026, time.January, 2, 15, 4, 0, 0, time.UTC)
 	if got := e.Localize(context.Background(), "app.when", i18n.Args{"at": i18n.Time(instant)}); got != "Fri, 02 Jan 2026 15:04" {
 		t.Errorf("Localize = %q, want %q", got, "Fri, 02 Jan 2026 15:04")
 	}
 }
 
-// TestTimeFormWithANonTimeValueIsLeftAsWritten holds that the time rule follows
-// the missing-parameter rule: a segment whose parameter is absent, or present
-// but not a time, is written back as it stood rather than rendered.
+// TestTimeFormWithANonTimeValueIsLeftAsWritten checks that a time segment with a
+// missing or non-time parameter is written back as it stood.
 func TestTimeFormWithANonTimeValueIsLeftAsWritten(t *testing.T) {
 	const raw = "{{at, time, 2006-01-02}}"
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
@@ -567,9 +501,8 @@ func TestTimeFormWithANonTimeValueIsLeftAsWritten(t *testing.T) {
 	}
 }
 
-// TestTimeFormWithAnEmptyLayoutFailsStartup holds that a time segment carrying no
-// layout is a malformed message: startup terminates under ErrInvalidMessage and
-// the failure names the key it came from.
+// TestTimeFormWithAnEmptyLayoutFailsStartup checks that a time segment with an
+// empty layout fails startup under ErrInvalidMessage naming the key.
 func TestTimeFormWithAnEmptyLayoutFailsStartup(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/en-US.json": `{"app.when":"{{at, time, }}"}`,
@@ -583,10 +516,8 @@ func TestTimeFormWithAnEmptyLayoutFailsStartup(t *testing.T) {
 	}
 }
 
-// TestTimeFormRendersConcurrently holds that the zone cache is safe under
-// concurrent renders: many goroutines render a time form naming different zones
-// at once, so the guard on the cache is exercised. Run under -race it is the
-// check that the one field written after construction is written behind a lock.
+// TestTimeFormRendersConcurrently checks that concurrent time-form renders are
+// safe, exercising the zone cache.
 func TestTimeFormRendersConcurrently(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/en-US.json": `{"app.when":"{{at, time, 2006-01-02 15:04:05}}"}`,
@@ -607,11 +538,8 @@ func TestTimeFormRendersConcurrently(t *testing.T) {
 	wg.Wait()
 }
 
-// TestMalformedMessageFailsStartup holds that a message the engine cannot parse
-// terminates startup under ErrInvalidMessage — a sentinel distinct from the
-// source failures — naming the key and the module it came from. The three ways a
-// plural segment is malformed are a category that is not a CLDR category, a
-// missing "other" branch, and a repeated category.
+// TestMalformedMessageFailsStartup checks that each malformed plural segment
+// fails startup under ErrInvalidMessage naming the key and the module.
 func TestMalformedMessageFailsStartup(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -650,9 +578,8 @@ func TestMalformedMessageFailsStartup(t *testing.T) {
 	}
 }
 
-// TestMalformedOverlayMessageFailsStartup holds that a malformed message in the
-// configured catalogs directory fails startup under ErrInvalidMessage naming the
-// key and the directory, so an operator can find the file.
+// TestMalformedOverlayMessageFailsStartup checks that a malformed overlay message
+// fails startup naming the key and the directory.
 func TestMalformedOverlayMessageFailsStartup(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/en-US.json": `{"app.en":"Hello"}`,
@@ -672,6 +599,8 @@ func TestMalformedOverlayMessageFailsStartup(t *testing.T) {
 	}
 }
 
+// TestNegotiateNoMatch checks that an empty header, unsupported languages and a
+// zero-q entry all report no match.
 func TestNegotiateNoMatch(t *testing.T) {
 	e := mustEngine(t, []core.Resource[i18n.Catalog]{twoLocales}, nil)
 	tests := []struct {
@@ -691,10 +620,9 @@ func TestNegotiateNoMatch(t *testing.T) {
 	}
 }
 
+// TestNegotiateQValueOrdering checks that q-value ordering is stable across
+// engine builds.
 func TestNegotiateQValueOrdering(t *testing.T) {
-	// The supported set is built from a map, so the matcher's internal order
-	// varies from build to build. The negotiated locale must not: build the
-	// engine repeatedly and require the same answer every time.
 	catalogs := []core.Resource[i18n.Catalog]{twoLocales}
 	for i := range 64 {
 		e := mustEngine(t, catalogs, nil)
@@ -707,6 +635,8 @@ func TestNegotiateQValueOrdering(t *testing.T) {
 	}
 }
 
+// TestLoadErrors checks the startup failures of a declared catalog and that each
+// names what it must.
 func TestLoadErrors(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -767,10 +697,9 @@ func TestLoadErrors(t *testing.T) {
 	}
 }
 
+// TestLoadMultiLocaleCatalog checks that one module carrying one key in several
+// locales loads.
 func TestLoadMultiLocaleCatalog(t *testing.T) {
-	// One module ships one key in every locale it supports. That is a single
-	// declaration by one module and must load; only a key shared between two
-	// modules is a conflict.
 	catalogs := []core.Resource[i18n.Catalog]{
 		catalogOf("app", map[string]string{
 			"locales/en-US.json": `{"app.hello":"Hello"}`,
@@ -782,7 +711,6 @@ func TestLoadMultiLocaleCatalog(t *testing.T) {
 	}
 }
 
-// stubProfile is an account's stored preferences for the resolver cases.
 type stubProfile struct {
 	locale i18n.Locale
 	zone   string
@@ -796,11 +724,6 @@ func (p stubProfile) TimeZoneFor(context.Context, string) (string, bool, error) 
 	return p.zone, p.zone != "", nil
 }
 
-// failingProfile is an account preference the store cannot answer: it reports a
-// read failure for the language and the zone alike, so a case can hold that the
-// locale walk continues past it and that a zone failure is reported rather than
-// read as "no preference stored". A case that leaves err unset gets a generic
-// failure; a zone case names the error it expects back.
 type failingProfile struct {
 	err error
 }
@@ -813,7 +736,6 @@ func (p failingProfile) TimeZoneFor(context.Context, string) (string, bool, erro
 	return "", false, p.readErr()
 }
 
-// readErr is the failure this profile answers with.
 func (p failingProfile) readErr() error {
 	if p.err != nil {
 		return p.err
@@ -821,6 +743,7 @@ func (p failingProfile) readErr() error {
 	return errors.New("the account store is unavailable")
 }
 
+// TestLocaleFor checks the context, profile, default and failed-read answers.
 func TestLocaleFor(t *testing.T) {
 	profile := stubProfile{locale: localeZH, zone: "Asia/Shanghai"}
 	tests := []struct {
@@ -846,6 +769,7 @@ func TestLocaleFor(t *testing.T) {
 	}
 }
 
+// TestTimeZoneFor checks the context, profile and no-preference answers.
 func TestTimeZoneFor(t *testing.T) {
 	profile := stubProfile{locale: localeZH, zone: "Asia/Shanghai"}
 	tests := []struct {
@@ -874,11 +798,8 @@ func TestTimeZoneFor(t *testing.T) {
 	}
 }
 
-// TestTimeZoneForReportsAProfileReadFailure holds that a profile's failure is
-// reported rather than read as "no preference stored": the two answers lead to
-// different behaviour, since an unset zone renders in UTC while a failed read
-// must not freeze a wrong instant into a mail. The walk stops at the failing
-// profile and does not fall through to the next one.
+// TestTimeZoneForReportsAProfileReadFailure checks that a profile failure is
+// reported and stops the walk.
 func TestTimeZoneForReportsAProfileReadFailure(t *testing.T) {
 	readErr := errors.New("the account store is unreachable")
 	e := mustEngine(t, nil, []i18n.Profile{
@@ -894,9 +815,8 @@ func TestTimeZoneForReportsAProfileReadFailure(t *testing.T) {
 	}
 }
 
-// TestTimeZoneForPrefersTheContextOverAFailingProfile holds that a context
-// that already names a zone never reads a profile, so a stored-preference
-// failure cannot override a zone the caller supplied.
+// TestTimeZoneForPrefersTheContextOverAFailingProfile checks that a context zone
+// is returned without reading a profile.
 func TestTimeZoneForPrefersTheContextOverAFailingProfile(t *testing.T) {
 	e := mustEngine(t, nil, []i18n.Profile{failingProfile{err: errors.New("unreachable")}})
 	got, ok, err := e.TimeZoneFor(i18n.WithTimeZone(context.Background(), "UTC"), "acct")
@@ -905,6 +825,8 @@ func TestTimeZoneForPrefersTheContextOverAFailingProfile(t *testing.T) {
 	}
 }
 
+// TestModuleCollectsDeclaredCatalogs checks that the module collects a declared
+// catalog through the real Module.
 func TestModuleCollectsDeclaredCatalogs(t *testing.T) {
 	reg := core.New()
 	reg.Register(core.Module{
@@ -914,8 +836,6 @@ func TestModuleCollectsDeclaredCatalogs(t *testing.T) {
 		},
 	})
 	reg.Register(Module())
-	// The default locale is read from configuration, so the module resolves a
-	// reader in New: supply one over the module's own schema, as a host does.
 	reg.Register(config.Module())
 	reg.Supply(authntest.ConfigReaderAll(t, "{}", Module()), config.ModuleName)
 
@@ -932,12 +852,8 @@ func TestModuleCollectsDeclaredCatalogs(t *testing.T) {
 	}
 }
 
-// TestModuleReadsTheConfiguredDefaultIntoTheEngine holds the configuration-to-
-// engine wiring: driven through the real Module() over a reader configured with
-// default-locale ja-JP and catalogs that carry ja-JP and en-US, the engine
-// resolves a request naming none to ja-JP. New has to carry the decoded
-// cfg.DefaultLocale into the engine; a hardcoded en-US would resolve here to
-// en-US and fail this case.
+// TestModuleReadsTheConfiguredDefaultIntoTheEngine checks that New carries the
+// configured default locale into the engine.
 func TestModuleReadsTheConfiguredDefaultIntoTheEngine(t *testing.T) {
 	reg := core.New()
 	reg.Register(core.Module{
@@ -969,12 +885,8 @@ func TestModuleReadsTheConfiguredDefaultIntoTheEngine(t *testing.T) {
 	}
 }
 
-// TestModuleReadsTheConfiguredOverlayIntoTheEngine holds the configuration-to-
-// engine wiring for the overlay: driven through the real Module() over a reader
-// carrying catalogs-dir and a default-locale that only the overlay supplies, the
-// engine renders the overlay's message. New has to carry the decoded
-// cfg.CatalogsDir into the engine; dropping it would leave the declared catalogs
-// alone and fail here.
+// TestModuleReadsTheConfiguredOverlayIntoTheEngine checks that New carries the
+// configured catalogs directory into the engine.
 func TestModuleReadsTheConfiguredOverlayIntoTheEngine(t *testing.T) {
 	dir := overlayDir(t, map[string]string{"ja-JP.json": `{"app.ja":"こんにちは"}`})
 	reg := core.New()
@@ -1009,11 +921,8 @@ func TestModuleReadsTheConfiguredOverlayIntoTheEngine(t *testing.T) {
 	}
 }
 
-// TestEngineNegotiatesACatalogDefinedThirdLanguage holds that the supported set
-// is the set of locales the catalogs carry and not a fixed pair: a catalog in
-// three languages negotiates the third — ja-JP, neither English nor Chinese —
-// for a request that prefers it, and renders in it. The engine hard-codes no
-// language, so a run gains one by declaring a catalog, not by a code change.
+// TestEngineNegotiatesACatalogDefinedThirdLanguage checks that a third language a
+// catalog defines is negotiated and rendered.
 func TestEngineNegotiatesACatalogDefinedThirdLanguage(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/en-US.json": `{"app.en":"Hello"}`,
@@ -1029,11 +938,8 @@ func TestEngineNegotiatesACatalogDefinedThirdLanguage(t *testing.T) {
 	}
 }
 
-// TestEngineRunsWithANonEnglishConfiguredDefault holds that the default is a
-// configured value and not a compile-time constant: over a catalog that carries
-// ja-JP, a run configured with default-locale ja-JP resolves a request naming
-// none, an account with no stored preference, the Localize fallback and
-// Resolver.Default to ja-JP.
+// TestEngineRunsWithANonEnglishConfiguredDefault checks that the configured
+// default drives every resolution path.
 func TestEngineRunsWithANonEnglishConfiguredDefault(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/en-US.json": `{"app.en":"Hello"}`,
@@ -1050,17 +956,13 @@ func TestEngineRunsWithANonEnglishConfiguredDefault(t *testing.T) {
 	if got := e.LocaleFor(context.Background(), "acct"); got != localeJA {
 		t.Errorf("LocaleFor(no stored preference) = %q, want %q", got, localeJA)
 	}
-	// A key only the configured default carries, requested in a locale that
-	// misses it, is rendered from the default — here ja-JP, not English.
 	if got := e.Localize(i18n.WithLocale(context.Background(), localeEN), "app.ja", nil); got != "こんにちは" {
 		t.Errorf("Localize fallback = %q, want %q", got, "こんにちは")
 	}
 }
 
-// TestCatalogsMissingTheConfiguredDefaultFailStartup holds that startup refuses a
-// set of catalogs that does not carry the configured default: with default-locale
-// ja-JP and no ja-JP catalog, the engine stops with ErrNoCatalog naming ja-JP,
-// ahead of any request.
+// TestCatalogsMissingTheConfiguredDefaultFailStartup checks that a catalog set
+// without the configured default fails under ErrNoCatalog naming it.
 func TestCatalogsMissingTheConfiguredDefaultFailStartup(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/en-US.json": `{"app.en":"Hello"}`,
@@ -1074,9 +976,8 @@ func TestCatalogsMissingTheConfiguredDefaultFailStartup(t *testing.T) {
 	}
 }
 
-// TestAnUnsetDefaultLocaleResolvesToEnglish holds the unset case through the
-// configuration path: a configuration that names no default-locale decodes to
-// en-US, the schema's default, and a run on it resolves there.
+// TestAnUnsetDefaultLocaleResolvesToEnglish checks that an unset default decodes
+// to en-US and resolves there.
 func TestAnUnsetDefaultLocaleResolvesToEnglish(t *testing.T) {
 	cfg, err := readConfig(authntest.ConfigReaderAll(t, "{}", Module()))
 	if err != nil {
@@ -1094,11 +995,8 @@ func TestAnUnsetDefaultLocaleResolvesToEnglish(t *testing.T) {
 	}
 }
 
-// TestOverlayOverridesADeclaredMessage holds that a message the overlay directory
-// carries wins over the same key a declared catalog carries: the index is built
-// from the declared catalogs and then the overlay, and the overlay's entry is
-// written last. It covers both render paths — Localize (with fallback) and
-// Translate (without) — so the override is in the index, not in the fallback.
+// TestOverlayOverridesADeclaredMessage checks that an overlay message wins over
+// the declared one in both render paths.
 func TestOverlayOverridesADeclaredMessage(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/en-US.json": `{"app.greet":"Hello from the binary"}`,
@@ -1115,10 +1013,8 @@ func TestOverlayOverridesADeclaredMessage(t *testing.T) {
 	}
 }
 
-// TestOverlayIntroducesANewLocale holds that a locale only the overlay carries
-// enters the engine's supported set: a request that prefers it negotiates to it
-// and renders in it, though no declared catalog names it. The engine supports
-// whatever the merged index carries, not a fixed pair.
+// TestOverlayIntroducesANewLocale checks that a locale only the overlay carries
+// joins the supported set.
 func TestOverlayIntroducesANewLocale(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/en-US.json": `{"app.en":"Hello"}`,
@@ -1135,11 +1031,8 @@ func TestOverlayIntroducesANewLocale(t *testing.T) {
 	}
 }
 
-// TestOverlaySuppliesTheConfiguredDefault holds that the default-locale check
-// runs after the merge: a declared catalog carries only zh-CN while the
-// configured default is ja-JP, which only the overlay carries. Because the
-// overlay is merged first, the run starts instead of failing with ErrNoCatalog,
-// and the overlay's locale is the fallback every message relies on.
+// TestOverlaySuppliesTheConfiguredDefault checks that the default check runs
+// after the overlay merge, so the overlay can supply the default locale.
 func TestOverlaySuppliesTheConfiguredDefault(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/zh-CN.json": `{"app.zh":"你好"}`,
@@ -1147,8 +1040,6 @@ func TestOverlaySuppliesTheConfiguredDefault(t *testing.T) {
 	dir := overlayDir(t, map[string]string{
 		"ja-JP.json": `{"app.ja":"こんにちは"}`,
 	})
-	// newEngine builds and does not fail, where a set that carries no ja-JP would
-	// stop with ErrNoCatalog.
 	e := mustEngineWithOverlay(t, catalogs, nil, dir, localeJA)
 	if got := e.Default(); got != localeJA {
 		t.Errorf("Default() = %q, want the configured default %q", got, localeJA)
@@ -1156,19 +1047,13 @@ func TestOverlaySuppliesTheConfiguredDefault(t *testing.T) {
 	if got, ok := e.Translate(localeJA, "app.ja", nil); !ok || got != "こんにちは" {
 		t.Errorf("Translate in the overlay-supplied default = %q, %v; want %q, true", got, ok, "こんにちは")
 	}
-	// A key the requested locale misses falls back to the overlay-supplied
-	// default, so the overlay is a real fallback target, not only an added locale.
 	if got := e.Localize(i18n.WithLocale(context.Background(), localeZH), "app.ja", nil); got != "こんにちは" {
 		t.Errorf("Localize fallback to the overlay-supplied default = %q, want %q", got, "こんにちは")
 	}
 }
 
-// TestOverlayMalformedFileFailsStartup holds that a file in the configured
-// directory the loader cannot read as a catalog fails startup under
-// ErrInvalidOverlay — a sentinel distinct from ErrInvalidCatalog, and naming the
-// directory and the file. The two ways a file is malformed are a body that is
-// not a JSON object of string to string and a base name that is not a language
-// tag.
+// TestOverlayMalformedFileFailsStartup checks that a malformed overlay file fails
+// under ErrInvalidOverlay naming the file.
 func TestOverlayMalformedFileFailsStartup(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/en-US.json": `{"app.en":"Hello"}`,
@@ -1198,12 +1083,8 @@ func TestOverlayMalformedFileFailsStartup(t *testing.T) {
 	}
 }
 
-// TestNoOverlayLeavesBehaviourAsBefore holds that every way of naming no overlay
-// — the item unset, a path that is not an existing directory, an existing
-// directory holding no *.json file, a path naming a file — leaves the engine
-// built from the declared catalogs alone. In particular the loader's "matched no
-// file" error, an error for a declared catalog, must not surface for the overlay
-// source.
+// TestNoOverlayLeavesBehaviourAsBefore checks that every way of naming no overlay
+// leaves the engine built from the declared catalogs alone.
 func TestNoOverlayLeavesBehaviourAsBefore(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{twoLocales}
 	empty := t.TempDir()
@@ -1231,7 +1112,6 @@ func TestNoOverlayLeavesBehaviourAsBefore(t *testing.T) {
 			if got := e.Default(); got != localeEN {
 				t.Errorf("Default() = %q, want %q", got, localeEN)
 			}
-			// No overlay adds a locale the declared catalogs do not carry.
 			if _, ok := e.Translate(localeJA, "app.ja", nil); ok {
 				t.Error("an overlay-less run carries a locale no declared catalog does")
 			}

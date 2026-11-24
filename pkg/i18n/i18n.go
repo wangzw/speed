@@ -1,16 +1,7 @@
-// Package i18n carries the user-facing text the server renders.
-//
-// It is the interface package of a capability directory: it declares the
-// interfaces, the value types and the resource type, and registers no module.
-// The engine that collects the message catalogs, the entry point wiring that
-// settles a request's locale and the bridge to an account's stored preferences
-// each live in a subpackage and register a module of their own, the way the
-// subpackages of pkg/authn do.
-//
-// The root package depends on the standard library only, so a module that only
-// reads a locale can import it without carrying any library the engine binds.
-// The one library the engine needs, golang.org/x/text — for language matching,
-// plural selection and number formatting — stays inside the engine.
+// Package i18n carries the user-facing text the server renders: the
+// interfaces, value types and resource type a module uses to declare a catalog
+// and render a message. It registers no module and depends on the standard
+// library alone.
 package i18n
 
 import (
@@ -20,48 +11,27 @@ import (
 	"time"
 )
 
-// Locale is the language a message is rendered in, written as a BCP 47 tag. It
-// is a string so that it crosses a module boundary — a context, an interface, a
-// declared catalog — without carrying a language-matching library to every
-// consumer; the engine parses it where matching happens.
+// Locale is the language a message is rendered in, written as a BCP 47 tag.
 type Locale string
 
-// The names this capability reads its configuration under. The set of locales a
-// run supports is the set of locales the declared catalogs and the configured
-// catalogs directory carry, and the one
-// additional choice — which of them a request that names none resolves to — is
-// this configuration item rather than a value written into code.
-//
-// The default locale is the one configuration item the SMS module also resolves,
-// so one statement of the default serves both capabilities. Because that second
-// module needs the two names, they are exported here rather than spelled as
-// literals on both sides.
 const (
 	// ConfigNamespace is the config namespace this capability's items hang from.
 	ConfigNamespace = "i18n"
 	// DefaultLocaleItem is the config item carrying the default locale: the
-	// locale a request that names none resolves to, and the locale a message
-	// falls back to when the requested locale has no entry for its key. Its value
-	// is a BCP 47 language tag, and it is "en-US" when unset.
+	// locale a request that names none resolves to, and the fallback for a key a
+	// catalog misses. Its value is a BCP 47 language tag, and it is "en-US" when
+	// unset.
 	DefaultLocaleItem = "default-locale"
 )
 
-// Key identifies a message in a catalog. A key is flat and namespaced by the
-// module that renders it — "authn.login-failed", "http.404" — so that two
-// modules never collide on one and a key read off a problem's Type is
-// unambiguous.
+// Key identifies a message in a catalog. It is flat and namespaced by the module
+// that renders it.
 type Key string
 
-// Args carries the values a parameterised message interpolates. A message
-// writes a parameter as {{name}}, and a name with no value in Args is left in
-// the text as written, so a missing parameter is visible rather than silent.
-//
-// A value is typed: a string is written into the text verbatim, an integer or a
-// number is formatted for the message's language by the engine, and a time is
-// formatted by the layout the message's own time segment carries and in the
-// render context's time zone. The type is a plain value type built with String,
-// Int, Float or Time, so this package stays on the standard library and all
-// formatting lives in the engine.
+// Args carries the values a parameterised message interpolates. A name with no
+// value is left in the text as written. A value is typed: a string is written
+// verbatim, a number is formatted for the message's language, and a time is
+// formatted by the layout of the message's own time segment.
 type Args map[string]Value
 
 // ValueKind is which type a Value carries.
@@ -81,11 +51,8 @@ const (
 	KindTime
 )
 
-// Value is the typed value a message parameter carries. It is built with
-// String, Int, Float or Time; the engine reads it back with the KindOf, StringOf,
-// IntOf, FloatOf and TimeOf functions. A message author only builds one.
-//
-// The zero Value reads as an empty string, the same as String("").
+// Value is the typed value a message parameter carries, built with String, Int,
+// Float or Time. The zero Value reads as an empty string.
 type Value struct {
 	kind ValueKind
 	text string
@@ -94,9 +61,6 @@ type Value struct {
 	tm   time.Time
 }
 
-// The two private-use characters that delimit a time marker. They are not part
-// of any catalog syntax, so a marker cannot be confused with a {{name}} or a
-// {{name, time, layout}} segment, and a marker carries no braces at all.
 const (
 	timeMarkerOpen  = "\uE000"
 	timeMarkerClose = "\uE001"
@@ -104,20 +68,14 @@ const (
 
 // MarkedTime is the marker a TimeRenderMarked render writes in place of a time
 // segment: the opening delimiter, "time:", the parameter name, and the closing
-// delimiter. The marker carries no instant, layout or zone, so a client that
-// resolves it renders the parameter's value in the viewer's display zone and
-// language at read time — changing either re-renders a message already stored.
-//
-// The name is the parameter name the segment already trimmed, which is the key
-// the dispatch's parameters carry.
+// delimiter. It carries no instant, layout or zone, so a client resolves it in
+// the viewer's display zone at read time.
 func MarkedTime(name string) string {
 	return timeMarkerOpen + "time:" + name + timeMarkerClose
 }
 
-// StripTimeMarkerDelimiters removes the two characters MarkedTime delimits a
-// marker with. A marked render passes every string parameter through it, so a
-// value that happens to carry a private-use character cannot be mistaken for a
-// marker by the client resolving the text.
+// StripTimeMarkerDelimiters removes the two private-use characters a marker is
+// delimited with.
 func StripTimeMarkerDelimiters(s string) string {
 	return strings.Map(func(r rune) rune {
 		if r == '\uE000' || r == '\uE001' {
@@ -164,8 +122,7 @@ func TimeOf(v Value) time.Time { return v.tm }
 // engine.
 type Localizer interface {
 	// Localize renders key in the locale of ctx, falling back to the run's
-	// default and then to the key itself, so the result is never empty. A key no
-	// catalog carries is written back as the key.
+	// default and then to the key itself, so the result is never empty.
 	Localize(ctx context.Context, key Key, args Args) string
 	// Translate renders key in the named locale, reporting whether a catalog
 	// carried it. It does not fall back.
@@ -173,13 +130,11 @@ type Localizer interface {
 }
 
 // Negotiator picks the supported locale that best fits a request's language
-// preferences. It is delivered exclusively by the engine, which holds the set
-// of supported locales.
+// preferences. It is delivered exclusively by the engine.
 type Negotiator interface {
 	// Negotiate returns the supported locale that best matches an Accept-Language
-	// header value, and whether any supported locale matched. A header naming
-	// only unsupported languages, or none at all, reports no match, which a
-	// caller reads as "leave the locale unset" rather than "use the default".
+	// header value, and whether any supported locale matched. No match means the
+	// caller leaves the locale unset rather than using the default.
 	Negotiate(acceptLanguage string) (Locale, bool)
 }
 
@@ -188,60 +143,48 @@ type Negotiator interface {
 // engine.
 type Resolver interface {
 	// Default is the locale a request that names none resolves to, and the
-	// fallback for a key a catalog misses. It is the run's configured default.
+	// fallback for a key a catalog misses.
 	Default() Locale
-	// LocaleOf is the locale of ctx: the one written into it, or the value
-	// Default reports. It never fails.
+	// LocaleOf is the locale of ctx: the one written into it, or Default. It
+	// never fails.
 	LocaleOf(ctx context.Context) Locale
 	// TimeZoneOf is the IANA time zone name of ctx, or "" when none is set, which
 	// reads as UTC.
 	TimeZoneOf(ctx context.Context) string
 	// LocaleFor is the locale for a named account, read from its stored
-	// preferences when the context carries none, and the value Default reports
-	// otherwise.
+	// preferences when the context carries none, and Default otherwise.
 	LocaleFor(ctx context.Context, account string) Locale
 	// TimeZoneFor is the time zone for a named account: the context's zone when
 	// it carries one, otherwise the account's stored preference. It reports
 	// whether a zone was found and, when a profile could not be read, the
-	// failure. "No zone stored" and "the zone could not be read" lead to
-	// different behaviour at the caller — the first renders in UTC, the second
-	// must retry rather than freeze a wrong instant into text — so they are not
-	// collapsed into one answer.
+	// failure; an unset zone and an unreadable one lead to different behaviour at
+	// the caller.
 	TimeZoneFor(ctx context.Context, account string) (string, bool, error)
 }
 
 // Profile is the seam onto an account's stored language and time zone. It is
-// non-exclusive and optional: the engine takes every implementation with
-// core.ResolveAll and falls back to the run's default when there is none. The
-// bridge to pkg/authn's accounts implements it.
+// non-exclusive and optional.
 type Profile interface {
 	// LocaleFor returns the locale stored for an account, and whether one is. An
-	// error reports a preference that could not be read: a caller cannot
-	// otherwise tell a failed read from an absent preference. Both take the
-	// same fallback, and only the failed read leaves a warning.
+	// error reports a preference that could not be read, which a caller must tell
+	// from an absent preference.
 	LocaleFor(ctx context.Context, account string) (Locale, bool, error)
 	// TimeZoneFor returns the IANA time zone stored for an account, whether one
-	// is, and the failure that kept the store from answering. A missing account,
-	// a malformed identifier and an absent or empty attribute are all
-	// "no zone, no failure"; any other store failure is reported, so the engine
-	// can tell an unset preference from an unreadable one.
+	// is, and the failure that kept the store from answering.
 	TimeZoneFor(ctx context.Context, account string) (string, bool, error)
 }
 
-// Catalog is the resource type a module declares its message files as. The
-// engine is the consumer: it reads every declared catalog, over the available
-// set, and merges them into one index.
-//
-// FS is a filesystem — an embed.FS a module reads its own files in with — and
-// Pattern selects the message files under it, one per locale, each named for
-// the locale it carries, as "locales/{tag}.json".
+// Catalog is the resource type a module declares its message files as. FS is the
+// filesystem the module reads its own files in, and Pattern selects the message
+// files under it, one per locale, as "locales/{tag}.json".
 type Catalog struct {
-	FS      fs.FS
+	// FS is the filesystem the module reads its own message files from.
+	FS fs.FS
+	// Pattern selects the message files under FS, one per locale.
 	Pattern string
 }
 
 // LocaleResolver marks the middleware layer that settles a request's locale, so
 // that another layer can be ordered against it with After or Before. It has no
-// method a caller uses; a layer stands for it by naming (*LocaleResolver)(nil)
-// in its Middleware.Provides.
+// method a caller uses.
 type LocaleResolver interface{ localeResolver() }

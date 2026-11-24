@@ -15,18 +15,11 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// The tags these cases write by name. The engine no longer exports them, so the
-// test names them itself.
 const (
 	localeEN i18n.Locale = "en-US"
 	localeZH i18n.Locale = "zh-CN"
 )
 
-// fakeNegotiator is a Negotiator whose answer a test fixes: it returns locale
-// and ok for any header, and records whether it was reached and the header it
-// was handed, so a test can hold the layer to consulting the negotiator only
-// when the context carries no locale and only with the request's own
-// Accept-Language.
 type fakeNegotiator struct {
 	locale i18n.Locale
 	ok     bool
@@ -34,15 +27,12 @@ type fakeNegotiator struct {
 	header string
 }
 
-// Negotiate records the call and the header, and returns the fixed answer.
 func (f *fakeNegotiator) Negotiate(acceptLanguage string) (i18n.Locale, bool) {
 	f.called = true
 	f.header = acceptLanguage
 	return f.locale, f.ok
 }
 
-// ginContext returns a gin context whose request carries ctx and the given
-// Accept-Language header, as a layer reads them off c.Request.
 func ginContext(ctx context.Context, acceptLanguage string) *gin.Context {
 	gin.SetMode(gin.TestMode)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -55,10 +45,8 @@ func ginContext(ctx context.Context, acceptLanguage string) *gin.Context {
 	return c
 }
 
-// TestNegotiationLayerWritesTheNegotiatedLocale pins the negotiation layer's
-// three outcomes: it writes the locale the negotiator matched, leaves a locale
-// another writer already put in the context, and writes nothing when the
-// negotiator reports no match.
+// TestNegotiationLayerWritesTheNegotiatedLocale checks that the layer writes a
+// matched locale, keeps one present and writes nothing on no match.
 func TestNegotiationLayerWritesTheNegotiatedLocale(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -80,8 +68,6 @@ func TestNegotiationLayerWritesTheNegotiatedLocale(t *testing.T) {
 			wantAny: true,
 		},
 		{
-			// A locale is already in the context, so the layer never consults the
-			// negotiator and the header it would have matched cannot overwrite it.
 			name:    "leaves a locale the context already carries",
 			base:    localeEN,
 			header:  "zh-CN,zh;q=0.9",
@@ -92,8 +78,6 @@ func TestNegotiationLayerWritesTheNegotiatedLocale(t *testing.T) {
 			wantAny: true,
 		},
 		{
-			// The matched value is non-empty beside a false ok, so a layer that
-			// wrote it without reading the bool would be caught writing it here.
 			name:    "writes nothing when the negotiator reports no match",
 			header:  "fr-FR",
 			matched: localeZH,
@@ -130,10 +114,8 @@ func TestNegotiationLayerWritesTheNegotiatedLocale(t *testing.T) {
 	}
 }
 
-// TestProfileLayerFillsFromTheIdentity pins what the profile layer copies off the
-// signed-in identity into a request context: the account's i18n.locale and
-// i18n.tz attributes, each written only when the context does not already carry
-// that value.
+// TestProfileLayerFillsFromTheIdentity checks that the profile layer copies the
+// identity's locale and zone into the context only where it carries neither.
 func TestProfileLayerFillsFromTheIdentity(t *testing.T) {
 	attrs := map[string]string{
 		i18n.LocaleAttributeKey:   string(localeZH),
@@ -183,10 +165,8 @@ func TestProfileLayerFillsFromTheIdentity(t *testing.T) {
 	}
 }
 
-// TestProfileLayerLeavesAContextWithoutAnIdentityAlone pins the anonymous
-// branch: a request the gateway stamped no identity onto — an exempt or
-// credential-less optional route — is handed on with nothing written, so the
-// layer adds no locale the header did not name.
+// TestProfileLayerLeavesAContextWithoutAnIdentityAlone checks that a context
+// with no identity passes through unwritten.
 func TestProfileLayerLeavesAContextWithoutAnIdentityAlone(t *testing.T) {
 	c := ginContext(context.Background(), "")
 
@@ -200,9 +180,8 @@ func TestProfileLayerLeavesAContextWithoutAnIdentityAlone(t *testing.T) {
 	}
 }
 
-// TestDeclaredLayers pins the stage, Order, anchor and capability each layer
-// puts on the chain, which is what the entry point orders them by and what
-// another module points at with After or Before.
+// TestDeclaredLayers checks the stage, order, anchor and capability each layer
+// declares.
 func TestDeclaredLayers(t *testing.T) {
 	neg := negotiationLayer(&fakeNegotiator{})
 
