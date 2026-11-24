@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { act, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import { profileBody } from '../test-utils/fixtures.js'
@@ -136,7 +136,7 @@ describe('ProfileSection', () => {
     expect(onDisplayNameSaved).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps the field disabled until the refetch that follows the save settles', async () => {
+  it('keeps the field read-only until the refetch that follows the save settles', async () => {
     let patchDone = false
     let releaseRefetch: (() => void) | null = null
     const respond: RealResponder = async (call: RealCall) => {
@@ -168,12 +168,16 @@ describe('ProfileSection', () => {
     await user.click(screen.getByRole('button', { name: zhCN.profile.save }))
 
     // The PATCH settled, but the scope's attempt is still open on the
-    // refetch, so the field stays disabled until the whole attempt settles.
+    // refetch, so the field stays locked until the whole attempt settles.
+    // It is read-only rather than disabled: a field that goes natively
+    // disabled drops focus to the body.
     await waitFor(() => expect(releaseRefetch).not.toBeNull())
-    expect(field).toBeDisabled()
+    expect(field).toHaveAttribute('readonly')
+    expect(field).not.toHaveAttribute('disabled')
 
     releaseRefetch!()
-    await waitFor(() => expect(field).toBeEnabled())
+    await waitFor(() => expect(field).not.toHaveAttribute('readonly'))
+    expect(field).not.toHaveAttribute('disabled')
   })
 
   it('renders a refused save as its code text', async () => {
@@ -207,31 +211,144 @@ describe('ProfileSection', () => {
     ).toBeTruthy()
   })
 
-  it('disables the save button while the field still holds the account name', async () => {
+  it('holds the save button unavailable with its reason while the field still holds the account name', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileBody({ display_name: 'Ada' }))
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
-    mount(respond)
+    const { rig } = mount(respond)
     const user = userEvent.setup()
 
     const save = await screen.findByRole('button', { name: zhCN.profile.save })
-    // Nothing changed yet: the save is inert, so a stray click cannot fire a
-    // no-op PATCH.
-    expect(save).toBeDisabled()
+    // Nothing changed yet: the save is inert. It stays focusable and says
+    // why -- it is unavailable, not natively disabled.
+    expect(save).toHaveAttribute('aria-disabled', 'true')
+    expect(save).not.toHaveAttribute('disabled')
+    expect(save).not.toHaveAttribute('aria-busy')
+    expect(save).toHaveAccessibleDescription(zhCN.profile.saveUnavailable)
+    save.focus()
+    expect(save).toHaveFocus()
+
+    // Click and the keyboard leave without a request, and a direct form
+    // submit is swallowed by the same rule.
+    await user.click(save)
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    fireEvent.submit(save.closest('form') as HTMLFormElement)
+    expect(rig.calls.filter((call) => call.method === 'PATCH')).toHaveLength(0)
 
     const field = screen.getByRole('textbox', {
       name: zhCN.profile.displayName.label,
     })
     await user.type(field, '!')
-    expect(save).toBeEnabled()
+    // A changed name releases the control and clears its reason.
+    expect(save).not.toHaveAttribute('aria-disabled', 'true')
+    expect(save).not.toHaveAccessibleDescription()
 
-    // Restoring the account's own name disables it again.
+    // Restoring the account's own name makes it unavailable again.
     await user.clear(field)
     await user.type(field, 'Ada')
-    expect(save).toBeDisabled()
+    expect(save).toHaveAttribute('aria-disabled', 'true')
+    expect(save).toHaveAccessibleDescription(zhCN.profile.saveUnavailable)
+  })
+
+  it('keeps focus on the save button while the save is in flight and after it lands', async () => {
+    let stored = 'Ada'
+    let releasePatch: (() => void) | null = null
+    const respond: RealResponder = async (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ display_name: stored }))
+      }
+      if (call.method === 'PATCH' && call.path === PROFILE_PATH) {
+        const nextName = (call.body as { display_name: string }).display_name
+        await new Promise<void>((resolve) => {
+          releasePatch = resolve
+        })
+        stored = nextName
+        return jsonResponse(200, {})
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    const field = await screen.findByRole('textbox', {
+      name: zhCN.profile.displayName.label,
+    })
+    await user.clear(field)
+    await user.type(field, 'Grace')
+    const save = screen.getByRole('button', { name: zhCN.profile.save })
+    await user.click(save)
+
+    // The control that started the write reports busy and keeps focus; it
+    // is never natively disabled, and the field stays focusable while it
+    // cannot be changed.
+    await waitFor(() => expect(save).toHaveAttribute('aria-busy', 'true'))
+    expect(save).toHaveAttribute('aria-disabled', 'true')
+    expect(save).not.toHaveAttribute('disabled')
+    expect(save).toHaveFocus()
+    expect(field).toHaveAttribute('readonly')
+    expect(field).not.toHaveAttribute('disabled')
+
+    releasePatch!()
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(zhCN.profile.saved),
+    )
+
+    // The landing makes the name match the stored one again, so the save
+    // becomes unavailable with its reason -- the same element, still
+    // focused.
+    await waitFor(() => expect(save).not.toHaveAttribute('aria-busy'))
+    expect(save).toHaveAttribute('aria-disabled', 'true')
+    expect(save).toHaveAccessibleDescription(zhCN.profile.saveUnavailable)
+    expect(save).toHaveFocus()
+  })
+
+  it('keeps focus in the inline field while an Enter-started write is in flight', async () => {
+    let stored = 'Ada'
+    let releasePatch: (() => void) | null = null
+    const respond: RealResponder = async (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ display_name: stored }))
+      }
+      if (call.method === 'PATCH' && call.path === PROFILE_PATH) {
+        const nextName = (call.body as { display_name: string }).display_name
+        await new Promise<void>((resolve) => {
+          releasePatch = resolve
+        })
+        stored = nextName
+        return jsonResponse(200, {})
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRigWithoutSession(respond)
+    rig.store.set('access-1')
+    renderWithProviders(<ProfileSection inline />)
+    const user = userEvent.setup()
+
+    const field = await screen.findByRole('textbox', {
+      name: zhCN.profile.displayName.label,
+    })
+    await user.clear(field)
+    await user.type(field, 'Grace')
+    field.focus()
+    await user.keyboard('{Enter}')
+
+    // The field started the write: it stays put, read-only instead of
+    // disabled, and the Enter that submitted it did not take focus away.
+    await waitFor(() => expect(field).toHaveAttribute('readonly'))
+    expect(field).not.toHaveAttribute('disabled')
+    expect(field).toHaveFocus()
+    // Enter while the write is in flight is swallowed by the guard.
+    await user.keyboard('{Enter}')
+    expect(rig.calls.filter((call) => call.method === 'PATCH')).toHaveLength(1)
+
+    releasePatch!()
+    await waitFor(() => expect(field).not.toHaveAttribute('readonly'))
+    expect(field).toHaveFocus()
+    expect(field).toHaveValue('Grace')
   })
 
   it('writes the inline field on blur and on Enter, with no save button', async () => {
@@ -266,8 +383,9 @@ describe('ProfileSection', () => {
     expect(afterBlur).toHaveLength(1)
     expect(afterBlur[0]?.body).toEqual({ display_name: 'Grace' })
 
-    // The refetch that follows the save settles before the next edit.
-    await waitFor(() => expect(field).toBeEnabled())
+    // The refetch that follows the save settles before the next edit: the
+    // attempt's read-only lock is released, not a native disable.
+    await waitFor(() => expect(field).not.toHaveAttribute('readonly'))
     expect(field).toHaveValue('Grace')
 
     // Enter commits the next changed name through the form's submit.
@@ -301,7 +419,7 @@ describe('ProfileSection', () => {
     await user.keyboard('{Enter}')
 
     // Enter on the account's own name is no write: no PATCH goes out and the
-    // region reports nothing, matching the non-inline button's disabled rule.
+    // region reports nothing, matching the non-inline button's unavailable rule.
     expect(rig.calls.filter((call) => call.method === 'PATCH')).toHaveLength(0)
     expect(screen.getByRole('status').textContent).toBe('')
   })

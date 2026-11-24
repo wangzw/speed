@@ -12,10 +12,14 @@
  * The section reads GET /api/v1/auth/me for the stored name, seeds the field from
  * it and PATCHes a one-field body on save. The write is not fired on every
  * keystroke: it goes out from the save button, so a half-typed name never
- * lands on the account, and the button is disabled while the field still
+ * lands on the account, and the button is unavailable while the field still
  * holds the account's own name (a save with nothing changed would fire a
- * no-op PATCH) -- the same no-change-disabled convention the console's
- * account-detail save controls set.
+ * no-op PATCH) -- the same no-change convention the console's account-detail
+ * save controls set. Unavailable is not disabled: the button stays focusable,
+ * carries `aria-disabled`, and gives the reason, so a landing that makes the
+ * name match the stored one again does not take focus away. The field is
+ * read-only, not disabled, while the write is in flight, so whoever typed in
+ * it keeps focus too.
  *
  * The write does not ask for a fresh authentication: the route admits the
  * account's own display name, language and time zone directly
@@ -39,6 +43,7 @@
  */
 
 import { useState } from 'react'
+import type { FormEvent } from 'react'
 import Box from '@mui/material/Box'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
@@ -52,6 +57,7 @@ import {
   ActionRow,
   FORM_MAX_WIDTH,
   SectionCard,
+  useActivationGuard,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import { AccountAsyncSection } from './internal/async-section.js'
@@ -103,10 +109,13 @@ export function ProfileSection({
   const feedback = useWriteFeedback()
 
   const pending = isPending && data === undefined
-  // Disabled through the whole attempt, including the refetch that follows
+  // In flight through the whole attempt, including the refetch that follows
   // the mutation, so the field cannot change context under a pending scope.
   const busy = patchProfile.isPending || feedback.pending
   const name = editedName ?? data?.display_name ?? ''
+  // Saving the account's own name would fire a no-op PATCH; that is the
+  // precondition the save control and the form guard report as unavailable.
+  const unchanged = name === (data?.display_name ?? '')
 
   function invalidateProfile(): Promise<void> {
     return queryClient.invalidateQueries({
@@ -139,6 +148,20 @@ export function ProfileSection({
     void save(nextName)
   }
 
+  // The form's own submission is guarded by the same rule as the save
+  // control: nothing reaches `commit` while a write is in flight or the
+  // name has not changed, so a programmatic submit or a synthetic Enter
+  // click cannot fire a second PATCH.
+  const guardedSubmit = useActivationGuard(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      // Enter commits the inline field, but an unchanged value is no
+      // write -- the same rule the non-inline save button follows.
+      commit(name)
+    },
+    { busy, unavailable: unchanged },
+  )
+
   return (
     <SectionCard title={t('profile.title')}>
       <AccountAsyncSection
@@ -159,12 +182,7 @@ export function ProfileSection({
           <Box
             component="form"
             noValidate
-            onSubmit={(event) => {
-              event.preventDefault()
-              // Enter commits the inline field, but an unchanged value is no
-              // write -- the same rule the non-inline save button follows.
-              commit(name)
-            }}
+            onSubmit={guardedSubmit}
             sx={{
               display: 'flex',
               flexDirection: 'column',
@@ -178,17 +196,17 @@ export function ProfileSection({
               size="small"
               variant="outlined"
               label={inline ? undefined : t('profile.displayName.label')}
-              slotProps={
-                inline
-                  ? {
-                      htmlInput: {
-                        'aria-label': t('profile.displayName.label'),
-                      },
-                    }
-                  : undefined
-              }
+              slotProps={{
+                htmlInput: {
+                  // Locked, not disabled, for the whole attempt: the field
+                  // stays focusable and cannot change under a pending write.
+                  readOnly: busy,
+                  ...(inline
+                    ? { 'aria-label': t('profile.displayName.label') }
+                    : {}),
+                },
+              }}
               value={name}
-              disabled={busy}
               onChange={(event) => setEditedName(event.target.value)}
               onBlur={
                 inline
@@ -207,11 +225,17 @@ export function ProfileSection({
                 <ActionButton
                   type="submit"
                   emphasis="primary"
-                  // Disabled while the field still holds the account's own
-                  // name: a save with nothing changed would fire a no-op
-                  // PATCH, and the console account detail's save controls set
-                  // the same no-change-disabled convention.
-                  disabled={busy || name === (data?.display_name ?? '')}
+                  // Busy is the save this control started; unavailable is
+                  // the no-change precondition. Neither is native disabled:
+                  // the landing that makes the name match again leaves focus
+                  // on the button and reads out why it cannot run.
+                  busy={busy}
+                  unavailable={!busy && unchanged}
+                  unavailableReason={
+                    !busy && unchanged
+                      ? t('profile.saveUnavailable')
+                      : undefined
+                  }
                 >
                   {t('profile.save')}
                 </ActionButton>
