@@ -1,20 +1,3 @@
-/**
- * Rule tests for no-double-feedback-region. Run from the web workspace
- * root:
- *
- *   pnpm exec vitest run eslint-rules/no-double-feedback-region.test.mjs
- *
- * The RuleTester cases pin the rule's judgement; the final suite scans
- * every runtime TSX file under web/packages/<name>/src and the demo
- * host's src -- the scopes the workspace and host lint configs give the
- * rule -- and holds the exemption list exactly equal to the multi-region
- * components in either tree, so a new one cannot slip in unregistered and
- * a stale entry cannot linger.
- *
- * Test snippets are fixture code for the rule under test; the scanned
- * files are the packages' and the host's own source.
- */
-
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -36,10 +19,6 @@ const ruleTester = new RuleTester({
   },
 })
 
-/**
- * RuleTester.run throws an aggregate error listing every failing case;
- * surface that error as the test failure instead of swallowing it.
- */
 function runRule(valid, invalid) {
   try {
     ruleTester.run('no-double-feedback-region', noDoubleFeedbackRegionRule, {
@@ -60,17 +39,11 @@ describe('no-double-feedback-region rule', () => {
   it('accepts one region per component', () => {
     runRule(
       [
-        // One control group, one scope, one region.
         'function Panel() { return <WriteFeedbackRegion outcome={feedback.outcome} /> }',
-        // Two components in one file each render their own region.
         'function First() { return <WriteFeedbackRegion outcome={a.outcome} /> }' +
           'function Second() { return <WriteFeedbackRegion outcome={b.outcome} /> }',
-        // An anonymous render prop belongs to the component that declares it.
         'function Table() { return <AsyncSection>{() => <WriteFeedbackRegion outcome={feedback.outcome} />}</AsyncSection> }',
-        // A per-row result that is not a WriteFeedbackRegion stays legal:
-        // an upload queue row carries its status as text from row props.
         'function Uploader({ rows }) { return <ul>{rows.map((row) => <li key={row.id}>{row.status}</li>)}</ul> }',
-        // One region rendered per row is one JSX element in the component.
         'function Uploader({ rows }) { return <ul>{rows.map((row) => <li key={row.id}><WriteFeedbackRegion outcome={row.outcome} /></li>)}</ul> }',
       ],
       [],
@@ -249,9 +222,6 @@ describe('no-double-feedback-region rule', () => {
   })
 })
 
-/** Every TSX file under one package's src; the workspace lint config
- * applies the rule to each package's src and excludes test files and
- * `test-utils/`, so the scan skips the same entries. */
 function runtimeTsxFiles(directory, found = []) {
   for (const entry of readdirSync(directory)) {
     if (
@@ -293,16 +263,12 @@ describe('no-double-feedback-region exemptions', () => {
   const packagesRoot = join(webRoot, 'packages')
   const hostSrcRoot = join(webRoot, '..', 'starters/demo/web/src')
 
-  /** The `src` directory of every workspace package that has one. */
   function packageSrcDirs() {
     return readdirSync(packagesRoot)
       .map((name) => join(packagesRoot, name, 'src'))
       .filter((dir) => existsSync(dir) && statSync(dir).isDirectory())
   }
 
-  /** Every runtime source root the two lint configs give the rule, with
-   * the prefix its exemption entries use: a package keys from `web/`, the
-   * demo host from the repository root. */
   function sourceScopes() {
     return [
       ...packageSrcDirs().map((dir) => ({

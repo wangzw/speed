@@ -1,51 +1,3 @@
-/**
- * no-e2e-bypass: the end-to-end tier interacts with the product only through
- * rendered UI.
- *
- * The e2e journeys (starters/demo/web/e2e/specs) prove the product works by
- * clicking and typing in a real browser against the real built backend. These
- * families of API break that premise, and each one is reported here:
- *
- *   - Network. `fetch`, `XMLHttpRequest`, `WebSocket`, axios/node-fetch/ws and
- *     the Node HTTP clients (`node:http`, `node:https`, `node:http2`,
- *     `node:net`) issue or carry traffic outside the browser. The Playwright
- *     API request context (`page.request`, the `request` fixture) is the same
- *     bypass inside the test runner.
- *   - Route interception. `route`, `routeFromHAR`, `routeWebSocket`,
- *     `unroute`/`unrouteAll` fake or short-circuit the backend. The contract is
- *     that the server is real, so a route that answers a request is a
- *     manufactured pass.
- *   - Evaluate. `evaluate`, `evaluateHandle`, `evaluateAll`, `$eval`, `$$eval`
- *     and `addInitScript` execute script in the page: an assertion made from
- *     inside the page is not an assertion on rendered behaviour, and a script
- *     that mutates the page hides what the product actually renders.
- *   - Layer. A spec or helper may not reach around the product: no process
- *     spawning, no filesystem writes, no database client, and no reading of
- *     the raw process log beyond the sanctioned reads. Those reads are a
- *     verification code (the one export a spec or helper may import from the
- *     log fixture) and, through the server fixture, the review SMS carrier's
- *     accepted-message line and the delivery pipeline's external-send record.
- *     The harness assembles its environment in fixtures/, so those pass
- *     `{ allowAssembly: true }`.
- *
- * Detection is binding-based, not name-equality-based: `page`, `context` and
- * `request` are seeded from the test callback's destructured parameters, and
- * the rule follows aliases (`const p = page`, `{ page: p }`, `{ request: api }`)
- * and CDP sessions identified by their `newCDPSession(...)` initializer. A
- * dynamic `send` is reported when its receiver is such a session, not when its
- * variable name happens to contain "session".
- *
- * The one allowed side channel is a browser-device fixture for WebAuthn: the
- * Playwright CDP session (`context.newCDPSession(page)`) may carry
- * `WebAuthn.*` virtual-authenticator commands. Every other CDP domain is
- * reported, and a dynamic `send` on a tracked session is reported because the
- * rule cannot prove which family it belongs to.
- *
- * Scope is applied in the demo host's eslint.config.mjs over `e2e/**`; keep
- * the rule itself free of path assumptions.
- */
-
-/** A declaration or parameter named one of these seeds the taint map. */
 const SEED_KINDS = new Map([
   ['page', 'page'],
   ['context', 'context'],
@@ -69,7 +21,6 @@ const ROUTE_METHODS = new Set([
   'unrouteAll',
 ])
 
-/** Packages that carry HTTP outside the browser. */
 const BANNED_NETWORK_PACKAGES = new Set([
   'axios',
   'node-fetch',
@@ -80,7 +31,6 @@ const BANNED_NETWORK_PACKAGES = new Set([
   'net',
 ])
 
-/** Packages only the assembly layer may use: spawning and database clients. */
 const BANNED_ASSEMBLY_PACKAGES = new Set([
   'child_process',
   'better-sqlite3',
@@ -99,7 +49,6 @@ const BANNED_ASSEMBLY_PACKAGES = new Set([
   'mongodb',
 ])
 
-/** Filesystem entries that write. A read-only import is legitimate. */
 const FS_PACKAGES = new Set(['fs'])
 const FS_WRITE_FUNCTIONS = new Set([
   'appendFile',
@@ -141,19 +90,14 @@ const FS_WRITE_FUNCTIONS = new Set([
   'writeSync',
 ])
 
-/** The only log export a spec or helper may import directly. */
 const ALLOWED_LOG_EXPORTS = new Set(['waitForVerificationCode'])
 
-/** The environment objects whose fetch member is the global fetch. */
 const ENVIRONMENT_OBJECTS = new Set(['window', 'globalThis', 'self'])
 
-/** The one CDP domain the requirements author allows. */
 const ALLOWED_CDP_DOMAIN = 'WebAuthn'
 
-/** A CDP command is `Domain.Method`. */
 const CDP_COMMAND = /^[A-Za-z][A-Za-z0-9]*\./
 
-/** Node wrappers around an initializer expression. */
 const UNWRAP_TYPES = new Set([
   'AwaitExpression',
   'ChainExpression',
@@ -164,7 +108,6 @@ const UNWRAP_TYPES = new Set([
   'TypeCastExpression',
 ])
 
-/** The string an import source node carries, or undefined. */
 function importSourceValue(source) {
   if (source.type === 'Literal' && typeof source.value === 'string') {
     return source.value
@@ -180,14 +123,12 @@ function importSourceValue(source) {
   return undefined
 }
 
-/** The package segment of a module specifier, `node:` prefix removed. */
 function packageName(source) {
   const normalized = source.startsWith('node:') ? source.slice(5) : source
   const slash = normalized.indexOf('/')
   return slash === -1 ? normalized : normalized.slice(0, slash)
 }
 
-/** Whether any scope from the node upward binds `name` with a declaration. */
 function isBound(name, node, sourceCode) {
   for (
     let scope = sourceCode.getScope(node);
@@ -205,7 +146,6 @@ function isBound(name, node, sourceCode) {
   return false
 }
 
-/** The member name a MemberExpression carries, computed literal included. */
 function memberName(member) {
   if (!member.computed) {
     return member.property.type === 'Identifier'
@@ -218,7 +158,6 @@ function memberName(member) {
     : undefined
 }
 
-/** Whether a callee is one of the environment objects' fetch members. */
 function isEnvironmentFetch(callee, sourceCode) {
   if (callee.type !== 'MemberExpression') {
     return false
@@ -234,7 +173,6 @@ function isEnvironmentFetch(callee, sourceCode) {
   )
 }
 
-/** Strip await/TS wrappers from an initializer. */
 function unwrap(node) {
   let current = node
   while (current && UNWRAP_TYPES.has(current.type)) {
@@ -244,7 +182,6 @@ function unwrap(node) {
   return current
 }
 
-/** Whether a call is `something.newCDPSession(...)`. */
 function isNewCdpSession(node) {
   return (
     node !== null &&
@@ -255,7 +192,6 @@ function isNewCdpSession(node) {
   )
 }
 
-/** The specifier names of an import declaration, and whether it is opaque. */
 function importedNames(node) {
   const names = []
   let opaque = false
@@ -268,14 +204,12 @@ function importedNames(node) {
         imported.type === 'Identifier' ? imported.name : String(imported.value),
       )
     } else {
-      // Default and namespace imports cannot be proven read-only.
       opaque = true
     }
   }
   return { names, opaque, typeOnly }
 }
 
-/** Whether a module specifier names the log fixture. */
 function isLogModule(source) {
   const normalized = source.startsWith('node:') ? source.slice(5) : source
   return /(^|\/)fixtures\/log$/.test(normalized) || /(^|\/)log$/.test(normalized)
@@ -312,9 +246,6 @@ export const noE2eBypassRule = {
       {
         type: 'object',
         properties: {
-          // Fixtures (and global setup) assemble the environment: builds,
-          // temporary directories, ports, probes, seeding. They may use the
-          // process, filesystem and socket modules this rule otherwise bans.
           allowAssembly: { type: 'boolean' },
         },
         additionalProperties: false,
@@ -330,7 +261,6 @@ export const noE2eBypassRule = {
       context.report({ node, messageId, data })
     }
 
-    /** Child nodes of a node, from the language's visitor keys. */
     function children(node) {
       const keys =
         sourceCode.visitorKeys[node.type] ??
@@ -358,8 +288,6 @@ export const noE2eBypassRule = {
       visit(node)
       for (const child of children(node)) walk(child, visit)
     }
-
-    // --- taint -------------------------------------------------------------
 
     const taint = new Map()
 
@@ -451,8 +379,6 @@ export const noE2eBypassRule = {
               changed = true
             }
           } else if (current.id.type === 'ObjectPattern') {
-            // Destructuring from a fixture aggregate (`const { page } = demo`)
-            // is the common shape; the key name is the seed.
             changed = bindPattern(current.id, kind) || changed
           }
         }
@@ -473,8 +399,6 @@ export const noE2eBypassRule = {
       return changed
     }
 
-    // --- import checks -----------------------------------------------------
-
     function checkImportSpecifier(sourceNode, declared) {
       const module = importSourceValue(sourceNode)
       if (module === undefined) return
@@ -483,8 +407,6 @@ export const noE2eBypassRule = {
 
       if (declared !== undefined && declared.typeOnly) return
 
-      // The assembly layer may open sockets to probe the server it started;
-      // a spec or helper may not carry traffic around the browser.
       if (!allowAssembly && BANNED_NETWORK_PACKAGES.has(pkg)) {
         report(sourceNode, 'directHttp', { module })
         return
@@ -543,8 +465,6 @@ export const noE2eBypassRule = {
       checkImportSpecifier(call.arguments[0], declared)
     }
 
-    // --- member/Call checks ------------------------------------------------
-
     function checkSend(call, callee) {
       const command = importSourceValue(call.arguments[0])
       if (command === undefined) {
@@ -602,8 +522,6 @@ export const noE2eBypassRule = {
         checkSend(node, callee)
         return
       }
-      // A request context reached through a tracked binding, or the
-      // `page.request` member itself.
       if (
         kindOf(callee.object) === 'request' ||
         (callee.object.type === 'MemberExpression' &&
@@ -614,8 +532,9 @@ export const noE2eBypassRule = {
     }
 
     function checkMember(node) {
-      // A member in callee position is reported by checkCall; one used as the
-      // object of a longer member chain is reported at the end of the chain.
+      // A member in callee position is reported by checkCall, and one in the
+      // middle of a longer chain at the chain's end; reporting here would
+      // double-report.
       if (
         node.parent !== null &&
         node.parent !== undefined &&
@@ -672,7 +591,6 @@ export const noE2eBypassRule = {
 
     return {
       Program(node) {
-        // Build the taint map to a fixpoint, then report in source order.
         for (let round = 0; round < 16; round += 1) {
           if (!propagate(node)) break
         }

@@ -1,15 +1,3 @@
-/**
- * Rule tests for no-e2e-bypass. Run from the web workspace root:
- *
- *   pnpm exec vitest run eslint-rules/no-e2e-bypass.test.mjs
- *
- * The vitest CLI filter keeps this single-file run inside the plain node
- * environment; the packages' own tests are not picked up.
- *
- * Test snippets are fixture code for the rule under test, not rendered product
- * text, so the CJK scan does not apply to them.
- */
-
 import { RuleTester } from 'eslint'
 import { describe, expect, it } from 'vitest'
 import { noE2eBypassRule } from './no-e2e-bypass.js'
@@ -23,7 +11,6 @@ const ruleTester = new RuleTester({
   },
 })
 
-/** Surface RuleTester's aggregate failure as the test failure. */
 function runRule(valid, invalid) {
   try {
     ruleTester.run('no-e2e-bypass', noE2eBypassRule, { valid, invalid })
@@ -41,9 +28,7 @@ describe('no-e2e-bypass rule', () => {
         "await page.keyboard.press('Enter');",
         "await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();",
         "await page.getByText('Create an account').click();",
-        // A shadowed fetch is a local, not the environment global.
         "function local(fetch) { return fetch('/x'); }",
-        // Symbols the rule does not own are untouched.
         "const value = await page.getByTestId('count').textContent();",
       ],
       [],
@@ -53,14 +38,11 @@ describe('no-e2e-bypass rule', () => {
   it('allows the one CDP family: WebAuthn virtual-authenticator setup', () => {
     runRule(
       [
-        // The session handle the WebAuthn fixture needs.
         'const session = await context.newCDPSession(page);',
-        // Every command inside the WebAuthn family is valid.
         "await session.send('WebAuthn.enable', { enableUI: true });",
         "await session.send('WebAuthn.addVirtualAuthenticator', { options: {} });",
         "await session.send('WebAuthn.addCredential', { credential: {} });",
         "await session.send('WebAuthn.setUserVerified');",
-        // A non-CDP send (no dot in the command) is not a CDP command.
         "ws.send('hello');",
       ],
       [],
@@ -92,7 +74,6 @@ describe('no-e2e-bypass rule', () => {
           errors: [{ messageId: 'evaluate' }],
         },
         {
-          // Computed member access is the same method.
           code: 'await page[\'evaluate\'](() => 1);',
           errors: [{ messageId: 'evaluate' }],
         },
@@ -153,8 +134,6 @@ describe('no-e2e-bypass rule', () => {
           errors: [{ messageId: 'requestContext' }],
         },
         {
-          // Taking the context off the page (one report) and calling it
-          // through the alias (the second) are both bypasses.
           code: 'async ({ page }) => { const api = page.request; await api.get("/x") }',
           errors: [
             { messageId: 'requestContext' },
@@ -162,7 +141,6 @@ describe('no-e2e-bypass rule', () => {
           ],
         },
         {
-          // Taking a request context off the fixture is itself the bypass.
           code: 'async ({ page }) => { return page.request }',
           errors: [{ messageId: 'requestContext' }],
         },
@@ -246,7 +224,6 @@ describe('no-e2e-bypass rule', () => {
           code: "await client.send('Page.navigate');",
           errors: [{ messageId: 'cdp', data: { domain: 'Page' } }],
         },
-        // A dynamic command on a tracked session cannot be proven WebAuthn.
         {
           code:
             'const session = await context.newCDPSession(page);' +
@@ -254,8 +231,6 @@ describe('no-e2e-bypass rule', () => {
           errors: [{ messageId: 'cdpDynamic' }],
         },
         {
-          // The session is recognized by its initializer, then followed
-          // through an alias.
           code:
             'const session = await context.newCDPSession(page);' +
             'const s = session;' +

@@ -1,17 +1,3 @@
-/**
- * Rule tests for no-literal-text. Run from the web workspace root:
- *
- *   pnpm exec vitest run eslint-rules/no-literal-text.test.mjs
- *
- * The vitest CLI filter keeps this single-file run inside the plain
- * node environment; the packages' own tests (which need their jsdom
- * configs) are not picked up.
- *
- * Test snippets are intentionally English -- they are fixture code for
- * the rule under test, not rendered UI text, so the CJK scan does not
- * apply to them.
- */
-
 import { RuleTester } from 'eslint'
 import { describe, expect, it } from 'vitest'
 import { noLiteralTextRule } from './no-literal-text.js'
@@ -25,10 +11,6 @@ const ruleTester = new RuleTester({
   },
 })
 
-/**
- * RuleTester.run throws an aggregate error listing every failing case;
- * surface that error as the test failure instead of swallowing it.
- */
 function runRule(valid, invalid) {
   try {
     ruleTester.run('no-literal-text', noLiteralTextRule, { valid, invalid })
@@ -41,24 +23,16 @@ describe('no-literal-text rule', () => {
   it('accepts text routed through t() and computed expressions', () => {
     runRule(
       [
-        // The sanctioned shapes: children and attributes through t().
         "<Button>{t('empty.title')}</Button>",
         "<Button aria-label={t('empty.title')}>{t('empty.title')}</Button>",
-        // Computed expressions are data, not literals.
         '<Button>{row.name}</Button>',
         '<img alt={row.altText} />',
-        // Substitution templates are dynamic by construction.
         "<Button aria-label={`row ${row.id}`} />",
-        // Whitespace-only text nodes are layout, not content.
         '<div> </div>',
         '<div>\n  \n</div>',
-        // Attributes outside the text-bearing set are not content.
         '<input type="email" value={query} />',
-        // Conditional branches through t() are the sanctioned shape;
-        // only their literal branches are the violation.
         "<Button>{ok ? t('save.title') : t('wait.title')}</Button>",
         '<Button aria-label={ok ? t(\'a.b\') : `row ${row.id}`} />',
-        // Empty attribute literals carry no text.
         '<div title="" />',
         '<div placeholder="   " />',
       ],
@@ -76,7 +50,6 @@ describe('no-literal-text rule', () => {
           errors: [{ messageId: 'literalText' }],
         },
         { code: '<p>Hello world</p>', errors: [{ messageId: 'literalText' }] },
-        // Mixed text and elements carries a bare text node per fragment.
         {
           code: '<Button>Save <b>now</b></Button>',
           errors: [{ messageId: 'literalText' }, { messageId: 'literalText' }],
@@ -102,12 +75,6 @@ describe('no-literal-text rule', () => {
   })
 
   it('flags text under aria-hidden: aria-hidden hides from assistive technology only, not from sight', () => {
-    // aria-hidden removes content from the accessibility tree only; a
-    // sighted user still reads text that is merely aria-hidden (and
-    // text that matters to sighted users should not be hidden from
-    // assistive technology in the first place), so no exemption is
-    // defensible on aria-hidden alone. Decorative glyphs belong in
-    // icons or CSS, not as exempt text.
     runRule(
       [],
       [
@@ -136,11 +103,6 @@ describe('no-literal-text rule', () => {
   })
 
   it('flags plain-string branches of conditional expressions in children and attributes', () => {
-    // A ternary is a computed expression, but a plain-string branch is
-    // still a literal reaching the user: {ok ? 'Save' : 'Wait'} renders
-    // user-facing text exactly as a bare <Button>Save</Button> does.
-    // Each offending branch reports its own literal; branches through
-    // t() or dynamic templates stay the sanctioned path.
     runRule(
       [],
       [
@@ -187,16 +149,8 @@ describe('no-literal-text rule', () => {
   })
 
   it('flags plain-string operands of logical expressions in children and attributes', () => {
-    // The && / || / ?? operators render one of their operands as the
-    // expression's value, exactly like the ternary arms the walk
-    // already covers: {ok && 'Saving...'} shows the literal whenever ok
-    // holds. Which operand renders depends on the runtime value of the
-    // other, so both are walked; the non-rendered side is normally a
-    // condition and contributes nothing.
     runRule(
       [
-        // Sanctioned: the plain side through t(), or computed values on
-        // both sides.
         "<Button>{ok && t('save.title')}</Button>",
         "<Button>{name ?? t('fallback.title')}</Button>",
         '<Button>{ok && row.name}</Button>',
@@ -267,11 +221,6 @@ describe('no-literal-text rule', () => {
   })
 
   it('flags the children attribute carrying literal text like the JSXText form', () => {
-    // <Button children="Save" /> renders exactly what
-    // <Button>Save</Button> renders -- the attribute spelling of the
-    // same text, reported with the same literalText message. Template,
-    // expression-container and conditional/logical values ride the same
-    // plain-literal walk as JSXText children.
     runRule(
       [
         "<Button children={t('empty.title')} />",
@@ -323,8 +272,6 @@ describe('no-literal-text rule', () => {
           code: '<Button>Delete forever</Button>',
           errors: [
             {
-              // RuleTester forbids pairing messageId with message; the
-              // full text pins both id and interpolation in one assert.
               message:
                 'User-facing text must come from the i18n namespace, not be written inline. Render "Delete forever" through a t() call (see the i18n section of the frontend coding standards).',
             },
@@ -353,8 +300,6 @@ describe('no-literal-text rule', () => {
         },
         {
           code: '<Button title="Save" />',
-          // The report lands on the offending literal itself (the value
-          // node, quote included), not on the whole attribute.
           errors: [{ messageId: 'literalAttribute', line: 1, column: 15 }],
         },
       ],
