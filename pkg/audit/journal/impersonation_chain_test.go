@@ -18,11 +18,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant/catalog"
 )
 
-// gateStandIn is a layer that provides the authentication token and leaves the
-// identity in the request's context the way the gateway does. Its Order puts it
-// inside the capture layer, so the only thing that places the capture layer
-// after it is the capture layer's After edge: a layer that lost that edge would
-// run outside the stand-in and read no identity.
 func gateStandIn(t *testing.T, opts ...authntest.Option) speedhttp.Middleware {
 	t.Helper()
 	// Built once here, in the test's own goroutine, so that a combination the
@@ -39,7 +34,6 @@ func gateStandIn(t *testing.T, opts ...authntest.Option) speedhttp.Middleware {
 	}
 }
 
-// impersonatedOptions is the identity impersonated(t) builds, as options.
 var impersonatedOptions = []authntest.Option{
 	authntest.WithAccount("customer-1"),
 	authntest.WithActor("admin-9"),
@@ -47,13 +41,8 @@ var impersonatedOptions = []authntest.Option{
 	authntest.WithScope("acme"),
 }
 
-// The request path reads the identity out of the request the layer received, in
-// a real chain, on both ways out of it: the handler returned, and the handler
-// panicked. The four-path case above calls recordRequest directly and so cannot
-// tell a layer that hands recordRequest a request without the context. The write
-// case is the one the impersonation change newly allows: a mutating method
-// reaches the handler, and the row it leaves still names the operator as the
-// actor and carries the target, the grant's tenant and the session in its detail.
+// The request path reads the identity out of the request the layer
+// received, in a real chain, on both ways out of it.
 func TestAnImpersonationReachesTheRowOfARequestThroughTheChain(t *testing.T) {
 	for name, c := range map[string]struct {
 		request, method, path string
@@ -122,10 +111,7 @@ func TestAnOrdinaryIdentityThroughTheChainRecordsItsKeyAndNoImpersonationKey(t *
 	})
 }
 
-// The three keys are the whole of what an impersonation adds. The identity here
-// holds more than the three keys read — attributes, an assurance, methods — so
-// a step that wrote more of it into the detail shows up as a key the case does
-// not expect.
+// The three keys are the whole of what an impersonation adds.
 func TestAnImpersonationAddsExactlyTheThreeKeysAndNoOther(t *testing.T) {
 	ctx := authntest.Context(t, context.Background(), append([]authntest.Option{
 		authntest.WithAssurance(authn.AssuranceMulti),
@@ -150,9 +136,8 @@ func TestAnImpersonationAddsExactlyTheThreeKeysAndNoOther(t *testing.T) {
 	}
 }
 
-// With a tenant in the context, the tenant column is that tenant whatever the
-// impersonation scope says: the column is where the work was done, the scope is
-// detail.
+// With a tenant in the context, the tenant column is that tenant whatever
+// the impersonation scope says.
 func TestTheTenantColumnOfAnImpersonationInATenantIsTheContextsTenant(t *testing.T) {
 	assembled(t, []core.Module{catalog.Module()}, func(ctx context.Context, reg *core.Registry) error {
 		roster, err := core.Resolve[tenant.Catalog](reg)

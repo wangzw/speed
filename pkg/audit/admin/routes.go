@@ -11,9 +11,6 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The query routes' absolute paths: the paths the fragment declares, resolved
-// against the API root the module's Spec declares. Each is addressed by a
-// natural key — a row identifier — so no opaque cursor ever appears in a path.
 var (
 	recordsPath = auditSpec.ResolvePath(pathRecords)
 	recordPath  = auditSpec.ResolvePath(pathRecord)
@@ -25,18 +22,8 @@ var (
 // the read surface it reads through is required.
 var managementGroups = []string{"records"}
 
-// realmKey is where the name of the endpoint a query route was mounted on is put
-// for the handler to read back. A handler that answers 401 itself writes the
-// endpoint's name as the realm of its challenge — the name of the protection
-// space, the same realm the admission and authorization layers use — and the
-// endpoint name is known only where the routes are mounted, which is why it is
-// carried on the request rather than read in the handler.
 const realmKey = "audit.admin.realm"
 
-// withRealm wraps a query handler so the endpoint it was mounted on reaches it
-// as the realm of its 401. The same handler is mounted on every configured
-// endpoint, so the realm is bound per endpoint here rather than held by the
-// handler.
 func withRealm(endpoint string, handler gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Set(realmKey, endpoint)
@@ -44,8 +31,6 @@ func withRealm(endpoint string, handler gin.HandlerFunc) gin.HandlerFunc {
 	}
 }
 
-// route is one query route: the method and path it answers and the handler that
-// serves it.
 type route struct {
 	method  string
 	path    string
@@ -56,11 +41,6 @@ type route struct {
 // decision and before the typed handler binds the declared input.
 type shape func(*gin.Context) bool
 
-// routes is the closed set of query routes, in the order they are mounted. Every
-// route reads the audit table: two read it a page or a row at a time and one
-// exports the rows the filters match, all under the same permission. Each
-// handler is the operation declared for the route, bound to its typed input and
-// answer, behind the route's decision.
 func (p *product) routes() []route {
 	return []route{
 		{http.MethodGet, recordsPath, p.guardRoute(listParams, listShape, listOperation.Handle(p.handleRecordList))},
@@ -69,16 +49,8 @@ func (p *product) routes() []route {
 	}
 }
 
-// guardRoute puts one decision order in front of a route, whatever the route
-// reads: the caller first — a request with no identity is the 401 with this
-// endpoint's challenge, and the guard is not asked — then the handler-internal
-// guard for audit.read, whose shortfall it answers itself. Only past the
-// decision does the request's shape get checked and the typed handler run.
-//
-// The typed handler receives a context and its bound input, not the request, so
-// the parts of the order that need the request stay here. The closed query set
-// is one of them: the binder reads only the parameters the declaration carries
-// and ignores the rest, so this is what keeps the set closed.
+// guardRoute puts one decision order in front of a route: the caller first (401
+// with no identity), then the handler-internal guard for audit.read.
 func (p *product) guardRoute(accepted map[string]bool, check shape, next gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if _, ok := p.caller(c); !ok || !p.require(c) {
@@ -96,11 +68,9 @@ func (p *product) guardRoute(accepted map[string]bool, check shape, next gin.Han
 	}
 }
 
-// listShape checks the one bound the typed binder would answer with its generic
-// refusal rather than this module's: a limit that is not a non-negative
-// integer. The declaration carries the parameter as an integer, so the binder
-// cannot tell a bad value from a shape the caller meant to send; the check here
-// answers it before the binder reads anything.
+// listShape checks the one bound the typed binder would answer with its
+// generic refusal rather than this module's: a limit that is not a
+// non-negative integer.
 func listShape(c *gin.Context) bool {
 	s := c.Query(paramLimit)
 	if s == "" {
@@ -110,10 +80,6 @@ func listShape(c *gin.Context) bool {
 	return err == nil && n >= 0
 }
 
-// mount resolves every configured endpoint on the entry point and registers the
-// query routes on each. Every name is looked up before any route is registered,
-// so a name the entry point does not declare fails the startup naming that
-// endpoint rather than leaving a partial mounting behind.
 func (p *product) mount(router speedhttp.Router) error {
 	type target struct {
 		name     string
@@ -135,17 +101,6 @@ func (p *product) mount(router speedhttp.Router) error {
 	return nil
 }
 
-// declareOpen records every query route as needing no permission on the
-// route-declaration surface, when one is present.
-//
-// The routes are declared open so that the authorization middleware lets a
-// request reach the handler: the handler makes the decision, on the permission
-// audit.read, through the handler-internal guard. Declaring them to require a
-// permission would make the middleware decide, and the module grants itself no
-// permission — audit.read is the authorization capability's. With no declaration
-// surface the routes carry no declaration, and a guarded endpoint answers them
-// as undeclared — which is why a command that mounts these routes should name
-// the enforcement module too.
 func (p *product) declareOpen() {
 	if p.gate == nil {
 		return

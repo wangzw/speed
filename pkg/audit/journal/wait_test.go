@@ -24,11 +24,6 @@ import (
 	"github.com/vislake/speed/pkg/internal/dbtest"
 )
 
-// deliveredBusyTimeout is the busy timeout the delivered locator sets in the
-// cases that meet the delivered database's lock. It is not the driver's
-// default, so a connection that carries anything but what its locator gave it
-// is seen; and it is short, so a row that waits for the lock for it gives up
-// well inside a case's timer.
 const deliveredBusyTimeout = 1500 * time.Millisecond
 
 // selfWaitTimer is how long a case lets a write run before it counts the write
@@ -38,16 +33,10 @@ func selfWaitTimer() time.Duration {
 	return deliveredBusyTimeout + coretest.Scale(3*time.Second)
 }
 
-// connectionTimer is the same for a row this module writes itself, which waits
-// for a connection within connectionWait.
 func connectionTimer() time.Duration {
 	return connectionWait + coretest.Scale(3*time.Second)
 }
 
-// within runs write on a goroutine of its own and reports what it returned, or
-// that it had not returned when the limit ran out. None of the writes carries a
-// deadline: the timer is what bounds the case, so a write that waits for good is
-// seen waiting rather than cut short by a context the case gave it.
 func within(limit time.Duration, write func() error) (bool, error) {
 	done := make(chan error, 1)
 	go func() { done <- write() }()
@@ -59,7 +48,6 @@ func within(limit time.Duration, write func() error) (bool, error) {
 	}
 }
 
-// busyTimeoutOf reads the busy timeout a connection of the pool carries.
 func busyTimeoutOf(ctx context.Context, t *testing.T, conn *sql.Conn) int64 {
 	t.Helper()
 	var ms int64
@@ -69,10 +57,6 @@ func busyTimeoutOf(ctx context.Context, t *testing.T, conn *sql.Conn) int64 {
 	return ms
 }
 
-// requireBusyTimeoutsAsOpened checks every idle connection of the handle's pool
-// for the busy timeout the pool's connections carry when they are opened: the
-// rows written through db.Connection leave the connection they take as they
-// found it.
 func requireBusyTimeoutsAsOpened(ctx context.Context, t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	pool, err := handle.DB()
@@ -100,21 +84,14 @@ func requireBusyTimeoutsAsOpened(ctx context.Context, t *testing.T, handle *gorm
 	}
 }
 
-// withBusyTimeout is a SQLite locator that opens every connection with
-// deliveredBusyTimeout.
 func withBusyTimeout(dsn string) string {
 	return fmt.Sprintf("%s?_pragma=busy_timeout(%d)", dsn, deliveredBusyTimeout.Milliseconds())
 }
 
-// quietly is a session that keeps the record of a statement a case fails on
-// purpose out of the run's output.
 func quietly(handle *gorm.DB) *gorm.DB {
 	return handle.Session(&gorm.Session{Logger: logger.Discard})
 }
 
-// requireRefusedForWaiting checks that a write on a connection built with Open
-// was refused for its record, and that the refusal names the wait for a
-// connection.
 func requireRefusedForWaiting(t *testing.T, err error) {
 	t.Helper()
 	if !errors.Is(err, audit.ErrWriteFailed) {
@@ -126,25 +103,16 @@ func requireRefusedForWaiting(t *testing.T, err error) {
 	}
 }
 
-// lockHeadroom is how far past the delivered connection's busy timeout a write
-// may return: a fifth of the timeout, which is room for a loaded machine's
-// scheduling and still far short of the driver's own busy timeout, the finite
-// wrong time the upper bound rejects in the cases that do not widen it.
+// lockHeadroom is how far past the delivered connection's busy timeout a write may
+// return: a fifth of it.
 const lockHeadroom = 300 * time.Millisecond
 
-// driverBusyTimeout is the busy timeout the SQLite driver applies to a
-// connection whose locator sets none: the wait a delivered connection that
-// ignored its locator's pragma would give the insert, and the wrong time the
-// upper bound rejects where the case does not widen the connection wait.
+// driverBusyTimeout is the busy timeout the SQLite driver applies when the locator
+// sets none.
 const driverBusyTimeout = 5 * time.Second
 
-// requireRefusedForTheLock checks that a write whose row met the delivered
-// database's lock was refused with ErrWriteFailed and SQLite's refusal of the
-// lock, once the delivered connection's busy timeout had passed and not long
-// after. wrong is the time the wrong implementation this case rejects needs,
-// which the two callers state: the driver's own busy timeout where the case
-// leaves the locator's in place, and the widened connection wait where it
-// widens it.
+// requireRefusedForTheLock checks that a write meeting the delivered database's
+// lock is refused with ErrWriteFailed and SQLite's refusal.
 func requireRefusedForTheLock(t *testing.T, err error, took, wrong time.Duration) {
 	t.Helper()
 	if !errors.Is(err, audit.ErrWriteFailed) || !strings.Contains(err.Error(), "SQLITE_BUSY") {
@@ -160,17 +128,8 @@ func requireRefusedForTheLock(t *testing.T, err error, took, wrong time.Duration
 	}
 }
 
-// A write on a connection built with Open inside a transaction the caller holds
-// on the delivered handle fails rather than waiting on the caller for as long
-// as the caller waits on it.
-//
-// The row goes to the delivered database, and what it needs there is held by
-// the caller until after the write returns. On an in-memory database that is
-// the one connection, and the row gives up on it within openedRowWait, naming
-// the wait. On a file database it is the write lock, which the row's insert
-// waits for for the delivered connection's busy timeout before SQLite refuses
-// it. Either way the write it would record does not happen, and the delivered
-// connections carry the busy timeout they were opened with.
+// A write on an Open connection inside the caller's delivered-handle
+// transaction fails instead of waiting on the caller.
 func TestAWriteOnAnOpenedConnectionInsideTheCallersTransactionFails(t *testing.T) {
 	for _, shape := range []struct {
 		name string
@@ -217,13 +176,9 @@ func TestAWriteOnAnOpenedConnectionInsideTheCallersTransactionFails(t *testing.T
 					return errCaseFailed
 				}
 				if shape.lock {
-					// The upper bound in requireRefusedForTheLock is the delivered
-					// busy timeout plus lockHeadroom through GATE_TIME_SCALE alone,
-					// and the timer around this write carries the race factor as
-					// well. A wrong implementation that applies the connection wait
-					// here answers before the busy timeout, so the unscaled lower
-					// bound catches it; the upper bound rejects one that waits past
-					// the busy timeout, which is the driver's own.
+					// The upper bound in requireRefusedForTheLock is the delivered busy
+					// timeout plus lockHeadroom through GATE_TIME_SCALE alone, and the timer
+					// around this write carries the race factor as well.
 					requireRefusedForTheLock(t, err, took, driverBusyTimeout)
 				} else {
 					requireRefusedForWaiting(t, err)
@@ -239,8 +194,6 @@ func TestAWriteOnAnOpenedConnectionInsideTheCallersTransactionFails(t *testing.T
 	}
 }
 
-// holdTheDatabase begins a transaction that holds the whole of the SQLite
-// database at file, on a pool of its own, and returns what lets it go.
 func holdTheDatabase(ctx context.Context, t *testing.T, database db.Database, file string) (func(), error) {
 	t.Helper()
 	holding, err := database.Open(ctx, file)
@@ -269,11 +222,8 @@ func holdTheDatabase(ctx context.Context, t *testing.T, database db.Database, fi
 	}, nil
 }
 
-// A write on a connection built with Open while another connection holds the
-// whole delivered database fails once the delivered connection's busy timeout
-// has passed: telling that the connection does not reach the delivered table
-// waits for no lock, and the row's insert waits for the lock as SQLite makes it
-// wait.
+// A write on an Open connection fails once the delivered connection's busy
+// timeout passes while another holds the whole database.
 func TestAWriteOnAnOpenedConnectionWhileTheDeliveredDatabaseIsHeldFailsOnceTheBusyTimeoutPasses(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "delivered.db")
 	assembledAt(t, withBusyTimeout(file), nil, func(ctx context.Context, reg *core.Registry) error {
@@ -305,20 +255,14 @@ func TestAWriteOnAnOpenedConnectionWhileTheDeliveredDatabaseIsHeldFailsOnceTheBu
 				"still waiting after %v", limit)
 			return errCaseFailed
 		}
-		// The same bound as the call site above: the delivered busy timeout plus
-		// lockHeadroom through GATE_TIME_SCALE alone for the upper bound, and the
-		// unscaled busy timeout for the lower one that catches a connection wait.
 		requireRefusedForTheLock(t, err, took, driverBusyTimeout)
 		requireBusyTimeoutsAsOpened(ctx, t, handle)
 		return nil
 	})
 }
 
-// A write on a connection built with Open onto the delivered database itself is
-// recorded on the statement's own session while that connection's own
-// transaction holds the whole database: telling that the connection reaches the
-// delivered table waits for no lock, so it is not left waiting on the lock its
-// own statement holds.
+// A write on an Open connection onto the delivered database itself is recorded
+// on the statement's session while that database is held.
 func TestAConnectionOpenedOntoTheDeliveredDatabaseRecordsWhileItsTransactionHoldsTheDatabase(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "delivered.db")
 	assembledAt(t, withBusyTimeout(file), nil, func(ctx context.Context, reg *core.Registry) error {
@@ -332,8 +276,6 @@ func TestAConnectionOpenedOntoTheDeliveredDatabaseRecordsWhileItsTransactionHold
 			t.Errorf("creating the orders table: %v", createErr)
 			return errCaseFailed
 		}
-		// Every transaction on this connection begins by taking the whole
-		// database.
 		again, err := database.Open(ctx, file+"?_txlock=exclusive")
 		if err != nil {
 			t.Errorf("opening the delivered database a second time: %v", err)
@@ -364,15 +306,10 @@ func TestAConnectionOpenedOntoTheDeliveredDatabaseRecordsWhileItsTransactionHold
 	})
 }
 
-// briefHold is how long another writer holds the delivered database in the
-// case below: far longer than an insert takes, well inside the busy timeout.
 const briefHold = 200 * time.Millisecond
 
-// A write on a connection built with Open while another writer briefly holds
-// the delivered database waits the hold out and is recorded.
-//
-// A row that gave up the moment the delivered database was busy would fail
-// every such write whenever any other request happened to be writing there.
+// A write on a connection built with Open while another writer briefly
+// holds the delivered database waits the hold out and is recorded.
 func TestAWriteOnAnOpenedConnectionWaitsOutAnotherWritersBriefHold(t *testing.T) {
 	for _, shape := range []struct{ name, dsn string }{
 		{name: "a file database", dsn: withBusyTimeout(filepath.Join(t.TempDir(), "delivered.db"))},
@@ -413,8 +350,6 @@ func TestAWriteOnAnOpenedConnectionWaitsOutAnotherWritersBriefHold(t *testing.T)
 					t.Errorf("the other writer's transaction ended before it held the database: %v", err)
 					return errCaseFailed
 				}
-				// The write waits on purpose, and GORM reports a statement that
-				// took this long as slow; the wait is what the case measures.
 				start := time.Now()
 				if err := quietly(opened).WithContext(ctx).Create(&order{ID: "o1", Note: "elsewhere"}).Error; err != nil {
 					t.Errorf("a write on a connection built with Open while another writer held the delivered "+
@@ -438,10 +373,6 @@ func TestAWriteOnAnOpenedConnectionWaitsOutAnotherWritersBriefHold(t *testing.T)
 	}
 }
 
-// openSingle builds a handle on an in-memory database held to one connection —
-// the one the database module delivers for :memory:, the shape it gives a
-// locator private to its connection — with the capture plugin installed and
-// both tables created.
 func openSingle(t *testing.T) *gorm.DB {
 	t.Helper()
 	handle := quietly(dbtest.SQLite(t, ":memory:", nil).DB())
@@ -455,14 +386,8 @@ func openSingle(t *testing.T) *gorm.DB {
 	return handle
 }
 
-// A row this module writes itself — handed to the seam, or taken from an event
-// a process-local bus delivers on the publisher's goroutine — from inside a
-// transaction the caller holds on an in-memory database fails within the
-// connection bound instead of waiting for the caller's connection for good.
-//
-// The in-memory database's one connection plays the lock's part, and nothing
-// else ends that wait. The event path drops the publisher's cancellation, so
-// there not even a deadline would.
+// A row written from inside a caller's transaction on an in-memory database fails
+// within the connection bound.
 func TestARowWrittenInsideTheCallersTransactionOnOneConnectionDoesNotWaitForIt(t *testing.T) {
 	t.Run("the seam", func(t *testing.T) {
 		handle := openSingle(t)
@@ -513,11 +438,8 @@ func TestARowWrittenInsideTheCallersTransactionOnOneConnectionDoesNotWaitForIt(t
 	})
 }
 
-// A row this module writes itself while another connection holds the whole
-// delivered database waits for the lock for the delivered connection's busy
-// timeout, whatever connectionWait is, and then fails: the seam returns
-// ErrWriteFailed with SQLite's refusal. A caller holding the database in its
-// own transaction on a file database is what the row waits for there.
+// A row this module writes itself waits for the delivered connection's busy
+// timeout, whatever connectionWait is, then fails.
 func TestARowWrittenWhileTheDeliveredDatabaseIsHeldFailsOnceTheBusyTimeoutPasses(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "delivered.db")
 	handle := quietly(dbtest.SQLite(t, withBusyTimeout(file), nil).DB())
@@ -526,12 +448,8 @@ func TestARowWrittenWhileTheDeliveredDatabaseIsHeldFailsOnceTheBusyTimeoutPasses
 	}
 	applyMigrations(t, handle, auditDialect)
 	j := newTestJournal(handle, settings{})
-	// A wrong implementation applies the connection wait where the engine's
-	// busy timeout bounds the lock, so widening it makes that implementation
-	// need an hour while the right one still gives up after the delivered
-	// connection's busy timeout. The bound in requireRefusedForTheLock is that
-	// timeout plus lockHeadroom through GATE_TIME_SCALE alone; the hour is the
-	// wrong time the case states to it.
+	// A wrong implementation applies the connection wait where the busy timeout
+	// bounds the lock, so widening it makes that implementation need an hour.
 	j.connectWithin = time.Hour
 	holding, err := dbtest.SQLite(t, file, nil).DB().DB()
 	if err != nil {
@@ -560,10 +478,8 @@ func TestARowWrittenWhileTheDeliveredDatabaseIsHeldFailsOnceTheBusyTimeoutPasses
 	requireRefusedForTheLock(t, err, time.Since(started), time.Hour)
 }
 
-// A row this module writes itself while another writer briefly holds the one
-// connection of an in-memory database waits the hold out and is written: the
-// bound ends a wait on the caller, not the queue a single connection makes of
-// every statement on it.
+// A row this module writes itself outlives a brief hold on an in-memory
+// database's one connection and is written.
 func TestARowWrittenWhileAnotherWriterHoldsTheOneConnectionWaitsItOut(t *testing.T) {
 	handle := openSingle(t)
 	j := newTestJournal(handle, settings{})
@@ -595,15 +511,10 @@ func TestARowWrittenWhileAnotherWriterHoldsTheOneConnectionWaitsItOut(t *testing
 	}
 }
 
-// errRowPanicked is what the callback in the case below panics with.
 var errRowPanicked = errors.New("a callback panicked inside the audit row's transaction")
 
-// A callback that panics inside the transaction GORM opens around a row this
-// module writes, under a context that never ends, has the panic come out of
-// the call, the row rolled back and the connection handed back. On an
-// in-memory database held to one connection, the connection is the database:
-// one left waiting on its own transaction would hold every later statement,
-// and one dropped from the pool would take the tables with it.
+// A callback panic inside the transaction around a row this module writes
+// escapes the call, rolls the row back and returns the connection.
 func TestAPanicWhileARowIsWrittenHandsTheConnectionBack(t *testing.T) {
 	handle := openSingle(t)
 	j := newTestJournal(handle, settings{})
@@ -640,10 +551,8 @@ func TestAPanicWhileARowIsWrittenHandsTheConnectionBack(t *testing.T) {
 	}
 }
 
-// The journal records over a handle the host opened itself with gorm.Open, as
-// it does over the one the database module delivers: a row this module writes
-// takes a connection of whatever pool the handle is on, and a statement's row
-// rides the statement's own session.
+// The journal records over a handle the host opened itself with
+// gorm.Open, as it does over the one the database module delivers.
 func TestTheJournalWorksOverAHandleTheHostOpened(t *testing.T) {
 	handle, err := gorm.Open(sqlitedriver.Open(filepath.Join(t.TempDir(), "host.db")),
 		&gorm.Config{Logger: logger.Discard})

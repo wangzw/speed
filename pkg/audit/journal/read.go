@@ -11,16 +11,11 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// ErrInvalidQuery reports a query this read face cannot read: a cursor that is
-// not one it handed out. It is a shape failure and not a table failure — the
-// read face never reaches the table with it — so a caller answers it as a bad
-// request, while every other failure this read face reports is an outage.
+// ErrInvalidQuery reports a query this read face cannot read: a cursor
+// that is not one it handed out.
 var ErrInvalidQuery = errors.New("audit: the query is not one this read face can read")
 
-// ErrReadFailed reports that the audit table could not be read. It is about the
-// module's own state — its connection, its table, a column that does not hold
-// what the writer puts there — and not about the query, which was well formed
-// enough to be issued.
+// ErrReadFailed reports that the audit table could not be read.
 var ErrReadFailed = errors.New("audit: the audit table could not be read")
 
 // DefaultPageSize is the page size a query that asks for none gets.
@@ -30,31 +25,11 @@ const DefaultPageSize = 50
 // more is read at this size.
 const MaxPageSize = 200
 
-// Reader is the read surface of the audit table, delivered by this module beside
-// the capture paths. It is one module with the capture paths rather than a
-// module of its own, because the table and the record shape are one: this reads
-// exactly what the capture paths write.
-//
-// The module delivers it exclusively, on the same judgement as the audit
-// capability it delivers beside — two readers in one assembly are two tables an
-// entry could be read from, and which one a read reached is not a fact anything
-// could resolve.
-//
-// It reads, and only reads. Nothing here writes the table: the table is written
-// by the capture paths alone, and a write through this surface would be a row no
-// capture path produced, indistinguishable from a row the module wrote.
+// Reader is the read surface of the audit table, delivered by this module
+// beside the capture paths.
 type Reader interface {
-	// Query reads one page of audit rows, newest first, returning the page and
-	// the cursor of the next, which is empty on the last page.
-	//
-	// The tenant is a fact of the context and not of the query. A context that
-	// carries a tenant scopes every row read to it; the cross-tenant mark lifts
-	// the condition and reads every tenant's rows and the rows that belong to no
-	// tenant; a context that is neither is refused by the tenancy capability, as
-	// every scoped read of this table is.
-	//
-	// A query whose cursor is not one this surface handed out is ErrInvalidQuery.
-	// A table that could not be read is ErrReadFailed.
+	// Query reads one page of audit rows, newest first, returning the page
+	// and the cursor of the next, which is empty on the last page.
 	Query(ctx context.Context, q Query) ([]Row, string, error)
 }
 
@@ -111,24 +86,6 @@ type Row struct {
 	Detail map[string]string
 }
 
-// readModel is the read-only model of the audit table.
-//
-// It embeds the tenancy convention, so that the tenancy capability scopes every
-// read through it — to a request's tenant under a context that carries one, to
-// nothing under the cross-tenant mark, and refuses a read whose context is
-// neither. That is the whole of how a read of this table is held to a tenant;
-// this module states no tenant condition of its own.
-//
-// It embeds the convention to READ a table another module declares and writes,
-// not to declare one: it carries none of the obligations that bind the writing
-// side — the key led by the tenant column, the NOT NULL — because it issues no
-// write. It issues read statements alone.
-//
-// TenantID takes the tenant column over from the convention's own field. The
-// convention reads a NULL into the empty identifier and so cannot tell a row
-// that belongs to no tenant from one whose tenant column holds the empty
-// string; this column is nullable and holds a pointer, so a NULL reads as nil
-// and the two are told apart. A tenant's read still scopes on this field.
 type readModel struct {
 	ID         uint64    `gorm:"column:id;primaryKey"`
 	OccurredAt time.Time `gorm:"column:occurred_at"`
@@ -142,14 +99,13 @@ type readModel struct {
 
 	tenant.Model
 
+	// TenantID is the convention's scoping column; a NULL reads as nil, meaning
+	// no tenant.
 	TenantID *string `gorm:"column:tenant_id"`
 }
 
-// TableName is the name the migration files create and the table the capture
-// paths write.
 func (readModel) TableName() string { return tableName }
 
-// Query reads one page of the audit table. See Reader for the contract.
 func (j *journal) Query(ctx context.Context, q Query) ([]Row, string, error) {
 	limit := pageLimit(q.Limit)
 	tx := j.handle.WithContext(ctx).Model(&readModel{})
@@ -180,10 +136,8 @@ func (j *journal) Query(ctx context.Context, q Query) ([]Row, string, error) {
 		tx = tx.Where("id < ?", after)
 	}
 
-	// One row past the page tells whether there is a next one without a second
-	// read. The rows come newest first: the row identifier is a serial, so a
-	// greater identifier is a later row, and reading by the key rather than by
-	// an offset costs the same however deep a page is.
+	// One row past the page tells whether there is a next one without a
+	// second read.
 	var models []readModel
 	if err := tx.Order("id DESC").Limit(limit + 1).Find(&models).Error; err != nil {
 		return nil, "", fmt.Errorf("%w: %w", ErrReadFailed, err)
@@ -197,9 +151,6 @@ func (j *journal) Query(ctx context.Context, q Query) ([]Row, string, error) {
 
 	rows := make([]Row, 0, len(models))
 	for _, m := range models {
-		// The tenant column is the one the convention scopes on, which this
-		// model's own pointer field took over; a NULL is nil, which is "no
-		// tenant".
 		tenantID := ""
 		if m.TenantID != nil {
 			tenantID = *m.TenantID
@@ -224,8 +175,6 @@ func (j *journal) Query(ctx context.Context, q Query) ([]Row, string, error) {
 	return rows, next, nil
 }
 
-// pageLimit resolves a query's page size: a non-positive value takes the
-// default, and a value above the maximum is read at the maximum.
 func pageLimit(limit int) int {
 	switch {
 	case limit <= 0:
@@ -237,10 +186,6 @@ func pageLimit(limit int) int {
 	}
 }
 
-// decodeDetail reads the detail column, the inverse of encodeDetail. An empty
-// column and an empty object are the empty set. A column that does not hold a
-// set of strings is ErrReadFailed: the writer puts nothing else there, so its
-// presence means the table holds a row this module did not write.
 func decodeDetail(text string) (map[string]string, error) {
 	if text == "" || text == "{}" {
 		return map[string]string{}, nil

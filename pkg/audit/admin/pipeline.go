@@ -11,31 +11,15 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The problem types this module writes. typePrefix is the audit capability's
-// namespace; badRequest is its one code here. A 404, a 503 and a 401 are written
-// with no type: they say a row is not there, a dependency could not answer, or a
-// request carried no identity, and not which kind of refusal it was, so naming a
-// kind would separate the failures the answer is meant to keep apart.
 const (
 	typePrefix     = "urn:speed:audit:"
 	badRequestCode = "bad-request"
 )
 
-// badRequestFault is the 400 every shape refusal of this module answers with.
 func badRequestFault() error {
 	return speedhttp.Fault{Status: http.StatusBadRequest, Type: typePrefix + badRequestCode}
 }
 
-// caller reads the identity the gateway put on the request.
-//
-// A query route is reached with no identity only when the authorization
-// middleware let an anonymous request through — the routes are declared open —
-// or when the request is on an endpoint that middleware does not guard. Both are
-// a request that cannot be put to the policy, and neither is a denial, so the
-// answer is the 401 the admission and authorization layers write for a route
-// that requires an identity and carries none: the status alone, no type, and the
-// same realm challenge. The route returns without asking the guard or reading
-// anything.
 func (p *product) caller(c *gin.Context) (authn.Identity, bool) {
 	id, ok := authn.FromContext(c.Request.Context())
 	if !ok {
@@ -45,11 +29,6 @@ func (p *product) caller(c *gin.Context) (authn.Identity, bool) {
 	return id, true
 }
 
-// realmOf reads back the endpoint a query route was mounted on, the name the
-// handler writes as the realm of its 401. It is empty off the mounted route —
-// the handler called directly — and the challenge is then written with an empty
-// realm, which is the shape the design fixes and not a value a client reads off
-// the header.
 func realmOf(c *gin.Context) string {
 	if v, ok := c.Get(realmKey); ok {
 		if name, ok := v.(string); ok {
@@ -59,27 +38,15 @@ func realmOf(c *gin.Context) string {
 	return ""
 }
 
-// writeNoIdentity401 writes the 401 of a query route reached with no identity.
-// It is the same answer the admission and authorization layers write for the
-// same condition: a 401 with no problem type and the realm challenge naming both
-// carriers. It lives here because the query face is inside the gateway and can
-// be the last layer that refuses an anonymous request when the gateway is
-// absent; the writers agreeing on the shape is what keeps a caller from having
-// to tell them apart.
 func writeNoIdentity401(c *gin.Context, realm string) {
 	realm = quoteRealm(realm)
 	c.Header("WWW-Authenticate", `Bearer realm="`+realm+`", Cookie realm="`+realm+`"`)
 	speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusUnauthorized})
 }
 
-// quoteRealm escapes what goes between the quotes of a realm: a quote or a
-// backslash gets a backslash, and a line ending is dropped because it would
-// start another header.
-//
-// It is the rule the authorization layer writes, kept byte-identical here
-// because the design promises the no-identity 401 of this face and of that layer
-// are the same shape, and no package boundary between them carries a symbol the
-// two may share.
+// quoteRealm escapes what goes between the quotes of a realm: a quote or
+// a backslash gets a backslash, and a line ending is dropped because it
+// would start another header.
 func quoteRealm(name string) string {
 	var b strings.Builder
 	for i := 0; i < len(name); i++ {
@@ -95,17 +62,6 @@ func quoteRealm(name string) string {
 	return b.String()
 }
 
-// require asks the handler-internal guard for audit.read. It is the decision
-// every query route makes after reading the caller and before parsing anything:
-// a shortfall is answered by the guard — a 403 for a denial, a 503 for an
-// outage — and the route returns.
-//
-// The decision is made in the platform domain. The audit table is the process's
-// own and not a tenant's: it holds every tenant's rows and the rows that belong
-// to no tenant, so a query is a platform operation. Deciding in whatever tenant
-// the request happened to resolve to would let a caller authorized in one tenant
-// read another tenant's rows by sending a tenant header. The explicit-domain
-// form is what makes the decision independent of the request's tenant.
 func (p *product) require(c *gin.Context) bool {
 	return p.guard.RequirePermissionIn(c, authz.PermissionAuditRead, authz.PlatformDomain)
 }

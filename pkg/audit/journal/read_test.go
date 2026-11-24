@@ -14,10 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant/catalog"
 )
 
-// readHandle builds a handle with the audit table migrated and the tenancy
-// capability's plugin installed, which is what an assembly that carries the
-// tenancy module hands the journal. A read of the audit table through the read
-// model is scoped by that plugin; without it the read is not scoped at all.
 func readHandle(t *testing.T) *gorm.DB {
 	t.Helper()
 	handle := sharedMemory(t)
@@ -44,10 +40,6 @@ func installTenancy(t *testing.T, handle *gorm.DB) {
 	t.Fatal("the tenancy module declares no database plugin")
 }
 
-// insertEntry writes one audit row and returns its identifier. The write model
-// embeds no tenancy convention, so the plugin leaves it alone and a case can
-// write a row that belongs to a named tenant, one that belongs to none, whatever
-// the handle's plugin would do with a scoped write.
 func insertEntry(t *testing.T, handle *gorm.DB, e row) uint64 {
 	t.Helper()
 	if e.Source == "" {
@@ -65,12 +57,9 @@ func insertEntry(t *testing.T, handle *gorm.DB, e row) uint64 {
 	return e.ID
 }
 
-// ptr returns a pointer to s, for the nullable tenant column.
 func ptr(s string) *string { return &s }
 
-// Query reads newest first and pages by an opaque cursor: the first page is the
-// most recent rows, the cursor it returns reads the rows after them, and the
-// last page carries no cursor.
+// Query reads newest first and pages by an opaque cursor.
 func TestQueryReadsNewestFirstAndPagesByCursor(t *testing.T) {
 	handle := readHandle(t)
 	first := insertEntry(t, handle, row{Action: "a.create", Actor: "alice"})
@@ -137,7 +126,6 @@ func TestQueryReadsOneRowByID(t *testing.T) {
 		t.Errorf("reading one row carries the cursor %q, want none", next)
 	}
 
-	// An identifier no row holds reads nothing, which a route answers as a 404.
 	page, _, err = journal.Query(ctx, Query{ID: wanted + 1000, Limit: 1})
 	if err != nil {
 		t.Fatalf("reading a missing row failed: %v", err)
@@ -181,9 +169,8 @@ func TestQueryNarrowsByTimeAndAction(t *testing.T) {
 	}
 }
 
-// The outcome and actor filters are sets applied to the table; a row outside
-// the named set is left out, and both combine with each other and with the
-// action set.
+// The outcome and actor filters are sets: a row outside the named set is left
+// out, and each combines with the other and the action set.
 func TestQueryNarrowsByOutcomeAndActor(t *testing.T) {
 	handle := readHandle(t)
 	okAlice := insertEntry(t, handle, row{Action: "a.create", Actor: "alice", Outcome: "ok"})
@@ -235,14 +222,12 @@ func TestQueryNarrowsByOutcomeAndActor(t *testing.T) {
 	if got := ids(Query{Actors: []string{""}}); !same(got, system) {
 		t.Errorf("the actor filter read %v for an empty actor, want the row with no actor %d", got, system)
 	}
-	// Both filters together, and each with the action set.
 	if got := ids(Query{Outcomes: []string{"failed"}, Actors: []string{"alice"}}); !same(got, failedAlice) {
 		t.Errorf("the outcome and actor filters read %v, want only %d", got, failedAlice)
 	}
 	if got := ids(Query{Actions: []string{"a.update"}, Outcomes: []string{"ok"}, Actors: []string{"bob"}}); !same(got, okBob) {
 		t.Errorf("the action, outcome and actor filters read %v, want only bob's update %d", got, okBob)
 	}
-	// A value no row carries reads nothing.
 	if got := ids(Query{Outcomes: []string{"panic"}, Actors: []string{"nobody"}}); len(got) != 0 {
 		t.Errorf("a filter no row matches read %v, want nothing", got)
 	}
@@ -276,10 +261,8 @@ func TestCrossTenantReadsEveryTenantAndNoTenant(t *testing.T) {
 	}
 }
 
-// A read whose context neither carries a tenant nor crosses is refused by the
-// tenancy capability. This is the case the embedded convention exists for:
-// without it the read would not be scoped at all and would answer every tenant's
-// rows to a scoped caller.
+// A read whose context neither carries a tenant nor crosses is refused by
+// the tenancy capability.
 func TestQueryWithoutATenantIsRefused(t *testing.T) {
 	handle := readHandle(t)
 	insertEntry(t, handle, row{Action: "a.create", TenantID: ptr("alpha")})

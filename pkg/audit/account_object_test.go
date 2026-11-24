@@ -6,10 +6,8 @@ import (
 	"github.com/vislake/speed/pkg/audit"
 )
 
-// TestAccountObjectNamesTheType holds the one spelling an entry whose object
-// names an account uses: the type marker, then the identifier unchanged. A
-// reader relies on the marker to tell an account identifier from a session or
-// an invitation identifier, whose opaque shapes are alike.
+// TestAccountObjectNamesTheType holds the one spelling an entry whose
+// object names an account uses.
 func TestAccountObjectNamesTheType(t *testing.T) {
 	const id = "019a2d4f-1c3e-7b52-9f00-6d7a1b2c3d4e"
 	if got := audit.AccountObject(id); got != "account:"+id {
@@ -17,9 +15,8 @@ func TestAccountObjectNamesTheType(t *testing.T) {
 	}
 }
 
-// TestAccountObjectLeavesNoMarkerWithoutAnAccount holds that an entry naming
-// no account carries an empty object: a bare marker would name an account
-// whose identifier is empty, which is no account at all.
+// TestAccountObjectLeavesNoMarkerWithoutAnAccount holds that an entry
+// naming no account carries an empty object.
 func TestAccountObjectLeavesNoMarkerWithoutAnAccount(t *testing.T) {
 	if got := audit.AccountObject(""); got != "" {
 		t.Errorf("AccountObject(%q) = %q, want the empty object", "", got)

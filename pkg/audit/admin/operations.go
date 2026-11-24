@@ -7,79 +7,69 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The fragment's info section. Every module's fragment carries its own module
-// name and the version of the fragment's shape.
 const (
 	fragmentTitle   = "audit.admin"
 	fragmentVersion = "1.0.0"
 )
 
-// The routes as the fragment writes them: relative to the API root the module's
-// Spec declares. The mounting resolves them to the absolute paths the routes are
-// registered at.
 const (
 	pathRecords = "/audit/records"
 	pathRecord  = "/audit/records/:id"
 	pathExport  = "/audit/export"
 )
 
-// RecordListInput is the request of the list route: the closed set of query
-// parameters the route accepts. A time bound is read as text and parsed by the
-// handler, because a bound that is not RFC 3339 is the capability's own
-// bad-request problem rather than the entry point's generic shape refusal.
-//
-// A parameter the route does not accept never reaches this type: the typed
-// binder ignores a query key the declaration does not carry, so the module keeps
-// the closed-set check in front of the handler (routes.go).
+// RecordListInput is the request of the list route: the closed set of
+// query parameters the route accepts.
 type RecordListInput struct {
-	Since   string   `query:"since" format:"date-time" description:"Read rows at or after this instant, RFC 3339"`
-	Until   string   `query:"until" format:"date-time" description:"Read rows before this instant, RFC 3339"`
-	Action  []string `query:"action" description:"Narrow to rows carrying one of these actions"`
+	// Since reads rows at or after this instant, RFC 3339.
+	Since string `query:"since" format:"date-time" description:"Read rows at or after this instant, RFC 3339"`
+	// Until reads rows before this instant, RFC 3339.
+	Until string `query:"until" format:"date-time" description:"Read rows before this instant, RFC 3339"`
+	// Action narrows to rows carrying one of these actions.
+	Action []string `query:"action" description:"Narrow to rows carrying one of these actions"`
+	// Outcome narrows to rows whose outcome is one of these.
 	Outcome []string `query:"outcome" description:"Narrow to rows whose outcome is one of these"`
-	Actor   []string `query:"actor" description:"Narrow to rows whose actor is one of these"`
-	Cursor  string   `query:"cursor" description:"Continue after the row this cursor names"`
-	Limit   int      `query:"limit" minimum:"0" description:"The page's maximum size; the read surface caps it"`
+	// Actor narrows to rows whose actor is one of these.
+	Actor []string `query:"actor" description:"Narrow to rows whose actor is one of these"`
+	// Cursor continues after the row it names.
+	Cursor string `query:"cursor" description:"Continue after the row this cursor names"`
+	// Limit is the page's maximum size; the read surface caps it.
+	Limit int `query:"limit" minimum:"0" description:"The page's maximum size; the read surface caps it"`
 }
 
-// RecordExportInput is the request of the export route: the same closed set of
-// filters as the list route, with no cursor and no page size. Both of those
-// describe a page, and an export reads every row the filters match, so a request
-// that sends either is a shape refusal rather than a bound the route ignores.
+// RecordExportInput is the request of the export route: the same closed
+// set of filters as the list route, with no cursor and no page size.
 type RecordExportInput struct {
-	Since   string   `query:"since" format:"date-time" description:"Export rows at or after this instant, RFC 3339"`
-	Until   string   `query:"until" format:"date-time" description:"Export rows before this instant, RFC 3339"`
-	Action  []string `query:"action" description:"Narrow to rows carrying one of these actions"`
+	// Since exports rows at or after this instant, RFC 3339.
+	Since string `query:"since" format:"date-time" description:"Export rows at or after this instant, RFC 3339"`
+	// Until exports rows before this instant, RFC 3339.
+	Until string `query:"until" format:"date-time" description:"Export rows before this instant, RFC 3339"`
+	// Action narrows to rows carrying one of these actions.
+	Action []string `query:"action" description:"Narrow to rows carrying one of these actions"`
+	// Outcome narrows to rows whose outcome is one of these.
 	Outcome []string `query:"outcome" description:"Narrow to rows whose outcome is one of these"`
-	Actor   []string `query:"actor" description:"Narrow to rows whose actor is one of these"`
+	// Actor narrows to rows whose actor is one of these.
+	Actor []string `query:"actor" description:"Narrow to rows whose actor is one of these"`
 }
 
 // RecordGetInput is the request of the get route: the row identifier as a path
 // parameter. The route takes no query parameter.
 type RecordGetInput struct {
+	// ID is the row identifier, a non-negative decimal integer.
 	ID string `path:"id" description:"The row identifier, a non-negative decimal integer"`
 }
 
-// unauthorizedChallenge declares the header a 401 on this module's routes
-// carries. The handler that answers 401 itself writes the realm of the endpoint
-// the route was mounted on, so the header is declared and the value is left to
-// the handler.
 var unauthorizedChallenge = speedhttp.Header{
 	Name:        "WWW-Authenticate",
 	Description: "The identity challenge, carrying the realm of the endpoint the route was mounted on.",
 }
 
-// unauthorized is the declaration of the 401 every route shares: the request
-// carried no identity. It is the same answer the admission and authorization
-// layers write for the same condition, so the two agree on the shape.
 func unauthorized(description string) speedhttp.Response {
 	response := speedhttp.ProblemResponse(http.StatusUnauthorized, description)
 	response.Headers = []speedhttp.Header{unauthorizedChallenge}
 	return response
 }
 
-// listOperation declares GET /audit/records and binds its types: the
-// handler receives the declared query parameters and returns the page, so the
-// entry point binds the request and writes the declared 200.
 var listOperation = speedhttp.NewOperation[RecordListInput, AuditAdminRecordPage](
 	"audit.admin.records.list",
 	http.MethodGet,
@@ -144,10 +134,6 @@ var getOperation = speedhttp.NewReplyOperation[RecordGetInput](
 	},
 )
 
-// exportOperation declares GET /audit/export and binds its types. The handler
-// builds the answer because the body is streamed: the first page is read before
-// the reply is returned, and the pages after it are written as they are read,
-// which the simple form cannot express.
 var exportOperation = speedhttp.NewReplyOperation[RecordExportInput](
 	"audit.admin.records.export",
 	http.MethodGet,
@@ -189,6 +175,4 @@ var exportOperation = speedhttp.NewReplyOperation[RecordExportInput](
 	},
 )
 
-// operations is this module's declaration of the API it serves. The fragment is
-// generated from it; the routes are mounted from the same declarations.
 var operations = speedhttp.Operations{listOperation, getOperation, exportOperation}

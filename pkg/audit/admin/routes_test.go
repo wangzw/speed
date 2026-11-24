@@ -13,16 +13,13 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// listRoute and getRoute are the two routes as the cases address them.
 const (
 	listRoute = "/api/v1/system/audit/records"
 	getRoute  = listRoute + "/"
 )
 
-// A request with no identity is the 401 the admission and authorization layers
-// write: the status alone, no problem type, and the realm challenge naming the
-// endpoint the route was mounted on. It is answered before the guard is asked
-// and before the table is read.
+// A request with no identity is the 401 the admission and authorization
+// layers write.
 func TestNoIdentityIs401(t *testing.T) {
 	r := newRig(t)
 	w := r.doAnonymous(listRoute)
@@ -66,9 +63,8 @@ func TestAShortfallIsTheGuardsOwnAnswer(t *testing.T) {
 	})
 }
 
-// The decision is made for audit.read, in the platform domain, whatever tenant
-// the request carries. Deciding in the request's own tenant would let a caller
-// authorized in one tenant read another's rows by sending a tenant header.
+// The decision is made for audit.read, in the platform domain, whatever
+// tenant the request carries.
 func TestTheDecisionIsMadeInThePlatformDomain(t *testing.T) {
 	r := newRig(t)
 	if w := r.do(listRoute); w.Code != http.StatusOK {
@@ -82,11 +78,8 @@ func TestTheDecisionIsMadeInThePlatformDomain(t *testing.T) {
 	}
 }
 
-// The read is issued under a cross-tenant mark derived from the request, which
-// is what makes it reach every tenant's rows and the rows that belong to none
-// rather than the request's own tenant. The mark's effect on the table is the
-// read surface's, held in its own cases; what is held here is that the handler
-// hands the read surface a context of its own, carrying no tenant.
+// The read runs under a cross-tenant mark, so it reaches every tenant's rows and
+// the unowned rows rather than the request's own tenant.
 func TestTheReadIsIssuedAcrossTenants(t *testing.T) {
 	r := newRig(t)
 	if w := r.do(listRoute); w.Code != http.StatusOK {
@@ -193,9 +186,8 @@ func TestTheListAnswersAPageAndPassesTheQueryThrough(t *testing.T) {
 	}
 }
 
-// The list route hands the read surface the outcome and actor sets the request
-// carried, each narrowed to the rows it names, alongside the time window and the
-// action set.
+// The list route passes the read surface the request's outcome and actor sets,
+// its time window and its action set.
 func TestTheListPassesOutcomeAndActorThrough(t *testing.T) {
 	r := newRig(t)
 	w := r.do(listRoute + "?outcome=ok&outcome=failed&actor=alice&actor=bob&action=a.create")

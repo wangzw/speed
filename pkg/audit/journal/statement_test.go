@@ -10,10 +10,8 @@ import (
 	"github.com/vislake/speed/pkg/audit"
 )
 
-// assertTheStatementsOwnFailure checks that err is the failure the statement
-// itself ran into, and nothing this module added to it: the audit table in these
-// cases is healthy, so a caller that tells an unavailable audit store from its
-// own failure by ErrWriteFailed must not be told the store is at fault.
+// assertTheStatementsOwnFailure checks that err is the statement's own failure, not
+// something this module added.
 func assertTheStatementsOwnFailure(t *testing.T, err, want error) {
 	t.Helper()
 	if !errors.Is(err, want) {
@@ -27,12 +25,8 @@ func assertTheStatementsOwnFailure(t *testing.T, err, want error) {
 	}
 }
 
-// A statement that fails on its own keeps its own error and leaves no row.
-//
-// A duplicate key is the ordinary case: the table is healthy, the statement is
-// not, and a caller mapping ErrWriteFailed to "audit unavailable" would answer a
-// conflict as an outage if the record of the failed statement were attempted on
-// a session that carries the statement's error.
+// A statement that fails on its own keeps its own error and leaves no
+// row.
 func TestAStatementThatFailsKeepsItsOwnError(t *testing.T) {
 	handle := open(t)
 	if err := handle.Create(&order{ID: "o1", Note: "first"}).Error; err != nil {

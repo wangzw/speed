@@ -9,30 +9,12 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// subscribe registers one handler per configured type name.
-//
-// It runs in the Init stage: the bus freezes its subscription table at its own
-// Start callback, which the drive reaches after every module's Init. A
-// subscription registered after that freeze does not cover anything published
-// before it, whether the bus refuses it at the call site or accepts it and
-// misses those events.
 func (j *journal) subscribe(bus event.Bus) {
 	for _, typeName := range unique(j.settings.events) {
 		bus.Subscribe(typeName, ModuleName, j.handlerFor(typeName))
 	}
 }
 
-// handlerFor builds the handler for one configured type name.
-//
-// The payload is read structurally, by field name, because a subscriber cannot
-// name a publisher's type without inverting the dependency. A payload that does
-// not read at all costs the event: the subscriber's contract with its publisher
-// is to drop what it cannot read, and there is nobody to hand the failure to —
-// a subscriber's failure never reaches the publisher.
-//
-// That drop is recorded through the log chain, and the chain can be turned off
-// entirely by an empty output list, so the record is a non-guarantee rather
-// than a report.
 func (j *journal) handlerFor(typeName string) event.Handler {
 	return func(ctx context.Context, evt event.Event) error {
 		if !j.accepting.Load() {
@@ -51,9 +33,8 @@ func (j *journal) handlerFor(typeName string) event.Handler {
 			Detail:  detailOf(fields),
 		}
 		// The tenant arrives on the event rather than in the context: the bus
-		// carries it so that a subscriber does not have to reconstruct it, and
-		// a subscription callback usually has no request context to read one
-		// from.
+		// carries it so that a subscriber does not have to reconstruct it, and a
+		// subscription callback usually has no request context to read one from.
 		r := assemble(ctx, audit.SourceEvent, entry, evt.TenantID)
 		r.EventID = eventIDOf(evt)
 		j.submit(ctx, r)
@@ -61,16 +42,6 @@ func (j *journal) handlerFor(typeName string) event.Handler {
 	}
 }
 
-// eventIDOf is the identifier a row records its event under, or nil for an
-// event that carries none.
-//
-// The identifier is what tells a second delivery of one event from a second
-// event, on every replica alike, so it is kept on the row both to let a reader
-// match the row to the event and to let the table refuse the same event twice.
-// An event with no identifier has nothing to be told apart by — the bus assigns
-// one on Publish, so only a bus that does not reaches this — and it is recorded
-// on every delivery rather than merged with every other such event under an
-// empty key.
 func eventIDOf(evt event.Event) *string {
 	if evt.ID == "" {
 		return nil
@@ -79,13 +50,6 @@ func eventIDOf(evt event.Event) *string {
 	return &id
 }
 
-// readFields decodes a payload's top-level fields, each as the text the
-// payload's own serialization gave it, reporting whether it could be read.
-//
-// A payload that is simply absent is readable and empty: an event with nothing
-// to say is still an event, and dropping it would lose the fact of its
-// publication. Only a payload that is present and does not serialize to an
-// object is unreadable, which is the line the bus's own field helpers draw.
 func readFields(payload any) (map[string]json.RawMessage, bool) {
 	if payload == nil {
 		return nil, true
@@ -97,33 +61,16 @@ func readFields(payload any) (map[string]json.RawMessage, bool) {
 	return fields, true
 }
 
-// objectOf reads the object the event is about, by the spellings a publisher
-// may have used. Nothing found leaves it empty rather than failing.
 func objectOf(payload any) string {
 	value, _ := event.PayloadString(payload, "object", "Object", "id", "ID", "name", "Name")
 	return value
 }
 
-// readOutcome reads how the event ended.
 func readOutcome(payload any) string {
 	value, _ := event.PayloadString(payload, "outcome", "Outcome", "result", "Result")
 	return value
 }
 
-// detailOf keeps the payload's top-level scalar fields as the entry's detail.
-//
-// A string is kept as its value, and a boolean or a number as the text the
-// payload's serialization wrote for it. That text is the payload's own spelling
-// rather than one this module chose, and it keeps a number exact where decoding
-// it first would round an integer past a float's range. Those fields are where a
-// publisher puts the facts that tell one kind of event from another — a delete
-// from a write of the empty value, a withheld value from an unchanged one, the
-// version a change produced — so leaving them out loses the distinction.
-//
-// A nested object, an array and a null are left out. Masking compares whole
-// top-level keys, so a key inside a nested value is never compared at all, and
-// rendering the value as text would put whatever it carries into the table
-// unmasked.
 func detailOf(fields map[string]json.RawMessage) map[string]string {
 	if len(fields) == 0 {
 		return nil
@@ -140,8 +87,6 @@ func detailOf(fields map[string]json.RawMessage) map[string]string {
 	return out
 }
 
-// scalarText renders one serialized field, reporting false for the shapes the
-// detail leaves out.
 func scalarText(raw json.RawMessage) (string, bool) {
 	value := bytes.TrimSpace(raw)
 	if len(value) == 0 {

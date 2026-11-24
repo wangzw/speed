@@ -13,12 +13,8 @@ import (
 	"github.com/vislake/speed/pkg/db"
 )
 
-// A connection built with Open onto a database with no file behind it — an
-// in-memory one — is never taken for the delivered database, even when it
-// carries an audit table of its own: the row goes to the delivered table. Such
-// a database belongs to the connection that opened it, so it cannot be the
-// delivered one, and taking it for that would put the row in a table nothing
-// reads, or fail the write on a table it does not have.
+// An Open connection onto a fileless in-memory database is never taken for the
+// delivered one, even with its own audit table.
 func TestAnOpenedDatabaseWithNoFileIsNotTakenForTheDeliveredOne(t *testing.T) {
 	assembled(t, nil, func(ctx context.Context, reg *core.Registry) error {
 		database, err := core.Resolve[db.Database](reg)
@@ -53,11 +49,7 @@ func TestAnOpenedDatabaseWithNoFileIsNotTakenForTheDeliveredOne(t *testing.T) {
 }
 
 // Two PostgreSQL connections are taken for one audit table only when the
-// server run, the database and the relation all agree. The server run is what
-// tells a restored copy of the delivered database, or a promoted standby, from
-// the database itself: the database name and the table's relation can be the
-// same on both, and a row written on the copy's own session lands where nothing
-// reads it.
+// server run, the database and the relation all agree.
 func TestTwoPostgresConnectionsReachOneTableOnlyOnOneServerRun(t *testing.T) {
 	started := time.Date(2026, 9, 29, 8, 0, 0, 0, time.UTC)
 	delivered := reaching{started: started, database: "app", relation: 16384}
@@ -89,9 +81,6 @@ func TestTwoPostgresConnectionsReachOneTableOnlyOnOneServerRun(t *testing.T) {
 	}
 }
 
-// reaching is what one PostgreSQL connection answers about the audit table:
-// when its server started, which database it is on, and the relation the
-// table's name resolves to there.
 type reaching struct {
 	started  time.Time
 	database string
@@ -99,7 +88,6 @@ type reaching struct {
 	absent   bool
 }
 
-// answering is a pool whose every query answers the one row r describes.
 func answering(t *testing.T, r reaching) *sql.DB {
 	t.Helper()
 	pool := sql.OpenDB(answer{r})
@@ -107,8 +95,6 @@ func answering(t *testing.T, r reaching) *sql.DB {
 	return pool
 }
 
-// answer is a connector, a driver and a connection at once: every query on it
-// returns the row it describes.
 type answer struct{ reaching }
 
 func (a answer) Connect(context.Context) (driver.Conn, error) { return a, nil }
@@ -118,7 +104,6 @@ func (answer) Prepare(string) (driver.Stmt, error)            { return nil, erro
 func (answer) Close() error                                   { return nil }
 func (answer) Begin() (driver.Tx, error)                      { return nil, errors.New("no transactions") }
 
-// QueryContext answers any query with the one row.
 func (a answer) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
 	var relation driver.Value = a.relation
 	if a.absent {
@@ -127,7 +112,6 @@ func (a answer) QueryContext(context.Context, string, []driver.NamedValue) (driv
 	return &oneRow{values: []driver.Value{a.started, a.database, relation}}, nil
 }
 
-// oneRow is a result set of one row of three columns.
 type oneRow struct {
 	values []driver.Value
 	read   bool
@@ -136,7 +120,6 @@ type oneRow struct {
 func (*oneRow) Columns() []string { return []string{"started", "database", "relation"} }
 func (*oneRow) Close() error      { return nil }
 
-// Next hands the row over once.
 func (r *oneRow) Next(dest []driver.Value) error {
 	if r.read {
 		return io.EOF

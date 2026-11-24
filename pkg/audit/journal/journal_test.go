@@ -39,17 +39,8 @@ const createOrders = `CREATE TABLE orders (
 	note TEXT NOT NULL
 )`
 
-// auditDialect is the dialect these cases run on, and the subdirectory of the
-// migrations the module ships for it. The table the cases write into is built
-// from those files rather than from a copy written out here: a copy is a second
-// description of the schema, and the two part company at the first column
-// someone adds.
 const auditDialect = "sqlite"
 
-// applyMigration runs one of the module's own migration files.
-//
-// The statements go through Exec, which does not reach the plugin — reaching it
-// needs the model path. That is also how the production run applies them.
 func applyMigration(t *testing.T, handle *gorm.DB, name string) {
 	t.Helper()
 	sql, err := fs.ReadFile(migrationsFS, name)
@@ -79,8 +70,6 @@ func applyMigrations(t *testing.T, handle *gorm.DB, dialect string) {
 	}
 }
 
-// newTestJournal builds a product that is accepting, reports nowhere and logs
-// nowhere: what these cases assert is what reached the table.
 func newTestJournal(handle *gorm.DB, set settings) *journal {
 	j := newJournal(set, handle, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	j.signal = &signal{out: io.Discard}
@@ -88,8 +77,7 @@ func newTestJournal(handle *gorm.DB, set settings) *journal {
 	return j
 }
 
-// recordingBus is a bus that keeps what was subscribed to it, so a case can
-// hand the module a fact the way a bus would.
+// recordingBus keeps what was subscribed to it so a case can hand the module a fact.
 type recordingBus struct {
 	mu       sync.Mutex
 	handlers map[string][]event.Handler
@@ -118,21 +106,13 @@ func (b *recordingBus) Publish(ctx context.Context, evt event.Event) error {
 }
 
 // sharedMemory is a handle on a database of this call's own, which every
-// connection of the handle's pool shares: the one the database module delivers
-// over a SQLite file, released when the case ends.
-//
-// It is the database module's handle rather than one opened here, so that the
-// journal runs over what an assembly hands it: the constraint classification
-// the module installs, and the pool shape it gives the locator. The session
-// handed back writes no record of a statement a case fails on purpose.
+// connection of the handle's pool shares: the one the database module
+// delivers over a SQLite file, released when the case ends.
 func sharedMemory(t *testing.T) *gorm.DB {
 	t.Helper()
 	return quietly(dbtest.SQLite(t, filepath.Join(t.TempDir(), "journal.db"), nil).DB())
 }
 
-// open builds a handle with the capture plugin installed and both tables
-// created. The tables are created with raw SQL, which the plugin does not
-// capture — reaching the plugin needs the model path.
 func open(t *testing.T) *gorm.DB {
 	t.Helper()
 	handle := sharedMemory(t)
@@ -146,7 +126,6 @@ func open(t *testing.T) *gorm.DB {
 	return handle
 }
 
-// auditRows reads back what landed in the audit table.
 func auditRows(t *testing.T, handle *gorm.DB) []row {
 	t.Helper()
 	var rows []row
@@ -156,8 +135,7 @@ func auditRows(t *testing.T, handle *gorm.DB) []row {
 	return rows
 }
 
-// A model write is recorded once, with the path, verb and object the design
-// names for it.
+// A model write is recorded once, with its path, verb and object.
 func TestStatementCaptureRecordsAModelWrite(t *testing.T) {
 	handle := open(t)
 	if err := handle.Create(&order{ID: "o1", Note: "first"}).Error; err != nil {
@@ -183,11 +161,6 @@ func TestStatementCaptureRecordsAModelWrite(t *testing.T) {
 }
 
 // The module's own writes are left alone.
-//
-// This is the case the self-reference judgement exists for, and it is
-// discriminating in the direction that matters: without the judgement the write
-// below records itself, which records itself, and the test dies of a stack
-// overflow rather than of an assertion.
 func TestStatementCaptureLeavesItsOwnWritesAlone(t *testing.T) {
 	handle := open(t)
 	if err := handle.Create(&row{
@@ -200,19 +173,12 @@ func TestStatementCaptureLeavesItsOwnWritesAlone(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("writing an audit row: %v", err)
 	}
-	// Exactly the row written above, and no second one about it. Without the
-	// judgement this write records itself, which records itself, and the test
-	// dies of a stack overflow rather than of this assertion.
 	if got := len(auditRows(t, handle)); got != 1 {
 		t.Fatalf("want the one row written above and no record of it, got %d row(s)", got)
 	}
 }
 
 // A statement-level row rides the statement's transaction.
-//
-// This is the decision the path turns on: the record and the write it describes
-// are one unit of work. Writing on a connection of its own instead leaves the
-// row behind after the rollback, and this case says so.
 func TestStatementCaptureRidesTheStatementsTransaction(t *testing.T) {
 	handle := open(t)
 
@@ -245,13 +211,6 @@ func TestStatementCaptureRidesTheStatementsTransaction(t *testing.T) {
 }
 
 // A bare write and its record fail together.
-//
-// This is the path a host writes most of its code on: no transaction of its
-// own, so the one GORM opens around the statement is the one that matters.
-// A callback anchored on the statement's own step rather than on the commit
-// runs after that transaction has ended: the row goes out on a second
-// connection, and a failure is raised against a statement that has committed,
-// telling the caller to retry a write that is already durable.
 func TestABareWriteFailsWithItsRecord(t *testing.T) {
 	handle := sharedMemory(t)
 	if installErr := handle.Use(newCapture()); installErr != nil {
@@ -260,7 +219,6 @@ func TestABareWriteFailsWithItsRecord(t *testing.T) {
 	if createErr := handle.Exec(createOrders).Error; createErr != nil {
 		t.Fatalf("creating the orders table: %v", createErr)
 	}
-	// No audit table, so every capture write fails.
 
 	err := handle.Create(&order{ID: "o1", Note: "no trail"}).Error
 	if !errors.Is(err, audit.ErrWriteFailed) {
@@ -277,11 +235,6 @@ func TestABareWriteFailsWithItsRecord(t *testing.T) {
 }
 
 // Raw SQL reaches no audit row.
-//
-// The plugin registers on the model-path processors only, so a statement issued
-// through Exec is not merely unrecorded — it never reaches the callback. That is
-// the reach the design states as a non-guarantee, and it is also what keeps a
-// migration or a host's own cleanup from recording itself.
 func TestRawSQLIsNotCaptured(t *testing.T) {
 	handle := open(t)
 	if err := handle.Exec("INSERT INTO orders (id, note) VALUES (?, ?)", "o1", "raw").Error; err != nil {
@@ -293,10 +246,6 @@ func TestRawSQLIsNotCaptured(t *testing.T) {
 }
 
 // The masked set is exactly the closed one, spelled exactly.
-//
-// A wider match — case-insensitive, or a suffix — would mask values whose names
-// merely resemble these, and a reader who found a masked value could no longer
-// tell which rule had caught it.
 func TestMaskDetailCoversTheClosedSetAndNothingElse(t *testing.T) {
 	in := map[string]string{
 		"password":      "hunter2",
@@ -357,12 +306,7 @@ func TestSignalReportsOncePerFault(t *testing.T) {
 }
 
 // The seam returns its failure; a capture path does not.
-//
-// The handle has no audit table, so every write fails. Record says so, which is
-// what a caller asked for; the request path reports and carries on, which is
-// what keeps a request from failing on account of the record of it.
 func TestTheSeamReturnsItsFailureAndACapturePathDoesNot(t *testing.T) {
-	// A handle with no audit table, so every write fails.
 	handle := sharedMemory(t)
 	var reported bytes.Buffer
 	j := newJournal(settings{}, handle, nil)
@@ -378,8 +322,6 @@ func TestTheSeamReturnsItsFailureAndACapturePathDoesNot(t *testing.T) {
 		t.Error("a capture path's write failure was not reported anywhere")
 	}
 
-	// The seam says so too, which is what a caller asked for — and it says so
-	// without adding a second line for the same standing fault.
 	after := reported.Len()
 	if err := j.Record(context.Background(), audit.Entry{Action: "a"}); !errors.Is(err, audit.ErrWriteFailed) {
 		t.Fatalf("Record gave %v, want ErrWriteFailed", err)
@@ -415,9 +357,8 @@ func TestTheSeamIsBehindTheGate(t *testing.T) {
 	}
 }
 
-// The request path is behind the same gate as the paths the module drives: a
-// row for a request that finishes after Stop is not written. The control is the
-// same call while the journal is accepting, which writes it.
+// The request path is behind the same gate as the paths the module
+// drives: a row for a request that finishes after Stop is not written.
 func TestARequestRowIsNotWrittenOnceTheJournalStoppedAccepting(t *testing.T) {
 	handle := open(t)
 	j := newTestJournal(handle, settings{})
@@ -435,9 +376,8 @@ func TestARequestRowIsNotWrittenOnceTheJournalStoppedAccepting(t *testing.T) {
 	}
 }
 
-// The capture layer stands for the audit capability on the chain and sits in
-// the recording stage: the token and the stage are what other layers place
-// themselves against.
+// The capture layer stands for the audit capability on the chain and sits
+// in the recording stage.
 func TestMiddlewareCarriesTheAuditToken(t *testing.T) {
 	j := newJournal(settings{}, nil, nil)
 	mw := j.middlewareFor("public")
@@ -489,8 +429,6 @@ func TestEventPathRecordsASubscribedType(t *testing.T) {
 	if got.Object != "order/o1" || got.Outcome != "ok" {
 		t.Errorf("object/outcome are %q/%q, want the payload's", got.Object, got.Outcome)
 	}
-	// The tenant arrives on the event, not in a context a subscription callback
-	// has none of.
 	if got.TenantID == nil || *got.TenantID != "acme" {
 		t.Errorf("tenant is %v, want the one the event carried", got.TenantID)
 	}
@@ -542,9 +480,7 @@ func TestEventPathSubscribesOncePerType(t *testing.T) {
 	}
 }
 
-// Updates and deletes are captured the way inserts are, each under its own
-// verb — the callbacks are three separate registrations and one of them
-// standing in for another would go unnoticed here otherwise.
+// Updates and deletes are captured like inserts, each under its own verb.
 func TestStatementCaptureRecordsUpdateAndDelete(t *testing.T) {
 	handle := open(t)
 
@@ -572,15 +508,7 @@ func TestStatementCaptureRecordsUpdateAndDelete(t *testing.T) {
 }
 
 // A failing Prepare hands back the zero Enablement.
-//
-// Only a Prepare that returned no error has its stance read, so what travels
-// with the error is the zero value — the convention every other module states a
-// stance under. The stance this module states on the way through is StateEnabled
-// and never StateAuto: the capability is delivered exclusively, and an exclusive
-// provider stating StateAuto is the one cell resolution disables.
 func TestPrepareReturnsZeroEnablementWhenItCannotStart(t *testing.T) {
-	// Nothing is supplied, so the run carries no configuration reader for
-	// this module to read its own section with.
 	reg := core.New()
 	stated, err := Module().Prepare(context.Background(), reg)
 	if err == nil {
@@ -595,21 +523,12 @@ func TestPrepareReturnsZeroEnablementWhenItCannotStart(t *testing.T) {
 	}
 }
 
-// suppliedAudit is a value a host can supply for this module: it delivers the
-// audit capability and is not the module's product.
 type suppliedAudit struct{}
 
 func (suppliedAudit) Record(context.Context, audit.Entry) error { return nil }
 
 // The callbacks that act on the module's product leave an instance a host
 // supplied for the module as it is.
-//
-// The registry hands a callback whatever instance the module has, and a host can
-// supply any value that delivers the audit capability. A callback that took its
-// instance for the journal would panic on it, or fail the startup for it. The
-// contrast is the module's own product, which the same callbacks act on in the
-// same registry: Init wires it — skipping the request-level layer because the
-// registry has no entry point — and Start and Stop switch what it accepts.
 func TestTheCallbacksLeaveASuppliedInstanceAlone(t *testing.T) {
 	ctx := context.Background()
 	module := Module()
@@ -657,9 +576,7 @@ func TestWireFailsWhenEventsAreNamedAndNoBusIsInTheRun(t *testing.T) {
 	}
 }
 
-// Naming an endpoint without an entry point in the run wires cleanly: the run
-// serves no request, so there is nowhere to put the request-level layer and no
-// defect to report. The statement and record capture stay in force.
+// Naming an endpoint without an entry point in the run wires cleanly.
 func TestWireSkipsRequestCaptureWhenEndpointsAreNamedAndNoRouterIsInTheRun(t *testing.T) {
 	j := newTestJournal(open(t), settings{endpoints: []string{"public"}})
 	if err := j.wire(context.Background(), core.New()); err != nil {
