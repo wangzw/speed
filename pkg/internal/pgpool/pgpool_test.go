@@ -6,13 +6,7 @@ import (
 	"testing"
 )
 
-// TestAnEmptyConnectionStringIsRefused covers the fallback this shared unit
-// must not take. pgx does not refuse an empty connection string: it reads it as
-// the libpq defaults — PGHOST, the default unix socket, the login name — and
-// hands back a pool with no error, so a caller that reached Connect with
-// nothing would be given a live connection to whichever server answers on the
-// local default, and the first statement would go to a database the run never
-// named.
+// TestAnEmptyConnectionStringIsRefused covers the fallback this shared unit must not take.
 func TestAnEmptyConnectionStringIsRefused(t *testing.T) {
 	pool, err := Connect(context.Background(), "probe", Config{})
 	if err == nil {
@@ -22,11 +16,8 @@ func TestAnEmptyConnectionStringIsRefused(t *testing.T) {
 	}
 }
 
-// The dsn item's description is what the help output prints for it, and it is
-// the only place an operator is told what leaving the key out does. An
-// implementation reaches PostgreSQL at the server this key names, and it is in
-// the run only because the command tree named it, so the description has to say
-// the startup fails — not that the assembly goes on without the backend.
+// The dsn item's description is what the help output prints for it, and it is the only place an
+// operator is told what leaving the key out does.
 func TestDSNDescriptionStatesTheStartupFails(t *testing.T) {
 	description := Items()[DSNKey].Description
 	if description == "" {

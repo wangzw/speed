@@ -12,34 +12,15 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// rolePassword is the password of every role DMLRole creates. Like the
-// superuser's, it guards a throwaway server bound to the loopback interface.
 const rolePassword = "pgtest-role"
 
-// roleInfix separates the owning process id from the counter in a role's name,
-// as databaseInfix does in a database's.
 const roleInfix = "_r"
 
-// roleCounter numbers the roles this process creates.
 var roleCounter atomic.Int64
 
-// DMLRole creates a login role that may read and write the rows of every table,
-// and use every sequence, that the public schema of dsn's database holds at the
-// moment of the call, and that may create nothing. It hands back a locator for
-// the same database as that role, and drops the role when the test ends.
-//
-// It is the credential of a deployment that splits them: the schema created
-// once by a role that owns it, the service run by one that may only read and
-// write rows. PostgreSQL has given no role CREATE on the public schema by
-// default since version 15; the revoke below holds that on any server.
-//
-// The grants cover what exists when it is called, so a case calls it after the
-// tables the role is to use are there. Before handing the locator back it
-// checks that the role cannot create a table: a case asserting that a startup
-// asks for nothing the role lacks rests on that.
-//
-// dsn has to be a locator Acquire handed back: the statements run as the
-// superuser it carries.
+// DMLRole creates a login role that may read and write the rows of every table, and use every
+// sequence, that the public schema of dsn's database holds at the moment of the call, and that may
+// create nothing.
 func DMLRole(t *testing.T, dsn string) string {
 	t.Helper()
 	parsed, err := url.Parse(dsn)
@@ -67,9 +48,6 @@ func DMLRole(t *testing.T, dsn string) string {
 		}
 	}
 	t.Cleanup(func() {
-		// DROP OWNED BY revokes what the role was granted here as well as
-		// removing what it owns, and a role still holding a grant cannot be
-		// dropped.
 		for _, statement := range []string{`DROP OWNED BY ` + role, `DROP ROLE ` + role} {
 			if err := execute(owner, statement); err != nil {
 				t.Errorf("removing the role %s: %s: %v", name, statement, err)
@@ -86,7 +64,6 @@ func DMLRole(t *testing.T, dsn string) string {
 	return asRole
 }
 
-// openHandle opens a handle on a locator and closes it when the test ends.
 func openHandle(t *testing.T, dsn string) *sql.DB {
 	t.Helper()
 	handle, err := sql.Open("pgx", dsn)
@@ -97,7 +74,6 @@ func openHandle(t *testing.T, dsn string) *sql.DB {
 	return handle
 }
 
-// execute runs one statement within the maintenance statements' bound.
 func execute(handle *sql.DB, statement string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), statementTimeout)
 	defer cancel()

@@ -8,21 +8,13 @@ import (
 	"strings"
 	"testing"
 
-	_ "github.com/jackc/pgx/v5/stdlib" // registers the driver this package opens through
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
-// TestEachAcquisitionGetsAnEmptyDatabase holds this package to the isolation
-// every case built on it assumes.
-//
-// The migration cases assert on which tables exist and on what the record table
-// holds. make check runs the tests twice, once with the race detector, and go
-// test runs packages in parallel, so a shared database would carry one run's
-// tables into the next — and the cross-process case needs a database on which
-// nothing has been applied at all, or the replica that should apply the
-// migration finds the work already done and the case passes without testing
-// anything.
+// TestEachAcquisitionGetsAnEmptyDatabase holds this package to the isolation every case built on
+// it assumes.
 func TestEachAcquisitionGetsAnEmptyDatabase(t *testing.T) {
 	first, second := pgtest.Acquire(t), pgtest.Acquire(t)
 	if first == second {
@@ -41,11 +33,8 @@ func TestEachAcquisitionGetsAnEmptyDatabase(t *testing.T) {
 	}
 }
 
-// TestAcquiredDatabaseNamesCarryTheOwningProcess pins the naming this package's
-// housekeeping depends on: a run killed part-way leaves its databases on the
-// shared server, and the owning process id in the name is how a later run
-// tells the leftovers of a dead process from the databases a live one is using
-// right now.
+// TestAcquiredDatabaseNamesCarryTheOwningProcess checks that an acquired database's name carries the
+// owning process id.
 func TestAcquiredDatabaseNamesCarryTheOwningProcess(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	_, database, found := strings.Cut(strings.TrimSuffix(dsn, "?sslmode=disable"), "127.0.0.1:")
@@ -62,11 +51,8 @@ func TestAcquiredDatabaseNamesCarryTheOwningProcess(t *testing.T) {
 	}
 }
 
-// TestADMLRoleWritesRowsAndCreatesNothing holds DMLRole to the credential the
-// cases built on it describe: it reads and writes the rows of a table that was
-// there when it was made, it creates nothing, and its name carries the owning
-// process, which is how the housekeeping tells a dead run's role from a live
-// one's.
+// TestADMLRoleWritesRowsAndCreatesNothing checks that a DML role's name carries the owning process
+// id and that it can insert, update and delete rows but cannot create a table.
 func TestADMLRoleWritesRowsAndCreatesNothing(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	owner := open(t, dsn)
@@ -98,7 +84,6 @@ func TestADMLRoleWritesRowsAndCreatesNothing(t *testing.T) {
 	}
 }
 
-// open opens a handle on a locator this package handed back.
 func open(t *testing.T, dsn string) *sql.DB {
 	t.Helper()
 	handle, err := sql.Open("pgx", dsn)
@@ -113,7 +98,6 @@ func open(t *testing.T, dsn string) *sql.DB {
 	return handle
 }
 
-// tableExists reports whether a table is in the handle's database.
 func tableExists(t *testing.T, handle *sql.DB, table string) bool {
 	t.Helper()
 	var name sql.NullString
