@@ -404,6 +404,118 @@ describe('PreferencesSection', () => {
     expect(patches[0]?.body).toEqual({ time_zone: 'Europe/Berlin' })
   })
 
+  it('keeps the timezone select focused and read-only while its write is in flight', async () => {
+    let releaseWrite: () => void = () => {}
+    const writeGate = new Promise<void>((resolve) => {
+      releaseWrite = resolve
+    })
+    const { respond, stored } = makeProfileResponder({
+      time_zone: 'Asia/Tokyo',
+    })
+    const held: RealResponder = async (call) => {
+      if (call.method === 'PATCH') {
+        await writeGate
+      }
+      return respond(call)
+    }
+    const { rig } = mountSection(held)
+
+    const timezone = await screen.findByRole('combobox', {
+      name: zhCN.preferences.timezone.label,
+    })
+    chooseOption(timezone, 'Europe/Berlin')
+    await waitFor(() =>
+      expect(
+        rig.calls.filter((call) => call.method === 'PATCH'),
+      ).toHaveLength(1),
+    )
+
+    // The write is held open: the select keeps focus and stays in the Tab
+    // sequence, locked by read-only rather than by the native disable
+    // that would take it out of the sequence.
+    expect(document.activeElement).toBe(timezone)
+    expect(timezone).toHaveAttribute('aria-readonly', 'true')
+    expect(timezone).toHaveAttribute('tabindex', '0')
+    expect(timezone).not.toHaveAttribute('aria-disabled', 'true')
+
+    // PATCH-first: the displayed value has not moved, and a second
+    // activation cannot open the menu or start another write.
+    expect(timezone).toHaveTextContent('Asia/Tokyo')
+    fireEvent.mouseDown(timezone)
+    expect(screen.queryByRole('listbox')).toBeNull()
+    expect(
+      rig.calls.filter((call) => call.method === 'PATCH'),
+    ).toHaveLength(1)
+
+    // The sibling write-initiating control is locked the same way while a
+    // preference write is in flight, without being taken out of the Tab
+    // sequence either, and neither pointer nor keyboard can start a
+    // second write from it.
+    const language = screen.getByRole('combobox', {
+      name: zhCN.preferences.language.label,
+    })
+    expect(language).toHaveAttribute('aria-readonly', 'true')
+    expect(language).not.toHaveAttribute('aria-disabled', 'true')
+    expect(language).not.toHaveAttribute('aria-busy')
+    fireEvent.mouseDown(language)
+    fireEvent.keyDown(language, { key: 'Enter' })
+    expect(screen.queryByRole('listbox')).toBeNull()
+    expect(
+      rig.calls.filter((call) => call.method === 'PATCH'),
+    ).toHaveLength(1)
+
+    await act(async () => {
+      releaseWrite()
+    })
+    await waitFor(() => expect(stored.time_zone).toBe('Europe/Berlin'))
+    await waitFor(() =>
+      expect(timezone).not.toHaveAttribute('aria-readonly'),
+    )
+    expect(document.activeElement).toBe(timezone)
+  })
+
+  it('keeps the language select focused across its write and the language switch', async () => {
+    let releaseWrite: () => void = () => {}
+    const writeGate = new Promise<void>((resolve) => {
+      releaseWrite = resolve
+    })
+    const { respond, stored } = makeProfileResponder({})
+    const held: RealResponder = async (call) => {
+      if (call.method === 'PATCH') {
+        await writeGate
+      }
+      return respond(call)
+    }
+    const { rig, i18n } = mountSection(held)
+
+    const language = await screen.findByRole('combobox', {
+      name: zhCN.preferences.language.label,
+    })
+    chooseOption(language, languageLabel('en-US', 'zh-CN'))
+    await waitFor(() =>
+      expect(
+        rig.calls.filter((call) => call.method === 'PATCH'),
+      ).toHaveLength(1),
+    )
+    expect(document.activeElement).toBe(language)
+    expect(language).toHaveAttribute('aria-readonly', 'true')
+
+    await act(async () => {
+      releaseWrite()
+    })
+    await waitFor(() => expect(stored.locale).toBe('en-US'))
+    await waitFor(() => expect(i18n.language).toBe('en-US'))
+
+    // The switch re-labels the control but does not replace it or move
+    // focus away: the selection that landed the write still holds focus.
+    const switched = screen.getByRole('combobox', {
+      name: enUS.preferences.language.label,
+    })
+    expect(switched).toBe(language)
+    await waitFor(() => expect(switched).not.toHaveAttribute('aria-readonly'))
+    expect(document.activeElement).toBe(switched)
+  })
+
   it('PATCHes the cleared empty string under time_zone', async () => {
     const { respond, stored } = makeProfileResponder({
       time_zone: 'Asia/Tokyo',
