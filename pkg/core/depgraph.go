@@ -8,32 +8,8 @@ import (
 	"strings"
 )
 
-// Closure expands a list of module names into the set a command has to
-// include: the names given, plus the modules that provide what those require
-// at construction time, transitively. A provider that claims what it delivers
-// exclusively is not expanded; the rule and why it is the exception are below.
-//
-// Including a module means including what it takes to build it, and the
-// expansion lives here rather than in the caller because the matching rule
-// does: a requirement meets a delivery when their element types are the same,
-// never by assignability, exactly as Resolve matches. The command tree calls
-// this while it is assembled and hands Drive the literal result, so the drive
-// expands nothing.
-//
-// A requirement nothing delivers adds nothing, Optional or not: dependency
-// resolution reports that during the drive, where the failure can name the
-// module that required it and say what is missing. So does one whose providers
-// all claim the capability exclusively: none of them is pulled in, and the
-// failure says the host has to name one implementation on the command tree, or
-// supply an instance for one. A name no module registered is
-// ErrUnknownParticipant.
-//
-// Closure knows nothing of supplied instances. A module the host supplied an
-// instance for is expanded, and expands its own requirements, like any other
-// module it is given. It joins the participating set when the drive begins
-// whether or not the result names it, and nothing is expanded for it then.
-//
-// The result is deduplicated and in name order.
+// Closure expands a list of module names into the set a command has to include: the names given,
+// plus the modules that provide what those require at construction time, transitively.
 func (r *Registry) Closure(names []string) ([]string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -59,23 +35,11 @@ func (r *Registry) Closure(names []string) ([]string, error) {
 		}
 		included[name] = true
 		for i, req := range reg.module.Requires {
-			// An optional requirement does not pull its providers in. Its
-			// meaning is that going without it is a legal configuration, and
-			// a provider the host never listed, added here on the module's
-			// behalf, would leave it no way to be absent.
 			if req.Optional {
 				continue
 			}
 			ct := capabilityType(req.Token, fmt.Sprintf("module %q Requires[%d]", name, i))
 			for _, provider := range providers[ct] {
-				// Neither does a provider that claims the capability
-				// exclusively. Several implementations may each claim it
-				// alone, and picking one for the host would be a decision:
-				// the expansion rule introduces none, so which of them runs
-				// is what the host names on the command tree. Two providers
-				// of one capability nobody claims exclusively are the normal
-				// case and are all added, which is what a set of
-				// interchangeable backends relies on.
 				if claimsExclusive(r.mods[provider].module, ct) {
 					continue
 				}
@@ -86,33 +50,6 @@ func (r *Registry) Closure(names []string) ([]string, error) {
 	return sortedKeys(included), nil
 }
 
-// planConstruction resolves Requires over the enabled set and returns the
-// order construction follows.
-//
-// Resolution happens before any module is constructed: a required capability
-// without a provider is ErrMissingProvider and a cycle is ErrDependencyCycle,
-// and the drive has constructed nothing yet for either of them to roll back.
-//
-// A module the host supplied an instance for is a node like any other. It is in
-// the enabled set, it provides what it declares and comes before the modules
-// that require it, and its own Requires are resolved here as anyone's are.
-// Whether its instance was supplied or is yet to be constructed does not enter
-// the ordering.
-//
-// Exclusive conflicts are not re-checked here; resolution settled them. An
-// Optional requirement whose provider is absent is skipped, while a present
-// one still takes part in the ordering. A capability every provider of which
-// claims it exclusively has no provider here unless the command named one, or
-// the host supplied an instance for one — the closure never pulled one in — so
-// it fails as a missing provider whose fix is to name an implementation or
-// supply an instance rather than to import one.
-//
-// participants is what this command runs, and declarationsOnly and outside are
-// the two halves of what it did not: modules it reached for their declarations
-// alone, and modules it left registered but out. The second of those two is one
-// of the ways a capability ends up without a provider. origins maps a module
-// name to where the module came from, and a name missing from it loses only the
-// half of the report that says so.
 func planConstruction(enabled, participants, declarationsOnly, outside []Module, final map[string]Enablement, origins map[string]origin) ([]string, error) {
 	graph := newDependencyGraph(enabled)
 	for _, u := range graph.unmet {
@@ -134,31 +71,19 @@ func planConstruction(enabled, participants, declarationsOnly, outside []Module,
 	return order, nil
 }
 
-// dependencyGraph is the ordering Requires and Provides draw over a set of
-// modules: an edge runs from each provider of a capability to every module that
-// requires it, so a provider comes before the modules that need it. Only the
-// modules in the set provide anything to each other here.
 type dependencyGraph struct {
-	nodes    []string // module names, in name order
+	nodes    []string
 	edges    map[string]map[string]bool
 	indegree map[string]int
-	// unmet lists, in node order and then declaration order, the requirements
-	// no module of the set provides. The graph has no edge for them, and what to
-	// make of them is the caller's: planning fails over one, and an ordering
-	// that only has to place the modules ignores them.
-	unmet []unmetRequirement
+	unmet    []unmetRequirement
 }
 
-// unmetRequirement is a requirement of a module that no module in the graph
-// provides.
 type unmetRequirement struct {
 	module     string
 	capability reflect.Type
 	optional   bool
 }
 
-// newDependencyGraph draws the graph over mods, in name order and with the ties
-// of the ordering left to order.
 func newDependencyGraph(mods []Module) *dependencyGraph {
 	nodes := make([]string, 0, len(mods))
 	for _, m := range mods {
@@ -207,10 +132,8 @@ func (g *dependencyGraph) addEdge(from, to string) {
 	g.indegree[to]++
 }
 
-// order is Kahn's algorithm, always taking the smallest ready name, so the same
-// graph yields the same order whatever the registration order was. A module on a
-// cycle, and any module behind one, has no place in it: the result is shorter
-// than the node list exactly when the graph has a cycle.
+// order runs Kahn's algorithm, always taking the smallest ready name, so the same graph yields the same order whatever the registration order was.
+// A module on a cycle, and any module behind one, has no place in it.
 func (g *dependencyGraph) order() []string {
 	indegree := maps.Clone(g.indegree)
 	ready := make([]string, 0, len(g.nodes))
@@ -235,11 +158,6 @@ func (g *dependencyGraph) order() []string {
 	return order
 }
 
-// dependencyOrder orders modules by the Requires and Provides among them alone,
-// by the rule construction follows. It validates nothing: a requirement none of
-// them provides is ignored, and a cycle does not fail it. The modules on a cycle,
-// and any behind one, come last in name order, since a cycle gives them no
-// order but they are in the list all the same.
 func dependencyOrder(mods []Module) []string {
 	graph := newDependencyGraph(mods)
 	order := graph.order()
@@ -254,10 +172,6 @@ func dependencyOrder(mods []Module) []string {
 	return order
 }
 
-// cycleError names the modules on a cycle. The construction order is only
-// solvable on an acyclic graph; modules that genuinely reference each other
-// leave the relation out of Requires and take the other side up in Init, where
-// every instance already exists.
 func cycleError(nodes, ordered []string, edges map[string]map[string]bool) error {
 	left := make(map[string]bool, len(nodes))
 	for _, name := range nodes {
@@ -315,48 +229,6 @@ func cycleError(nodes, ordered []string, edges map[string]map[string]bool) error
 		ErrDependencyCycle, strings.Join(quoteAll(cycle), " -> "))
 }
 
-// missingProviderError tells the causes apart, because the fixing action
-// differs: nothing delivers the capability, a provider is disabled, a provider
-// exists but is constructed after the caller, a provider is registered and
-// this command did not include it, every provider of it claims the capability
-// exclusively and the command named none of them, or a provider has no New
-// callback and the host supplied no instance for it.
-//
-// A disabled provider is one that stood itself down with its own reason or was
-// stood down in resolution. The report repeats the reason the verdict carries
-// and does not interpret it: either the capability was meant to be absent on
-// this run, in which case the requiring module's own configuration is the thing
-// to revisit, or the provider could not run and said why. A capability nobody
-// delivers at all is the other cause and reads differently.
-//
-// declarers are the modules this command included, notIncluded the ones it
-// left out. Reporting the second group as any of the other three gives an
-// instruction that does nothing: the module is not disabled, and it is not
-// ordered late — it is not in this command at all.
-//
-// exclusive is the part of notIncluded that claims the capability exclusively.
-// Those modules are left out by the expansion rule rather than by the host's
-// writing, so the fix is a decision only the host can make: name one of them,
-// or supply an instance for one.
-//
-// noNew is the part of all three groups that declares no New callback. Such a
-// module builds no instance in any stage, so whether the command constructs it
-// late, includes it or takes it in at run level changes nothing: it is reported
-// for what is true of it at every moment, that its instance can only come from
-// the host, and only with the fix that supplies one. A declarer disabled by its
-// own stance or by resolution keeps the report of why it is disabled.
-//
-// requiredBy is the module whose Requires went unmet, and from where it came.
-// Both are empty when the registry does not know them, which is the Resolve path:
-// a lookup does not say who is making it. A requirer that has a supplied
-// instance is in the command without the command tree's say and its requirements
-// were not expanded with it, which changes what the host can do about it.
-//
-// nothingBuilt is set when the lookup is made while no module's New has run
-// and says why: then an enabled declarer is not constructed later than the
-// caller, it is not constructed at all yet, and ordering it by Requires cannot
-// help. It is empty on the planning path, where every declarer this command
-// runs and that has no instance is one resolution disabled.
 func missingProviderError(ct reflect.Type, declarers, declarationsOnly, notIncluded, exclusive, noNew []string, final map[string]Enablement, requiredBy string, from origin, nothingBuilt string) error {
 	if len(declarers) == 0 && len(declarationsOnly) == 0 && len(notIncluded) == 0 {
 		return errorText{
@@ -440,7 +312,6 @@ func missingProviderError(ct reflect.Type, declarers, declarationsOnly, notInclu
 	return errorText{wrapped: ErrMissingProvider, text: b.String()}
 }
 
-// excluding drops the names in drop from names, keeping the order of the rest.
 func excluding(names, drop []string) []string {
 	if len(drop) == 0 {
 		return names
@@ -454,14 +325,6 @@ func excluding(names, drop []string) []string {
 	return out
 }
 
-// requiredByClause names the module whose requirement went unmet, together with
-// the package that registered it and, when the host supplied its instance, that
-// too. The available set is decided by imports, so that module may be one a
-// dependency pulled in rather than one the host wrote down, and a name on its
-// own does not say where to look for it.
-//
-// trailing puts a comma after the clause, for the sentences that carry on past
-// it rather than ending there.
 func requiredByClause(requiredBy string, from origin, trailing bool) string {
 	if requiredBy == "" {
 		return ""
@@ -479,21 +342,6 @@ func requiredByClause(requiredBy string, from origin, trailing bool) string {
 	return clause
 }
 
-// fixingActions lists what a host can do about a capability nothing delivers.
-// Importing an implementation is one of them; leaving the requiring module out
-// of the command is the other, and it only becomes actionable once the failure
-// names that module: a host that never asked for it may want it gone rather
-// than want a provider in. The command tree is the whole of that move — a
-// module taken in at run level has to start, so no setting turns it back off.
-//
-// A requiring module that has a supplied instance is in the command whatever
-// the command tree says, so the move is another: stop supplying it. Its
-// requirements were not expanded with it either, so an implementation that is
-// imported still has to be taken in on the command tree, or supplied in turn.
-//
-// The list carries no "enable one that is already imported". This failure is
-// reached only when no registered module declared the capability, so an
-// implementation already imported does not exist by construction.
 func fixingActions(requiredBy string, supplied bool) string {
 	if requiredBy != "" && supplied {
 		return fmt.Sprintf("Import an implementation of it and take it in on the command tree, or "+
@@ -514,7 +362,6 @@ func fixingActions(requiredBy string, supplied bool) string {
 	return strings.Join(actions[:last], ", ") + ", or " + actions[last]
 }
 
-// declarersOf lists the modules that declared a capability, in name order.
 func declarersOf(mods []Module, ct reflect.Type) []string {
 	var names []string
 	for _, m := range mods {
@@ -526,9 +373,6 @@ func declarersOf(mods []Module, ct reflect.Type) []string {
 	return names
 }
 
-// exclusiveAmong lists the modules of a group that claim a capability
-// exclusively, in name order. These are the ones the expansion rule leaves
-// out, so their absence from a command is the host's to fix by naming one.
 func exclusiveAmong(mods []Module, ct reflect.Type) []string {
 	var names []string
 	for _, m := range mods {
@@ -540,9 +384,6 @@ func exclusiveAmong(mods []Module, ct reflect.Type) []string {
 	return names
 }
 
-// lackingNewAmong lists the modules of the groups that declare a capability and
-// declare no New callback, in name order. These can only get an instance from
-// the host.
 func lackingNewAmong(ct reflect.Type, groups ...[]Module) []string {
 	var names []string
 	for _, mods := range groups {

@@ -6,16 +6,12 @@ import (
 	"testing"
 )
 
-// cacheCap and the fixtures below back the white-box suites in this package.
 type cacheCap interface{ cacheID() string }
 
 type storeCap interface{ storeID() string }
 
 type readerCap interface{ readerID() string }
 
-// superCacheCap embeds cacheCap, so a value satisfying it satisfies cacheCap
-// as well. They are still two capabilities: a declaration matches a request by
-// the identity of the type, never by assignability.
 type superCacheCap interface {
 	cacheCap
 	superID() string
@@ -28,8 +24,6 @@ func (p *product) storeID() string  { return p.id }
 func (p *product) readerID() string { return p.id }
 func (p *product) superID() string  { return p.id }
 
-// schemaRes and the two below stand in for resource declarations: core stores
-// them as given and never interprets them.
 type schemaRes struct{ Namespace string }
 
 type specRes struct{ Path string }
@@ -39,8 +33,6 @@ type namedRes interface{ resourceName() string }
 func (s schemaRes) resourceName() string { return "schema:" + s.Namespace }
 func (s specRes) resourceName() string   { return "spec:" + s.Path }
 
-// resNames is a named type over []string. A bare []string is assignable to it
-// yet not assertable to it, which is the gap the two match rules turn on.
 type resNames []string
 
 type otherRes struct{ Label string }
@@ -63,6 +55,8 @@ func assertPanics(t *testing.T, want string, fn func()) {
 	fn()
 }
 
+// TestCapabilityTokenRejectsNonPointer checks that a capability token panics for a non-pointer
+// value and for an untyped nil.
 func TestCapabilityTokenRejectsNonPointer(t *testing.T) {
 	assertPanics(t, "must be a typed nil pointer", func() {
 		capabilityType(42, "test")
@@ -72,12 +66,16 @@ func TestCapabilityTokenRejectsNonPointer(t *testing.T) {
 	})
 }
 
+// TestCapabilityTokenRejectsNonNilPointer checks that a capability token panics for a non-nil
+// pointer.
 func TestCapabilityTokenRejectsNonNilPointer(t *testing.T) {
 	assertPanics(t, "must be a nil pointer", func() {
 		capabilityType(&product{}, "test")
 	})
 }
 
+// TestCapabilityTokenRejectsConcreteElem checks that a capability token panics when it points to a
+// concrete type rather than an interface.
 func TestCapabilityTokenRejectsConcreteElem(t *testing.T) {
 	assertPanics(t, "must point to an interface", func() {
 		capabilityType((*bytes.Buffer)(nil), "test")
@@ -87,6 +85,8 @@ func TestCapabilityTokenRejectsConcreteElem(t *testing.T) {
 	})
 }
 
+// TestCapabilityTokenAcceptsInterfaceElem checks that a typed nil pointer to an interface is
+// accepted and named after the interface's type.
 func TestCapabilityTokenAcceptsInterfaceElem(t *testing.T) {
 	got := capabilityType((*cacheCap)(nil), "test")
 	if got.Name() != "cacheCap" {
@@ -94,13 +94,13 @@ func TestCapabilityTokenAcceptsInterfaceElem(t *testing.T) {
 	}
 }
 
+// TestResourceTokenAcceptsConcreteElem checks that a resource token accepts a typed nil pointer to a
+// concrete type and panics for a value or a non-nil pointer.
 func TestResourceTokenAcceptsConcreteElem(t *testing.T) {
 	got := resourceType((*schemaRes)(nil), "test")
 	if got.Name() != "schemaRes" {
 		t.Fatalf("resourceType returned %s, want schemaRes", got)
 	}
-	// A resource token is still a typed nil pointer; only the "must be an
-	// interface" rule is lifted.
 	assertPanics(t, "must be a typed nil pointer", func() {
 		resourceType(schemaRes{}, "test")
 	})

@@ -16,9 +16,6 @@ func needs(tokens ...Token) []Requirement {
 	return out
 }
 
-// building is a module that delivers what it declares by constructing it, the
-// ordinary shape. A declarer without a New callback is a different case, and
-// the suites that mean it say so.
 func building(name string, provs ...Provision) Module {
 	return Module{
 		Name:     name,
@@ -53,6 +50,8 @@ func indexOf(t *testing.T, order []string, name string) int {
 	return i
 }
 
+// TestMissingProviderNoDeclarer checks that a requirement no module delivers fails as a missing
+// provider, naming the no-declarer case and a fixing action.
 func TestMissingProviderNoDeclarer(t *testing.T) {
 	consumer := Module{Name: "consumer", Requires: needs((*cacheCap)(nil))}
 
@@ -68,16 +67,8 @@ func TestMissingProviderNoDeclarer(t *testing.T) {
 	}
 }
 
-// TestFixingActionsListsWhatCanBeDone pins the actions a capability nothing
-// delivers leaves a host with: import an implementation, and -- once the
-// requiring module is named -- disable it. "Enable one that is already
-// imported" is not among them, because this failure is reached only when no
-// registered module declared the capability, so an implementation already
-// imported does not exist by construction.
-//
-// The single-action shape has to read as a sentence on its own: the Resolve
-// path reaches the failure with no requiring module to name, and joining one
-// action as though there were a list would leave a dangling ", or".
+// TestFixingActionsListsWhatCanBeDone pins the actions a capability nothing delivers leaves a host
+// with: import an implementation, and -- once the requiring module is named -- disable it.
 func TestFixingActionsListsWhatCanBeDone(t *testing.T) {
 	if got, want := fixingActions("", false), "Import an implementation of it"; got != want {
 		t.Errorf("with no requiring module, fixingActions is %q, want %q", got, want)
@@ -87,13 +78,8 @@ func TestFixingActionsListsWhatCanBeDone(t *testing.T) {
 	}
 }
 
-// TestFixingActionsForARequirerWithASuppliedInstance pins the actions that
-// differ when the module whose requirement went unmet has a supplied instance.
-// Leaving it out of the command is no action then: it is in the participating
-// set because the host supplied it, whatever the command tree says, so the way
-// to be rid of it is to stop supplying it. Its requirements were not expanded
-// with it either, so an implementation that gets imported still has to reach
-// the command, by the command tree or by a supplied instance of its own.
+// TestFixingActionsForARequirerWithASuppliedInstance pins the actions that differ when the module
+// whose requirement went unmet has a supplied instance.
 func TestFixingActionsForARequirerWithASuppliedInstance(t *testing.T) {
 	got := fixingActions("api", true)
 	for _, want := range []string{
@@ -112,12 +98,8 @@ func TestFixingActionsForARequirerWithASuppliedInstance(t *testing.T) {
 	}
 }
 
-// TestMissingProviderForAnExclusiveCapabilitySaysToNameOne pins the fix that
-// belongs to the closure's exception. A capability its providers claim
-// exclusively is not pulled into a command, so a consumer of it fails with an
-// instruction to name one implementation, or to supply an instance for one --
-// not with the instruction to import one, which is already satisfied and would
-// change nothing.
+// TestMissingProviderForAnExclusiveCapabilitySaysToNameOne pins the fix that belongs to the
+// closure's exception.
 func TestMissingProviderForAnExclusiveCapabilitySaysToNameOne(t *testing.T) {
 	consumer := Module{Name: "consumer", Requires: needs((*cacheCap)(nil))}
 	memory := building("memory", exclusive((*cacheCap)(nil)))
@@ -143,9 +125,8 @@ func TestMissingProviderForAnExclusiveCapabilitySaysToNameOne(t *testing.T) {
 	}
 }
 
-// TestMissingProviderTextCarriesDisableReason pins that a capability lost to
-// resolution reports why its provider is not running, not merely that nobody
-// provides it.
+// TestMissingProviderTextCarriesDisableReason pins that a capability lost to resolution reports
+// why its provider is not running, not merely that nobody provides it.
 func TestMissingProviderTextCarriesDisableReason(t *testing.T) {
 	provider := building("provider", provides((*cacheCap)(nil))...)
 	consumer := Module{Name: "consumer", Requires: needs((*cacheCap)(nil))}
@@ -165,11 +146,8 @@ func TestMissingProviderTextCarriesDisableReason(t *testing.T) {
 	}
 }
 
-// TestMissingProviderNamesTheRequiringModule pins that the failure says which
-// module asked for the capability. The available set is decided by imports, so
-// the module left unsatisfied may be one a dependency pulled in rather than one
-// the host wrote down, and disabling it is a fixing action no host can take
-// without its name.
+// TestMissingProviderNamesTheRequiringModule pins that the failure says which module asked for the
+// capability.
 func TestMissingProviderNamesTheRequiringModule(t *testing.T) {
 	consumer := Module{Name: "consumer", Requires: needs((*cacheCap)(nil))}
 
@@ -183,6 +161,8 @@ func TestMissingProviderNamesTheRequiringModule(t *testing.T) {
 	}
 }
 
+// TestOptionalMissingIsNotAnError checks that an absent optional requirement neither fails
+// planning nor enters the order.
 func TestOptionalMissingIsNotAnError(t *testing.T) {
 	consumer := Module{
 		Name:     "consumer",
@@ -198,6 +178,8 @@ func TestOptionalMissingIsNotAnError(t *testing.T) {
 	}
 }
 
+// TestOptionalPresentStillOrders checks that a present optional provider is placed before its
+// consumer.
 func TestOptionalPresentStillOrders(t *testing.T) {
 	provider := Module{Name: "zzz-provider", Provides: provides((*cacheCap)(nil))}
 	consumer := Module{
@@ -211,6 +193,8 @@ func TestOptionalPresentStillOrders(t *testing.T) {
 	}
 }
 
+// TestCycleDetectedNamingModules checks that a dependency cycle fails as ErrDependencyCycle,
+// naming every module on it and the way out.
 func TestCycleDetectedNamingModules(t *testing.T) {
 	a := Module{Name: "a", Requires: needs((*storeCap)(nil)), Provides: provides((*cacheCap)(nil))}
 	b := Module{Name: "b", Requires: needs((*cacheCap)(nil)), Provides: provides((*storeCap)(nil))}
@@ -229,6 +213,8 @@ func TestCycleDetectedNamingModules(t *testing.T) {
 	}
 }
 
+// TestSelfCycle checks that a module requiring its own capability fails as a
+// dependency cycle naming the module.
 func TestSelfCycle(t *testing.T) {
 	m := Module{
 		Name:     "self",
@@ -245,6 +231,8 @@ func TestSelfCycle(t *testing.T) {
 	}
 }
 
+// TestConsumerFollowsAllProviders checks that a requirement with several providers is placed after
+// all of them.
 func TestConsumerFollowsAllProviders(t *testing.T) {
 	one := Module{Name: "one", Provides: provides((*storeCap)(nil))}
 	two := Module{Name: "two", Provides: provides((*storeCap)(nil))}
@@ -257,12 +245,12 @@ func TestConsumerFollowsAllProviders(t *testing.T) {
 	}
 }
 
+// TestOrderStableAcrossRegistrationOrders checks that the construction order, ties broken by name,
+// does not depend on registration order.
 func TestOrderStableAcrossRegistrationOrders(t *testing.T) {
 	a := Module{Name: "alpha", Provides: provides((*cacheCap)(nil))}
 	b := Module{Name: "bravo", Requires: needs((*cacheCap)(nil)), Provides: provides((*storeCap)(nil))}
 	c := Module{Name: "charlie", Requires: needs((*storeCap)(nil))}
-	// delta shares bravo's tier: nothing orders the two, so the tie is
-	// broken by name and must not follow registration order.
 	d := Module{Name: "delta", Requires: needs((*cacheCap)(nil))}
 
 	want := mustPlan(t, a, b, c, d)
@@ -276,21 +264,13 @@ func TestOrderStableAcrossRegistrationOrders(t *testing.T) {
 			t.Fatalf("registration order changed the construction order: got %v, want %v", got, want)
 		}
 	}
-	// Each step takes the smallest name among those whose dependencies are
-	// already placed: alpha alone starts ready, placing it readies bravo and
-	// delta, and bravo wins that tie by name and readies charlie, which then
-	// wins against delta.
 	if !slices.Equal(want, []string{"alpha", "bravo", "charlie", "delta"}) {
 		t.Fatalf("order is %v, want ties broken by name at each step", want)
 	}
 }
 
-// TestAModuleWithoutNewIsAProviderLikeAnyOther pins that planning does not look
-// at where an instance comes from. A module that declares a capability and has
-// no New callback can only get its instance from the host, and once the host
-// supplied one it is a node like any other: ordered before the modules that
-// require it, whatever its name sorts like. Whether the instance is there is for
-// construction to check.
+// TestAModuleWithoutNewIsAProviderLikeAnyOther pins that planning does not look at where an
+// instance comes from.
 func TestAModuleWithoutNewIsAProviderLikeAnyOther(t *testing.T) {
 	provider := Module{Name: "zzz-supplied", Provides: provides((*readerCap)(nil))}
 	consumer := Module{Name: "aaa-consumer", Requires: needs((*readerCap)(nil))}
@@ -302,10 +282,8 @@ func TestAModuleWithoutNewIsAProviderLikeAnyOther(t *testing.T) {
 	}
 }
 
-// TestMissingProviderNamesAModuleThisCommandLeftOut pins the fourth cause
-// apart from the other three. A provider outside the participating set is
-// neither disabled nor ordered late, so reporting it as either gives an
-// instruction that changes nothing; the fix is to include it.
+// TestMissingProviderNamesAModuleThisCommandLeftOut pins the fourth cause apart from the other
+// three.
 func TestMissingProviderNamesAModuleThisCommandLeftOut(t *testing.T) {
 	consumer := Module{Name: "consumer", Requires: needs((*cacheCap)(nil))}
 	provider := building("left-out", provides((*cacheCap)(nil))...)
@@ -329,16 +307,7 @@ func TestMissingProviderNamesAModuleThisCommandLeftOut(t *testing.T) {
 	}
 }
 
-// TestMissingProviderTellsADeclarationLevelModuleApart pins the fifth cause
-// apart from the fourth.
-//
-// A module taken in for its declarations alone is taken in, so the advice the
-// fourth cause gives -- add it to the command's Include -- is false of it, and
-// following that advice constructs a module the command was written not to
-// build. What it cannot do is deliver: it is never constructed, however much it
-// declares. The two groups arrive from the same command's writing and lead to
-// opposite fixes, so a report that merged them would send half its readers the
-// wrong way.
+// TestMissingProviderTellsADeclarationLevelModuleApart pins the fifth cause apart from the fourth.
 func TestMissingProviderTellsADeclarationLevelModuleApart(t *testing.T) {
 	consumer := Module{Name: "consumer", Requires: needs((*cacheCap)(nil))}
 	declarer := building("collected", provides((*cacheCap)(nil))...)
@@ -360,21 +329,13 @@ func TestMissingProviderTellsADeclarationLevelModuleApart(t *testing.T) {
 	}
 }
 
-// TestTheDriveReachesTheDeclarationLevelInItsReport is the same report through
-// a drive rather than through the planner, so that the split a drive makes is
-// the split the report is built from.
-//
-// Nothing in the planner can tell the two groups of outside modules apart: it
-// is given them already divided, and this is what checks that the drive divides
-// them the way it says it does.
+// TestTheDriveReachesTheDeclarationLevelInItsReport is the same report through a drive rather than
+// through the planner, so that the split a drive makes is the split the report is built from.
 func TestTheDriveReachesTheDeclarationLevelInItsReport(t *testing.T) {
 	reg := New()
 	reg.Register(Module{Name: "consumer", Requires: needs((*cacheCap)(nil))})
 	reg.Register(building("collected", provides((*cacheCap)(nil))...))
 
-	// StageNew rather than the zero depth: a command that collects stances
-	// alone never resolves dependencies, and this is about the report a
-	// construction attempt makes.
 	err := reg.Drive(t.Context(), Drive{
 		Depth:         StageNew,
 		Participants:  []string{"consumer"},
@@ -393,13 +354,8 @@ func TestTheDriveReachesTheDeclarationLevelInItsReport(t *testing.T) {
 	}
 }
 
-// TestMissingProviderForAModuleWithoutNewPointsAtSupply pins the cause that
-// outranks the ones beside it. A declarer with no New callback builds no
-// instance in any stage, so whether this command includes it, took it in for its
-// declarations alone, or left it out by the exclusive-closure rule changes
-// nothing about it: the only way it gets an instance is the host supplying one.
-// A report that gave the fix of the group it sits in would send the reader to an
-// edit that cannot help, and that is the one thing this test is about.
+// TestMissingProviderForAModuleWithoutNewPointsAtSupply pins the cause that outranks the ones
+// beside it.
 func TestMissingProviderForAModuleWithoutNewPointsAtSupply(t *testing.T) {
 	consumer := Module{Name: "consumer", Requires: needs((*cacheCap)(nil))}
 	hostOnly := Module{Name: "host-only", Provides: provides((*cacheCap)(nil))}
@@ -445,11 +401,7 @@ func TestMissingProviderForAModuleWithoutNewPointsAtSupply(t *testing.T) {
 	}
 }
 
-// TestMissingProviderGivesEachDeclarerItsOwnFix pins that the report is made per
-// declarer. Two modules deliver the capability and neither is in the command:
-// the one that builds its own instance is fixed by including it, and the one
-// without a New callback only by supplying an instance, so each gets its own
-// fix and neither gets the other's.
+// TestMissingProviderGivesEachDeclarerItsOwnFix pins that the report is made per declarer.
 func TestMissingProviderGivesEachDeclarerItsOwnFix(t *testing.T) {
 	consumer := Module{Name: "consumer", Requires: needs((*cacheCap)(nil))}
 	builds := building("builds", provides((*cacheCap)(nil))...)
@@ -478,12 +430,8 @@ func TestMissingProviderGivesEachDeclarerItsOwnFix(t *testing.T) {
 	}
 }
 
-// TestMissingProviderKeepsTheDisableReasonForAModuleWithoutNew pins the
-// exception to the rule above. A declarer that resolution disabled is not
-// reported for what its descriptor lacks: it is not running, and why it is not
-// running is what the reader needs; supplying an instance for it would bring it
-// into the command with a fixed stance instead of the one that made it stand
-// down.
+// TestMissingProviderKeepsTheDisableReasonForAModuleWithoutNew pins the exception to the rule
+// above.
 func TestMissingProviderKeepsTheDisableReasonForAModuleWithoutNew(t *testing.T) {
 	provider := Module{Name: "provider", Provides: provides((*cacheCap)(nil))}
 	consumer := Module{Name: "consumer", Requires: needs((*cacheCap)(nil))}
@@ -504,12 +452,8 @@ func TestMissingProviderKeepsTheDisableReasonForAModuleWithoutNew(t *testing.T) 
 	}
 }
 
-// TestMissingProviderNamesWhenTheRequirerHasASuppliedInstance pins that the
-// report tells a requiring module with a supplied instance apart, from the
-// registry's record of what was supplied. It is in the command because the host
-// supplied it, so leaving it out of the command is no fix, and its requirements
-// were not expanded with it, so a provider that is imported or registered still
-// has to reach the command.
+// TestMissingProviderNamesWhenTheRequirerHasASuppliedInstance checks that a missing provider's
+// message distinguishes a supplied requirer, a left-out provider and a named one.
 func TestMissingProviderNamesWhenTheRequirerHasASuppliedInstance(t *testing.T) {
 	consumer := Module{Name: "consumer", Requires: needs((*cacheCap)(nil))}
 	origins := map[string]origin{"consumer": {site: "example.com/host", supplied: true}}
@@ -572,10 +516,8 @@ func TestMissingProviderNamesWhenTheRequirerHasASuppliedInstance(t *testing.T) {
 	})
 }
 
-// TestDependencyOrderPlacesProvidersBeforeTheirRequirers pins the rule the
-// release of unreached supplied instances follows, which is the one construction
-// follows: among the modules given, a provider comes before whatever requires
-// what it delivers, and the rest go by name.
+// TestDependencyOrderPlacesProvidersBeforeTheirRequirers checks that each provider precedes its
+// requirer whatever order the modules are given in.
 func TestDependencyOrderPlacesProvidersBeforeTheirRequirers(t *testing.T) {
 	a := Module{Name: "alpha", Requires: needs((*cacheCap)(nil))}
 	b := Module{Name: "bravo", Requires: needs((*storeCap)(nil)), Provides: provides((*cacheCap)(nil))}
@@ -589,10 +531,8 @@ func TestDependencyOrderPlacesProvidersBeforeTheirRequirers(t *testing.T) {
 	}
 }
 
-// TestDependencyOrderValidatesNothing pins that the order is computed over the
-// modules given and no others. A requirement none of them provides is not an
-// error here, since this is the order instances are released in and nothing in
-// it can fail over a module outside the list, and neither is a cycle.
+// TestDependencyOrderValidatesNothing pins that the order is computed over the modules given and
+// no others.
 func TestDependencyOrderValidatesNothing(t *testing.T) {
 	needsOutsider := Module{Name: "needs-outsider", Requires: needs((*readerCap)(nil))}
 	optional := Module{Name: "optional", Requires: []Requirement{{Token: (*cacheCap)(nil), Optional: true}}}
@@ -603,11 +543,7 @@ func TestDependencyOrderValidatesNothing(t *testing.T) {
 	}
 }
 
-// TestDependencyOrderKeepsTheModulesOnACycle pins that a cycle does not drop its
-// members. Planning fails over a cycle, but the order here is a list of
-// instances to release, and an instance on a cycle is still an instance. The
-// modules the order could place come first, in dependency order; the ones on the
-// cycle, and the one that needs them, follow by name.
+// TestDependencyOrderKeepsTheModulesOnACycle pins that a cycle does not drop its members.
 func TestDependencyOrderKeepsTheModulesOnACycle(t *testing.T) {
 	root := Module{Name: "zz-root", Provides: provides((*readerCap)(nil))}
 	x := Module{Name: "x", Requires: needs((*storeCap)(nil)), Provides: provides((*cacheCap)(nil))}

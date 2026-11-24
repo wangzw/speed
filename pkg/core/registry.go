@@ -8,78 +8,39 @@ import (
 	"sync"
 )
 
-// ProcessRegistry is the process-level registry. Registrations made in init
-// land here, so the available set is decided by what the binary imports.
+// ProcessRegistry is the process-level registry.
+// Registrations made in init land here, so the available set is decided by what the binary
+// imports.
 var ProcessRegistry = New()
 
-// Registry holds registrations, the instances of the registered modules, and the
-// lifecycle driver.
-//
-// The descriptor part is written before Run and read-only afterwards. The
-// driver itself is single-goroutine: stages are strictly ordered and callbacks
-// within a stage run one at a time.
+// Registry holds registrations, the instances of the registered modules, and the lifecycle driver.
+// The descriptor part is written before Run and read-only afterwards.
 type Registry struct {
 	mu sync.RWMutex
 
-	order []string                 // registration order
-	mods  map[string]*registration // by module name
+	order []string
+	mods  map[string]*registration
 
-	// instances holds each module's instance by module name: the product its
-	// New constructed, or the instance the host supplied for it. A module with
-	// neither has no entry, and a lookup finds nothing for it.
-	instances map[string]any
-	// supplied records, by module name, the instances the host handed in
-	// before the drive. The instance itself is in instances from the moment
-	// it is supplied; this keeps what a later conflict has to name, and tells
-	// the drive which modules never run Prepare and New.
-	supplied map[string]suppliedInstance
-	// suppliedObjects maps the identity of each supplied object to the module
-	// it was supplied for, which is how one object supplied twice is found.
+	instances       map[string]any
+	supplied        map[string]suppliedInstance
 	suppliedObjects map[objectKey]string
-	// lifecycle lists the modules that entered construction, in the order
-	// they did. Rollback walks it backwards. A module whose instance the host
-	// supplied enters it when construction reaches the module, and one the
-	// drive never reached is released as though it had entered last (see
-	// constructionOrder).
-	lifecycle []string
+	lifecycle       []string
 
-	// enablement holds the verdict resolution reached, keyed by module name.
-	// It is nil until resolution has run.
 	enablement map[string]Enablement
 
-	// participating holds the modules this drive took in at run level and the
-	// modules the host supplied an instance for, keyed by name. It is settled
-	// when the drive begins, ahead of the stances, because the command tree
-	// already knows it; nil until then. It is deliberately not the same thing
-	// as the key set of enablement, which resolution fills later and which
-	// reports a module the drive left out as disabled rather than absent.
 	participating map[string]bool
-	// declaringOnly holds the modules this drive reached for their
-	// declarations alone, keyed by name, with the adjustments the host
-	// made to each. A name in both maps is not possible: a participant is
-	// a participant whatever else it was named as. Nil until a drive
-	// begins.
 	declaringOnly map[string]Declaration
 
-	running bool
-	// constructing records that this drive has begun constructing. Until it
-	// has, no module's New has run, and a lookup that finds no instance is not
-	// a matter of construction order.
+	running      bool
 	constructing bool
 }
 
-// registration is a descriptor plus where it was registered from. The other
-// party to a name collision may have been imported by a dependency and be
-// absent from the host's own code, so the module name alone cannot locate it.
 type registration struct {
 	module Module
-	site   string // package path of the caller of Register
+	site   string
 }
 
-// New returns an independent registry. It does not inherit the registrations
-// init made on ProcessRegistry: whatever is to be assembled in it has to be
-// registered by hand, which is what makes it the way to assemble a small group
-// of modules in a test.
+// New returns an independent registry.
 func New() *Registry {
 	return &Registry{
 		mods:            make(map[string]*registration),
@@ -89,19 +50,8 @@ func New() *Registry {
 	}
 }
 
-// Register records a module descriptor. Modules call it from their own init.
-//
-// A duplicate name panics, and so does an illegal token in Requires or
-// Provides: both are programming errors, and both surface at the moment of
-// registration rather than somewhere downstream. So does a call made once the
-// drive has started, from a stage, from the action or after the drive
-// returned: descriptors and the resources they carry are fixed before the
-// drive, and a query answered during it would otherwise change under the run
-// that asked.
-//
-// Register does not look at the instances already supplied. An instance
-// belongs to the module it was assigned to when Supply ran, and a module
-// registered afterwards takes no part in that.
+// Register records a module descriptor.
+// Modules call it from their own init.
 func (r *Registry) Register(m Module) {
 	site := callerPackage(3)
 	if m.Name == "" {
@@ -134,16 +84,11 @@ func (r *Registry) Register(m Module) {
 	r.order = append(r.order, m.Name)
 }
 
-// origin is what the registry recorded about a module besides its descriptor:
-// the package that called Register for it, and whether the host supplied its
-// instance. A failure that names a module the host never wrote down can say
-// where it came in, which the name alone does not.
 type origin struct {
 	site     string
 	supplied bool
 }
 
-// origins maps each registered module to its origin.
 func (r *Registry) origins() map[string]origin {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -155,11 +100,7 @@ func (r *Registry) origins() map[string]origin {
 	return out
 }
 
-// Modules gives the full set of descriptors. A capability with a single
-// provider can be traced back to its module from here; several providers give
-// only the candidate set, and routing by name belongs to the capability
-// interface itself. Cross-cutting mechanisms that collect by type use
-// Resources instead.
+// Modules gives the full set of descriptors.
 func (r *Registry) Modules() []Module {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -170,8 +111,8 @@ func (r *Registry) Modules() []Module {
 	return out
 }
 
-// Lookup returns the descriptor registered under a name. Descriptors do not
-// change once registered, so it is usable in any stage.
+// Lookup returns the descriptor registered under a name.
+// Descriptors do not change once registered, so it is usable in any stage.
 func (r *Registry) Lookup(name string) (Module, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -182,8 +123,6 @@ func (r *Registry) Lookup(name string) (Module, bool) {
 	return reg.module, true
 }
 
-// callerPackage reports the package path of the frame skip levels above
-// runtime.Callers, which is the caller of the exported method that asked.
 func callerPackage(skip int) string {
 	var pcs [1]uintptr
 	if runtime.Callers(skip, pcs[:]) == 0 {
@@ -196,16 +135,6 @@ func callerPackage(skip int) string {
 	return packageOf(frame.Function)
 }
 
-// packageOf extracts the import path of the package from a runtime function
-// name, which reads like "pkg/path.Func", "pkg/path.(*T).Method" or
-// "pkg/path.Func[...]". The path ends at the first dot after the last slash:
-// the linker writes a dot in the last element of the path as %2e, so that dot
-// is the separator and none is inside the path.
-//
-// The path comes back as it is written in an import, with those escapes undone.
-// That is the form reflect.Type.PkgPath reports, which a registration site is
-// compared with when an instance is claimed by the package of its type, and the
-// form a message shows: the same package reads the same wherever it appears.
 func packageOf(function string) string {
 	dir, rest := "", function
 	if i := strings.LastIndex(function, "/"); i >= 0 {
@@ -217,9 +146,6 @@ func packageOf(function string) string {
 	return unescapeSymbol(dir + rest)
 }
 
-// unescapeSymbol undoes the %xx escapes the linker writes into a symbol name
-// for a dot in the last element of a package path, and for a space, a control
-// byte, a quote, a percent sign and any byte outside ASCII.
 func unescapeSymbol(s string) string {
 	if !strings.Contains(s, "%") {
 		return s

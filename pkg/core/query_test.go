@@ -8,9 +8,6 @@ import (
 	"testing"
 )
 
-// seed registers a module and, when instance is non-nil, records it as that
-// module's product. The lifecycle driver does this in New; these suites are
-// white-box so that queries can be pinned before the driver exists.
 func seed(t *testing.T, r *Registry, m Module, instance any) {
 	t.Helper()
 	r.Register(m)
@@ -27,9 +24,8 @@ func provides(tokens ...Token) []Provision {
 	return out
 }
 
-// TestResolveIgnoresUndeclaredImplementation pins the declaration as the sole
-// authority: a product that happens to implement a capability its module never
-// declared is invisible.
+// TestResolveIgnoresUndeclaredImplementation pins the declaration as the sole authority: a product
+// that happens to implement a capability its module never declared is invisible.
 func TestResolveIgnoresUndeclaredImplementation(t *testing.T) {
 	reg := New()
 	seed(t, reg, Module{Name: "undeclared"}, &product{id: "undeclared"})
@@ -40,6 +36,8 @@ func TestResolveIgnoresUndeclaredImplementation(t *testing.T) {
 	}
 }
 
+// TestResolveAmbiguous checks that a capability two modules deliver fails as ErrAmbiguousProvider
+// naming both.
 func TestResolveAmbiguous(t *testing.T) {
 	reg := New()
 	seed(t, reg, Module{Name: "one", Provides: provides((*cacheCap)(nil))}, &product{id: "one"})
@@ -56,9 +54,8 @@ func TestResolveAmbiguous(t *testing.T) {
 	}
 }
 
-// TestResolveDoesNotFilterByRequires pins that Requires orders construction
-// and validates it, and does not limit what a module can see: a dependency of
-// a dependency never appears in one's own declarations.
+// TestResolveDoesNotFilterByRequires checks that Resolve returns a constructed instance whose
+// module never declared the capability.
 func TestResolveDoesNotFilterByRequires(t *testing.T) {
 	reg := New()
 	seed(t, reg, Module{Name: "c"}, &product{id: "c"})
@@ -73,12 +70,8 @@ func TestResolveDoesNotFilterByRequires(t *testing.T) {
 	}
 }
 
-// TestResolveNamesLaterConstructedProvider separates "constructed later" from
-// "nobody delivers it": the fixing actions differ.
-//
-// The case is a real one: construction has begun, and the provider sorts after
-// the module looking it up, which declared no requirement that would order it
-// first.
+// TestResolveNamesLaterConstructedProvider separates "constructed later" from "nobody delivers
+// it": the fixing actions differ.
 func TestResolveNamesLaterConstructedProvider(t *testing.T) {
 	reg := New()
 	var err error
@@ -116,12 +109,8 @@ func TestResolveNamesLaterConstructedProvider(t *testing.T) {
 	}
 }
 
-// TestResolveBeforeAnyProductExistsSaysSo pins the lookups that no ordering
-// can satisfy, because nothing has been or will be constructed when they are
-// made: before the drive, in Prepare, and in the action of a drive that stops
-// at StagePrepare. Telling those callers to declare the capability in Requires
-// sends them after a fix that changes nothing, since Requires orders
-// construction and none is under way.
+// TestResolveBeforeAnyProductExistsSaysSo checks that a missing provider before construction, in
+// Prepare or before the action is reported with that context, not as a construction-order problem.
 func TestResolveBeforeAnyProductExistsSaysSo(t *testing.T) {
 	provider := Module{
 		Name:     "provider",
@@ -129,12 +118,8 @@ func TestResolveBeforeAnyProductExistsSaysSo(t *testing.T) {
 		New:      func(context.Context, *Registry) (any, error) { return &product{id: "p"}, nil },
 	}
 	cases := map[string]struct {
-		lookup func(t *testing.T) error
-		says   string
-		// supplied is the part of the explanation that says an instance the
-		// host supplied is the one thing that does exist at that moment. A
-		// reader told only that nothing is built would look for a way to
-		// build it, where the way is to supply it.
+		lookup   func(t *testing.T) error
+		says     string
 		supplied string
 	}{
 		"before the drive": {
@@ -207,10 +192,8 @@ func TestResolveBeforeAnyProductExistsSaysSo(t *testing.T) {
 	}
 }
 
-// TestResolveNamesTheExclusiveFix pins the fix the planner reports on the
-// lookup path too: a capability its providers claim exclusively is not pulled
-// into a command, so a lookup that finds no provider tells the host to name one
-// implementation rather than sending it after an import it already has.
+// TestResolveNamesTheExclusiveFix checks that a capability claimed exclusively by modules outside
+// the drive names them and the two ways to fix it.
 func TestResolveNamesTheExclusiveFix(t *testing.T) {
 	reg := New()
 	reg.Register(building("memory", exclusive((*cacheCap)(nil))))
@@ -231,10 +214,8 @@ func TestResolveNamesTheExclusiveFix(t *testing.T) {
 	}
 }
 
-// TestResolveFindsASuppliedInstanceFromSupplyOn pins that a supplied instance is
-// the instance of its module in the registry's own table, so a lookup finds it
-// with no drive running, and that it is found by the module's declaration: the
-// host named no capability.
+// TestResolveFindsASuppliedInstanceFromSupplyOn checks that Resolve and ResolveAll return a supplied
+// instance as soon as Supply records it.
 func TestResolveFindsASuppliedInstanceFromSupplyOn(t *testing.T) {
 	reg := New()
 	reg.Register(Module{Name: "host-built", Provides: provides((*cacheCap)(nil))})
@@ -253,10 +234,8 @@ func TestResolveFindsASuppliedInstanceFromSupplyOn(t *testing.T) {
 	}
 }
 
-// TestResolveAllPutsSuppliedAndBuiltInstancesInOneNameOrder pins that a supplied
-// instance is not a second kind of source with a place of its own in the
-// result: it takes the place its module's name gives it among the instances the
-// drive constructed.
+// TestResolveAllPutsSuppliedAndBuiltInstancesInOneNameOrder checks that ResolveAll returns built
+// and supplied instances together, ordered by module name.
 func TestResolveAllPutsSuppliedAndBuiltInstancesInOneNameOrder(t *testing.T) {
 	reg := New()
 	seed(t, reg, Module{Name: "alpha", Provides: provides((*cacheCap)(nil))}, &product{id: "alpha"})
@@ -274,10 +253,8 @@ func TestResolveAllPutsSuppliedAndBuiltInstancesInOneNameOrder(t *testing.T) {
 	}
 }
 
-// TestResolveIsAmbiguousBetweenASuppliedAndABuiltInstance pins the single-valued
-// rule across the two origins. Nothing special-cases a supplied instance, so one
-// capability with a supplied instance and a constructed one has two providers
-// with an instance, and a single-valued lookup is ambiguous like any other.
+// TestResolveIsAmbiguousBetweenASuppliedAndABuiltInstance pins the single-valued rule across the
+// two origins.
 func TestResolveIsAmbiguousBetweenASuppliedAndABuiltInstance(t *testing.T) {
 	reg := New()
 	seed(t, reg, Module{Name: "built", Provides: provides((*cacheCap)(nil))}, &product{id: "built"})
@@ -295,16 +272,8 @@ func TestResolveIsAmbiguousBetweenASuppliedAndABuiltInstance(t *testing.T) {
 	}
 }
 
-// TestResolveForAModuleWithoutNewSaysSupplyAtEveryMoment pins the cause that
-// outranks the timing ones. A module that declares the capability and has no New
-// callback never builds an instance, so telling the caller that nothing is built
-// yet, or that the provider is constructed later, sends it after a fix that
-// changes nothing: the instance can only come from the host.
-//
-// It outranks the module's place in the drive as well. A module the command did
-// not include, and one it reached for its declarations alone, are no better off:
-// including it, or taking it in at run level, gives it no instance either, so
-// the advice to do so is as empty as the timing ones.
+// TestResolveForAModuleWithoutNewSaysSupplyAtEveryMoment pins the cause that outranks the timing
+// ones.
 func TestResolveForAModuleWithoutNewSaysSupplyAtEveryMoment(t *testing.T) {
 	hostOnly := Module{Name: "host-only", Provides: provides((*cacheCap)(nil))}
 	cases := map[string]struct {
@@ -371,9 +340,6 @@ func TestResolveForAModuleWithoutNewSaysSupplyAtEveryMoment(t *testing.T) {
 					},
 				})
 				reg.Register(Module{Name: "later", Provides: provides((*cacheCap)(nil))})
-				// The drive fails when it reaches the module that delivers
-				// nothing; what the earlier module's lookup saw is what is
-				// measured.
 				_ = reg.Drive(t.Context(), Drive{Depth: StageNew, Participants: []string{"early", "later"}})
 				return err
 			},
@@ -444,6 +410,8 @@ func TestResolveForAModuleWithoutNewSaysSupplyAtEveryMoment(t *testing.T) {
 	}
 }
 
+// TestResolveAllSortedByModuleName checks that ResolveAll lists instances in module-name order
+// whatever order the modules were seeded in.
 func TestResolveAllSortedByModuleName(t *testing.T) {
 	reg := New()
 	for _, name := range []string{"zeta", "alpha", "mid"} {
@@ -459,6 +427,8 @@ func TestResolveAllSortedByModuleName(t *testing.T) {
 	}
 }
 
+// TestResolveAllEmptyReturnsEmptySlice checks that ResolveAll with no instance returns an empty
+// slice, not nil.
 func TestResolveAllEmptyReturnsEmptySlice(t *testing.T) {
 	got := New().ResolveAll((*cacheCap)(nil))
 	if got == nil {
@@ -469,6 +439,8 @@ func TestResolveAllEmptyReturnsEmptySlice(t *testing.T) {
 	}
 }
 
+// TestResourcesMatchByAssignabilityInterface checks that a resource target interface collects every
+// declaration implementing it.
 func TestResourcesMatchByAssignabilityInterface(t *testing.T) {
 	reg := New()
 	seed(t, reg, Module{Name: "a", Resources: []any{schemaRes{Namespace: "cache"}}}, nil)
@@ -481,6 +453,8 @@ func TestResourcesMatchByAssignabilityInterface(t *testing.T) {
 	}
 }
 
+// TestResourcesMatchByAssignabilityConcrete checks that a concrete resource target collects only
+// declarations of that type.
 func TestResourcesMatchByAssignabilityConcrete(t *testing.T) {
 	reg := New()
 	seed(t, reg, Module{Name: "a", Resources: []any{schemaRes{Namespace: "cache"}}}, nil)
@@ -495,6 +469,8 @@ func TestResourcesMatchByAssignabilityConcrete(t *testing.T) {
 	}
 }
 
+// TestResourcesCarryModuleName checks that each collected resource is tagged with its declaring
+// module's name.
 func TestResourcesCarryModuleName(t *testing.T) {
 	reg := New()
 	seed(t, reg, Module{Name: "declarer", Resources: []any{schemaRes{Namespace: "cache"}}}, nil)
@@ -505,6 +481,7 @@ func TestResourcesCarryModuleName(t *testing.T) {
 	}
 }
 
+// TestResourcesSortedByModuleName checks that Resources sorts declarations by module name.
 func TestResourcesSortedByModuleName(t *testing.T) {
 	reg := New()
 	for _, name := range []string{"zeta", "alpha", "mid"} {
@@ -520,8 +497,8 @@ func TestResourcesSortedByModuleName(t *testing.T) {
 	}
 }
 
-// TestResourcesKeepsMultipleFromOneModule pins what ADR-module-resources
-// leaves to the consumer: the mechanism itself does not cap the count.
+// TestResourcesKeepsMultipleFromOneModule checks that Resources keeps every declaration of one
+// module in declaration order.
 func TestResourcesKeepsMultipleFromOneModule(t *testing.T) {
 	reg := New()
 	seed(t, reg, Module{
@@ -538,10 +515,7 @@ func TestResourcesKeepsMultipleFromOneModule(t *testing.T) {
 	}
 }
 
-// TestResourcesConcreteTargetRequiresTypeIdentity pins the concrete half of
-// the match rule. A []string is assignable to a named type over []string but
-// not assertable to it, so selecting by assignability hands the generic
-// wrapper a value its assertion cannot take.
+// TestResourcesConcreteTargetRequiresTypeIdentity pins the concrete half of the match rule.
 func TestResourcesConcreteTargetRequiresTypeIdentity(t *testing.T) {
 	reg := New()
 	seed(t, reg, Module{Name: "underlying", Resources: []any{[]string{"a", "b"}}}, nil)
@@ -554,9 +528,8 @@ func TestResourcesConcreteTargetRequiresTypeIdentity(t *testing.T) {
 	}
 }
 
-// TestResourcesConcreteTargetRejectsChannelDirection covers the second shape
-// of the same gap: a bidirectional channel is assignable to a receive-only
-// channel type, and again not assertable to it.
+// TestResourcesConcreteTargetRejectsChannelDirection checks that a channel direction a value does
+// not have collects nothing, through both the method and the generic function.
 func TestResourcesConcreteTargetRejectsChannelDirection(t *testing.T) {
 	reg := New()
 	seed(t, reg, Module{Name: "signals", Resources: []any{make(chan int)}}, nil)
@@ -569,9 +542,8 @@ func TestResourcesConcreteTargetRejectsChannelDirection(t *testing.T) {
 	}
 }
 
-// TestResourcesInterfaceTargetKeepsAssignability pins that tightening the
-// concrete half leaves the interface half alone: implementations of the target
-// still match, whatever their own type, and a non-implementor still does not.
+// TestResourcesInterfaceTargetKeepsAssignability checks that an interface resource target collects
+// both implementations and skips an unrelated value.
 func TestResourcesInterfaceTargetKeepsAssignability(t *testing.T) {
 	reg := New()
 	seed(t, reg, Module{Name: "a", Resources: []any{schemaRes{Namespace: "cache"}}}, nil)
@@ -587,6 +559,8 @@ func TestResourcesInterfaceTargetKeepsAssignability(t *testing.T) {
 	}
 }
 
+// TestGenericResolveAllPanicsOnNonInterface checks that ResolveAll with a concrete type argument
+// panics, explaining that the token must point to an interface.
 func TestGenericResolveAllPanicsOnNonInterface(t *testing.T) {
 	reg := New()
 	assertPanics(t, "must point to an interface", func() {
@@ -594,6 +568,8 @@ func TestGenericResolveAllPanicsOnNonInterface(t *testing.T) {
 	})
 }
 
+// TestGenericResourcesAllowsConcreteType checks that Resources accepts a concrete type argument and
+// returns its declarations.
 func TestGenericResourcesAllowsConcreteType(t *testing.T) {
 	reg := New()
 	seed(t, reg, Module{Name: "a", Resources: []any{schemaRes{Namespace: "cache"}}}, nil)
@@ -604,6 +580,8 @@ func TestGenericResourcesAllowsConcreteType(t *testing.T) {
 	}
 }
 
+// TestGenericResolveReturnsTypedInstance checks that Resolve returns the instance typed as the
+// capability interface.
 func TestGenericResolveReturnsTypedInstance(t *testing.T) {
 	reg := New()
 	seed(t, reg, Module{Name: "a", Provides: provides((*cacheCap)(nil))}, &product{id: "a"})
@@ -617,6 +595,7 @@ func TestGenericResolveReturnsTypedInstance(t *testing.T) {
 	}
 }
 
+// TestEnablementMissingName checks that Enablement reports false for a name with no verdict.
 func TestEnablementMissingName(t *testing.T) {
 	reg := New()
 	reg.enablement = map[string]Enablement{"known": {State: StateEnabled}}
@@ -626,6 +605,8 @@ func TestEnablementMissingName(t *testing.T) {
 	}
 }
 
+// TestEnablementReportsDisabledWithReason checks that Enablement returns a disabled verdict with
+// its reason.
 func TestEnablementReportsDisabledWithReason(t *testing.T) {
 	reg := New()
 	reg.enablement = map[string]Enablement{
@@ -641,8 +622,8 @@ func TestEnablementReportsDisabledWithReason(t *testing.T) {
 	}
 }
 
-// TestEnablementBeforeResolutionReportsNotReady pins that the query promises
-// the final verdict, and before resolution there is none to give.
+// TestEnablementBeforeResolutionReportsNotReady pins that the query promises the final verdict,
+// and before resolution there is none to give.
 func TestEnablementBeforeResolutionReportsNotReady(t *testing.T) {
 	reg := New()
 	reg.Register(Module{Name: "pending"})
@@ -652,12 +633,8 @@ func TestEnablementBeforeResolutionReportsNotReady(t *testing.T) {
 	}
 }
 
-// TestResolveMatchesCapabilityByTypeIdentity pins how one capability token
-// matches another: by the identity of the element type, not by assignability.
-// A module delivering superCacheCap delivers one capability, and a request for
-// the capability it embeds does not see it -- matching by assignability would
-// put that module in two groups at once, and exclusive resolution could then
-// not name the providers of a capability at all.
+// TestResolveMatchesCapabilityByTypeIdentity pins how one capability token matches another: by the
+// identity of the element type, not by assignability.
 func TestResolveMatchesCapabilityByTypeIdentity(t *testing.T) {
 	reg := New()
 	seed(t, reg, Module{Name: "super", Provides: provides((*superCacheCap)(nil))}, &product{id: "super"})
@@ -674,14 +651,7 @@ func TestResolveMatchesCapabilityByTypeIdentity(t *testing.T) {
 	}
 }
 
-// TestADriveThatNamesOneModuleTwiceKeepsBothAdjustments pins where the
-// declaration list is folded.
-//
-// The list is literal and a host builds one by hand: a registry assembled in a
-// test is given a Drive directly, and nothing about that is a misuse. So what a
-// Drive means cannot be left to whichever producer happened to write it -- two
-// entries are two things somebody asked for, and a fold that kept only one of
-// them would drop a request from a Drive that was accepted without complaint.
+// TestADriveThatNamesOneModuleTwiceKeepsBothAdjustments pins where the declaration list is folded.
 func TestADriveThatNamesOneModuleTwiceKeepsBothAdjustments(t *testing.T) {
 	reg := New()
 	reg.Register(Module{Name: "collected"})
@@ -698,14 +668,8 @@ func TestADriveThatNamesOneModuleTwiceKeepsBothAdjustments(t *testing.T) {
 	}
 }
 
-// TestAModuleADriveNamesAtBothLevelsIsAParticipant pins which level wins when
-// one Drive names a module as both.
-//
-// It runs, so the reading that treats it as reached for its declarations alone
-// never arises, and the adjustments that came with that naming go with it. What
-// the drive must not do is answer both ways about one module: a consumption
-// point reading the two queries would then see a module it runs and a module
-// whose declarations are in force, and take the second to mean it does not.
+// TestAModuleADriveNamesAtBothLevelsIsAParticipant pins which level wins when one Drive names a
+// module as both.
 func TestAModuleADriveNamesAtBothLevelsIsAParticipant(t *testing.T) {
 	reg := New()
 	reg.Register(Module{Name: "both"})

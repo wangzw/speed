@@ -1,31 +1,19 @@
 package core
 
-// The generic free functions below exist because Go does not allow methods to
-// carry type parameters. They build the capability or resource token
-// themselves and complete the assertion, and carry no semantics beyond the
-// method they wrap: what they buy is type safety at the call site, not fewer
-// characters.
-
 // Resolve returns the instance of the one module that delivers capability T.
 // It is the type-safe form of (*Registry).Resolve, written core.Resolve[KV](reg).
-//
-// T must be an interface: a capability is a set of methods, so core.Resolve[int]
-// panics just as a concrete token in a declaration does.
 func Resolve[T any](r *Registry) (T, error) {
 	var zero T
 	v, err := r.Resolve(token[T]())
 	if err != nil {
 		return zero, err
 	}
-	//nolint:errcheck // the assertion cannot fail: Resolve matched the module
-	// against this very token[T], so a value that does not implement T would be
-	// a defect in the registry, not a case the caller could handle. The panic
-	// reports it; the comma-ok form would hand back a zero T and hide it.
+	//nolint:errcheck // Resolve matched this very token[T]; a mismatch is a registry defect the panic reports, not a caller case.
 	return v.(T), nil
 }
 
-// ResolveAll returns every constructed instance that delivers capability T, in
-// module-name order. T must be an interface.
+// ResolveAll returns every constructed instance that delivers capability T, in module-name order.
+// T must be an interface.
 func ResolveAll[T any](r *Registry) []T {
 	values := r.ResolveAll(token[T]())
 	out := make([]T, 0, len(values))
@@ -51,7 +39,6 @@ func Resources[T any](r *Registry) []Resource[T] {
 	return out
 }
 
-// token builds the typed nil pointer that designates T.
 func token[T any]() Token {
 	var p *T
 	return p

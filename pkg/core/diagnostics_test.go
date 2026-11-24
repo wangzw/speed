@@ -18,6 +18,8 @@ func diagnosticLines(t *testing.T, final map[string]Enablement) []string {
 	return strings.Split(text, "\n")
 }
 
+// TestDiagnosticsListsNotEnabledModuleWithItsReason checks that a disabled module writes one
+// diagnostic line naming it and its reason.
 func TestDiagnosticsListsNotEnabledModuleWithItsReason(t *testing.T) {
 	lines := diagnosticLines(t, map[string]Enablement{
 		"remote": {State: StateDisabled, Reason: "no connection address configured"},
@@ -32,10 +34,8 @@ func TestDiagnosticsListsNotEnabledModuleWithItsReason(t *testing.T) {
 	}
 }
 
-// TestDiagnosticsListsResolutionDisabledModuleWithResolutionReason pins that
-// the reason shown is the one the verdict carries. A participant misses the
-// enabled set either by standing itself down with its own reason or by losing
-// resolution with the reason resolution gave; this is the second.
+// TestDiagnosticsListsResolutionDisabledModuleWithResolutionReason pins that the reason shown is
+// the one the verdict carries.
 func TestDiagnosticsListsResolutionDisabledModuleWithResolutionReason(t *testing.T) {
 	final := mustResolve(t,
 		stated("memory", StateAuto, "", exclusive((*cacheCap)(nil))),
@@ -53,9 +53,8 @@ func TestDiagnosticsListsResolutionDisabledModuleWithResolutionReason(t *testing
 	}
 }
 
-// TestDiagnosticsCarriesTheReasonAModuleStated pins the self-disabled side: the
-// line shows the reason the module gave, unchanged, because that is the fact
-// core propagates.
+// TestDiagnosticsCarriesTheReasonAModuleStated pins that a self-disabled
+// module's line shows the reason it gave, unchanged.
 func TestDiagnosticsCarriesTheReasonAModuleStated(t *testing.T) {
 	final := mustResolve(t,
 		stated("off", StateDisabled, "GitHub app credentials not configured"),
@@ -72,6 +71,8 @@ func TestDiagnosticsCarriesTheReasonAModuleStated(t *testing.T) {
 	}
 }
 
+// TestDiagnosticsOmitsEnabledModules checks that enabled and auto modules write no diagnostic
+// line, while a disabled one does.
 func TestDiagnosticsOmitsEnabledModules(t *testing.T) {
 	lines := diagnosticLines(t, map[string]Enablement{
 		"running": {State: StateEnabled},
@@ -83,6 +84,8 @@ func TestDiagnosticsOmitsEnabledModules(t *testing.T) {
 	}
 }
 
+// TestDiagnosticsLinesAreStableAndSorted checks that diagnostic lines carry the writer's prefix and
+// are sorted by module name.
 func TestDiagnosticsLinesAreStableAndSorted(t *testing.T) {
 	lines := diagnosticLines(t, map[string]Enablement{
 		"zeta":  {State: StateDisabled, Reason: "z"},
@@ -105,8 +108,8 @@ func TestDiagnosticsLinesAreStableAndSorted(t *testing.T) {
 	}
 }
 
-// TestEnablementQueryMatchesDiagnostics pins the query as the programmatic
-// route to the same information the diagnostics put on stderr.
+// TestEnablementQueryMatchesDiagnostics pins the query as the programmatic route to the same
+// information the diagnostics put on stderr.
 func TestEnablementQueryMatchesDiagnostics(t *testing.T) {
 	final := mustResolve(t,
 		stated("memory", StateAuto, "", exclusive((*cacheCap)(nil))),

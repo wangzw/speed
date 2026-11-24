@@ -9,22 +9,13 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// TestUndeliveredCapabilityNamesWhichWayNothingWasBuilt separates the two ways a
-// module whose New did not run leaves the instance nil. One module has no New
-// callback at all; the other has one and it returned no product. Both leave
-// assertDelivered with a nil instance, and the fixing actions differ — one
-// module has to gain an instance from the host, the other has to correct what
-// its callback returns — so a message that reports a missing callback for both
-// sends half its readers after a callback that is not absent. The module that
-// has no New is the one only the host can give an instance, and the text says
-// how.
+// TestUndeliveredCapabilityNamesWhichWayNothingWasBuilt separates the two ways a module whose New
+// did not run leaves the instance nil.
 func TestUndeliveredCapabilityNamesWhichWayNothingWasBuilt(t *testing.T) {
 	for _, tc := range []struct {
 		why    string
 		module core.Module
 		want   []string
-		// absent is a fragment the message must not carry, because it names
-		// the other way of arriving here.
 		absent string
 	}{
 		{
@@ -66,10 +57,8 @@ func TestUndeliveredCapabilityNamesWhichWayNothingWasBuilt(t *testing.T) {
 	}
 }
 
-// TestAModuleWithoutNewDeliversWhatTheHostSupplied pins the way out the text
-// above names: a module that declares a capability and builds nothing is
-// delivered by the instance the host handed it, and the drive that includes it
-// goes through.
+// TestAModuleWithoutNewDeliversWhatTheHostSupplied checks that Resolve returns the instance the
+// host supplied for a module that declares a capability without a New callback.
 func TestAModuleWithoutNewDeliversWhatTheHostSupplied(t *testing.T) {
 	reg := core.New()
 	register(reg, placeholder("face", (*Reader)(nil)))
@@ -92,9 +81,8 @@ func TestAModuleWithoutNewDeliversWhatTheHostSupplied(t *testing.T) {
 	}
 }
 
-// TestASuppliedInstanceTakesThePlaceOfNewEvenWhereNewWouldDeliverNothing pins
-// that the supplied instance replaces the module's New instead of competing
-// with it: New does not run, so what it would have returned is of no account.
+// TestASuppliedInstanceTakesThePlaceOfNewEvenWhereNewWouldDeliverNothing checks that a supplied
+// instance satisfies the delivery check without the module's New running.
 func TestASuppliedInstanceTakesThePlaceOfNewEvenWhereNewWouldDeliverNothing(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -117,14 +105,8 @@ func TestASuppliedInstanceTakesThePlaceOfNewEvenWhereNewWouldDeliverNothing(t *t
 	}
 }
 
-// TestMissingProviderPointsAtSupplyForADeclarerWithoutNew pins that the fix a
-// capability's sole declarer offers decides the text, whatever the moment the
-// lookup came at: a module without New never builds an instance, so asking it
-// to be included, constructed earlier or declared in Requires would change
-// nothing, and the text sends the reader to the host's Supply. Each case
-// reaches the failure from another side — the planning, a stance, a
-// construction ordered ahead of the declarer, and an action in a drive that
-// builds nothing.
+// TestMissingProviderPointsAtSupplyForADeclarerWithoutNew checks that a missing provider of a
+// module with no New names the capability and Supply from any lookup point.
 func TestMissingProviderPointsAtSupplyForADeclarerWithoutNew(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -209,11 +191,8 @@ func TestMissingProviderPointsAtSupplyForADeclarerWithoutNew(t *testing.T) {
 	}
 }
 
-// TestMissingProviderForExclusiveProvidersNamesSupplyAsAFix pins the second
-// fix a capability whose every provider claims it exclusively has. Neither
-// provider is brought in on the requirer's behalf, so none is in the
-// participating set until the host names one on the command tree or supplies
-// an instance for one of them.
+// TestMissingProviderForExclusiveProvidersNamesSupplyAsAFix pins the second fix a capability whose
+// every provider claims it exclusively has.
 func TestMissingProviderForExclusiveProvidersNamesSupplyAsAFix(t *testing.T) {
 	p := &probe{}
 	reg := core.New()

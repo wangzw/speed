@@ -14,18 +14,12 @@ import (
 	dotted "github.com/vislake/speed/pkg/core/internal/regprobe/dotted.v1"
 )
 
-// The package paths a panic has to name. The available set is decided by
-// imports, so the other party to a conflict may sit in a dependency rather
-// than in the host's own code.
 const (
 	testSite     = "github.com/vislake/speed/pkg/core_test"
 	regprobeSite = "github.com/vislake/speed/pkg/core/internal/regprobe"
 	dottedSite   = regprobeSite + "/dotted.v1"
 )
 
-// placeholder is a module that only declares what it delivers, the way a test
-// stands one in for a capability it has no real module for. It has no New, so
-// the instance it carries can only come from a host's Supply.
 func placeholder(name string, provides ...core.Token) core.Module {
 	m := core.Module{Name: name}
 	for _, token := range provides {
@@ -34,7 +28,6 @@ func placeholder(name string, provides ...core.Token) core.Module {
 	return m
 }
 
-// capturing makes a module copy into dst the instance its Init receives.
 func capturing(m core.Module, dst *any) core.Module {
 	m.Init = func(_ context.Context, _ *core.Registry, instance any) error {
 		*dst = instance
@@ -43,10 +36,6 @@ func capturing(m core.Module, dst *any) core.Module {
 	return m
 }
 
-// takenIn drives the registry no further than the stances, with no module
-// named, and reports which modules took part nevertheless. A module takes part
-// without being named only when an instance was supplied to it, so the answer
-// is the set of modules the supplied instances belong to.
 func takenIn(t *testing.T, reg *core.Registry) []string {
 	t.Helper()
 	if err := driveToEnd(t, reg, core.Drive{}); err != nil {
@@ -78,9 +67,6 @@ func assertMentions(t *testing.T, msg string, wants ...string) {
 	}
 }
 
-// assertOmits fails for every fragment the message carries although it should
-// not: a report that names what an instance does deliver, beside what it lacks,
-// leaves the reader to work out which is which.
 func assertOmits(t *testing.T, msg string, unwanted ...string) {
 	t.Helper()
 	for _, fragment := range unwanted {
@@ -90,23 +76,13 @@ func assertOmits(t *testing.T, msg string, unwanted ...string) {
 	}
 }
 
-// assertCalledFrom fails unless the message names site as the package that
-// called Supply. Every refusal opens with "Supply from <package> ", and the
-// fragment asserted is that opening: a path found anywhere else in the message
-// does not stand in for it, whether it is the package of the instance's type,
-// the package a candidate was registered from, or a package whose path another
-// one's path begins with.
 func assertCalledFrom(t *testing.T, msg, site string) {
 	t.Helper()
 	assertMentions(t, msg, "Supply from "+site+" ")
 }
 
-// wrapped is a host type that wraps a product another package defines: the
-// type is defined in the host's package, whatever it carries.
 type wrapped struct{ *regprobe.Product }
 
-// registrationRoute is a way of registering a module from a package other than
-// the test's own, together with an instance of a type that package defines.
 type registrationRoute struct {
 	name     string
 	site     string
@@ -125,13 +101,13 @@ func registrationRoutes() []registrationRoute {
 	}
 }
 
+// TestSupplyClaimsTheOnlyModuleTheInstanceSatisfies checks that an unnamed supply picks the only
+// registered module whose capabilities the instance implements.
 func TestSupplyClaimsTheOnlyModuleTheInstanceSatisfies(t *testing.T) {
 	reg := core.New()
 	register(reg,
 		placeholder("cache-mod", (*Cache)(nil)),
 		placeholder("reading-mod", (*Reader)(nil)),
-		// A module that declares nothing is satisfied by every instance and
-		// would be a candidate for all of them; it is never one.
 		core.Module{Name: "bare"},
 	)
 
@@ -140,11 +116,8 @@ func TestSupplyClaimsTheOnlyModuleTheInstanceSatisfies(t *testing.T) {
 	assertTakenIn(t, reg, "cache-mod")
 }
 
-// TestSupplyClaimsASingleCandidateWhicheverPackageRegisteredIt pins that the
-// package that defines the instance's type is consulted only to tell several
-// candidates apart. The one module the box satisfies is taken although a
-// package other than the one that defines the box registered it, which a claim
-// that asked every candidate for its package would turn away.
+// TestSupplyClaimsASingleCandidateWhicheverPackageRegisteredIt pins that the package that defines
+// the instance's type is consulted only to tell several candidates apart.
 func TestSupplyClaimsASingleCandidateWhicheverPackageRegisteredIt(t *testing.T) {
 	for _, route := range registrationRoutes() {
 		t.Run(route.name, func(t *testing.T) {
@@ -158,10 +131,8 @@ func TestSupplyClaimsASingleCandidateWhicheverPackageRegisteredIt(t *testing.T) 
 	}
 }
 
-// TestSupplyClaimsOnlyAModuleWhoseEveryCapabilityTheInstanceSatisfies pins that
-// being satisfied in part makes no candidate. The wider module declares one
-// capability the box lacks, so the claim lands on the narrow one and the miss
-// goes unreported: near candidates are reported only when there is none.
+// TestSupplyClaimsOnlyAModuleWhoseEveryCapabilityTheInstanceSatisfies pins that being satisfied in
+// part makes no candidate.
 func TestSupplyClaimsOnlyAModuleWhoseEveryCapabilityTheInstanceSatisfies(t *testing.T) {
 	reg := core.New()
 	register(reg,
@@ -174,6 +145,8 @@ func TestSupplyClaimsOnlyAModuleWhoseEveryCapabilityTheInstanceSatisfies(t *test
 	assertTakenIn(t, reg, "narrow")
 }
 
+// TestSupplyClaimsAModuleWhoseSeveralCapabilitiesTheInstanceMeetsInFull checks that an unnamed
+// supply picks a module whose every capability the instance implements.
 func TestSupplyClaimsAModuleWhoseSeveralCapabilitiesTheInstanceMeetsInFull(t *testing.T) {
 	reg := core.New()
 	register(reg,
@@ -186,11 +159,8 @@ func TestSupplyClaimsAModuleWhoseSeveralCapabilitiesTheInstanceMeetsInFull(t *te
 	assertTakenIn(t, reg, "pair")
 }
 
-// TestSupplyBreaksATieByThePackageThatRegisteredTheModule pins the second step
-// of a claim by instance. Every module below declares the capability the
-// product satisfies; only the one registered from the package that defines the
-// product's type is taken. The module is neither first nor last by name or by
-// registration order, so neither order can pass for the rule.
+// TestSupplyBreaksATieByThePackageThatRegisteredTheModule pins the second step of a claim by
+// instance.
 func TestSupplyBreaksATieByThePackageThatRegisteredTheModule(t *testing.T) {
 	for _, route := range registrationRoutes() {
 		t.Run(route.name, func(t *testing.T) {
@@ -206,9 +176,8 @@ func TestSupplyBreaksATieByThePackageThatRegisteredTheModule(t *testing.T) {
 	}
 }
 
-// TestSupplyClaimsATypedNilPointerByItsDynamicType pins that a typed nil is an
-// instance like any other for the claim: it carries a type, and the type is
-// what the claim looks at.
+// TestSupplyClaimsATypedNilPointerByItsDynamicType pins that a typed nil is an instance like any
+// other for the claim: it carries a type, and the type is what the claim looks at.
 func TestSupplyClaimsATypedNilPointerByItsDynamicType(t *testing.T) {
 	reg := core.New()
 	register(reg, placeholder("zulu", (*Cache)(nil)))
@@ -220,11 +189,8 @@ func TestSupplyClaimsATypedNilPointerByItsDynamicType(t *testing.T) {
 	assertTakenIn(t, reg, "mid")
 }
 
-// TestSupplyGivesAnInstanceOfAHostDefinedTypeToTheModuleTheHostRegistered
-// pins the same step from the host's side: the type is defined in the test's
-// package, so the candidate registered from the test's package is the one that
-// is taken, whichever module the host had in mind. A host that means another
-// candidate names it.
+// TestSupplyGivesAnInstanceOfAHostDefinedTypeToTheModuleTheHostRegistered checks that the
+// registration site's package decides between two modules declaring the same capability.
 func TestSupplyGivesAnInstanceOfAHostDefinedTypeToTheModuleTheHostRegistered(t *testing.T) {
 	reg := core.New()
 	regprobe.Register(reg, placeholder("in-probe", (*Cache)(nil)))
@@ -235,14 +201,8 @@ func TestSupplyGivesAnInstanceOfAHostDefinedTypeToTheModuleTheHostRegistered(t *
 	assertTakenIn(t, reg, "in-test")
 }
 
-// TestSupplyPanicsWhenTheTypesPackageDoesNotSettleTheClaim covers every way the
-// registration package can fail to pick one candidate out of several: it
-// registered none of them or it registered more than one. The panic lists each
-// candidate with the package that registered it. The candidates are registered
-// from packages other than this test's, so that a registration package cannot
-// be mistaken for the caller, in every case but the one that is about the
-// test's own package. Naming a candidate settles the call the refusal left
-// open.
+// TestSupplyPanicsWhenTheTypesPackageDoesNotSettleTheClaim checks that an ambiguous unnamed supply
+// panics naming the candidates and their sites, and that a name settles it.
 func TestSupplyPanicsWhenTheTypesPackageDoesNotSettleTheClaim(t *testing.T) {
 	cache := (*Cache)(nil)
 	cases := []struct {
@@ -287,8 +247,6 @@ func TestSupplyPanicsWhenTheTypesPackageDoesNotSettleTheClaim(t *testing.T) {
 			mentions: []string{testSite, "cand-a", "cand-b", regprobeSite},
 		},
 		{
-			// A type written out in place has no defining package, so no
-			// candidate is registered from it, whatever the candidates are.
 			name: "the type is written out in place, so no package defines it",
 			setup: func(reg *core.Registry) {
 				regprobe.Register(reg, placeholder("cand-a", cache))
@@ -307,7 +265,6 @@ func TestSupplyPanicsWhenTheTypesPackageDoesNotSettleTheClaim(t *testing.T) {
 
 			assertCalledFrom(t, msg, testSite)
 			assertMentions(t, msg, c.mentions...)
-			// The refusal says how to settle what it left open.
 			assertMentions(t, msg, "Name the module")
 			reg.Supply(c.instance, "cand-b")
 			assertTakenIn(t, reg, "cand-b")
@@ -315,16 +272,7 @@ func TestSupplyPanicsWhenTheTypesPackageDoesNotSettleTheClaim(t *testing.T) {
 	}
 }
 
-// TestSupplyReportsTheNearCandidatesWhenThereIsNoCandidate pins what a miss
-// says. Each near candidate is a module the instance satisfies in part, and
-// the panic names the capability it lacks. A module the instance satisfies in
-// no part is not near, and a module that declares nothing is no candidate of
-// any kind.
-//
-// The call comes from a package other than the test's own, which is both the
-// package that defines the instance's type and the one that registered the
-// candidates, so the package the panic names as the caller is not one the rest
-// of the message would put there anyway.
+// TestSupplyReportsTheNearCandidatesWhenThereIsNoCandidate pins what a miss says.
 func TestSupplyReportsTheNearCandidatesWhenThereIsNoCandidate(t *testing.T) {
 	reg := core.New()
 	register(reg,
@@ -338,12 +286,7 @@ func TestSupplyReportsTheNearCandidatesWhenThereIsNoCandidate(t *testing.T) {
 
 	assertCalledFrom(t, msg, regprobeSite)
 	assertMentions(t, msg, "near-a", "Reader", "near-b", "Intake")
-	// The box delivers Cache and Store, so naming either as missing would be
-	// wrong, and neither the module it satisfies in no part nor the one that
-	// declares nothing is near.
 	assertOmits(t, msg, "unrelated", "bare", "Cache", "Store")
-	// Each near candidate is followed by what it lacks, in name order, and by
-	// nothing of the next one's.
 	at := func(fragment string) int { return strings.Index(msg, fragment) }
 	if at("near-a") >= at("Reader") || at("Reader") >= at("near-b") || at("near-b") >= at("Intake") {
 		t.Errorf("panic %q does not pair each near candidate with the capability it lacks", msg)
@@ -351,19 +294,14 @@ func TestSupplyReportsTheNearCandidatesWhenThereIsNoCandidate(t *testing.T) {
 	assertNoCandidateAdvice(t, msg)
 	assertMentions(t, msg, "Naming one of them does not help")
 
-	// A near candidate is refused by name as well, which is why the advice does
-	// not send the host there; the module that declares nothing is the one the
-	// advice does send it to, and takes the instance.
 	msg = recoverMessage(t, func() { reg.Supply(&box{id: "host"}, "near-a") })
 	assertMentions(t, msg, "near-a", "Reader")
 	reg.Supply(&box{id: "host"}, "bare")
 	assertTakenIn(t, reg, "bare")
 }
 
-// TestSupplyWithoutAnyNearCandidateStillPanics pins that a refusal with nothing
-// near to report still says why and what to do. The usual cause is the module
-// not being registered yet, so the advice starts there. As in the test above,
-// the call comes from a package other than the test's own.
+// TestSupplyWithoutAnyNearCandidateStillPanics pins that a refusal with nothing near to report
+// still says why and what to do.
 func TestSupplyWithoutAnyNearCandidateStillPanics(t *testing.T) {
 	cases := map[string]func(reg *core.Registry){
 		"a registry with no module": func(*core.Registry) {},
@@ -384,34 +322,20 @@ func TestSupplyWithoutAnyNearCandidateStillPanics(t *testing.T) {
 			assertCalledFrom(t, msg, regprobeSite)
 			assertMentions(t, msg, "registered before an instance is supplied")
 			assertNoCandidateAdvice(t, msg)
-			// There is no near candidate to name, so the advice that is given
-			// for one has nothing to say here.
 			assertOmits(t, msg, "Naming one of them")
 			assertTakenIn(t, reg)
 		})
 	}
 }
 
-// assertNoCandidateAdvice pins what a refusal for want of a candidate tells the
-// host to do, which has to be something that works. A module takes an instance
-// only if the instance implements every capability the module declares, whether
-// the module is found by claim or by name. With no candidate, naming therefore
-// gets an instance in for a module that declares nothing and for no other, and
-// advising to name a module the instance satisfies in part sends the host to a
-// second refusal.
 func assertNoCandidateAdvice(t *testing.T, msg string) {
 	t.Helper()
 	assertMentions(t, msg, "every capability the module declares", "declares nothing")
 	assertOmits(t, msg, "in part")
 }
 
-// TestSupplyPanicsReadTheSameWhateverTheOrderOfRegistration pins that what a
-// refusal says does not depend on the order the modules were registered in. The
-// available set is decided by imports, and init fixes only a partial order
-// between packages, so one mistake would otherwise read differently from build
-// to build: a message that is searched for or compared would match in one and
-// not in the other. Every order the modules can be registered in gives one
-// message.
+// TestSupplyPanicsReadTheSameWhateverTheOrderOfRegistration pins that what a refusal says does not
+// depend on the order the modules were registered in.
 func TestSupplyPanicsReadTheSameWhateverTheOrderOfRegistration(t *testing.T) {
 	cache := (*Cache)(nil)
 	type entry struct {
@@ -455,7 +379,6 @@ func TestSupplyPanicsReadTheSameWhateverTheOrderOfRegistration(t *testing.T) {
 	}
 }
 
-// orders lists every order n things can be taken in, as indexes.
 func orders(n int) [][]int {
 	if n == 0 {
 		return [][]int{{}}
@@ -469,9 +392,8 @@ func orders(n int) [][]int {
 	return out
 }
 
-// TestSupplyByNameOverridesTheClaimByType pins that a name is the host's
-// decision: the instance below would be claimed by "mid", and the name sends it
-// to "alpha" without any cross-check against the package that defines its type.
+// TestSupplyByNameOverridesTheClaimByType checks that a name picks the module even when the type's
+// package would have chosen another.
 func TestSupplyByNameOverridesTheClaimByType(t *testing.T) {
 	reg := core.New()
 	register(reg, placeholder("zulu", (*Cache)(nil)))
@@ -483,9 +405,8 @@ func TestSupplyByNameOverridesTheClaimByType(t *testing.T) {
 	assertTakenIn(t, reg, "alpha")
 }
 
-// TestSupplyByNameAcceptsAModuleThatDeclaresNothing pins that only a name
-// reaches a module without Provides, and that such a module takes part and
-// receives the instance like any other.
+// TestSupplyByNameAcceptsAModuleThatDeclaresNothing pins that only a name reaches a module without
+// Provides, and that such a module takes part and receives the instance like any other.
 func TestSupplyByNameAcceptsAModuleThatDeclaresNothing(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -508,9 +429,8 @@ func TestSupplyByNameAcceptsAModuleThatDeclaresNothing(t *testing.T) {
 	}
 }
 
-// TestSupplyTakesTheEmptyStringAsAName pins that an empty name is a name: no
-// module registers under it, so the call refuses, and it does not fall back to
-// claiming by instance, which would have found the one module below.
+// TestSupplyTakesTheEmptyStringAsAName checks that an empty name panics at the call site and
+// supplies nothing.
 func TestSupplyTakesTheEmptyStringAsAName(t *testing.T) {
 	reg := core.New()
 	register(reg, placeholder("cache-mod", (*Cache)(nil)))
@@ -521,6 +441,8 @@ func TestSupplyTakesTheEmptyStringAsAName(t *testing.T) {
 	assertTakenIn(t, reg)
 }
 
+// TestSupplyByNameRejectsAnUnregisteredName checks that an unregistered name panics naming it and
+// supplies nothing.
 func TestSupplyByNameRejectsAnUnregisteredName(t *testing.T) {
 	reg := core.New()
 	register(reg, placeholder("cache-mod", (*Cache)(nil)))
@@ -531,12 +453,7 @@ func TestSupplyByNameRejectsAnUnregisteredName(t *testing.T) {
 	assertTakenIn(t, reg)
 }
 
-// TestSupplyTakesAtMostOneName pins that the number of names is checked on its
-// own account. The claim by instance has exactly one candidate here, so a call
-// that were let through to it would succeed: the refusal can only be for the
-// names. Were two candidates declared instead, the claim itself would refuse the
-// call, and the test would pass for a rule that is not there. The panic says how
-// many names it was given, and the refused call leaves no instance behind.
+// TestSupplyTakesAtMostOneName pins that the number of names is checked on its own account.
 func TestSupplyTakesAtMostOneName(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -560,13 +477,8 @@ func TestSupplyTakesAtMostOneName(t *testing.T) {
 	}
 }
 
-// TestSupplyByNameRejectsAnInstanceThatMissesACapability pins that a name
-// relaxes how the module is found and nothing about what it must be handed:
-// the instance still has to satisfy every capability the module declares, and
-// the panic says which ones it lacks: those and no others. The box delivers
-// Cache and Store and lacks Reader and Intake. The call comes from a package
-// other than the one that defines the box, so the package the panic names as
-// the caller is not one the instance's type would put there anyway.
+// TestSupplyByNameRejectsAnInstanceThatMissesACapability checks that a named supply panics naming
+// only the capabilities the instance lacks.
 func TestSupplyByNameRejectsAnInstanceThatMissesACapability(t *testing.T) {
 	for _, c := range []struct {
 		name     string
@@ -596,6 +508,8 @@ func TestSupplyByNameRejectsAnInstanceThatMissesACapability(t *testing.T) {
 	}
 }
 
+// TestSupplyRejectsANilInstance checks that supplying nil panics with or without a name and
+// supplies nothing.
 func TestSupplyRejectsANilInstance(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -616,10 +530,8 @@ func TestSupplyRejectsANilInstance(t *testing.T) {
 	}
 }
 
-// TestSupplyTakesATypedNilPointerAsAnInstance pins that only an interface value
-// that is itself nil counts as no instance. A typed nil pointer is claimed by
-// its type, satisfies a capability by its method set, and reaches the
-// module's callbacks as the typed nil it is.
+// TestSupplyTakesATypedNilPointerAsAnInstance pins that only an interface value that is itself nil
+// counts as no instance.
 func TestSupplyTakesATypedNilPointerAsAnInstance(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -641,18 +553,8 @@ func TestSupplyTakesATypedNilPointerAsAnInstance(t *testing.T) {
 	}
 }
 
-// TestSupplyDecidesWhetherTwoInstancesAreOneObjectByReferenceIdentity pins
-// which pairs the same-object check refuses and which it lets through. It
-// refuses what is a reference to one object, judged by dynamic type and
-// address together. It lets through what has no object identity to judge —
-// values, slices, functions, zero-size types, and nils — and what shares an
-// address while differing in type, which is the case of a struct and a pointer
-// to its first field.
-//
-// The two calls come from two packages that differ from each other and from the
-// one that defines the instances' types. The panic names the package of each
-// call, and a call site that coincided with another path in the message could
-// be dropped from it unnoticed.
+// TestSupplyDecidesWhetherTwoInstancesAreOneObjectByReferenceIdentity pins which pairs the
+// same-object check refuses and which it lets through.
 func TestSupplyDecidesWhetherTwoInstancesAreOneObjectByReferenceIdentity(t *testing.T) {
 	outer := &outerBox{id: "outer"}
 	if reflect.ValueOf(outer).Pointer() != reflect.ValueOf(&outer.inner).Pointer() {
@@ -701,13 +603,8 @@ func TestSupplyDecidesWhetherTwoInstancesAreOneObjectByReferenceIdentity(t *test
 				return
 			}
 			msg := recoverMessage(t, func() { dotted.Supply(reg, c.second, "second") })
-			// The first call's package is the one the panic gives for the module
-			// that already has the object; asserted bare, it would be found in the
-			// path of the second call's package, which it is a prefix of.
 			assertCalledFrom(t, msg, dottedSite)
 			assertMentions(t, msg, fmt.Sprintf("module %q, from %s.", "first", regprobeSite))
-			// The refused call left nothing behind: the module it named has no
-			// instance to be found.
 			if _, err := core.Resolve[Store](reg); !errors.Is(err, core.ErrMissingProvider) {
 				t.Errorf("Resolve[Store] returned %v after the refusal, want ErrMissingProvider", err)
 			}
@@ -716,11 +613,8 @@ func TestSupplyDecidesWhetherTwoInstancesAreOneObjectByReferenceIdentity(t *test
 	}
 }
 
-// TestTheSameObjectMayBeSuppliedToTwoRegistries pins that the same-object check
-// and the one-instance-per-module check both live in one registry: the object
-// goes to a module of the same name in a second registry, and to a module of
-// another name in a third, and nothing is shared between registries but the
-// object.
+// TestTheSameObjectMayBeSuppliedToTwoRegistries checks that one object may be supplied to several
+// registries without a duplicate-object panic.
 func TestTheSameObjectMayBeSuppliedToTwoRegistries(t *testing.T) {
 	shared := &box{id: "shared"}
 	for _, module := range []string{"cache-mod", "cache-mod", "other-mod"} {
@@ -733,9 +627,7 @@ func TestTheSameObjectMayBeSuppliedToTwoRegistries(t *testing.T) {
 	}
 }
 
-// TestTwoModulesMayConstructTheSameObject pins that the check covers Supply
-// alone. A New callback returning an object another module's New returned is
-// not something the registry looks at.
+// TestTwoModulesMayConstructTheSameObject pins that the check covers Supply alone.
 func TestTwoModulesMayConstructTheSameObject(t *testing.T) {
 	shared := &box{id: "shared"}
 	construct := func(context.Context, *core.Registry) (any, error) { return shared, nil }
@@ -751,10 +643,8 @@ func TestTwoModulesMayConstructTheSameObject(t *testing.T) {
 	}
 }
 
-// TestSupplyTwiceToOneModulePanicsNamingBothCalls pins that a module has at
-// most one supplied instance, however the call found the module, and that the
-// panic names the package of each call. The first instance stays in force: the
-// refused call changes nothing.
+// TestSupplyTwiceToOneModulePanicsNamingBothCalls pins that a module has at most one supplied
+// instance, however the call found the module, and that the panic names the package of each call.
 func TestSupplyTwiceToOneModulePanicsNamingBothCalls(t *testing.T) {
 	routes := []struct {
 		name   string
@@ -776,8 +666,6 @@ func TestSupplyTwiceToOneModulePanicsNamingBothCalls(t *testing.T) {
 			t.Run(route.name+" "+claim.name, func(t *testing.T) {
 				var received any
 				reg := core.New()
-				// other-mod declares nothing, so it is no candidate of a claim and
-				// takes an instance by name alone.
 				register(reg, capturing(placeholder("cache-mod", (*Cache)(nil)), &received),
 					core.Module{Name: "other-mod"})
 				first := &box{id: "first"}
@@ -787,8 +675,6 @@ func TestSupplyTwiceToOneModulePanicsNamingBothCalls(t *testing.T) {
 				msg := recoverMessage(t, func() { reg.Supply(second, claim.names...) })
 
 				assertMentions(t, msg, route.site, testSite, "cache-mod")
-				// The refused instance was not recorded against the module that
-				// turned it away: it is still free to go to another.
 				reg.Supply(second, "other-mod")
 				if err := driveToEnd(t, reg, core.Drive{Depth: core.StageInit}); err != nil {
 					t.Fatalf("Drive returned %v", err)
@@ -801,10 +687,8 @@ func TestSupplyTwiceToOneModulePanicsNamingBothCalls(t *testing.T) {
 	}
 }
 
-// TestSupplyBeforeTheModuleIsRegisteredFollowsTheOrderOfCalls pins the one
-// order the mechanism supports. A call decides the owner by the modules
-// registered at that moment, and neither a later registration nor Register
-// revisits it.
+// TestSupplyBeforeTheModuleIsRegisteredFollowsTheOrderOfCalls pins the one order the mechanism
+// supports.
 func TestSupplyBeforeTheModuleIsRegisteredFollowsTheOrderOfCalls(t *testing.T) {
 	t.Run("a name registered later is refused", func(t *testing.T) {
 		reg := core.New()
@@ -827,20 +711,14 @@ func TestSupplyBeforeTheModuleIsRegisteredFollowsTheOrderOfCalls(t *testing.T) {
 		regprobe.Register(reg, placeholder("early", (*Cache)(nil)))
 		reg.Supply(&box{id: "host"})
 
-		// The late module is the one a claim would prefer now: the instance's
-		// type is defined in the package that registers it, and not in the
-		// package that registered the first.
 		register(reg, placeholder("late", (*Cache)(nil)))
 
 		assertTakenIn(t, reg, "early")
 	})
 }
 
-// TestSupplyAfterTheDriveStartedPanics pins the boundary the mechanism rests
-// on: the host hands its instances in before the drive. Whether a module is in
-// the participating set is settled when the drive starts, so a module that
-// supplied one from inside a stage would reach around everything that decides
-// the set. Each call below would be accepted before the drive.
+// TestSupplyAfterTheDriveStartedPanics pins the boundary the mechanism rests on: the host hands
+// its instances in before the drive.
 func TestSupplyAfterTheDriveStartedPanics(t *testing.T) {
 	late := &box{id: "late"}
 	supplyLate := func(r *core.Registry) { r.Supply(late, "target") }
@@ -905,9 +783,8 @@ func TestSupplyAfterTheDriveStartedPanics(t *testing.T) {
 	}
 }
 
-// TestASuppliedInstanceIsTakenUpBeforeTheDriveBegins pins that the instance
-// exists from the call, not from construction: both lookups answer with it
-// before any drive.
+// TestASuppliedInstanceIsTakenUpBeforeTheDriveBegins pins that the instance exists from the call,
+// not from construction: both lookups answer with it before any drive.
 func TestASuppliedInstanceIsTakenUpBeforeTheDriveBegins(t *testing.T) {
 	reg := core.New()
 	register(reg, placeholder("reading-mod", (*Reader)(nil)))
@@ -925,10 +802,8 @@ func TestASuppliedInstanceIsTakenUpBeforeTheDriveBegins(t *testing.T) {
 	}
 }
 
-// TestALookupSeesASuppliedInstanceOnlyThroughWhatItsModuleDeclares pins that
-// the declaration is the one authority for a supplied instance too. The box
-// satisfies Store and Greeter as well, and the module declares neither, so a
-// lookup for either finds nothing.
+// TestALookupSeesASuppliedInstanceOnlyThroughWhatItsModuleDeclares pins that the declaration is
+// the one authority for a supplied instance too.
 func TestALookupSeesASuppliedInstanceOnlyThroughWhatItsModuleDeclares(t *testing.T) {
 	reg := core.New()
 	register(reg, placeholder("cache-mod", (*Cache)(nil)))
@@ -945,9 +820,8 @@ func TestALookupSeesASuppliedInstanceOnlyThroughWhatItsModuleDeclares(t *testing
 	}
 }
 
-// TestSupplyAddsNoModule pins that an instance has no descriptor of its own: it
-// belongs to a module that is already registered, and the list of modules and
-// that module's descriptor are what they were.
+// TestSupplyAddsNoModule checks that a supply adds no module and leaves the registered descriptor
+// intact.
 func TestSupplyAddsNoModule(t *testing.T) {
 	reg := core.New()
 	register(reg, placeholder("cache-mod", (*Cache)(nil)), placeholder("other", (*Reader)(nil)))
@@ -968,8 +842,6 @@ func TestSupplyAddsNoModule(t *testing.T) {
 	}
 }
 
-// Instance shapes the same-object check treats differently. Each carries the
-// methods of Cache and Store, so that one value can be handed to two modules.
 type (
 	plainBox struct{ id string }
 	heldBox  struct{ items []string }
@@ -995,9 +867,6 @@ func (s sliceBox) StoreID() string { return strings.Join(s, ",") }
 func (funcBox) CacheID() string    { return "func" }
 func (funcBox) StoreID() string    { return "func" }
 
-// innerBox is the first field of outerBox, so a pointer to the struct and a
-// pointer to the field hold one address. Each carries one capability, and a
-// pointer to either is an instance of a different type.
 type innerBox struct{ id string }
 
 func (b *innerBox) StoreID() string { return b.id }

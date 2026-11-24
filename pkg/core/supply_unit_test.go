@@ -10,20 +10,10 @@ import (
 	"time"
 )
 
-// The tests here pin the parts a claim is assembled from, below the call that
-// panics or does not: how a package path is read and compared, which package a
-// type belongs to, and which instances have an object identity.
-
 const thisPackage = "github.com/vislake/speed/pkg/core"
 
-// TestPackageOfReadsTheImportPathFromARuntimeFunctionName pins both halves of
-// the reading: where the path ends in the symbol, and what it looks like once
-// it does. The linker writes a dot in the last element of a path as %2e, so the
-// first dot after the last slash is the one that ends the path, and the escapes
-// are undone to give the form reflect.Type.PkgPath reports. A registration site
-// and the package of an instance's type are compared as strings, and a package
-// whose last path element contains a dot, gopkg.in/yaml.v3 for one, would never
-// match its own types if the two were in different forms.
+// TestPackageOfReadsTheImportPathFromARuntimeFunctionName pins both halves of the reading: where
+// the path ends in the symbol, and what it looks like once it does.
 func TestPackageOfReadsTheImportPathFromARuntimeFunctionName(t *testing.T) {
 	for _, c := range []struct{ name, function, want string }{
 		{"a function", thisPackage + ".Register", thisPackage},
@@ -49,10 +39,8 @@ func TestPackageOfReadsTheImportPathFromARuntimeFunctionName(t *testing.T) {
 	}
 }
 
-// TestUnescapeSymbolLeavesWhatIsNotAnEscapeAlone pins that only a percent sign
-// followed by two hexadecimal digits is undone. The linker escapes every percent
-// sign it writes, so a malformed one is not its work, and rewriting it would
-// invent a byte.
+// TestUnescapeSymbolLeavesWhatIsNotAnEscapeAlone pins that only a percent sign followed by two
+// hexadecimal digits is undone.
 func TestUnescapeSymbolLeavesWhatIsNotAnEscapeAlone(t *testing.T) {
 	for in, want := range map[string]string{
 		"plain/path":  "plain/path",
@@ -75,8 +63,8 @@ func TestUnescapeSymbolLeavesWhatIsNotAnEscapeAlone(t *testing.T) {
 	}
 }
 
-// TestCallerPackageIsThePackageOfTheCaller pins what a site is: the package of
-// the function that called the exported method, in the form an import writes.
+// TestCallerPackageIsThePackageOfTheCaller pins what a site is: the package of the function that
+// called the exported method, in the form an import writes.
 func TestCallerPackageIsThePackageOfTheCaller(t *testing.T) {
 	if got := callerPackage(2); got != thisPackage {
 		t.Fatalf("callerPackage reports %q for a call made from this test, want %q", got, thisPackage)
@@ -87,11 +75,8 @@ type sampleStruct struct{ n int }
 
 type sampleMap map[string]int
 
-// TestTypePackageNamesTheDefiningPackageOfTheNamedTypeBehindThePointers pins
-// the package a claim compares with the registration packages. Pointers are
-// stripped, and what is left has to be a named type for any package to define
-// it: a type written out in place, or a built-in one, belongs to none, so it
-// never matches a registration site.
+// TestTypePackageNamesTheDefiningPackageOfTheNamedTypeBehindThePointers pins the package a claim
+// compares with the registration packages.
 func TestTypePackageNamesTheDefiningPackageOfTheNamedTypeBehindThePointers(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -126,13 +111,8 @@ type fieldFirstSample struct {
 
 type zeroSizeSample struct{}
 
-// TestObjectOfGivesAnIdentityOnlyToAReferenceToAnObject pins which instances
-// the same-object check can speak about. A non-nil pointer to a type with
-// storage, a non-nil map and a non-nil channel refer to an object, and the
-// dynamic type together with the address says which. Everything else has none:
-// a value is copied each time it is passed, a slice or a function value can
-// share state while its address differs or coincides, a zero-size type has no
-// storage for an address to tell apart, and a nil refers to nothing.
+// TestObjectOfGivesAnIdentityOnlyToAReferenceToAnObject pins which instances the same-object check
+// can speak about.
 func TestObjectOfGivesAnIdentityOnlyToAReferenceToAnObject(t *testing.T) {
 	shared := &sampleStruct{n: 1}
 	sharedMap := sampleMap{"k": 1}
@@ -193,10 +173,8 @@ func mustObject(t *testing.T, instance any) objectKey {
 	return key
 }
 
-// TestObjectOfSeparatesAStructFromItsFirstField pins the case the dynamic type
-// is part of the identity for. A pointer to a struct and a pointer to its first
-// field hold one address, and they are not the same object: handed to two
-// modules they are two instances, each of its own type.
+// TestObjectOfSeparatesAStructFromItsFirstField pins the case the dynamic type is part of the
+// identity for.
 func TestObjectOfSeparatesAStructFromItsFirstField(t *testing.T) {
 	outer := &fieldFirstSample{}
 	inner := &outer.first
@@ -209,8 +187,8 @@ func TestObjectOfSeparatesAStructFromItsFirstField(t *testing.T) {
 	}
 }
 
-// TestCapabilityListReadsAsAPhrase pins the wording a message builds from the
-// capabilities an instance lacks, one and several.
+// TestCapabilityListReadsAsAPhrase pins the wording a message builds from the capabilities an
+// instance lacks, one and several.
 func TestCapabilityListReadsAsAPhrase(t *testing.T) {
 	cache := reflect.TypeOf((*cacheCap)(nil)).Elem()
 	store := reflect.TypeOf((*storeCap)(nil)).Elem()
@@ -231,10 +209,8 @@ func TestCapabilityListReadsAsAPhrase(t *testing.T) {
 	}
 }
 
-// TestInstanceTypeNameKeepsTheImportPathBehindPointers pins that a message names
-// an instance's type with the package that defines it, even behind pointers,
-// since that package is what a claim by type compares with the registration
-// sites, and a reader looking for the reason a claim went where it did needs it.
+// TestInstanceTypeNameKeepsTheImportPathBehindPointers checks that the instance type name keeps the
+// package path and adds one * per pointer level.
 func TestInstanceTypeNameKeepsTheImportPathBehindPointers(t *testing.T) {
 	for _, c := range []struct {
 		typ  reflect.Type
@@ -251,12 +227,8 @@ func TestInstanceTypeNameKeepsTheImportPathBehindPointers(t *testing.T) {
 	}
 }
 
-// TestAssertDeliveredTellsAMissingCallbackFromAnEmptyOne pins the two ways an
-// instance can be nil, which call for different fixes: a module without New has
-// to have its instance supplied, and a module whose New returned nothing has to
-// have that callback corrected. Sending the first reader to Supply and the
-// second to the callback is the whole of the distinction, so each message must
-// carry its own and not the other's.
+// TestAssertDeliveredTellsAMissingCallbackFromAnEmptyOne checks that a module with no New is told to
+// supply an instance, while a New that returned nothing is told it returned no product.
 func TestAssertDeliveredTellsAMissingCallbackFromAnEmptyOne(t *testing.T) {
 	withoutNew := Module{Name: "host-only", Provides: provides((*cacheCap)(nil))}
 	hollow := Module{
@@ -293,10 +265,8 @@ func TestAssertDeliveredTellsAMissingCallbackFromAnEmptyOne(t *testing.T) {
 	}
 }
 
-// TestAssertDeliveredAcceptsAnInstanceThatDeliversEveryCapability pins the other
-// half: an instance is judged by what it implements, a supplied one as a
-// constructed one, and a nil instance for a module that declares nothing is no
-// failure.
+// TestAssertDeliveredAcceptsAnInstanceThatDeliversEveryCapability checks that an instance
+// delivering every declared capability passes, while one delivering none is refused.
 func TestAssertDeliveredAcceptsAnInstanceThatDeliversEveryCapability(t *testing.T) {
 	both := Module{Name: "both", Provides: provides((*cacheCap)(nil), (*storeCap)(nil))}
 	if err := assertDelivered(both, &product{id: "p"}); err != nil {

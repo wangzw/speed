@@ -5,13 +5,6 @@ import (
 	"reflect"
 )
 
-// capabilityType returns the interface type a capability token designates.
-//
-// An illegal token panics rather than returning an error. It is a programming
-// error at the declaration or the call site, unrelated to data, and it shows
-// up deterministically on first execution; expressing it as an error would
-// force ResolveAll and Resources to grow an error return for a case only a bug
-// can reach.
 func capabilityType(t Token, where string) reflect.Type {
 	elem := pointerElem(t, where, "capability")
 	if elem.Kind() != reflect.Interface {
@@ -22,8 +15,6 @@ func capabilityType(t Token, where string) reflect.Type {
 	return elem
 }
 
-// resourceType returns the type a resource token designates. Resources are
-// passive data, so any element type is legal.
 func resourceType(t Token, where string) reflect.Type {
 	return pointerElem(t, where, "resource")
 }
@@ -46,8 +37,6 @@ func pointerElem(t Token, where, kind string) reflect.Type {
 	return v.Type().Elem()
 }
 
-// typeName renders a type for an error message, keeping the package path so
-// the reader can find the declaration.
 func typeName(t reflect.Type) string {
 	if t.PkgPath() != "" && t.Name() != "" {
 		return t.PkgPath() + "." + t.Name()

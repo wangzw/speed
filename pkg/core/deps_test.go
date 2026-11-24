@@ -11,17 +11,14 @@ import (
 	"testing"
 )
 
-// The import paths the rules below are about.
 const (
 	moduleImportPath = "github.com/vislake/speed/pkg"
 	coreRootPath     = moduleImportPath + "/core"
 	coretestPath     = coreRootPath + "/coretest"
 )
 
-// TestCoreHasNoThirdPartyDependencies is the executable form of the first
-// architecture invariant: core is imported by every module, so any dependency
-// of its own would land in every host's dependency list. A standard library
-// path has no domain in its first segment; anything else does.
+// TestCoreHasNoThirdPartyDependencies checks that every package core depends on is in the standard
+// library or in core itself.
 func TestCoreHasNoThirdPartyDependencies(t *testing.T) {
 	out, err := exec.Command("go", "list", "-deps", "./...").CombinedOutput()
 	if err != nil {
@@ -39,19 +36,11 @@ func TestCoreHasNoThirdPartyDependencies(t *testing.T) {
 	}
 }
 
-// listed is what these checks read about one package: its import path and the
-// imports of its non-test files. go list reports the test files' imports
-// separately, and the rule is about production code, so those are not asked
-// for.
 type listed struct {
 	ImportPath string
 	Imports    []string
 }
 
-// goList lists every package of the module with go list and returns them.
-// The pattern names the module, so the listing does not depend on the
-// directory the tests run from. -e keeps a package that does not compile in
-// the listing, with its imports as the parser read them.
 func goList(t *testing.T) []listed {
 	t.Helper()
 	cmd := exec.Command("go", "list", "-e", "-json=ImportPath,Imports", moduleImportPath+"/...")
@@ -75,14 +64,8 @@ func goList(t *testing.T) []listed {
 	}
 }
 
-// TestNoProductionCodeImportsCoretest is the executable form of the fixture's
-// packaging limit: coretest is for tests, and the compiler cannot stop a
-// package's non-test code from importing it. A package that did would carry
-// the fixture into a binary a host ships.
-//
-// The listing is go list's, and a positive control holds that it is reading
-// this tree: a listing without coretest in it would let the rule pass while
-// looking at nothing.
+// TestNoProductionCodeImportsCoretest is the executable form of the fixture's packaging limit:
+// coretest is for tests, and the compiler cannot stop a package's non-test code from importing it.
 func TestNoProductionCodeImportsCoretest(t *testing.T) {
 	pkgs := goList(t)
 	if !slices.ContainsFunc(pkgs, func(p listed) bool { return p.ImportPath == coretestPath }) {
@@ -93,10 +76,8 @@ func TestNoProductionCodeImportsCoretest(t *testing.T) {
 	}
 }
 
-// TestTheCoretestRuleFailsOnAForbiddenImport holds the rule to be a rule and
-// not a check that accepts anything: an import of coretest from another
-// package's non-test code is reported, while coretest's own files and a
-// standard-library import of an ordinary package are not.
+// TestTheCoretestRuleFailsOnAForbiddenImport checks that a non-test import of coretest outside its
+// own package is reported as a violation.
 func TestTheCoretestRuleFailsOnAForbiddenImport(t *testing.T) {
 	pkgs := []listed{
 		{ImportPath: coretestPath, Imports: []string{"strings"}},
@@ -110,8 +91,6 @@ func TestTheCoretestRuleFailsOnAForbiddenImport(t *testing.T) {
 	}
 }
 
-// coretestViolations reports every package whose non-test files import
-// coretest, coretest itself excepted.
 func coretestViolations(pkgs []listed) []string {
 	var out []string
 	for _, p := range pkgs {

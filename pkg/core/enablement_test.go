@@ -49,6 +49,8 @@ func assertDisabled(t *testing.T, final map[string]Enablement, name, reasonFragm
 	}
 }
 
+// TestBothExclusiveAutoViolates checks that two auto modules claiming one capability exclusively
+// fail as ErrExclusiveViolated naming both.
 func TestBothExclusiveAutoViolates(t *testing.T) {
 	_, err := resolveEnablement([]stance{
 		stated("memory", StateAuto, "", exclusive((*cacheCap)(nil))),
@@ -64,9 +66,8 @@ func TestBothExclusiveAutoViolates(t *testing.T) {
 	}
 }
 
-// TestAnExclusiveConflictWithoutASuppliedPartySaysNothingOfSupply pins the text
-// of the failure in full when no party to it has a supplied instance: the note
-// about a supplied instance is there when one is a party, and not otherwise.
+// TestAnExclusiveConflictWithoutASuppliedPartySaysNothingOfSupply checks the exact message of an
+// exclusive conflict between two constructed modules.
 func TestAnExclusiveConflictWithoutASuppliedPartySaysNothingOfSupply(t *testing.T) {
 	_, err := resolveEnablement([]stance{
 		stated("memory", StateAuto, "", exclusive((*cacheCap)(nil))),
@@ -82,20 +83,14 @@ func TestAnExclusiveConflictWithoutASuppliedPartySaysNothingOfSupply(t *testing.
 	}
 }
 
-// suppliedStance is the stance of a module the host supplied an instance for:
-// StateEnabled, whatever the module's Prepare would have said.
 func suppliedStance(name string, provs ...Provision) stance {
 	s := stated(name, StateEnabled, "", provs...)
 	s.supplied = true
 	return s
 }
 
-// TestAnExclusiveConflictSaysWhichPartyHasASuppliedInstance pins what the failure
-// adds for a party whose instance the host supplied. Its stance is fixed at
-// StateEnabled, so it never stands down, and leaving it out of the command tree
-// does not take it out of the command: the advice that fits every other party
-// does not reach it, and the way out that does -- supply it no instance -- is
-// the one the text has to give. Only the parties that have one are named.
+// TestAnExclusiveConflictSaysWhichPartyHasASuppliedInstance pins what the failure adds for a party
+// whose instance the host supplied.
 func TestAnExclusiveConflictSaysWhichPartyHasASuppliedInstance(t *testing.T) {
 	for _, c := range []struct {
 		name    string
@@ -153,9 +148,8 @@ func TestAnExclusiveConflictSaysWhichPartyHasASuppliedInstance(t *testing.T) {
 	}
 }
 
-// TestExclusiveAutoStandsDownForExplicitProvider is the default-implementation
-// case: configure the remote one and it wins, leave it unconfigured and the
-// in-memory one runs, with nobody maintaining a module list.
+// TestExclusiveAutoStandsDownForExplicitProvider checks that an auto exclusive provider stands down
+// when another provider is explicitly enabled.
 func TestExclusiveAutoStandsDownForExplicitProvider(t *testing.T) {
 	final := mustResolve(t,
 		stated("memory", StateAuto, "", exclusive((*cacheCap)(nil))),
@@ -165,9 +159,8 @@ func TestExclusiveAutoStandsDownForExplicitProvider(t *testing.T) {
 	assertEnabled(t, final, "remote")
 }
 
-// TestPropagationLeavesNonExclusiveProvidersCoexisting pins that propagation
-// only disables the exclusive default: mail states StateAuto and never claimed
-// exclusivity, so a doomed exclusive default beside it must not drag it down.
+// TestPropagationLeavesNonExclusiveProvidersCoexisting checks that shared providers keep running
+// while an exclusive auto one stands down.
 func TestPropagationLeavesNonExclusiveProvidersCoexisting(t *testing.T) {
 	final := mustResolve(t,
 		stated("console", StateAuto, "", exclusive((*storeCap)(nil))),
@@ -178,9 +171,8 @@ func TestPropagationLeavesNonExclusiveProvidersCoexisting(t *testing.T) {
 	assertEnabled(t, final, "mail", "sms")
 }
 
-// TestNonExclusiveDefaultAgainstExclusiveExplicitFails pins the consequence
-// the design spells out: the side that stands down must claim exclusivity
-// itself, otherwise propagation has nobody to disable and adjudication fails.
+// TestNonExclusiveDefaultAgainstExclusiveExplicitFails checks that a shared auto provider beside an
+// exclusive explicit one violates exclusivity.
 func TestNonExclusiveDefaultAgainstExclusiveExplicitFails(t *testing.T) {
 	_, err := resolveEnablement([]stance{
 		stated("memory", StateAuto, "", shared((*cacheCap)(nil))),
@@ -191,10 +183,8 @@ func TestNonExclusiveDefaultAgainstExclusiveExplicitFails(t *testing.T) {
 	}
 }
 
-// TestStatedDisabledIsHonoured pins the stance the mechanism accepts: a module
-// that can run without an optional piece of its configuration states
-// StateDisabled with its reason, and resolution leaves it out of the enabled set
-// carrying that reason unchanged. core does not read the reason.
+// TestStatedDisabledIsHonoured checks that a module that states disabled stays disabled with its
+// own reason.
 func TestStatedDisabledIsHonoured(t *testing.T) {
 	final := mustResolve(t,
 		stated("running", StateAuto, ""),
@@ -204,10 +194,8 @@ func TestStatedDisabledIsHonoured(t *testing.T) {
 	assertEnabled(t, final, "running")
 }
 
-// TestStatedDisabledWithoutAReasonFails pins the one thing a self-disabled
-// stance owes the mechanism: the reason. It is the whole of what the
-// diagnostics and a dependent's failure can say about the absence, so an empty
-// one leaves both reports without the fact that makes them useful.
+// TestStatedDisabledWithoutAReasonFails pins the one thing a self-disabled stance owes the
+// mechanism: the reason.
 func TestStatedDisabledWithoutAReasonFails(t *testing.T) {
 	_, err := resolveEnablement([]stance{
 		stated("silent", StateDisabled, ""),
@@ -220,12 +208,8 @@ func TestStatedDisabledWithoutAReasonFails(t *testing.T) {
 	}
 }
 
-// TestStatedDisabledDeliversNothingToResolution pins that a module that stood
-// itself down takes no part in exclusive delivery: its exclusive claim neither
-// contests the capability nor fails adjudication beside another exclusive
-// provider. Reading it as a provider would turn this pair into
-// ErrExclusiveViolated, which is the failure the disabled module must not
-// cause.
+// TestStatedDisabledDeliversNothingToResolution checks that a disabled exclusive claimant delivers
+// nothing, so another auto provider runs.
 func TestStatedDisabledDeliversNothingToResolution(t *testing.T) {
 	final := mustResolve(t,
 		stated("off", StateDisabled, "not configured", exclusive((*cacheCap)(nil))),
@@ -235,9 +219,8 @@ func TestStatedDisabledDeliversNothingToResolution(t *testing.T) {
 	assertEnabled(t, final, "on")
 }
 
-// TestStatedDisabledIsNotStoodDownForAnotherProvider pins that resolution leaves
-// a module that already stood itself down alone: it keeps its own reason rather
-// than being rewritten with a resolution reason it never took part in.
+// TestStatedDisabledIsNotStoodDownForAnotherProvider checks that a module that stated disabled
+// keeps its own reason rather than a stand-down caused by another provider.
 func TestStatedDisabledIsNotStoodDownForAnotherProvider(t *testing.T) {
 	final := mustResolve(t,
 		stated("off", StateDisabled, "not configured", exclusive((*cacheCap)(nil))),
@@ -247,9 +230,8 @@ func TestStatedDisabledIsNotStoodDownForAnotherProvider(t *testing.T) {
 	assertEnabled(t, final, "remote")
 }
 
-// TestAbsentPrepareIsAuto pins the zero value: a module without a Prepare
-// callback states StateAuto, so it stands down like any other exclusive
-// default.
+// TestAbsentPrepareIsAuto pins the zero value: a module without a Prepare callback states
+// StateAuto, so it stands down like any other exclusive default.
 func TestAbsentPrepareIsAuto(t *testing.T) {
 	if (Enablement{}).State != StateAuto {
 		t.Fatal("the zero Enablement is not StateAuto")
@@ -262,9 +244,8 @@ func TestAbsentPrepareIsAuto(t *testing.T) {
 	assertEnabled(t, final, "remote")
 }
 
-// TestResolutionIndependentOfRegistrationOrder pins that the outcome comes
-// from a snapshot: init only guarantees a partial order, so anything derived
-// from registration order would change from build to build.
+// TestResolutionIndependentOfRegistrationOrder checks that every permutation of the stances
+// resolves to the same verdicts.
 func TestResolutionIndependentOfRegistrationOrder(t *testing.T) {
 	base := []stance{
 		stated("console", StateAuto, "", exclusive((*storeCap)(nil))),
@@ -289,6 +270,8 @@ func TestResolutionIndependentOfRegistrationOrder(t *testing.T) {
 	}
 }
 
+// TestModuleWithoutProvisionsOnlyUsesOwnState checks that a module delivering and requiring nothing
+// keeps its own stance whatever the others do.
 func TestModuleWithoutProvisionsOnlyUsesOwnState(t *testing.T) {
 	final := mustResolve(t,
 		stated("plain", StateAuto, ""),
@@ -297,9 +280,8 @@ func TestModuleWithoutProvisionsOnlyUsesOwnState(t *testing.T) {
 	assertEnabled(t, final, "plain", "remote")
 }
 
-// TestExclusiveClaimLapsesWhenPropagationDisablesTheClaimant pins the snapshot
-// semantics for a module that claims two capabilities: once propagation
-// disables it over one of them, its claim on the other lapses with it.
+// TestExclusiveClaimLapsesWhenPropagationDisablesTheClaimant checks that a claim on a second
+// capability lapses when propagation disables the module.
 func TestExclusiveClaimLapsesWhenPropagationDisablesTheClaimant(t *testing.T) {
 	final := mustResolve(t,
 		stated("x", StateAuto, "", exclusive((*cacheCap)(nil)), exclusive((*storeCap)(nil))),
@@ -310,6 +292,8 @@ func TestExclusiveClaimLapsesWhenPropagationDisablesTheClaimant(t *testing.T) {
 	assertEnabled(t, final, "y", "z")
 }
 
+// TestResolutionCoversEveryStance checks that resolution reports a verdict for every module in the
+// set.
 func TestResolutionCoversEveryStance(t *testing.T) {
 	final := mustResolve(t,
 		stated("a", StateAuto, ""),
@@ -322,10 +306,8 @@ func TestResolutionCoversEveryStance(t *testing.T) {
 	}
 }
 
-// TestExclusiveResolutionGroupsByTypeIdentity pins the resolution half of the
-// same rule: an exclusive provider of superCacheCap and an exclusive provider
-// of the capability it embeds are providers of two capabilities, so neither
-// crowds the other out.
+// TestExclusiveResolutionGroupsByTypeIdentity checks that exclusivity is grouped by the capability's
+// type identity, so two different interfaces do not conflict.
 func TestExclusiveResolutionGroupsByTypeIdentity(t *testing.T) {
 	final := mustResolve(t,
 		stated("super", StateAuto, "", exclusive((*superCacheCap)(nil))),
