@@ -592,9 +592,6 @@ the page; the button adds it to `aria-describedby` and renders nothing
 itself. A caller-supplied `aria-describedby` stays first either way. With
 neither, the button carries `aria-disabled` alone -- the shape a write in
 flight leaves on a contextual control. A busy button gives no reason.
-`disabled` and `loading` remain for call sites that have not migrated, are
-deprecated, and are removed once every call site uses `busy` /
-`unavailable`.
 
 ```tsx
 import { ActionButton, ActionRow } from '@speed/ui-kit'

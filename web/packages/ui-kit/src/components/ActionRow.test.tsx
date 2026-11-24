@@ -153,20 +153,6 @@ describe('ActionButton', () => {
     await user.click(save)
     expect(onClick).toHaveBeenCalledTimes(1)
   })
-
-  it('renders the disabled and loading states the host gives it', () => {
-    renderWithProviders(
-      <ActionRow>
-        <ActionButton disabled>Cancel</ActionButton>
-        <ActionButton emphasis="primary" loading>
-          Save
-        </ActionButton>
-      </ActionRow>,
-    )
-
-    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
-  })
 })
 
 describe('ActionButton busy and unavailable states', () => {
@@ -421,3 +407,13 @@ describe('ActionButton busy and unavailable states', () => {
     expect(progress).toHaveAttribute('aria-labelledby', save.id)
   })
 })
+
+/** Shape-drift guards: each must keep erroring as long as the pinned
+ * constraint holds. The @ts-expect-error comment turns a guard that
+ * silently stops erroring into a typecheck failure. */
+// @ts-expect-error -- guard: ActionButton no longer accepts disabled
+const disabledButton = <ActionButton disabled>Save</ActionButton>
+// @ts-expect-error -- guard: ActionButton no longer accepts loading
+const loadingButton = <ActionButton loading>Save</ActionButton>
+void disabledButton
+void loadingButton
