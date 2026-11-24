@@ -8,8 +8,6 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// configuredRig is a loaded rig whose configuration source declares one
-// template, so a case drives both sources at once.
 func configuredRig(t *testing.T) *rig {
 	t.Helper()
 	cfg := settingsOf(t, map[string]sms.TemplateSpec{
@@ -20,9 +18,8 @@ func configuredRig(t *testing.T) *rig {
 	return r
 }
 
-// TestResolvePicksFromEitherSource drives the two sources and the priority
-// between them: a configured message is resolved through the declaration, a
-// runtime message through the snapshot, and a name neither holds is refused.
+// TestResolvePicksFromEitherSource checks the two sources: a configured message resolves through
+// the declaration, a runtime one through the snapshot, and an unknown name is refused.
 func TestResolvePicksFromEitherSource(t *testing.T) {
 	r := configuredRig(t)
 	r.plant("otp", []string{"code", "ttl"}, map[string]string{"en": "rt-en"},
@@ -54,7 +51,6 @@ func TestResolvePicksFromEitherSource(t *testing.T) {
 	if got.Code != "rt-en" {
 		t.Errorf("the runtime template resolved to code %q, want rt-en", got.Code)
 	}
-	// Ordered follows the declared parameter order, not the map's.
 	if len(got.Ordered) != 2 || got.Ordered[0] != "1234" || got.Ordered[1] != "5" {
 		t.Errorf("the runtime parameters are ordered %+v", got.Ordered)
 	}
@@ -64,9 +60,7 @@ func TestResolvePicksFromEitherSource(t *testing.T) {
 	}
 }
 
-// TestResolveRefusesNotSendable covers a runtime template that is disabled and
-// one whose vendor review has not come back approved: both are ErrNotSendable,
-// told apart from a caller defect.
+// TestResolveRefusesNotSendable checks that a disabled template and one whose review is not approved are ErrNotSendable.
 func TestResolveRefusesNotSendable(t *testing.T) {
 	r := newSQLiteRig(t)
 	r.plant("off", []string{"code"}, map[string]string{"en": "c1"}, map[string]sms.Approval{"en": {State: sms.ApprovalApproved}}, false, base)
@@ -81,11 +75,7 @@ func TestResolveRefusesNotSendable(t *testing.T) {
 	}
 }
 
-// TestResolveIsPerLanguage covers the review's granularity: a template approved
-// in one language and still pending in another resolves in the approved language
-// and is refused with ErrNotSendable in the pending one. This is the case a
-// single aggregate verdict got wrong: a pending second language must not block a
-// message in a language the vendor already approved.
+// TestResolveIsPerLanguage checks that a template approved in one language and pending in another resolves in the approved language.
 func TestResolveIsPerLanguage(t *testing.T) {
 	r := newSQLiteRig(t)
 	r.plant("otp", []string{"code"}, map[string]string{"en": "c-en", "zh": "c-zh"},
@@ -106,9 +96,8 @@ func TestResolveIsPerLanguage(t *testing.T) {
 	}
 }
 
-// TestResolveRuntimeChecksLanguageAndParams covers the runtime path's own
-// structural checks: a language with no code, a missing parameter and a surplus
-// parameter are each ErrRejected.
+// TestResolveRuntimeChecksLanguageAndParams checks that an unknown language, a
+// missing parameter and a surplus parameter are each ErrRejected.
 func TestResolveRuntimeChecksLanguageAndParams(t *testing.T) {
 	r := newSQLiteRig(t)
 	r.plant("otp", []string{"code"}, map[string]string{"en": "c"}, map[string]sms.Approval{"en": {State: sms.ApprovalApproved}}, true, base)
@@ -125,8 +114,7 @@ func TestResolveRuntimeChecksLanguageAndParams(t *testing.T) {
 	}
 }
 
-// TestResolveEmptyLocaleIsRejected covers the empty-locale check, which is the
-// caller's defect whichever source holds the template.
+// TestResolveEmptyLocaleIsRejected checks that an empty locale is rejected whichever source holds the template.
 func TestResolveEmptyLocaleIsRejected(t *testing.T) {
 	r := configuredRig(t)
 	if _, err := r.s.Resolve(sms.Message{Template: "welcome", Params: map[string]string{"name": "A"}}); !errors.Is(err, sms.ErrRejected) {
@@ -139,13 +127,9 @@ func TestResolveEmptyLocaleIsRejected(t *testing.T) {
 	}
 }
 
-// TestRuntimeReadBeforeLoadIsUnavailable covers the before-load behaviour: a
-// runtime resolve, a list and a management call are each a failure that says
-// the state is unavailable, never that the set is empty or that a template is
-// absent.
+// TestRuntimeReadBeforeLoadIsUnavailable checks that a runtime read before the load fails as unavailable rather than as absent.
 func TestRuntimeReadBeforeLoadIsUnavailable(t *testing.T) {
 	r := newRig(t, openDialect(t, sqliteDialect), newProvider(), settingsOf(t, nil, 0))
-	// No load: the state Init leaves is absent.
 
 	if _, err := r.s.Resolve(sms.Message{Template: "otp", Locale: "en", Params: map[string]string{"code": "x"}}); !errors.Is(err, ErrNotLoaded) {
 		t.Errorf("resolving before the load returned %v, want ErrNotLoaded", err)
@@ -161,8 +145,8 @@ func TestRuntimeReadBeforeLoadIsUnavailable(t *testing.T) {
 	}
 }
 
-// TestDeclaredMergesAndFilters covers Declared: the configuration templates plus
-// the runtime ones that are both enabled and approved, in name order.
+// TestDeclaredMergesAndFilters checks that Declared reports the configuration
+// templates plus the runtime ones enabled and approved, in name order.
 func TestDeclaredMergesAndFilters(t *testing.T) {
 	r := configuredRig(t)
 	r.plant("beta", []string{"code"}, map[string]string{"en": "c"}, map[string]sms.Approval{"en": {State: sms.ApprovalApproved}}, true, base)
@@ -175,8 +159,6 @@ func TestDeclaredMergesAndFilters(t *testing.T) {
 	for _, tmpl := range got {
 		names = append(names, tmpl.Name)
 	}
-	// welcome (config) and beta (runtime, enabled and approved); alpha is
-	// pending and gamma is disabled, so neither is in force.
 	want := []string{"beta", "welcome"}
 	if len(names) != len(want) {
 		t.Fatalf("Declared returned %v, want %v", names, want)
@@ -189,9 +171,8 @@ func TestDeclaredMergesAndFilters(t *testing.T) {
 	}
 }
 
-// TestListMergesSources covers List: the configuration records are read-only
-// and always enabled with an untracked review; the runtime records carry their
-// state and bookkeeping.
+// TestListMergesSources checks that List reports configured records read-only
+// and always enabled, and runtime records with their state and bookkeeping.
 func TestListMergesSources(t *testing.T) {
 	r := configuredRig(t)
 	r.plant("otp", []string{"code", "ttl"}, map[string]string{"en": "c"}, map[string]sms.Approval{"en": {State: sms.ApprovalApproved}}, true, base)
@@ -204,7 +185,6 @@ func TestListMergesSources(t *testing.T) {
 	if len(records) != 2 {
 		t.Fatalf("List returned %d records, want 2", len(records))
 	}
-	// Sorted by name: otp (runtime) then welcome (config).
 	otp, welcome := records[0], records[1]
 	if otp.Name != "otp" || otp.Source != sms.SourceRuntime || otp.Approvals["en"].State != sms.ApprovalApproved ||
 		!otp.Enabled || otp.Version != 1 || otp.CreatedAt.IsZero() {
@@ -219,8 +199,7 @@ func TestListMergesSources(t *testing.T) {
 	}
 }
 
-// TestDeclaredHandsOutCopies covers that a caller cannot write into the
-// module's storage through what it read.
+// TestDeclaredHandsOutCopies checks that a caller cannot write into the storage through what it read.
 func TestDeclaredHandsOutCopies(t *testing.T) {
 	r := newSQLiteRig(t)
 	r.plant("otp", []string{"code"}, map[string]string{"en": "c"}, map[string]sms.Approval{"en": {State: sms.ApprovalApproved}}, true, base)
@@ -238,8 +217,7 @@ func TestDeclaredHandsOutCopies(t *testing.T) {
 	}
 }
 
-// TestResolvedUsesTheWriteTimeClock is a guard that the runtime resolve carries
-// every field the carrier needs and nothing the module invented.
+// TestResolvedFieldsRoundTrip checks that a runtime resolve carries every field the carrier needs.
 func TestResolvedFieldsRoundTrip(t *testing.T) {
 	r := newSQLiteRig(t)
 	r.plant("otp", []string{"a", "b"}, map[string]string{"en": "code-en"}, map[string]sms.Approval{"en": {State: sms.ApprovalApproved}}, true, base)
@@ -262,8 +240,7 @@ func TestResolvedFieldsRoundTrip(t *testing.T) {
 	}
 }
 
-// TestChangedRowIsPublishedAsAnEvent covers that a write publishes the change
-// event and that the handler reloads the snapshot.
+// TestChangedRowIsPublishedAsAnEvent checks that a write publishes the change event and the handler reloads the snapshot.
 func TestChangedRowIsPublishedAsAnEvent(t *testing.T) {
 	r := newSQLiteRig(t)
 	r.s.subscribe()
@@ -274,8 +251,6 @@ func TestChangedRowIsPublishedAsAnEvent(t *testing.T) {
 	if len(evts) != 1 || evts[0].Type != ChangedEventType {
 		t.Fatalf("the bus published %+v, want one %q", evts, ChangedEventType)
 	}
-	// A second replica applies the event by reloading; here the same snapshot
-	// is rebuilt, so the row is still resolvable.
 	r.bus.deliver(context.Background(), evts[0])
 	if _, err := r.s.Resolve(sms.Message{Template: "otp", Locale: "en", Params: map[string]string{"code": "x"}}); errors.Is(err, ErrNotLoaded) {
 		t.Errorf("the snapshot was cleared by the reload: %v", err)

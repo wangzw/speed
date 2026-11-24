@@ -1,31 +1,6 @@
-// Package sms sends one templated message through a carrier.
-//
-// It is the sending capability on its own: a Message names a template, a
-// language, the parameters the template substitutes, an optional originator and
-// an optional lifetime, and a Sender hands that message to one vendor. It holds
-// no challenge state, no queue, no budget and no retry; a consumer that needs
-// those builds them over this package.
-//
-// A template is a first-class declaration, because the carriers this package
-// serves take only approved templates: a domestic carrier sends under a
-// pre-approved signature and template and only the parameters that template was
-// approved with; a positional carrier requires those parameters in the approved
-// order; and a carrier that sends by body sends the text the declaration
-// rendered. A template carries its kind and either a vendor code per language, a
-// locally rendered body per language, or both — which of the two a carrier can
-// use is part of its CarrierModel.
-//
-// The template set is the Registry's, not a carrier's: a registry holds the
-// templates in force, resolves a Message against them and reaches the vendor
-// through the Provider seam. A carrier holds no template set at all — it lays out
-// what a Registry already resolved, and its CarrierModel declares the shape of
-// template it can carry. See registry.go for the registry seam and the record an
-// operator manages.
-//
-// A carrier is a module: an implementation subpackage hands a Spec to NewModule,
-// and a host enables at most one of them, for this package's Sender and Provider
-// alike. There is one carrier per process and no routing: a Message carries no
-// routing key, and neither Sender nor Provider is delivered twice.
+// Package sms sends one templated message through a carrier. A template is a
+// first-class declaration held by the Registry; a carrier lays out what the
+// Registry resolved and declares what it can carry in its CarrierModel.
 package sms
 
 import (
@@ -34,35 +9,23 @@ import (
 	"time"
 )
 
-// Message is one templated message handed to a carrier.
-//
-// The parameter values it carries — a verification code among them — and any
-// carrier credential reach no log, no error text and no metric. This package
-// names the fields; keeping that is each carrier's.
+// Message is one templated message handed to a carrier. Its parameter values and
+// any carrier credential reach no log, no error text and no metric.
 type Message struct {
 	// To is the destination, in E.164.
 	To string
-	// Template is the logical template name, chosen by the caller. The registry
-	// maps it, with the language, to the vendor's code or the body the declaration
-	// holds for it, so the same name means the same message shape to every
-	// carrier.
+	// Template is the logical template name, chosen by the caller; the registry maps
+	// it, with the language, to a vendor code or a body.
 	Template string
 	// Params carries the substitutions. Its keys are the parameter names the
 	// template declared; a declared parameter that is absent and a parameter that
 	// was never declared are both caller defects, refused by Resolve.
 	Params map[string]string
-	// Locale is the language the message is written in. It is opaque here — this
-	// package only indexes the template's language maps with it — and it must be
-	// non-empty: an empty locale is a caller defect, refused with ErrRejected. A
-	// consumer that lets an empty value mean a default normalizes it before it
-	// builds the Message.
+	// Locale is the language the message is written in. It is opaque here and must be
+	// non-empty; an empty locale is a caller defect refused with ErrRejected.
 	Locale string
-	// Originator names the sending identity to use, from the carrier's
-	// CarrierModel.Identities. It is optional, and empty means the carrier's
-	// default identity. Resolve does not check it, because a Declaration holds no
-	// identities; the carrier checks it in Send and refuses an unknown name with
-	// ErrRejected, an identity that cannot serve the destination with
-	// ErrUnroutable.
+	// Originator names the sending identity, empty for the carrier's default. Resolve
+	// does not check it; the carrier refuses an unknown name with ErrRejected.
 	Originator string
 	// ValidFor is how long the message stays worth delivering. Zero means the
 	// vendor's own default. A carrier whose vendor takes no lifetime ignores it.
@@ -80,21 +43,9 @@ type Receipt struct {
 	ProviderID string
 }
 
-// Sender is the sending seam a carrier module delivers.
-//
-// A carrier module delivers it exclusively, so a command names one carrier and
-// two at once fail in resolution. A carrier answers its own name, calls one
-// vendor and never retries inside the call, and classifies what comes back into
-// ErrThrottled, ErrRejected, ErrUnroutable or ErrUncertain: a failure that fits
-// none of the first three — a timeout and a network error included — is
-// ErrUncertain.
-//
-// It takes a Resolved and not a Message: which template a message goes out under
-// is decided by the template registry, against the set that is in force, and a
-// carrier holds no template set of its own. The carrier's whole part in the
-// decision is checking the originator and laying what it was handed out the way
-// its vendor wants it: the vendor code or the rendered body, the parameters and
-// the registration attributes.
+// Sender is the sending seam a carrier module delivers exclusively. It answers its
+// name, calls one vendor without retrying, and classifies the answer into the
+// sending sentinels. It takes a Resolved because a carrier holds no template set.
 type Sender interface {
 	// Name reports the carrier this sender is.
 	Name() string
@@ -104,47 +55,23 @@ type Sender interface {
 	Send(ctx context.Context, r Resolved) (Receipt, error)
 }
 
-// Provider is the template-management seam a carrier module delivers beside
-// Sender: what the carrier can carry, and the operations a template's life at the
-// vendor goes through — the only place this package creates, reads, reviews or
-// removes vendor-side content.
-//
-// It is a separate seam from Sender because it is a separate kind of work: a
-// send is one call the caller waits on, while a template outlives the process, is
-// reviewed by the vendor on the vendor's own schedule, and is reached by an
-// operator rather than by a flow. A carrier module delivers both, exclusively,
-// so a command still names exactly one carrier.
-//
-// A carrier answers its own Name, and every error it returns is wrapped so
-// errors.Is finds the sentinel. A vendor error the carrier cannot place is
-// ErrUncertain, on the same reasoning as a send: a call that fell over may still
-// have landed, and offering a template twice is a template nobody approved.
+// Provider is the template-management seam a carrier delivers beside Sender: what
+// the carrier can carry and the operations a template goes through at the vendor.
+// Every error is wrapped so errors.Is finds the sentinel.
 type Provider interface {
 	// Name reports the carrier this provider is, the same name Sender answers.
 	Name() string
-	// Model reports what this carrier can carry: its content and review support,
-	// its identities and their countries, the attribute keys it accepts, its body
-	// bound and whether its receipts are asynchronous. The model is fixed for the
-	// life of the process.
-	//
-	// It sits on Provider rather than on Product because the management surface
-	// holds a Provider and not a Product: without it here, a caller holding the
-	// management seam could not answer which kind of carrier it is managing.
-	// Product is Sender plus Provider, so it carries Model transitively.
+	// Model reports what this carrier can carry, fixed for the life of the process. It
+	// sits on Provider so the management surface can answer which carrier it holds.
 	Model() CarrierModel
-	// Offer hands a template to the vendor for review and answers the vendor's
-	// identifier for it. The vendor reviews asynchronously, so the identifier is
-	// all that comes back; the state is read later through Approval. A carrier
-	// whose model has no per-template review records the body locally, calls no
-	// vendor, and answers the code it filed the template under.
+	// Offer hands a template to the vendor for review and answers its identifier. A
+	// carrier with no per-template review records the body locally.
 	Offer(ctx context.Context, s Submission) (code string, err error)
 	// Approval reads the vendor's review state for one template code. A carrier
 	// whose model has no per-template review answers ApprovalNotRequired.
 	Approval(ctx context.Context, code string) (Approval, error)
-	// Retire removes one template at the vendor. It is not the same as disabling
-	// a template locally: the vendor stops holding it. A carrier with no
-	// per-template review holds nothing at the vendor to remove, so its Retire is a
-	// no-op.
+	// Retire removes one template at the vendor, unlike disabling it locally. A carrier
+	// with no per-template review has nothing to remove, so its Retire is a no-op.
 	Retire(ctx context.Context, code string) error
 }
 
@@ -192,13 +119,8 @@ const (
 	IdentityMessagingService IdentityKind = "messaging-service"
 )
 
-// Identity is one sending identity this deployment has.
-//
-// It declares the identity and the countries it can serve; it says nothing about
-// whether that identity is registered in a country. Registration — a US 10DLC
-// brand or campaign, an India DLT entity, toll-free verification, a short code,
-// a per-country sender ID — stays with the vendor's portal and the contract, and
-// this package never manages, tracks or claims it.
+// Identity is one sending identity this deployment has. It declares the identity
+// and the countries it can serve, never its registration state.
 type Identity struct {
 	// Name is what Message.Originator names it by.
 	Name string
@@ -216,13 +138,8 @@ type Identity struct {
 	Attributes map[string]string
 }
 
-// CarrierModel is a carrier's declaration of what it can carry, fixed for the
-// life of the process.
-//
-// The template registry and the management surface read it to decide whether a
-// template fits this carrier and how a send is shaped; neither reaches the vendor
-// to learn it. It is the whole of what a carrier says about itself beyond its
-// name.
+// CarrierModel is a carrier's declaration of what it can carry, fixed for the life
+// of the process.
 type CarrierModel struct {
 	// Content says whether it sends by vendor code, by rendered body, or both.
 	Content ContentSupport
@@ -251,31 +168,18 @@ type CarrierModel struct {
 var (
 	// ErrThrottled reports a carrier that limited the call.
 	ErrThrottled = errors.New("sms: the carrier limited the call")
-	// ErrRejected reports a message a carrier refused: a template, a language, a
-	// parameter, an originator or a signature it would not send under. It is also
-	// the sentinel for a caller defect this package catches before the carrier is
-	// reached — an empty locale, an undeclared template, a language the template
-	// has neither a code nor a body for, a missing or surplus parameter, an
-	// originator this deployment does not have — because neither reached the
-	// carrier and neither is uncertain.
+	// ErrRejected reports a message a carrier refused, and also the caller defects
+	// this package catches before the carrier is reached.
 	ErrRejected = errors.New("sms: the carrier rejected the message")
-	// ErrUnroutable reports a message this carrier cannot carry to this
-	// destination under this deployment: a permission it lacks, a resource that
-	// does not exist, a quota that is exhausted, or an identity that cannot serve
-	// the destination's country. It is distinct from ErrRejected because the
-	// message itself is not defective, and from ErrUncertain because the outcome
-	// is definite — only another deployment would change it.
+	// ErrUnroutable reports a message this carrier cannot carry to this destination
+	// under this deployment. The message is not defective and the outcome is definite.
 	ErrUnroutable = errors.New("sms: the carrier cannot carry this message to this destination")
 	// ErrUncertain reports a send whose delivery is not known, because the call
 	// failed in a way that leaves it open whether the message went out.
 	ErrUncertain = errors.New("sms: whether the message was delivered is not known")
 	// ErrInvalidConfig reports a configuration a carrier cannot run on.
 	ErrInvalidConfig = errors.New("sms: the configuration holds a value it cannot run on")
-	// ErrNotSendable reports a template this process holds but must not send
-	// under: one that is disabled, or one whose vendor review has not come back
-	// approved though the vendor reviews it. It is told apart from ErrRejected
-	// because the remedy differs — a rejected message is the caller's to fix, while
-	// this one is the template's state, and nothing the caller writes into a
-	// message changes it.
+	// ErrNotSendable reports a template this process holds but must not send under:
+	// it is disabled or its vendor review has not come back approved.
 	ErrNotSendable = errors.New("sms: the template is not in a state a message may be sent under")
 )

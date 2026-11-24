@@ -12,9 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// fakeSettings is a settings store over named rows, with every read recorded and
-// one shared failure a case can make it answer, so a case can drive the sending
-// switch without the settings module.
 type fakeSettings struct {
 	mu     sync.Mutex
 	values map[string]any
@@ -74,17 +71,13 @@ func (f *fakeSettings) readKeys() []string {
 	return append([]string(nil), f.reads...)
 }
 
-// TestSendingEnabledGatesResolve covers the switch: false answers ErrNotSendable,
-// true resolves, and Resolve reads it on every call, so an operator can turn it
-// back without a restart.
+// TestSendingEnabledGatesResolve checks that false answers ErrNotSendable, true resolves, and the switch is read on every call.
 func TestSendingEnabledGatesResolve(t *testing.T) {
 	r := configuredRig(t)
 	store := &fakeSettings{values: map[string]any{}}
 	r.s.tuned = newSettingsReader(store, r.logs.logger())
 
 	msg := sms.Message{Template: "welcome", Locale: "en", Params: map[string]string{"name": "Ann"}}
-	// The store holds no row, so the declared default applies and the message
-	// resolves.
 	if _, err := r.s.Resolve(msg); err != nil {
 		t.Fatalf("resolving with the switch at its default: %v", err)
 	}
@@ -110,9 +103,8 @@ func TestSendingEnabledGatesResolve(t *testing.T) {
 	}
 }
 
-// TestSendingEnabledFallsBackToTheDeclaredDefault covers an unreadable switch: it
-// reads as its declared default, true, and the fault is logged rather than
-// taking the whole capability down.
+// TestSendingEnabledFallsBackToTheDeclaredDefault checks that an unreadable
+// switch reads as its declared default and the fault is logged.
 func TestSendingEnabledFallsBackToTheDeclaredDefault(t *testing.T) {
 	r := configuredRig(t)
 	store := &fakeSettings{values: map[string]any{}, err: errors.New("the store is unreachable")}
@@ -128,9 +120,8 @@ func TestSendingEnabledFallsBackToTheDeclaredDefault(t *testing.T) {
 	}
 }
 
-// TestTheModuleDeclaresTheSendingSwitchAsASetting covers the declaration the
-// settings module collects: the item is there under the module's namespace and
-// its declared default is true.
+// TestTheModuleDeclaresTheSendingSwitchAsASetting checks that the item is
+// declared under the module's namespace with a default of true.
 func TestTheModuleDeclaresTheSendingSwitchAsASetting(t *testing.T) {
 	var declared settings.Schema
 	found := false

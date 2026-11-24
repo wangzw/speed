@@ -9,11 +9,8 @@ import (
 	"testing"
 )
 
-// TestNoVendorTypeReachesTheExportedSurface holds that the vendor SDK is an
-// implementation detail: the package exports the module name, its config
-// namespace and the module descriptor and nothing else, and no exported
-// signature names a vendor type, so a host that imports this package to register
-// it never has to name the SDK.
+// TestNoVendorTypeReachesTheExportedSurface checks that the package exports only the module name,
+// its config namespace and the module descriptor, and no exported signature names a vendor type.
 func TestNoVendorTypeReachesTheExportedSurface(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -36,7 +33,6 @@ func TestNoVendorTypeReachesTheExportedSurface(t *testing.T) {
 		for _, decl := range file.Decls {
 			switch d := decl.(type) {
 			case *ast.FuncDecl:
-				// A method on an unexported type is not on the package's surface.
 				if d.Recv != nil || !d.Name.IsExported() {
 					continue
 				}
@@ -64,7 +60,6 @@ func TestNoVendorTypeReachesTheExportedSurface(t *testing.T) {
 	}
 }
 
-// vendorImportNames returns the local names a file gives the vendor packages.
 func vendorImportNames(file *ast.File) map[string]bool {
 	names := make(map[string]bool)
 	for _, imp := range file.Imports {
@@ -84,8 +79,6 @@ func vendorImportNames(file *ast.File) map[string]bool {
 	return names
 }
 
-// namesVendorType reports whether a type expression is a selector on a vendor
-// package.
 func namesVendorType(node ast.Node, aliases map[string]bool) bool {
 	found := false
 	ast.Inspect(node, func(n ast.Node) bool {
@@ -101,8 +94,6 @@ func namesVendorType(node ast.Node, aliases map[string]bool) bool {
 	return found
 }
 
-// exportedSpec names the exported declarations a spec introduces, under the
-// keyword of the declaration it belongs to.
 func exportedSpec(tok token.Token, specs []ast.Spec) []string {
 	var names []string
 	for _, spec := range specs {

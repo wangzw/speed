@@ -10,7 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// requireNullField asserts that one field of a decoded JSON object is null.
 func requireNullField(t *testing.T, object map[string]json.RawMessage, name string) {
 	t.Helper()
 	raw, present := object[name]
@@ -23,8 +22,6 @@ func requireNullField(t *testing.T, object map[string]json.RawMessage, name stri
 	}
 }
 
-// requireUTCInstant asserts that one field of a decoded JSON object is a
-// quoted string and that its wire text ends in Z.
 func requireUTCInstant(t *testing.T, object map[string]json.RawMessage, name string) {
 	t.Helper()
 	raw, present := object[name]
@@ -37,9 +34,7 @@ func requireUTCInstant(t *testing.T, object map[string]json.RawMessage, name str
 	}
 }
 
-// TestARuntimeTemplateWritesItsInstantsInUTC holds the wire rule for the write
-// instants a runtime template carries: a value stored in a non-UTC zone leaves
-// as UTC with a trailing Z.
+// TestARuntimeTemplateWritesItsInstantsInUTC checks that a stored non-UTC value leaves as UTC with a trailing Z.
 func TestARuntimeTemplateWritesItsInstantsInUTC(t *testing.T) {
 	at := time.Date(2027, 3, 4, 5, 6, 7, 0, time.FixedZone("UTC+8", 8*60*60))
 	r := newRig(t)
@@ -62,8 +57,7 @@ func TestARuntimeTemplateWritesItsInstantsInUTC(t *testing.T) {
 	requireUTCInstant(t, body.Templates[0], "updated_at")
 }
 
-// TestAConfiguredTemplateWritesNullTimes holds the wire rule for a configured
-// template, which carries no write instants: both are null, not the zero time.
+// TestAConfiguredTemplateWritesNullTimes checks that a configured template writes both write instants as null.
 func TestAConfiguredTemplateWritesNullTimes(t *testing.T) {
 	r := newRig(t)
 	r.registry.records = []sms.Record{{

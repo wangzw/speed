@@ -10,8 +10,8 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// The carrier's declaration: Tencent sends by the vendor template number,
-// reviews every template, and the deployment sends under one signature.
+// TestTheCarrierDeclaresItsModel checks the carrier's declaration: it sends by
+// template number, reviews every template, and names one signature identity.
 func TestTheCarrierDeclaresItsModel(t *testing.T) {
 	model := newTestSender(t, "127.0.0.1:1").Model()
 	if !model.Content.TemplateCode || model.Content.TextBody {
@@ -39,9 +39,8 @@ func TestTheCarrierDeclaresItsModel(t *testing.T) {
 	}
 }
 
-// A codes-only declaration — the shape this carrier has always sent under, with
-// no body and a vendor number per language — still resolves and goes out as one
-// SendSms carrying that number.
+// TestACodesOnlyDeclarationResolvesAndSends checks that a codes-only declaration
+// resolves and goes out as one SendSms carrying that number.
 func TestACodesOnlyDeclarationResolvesAndSends(t *testing.T) {
 	declaration, err := sms.NewDeclaration(map[string]sms.TemplateSpec{
 		"authn.code.login": {

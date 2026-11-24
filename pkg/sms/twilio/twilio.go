@@ -1,30 +1,5 @@
-// Package twilio delivers the SMS carrier seams over Twilio's Messages and
-// Content APIs.
-//
-// It is a carrier module and nothing else. The sending seam lays a resolved
-// message out the way the Messages API wants it — the destination, the content
-// template the registry resolved, the ordered values as the template's
-// positional content variables, and the identity the message goes out from —
-// calls the vendor once and classifies what comes back into the sending
-// sentinels. The management seam creates a content template over the Content
-// API, answers the absence of a per-template review, and removes content. It
-// holds no challenge state, counts nothing, retries nothing and knows no
-// template set of its own: which template a message goes out under is decided by
-// the template registry, and this carrier holds only the content SID it is
-// handed.
-//
-// A host takes it in by writing ModuleName into a command. It delivers
-// sms.Sender and sms.Provider exclusively, so a command names exactly one carrier
-// and two at once fail in resolution. The whole leaf package binds the vendor SDK
-// and can be dropped without touching any other module.
-//
-// The carrier never learns who the caller is and this module never logs what it
-// sends: the auth token is registered as a literal redaction rule, and the
-// rendered body, the parameter values and the credentials reach no log, no error
-// text and no metric. Registration — a US 10DLC brand or campaign, toll-free
-// verification, a short code — and delivery receipts stay outside this package:
-// it declares the identities and the countries they serve and tracks neither
-// state, and the vendor's final delivery status arrives out of band.
+// Package twilio delivers the SMS carrier seams over Twilio Messages and Content
+// APIs. It binds the vendor SDK and registers one carrier module.
 package twilio
 
 import (
@@ -53,29 +28,14 @@ const ModuleName = "sms.twilio"
 // ConfigNamespace is where this module's input items are mounted.
 const ConfigNamespace = ModuleName
 
-// carrierName is the name this carrier reports through sms.Sender.Name and
-// sms.Provider.Name. It is a constant of the code: the assembly names exactly one
-// carrier, and a host reading a diagnostic has to be able to tell which.
 const carrierName = "twilio"
 
-// fromAttribute is the identity attribute that pins the sender a message goes
-// out from. Beside a messaging service it names one sender of the service's
-// pool; it may also carry the sender of any other identity.
 const fromAttribute = "from"
 
-// init registers this module with the process registry. A host chooses its
-// carrier by importing it, and what enters its go.mod follows the packages it
-// imported: a host that takes only this carrier binds only this vendor's SDK.
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// Module is the descriptor a host registers.
-//
-// Exclusive is set on both seams, which is what makes a command name exactly one
-// carrier: two of them enabled at once fail in resolution. The stance reads the
-// configuration, so a section this module cannot run on is a startup failure
-// ahead of every construction. The logging capability is taken up as an optional
-// requirement, because the auth token is registered as a literal redaction rule
-// and an assembly with no logging has nothing to register it with.
+// Module is the descriptor a host registers. It delivers both carrier seams
+// exclusively and takes the logging capability as an optional requirement.
 func Module() core.Module {
 	return sms.NewModule(sms.Spec[moduleConfig]{
 		ModuleName:      ModuleName,
@@ -89,11 +49,6 @@ func Module() core.Module {
 	})
 }
 
-// stance judges whether this carrier is configured to run, without consulting
-// sms.carrier. A section with none of the account, the sending identity and the
-// credential set is unconfigured and stands down; a section with some of them
-// set is half-configured and is an error naming the missing items. The identity
-// list's own consistency is checked in resolve once the section is complete.
 func stance(cfg *moduleConfig) (core.Enablement, error) {
 	if cfg.AccountSID == "" && cfg.AuthToken == "" && cfg.DefaultIdentity == "" && len(cfg.Identities) == 0 {
 		return core.Enablement{
@@ -124,13 +79,10 @@ func stance(cfg *moduleConfig) (core.Enablement, error) {
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 
-// secrets returns the values that have to be masked wherever the process logs
-// them: the auth token, which authenticates every call.
 func secrets(cfg *moduleConfig) []string {
 	return []string{cfg.AuthToken}
 }
 
-// open builds the product over the vendor clients.
 func open(_ context.Context, cfg *moduleConfig) (sms.Product, error) {
 	conf, err := cfg.resolve()
 	if err != nil {
@@ -139,35 +91,21 @@ func open(_ context.Context, cfg *moduleConfig) (sms.Product, error) {
 	return newSender(conf), nil
 }
 
-// endpointClient is the SDK's base client with its two public access points
-// replaced by the configured ones.
-//
-// The generated services hard-code https://api.twilio.com and
-// https://content.twilio.com, and the SDK offers no setter for either. The one
-// seam it does offer is the base client, which receives the finished URL: this
-// wrapper rewrites the host of a request aimed at one of the two public
-// endpoints and delegates everything else — credentials, form encoding, error
-// decoding — to the SDK's own client. It is what lets a host point the carrier at
-// a gateway, and what lets a case point it at a loopback server.
+// The generated services hard-code the public hosts and the SDK offers no setter, so this wrapper rewrites the host and delegates the rest.
 type endpointClient struct {
 	inner       twclient.BaseClient
 	apiBase     *url.URL
 	contentBase *url.URL
 }
 
-// endpointClient must satisfy the seam the SDK builds its request handler over.
 var _ twclient.BaseClient = (*endpointClient)(nil)
 
-// AccountSid reports the account the request paths are built under.
 func (c *endpointClient) AccountSid() string { return c.inner.AccountSid() }
 
-// SetTimeout sets the timeout the underlying HTTP client applies.
 func (c *endpointClient) SetTimeout(timeout time.Duration) { c.inner.SetTimeout(timeout) }
 
-// SetOauth sets the OAuth provider the underlying client authenticates with.
 func (c *endpointClient) SetOauth(auth twclient.OAuth) { c.inner.SetOauth(auth) }
 
-// OAuth reports the OAuth provider the underlying client authenticates with.
 func (c *endpointClient) OAuth() twclient.OAuth { return c.inner.OAuth() }
 
 // SendRequest rewrites a request aimed at one of the public endpoints onto the
@@ -182,10 +120,6 @@ func (c *endpointClient) SendRequest(method, rawURL string, data url.Values,
 	return c.inner.SendRequest(method, rewritten, data, headers, body...)
 }
 
-// rewrite swaps the public host of a request for the configured one. A URL that
-// names neither public endpoint is left alone: nothing this module sends aims
-// anywhere else, and guessing would send a request to a host the operator did not
-// configure.
 func (c *endpointClient) rewrite(rawURL string) (string, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -206,43 +140,26 @@ func (c *endpointClient) rewrite(rawURL string) (string, error) {
 	return parsed.String(), nil
 }
 
-// isEndpoint reports whether a host is the vendor's public endpoint for a
-// product: api.twilio.com or content.twilio.com, and the region and edge
-// variants the SDK's request handler can build from them.
 func isEndpoint(host, product string) bool {
 	return strings.HasPrefix(host, product+".") && strings.HasSuffix(host, ".twilio.com")
 }
 
-// sender is this module's product: it answers both carrier seams over one
-// account.
 type sender struct {
-	messages *messages.ApiService
-	content  *content.ApiService
-	// identities is the deployment's identity declaration in a stable order, and
-	// identityByName is what Send looks an originator up in.
-	identities     []sms.Identity
-	identityByName map[string]sms.Identity
-	// defaultIdentity is the identity a message that names none goes out from.
+	messages        *messages.ApiService
+	content         *content.ApiService
+	identities      []sms.Identity
+	identityByName  map[string]sms.Identity
 	defaultIdentity string
-	// dupe remembers the sends this instance has made, keyed by the resolved
-	// message's stable identifier, so the non-idempotent carrier is called at most
-	// once per identifier.
-	dupe *dedupe.Table[sms.Receipt]
+	dupe            *dedupe.Table[sms.Receipt]
 }
 
-// sender must satisfy the seams it delivers.
 var (
 	_ sms.Sender   = (*sender)(nil)
 	_ sms.Provider = (*sender)(nil)
 )
 
-// newSender builds the product over the configured access points.
-//
-// The SDK's own client holds the credentials and does the form encoding and error
-// decoding; the wrapper only redirects the two public hosts. The client is left
-// with the SDK's default timeout, which bounds a call that never answers and is
-// classified as uncertain, and with its default of not following redirects, so a
-// redirect cannot turn one send into two.
+// The client keeps the SDK's default of not following redirects, so a redirect
+// cannot turn one send into two.
 func newSender(cfg resolved) *sender {
 	inner := &twclient.Client{Credentials: twclient.NewCredentials(cfg.accountSID, cfg.authToken)}
 	inner.SetAccountSid(cfg.accountSID)
@@ -258,22 +175,12 @@ func newSender(cfg resolved) *sender {
 	}
 }
 
-// Name reports the name this carrier answers under, on both seams. It is a
-// constant: the assembly names exactly one carrier, and the name identifies it in
-// a diagnostic.
+// Name reports the name this carrier answers under, on both seams.
 func (s *sender) Name() string { return carrierName }
 
-// Model reports what this carrier can carry.
-//
-// Twilio sends by the vendor's content template SID, so a template this carrier
-// carries holds a code per language. The vendor has no per-template review for
-// the content resources this module creates, so a template is sendable without
-// waiting on one, and Approval answers ApprovalNotRequired. A send may pick its
-// identity among the deployment's declared ones (Review.Originator), and the
-// vendor's final delivery status arrives asynchronously (AsyncReceipt): the
-// synchronous answer is the message SID, and acceptance is not delivery. It
-// declares no attribute keys, no body bound of its own and no carrier-wide
-// country restriction; the identities carry the countries they serve.
+// Model reports what this carrier can carry: the vendor content template SID, no
+// per-template review, an identity chosen by the send and an asynchronous final
+// status; the identities carry the countries they serve.
 func (s *sender) Model() sms.CarrierModel {
 	identities := make([]sms.Identity, 0, len(s.identities))
 	for _, identity := range s.identities {
@@ -294,13 +201,8 @@ func (s *sender) Model() sms.CarrierModel {
 }
 
 // Send hands one resolved message to the carrier, at most once per stable
-// identifier.
-//
-// A message whose identifier was seen before is not sent again: the caller is
-// answered with the earlier call's outcome, so the non-idempotent carrier is
-// reached at most once per identifier. An empty identifier has nothing to guard
-// by, so the message is delivered directly; the caller is expected to set one
-// from the challenge.
+// identifier. A repeated identifier is answered with the earlier outcome; an
+// empty identifier has nothing to guard by.
 func (s *sender) Send(ctx context.Context, r sms.Resolved) (sms.Receipt, error) {
 	if r.DedupeID == "" {
 		return s.deliver(ctx, r)
@@ -314,21 +216,6 @@ func (s *sender) Send(ctx context.Context, r sms.Resolved) (sms.Receipt, error) 
 	return receipt, err
 }
 
-// deliver builds one CreateMessage request from a resolved message and calls the
-// carrier once.
-//
-// The content template and its ordered values are already decided: which
-// template a message goes out under is the registry's, and this carrier only
-// lays the values out the way its vendor wants them. The vendor has no body
-// form for a content template — the content resource holds the text — so no Body
-// is sent beside the ContentSid. Nothing here is retried: the vendor interface is
-// not idempotent, and a second call would deliver the message twice and bill it
-// twice.
-//
-// The caller's context is checked before the call. The SDK's request path takes
-// no context of its own, so a context that ends after this point cannot cancel
-// the in-flight request; the call then runs to the SDK's timeout and is
-// classified by what came back.
 func (s *sender) deliver(ctx context.Context, r sms.Resolved) (sms.Receipt, error) {
 	identity, err := s.identityFor(r.Originator)
 	if err != nil {
@@ -373,17 +260,8 @@ func (s *sender) deliver(ctx context.Context, r sms.Resolved) (sms.Receipt, erro
 	return sms.Receipt{ProviderID: *message.Sid}, nil
 }
 
-// maxValiditySeconds is the largest lifetime the vendor accepts.
 const maxValiditySeconds = 36000
 
-// validityPeriod reads a requested lifetime as the whole seconds the vendor
-// accepts.
-//
-// The vendor's field counts seconds and takes 1 to 36000; a lifetime below a
-// second becomes one second rather than the zero that would mean the vendor's
-// own default, and one beyond the bound is clamped to it rather than wrapping or
-// being refused. The direction matches the AWS carrier's TimeToLive handling, so
-// the same request means the same lifetime on either deployment.
 func validityPeriod(validFor time.Duration) int {
 	seconds := int64(validFor / time.Second)
 	switch {
@@ -396,15 +274,8 @@ func validityPeriod(validFor time.Duration) int {
 	}
 }
 
-// identityFor reads the identity a message goes out from: the one it names, or
-// the deployment's default when it names none. A name this deployment does not
-// declare is the caller's defect and is refused before the carrier is reached.
-//
-// The identity's declared countries are carried into the carrier declaration but
-// not compared here: the design fixes no form for a country value, and a
-// comparison against an opaque string would refuse messages for a reason the
-// operator cannot predict. Whether an identity reaches a destination is the
-// vendor's answer, classified by Send.
+// Countries are not compared here: a country value has no fixed form, and the
+// vendor judges reach.
 func (s *sender) identityFor(name string) (sms.Identity, error) {
 	if name == "" {
 		name = s.defaultIdentity
@@ -416,9 +287,6 @@ func (s *sender) identityFor(name string) (sms.Identity, error) {
 	return identity, nil
 }
 
-// messagingServiceSID reports the messaging service a send goes through, when the
-// identity is one. The service owns a pool of senders, so the message names the
-// service rather than a number.
 func messagingServiceSID(identity sms.Identity) string {
 	if identity.Kind == sms.IdentityMessagingService {
 		return identity.Value
@@ -426,13 +294,6 @@ func messagingServiceSID(identity sms.Identity) string {
 	return ""
 }
 
-// senderOf reports the From value a send carries.
-//
-// The "from" attribute wins when it is set: beside a messaging service it pins
-// one sender of the service's pool, and beside any other identity it is the
-// deployment's own override. With no attribute, a non-service identity sends
-// From its value — a number, a short code, a sender ID — and a service identity
-// sends no From at all, letting the vendor pick from the pool.
 func senderOf(identity sms.Identity) string {
 	if from := identity.Attributes[fromAttribute]; from != "" {
 		return from
@@ -443,10 +304,6 @@ func senderOf(identity sms.Identity) string {
 	return identity.Value
 }
 
-// contentVariables lays the ordered values out as the template's positional
-// content variables: the first value is "1", the second "2", and so on. The
-// order comes from the declaration, so it is the order the template was
-// approved with.
 func contentVariables(ordered []string) map[string]string {
 	variables := make(map[string]string, len(ordered))
 	for i, value := range ordered {

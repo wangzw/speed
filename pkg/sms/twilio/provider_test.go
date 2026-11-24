@@ -12,7 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// oneSubmission is a template the cases offer to the carrier.
 func oneSubmission() sms.Submission {
 	return sms.Submission{
 		Name:    "login code",
@@ -24,7 +23,6 @@ func oneSubmission() sms.Submission {
 	}
 }
 
-// contentReply answers a Content API call with one content resource.
 func contentReply(body string) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -33,10 +31,8 @@ func contentReply(body string) http.HandlerFunc {
 	}
 }
 
-// TestOfferCreatesATextTemplate holds the Content API request shape: a
-// twilio/text content under the submission's name, its body rewritten from the
-// seam's named placeholders into double-brace positional ones, and the language
-// derived from the locale.
+// TestOfferCreatesATextTemplate holds the Content API request: a twilio/text content, the body
+// rewritten into double-brace placeholders and the language derived from the locale.
 func TestOfferCreatesATextTemplate(t *testing.T) {
 	var got struct {
 		method, path string
@@ -89,7 +85,7 @@ func TestOfferCreatesATextTemplate(t *testing.T) {
 	}
 }
 
-// TestTheLanguageIsTheLowercasedPrimaryTag holds the derivation, including the
+// TestTheLanguageIsTheLowercasedPrimaryTag checks the derivation, including
 // locales that cannot be expressed as a two-letter ISO 639-1 code.
 func TestTheLanguageIsTheLowercasedPrimaryTag(t *testing.T) {
 	for _, c := range []struct {
@@ -126,8 +122,7 @@ func TestTheLanguageIsTheLowercasedPrimaryTag(t *testing.T) {
 	}
 }
 
-// TestAnInexpressibleLocaleIsRefusedBeforeTheVendorCall holds that the language
-// check runs before any vendor call.
+// TestAnInexpressibleLocaleIsRefusedBeforeTheVendorCall checks that the language check runs before any vendor call.
 func TestAnInexpressibleLocaleIsRefusedBeforeTheVendorCall(t *testing.T) {
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -147,8 +142,7 @@ func TestAnInexpressibleLocaleIsRefusedBeforeTheVendorCall(t *testing.T) {
 	}
 }
 
-// TestTheBodyIsRewrittenIntoPositionalPlaceholders holds the rewriting itself and
-// the defects it refuses.
+// TestTheBodyIsRewrittenIntoPositionalPlaceholders checks the rewriting and the defects it refuses.
 func TestTheBodyIsRewrittenIntoPositionalPlaceholders(t *testing.T) {
 	t.Run("rewritten", func(t *testing.T) {
 		got, err := doubleBrace("code ${code}, ${n} minutes, ${code} again", []string{"code", "n"})
@@ -187,10 +181,8 @@ func TestTheBodyIsRewrittenIntoPositionalPlaceholders(t *testing.T) {
 	}
 }
 
-// TestOfferFailuresFollowTheErrorTable holds that a limit, a refusal and a server
-// failure are classified like a send, and that a response with no SID is
-// uncertain: the offer interface is not idempotent, so offering the template
-// again would be a second one.
+// TestOfferFailuresFollowTheErrorTable checks that a limit, a refusal and a server failure
+// are classified like a send, and that an answer with no SID is uncertain.
 func TestOfferFailuresFollowTheErrorTable(t *testing.T) {
 	for name, c := range map[string]struct {
 		status int
@@ -227,8 +219,7 @@ func TestOfferFailuresFollowTheErrorTable(t *testing.T) {
 	})
 }
 
-// TestApprovalAnswersNotRequiredWithoutAVendorCall holds that this carrier has no
-// per-template review to read, so Approval makes no call.
+// TestApprovalAnswersNotRequiredWithoutAVendorCall checks that Approval makes no call.
 func TestApprovalAnswersNotRequiredWithoutAVendorCall(t *testing.T) {
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -272,8 +263,7 @@ func TestRetireDeletesTheContentBySID(t *testing.T) {
 	}
 }
 
-// TestRetireTreatsAGoneContentAsRemoved holds that a 404 is success: the content
-// is not there either way.
+// TestRetireTreatsAGoneContentAsRemoved checks that a 404 is success.
 func TestRetireTreatsAGoneContentAsRemoved(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -288,8 +278,7 @@ func TestRetireTreatsAGoneContentAsRemoved(t *testing.T) {
 	}
 }
 
-// TestRetireFailuresFollowTheErrorTable holds the classification on the removal
-// call.
+// TestRetireFailuresFollowTheErrorTable checks the classification on the removal call.
 func TestRetireFailuresFollowTheErrorTable(t *testing.T) {
 	for name, c := range map[string]struct {
 		status int
@@ -315,7 +304,7 @@ func TestRetireFailuresFollowTheErrorTable(t *testing.T) {
 	}
 }
 
-// TestAManagementCallIsNotRetried holds the no-retry rule on the management seam.
+// TestAManagementCallIsNotRetried checks the no-retry rule on the management seam.
 func TestAManagementCallIsNotRetried(t *testing.T) {
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

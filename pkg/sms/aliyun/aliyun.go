@@ -1,22 +1,5 @@
 // Package aliyun delivers the SMS carrier seams over Aliyun's Dysmsapi.
-//
-// It is a carrier module and nothing else. The sending seam lays a resolved
-// message's parameters out the way Aliyun wants them, builds one SendSms request,
-// calls the carrier once and classifies what comes back into the sending
-// sentinels; the template-management seam offers a template for review, reads the
-// review state and retires a template, all over the same client. It holds no
-// challenge state, counts nothing, retries nothing and knows no template set of
-// its own: which template a message goes out under is decided by the template
-// registry, and this carrier holds only the vendor code it is handed.
-//
-// A host takes it in by writing ModuleName into a command. It delivers
-// sms.Sender and sms.Provider exclusively, so a command names exactly one carrier
-// and two at once fail in resolution. The whole leaf package binds the vendor SDK
-// and can be dropped without touching any other module.
-//
-// The carrier never learns who the caller is and this module never logs what it
-// sends: the access-key secret is registered as a literal redaction rule, and the
-// message code and the credentials reach no log, no error text and no metric.
+// It binds the vendor SDK and registers one carrier module.
 package aliyun
 
 import (
@@ -40,21 +23,11 @@ const ModuleName = "sms.aliyun"
 // ConfigNamespace is where this module's input items are mounted.
 const ConfigNamespace = ModuleName
 
-// carrierName is the name this carrier reports through sms.Sender.Name and
-// sms.Provider.Name. It is a constant of the code: the assembly names exactly one
-// carrier, and a host reading a diagnostic has to be able to tell which.
 const carrierName = "aliyun"
 
-// okCode is the status code the carrier answers with once it has taken a request.
-// Every other value, the empty one included, is a refusal.
+// Every value but OK, the empty one included, is a refusal.
 const okCode = "OK"
 
-// carrier is the set of operations this module calls on the vendor client. It is
-// an interface rather than the client itself so that a case can drive the adapter
-// over the same client pointed at a loopback endpoint, and so that no vendor type
-// appears on this package's surface. The sending call and the template calls are
-// one interface because they are one client: a carrier delivers both seams over a
-// single vendor account.
 type carrier interface {
 	SendSmsWithContext(ctx context.Context, request *dysmsapi.SendSmsRequest, runtime *dara.RuntimeOptions) (*dysmsapi.SendSmsResponse, error)
 	CreateSmsTemplateWithContext(ctx context.Context, request *dysmsapi.CreateSmsTemplateRequest, runtime *dara.RuntimeOptions) (*dysmsapi.CreateSmsTemplateResponse, error)
@@ -62,38 +35,21 @@ type carrier interface {
 	DeleteSmsTemplateWithContext(ctx context.Context, request *dysmsapi.DeleteSmsTemplateRequest, runtime *dara.RuntimeOptions) (*dysmsapi.DeleteSmsTemplateResponse, error)
 }
 
-// sender is this module's product: it answers both carrier seams over one client.
 type sender struct {
-	client carrier
-	// signName is the approved signature every message is sent under, and the
-	// signature a template is offered under.
+	client   carrier
 	signName string
-	// dupe remembers the sends this instance has made, keyed by the resolved
-	// message's stable identifier, so the non-idempotent carrier is called at most
-	// once per identifier.
-	dupe *dedupe.Table[sms.Receipt]
+	dupe     *dedupe.Table[sms.Receipt]
 }
 
-// sender must satisfy the seams it delivers.
 var (
 	_ sms.Sender   = (*sender)(nil)
 	_ sms.Provider = (*sender)(nil)
 )
 
-// init registers this module with the process registry. A host chooses its
-// carrier by importing it, and what enters its go.mod follows the packages it
-// imported: a host that takes only this carrier binds only this vendor's SDK.
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// Module is the descriptor a host registers.
-//
-// Exclusive is set on both seams, which is what makes a command name exactly one
-// carrier: two of them enabled at once fail in resolution. The stance reads the
-// configuration, so a section this module cannot run on is a startup failure
-// ahead of every construction, not a surprise when a message is first sent. The
-// logging capability is taken up as an optional requirement, because the
-// access-key secret is registered as a literal redaction rule and an assembly
-// with no logging has nothing to register it with.
+// Module is the descriptor a host registers. It delivers both carrier seams
+// exclusively and takes the logging capability as an optional requirement.
 func Module() core.Module {
 	return sms.NewModule(sms.Spec[moduleConfig]{
 		ModuleName:      ModuleName,
@@ -107,10 +63,6 @@ func Module() core.Module {
 	})
 }
 
-// stance judges whether this carrier is configured to run, without consulting
-// sms.carrier. A section with none of the credential and the signature set is
-// unconfigured and stands down; a section with some of them set is
-// half-configured and is an error naming the missing items.
 func stance(cfg *moduleConfig) (core.Enablement, error) {
 	if cfg.AccessKeyID == "" && cfg.AccessKeySecret == "" && cfg.SignName == "" {
 		return core.Enablement{
@@ -135,14 +87,10 @@ func stance(cfg *moduleConfig) (core.Enablement, error) {
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 
-// secrets returns the values that have to be masked wherever the process logs
-// them: the access-key secret, which signs every call.
 func secrets(cfg *moduleConfig) []string {
 	return []string{cfg.AccessKeySecret}
 }
 
-// open builds the product over a carrier client. Production passes the vendor
-// client; a case passes the same client pointed at a loopback endpoint.
 func open(_ context.Context, cfg *moduleConfig) (sms.Product, error) {
 	conf := cfg.resolve()
 	client, err := dysmsapi.NewClient(&openapiutil.Config{
@@ -156,7 +104,6 @@ func open(_ context.Context, cfg *moduleConfig) (sms.Product, error) {
 	return newSender(conf, client), nil
 }
 
-// newSender builds the product over a carrier client.
 func newSender(cfg resolved, client carrier) *sender {
 	return &sender{
 		client:   client,
@@ -165,21 +112,12 @@ func newSender(cfg resolved, client carrier) *sender {
 	}
 }
 
-// Name reports the name this carrier answers under, on both seams. It is a
-// constant: the assembly names exactly one carrier, and the name identifies it in
-// a diagnostic.
+// Name reports the name this carrier answers under, on both seams.
 func (s *sender) Name() string { return carrierName }
 
-// Model reports what this carrier can carry.
-//
-// Aliyun sends by the vendor's approved template code and reviews every
-// template, so a template is sendable only once the review has come back
-// approved. The deployment's one sending identity is the configured signature:
-// this process sends under exactly one, so the identity's name and value are
-// that signature, and a message cannot pick another — the vendor has no way to
-// choose one (Review.Originator is false, so Message.Originator has no effect).
-// It declares no attribute keys, no body bound of its own and no asynchronous
-// receipt: the synchronous answer is the whole outcome this carrier reports.
+// Model reports what this carrier can carry: it sends by the vendor's approved
+// template code, reviews every template, and declares the configured signature
+// as its one identity.
 func (s *sender) Model() sms.CarrierModel {
 	return sms.CarrierModel{
 		Content: sms.ContentSupport{TemplateCode: true},
@@ -193,13 +131,8 @@ func (s *sender) Model() sms.CarrierModel {
 }
 
 // Send hands one resolved message to the carrier, at most once per stable
-// identifier.
-//
-// A message whose identifier was seen before is not sent again: the caller is
-// answered with the earlier call's outcome, so the non-idempotent carrier is
-// reached at most once per identifier. An empty identifier has nothing to guard
-// by, so the message is delivered directly; the caller is expected to set one
-// from the challenge.
+// identifier. A repeated identifier is answered with the earlier outcome; an
+// empty identifier has nothing to guard by.
 func (s *sender) Send(ctx context.Context, r sms.Resolved) (sms.Receipt, error) {
 	if r.DedupeID == "" {
 		return s.deliver(ctx, r)
@@ -213,18 +146,6 @@ func (s *sender) Send(ctx context.Context, r sms.Resolved) (sms.Receipt, error) 
 	return receipt, err
 }
 
-// deliver builds one SendSms request from a resolved message and calls the
-// carrier once.
-//
-// The template code and the parameters are already decided: which template a
-// message goes out under is the registry's, and this carrier only lays the
-// parameters out the way its vendor wants them. Aliyun takes them as a JSON
-// object keyed by the parameter name, so the declared order does not matter here.
-// The call carries the caller's context, so a context that ends cancels the
-// in-flight request and is answered with the uncertain sentinel, the same
-// direction as a timeout the carrier itself reports. Nothing here is retried: the
-// vendor interface is not idempotent, and a second call would deliver the message
-// twice and bill it twice.
 func (s *sender) deliver(ctx context.Context, r sms.Resolved) (sms.Receipt, error) {
 	if r.ValidFor != 0 {
 		return sms.Receipt{}, fmt.Errorf("%w: %s has no lifetime for a queued message, and this message "+
@@ -245,16 +166,9 @@ func (s *sender) deliver(ctx context.Context, r sms.Resolved) (sms.Receipt, erro
 	return interpreted(answered{resp: resp, err: err})
 }
 
-// Offer hands a template to the carrier for review and answers the vendor code it
-// filed it under.
-//
-// Aliyun's approved templates are written with ${name} placeholders, which is the
-// form sms.Submission.Content is written in, so the body is passed through
-// verbatim; a carrier whose vendor took its placeholders positionally would be
-// the one to rewrite it here. The kind is mapped to the vendor's own template
-// type, and the signature is this module's configured one. Nothing is retried: a
-// call that fell over may still have created the template, so a failed call is
-// uncertain and never sent again.
+// Offer hands a template to the carrier for review and answers the vendor code
+// it filed it under; the body is passed through verbatim because Aliyun's
+// approved templates use the same ${name} placeholders.
 func (s *sender) Offer(ctx context.Context, sub sms.Submission) (string, error) {
 	templateType, ok := templateTypes[sub.Kind]
 	if !ok {
@@ -284,12 +198,8 @@ func (s *sender) Offer(ctx context.Context, sub sms.Submission) (string, error) 
 	return "", fmt.Errorf("%w: %s created a template and answered no code for it", sms.ErrUncertain, carrierName)
 }
 
-// Approval reads the carrier's review verdict for one template code.
-//
-// Aliyun answers a status code; this maps it into this package's own review
-// vocabulary, and a code the mapping does not name is uncertain rather than
-// guessed. The refusal reason, when the carrier gave one, is the review's own
-// reject text.
+// Approval reads the carrier's review verdict for one template code. A code the
+// mapping does not name is uncertain rather than guessed.
 func (s *sender) Approval(ctx context.Context, code string) (sms.Approval, error) {
 	request := &dysmsapi.GetSmsTemplateRequest{TemplateCode: dara.String(code)}
 	resp, err := s.client.GetSmsTemplateWithContext(ctx, request, noRetry())
@@ -311,11 +221,8 @@ func (s *sender) Approval(ctx context.Context, code string) (sms.Approval, error
 	return sms.Approval{State: state, Reason: rejectReason(resp.Body)}, nil
 }
 
-// Retire removes a template at the carrier, by its code.
-//
-// Aliyun deletes a recalled, rejected or approved template and refuses one that
-// is under review; a refusal is uncertain rather than a definite failure, and the
-// call is not retried.
+// Retire removes a template at the carrier, by its code. A refusal is uncertain
+// rather than a definite failure.
 func (s *sender) Retire(ctx context.Context, code string) error {
 	request := &dysmsapi.DeleteSmsTemplateRequest{TemplateCode: dara.String(code)}
 	resp, err := s.client.DeleteSmsTemplateWithContext(ctx, request, noRetry())
@@ -331,14 +238,10 @@ func (s *sender) Retire(ctx context.Context, code string) error {
 	return nil
 }
 
-// noRetry is the runtime options every call is made with: the SDK's own retry
-// switched off, because a second call is a second message, or a second template
-// nobody approved.
 func noRetry() *dara.RuntimeOptions {
 	return &dara.RuntimeOptions{Autoretry: dara.Bool(false)}
 }
 
-// rejectReason reads the carrier's refusal text from a review, when it gave one.
 func rejectReason(body *dysmsapi.GetSmsTemplateResponseBody) string {
 	if body.AuditInfo == nil {
 		return ""
@@ -346,20 +249,12 @@ func rejectReason(body *dysmsapi.GetSmsTemplateResponseBody) string {
 	return value(body.AuditInfo.RejectInfo)
 }
 
-// answered is one carrier answer: the response, or the error the call failed
-// with.
 type answered struct {
 	resp *dysmsapi.SendSmsResponse
 	err  error
 }
 
-// interpreted turns a carrier answer into a receipt or a sending sentinel.
-//
-// A call that failed, a response with no body and a status that is not OK are
-// all uncertain unless the table says otherwise: the vendor interface is not
-// idempotent, so a call whose outcome cannot be read may still have delivered
-// the message. The vendor error is not wrapped into what is returned: its text
-// carries the request, and the request carries the message code.
+// The vendor error is not wrapped because its text carries the request, and the request carries the message code.
 func interpreted(a answered) (sms.Receipt, error) {
 	if a.err != nil {
 		return sms.Receipt{}, sms.Unsettled(carrierName)
@@ -375,38 +270,18 @@ func interpreted(a answered) (sms.Receipt, error) {
 }
 
 // verifiedSentinels maps a carrier status code to the sending sentinel it means.
-//
-// It is empty: no Aliyun status code is known yet to mean throttled or rejected,
-// so every code the carrier can answer falls to the uncertain sentinel. The
-// direction is deliberate — it counts one more budget rather than treating an
-// unconfirmed failure as a definite throttle or refusal, and it never resends.
-// A code verified against the vendor's list is added here, and the case that
-// holds this table gains that code in the same change.
+// It is empty: no Aliyun status code is known to mean throttled or rejected, so
+// every code falls to the uncertain sentinel.
 var verifiedSentinels = map[string]error{}
 
-// templateTypes maps a template's kind to Aliyun's own TemplateType code.
-//
-// The values are the ones the SDK documents on
-// CreateSmsTemplateRequest.TemplateType: 0 is a verification code, 1 a
-// notification and 2 a promotional message. The kind's three values are this
-// package's vocabulary, and this is where they take the vendor's spelling. A
-// kind the map does not name is a caller defect, refused before the carrier is
-// reached.
 var templateTypes = map[sms.Kind]int32{
 	sms.KindVerification: 0,
 	sms.KindNotification: 1,
 	sms.KindMarketing:    2,
 }
 
-// approvalStates maps Aliyun's TemplateStatus code to this package's review
-// state.
-//
-// The mapping is an assumption: the vendor's numbering comes from the SDK's own
-// doc comment on GetSmsTemplateResponseBody.TemplateStatus — 0 is under review, 1
-// approved, 2 rejected and 10 recalled — but has not been confirmed against live
-// credentials. TestTheApprovalStatesFollowTheReviewCode holds it to those
-// vectors, and a code verified online is added here and to that case together. A
-// code the map does not name is uncertain rather than guessed.
+// The numbering is the SDK's own and unverified against live credentials; a
+// code verified online is added here and to the test that holds this table.
 var approvalStates = map[string]sms.ApprovalState{
 	"0":  sms.ApprovalPending,
 	"1":  sms.ApprovalApproved,
@@ -414,7 +289,6 @@ var approvalStates = map[string]sms.ApprovalState{
 	"10": sms.ApprovalWithdrawn,
 }
 
-// value reads a string the carrier may have left absent.
 func value(p *string) string {
 	if p == nil {
 		return ""

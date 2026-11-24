@@ -9,8 +9,6 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// completeConfig is a moduleConfig every required item is present in and every
-// identity is consistent.
 func completeConfig() moduleConfig {
 	return moduleConfig{
 		Region:          "us-east-1",
@@ -30,8 +28,7 @@ func completeConfig() moduleConfig {
 	}
 }
 
-// TestACompleteConfigurationResolves holds the control: a complete section
-// resolves and carries the values through.
+// TestACompleteConfigurationResolves checks that a complete section resolves and carries the values through.
 func TestACompleteConfigurationResolves(t *testing.T) {
 	got, err := completeConfig().resolve()
 	if err != nil {
@@ -52,10 +49,8 @@ func TestACompleteConfigurationResolves(t *testing.T) {
 	}
 }
 
-// TestTheDeclaredItemsCarryTheDesignsFlags holds the schema: the region, the
-// default identity and the identity list are required, the secret is sensitive,
-// and the identity list takes the primary configuration source alone because a
-// list of structs has no flat form the environment or the command line could give.
+// TestTheDeclaredItemsCarryTheDesignsFlags checks the schema: the region, identity list and default
+// identity are required, the secret is sensitive, and the list takes one source.
 func TestTheDeclaredItemsCarryTheDesignsFlags(t *testing.T) {
 	s, ok := Module().Resources[0].(config.Schema)
 	if !ok {
@@ -84,9 +79,7 @@ func TestTheDeclaredItemsCarryTheDesignsFlags(t *testing.T) {
 	}
 }
 
-// TestAnIncompleteSectionIsRefused holds that a section without a region is
-// half-configured: the stance refuses it, naming the missing item, rather than
-// starting a carrier that cannot send.
+// TestAnIncompleteSectionIsRefused checks that a section without a region is refused with the missing item named.
 func TestAnIncompleteSectionIsRefused(t *testing.T) {
 	body := `{"sms":{"aws":{` +
 		`"default-identity":"primary","identities":[{"name":"primary","kind":"pool","value":"pool-1"}]}}}`
@@ -100,8 +93,7 @@ func TestAnIncompleteSectionIsRefused(t *testing.T) {
 	}
 }
 
-// TestTheIdentityListIsRequiredByTheStance holds the same rule for the list: a
-// section that names no identity is refused once the section is judged.
+// TestTheIdentityListIsRequiredByTheStance checks that a section naming no identity is refused once it is judged.
 func TestTheIdentityListIsRequiredByTheStance(t *testing.T) {
 	body := `{"sms":{"aws":{"region":"us-east-1","default-identity":"primary"}}}`
 	reader := configtest.Reader(t, body, Module())
@@ -114,8 +106,8 @@ func TestTheIdentityListIsRequiredByTheStance(t *testing.T) {
 	}
 }
 
-// TestTheReaderServesACompleteSection is the control for the loader case, and
-// holds that a list of identities decodes with its countries and attributes.
+// TestTheReaderServesACompleteSection checks that the loader serves a complete
+// section and decodes identities with their countries and attributes.
 func TestTheReaderServesACompleteSection(t *testing.T) {
 	reader := configtest.Reader(t, completeBody(), Module())
 	var cfg moduleConfig
@@ -141,9 +133,7 @@ func TestTheReaderServesACompleteSection(t *testing.T) {
 	}
 }
 
-// TestResolveRefusesAConfigurationItCannotRunOn holds the startup checks: each
-// defect is ErrInvalidConfig, so no client is built and no message is sent under
-// a configuration nobody can act on.
+// TestResolveRefusesAConfigurationItCannotRunOn checks that each defect is ErrInvalidConfig at startup.
 func TestResolveRefusesAConfigurationItCannotRunOn(t *testing.T) {
 	cases := map[string]func(*moduleConfig){
 		"no region":                      func(c *moduleConfig) { c.Region = " " },
@@ -173,9 +163,7 @@ func TestResolveRefusesAConfigurationItCannotRunOn(t *testing.T) {
 	}
 }
 
-// TestTheSecretsHookNamesTheSecretAlone holds that the value registered as a
-// redaction rule is the secret access key, and that the identifier — which is not
-// a secret and is not used to sign anything — is not registered.
+// TestTheSecretsHookNamesTheSecretAlone checks that only the secret access key is registered as a redaction rule.
 func TestTheSecretsHookNamesTheSecretAlone(t *testing.T) {
 	cfg := completeConfig()
 	cfg.AccessKeyID = "the-id"
@@ -186,9 +174,8 @@ func TestTheSecretsHookNamesTheSecretAlone(t *testing.T) {
 	}
 }
 
-// TestAnEndpointWithoutASchemeTakesHTTPS holds the endpoint rule: a bare host is
-// an https service endpoint, and a value that already names a scheme is left as
-// written.
+// TestAnEndpointWithoutASchemeTakesHTTPS checks the endpoint rule: a bare host
+// takes https, and a value naming a scheme is left as written.
 func TestAnEndpointWithoutASchemeTakesHTTPS(t *testing.T) {
 	for _, c := range []struct{ given, want string }{
 		{"sms-voice.us-east-1.amazonaws.com", "https://sms-voice.us-east-1.amazonaws.com"},
@@ -201,7 +188,6 @@ func TestAnEndpointWithoutASchemeTakesHTTPS(t *testing.T) {
 	}
 }
 
-// completeBody is the configuration body a working assembly is built from.
 func completeBody() string {
 	return `{"sms":{"aws":{` +
 		`"region":"us-east-1",` +

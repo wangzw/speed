@@ -13,8 +13,6 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// offerRequest is the AddSmsTemplate body the carrier client posts, read back by
-// its JSON field names.
 type offerRequest struct {
 	TemplateName    string
 	TemplateContent string
@@ -22,18 +20,14 @@ type offerRequest struct {
 	Remark          string
 }
 
-// approvalRequest is the DescribeSmsTemplateList body, read back by its field
-// names.
 type approvalRequest struct {
 	TemplateIDSet []uint64
 }
 
-// retireRequest is the DeleteSmsTemplate body, read back by its field name.
 type retireRequest struct {
 	TemplateID uint64
 }
 
-// offerBody is an AddSmsTemplate answer that carries a template number.
 func offerBody(id string) string {
 	encoded, _ := json.Marshal(map[string]any{"Response": map[string]any{
 		"AddTemplateStatus": map[string]any{"TemplateId": id},
@@ -42,8 +36,6 @@ func offerBody(id string) string {
 	return string(encoded)
 }
 
-// describeBody is a DescribeSmsTemplateList answer holding one entry for id with
-// the given review status.
 func describeBody(id uint64, status *int64, reply string) string {
 	entry := map[string]any{"TemplateId": id}
 	if status != nil {
@@ -59,13 +51,12 @@ func describeBody(id uint64, status *int64, reply string) string {
 	return string(encoded)
 }
 
-// describeEmptyBody is a DescribeSmsTemplateList answer holding no entry.
 func describeEmptyBody() string {
 	return `{"Response":{"DescribeTemplateStatusSet":[],"RequestId":"req-1"}}`
 }
 
-// Offer renders the submission body positionally, maps the kind to the vendor's
-// template type, and answers the number the vendor filed the template under.
+// TestOfferBuildsTheRequestAndAnswersTheNumber checks that Offer renders the body
+// positionally, maps the kind to the vendor's type and answers the filed number.
 func TestOfferBuildsTheRequestAndAnswersTheNumber(t *testing.T) {
 	var got offerRequest
 	host := fakeServer(t, func(w http.ResponseWriter, r *http.Request) {
@@ -103,8 +94,7 @@ func TestOfferBuildsTheRequestAndAnswersTheNumber(t *testing.T) {
 	}
 }
 
-// An answer without a template number is uncertain: the submission may have
-// landed and this process cannot know the number to read its state under.
+// TestOfferWithoutANumberIsUncertain checks that an answer without a template number is uncertain.
 func TestOfferWithoutANumberIsUncertain(t *testing.T) {
 	s := newTestSender(t, answerServer(t, `{"Response":{"RequestId":"req-1"}}`))
 	_, err := s.Offer(context.Background(), sms.Submission{
@@ -116,8 +106,7 @@ func TestOfferWithoutANumberIsUncertain(t *testing.T) {
 	}
 }
 
-// The kind without a vendor template type is a caller defect, refused before the
-// carrier is reached.
+// TestOfferWithAnUnknownKindIsRefused checks that a kind without a vendor template type is refused before the carrier is reached.
 func TestOfferWithAnUnknownKindIsRefused(t *testing.T) {
 	var calls int
 	host := fakeServer(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -138,8 +127,8 @@ func TestOfferWithAnUnknownKindIsRefused(t *testing.T) {
 	}
 }
 
-// Approval looks the template up one number at a time and maps the vendor's
-// review status to a state of this package's vocabulary.
+// TestApprovalLooksUpOneNumberAndMapsTheStatus checks that Approval looks one
+// number up at a time and maps the vendor's status to a state.
 func TestApprovalLooksUpOneNumberAndMapsTheStatus(t *testing.T) {
 	var got approvalRequest
 	host := fakeServer(t, func(w http.ResponseWriter, r *http.Request) {
@@ -161,10 +150,8 @@ func TestApprovalLooksUpOneNumberAndMapsTheStatus(t *testing.T) {
 	}
 }
 
-// Each vendor review status maps to the state it means, asserted one code at a
-// time: 0 is approved and in force, 1 is under review, 2 is approved but not yet
-// in force and so must still hold a send back, -1 is turned down, and a code the
-// list does not name is uncertain.
+// TestEveryReviewStatusMapsToItsState checks each vendor review status: 0 approved in force, 1
+// under review, 2 approved but not yet in force, -1 turned down, and an unnamed code uncertain.
 func TestEveryReviewStatusMapsToItsState(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -190,8 +177,7 @@ func TestEveryReviewStatusMapsToItsState(t *testing.T) {
 	}
 }
 
-// A review status the vendor's list does not name is uncertain rather than
-// guessed at.
+// TestAnUnlistedReviewStatusIsUncertain checks that a review status the list does not name is uncertain rather than guessed.
 func TestAnUnlistedReviewStatusIsUncertain(t *testing.T) {
 	s := newTestSender(t, answerServer(t, describeBody(1001, int64Ptr(9), "")))
 	if _, err := s.Approval(context.Background(), "1001"); !errors.Is(err, sms.ErrUncertain) {
@@ -199,7 +185,7 @@ func TestAnUnlistedReviewStatusIsUncertain(t *testing.T) {
 	}
 }
 
-// A turned-down template carries the reviewer's reason.
+// TestARejectedApprovalCarriesTheReason checks that a turned-down template carries the reviewer's reason.
 func TestARejectedApprovalCarriesTheReason(t *testing.T) {
 	s := newTestSender(t, answerServer(t, describeBody(1001, int64Ptr(statusRejected), "the content is not specific enough")))
 	approval, err := s.Approval(context.Background(), "1001")
@@ -211,8 +197,7 @@ func TestARejectedApprovalCarriesTheReason(t *testing.T) {
 	}
 }
 
-// A response that names the number nowhere means the vendor no longer holds the
-// template: that is a withdrawal, not an error and not a blank state.
+// TestAnAbsentTemplateIsWithdrawn checks that a response naming the number nowhere reports a withdrawal.
 func TestAnAbsentTemplateIsWithdrawn(t *testing.T) {
 	s := newTestSender(t, answerServer(t, describeEmptyBody()))
 	approval, err := s.Approval(context.Background(), "1001")
@@ -224,8 +209,7 @@ func TestAnAbsentTemplateIsWithdrawn(t *testing.T) {
 	}
 }
 
-// A code that is not a template number is a caller defect: no carrier call is
-// made.
+// TestApprovalWithANonNumericCodeIsRefused checks that a non-numeric code is refused with no carrier call.
 func TestApprovalWithANonNumericCodeIsRefused(t *testing.T) {
 	var calls int
 	host := fakeServer(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -242,8 +226,7 @@ func TestApprovalWithANonNumericCodeIsRefused(t *testing.T) {
 	}
 }
 
-// Retire deletes the template the code names, and classifies a carrier error the
-// same way a send does.
+// TestRetireDeletesTheNumber checks that Retire deletes the named template and classifies a carrier error like a send.
 func TestRetireDeletesTheNumber(t *testing.T) {
 	var got retireRequest
 	host := fakeServer(t, func(w http.ResponseWriter, r *http.Request) {
@@ -261,8 +244,7 @@ func TestRetireDeletesTheNumber(t *testing.T) {
 	}
 }
 
-// A carrier error on a management call is classified: a rate limit is a
-// throttle, and a code the table does not name is uncertain.
+// TestManagementErrorsAreClassified checks that a rate limit is a throttle and an unlisted code is uncertain on a management call.
 func TestManagementErrorsAreClassified(t *testing.T) {
 	cases := []struct {
 		name string
@@ -285,8 +267,8 @@ func TestManagementErrorsAreClassified(t *testing.T) {
 	}
 }
 
-// The credential reaches neither a management failure's text nor what the seam
-// answers.
+// TestTheCredentialReachesNoManagementError checks that the credential reaches
+// neither a management failure's text nor what the seam answers.
 func TestTheCredentialReachesNoManagementError(t *testing.T) {
 	const secret = "secret-key-example"
 	s := newTestSender(t, answerServer(t, errBody("InternalError.UnknownError")))
@@ -302,8 +284,7 @@ func TestTheCredentialReachesNoManagementError(t *testing.T) {
 	}
 }
 
-// The submission body is rewritten from named placeholders to positions in the
-// order the parameters are declared.
+// TestPositionalRewritesNamedPlaceholders checks that named placeholders become positions in the declared parameter order.
 func TestPositionalRewritesNamedPlaceholders(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -330,9 +311,8 @@ func TestPositionalRewritesNamedPlaceholders(t *testing.T) {
 	}
 }
 
-// A submission that declares a parameter twice cannot say which slot a
-// placeholder means, and a body naming an undeclared parameter would hand the
-// vendor a slot whose meaning was never stated: both are caller defects.
+// TestPositionalRefusesAmbiguousAndUndeclaredPlaceholders checks that a
+// duplicated parameter and an undeclared placeholder are both refused.
 func TestPositionalRefusesAmbiguousAndUndeclaredPlaceholders(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -352,5 +332,4 @@ func TestPositionalRefusesAmbiguousAndUndeclaredPlaceholders(t *testing.T) {
 	}
 }
 
-// int64Ptr is a helper for the review-status tables.
 func int64Ptr(v int64) *int64 { return &v }

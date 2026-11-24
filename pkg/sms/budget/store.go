@@ -10,100 +10,64 @@ import (
 	"gorm.io/gorm"
 )
 
-// table is the ledger's one table.
 const table = "sms_budget_events"
 
-// packageName prefixes every error this package builds, so a failure is
-// attributable when it travels through a caller that adds no context of its own.
 const packageName = "sms.budget"
 
 var (
-	// ErrInvalidAttempt reports an attempt that is not a row this ledger can
-	// write: an unknown channel or outcome, an empty purpose or destination, a
-	// source or account that is present and empty, a zero attempted time, a
-	// refund before the attempt, or a suppressed attempt that names no refund.
+	// ErrInvalidAttempt reports an attempt this ledger cannot write: an unknown
+	// channel or outcome, an empty purpose or destination, an empty present source or
+	// account, a zero attempted time, a refund before it, or a suppressed attempt with no refund.
 	ErrInvalidAttempt = errors.New("sms.budget: the attempt is not valid")
-	// ErrInvalidQuery reports a query this ledger cannot compile: an unknown
-	// dimension or channel, a value with no dimension or a dimension with no
-	// value, a zero since, OnlyRefunded together with IncludeRefunded, or a
-	// prune with a zero cutoff.
+	// ErrInvalidQuery reports a query this ledger cannot compile: an unknown dimension
+	// or channel, a value without a dimension or a dimension without a value, a zero
+	// since, both refund switches, or a prune with a zero cutoff.
 	ErrInvalidQuery = errors.New("sms.budget: the query is not valid")
-	// ErrNotFound reports a refund naming an attempt this ledger holds no row
-	// for.
+	// ErrNotFound reports a refund naming an attempt this ledger holds no row for.
 	ErrNotFound = errors.New("sms.budget: no attempt with that identifier")
 )
 
-// Store is the ledger's calling surface.
-//
-// A Store is safe for concurrent use. Record is one INSERT and every read is a
-// query over the table; the implementation keeps no counter and no in-process
-// state, so two goroutines recording at once cannot lose one of the rows they
-// wrote.
-//
-// The store locks nothing. A caller whose budget has to be a hard cap runs its
-// counts and its Record in one transaction, on a Store built over that
-// transaction with New, and serialises the dimension itself. Two callers that
-// do not share a transaction do not see each other's uncommitted rows between
-// the count and the insert, which is the ordinary shape of a soft cap.
+// Store is the ledger calling surface, safe for concurrent use. The store keeps no
+// counter and locks nothing; a hard cap is the caller's transaction.
 type Store interface {
-	// Record writes one attempt and answers its identifier. It refuses a
-	// malformed attempt with ErrInvalidAttempt and writes nothing. A refunded
-	// attempt may be written directly, which is how a message that never
-	// reached the carrier is recorded as an attempt that spends no send
-	// budget.
+	// Record writes one attempt and answers its identifier, refusing a malformed
+	// attempt with ErrInvalidAttempt and writing nothing. A refunded attempt may be
+	// written directly.
 	Record(ctx context.Context, a Attempt) (ID, error)
-	// MarkRefunded marks one attempt refunded at at, which removes it from
-	// every send count and leaves it in every attempt count. It is idempotent:
-	// a second call leaves the first refund time in place and reports no
-	// error. An identifier with no row is ErrNotFound.
+	// MarkRefunded marks one attempt refunded at at, which leaves every send count and
+	// stays in every attempt count. It is idempotent; an identifier with no row is ErrNotFound.
 	MarkRefunded(ctx context.Context, id ID, at time.Time) error
-	// Count answers how many attempts match q. The refund and suppression
-	// switches in q decide which rows of the filters and window count; the Query
-	// documentation states the exact predicates.
+	// Count answers how many attempts match q; Query states how the switches select rows.
 	Count(ctx context.Context, q Query) (int64, error)
-	// CountDistinctDestinations answers how many different destination hashes
-	// match q. Two attempts to one destination count once, so a source that
-	// changes the number it targets is measured by the numbers rather than by
-	// the calls. IncludeRefunded decides whether a refunded attempt's
-	// destination stays in the count, as it does for Count.
+	// CountDistinctDestinations answers how many different destination hashes match q;
+	// IncludeRefunded decides whether a refunded destination stays in the count.
 	CountDistinctDestinations(ctx context.Context, q Query) (int64, error)
-	// Oldest answers the attempted time of the oldest attempt matching q,
-	// which is when the window frees a slot; the boolean is false when no row
-	// matches. It reads the same rows Count does for the same q.
+	// Oldest answers the attempted time of the oldest attempt matching q, false when no
+	// row matches.
 	Oldest(ctx context.Context, q Query) (time.Time, bool, error)
-	// Latest answers the attempted time of the newest attempt matching q,
-	// which is what a resend interval is measured from; the boolean is false
-	// when no row matches. It reads the same rows Count does for the same q.
+	// Latest answers the attempted time of the newest attempt matching q, false when no
+	// row matches.
 	Latest(ctx context.Context, q Query) (time.Time, bool, error)
-	// CountCeiling answers how many non-refunded, non-suppressed attempts both
-	// channels wrote since since. It is the cross-channel emergency cap: one
-	// count over both channels, and neither a refunded nor a suppressed attempt
-	// spends it.
+	// CountCeiling answers how many non-refunded, non-suppressed attempts both channels
+	// wrote since since.
 	CountCeiling(ctx context.Context, since time.Time) (int64, error)
-	// PruneBefore deletes every row attempted strictly before before and
-	// answers how many it deleted. It exists for a periodic sweep of the
-	// retention window; it reads no budget and changes no count outside the
-	// deleted window. A zero cutoff is ErrInvalidQuery.
+	// PruneBefore deletes every row attempted strictly before before and answers how
+	// many it deleted; a zero cutoff is ErrInvalidQuery.
 	PruneBefore(ctx context.Context, before time.Time) (int64, error)
 }
 
-// New returns the ledger over handle, which must not be nil. The module
-// delivers one over the database's handle; a caller that must run a count and a
-// record in one transaction builds another over that transaction with New.
+// New returns the ledger over handle, which must not be nil. A caller that needs a
+// count and a record in one transaction builds another over that transaction.
 func New(handle *gorm.DB) Store {
 	return &sqlStore{handle: handle}
 }
 
-// sqlStore is the SQL implementation of Store.
 type sqlStore struct {
 	handle *gorm.DB
 }
 
 var _ Store = (*sqlStore)(nil)
 
-// row is the table's shape. The column tags are explicit because the Go names
-// carry acronyms, and a mapping that is inferred is a mapping that can change
-// under a rename.
 type row struct {
 	ID             int64      `gorm:"column:id;primaryKey;autoIncrement"`
 	Channel        string     `gorm:"column:channel"`
@@ -118,10 +82,8 @@ type row struct {
 	Suppressed     bool       `gorm:"column:suppressed"`
 }
 
-// TableName fixes the table the ledger reads and writes.
 func (row) TableName() string { return table }
 
-// Record writes one attempt.
 func (s *sqlStore) Record(ctx context.Context, a Attempt) (ID, error) {
 	if err := a.validate(); err != nil {
 		return 0, err
@@ -144,7 +106,6 @@ func (s *sqlStore) Record(ctx context.Context, a Attempt) (ID, error) {
 	return ID(write.ID), nil
 }
 
-// MarkRefunded marks one attempt refunded.
 func (s *sqlStore) MarkRefunded(ctx context.Context, id ID, at time.Time) error {
 	if id <= 0 {
 		return fmt.Errorf("%w: the identifier %d names no attempt", ErrNotFound, id)
@@ -161,9 +122,6 @@ func (s *sqlStore) MarkRefunded(ctx context.Context, id ID, at time.Time) error 
 	if result.RowsAffected > 0 {
 		return nil
 	}
-	// Nothing was updated: either the row is already refunded, which is the
-	// idempotent case, or there is no such row. The second read tells them
-	// apart, and the first refund time is never overwritten.
 	var held int64
 	if err := s.handle.WithContext(ctx).Model(&row{}).Where("id = ?", int64(id)).Count(&held).Error; err != nil {
 		return fmt.Errorf("%s: reading an attempt before refunding it: %w", packageName, err)
@@ -174,7 +132,6 @@ func (s *sqlStore) MarkRefunded(ctx context.Context, id ID, at time.Time) error 
 	return nil
 }
 
-// Count counts the attempts q selects.
 func (s *sqlStore) Count(ctx context.Context, q Query) (int64, error) {
 	scope, err := s.scope(ctx, q)
 	if err != nil {
@@ -187,7 +144,6 @@ func (s *sqlStore) Count(ctx context.Context, q Query) (int64, error) {
 	return n, nil
 }
 
-// CountDistinctDestinations counts the different destinations q selects.
 func (s *sqlStore) CountDistinctDestinations(ctx context.Context, q Query) (int64, error) {
 	scope, err := s.scope(ctx, q)
 	if err != nil {
@@ -200,7 +156,6 @@ func (s *sqlStore) CountDistinctDestinations(ctx context.Context, q Query) (int6
 	return n, nil
 }
 
-// Oldest reads the attempted time of the oldest attempt q selects.
 func (s *sqlStore) Oldest(ctx context.Context, q Query) (time.Time, bool, error) {
 	scope, err := s.scope(ctx, q)
 	if err != nil {
@@ -216,7 +171,6 @@ func (s *sqlStore) Oldest(ctx context.Context, q Query) (time.Time, bool, error)
 	return out[0].AttemptedAt.UTC(), true, nil
 }
 
-// Latest reads the attempted time of the newest attempt q selects.
 func (s *sqlStore) Latest(ctx context.Context, q Query) (time.Time, bool, error) {
 	scope, err := s.scope(ctx, q)
 	if err != nil {
@@ -232,8 +186,6 @@ func (s *sqlStore) Latest(ctx context.Context, q Query) (time.Time, bool, error)
 	return out[0].AttemptedAt.UTC(), true, nil
 }
 
-// CountCeiling counts the non-refunded, non-suppressed attempts of both
-// channels since since.
 func (s *sqlStore) CountCeiling(ctx context.Context, since time.Time) (int64, error) {
 	if since.IsZero() {
 		return 0, fmt.Errorf("%w: the ceiling's window starts at no time", ErrInvalidQuery)
@@ -249,7 +201,6 @@ func (s *sqlStore) CountCeiling(ctx context.Context, since time.Time) (int64, er
 	return n, nil
 }
 
-// PruneBefore deletes every row attempted strictly before before.
 func (s *sqlStore) PruneBefore(ctx context.Context, before time.Time) (int64, error) {
 	if before.IsZero() {
 		return 0, fmt.Errorf("%w: the prune names no cutoff", ErrInvalidQuery)
@@ -261,8 +212,6 @@ func (s *sqlStore) PruneBefore(ctx context.Context, before time.Time) (int64, er
 	return result.RowsAffected, nil
 }
 
-// scope compiles q into the WHERE clause every read uses. Model is set here, so
-// a caller of scope only adds the select shape it needs.
 func (s *sqlStore) scope(ctx context.Context, q Query) (*gorm.DB, error) {
 	if err := q.validate(); err != nil {
 		return nil, err
@@ -279,22 +228,15 @@ func (s *sqlStore) scope(ctx context.Context, q Query) (*gorm.DB, error) {
 	}
 	switch {
 	case q.OnlyRefunded:
-		// Rows refunded after the fact. IncludeSuppressed still decides
-		// whether the suppressed ones, which are refunded at write time,
-		// take part.
 		db = db.Where("refunded_at IS NOT NULL")
 		if !q.IncludeSuppressed {
 			db = db.Where("suppressed = ?", false)
 		}
 	case q.IncludeRefunded:
-		// Every attempt, refunded or not.
 		if !q.IncludeSuppressed {
 			db = db.Where("suppressed = ?", false)
 		}
 	case q.IncludeSuppressed:
-		// A send budget, with the suppressed rows counted as charges: they
-		// are refunded at write time, so the refund condition alone would
-		// leave them out.
 		db = db.Where("(refunded_at IS NULL OR suppressed = ?)", true)
 	default:
 		db = db.Where("refunded_at IS NULL AND suppressed = ?", false)
@@ -303,9 +245,6 @@ func (s *sqlStore) scope(ctx context.Context, q Query) (*gorm.DB, error) {
 	return db, nil
 }
 
-// dimensionColumn names the column a dimension ranks. The switch is the only
-// place a Dimension becomes SQL, so a value outside the closed set cannot reach
-// a statement.
 func dimensionColumn(d Dimension) string {
 	switch d {
 	case DimensionSource:
@@ -321,7 +260,6 @@ func dimensionColumn(d Dimension) string {
 	}
 }
 
-// validate holds an attempt to what the table can carry.
 func (a Attempt) validate() error {
 	if !a.Channel.Valid() {
 		return fmt.Errorf("%w: the channel %q is not one of the two this ledger records", ErrInvalidAttempt, a.Channel)
@@ -354,7 +292,6 @@ func (a Attempt) validate() error {
 	return nil
 }
 
-// validate holds a query to what scope can compile.
 func (q Query) validate() error {
 	if q.Since.IsZero() {
 		return fmt.Errorf("%w: the window starts at no time", ErrInvalidQuery)
@@ -381,8 +318,6 @@ func (q Query) validate() error {
 	return nil
 }
 
-// utcPointer normalizes a nullable time the way every written time is
-// normalized, without turning a nil into a value.
 func utcPointer(t *time.Time) *time.Time {
 	if t == nil {
 		return nil

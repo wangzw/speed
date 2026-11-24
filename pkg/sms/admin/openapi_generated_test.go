@@ -8,16 +8,10 @@ import (
 	"github.com/vislake/speed/pkg/internal/openapigen"
 )
 
-// fragmentPath is this module's fragment, relative to the package directory
-// `go test` runs in.
 const fragmentPath = "openapi/sms.admin.json"
 
-// TestTheFragmentIsGeneratedFromTheDeclarations holds the embedded fragment to
-// what the declarations generate. The fragment is a build product: a handler or
-// a route that changes without the declaration fails here, and the fix is to
-// change the declaration and regenerate.
-//
-// Run with UPDATE_FRAGMENTS=1 to write the generated fragment.
+// TestTheFragmentIsGeneratedFromTheDeclarations checks that the embedded
+// fragment matches what the declarations generate.
 func TestTheFragmentIsGeneratedFromTheDeclarations(t *testing.T) {
 	generated, err := openapigen.Generate(fragmentTitle, fragmentVersion, operations)
 	if err != nil {

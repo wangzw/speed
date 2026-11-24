@@ -16,15 +16,11 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// The credentials the cases configure and then look for in everything the module
-// produces.
 const (
 	testAccountSID = "AC00000000000000000000000000000000"
 	testAuthToken  = "testauthtoken9f3a2c"
 )
 
-// completeConfig is a moduleConfig every required item is present in, with the
-// access points a case points at its loopback servers.
 func completeConfig(apiBase, contentBase string) moduleConfig {
 	return moduleConfig{
 		AccountSID:      testAccountSID,
@@ -45,7 +41,6 @@ func completeConfig(apiBase, contentBase string) moduleConfig {
 	}
 }
 
-// senderOver builds a sender whose two access points are the given servers.
 func senderOver(t *testing.T, apiBase, contentBase string) *sender {
 	t.Helper()
 	conf, err := completeConfig(apiBase, contentBase).resolve()
@@ -55,7 +50,6 @@ func senderOver(t *testing.T, apiBase, contentBase string) *sender {
 	return newSender(conf)
 }
 
-// messageReply answers a Messages API call with one message resource.
 func messageReply(body string) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -64,9 +58,6 @@ func messageReply(body string) http.HandlerFunc {
 	}
 }
 
-// oneResolved is the send the cases drive: a message the registry has already
-// resolved to a content template and the ordered values the template
-// substitutes.
 func oneResolved() sms.Resolved {
 	return sms.Resolved{
 		To:       "+15551234567",
@@ -80,6 +71,7 @@ func oneResolved() sms.Resolved {
 	}
 }
 
+// TestTheSenderReportsTheCarrierName checks that the sender reports the carrier name.
 func TestTheSenderReportsTheCarrierName(t *testing.T) {
 	s := senderOver(t, "http://127.0.0.1:1", "http://127.0.0.1:1")
 	if got := s.Name(); got != "twilio" {
@@ -90,9 +82,8 @@ func TestTheSenderReportsTheCarrierName(t *testing.T) {
 	}
 }
 
-// TestTheCarrierDeclaresItsModel holds the capability declaration: the vendor
-// content template is the sending shape, a send may pick its identity, there is
-// no per-template review and the final delivery status arrives asynchronously.
+// TestTheCarrierDeclaresItsModel checks the declaration: the content template is the sending shape,
+// a send may pick its identity, there is no per-template review and delivery is asynchronous.
 func TestTheCarrierDeclaresItsModel(t *testing.T) {
 	model := senderOver(t, "http://127.0.0.1:1", "http://127.0.0.1:1").Model()
 	if !model.Content.TemplateCode || model.Content.TextBody {
@@ -129,10 +120,8 @@ func TestTheCarrierDeclaresItsModel(t *testing.T) {
 	}
 }
 
-// TestTheRequestCarriesTheContentTemplateAndOrderedVariables holds the Messages
-// API request shape: the destination, the resolved content SID, the ordered
-// values keyed "1", "2", …, the messaging service the default identity names and
-// the From value its attribute pins — and no Body beside the content template.
+// TestTheRequestCarriesTheContentTemplateAndOrderedVariables holds the Messages API request: the
+// destination, the content SID, the ordered values, the messaging service and the From value.
 func TestTheRequestCarriesTheContentTemplateAndOrderedVariables(t *testing.T) {
 	var got struct {
 		method, path, to, contentSid, contentVariables, messagingServiceSid, from, body string
@@ -193,11 +182,8 @@ func TestTheRequestCarriesTheContentTemplateAndOrderedVariables(t *testing.T) {
 	}
 }
 
-// TestARequestedLifetimeBecomesTheValidityPeriod holds the lifetime mapping: a
-// resolved ValidFor reaches the vendor as whole seconds, a lifetime under a
-// second becomes one second rather than the zero that would mean the vendor's
-// default, a lifetime past the vendor's bound is clamped to it, and a message
-// that names no lifetime sends no parameter at all.
+// TestARequestedLifetimeBecomesTheValidityPeriod checks the lifetime mapping: whole
+// seconds, one second minimum, clamped to the bound, and no parameter when none is named.
 func TestARequestedLifetimeBecomesTheValidityPeriod(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -234,9 +220,8 @@ func TestARequestedLifetimeBecomesTheValidityPeriod(t *testing.T) {
 	}
 }
 
-// TestAnIdentityWithoutAttributesSendsFromItsValue holds that a message naming a
-// non-service identity sends From that identity's value and names no messaging
-// service.
+// TestAnIdentityWithoutAttributesSendsFromItsValue checks that a non-service
+// identity sends From its value and names no messaging service.
 func TestAnIdentityWithoutAttributesSendsFromItsValue(t *testing.T) {
 	var got struct{ from, messagingServiceSid string }
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -261,9 +246,7 @@ func TestAnIdentityWithoutAttributesSendsFromItsValue(t *testing.T) {
 	}
 }
 
-// TestAnUnknownOriginatorIsRejectedWithoutAVendorCall holds that a name the
-// deployment does not declare is the caller's defect: it is refused before the
-// carrier is reached.
+// TestAnUnknownOriginatorIsRejectedWithoutAVendorCall checks that an undeclared identity is refused before the carrier is reached.
 func TestAnUnknownOriginatorIsRejectedWithoutAVendorCall(t *testing.T) {
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -283,9 +266,8 @@ func TestAnUnknownOriginatorIsRejectedWithoutAVendorCall(t *testing.T) {
 	}
 }
 
-// TestAMessageWithoutATemplateCodeIsRejected holds that this carrier, which sends
-// by the vendor content template, refuses a resolved message that carries no
-// code before reaching the vendor.
+// TestAMessageWithoutATemplateCodeIsRejected checks that a resolved message
+// carrying no content code is refused before the vendor is reached.
 func TestAMessageWithoutATemplateCodeIsRejected(t *testing.T) {
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -305,9 +287,8 @@ func TestAMessageWithoutATemplateCodeIsRejected(t *testing.T) {
 	}
 }
 
-// TestTheErrorTableFollowsTheHTTPStatus is the per-class vector: 429 is a limit,
-// another synchronous 4xx is a refusal, and a 5xx, a transport failure and an
-// ended context are uncertain.
+// TestTheErrorTableFollowsTheHTTPStatus checks the per-class vector: 429 a limit, another
+// 4xx a refusal, and a 5xx, transport failure or ended context uncertain.
 func TestTheErrorTableFollowsTheHTTPStatus(t *testing.T) {
 	for _, c := range []struct {
 		status int
@@ -339,10 +320,8 @@ func TestTheErrorTableFollowsTheHTTPStatus(t *testing.T) {
 	}
 }
 
-// TestATransportFailureAndAnEndedContextAreUncertain holds that a call that did
-// not complete — a network error here, an ended context below — falls to the
-// uncertain sentinel, the direction which never resends a message the carrier may
-// already hold.
+// TestATransportFailureAndAnEndedContextAreUncertain checks that a network error
+// and an ended context fall to the uncertain sentinel.
 func TestATransportFailureAndAnEndedContextAreUncertain(t *testing.T) {
 	t.Run("a network error", func(t *testing.T) {
 		s := senderOver(t, "http://127.0.0.1:1", "http://127.0.0.1:1")
@@ -371,10 +350,8 @@ func TestATransportFailureAndAnEndedContextAreUncertain(t *testing.T) {
 	})
 }
 
-// TestADeliveryStatusErrorCodeIsNotASynchronousRefusal holds the distinction the
-// design fixes: a 2xx answer has taken the message, and an error code it carries
-// describes the delivery that follows, not the call. The send succeeds with the
-// message identifier.
+// TestADeliveryStatusErrorCodeIsNotASynchronousRefusal checks that a 2xx answer has taken
+// the message and an error code it carries describes delivery, not the call.
 func TestADeliveryStatusErrorCodeIsNotASynchronousRefusal(t *testing.T) {
 	server := httptest.NewServer(messageReply(
 		`{"sid":"SM42","status":"failed","error_code":21610,"error_message":"unsubscribed recipient"}`))
@@ -390,8 +367,8 @@ func TestADeliveryStatusErrorCodeIsNotASynchronousRefusal(t *testing.T) {
 	}
 }
 
-// TestAMessageAnswerWithNoIdentifierIsUncertain holds that an accepted call that
-// names no message identifier leaves the outcome unknown.
+// TestAMessageAnswerWithNoIdentifierIsUncertain checks that an accepted call
+// naming no message identifier leaves the outcome unknown.
 func TestAMessageAnswerWithNoIdentifierIsUncertain(t *testing.T) {
 	server := httptest.NewServer(messageReply(`{"status":"queued"}`))
 	defer server.Close()
@@ -402,8 +379,7 @@ func TestAMessageAnswerWithNoIdentifierIsUncertain(t *testing.T) {
 	}
 }
 
-// TestTheCarrierIsCalledExactlyOnceEvenWhenItFails holds the no-retry rule: the
-// vendor interface is not idempotent, so a failing call is never made again.
+// TestTheCarrierIsCalledExactlyOnceEvenWhenItFails checks that a failing call is never made again.
 func TestTheCarrierIsCalledExactlyOnceEvenWhenItFails(t *testing.T) {
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -423,8 +399,8 @@ func TestTheCarrierIsCalledExactlyOnceEvenWhenItFails(t *testing.T) {
 	}
 }
 
-// One identifier reaches the carrier once, and a second call is answered with the
-// first call's outcome rather than sending the message again.
+// TestOneIdentifierReachesTheCarrierOnce checks that one identifier reaches the
+// carrier once and a second call is answered with the first call's outcome.
 func TestOneIdentifierReachesTheCarrierOnce(t *testing.T) {
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -449,7 +425,7 @@ func TestOneIdentifierReachesTheCarrierOnce(t *testing.T) {
 	}
 }
 
-// Distinct identifiers each reach the carrier.
+// TestDistinctIdentifiersEachReachTheCarrier checks that distinct identifiers each reach the carrier.
 func TestDistinctIdentifiersEachReachTheCarrier(t *testing.T) {
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -471,7 +447,8 @@ func TestDistinctIdentifiersEachReachTheCarrier(t *testing.T) {
 	}
 }
 
-// Calls for one identifier that arrive together still reach the carrier once.
+// TestConcurrentCallsForOneIdentifierReachTheCarrierOnce checks that calls for
+// one identifier arriving together reach the carrier once.
 func TestConcurrentCallsForOneIdentifierReachTheCarrierOnce(t *testing.T) {
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -498,7 +475,6 @@ func TestConcurrentCallsForOneIdentifierReachTheCarrierOnce(t *testing.T) {
 	}
 }
 
-// itoa renders an int without importing strconv into every case.
 func itoa(n int) string {
 	return strconv.Itoa(n)
 }

@@ -9,10 +9,8 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// TestALegacyRowIsAdoptedByTheFirstCarrier covers the adoption: a row with no
-// carrier is rewritten to the mounted carrier's name and the ownership marker is
-// written beside it, so the row the load reads is the row the old implementation
-// wrote.
+// TestALegacyRowIsAdoptedByTheFirstCarrier checks that a row with no carrier is rewritten
+// to the mounted carrier's name and the ownership marker is written beside it.
 func TestALegacyRowIsAdoptedByTheFirstCarrier(t *testing.T) {
 	r := newRig(t, openDialect(t, sqliteDialect), newProvider(), settingsOf(t, nil, 0))
 	r.plantLegacy("otp", []string{"code"}, map[string]string{"en": "c"},
@@ -34,16 +32,12 @@ func TestALegacyRowIsAdoptedByTheFirstCarrier(t *testing.T) {
 		t.Errorf("resolving an adopted template returned %v", err)
 	}
 
-	// The same carrier starting again finds the marker and the adopted row in
-	// place, and adopting changes nothing.
 	if err := r.s.adopt(context.Background()); err != nil {
 		t.Errorf("a second adoption by the same carrier returned %v", err)
 	}
 }
 
-// TestADifferentCarrierRefusesToTakeOverAdoptedRows covers the marker: once one
-// carrier has adopted the legacy rows, a process mounting another carrier fails
-// its startup instead of silently taking them over.
+// TestADifferentCarrierRefusesToTakeOverAdoptedRows checks that a process mounting another carrier after adoption fails its startup.
 func TestADifferentCarrierRefusesToTakeOverAdoptedRows(t *testing.T) {
 	r := newRig(t, openDialect(t, sqliteDialect), newProvider(), settingsOf(t, nil, 0))
 	r.plantLegacy("otp", []string{"code"}, map[string]string{"en": "c"},
@@ -66,9 +60,7 @@ func TestADifferentCarrierRefusesToTakeOverAdoptedRows(t *testing.T) {
 	}
 }
 
-// TestADatabaseWithNoLegacyRowGetsNoOwnershipMarker covers the other side of the
-// marker: adoption has no ownership question to settle when every row already
-// names a carrier, so it writes nothing and two carriers may share the database.
+// TestADatabaseWithNoLegacyRowGetsNoOwnershipMarker checks that adoption writes no marker when every row already names a carrier.
 func TestADatabaseWithNoLegacyRowGetsNoOwnershipMarker(t *testing.T) {
 	r := newRig(t, openDialect(t, sqliteDialect), newProvider(), settingsOf(t, nil, 0))
 	r.plant("otp", []string{"code"}, map[string]string{"en": "c"},

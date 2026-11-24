@@ -12,22 +12,12 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// snapshot is the in-memory copy of the runtime template set.
-//
-// It holds the runtime records alone: the configuration source is frozen in the
-// declaration and never changes, so it is held once in the product and not
-// copied here. A snapshot is replaced as a whole and never written in place:
-// reads take the pointer once and the copy they took does not change under
-// them. It holds one carrier's rows: the read that builds it filters by the
-// mounted provider's name.
+// The in-memory copy of the runtime template set; replaced as a whole, never
+// written in place, and holds one carrier's rows.
 type snapshot struct {
 	byName map[string]runtimeTemplate
 }
 
-// runtimeTemplate is one runtime template as the snapshot holds it: its kind,
-// the ordered parameter names, the language-to-code and language-to-body tables,
-// the vendor registration identifiers, the vendor's review state per language
-// and the bookkeeping the management calls report.
 type runtimeTemplate struct {
 	name       string
 	kind       sms.Kind
@@ -43,7 +33,6 @@ type runtimeTemplate struct {
 	updated    time.Time
 }
 
-// record is the runtime template as it is reported to an operator.
 func (r runtimeTemplate) record(carrier string) sms.Record {
 	return sms.Record{
 		Name:       r.name,
@@ -62,13 +51,6 @@ func (r runtimeTemplate) record(carrier string) sms.Record {
 	}
 }
 
-// inForce reports whether a runtime template is in force: it must be enabled and
-// every language it names must carry a sendable review. Approved and NotRequired
-// are sendable — the second is a carrier whose vendor has no per-template review
-// — while Unknown is not: it says a review exists and this process does not
-// follow it. A template approved in one language and still waiting in another is
-// not in force, because a consumer's coverage check needs every language the
-// template names.
 func (r runtimeTemplate) inForce() bool {
 	if !r.enabled {
 		return false
@@ -81,16 +63,10 @@ func (r runtimeTemplate) inForce() bool {
 	return true
 }
 
-// sendableState reports whether a message may go out under a template in this
-// state. Only an approved review and the absence of any review qualify; every
-// state that says the vendor has not settled the template, or that this process
-// does not follow it, does not.
 func sendableState(state sms.ApprovalState) bool {
 	return state == sms.ApprovalApproved || state == sms.ApprovalNotRequired
 }
 
-// row is one runtime template as a read returns it, with the structured columns
-// still as the text the table holds.
 type row struct {
 	Carrier    string    `gorm:"column:carrier"`
 	Name       string    `gorm:"column:name"`
@@ -106,35 +82,9 @@ type row struct {
 	UpdatedAt  time.Time `gorm:"column:updated_at"`
 }
 
-// runtimeColumns is the column list every read of the runtime table selects, so
-// the shape of a row and the reads that build one stay in step.
 const runtimeColumns = "carrier, name, kind, params, codes, bodies, attributes, approvals, enabled, " +
 	"version, created_at, updated_at"
 
-// loadSnapshot reads one carrier's rows and builds a snapshot, refusing a row
-// whose name the configuration also holds and one whose shape the mounted
-// carrier's model does not accept.
-//
-// A column that does not decode is a load failure rather than a row carried as
-// broken: every row here was written by this module, so the structured columns
-// are well-formed text, and one that is not is corruption the operator needs to
-// see rather than a template silently missing from the set.
-//
-// The collision check lives here because this is the one place the two sources
-// meet. Every write refuses a name the configuration holds, but a name can be
-// registered first and written into the configuration afterwards, and the
-// restart that follows is the first moment anything holds both. Left alone they
-// would report as two records under one name, and the runtime one could not be
-// removed — Remove refuses a configured name — so it could only be cleared by
-// hand. Naming it here leaves the operator a way out that is a configuration
-// edit, which is what put the name in both places to begin with.
-//
-// The carrier-shape check is here for the same reason a write checks it: a row
-// written under one carrier's model may no longer fit the carrier this process
-// mounted, and a load that carried it anyway would defer that to the first send.
-//
-// A load that fails inside a reload keeps the snapshot already in place; the
-// startup load's failure stops the process.
 func loadSnapshot(ctx context.Context, handle *gorm.DB, configured map[string]struct{}, carrier string,
 	model sms.CarrierModel,
 ) (*snapshot, error) {
@@ -165,10 +115,6 @@ func loadSnapshot(ctx context.Context, handle *gorm.DB, configured map[string]st
 			return nil, fmt.Errorf("sms.registry: the template %q in the %s table does not fit the "+
 				"mounted carrier: %w", rec.name, tableName, err)
 		}
-		// A row reaches the table only through a write that already checked it, but
-		// the table is also a thing people edit. The declaration check runs again
-		// here so a hand-edited row fails the load rather than the first send under
-		// it.
 		if _, err := sms.NewDeclaration(map[string]sms.TemplateSpec{rec.name: spec}); err != nil {
 			return nil, fmt.Errorf("sms.registry: the template %q in the %s table is not self-consistent: %w",
 				rec.name, tableName, err)
@@ -178,8 +124,6 @@ func loadSnapshot(ctx context.Context, handle *gorm.DB, configured map[string]st
 	return loaded, nil
 }
 
-// decodeRuntime turns a row into the runtime template the snapshot holds,
-// decoding the four structured columns.
 func decodeRuntime(r row) (runtimeTemplate, error) {
 	var params []string
 	if err := json.Unmarshal([]byte(r.Params), &params); err != nil {
@@ -223,16 +167,11 @@ func decodeRuntime(r row) (runtimeTemplate, error) {
 	}, nil
 }
 
-// approvalRow is one language's verdict as the approvals column holds it. Its
-// keys are this module's own and not the exported Approval's field names, so a
-// change to those does not rewrite the table.
 type approvalRow struct {
 	State  string `json:"state"`
 	Reason string `json:"reason"`
 }
 
-// encodeApprovals renders the per-language verdicts as the approvals column's
-// JSON.
 func encodeApprovals(approvals map[string]sms.Approval) string {
 	rows := make(map[string]approvalRow, len(approvals))
 	for locale, approval := range approvals {
@@ -241,8 +180,6 @@ func encodeApprovals(approvals map[string]sms.Approval) string {
 	return mustJSON(rows)
 }
 
-// decodeApprovals reads the approvals column's JSON into the per-language
-// verdicts the snapshot holds.
 func decodeApprovals(text string) (map[string]sms.Approval, error) {
 	var rows map[string]approvalRow
 	if err := json.Unmarshal([]byte(text), &rows); err != nil {
@@ -255,8 +192,6 @@ func decodeApprovals(text string) (map[string]sms.Approval, error) {
 	return approvals, nil
 }
 
-// cloneApprovals copies a review table so a record handed out shares nothing
-// with the module's storage.
 func cloneApprovals(approvals map[string]sms.Approval) map[string]sms.Approval {
 	out := make(map[string]sms.Approval, len(approvals))
 	for locale, approval := range approvals {
@@ -265,8 +200,6 @@ func cloneApprovals(approvals map[string]sms.Approval) map[string]sms.Approval {
 	return out
 }
 
-// sortedKeys lists a string map's keys in a fixed order, so a failure and a
-// record report the same order every run.
 func sortedKeys(m map[string]string) []string {
 	out := make([]string, 0, len(m))
 	for key := range m {
@@ -276,10 +209,6 @@ func sortedKeys(m map[string]string) []string {
 	return out
 }
 
-// effectiveLocales is the effective language set of a template: the languages
-// it has a code for and the languages it has a body for, together. It is the
-// one statement of that set, so conflict detection, a merge, a resolve, Declared
-// and in-force all agree on which languages a template names.
 func effectiveLocales(codes, bodies map[string]string) []string {
 	seen := make(map[string]struct{}, len(codes)+len(bodies))
 	for locale := range codes {
@@ -296,8 +225,6 @@ func effectiveLocales(codes, bodies map[string]string) []string {
 	return out
 }
 
-// cloneMap copies a string map so a record handed out shares nothing with the
-// module's storage.
 func cloneMap(m map[string]string) map[string]string {
 	out := make(map[string]string, len(m))
 	for key, value := range m {
@@ -306,8 +233,6 @@ func cloneMap(m map[string]string) map[string]string {
 	return out
 }
 
-// copyMapOrNil copies a string map for a record, answering nil for an empty one
-// so a template that carries none reports none rather than an empty table.
 func copyMapOrNil(m map[string]string) map[string]string {
 	if len(m) == 0 {
 		return nil
@@ -315,8 +240,6 @@ func copyMapOrNil(m map[string]string) map[string]string {
 	return cloneMap(m)
 }
 
-// orEmpty answers the map itself, or an empty one when it is nil, so the
-// structured columns are written as an empty JSON object and never as null.
 func orEmpty(m map[string]string) map[string]string {
 	if m == nil {
 		return map[string]string{}

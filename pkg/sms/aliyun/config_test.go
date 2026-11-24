@@ -9,7 +9,6 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// completeConfig is a moduleConfig every required item is present in.
 func completeConfig() moduleConfig {
 	return moduleConfig{
 		AccessKeyID:     "the-id",
@@ -19,8 +18,7 @@ func completeConfig() moduleConfig {
 	}
 }
 
-// TestACompleteConfigurationResolves holds the control: a complete section
-// resolves and carries the values through.
+// TestACompleteConfigurationResolves checks that a complete section resolves and carries the values through.
 func TestACompleteConfigurationResolves(t *testing.T) {
 	got := completeConfig().resolve()
 	if got.accessKeyID != "the-id" || got.accessKeySecret != "the-secret" ||
@@ -29,10 +27,8 @@ func TestACompleteConfigurationResolves(t *testing.T) {
 	}
 }
 
-// TestTheDeclaredItemsCarryTheDesignsFlags holds the schema: the two credentials
-// and the signature are required, the secret is sensitive, and the endpoint has a
-// declared default. There is no templates item: the set a message is resolved
-// against belongs to the registry, not to the carrier.
+// TestTheDeclaredItemsCarryTheDesignsFlags checks the schema: the two credentials and the
+// signature are required, the secret is sensitive, and the endpoint has a declared default.
 func TestTheDeclaredItemsCarryTheDesignsFlags(t *testing.T) {
 	s, ok := Module().Resources[0].(config.Schema)
 	if !ok {
@@ -58,9 +54,7 @@ func TestTheDeclaredItemsCarryTheDesignsFlags(t *testing.T) {
 	}
 }
 
-// TestAnIncompleteSectionIsRefused holds that a section with some of the
-// credential and signature set is half-configured: the stance refuses it,
-// naming the missing item, rather than starting a carrier that cannot send.
+// TestAnIncompleteSectionIsRefused checks that a half-configured section is refused with the missing item named.
 func TestAnIncompleteSectionIsRefused(t *testing.T) {
 	body := `{"sms":{"aliyun":{` +
 		`"access-key-secret":"the-secret","sign-name":"Speed"}}}`
@@ -74,7 +68,7 @@ func TestAnIncompleteSectionIsRefused(t *testing.T) {
 	}
 }
 
-// TestTheReaderServesACompleteSection is the control for the loader case.
+// TestTheReaderServesACompleteSection checks that the loader serves a complete section.
 func TestTheReaderServesACompleteSection(t *testing.T) {
 	reader := configtest.Reader(t, completeBody(), Module())
 	var cfg moduleConfig

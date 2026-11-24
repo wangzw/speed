@@ -11,10 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// The first cases drive each route over the real HTTP surface the rig mounts,
-// with the identity a caller carries, and hold both the answer and what reached
-// the registry.
-
+// TestTheListAnswersOnePageWithItsSourceAndApproval checks the list answer and what reached the registry.
 func TestTheListAnswersOnePageWithItsSourceAndApproval(t *testing.T) {
 	r := newRig(t)
 	r.registry.records = []sms.Record{
@@ -46,8 +43,6 @@ func TestTheListAnswersOnePageWithItsSourceAndApproval(t *testing.T) {
 	if got.NextCursor != "" {
 		t.Errorf("next_cursor = %q, want empty on the last page", got.NextCursor)
 	}
-	// The page is ordered by template name, whatever order the registry answered
-	// in: "login-code" before "order-shipped".
 	if len(got.Templates) != 2 || got.Templates[0].Name != "login-code" || got.Templates[1].Name != "order-shipped" {
 		t.Fatalf("templates = %+v, want login-code then order-shipped", got.Templates)
 	}
@@ -71,6 +66,7 @@ func TestTheListAnswersOnePageWithItsSourceAndApproval(t *testing.T) {
 	}
 }
 
+// TestTheRegisterRouteAnswersCreatedAndPassesTheSpecOn checks the created answer and the spec passed on.
 func TestTheRegisterRouteAnswersCreatedAndPassesTheSpecOn(t *testing.T) {
 	r := newRig(t)
 	r.registry.register = sms.Record{Name: "login-code", Source: sms.SourceRuntime, Version: 1}
@@ -96,10 +92,7 @@ func TestTheRegisterRouteAnswersCreatedAndPassesTheSpecOn(t *testing.T) {
 	}
 }
 
-// A registration names no vendor code and no parameter either: a carrier that
-// sends by rendered body takes a template with only a body, and the handler
-// passes the empty tables on rather than refusing them on shape. Whether the
-// shape fits is the registry's check against the mounted carrier.
+// TestARegistrationNeedsNoCodeOrParameter checks that a registration with only a body is passed on rather than refused on shape.
 func TestARegistrationNeedsNoCodeOrParameter(t *testing.T) {
 	r := newRig(t)
 	r.registry.register = sms.Record{Name: "welcome", Source: sms.SourceRuntime, Version: 1}
@@ -123,6 +116,7 @@ func TestARegistrationNeedsNoCodeOrParameter(t *testing.T) {
 	}
 }
 
+// TestTheSubmissionRouteAnswersCreatedAndPassesTheSubmissionOn checks the created answer and the submission passed on.
 func TestTheSubmissionRouteAnswersCreatedAndPassesTheSubmissionOn(t *testing.T) {
 	r := newRig(t)
 	r.registry.offer = sms.Record{Name: "login-code", Source: sms.SourceRuntime, Version: 1}
@@ -147,6 +141,7 @@ func TestTheSubmissionRouteAnswersCreatedAndPassesTheSubmissionOn(t *testing.T) 
 	}
 }
 
+// TestTheEnableRouteAnswersNoContentAndPassesTheTargetOn checks the 204 answer and the target state passed on.
 func TestTheEnableRouteAnswersNoContentAndPassesTheTargetOn(t *testing.T) {
 	r := newRig(t)
 	w := r.do(http.MethodPost, "/api/v1/system/sms/templates/login-code/enabled", enabledBody{Enabled: ptr(true)})
@@ -159,6 +154,7 @@ func TestTheEnableRouteAnswersNoContentAndPassesTheTargetOn(t *testing.T) {
 	}
 }
 
+// TestTheRemoveRouteAnswersNoContentAndPassesTheNameOn checks the 204 answer and the name passed on.
 func TestTheRemoveRouteAnswersNoContentAndPassesTheNameOn(t *testing.T) {
 	r := newRig(t)
 	w := r.do(http.MethodDelete, "/api/v1/system/sms/templates/login-code", nil)
@@ -171,9 +167,8 @@ func TestTheRemoveRouteAnswersNoContentAndPassesTheNameOn(t *testing.T) {
 	}
 }
 
-// The decision is asked per method — a read needs template.read and a write
-// needs template.manage — and it is asked in the platform domain, so the
-// request's own tenant never steers it.
+// TestTheDecisionIsAskedPerMethodInThePlatformDomain checks that a read asks
+// template.read and a write template.manage, in the platform domain.
 func TestTheDecisionIsAskedPerMethodInThePlatformDomain(t *testing.T) {
 	cases := map[string]struct {
 		method string
@@ -204,9 +199,8 @@ func TestTheDecisionIsAskedPerMethodInThePlatformDomain(t *testing.T) {
 	}
 }
 
-// A request with no identity is a 401 with the realm challenge, the same answer
-// the admission and authorization layers write, and it reaches neither the guard
-// nor the registry nor the audit.
+// TestARequestWithNoIdentityIsA401 checks that it answers 401 with the realm
+// challenge and reaches neither the guard nor the registry.
 func TestARequestWithNoIdentityIsA401(t *testing.T) {
 	for name, target := range map[string]struct {
 		method string
@@ -242,8 +236,7 @@ func TestARequestWithNoIdentityIsA401(t *testing.T) {
 	}
 }
 
-// A guard refusal is answered by the guard — a 403 for a denial and a 503 for an
-// outage — and reaches no registry and no audit.
+// TestAGuardRefusalReachesNoRegistry checks that a guard refusal is answered by the guard and reaches no registry and no audit.
 func TestAGuardRefusalReachesNoRegistry(t *testing.T) {
 	t.Run("denial", func(t *testing.T) {
 		r := newRig(t)
@@ -269,9 +262,7 @@ func TestAGuardRefusalReachesNoRegistry(t *testing.T) {
 	})
 }
 
-// A write whose mandatory audit row does not land is a 503 and the action is not
-// carried out: the registry is not reached and no failed row is written beside a
-// row that was never written.
+// TestTheMandatoryAuditLandingIsRequired checks that a write whose mandatory row does not land answers 503 and reaches no registry.
 func TestTheMandatoryAuditLandingIsRequired(t *testing.T) {
 	writes := map[string]struct {
 		method string
@@ -301,8 +292,7 @@ func TestTheMandatoryAuditLandingIsRequired(t *testing.T) {
 	}
 }
 
-// A write the registry refuses is closed with a failed row linked to the
-// mandatory one by the action identifier, and the answer is the mapped one.
+// TestAFailedWriteClosesWithALinkedRow checks that a refused write closes with a failed row linked by the action identifier.
 func TestAFailedWriteClosesWithALinkedRow(t *testing.T) {
 	r := newRig(t)
 	r.registry.fail(sms.ErrTemplateExists)
@@ -326,9 +316,8 @@ func TestAFailedWriteClosesWithALinkedRow(t *testing.T) {
 	}
 }
 
-// The refusal mapping is closed and fail-closed: each sentinel the registry
-// returns reaches its status, and a failure no sentinel names is a 503 whose
-// cause stays in the log.
+// TestTheFailureMappingIsClosed checks that each sentinel reaches its status and
+// an unnamed failure is a 503 with the cause in the log.
 func TestTheFailureMappingIsClosed(t *testing.T) {
 	type writeCase struct {
 		method string
@@ -394,9 +383,7 @@ func TestTheFailureMappingIsClosed(t *testing.T) {
 	})
 }
 
-// The configuration-sourced refusal names its source in the problem type, so an
-// operator reads the fix off the answer, while a name collision wears the plain
-// conflict type.
+// TestTheConfigSourcedRefusalNamesItsSource checks that the configured refusal names its source in the problem type.
 func TestTheConfigSourcedRefusalNamesItsSource(t *testing.T) {
 	r := newRig(t)
 	r.registry.fail(sms.ErrImmutable)
@@ -416,9 +403,8 @@ func TestTheConfigSourcedRefusalNamesItsSource(t *testing.T) {
 	}
 }
 
-// A registration and an enable refuse their shape before the action: an empty
-// name, a name naming no row, and an enable body that names no target are 400s,
-// and neither the registry nor the audit is reached.
+// TestAShapeRefusalReachesNeitherTheRegistryNorTheAudit checks that an empty
+// name or enable body is a 400 reaching neither the registry nor the audit.
 func TestAShapeRefusalReachesNeitherTheRegistryNorTheAudit(t *testing.T) {
 	cases := map[string]struct {
 		method string
@@ -458,8 +444,7 @@ func TestAShapeRefusalReachesNeitherTheRegistryNorTheAudit(t *testing.T) {
 	})
 }
 
-// The list pages by template name: the cursor is the last name on the page and
-// the next page continues after it, in the order the names sort.
+// TestTheListPagesByTemplateName checks that the cursor is the last name on the page and the next page continues after it.
 func TestTheListPagesByTemplateName(t *testing.T) {
 	names := []string{"alpha", "bravo", "charlie", "delta", "echo"}
 	records := make([]sms.Record, len(names))
@@ -519,7 +504,7 @@ func TestTheListPagesByTemplateName(t *testing.T) {
 	})
 }
 
-// An illegal limit is a 400 before the registry is read.
+// TestAnIllegalLimitIsABadRequest checks that an illegal limit is a 400 before the registry is read.
 func TestAnIllegalLimitIsABadRequest(t *testing.T) {
 	for _, limit := range []string{"abc", "-1", "1.5"} {
 		t.Run(limit, func(t *testing.T) {
@@ -535,8 +520,7 @@ func TestAnIllegalLimitIsABadRequest(t *testing.T) {
 	}
 }
 
-// The view carries the fields the design names and never the vendor code, so a
-// field added to a record later does not reach a client by being there.
+// TestTheViewCarriesNoVendorCode checks that the view carries the named fields and never the vendor code.
 func TestTheViewCarriesNoVendorCode(t *testing.T) {
 	r := newRig(t)
 	r.registry.records = []sms.Record{{
@@ -570,10 +554,7 @@ func TestTheViewCarriesNoVendorCode(t *testing.T) {
 	}
 }
 
-// A missing template is answered with the status alone: a 404 that carries no
-// problem document, which is the shape the fragment declares and the surface has
-// always written. The answer is an empty reply, so a declared body would turn it
-// into an internal error.
+// TestAMissingTemplateIsAnsweredWithNoBody checks that a missing template is a 404 carrying no problem document.
 func TestAMissingTemplateIsAnsweredWithNoBody(t *testing.T) {
 	r := newRig(t)
 	r.registry.fail(sms.ErrNoTemplate)
@@ -586,6 +567,4 @@ func TestAMissingTemplateIsAnsweredWithNoBody(t *testing.T) {
 	}
 }
 
-// ptr returns a pointer to v, for building a body whose target is a pointer so a
-// case can tell an absent field from a false one.
 func ptr(v bool) *bool { return &v }

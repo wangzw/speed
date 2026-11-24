@@ -9,9 +9,7 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// TestPollReadsOnlyPendingRows covers the selection: the pass reads the vendor's
-// state for the rows with a language still pending and leaves every settled row
-// alone.
+// TestPollReadsOnlyPendingRows checks that the pass reads the vendor only for rows with a language still pending.
 func TestPollReadsOnlyPendingRows(t *testing.T) {
 	r := newSQLiteRig(t)
 	r.plant("waiting", []string{"code"}, map[string]string{"en": "cp"},
@@ -32,8 +30,7 @@ func TestPollReadsOnlyPendingRows(t *testing.T) {
 	}
 }
 
-// TestPollRecordsVerdictAndPublishes covers a verdict: the row is updated and a
-// change event is published.
+// TestPollRecordsVerdictAndPublishes checks that a verdict updates the row and publishes a change event.
 func TestPollRecordsVerdictAndPublishes(t *testing.T) {
 	r := newSQLiteRig(t)
 	r.plant("waiting", []string{"code"}, map[string]string{"en": "cp"},
@@ -54,8 +51,7 @@ func TestPollRecordsVerdictAndPublishes(t *testing.T) {
 	}
 }
 
-// TestPollVendorFailureLeavesState covers a failed vendor call: the state is not
-// changed, and the failure is logged rather than acted on.
+// TestPollVendorFailureLeavesState checks that a failed vendor call leaves the state unchanged and logs the failure.
 func TestPollVendorFailureLeavesState(t *testing.T) {
 	r := newSQLiteRig(t)
 	r.plant("waiting", []string{"code"}, map[string]string{"en": "cp"},
@@ -77,9 +73,7 @@ func TestPollVendorFailureLeavesState(t *testing.T) {
 	}
 }
 
-// TestPollAsksOnlyPendingLanguages covers the per-language selection: a language
-// already settled is not read, and a running one is written back on its own
-// without disturbing the settled language.
+// TestPollAsksOnlyPendingLanguages checks that a settled language is not read and a running one is written back alone.
 func TestPollAsksOnlyPendingLanguages(t *testing.T) {
 	r := newSQLiteRig(t)
 	r.plant("multi", []string{"code"}, map[string]string{"en": "c-en", "zh": "c-zh"},
@@ -101,14 +95,11 @@ func TestPollAsksOnlyPendingLanguages(t *testing.T) {
 	}
 }
 
-// TestPollSettlesEachLanguageSeparately covers the per-language write-back: one
-// language that comes back is written while another is still running, and the
-// running one is read again on a later pass.
+// TestPollSettlesEachLanguageSeparately checks that one language is written back while another is still running.
 func TestPollSettlesEachLanguageSeparately(t *testing.T) {
 	r := newSQLiteRig(t)
 	r.plant("multi", []string{"code"}, map[string]string{"en": "c-en", "zh": "c-zh"},
 		map[string]sms.Approval{"en": {State: sms.ApprovalPending}, "zh": {State: sms.ApprovalPending}}, true, base)
-	// The English review is in; the Chinese one is still running.
 	r.provider.setApproval("c-en", sms.Approval{State: sms.ApprovalApproved})
 	r.provider.setApproval("c-zh", sms.Approval{State: sms.ApprovalPending})
 	r.load()
@@ -125,8 +116,6 @@ func TestPollSettlesEachLanguageSeparately(t *testing.T) {
 		t.Errorf("the version is %d, want 2 (one language settled)", r.versionOf("multi"))
 	}
 
-	// The Chinese review now comes back rejected, and the approved language is
-	// left as it is.
 	r.provider.setApproval("c-zh", sms.Approval{State: sms.ApprovalRejected, Reason: "nope"})
 	r.s.pollOnce(context.Background())
 	if got := r.approvalOf("multi", "zh"); got != string(sms.ApprovalRejected) {
@@ -137,9 +126,8 @@ func TestPollSettlesEachLanguageSeparately(t *testing.T) {
 	}
 }
 
-// TestPollVendorFailureLeavesOneLanguageAlone covers the per-language failure: a
-// code the vendor could not answer about leaves that language as it is, while a
-// sibling language that could be read is still written back.
+// TestPollVendorFailureLeavesOneLanguageAlone checks that a language the vendor
+// could not answer about stays as it is while a sibling is written back.
 func TestPollVendorFailureLeavesOneLanguageAlone(t *testing.T) {
 	r := newSQLiteRig(t)
 	r.plant("multi", []string{"code"}, map[string]string{"en": "c-en", "zh": "c-zh"},
@@ -161,9 +149,8 @@ func TestPollVendorFailureLeavesOneLanguageAlone(t *testing.T) {
 	}
 }
 
-// TestPollNeverAsksAboutALanguageWithNoReview covers a carrier whose vendor has
-// no per-template review: its languages are recorded NotRequired, which is not
-// pending, so the pass never reads a review that does not exist.
+// TestPollNeverAsksAboutALanguageWithNoReview checks that a carrier with no
+// per-template review records NotRequired and is never polled.
 func TestPollNeverAsksAboutALanguageWithNoReview(t *testing.T) {
 	r := newRig(t, openDialect(t, sqliteDialect), newModelProvider(textCarrier()), settingsOf(t, nil, 0))
 	r.plantRow("fake", "no-review", sms.KindNotification, nil, nil, map[string]string{"en": "hello"}, nil,
@@ -180,8 +167,7 @@ func TestPollNeverAsksAboutALanguageWithNoReview(t *testing.T) {
 	}
 }
 
-// TestPollRunsOnStartAndStops covers the ticker: StartPoll runs a first pass at
-// once, and StopPoll waits for the goroutine to return.
+// TestPollRunsOnStartAndStops checks that startPoll runs a first pass at once and stopPoll waits for the goroutine.
 func TestPollRunsOnStartAndStops(t *testing.T) {
 	cfg := settingsOf(t, nil, time.Hour)
 	r := newRig(t, openDialect(t, sqliteDialect), newProvider(), cfg)
@@ -200,8 +186,7 @@ func TestPollRunsOnStartAndStops(t *testing.T) {
 	r.s.stopPoll()
 }
 
-// TestPollIsOffWhenTheIntervalIsZero covers the off switch: a zero interval
-// starts no goroutine, so stopping is a no-op and nothing is polled.
+// TestPollIsOffWhenTheIntervalIsZero checks that a zero interval starts no goroutine.
 func TestPollIsOffWhenTheIntervalIsZero(t *testing.T) {
 	r := newSQLiteRig(t)
 	r.s.startPoll(context.Background())

@@ -9,10 +9,8 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// TestTheCarrierDeclaresItsModel holds the carrier's capability declaration: it
-// sends a rendered body, reviews no template, lets a send pick its identity,
-// accepts the Indian template identifier, bounds the body at 1600 runes and
-// reports asynchronous delivery.
+// TestTheCarrierDeclaresItsModel checks the carrier's declaration: rendered body, no per-template
+// review, identity choice, IN_TEMPLATE_ID, a 1600-rune body bound and asynchronous delivery.
 func TestTheCarrierDeclaresItsModel(t *testing.T) {
 	model := newSender(testConfig(), nil).Model()
 	if !model.Content.TextBody || model.Content.TemplateCode {
@@ -51,8 +49,7 @@ func TestTheCarrierDeclaresItsModel(t *testing.T) {
 	}
 }
 
-// TestTheModelHandsOutCopies holds that a caller cannot change what the process
-// holds through the model it was handed.
+// TestTheModelHandsOutCopies checks that a caller cannot change what the process holds through the model it was handed.
 func TestTheModelHandsOutCopies(t *testing.T) {
 	s := newSender(testConfig(), nil)
 	first := s.Model()
@@ -69,9 +66,7 @@ func TestTheModelHandsOutCopies(t *testing.T) {
 	}
 }
 
-// TestTheManagementSeamCallsNoVendor holds that offering, approving and retiring
-// are local: AWS has no per-template review, so none of the three reaches the
-// vendor, and the answers are the ones the registry expects.
+// TestTheManagementSeamCallsNoVendor checks that offering, approving and retiring are local and answer what the registry expects.
 func TestTheManagementSeamCallsNoVendor(t *testing.T) {
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

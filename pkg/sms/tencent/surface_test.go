@@ -7,9 +7,8 @@ import (
 	"testing"
 )
 
-// The carrier SDK is bound by this package alone, so no carrier type reaches the
-// exported surface: a host that imports this package to name the carrier sees the
-// sms.Sender seam and nothing of the SDK behind it.
+// TestTheExportedSurfaceNamesNoCarrierType checks that no carrier type reaches
+// the exported surface, so a host sees only the sms.Sender seam.
 func TestTheExportedSurfaceNamesNoCarrierType(t *testing.T) {
 	cmd := exec.Command("go", "doc", "-all", ".")
 	var stderr bytes.Buffer

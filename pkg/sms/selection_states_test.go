@@ -7,18 +7,11 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// The selection states below mirror the ones mail's selection cases hold. The
-// two capabilities share one mechanism, so a state covered on one side and not
-// the other is an untested leg of this package's copy of it.
-
-// smsUnconfigured is the stance of a carrier whose section is wholly absent.
 func smsUnconfigured(*pickConfig) (core.Enablement, error) {
 	return core.Enablement{State: core.StateDisabled, Reason: "the section is unset"}, nil
 }
 
-// TestExplicitSelectionStandsTheOtherCarrierDown holds the named-carrier state:
-// a carrier the selection does not name stands down with a reason, without its
-// own configuration being judged.
+// TestExplicitSelectionStandsTheOtherCarrierDown checks that a carrier the selection does not name stands down with a reason.
 func TestExplicitSelectionStandsTheOtherCarrierDown(t *testing.T) {
 	primary := pickModule("sms.pick.primary", "primary", false, configured)
 	fallback := pickModule("sms.pick.fallback", "log", true, configured)
@@ -40,9 +33,7 @@ func TestExplicitSelectionStandsTheOtherCarrierDown(t *testing.T) {
 	}
 }
 
-// TestFallbackStatesAutoWithoutASelection holds the automatic state: with no
-// selection the fallback carrier states StateAuto, so core leaves it running
-// when no other carrier is enabled and stands it down when one is.
+// TestFallbackStatesAutoWithoutASelection checks that the fallback carrier states StateAuto without a selection.
 func TestFallbackStatesAutoWithoutASelection(t *testing.T) {
 	primary := pickModule("sms.pick.primary", "primary", false, smsUnconfigured)
 	fallback := pickModule("sms.pick.fallback", "log", true, configured)
@@ -64,9 +55,7 @@ func TestFallbackStatesAutoWithoutASelection(t *testing.T) {
 	}
 }
 
-// TestOffBySelectionReportsTheSweepOff holds the dependent's reading of the
-// selection: none switches the capability off and the reason a dependent states
-// when it stands itself down names the selection.
+// TestOffBySelectionReportsTheSweepOff checks that none reports the capability off with a reason naming the selection.
 func TestOffBySelectionReportsTheSweepOff(t *testing.T) {
 	reg := pickRegistry(t, `{"sms":{"carrier":"none"}}`)
 	off, reason, err := OffBySelection(reg)
@@ -81,9 +70,7 @@ func TestOffBySelectionReportsTheSweepOff(t *testing.T) {
 	}
 }
 
-// TestOffBySelectionWithoutAReaderLeavesTheCapabilityOn holds the other side:
-// an assembly with no configuration reader has no selection to read, so it is
-// not reported off.
+// TestOffBySelectionWithoutAReaderLeavesTheCapabilityOn checks that an assembly with no reader is not reported off.
 func TestOffBySelectionWithoutAReaderLeavesTheCapabilityOn(t *testing.T) {
 	off, _, err := OffBySelection(core.New())
 	if err != nil {
@@ -94,14 +81,8 @@ func TestOffBySelectionWithoutAReaderLeavesTheCapabilityOn(t *testing.T) {
 	}
 }
 
-// TestSelectionNamesACarrierThatCannotRun holds the named-but-unrunnable state:
-// a selection that names this carrier makes its configuration gap a startup
-// error, not a silent stand-down. The message names the module, the carrier and
-// the carrier's own reason.
-//
-// The error does not wrap ErrInvalidConfig today, while the unknown-name path
-// does. The test holds the observable text only so it does not pin that
-// classification either way.
+// TestSelectionNamesACarrierThatCannotRun checks that a selection naming this carrier makes
+// its configuration gap a startup error naming the module, the carrier and its reason.
 func TestSelectionNamesACarrierThatCannotRun(t *testing.T) {
 	primary := pickModule("sms.pick.primary", "primary", false, smsUnconfigured)
 	reg := pickRegistry(t, `{"sms":{"carrier":"primary"}}`, primary)

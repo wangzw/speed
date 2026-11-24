@@ -27,8 +27,6 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// The stubs implement the seams the module takes up, so a stub and an interface
-// cannot drift apart without failing the build.
 var (
 	_ sms.Registry       = (*stubRegistry)(nil)
 	_ sms.Provider       = (*stubProvider)(nil)
@@ -39,9 +37,6 @@ var (
 	_ log.Logger         = loggerStub{}
 )
 
-// registryCall is one call the stub registry recorded: the method's name and the
-// arguments that name a row, so a case can hold what the handler passed on and
-// that an action the module refused never reached the registry.
 type registryCall struct {
 	op      string
 	name    string
@@ -50,9 +45,6 @@ type registryCall struct {
 	enabled bool
 }
 
-// stubRegistry is a stand-in sms.Registry. It records every call, answers reads
-// from what a case set, and fails every method with the error a case set, which
-// is how a case drives a sentinel up the handler's mapping.
 type stubRegistry struct {
 	mu       sync.Mutex
 	calls    []registryCall
@@ -122,10 +114,6 @@ func (s *stubRegistry) Remove(_ context.Context, name string) error {
 	return s.errNow()
 }
 
-// stubProvider is a stand-in sms.Provider. It answers the name and the carrier
-// model a case set, which is what the carrier route reads; the template
-// operations are never called from the management surface, so they answer
-// nothing and succeed.
 type stubProvider struct {
 	mu    sync.Mutex
 	name  string
@@ -160,11 +148,6 @@ func (*stubProvider) Approval(context.Context, string) (sms.Approval, error) {
 
 func (*stubProvider) Retire(context.Context, string) error { return nil }
 
-// stubGuard is a stand-in guard.Guard. It records the permission every decision
-// asked about, and the domain it decided in, and answers from one setting:
-// allow, deny, or fail. The write-out matches the real guard's — a 403 for a
-// denial and a 503 for an outage — so a handler that returns on a shortfall
-// writes the same answer.
 type stubGuard struct {
 	mu      sync.Mutex
 	allow   bool
@@ -226,9 +209,6 @@ func (g *stubGuard) domainsAsked() []authz.Domain {
 	return append([]authz.Domain(nil), g.domains...)
 }
 
-// recordingAudit keeps the rows it was asked to write and can be told to fail,
-// which is how a case holds that a write whose mandatory row did not land
-// reached no registry.
 type recordingAudit struct {
 	mu    sync.Mutex
 	rows  []audit.Entry
@@ -242,8 +222,6 @@ func (a *recordingAudit) Record(_ context.Context, e audit.Entry) error {
 	if a.err != nil {
 		return a.err
 	}
-	// delay stands in for an audit store that is slow to take a row, so a case
-	// can hold what a call's own duration does and does not cover.
 	time.Sleep(a.delay)
 	a.rows = append(a.rows, e)
 	return nil
@@ -257,13 +235,10 @@ func (a *recordingAudit) entries() []audit.Entry {
 
 func (a *recordingAudit) fail(err error) { a.mu.Lock(); a.err = err; a.mu.Unlock() }
 
-// slow makes every row take d to record, standing in for a slow audit store.
 func (a *recordingAudit) slow(d time.Duration) { a.mu.Lock(); a.delay = d; a.mu.Unlock() }
 
-// mountedRoute is one (method, path) a registration recorded.
 type mountedRoute struct{ method, path string }
 
-// stubEndpoint records the routes registered on it.
 type stubEndpoint struct {
 	mu     sync.Mutex
 	routes []mountedRoute
@@ -285,9 +260,6 @@ func (e *stubEndpoint) registered() []mountedRoute {
 	return append([]mountedRoute(nil), e.routes...)
 }
 
-// stubRouter is a stand-in speedhttp.Router over a fixed set of endpoints. A
-// name it does not hold is an error, the way the real entry point answers an
-// undeclared endpoint.
 type stubRouter struct {
 	mu        sync.Mutex
 	endpoints map[string]*stubEndpoint
@@ -325,22 +297,16 @@ func (r *stubRouter) endpoint(name string) *stubEndpoint {
 	return r.endpoints[name]
 }
 
-// loggerStub delivers the logging capability over a recorder, so the module's
-// startup diagnostic lands in a case's buffer rather than on the test's output.
 type loggerStub struct{ logger *slog.Logger }
 
 func (l loggerStub) Named(string) *slog.Logger { return l.logger }
 func (loggerStub) Redaction() log.Redaction    { return noRules{} }
 
-// noRules takes redaction registrations and masks nothing: a case reads the
-// records themselves, not their masking.
 type noRules struct{}
 
 func (noRules) AddKeys(...string)              {}
 func (noRules) AddPattern(string, log.Matcher) {}
 
-// logBuffer collects what the module logs, so a case can hold the module's own
-// records apart from the test's output.
 type logBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -362,7 +328,6 @@ func (b *logBuffer) String() string {
 	return b.buf.String()
 }
 
-// decode reads a JSON response body into target.
 func decode(t *testing.T, w *httptest.ResponseRecorder, target any) {
 	t.Helper()
 	if err := json.Unmarshal(w.Body.Bytes(), target); err != nil {
@@ -370,13 +335,11 @@ func decode(t *testing.T, w *httptest.ResponseRecorder, target any) {
 	}
 }
 
-// problem is the default problem-details shape this module's refusals carry.
 type problem struct {
 	Type   string `json:"type"`
 	Status int    `json:"status"`
 }
 
-// problemOf reads the problem a recorder's body holds.
 func problemOf(t *testing.T, w *httptest.ResponseRecorder) problem {
 	t.Helper()
 	var p problem
@@ -384,8 +347,6 @@ func problemOf(t *testing.T, w *httptest.ResponseRecorder) problem {
 	return p
 }
 
-// standIn is a module that delivers instance for the tokens named, the way
-// another module delivers its capability exclusively.
 func standIn(name string, instance any, tokens ...core.Token) core.Module {
 	provides := make([]core.Provision, len(tokens))
 	for i, tk := range tokens {
@@ -398,10 +359,6 @@ func standIn(name string, instance any, tokens ...core.Token) core.Module {
 	}
 }
 
-// rig is the module with every dependency a case drives, mounted on a real gin
-// engine so a case reaches it over a real HTTP surface: the real routing, the
-// real path parameters and the real JSON binding, with the registry and the
-// other capabilities stood in for.
 type rig struct {
 	t        *testing.T
 	p        *product
@@ -414,8 +371,6 @@ type rig struct {
 	engine   *gin.Engine
 }
 
-// newRig builds the module over the stubs and mounts its route set on a real
-// engine, with one endpoint declared on the router.
 func newRig(t *testing.T) *rig {
 	t.Helper()
 	logs := &logBuffer{}
@@ -440,10 +395,6 @@ func newRig(t *testing.T) *rig {
 	return r
 }
 
-// mount registers the module's whole route set on a fresh gin engine, the way
-// the real entry point mounts them, and binds the realm each handler reads. A
-// conflict among the routes panics here, which is how a case holds that the
-// route set is mountable.
 func (r *rig) mount() *gin.Engine {
 	r.t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -454,8 +405,6 @@ func (r *rig) mount() *gin.Engine {
 	return engine
 }
 
-// do sends one request through the engine with the identity the options build
-// and, when a body is given, a JSON body.
 func (r *rig) do(method, target string, body any, opts ...authntest.Option) *httptest.ResponseRecorder {
 	r.t.Helper()
 	var reader io.Reader
@@ -469,23 +418,17 @@ func (r *rig) do(method, target string, body any, opts ...authntest.Option) *htt
 	return r.send(method, target, reader, body != nil, authntest.Context(r.t, context.Background(), opts...))
 }
 
-// doRaw sends a body as written, so a case can put a body the handler cannot
-// read in front of it.
 func (r *rig) doRaw(method, target, raw string) *httptest.ResponseRecorder {
 	r.t.Helper()
 	return r.send(method, target, strings.NewReader(raw), true, authntest.Context(r.t, context.Background()))
 }
 
-// doAnonymous sends one request with no identity on it, an optional-access
-// anonymous request, the way one reaches a management route the middleware let
-// through.
 func (r *rig) doAnonymous(method, target string) *httptest.ResponseRecorder {
 	r.t.Helper()
 	ctx := authntest.Anonymous(r.t, context.Background(), authn.AccessOptional)
 	return r.send(method, target, nil, false, ctx)
 }
 
-// send builds the request, installs the context and drives the engine.
 func (r *rig) send(method, target string, reader io.Reader, jsonBody bool, ctx context.Context) *httptest.ResponseRecorder {
 	r.t.Helper()
 	req := httptest.NewRequest(method, target, reader)

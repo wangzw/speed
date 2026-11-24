@@ -5,17 +5,14 @@ import (
 	"testing"
 )
 
-// Provider.Model has to be reachable from both seams: the management surface
-// holds a Provider, and Product is Sender plus Provider. A method expression
-// stops compiling if either seam loses it.
+// Provider.Model must be reachable from both seams; a method expression stops
+// compiling if either loses it.
 var (
 	_ func(Provider) CarrierModel = Provider.Model
 	_ func(Product) CarrierModel  = Product.Model
 )
 
-// TestTheSentinelsAreDistinct holds that a caller can tell the failure kinds
-// apart: ErrUnroutable is neither a defective message, an unknown outcome, a
-// template state nor a configuration fault.
+// TestTheSentinelsAreDistinct checks that a caller can tell the failure kinds apart.
 func TestTheSentinelsAreDistinct(t *testing.T) {
 	sentinels := map[string]error{
 		"ErrThrottled":     ErrThrottled,
@@ -37,9 +34,7 @@ func TestTheSentinelsAreDistinct(t *testing.T) {
 	}
 }
 
-// TestApprovalNotRequiredIsItsOwnState holds the closed vocabulary's new member:
-// it carries its own value and is distinct from Unknown, which says a review
-// exists and this process does not track it.
+// TestApprovalNotRequiredIsItsOwnState checks that it carries its own value and is distinct from Unknown.
 func TestApprovalNotRequiredIsItsOwnState(t *testing.T) {
 	if ApprovalNotRequired != "not-required" {
 		t.Errorf("ApprovalNotRequired = %q, want %q", ApprovalNotRequired, "not-required")
@@ -52,10 +47,7 @@ func TestApprovalNotRequiredIsItsOwnState(t *testing.T) {
 	}
 }
 
-// TestTheSendableStatesAreApprovedAndNotRequired holds which states a message may
-// go out under. NotRequired qualifies because the vendor has no review to wait
-// on; Unknown does not, because a review exists and this process does not follow
-// it.
+// TestTheSendableStatesAreApprovedAndNotRequired checks which states a message may go out under.
 func TestTheSendableStatesAreApprovedAndNotRequired(t *testing.T) {
 	cases := map[ApprovalState]bool{
 		ApprovalApproved:    true,
@@ -72,8 +64,7 @@ func TestTheSendableStatesAreApprovedAndNotRequired(t *testing.T) {
 	}
 }
 
-// TestIdentityKindsAreTheSharedVocabulary holds the closed set of identity kinds
-// a carrier maps its vendor's spelling onto.
+// TestIdentityKindsAreTheSharedVocabulary checks the closed set of identity kinds.
 func TestIdentityKindsAreTheSharedVocabulary(t *testing.T) {
 	want := []IdentityKind{
 		IdentitySignName, IdentitySenderID, IdentityLongCode, IdentityShortCode,

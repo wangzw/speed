@@ -7,10 +7,8 @@ import (
 	"time"
 )
 
-// TestSuppressedRowsCountInDimensionsButNotAsSendsOrCeiling holds the two rules
-// a suppressed row is kept for. It spends no send budget and no share of the
-// cross-channel ceiling, but a dimension count can include it, so a refusal does
-// not tell a registered destination from an unregistered one.
+// TestSuppressedRowsCountInDimensionsButNotAsSendsOrCeiling checks that a suppressed row
+// spends no send budget or ceiling share but a dimension count can include it.
 func TestSuppressedRowsCountInDimensionsButNotAsSendsOrCeiling(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, store Store) {
 		since := at.Add(-time.Second)
@@ -43,10 +41,8 @@ func TestSuppressedRowsCountInDimensionsButNotAsSendsOrCeiling(t *testing.T) {
 	})
 }
 
-// TestOnlyRefundedCountsDeterminateFailuresOnly holds the third refund shape: a
-// row refunded after the fact is a determinate failure, while a successful send
-// and — by default — a suppressed row are not. Including the suppressed rows is
-// the one opt-in way to count a suppressed row as a refund.
+// TestOnlyRefundedCountsDeterminateFailuresOnly checks the determinate-failure shape: a refunded
+// row counts, a successful send does not, and a suppressed row does not by default.
 func TestOnlyRefundedCountsDeterminateFailuresOnly(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, store Store) {
 		since := at.Add(-time.Second)
@@ -75,9 +71,7 @@ func TestOnlyRefundedCountsDeterminateFailuresOnly(t *testing.T) {
 	})
 }
 
-// TestLatestReturnsTheNewestAttempt holds Latest to the same rows Count reads:
-// the newest counted row is the resend interval's starting point, and a row the
-// current modes leave out is not it.
+// TestLatestReturnsTheNewestAttempt checks that Latest reads the same rows Count does.
 func TestLatestReturnsTheNewestAttempt(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, store Store) {
 		since := at.Add(-time.Second)
@@ -133,9 +127,8 @@ func TestLatestReturnsTheNewestAttempt(t *testing.T) {
 	})
 }
 
-// TestTheAccountDimensionCountsByAccount holds the account column to an indexed
-// dimension: rows carry the account they are for, and a login or reset attempt,
-// which has none, is not counted by any account.
+// TestTheAccountDimensionCountsByAccount checks that rows carry their account
+// and that an attempt with none matches no account count.
 func TestTheAccountDimensionCountsByAccount(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, store Store) {
 		since := at.Add(-time.Second)
@@ -154,9 +147,8 @@ func TestTheAccountDimensionCountsByAccount(t *testing.T) {
 	})
 }
 
-// TestPruneBeforeRemovesOnlyOlderRows holds the retention sweep: a row strictly
-// older than the cutoff goes, a row at or after it stays, and a refund or a
-// suppression does not keep an old row alive.
+// TestPruneBeforeRemovesOnlyOlderRows checks the retention sweep: a row strictly
+// older than the cutoff goes, a row at or after it stays.
 func TestPruneBeforeRemovesOnlyOlderRows(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, store Store) {
 		record(t, store, attempt(ChannelAuthn, "login", "S1", "D0", "T1", at.Add(-2*time.Hour)))

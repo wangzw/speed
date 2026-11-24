@@ -3,16 +3,8 @@ package sms
 import "fmt"
 
 // Classify maps a carrier's exact status code to a sentinel through a table and
-// answers the uncertain sentinel for any code the table does not name. The code
-// is carried into the text; it is the carrier's own word and holds no credential
-// and no message code.
-//
-// The table maps a code to the sentinel the carrier has verified it means:
-// ErrThrottled, ErrRejected or ErrUnroutable. It is empty until a code is
-// verified against the carrier's list, and the empty-table direction is
-// deliberate: a code not known to mean any of the three is uncertain, which
-// counts at most one more budget rather than treating an unconfirmed failure as
-// a definite one, and never resends.
+// answers ErrUncertain for any code the table does not name. The code is carried
+// into the text; it holds no credential and no message code.
 func Classify(table map[string]error, carrier, code string) error {
 	sentinel, verified := table[code]
 	if !verified {

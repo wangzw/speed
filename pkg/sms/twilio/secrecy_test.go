@@ -11,12 +11,8 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// TestTheCredentialsTheParametersAndTheBodyReachNoErrorText holds that a module
-// holding a secret configuration value and a message's content keeps both out of
-// the text of every failure it returns, even when the carrier echoes them back in
-// its own answer. The auth token authenticates the request and is registered as a
-// literal redaction rule for logs; what the seams return must not carry it
-// either.
+// TestTheCredentialsTheParametersAndTheBodyReachNoErrorText checks that the auth token, the
+// parameter values and the body stay out of every failure's text.
 func TestTheCredentialsTheParametersAndTheBodyReachNoErrorText(t *testing.T) {
 	const (
 		code = "135790"
@@ -71,9 +67,7 @@ func TestTheCredentialsTheParametersAndTheBodyReachNoErrorText(t *testing.T) {
 	}
 }
 
-// TestTheRenderedBodyIsNotSentBesideTheContentTemplate holds that a resolved
-// message's body never reaches the vendor: this carrier sends the content
-// template, and the request carries no Body.
+// TestTheRenderedBodyIsNotSentBesideTheContentTemplate checks that the request carries no Body beside the content template.
 func TestTheRenderedBodyIsNotSentBesideTheContentTemplate(t *testing.T) {
 	const body = "a body the vendor must not receive"
 	var request string

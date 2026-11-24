@@ -11,18 +11,12 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// The credential the cases configure: the values testConfig installs, so a
-// carrier that quotes a request value in its own answer is quoting one of these.
 const (
-	echoedSecretID  = "AKIDexample"
-	echoedSecretKey = "secret-key-example"
-	// echoedCredential is the phrase each seeded answer quotes — a carrier that
-	// repeats a request value in its reply.
+	echoedSecretID   = "AKIDexample"
+	echoedSecretKey  = "secret-key-example"
 	echoedCredential = "the credential " + echoedSecretID + " / " + echoedSecretKey + " was rejected"
 )
 
-// topLevelError is an answer whose top-level Error quotes message: the shape a
-// carrier uses when its structured reply repeats a value the request sent.
 func topLevelError(message string) string {
 	encoded, _ := json.Marshal(map[string]any{"Response": map[string]any{
 		"Error":     map[string]any{"Code": "InternalError.UnknownError", "Message": message},
@@ -31,7 +25,6 @@ func topLevelError(message string) string {
 	return string(encoded)
 }
 
-// perNumberStatus is an answer whose single per-number status quotes message.
 func perNumberStatus(message string) string {
 	encoded, _ := json.Marshal(map[string]any{"Response": map[string]any{
 		"SendStatusSet": []map[string]any{{
@@ -42,7 +35,6 @@ func perNumberStatus(message string) string {
 	return string(encoded)
 }
 
-// secrecySubmission is one template submission the Offer case hands the sender.
 func secrecySubmission() sms.Submission {
 	return sms.Submission{
 		Name: "authn.code.login", Content: "your code is ${code}", Kind: sms.KindVerification,
@@ -50,16 +42,8 @@ func secrecySubmission() sms.Submission {
 	}
 }
 
-// TestNoSeamRepeatsTheCredentialInItsError holds that a module holding a secret
-// configuration value keeps it out of the text of every failure its seams return,
-// even when the carrier echoes the value back in its answer. That echo is the
-// shape most easily missed: the module does not write the value into the error so
-// much as fail to keep the carrier's own message out of it, and the SDK copies a
-// non-200 body whole into the error it builds.
-//
-// Both seams are covered — the three management operations and the sending call —
-// against each echo shape the carrier has: a structured top-level error, a
-// per-number send status, and an HTTP failure whose body the SDK embeds.
+// TestNoSeamRepeatsTheCredentialInItsError checks that neither seam returns the
+// credential in a failure's text, even when the carrier echoes it back.
 func TestNoSeamRepeatsTheCredentialInItsError(t *testing.T) {
 	leaked := []string{echoedSecretID, echoedSecretKey}
 

@@ -16,13 +16,8 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// testAccessKeySecret is the value the cases configure and then look for in
-// everything the module produces.
 const testAccessKeySecret = "test-secret-access-key-9f3a2c"
 
-// testConfig is a configuration the cases run on: two identities, the primary one
-// covering two countries and carrying the Indian entity identifier, and a
-// default identity named.
 func testConfig() resolved {
 	identities := []sms.Identity{
 		{
@@ -54,8 +49,6 @@ func testConfig() resolved {
 	}
 }
 
-// senderOver builds a sender whose client points at the given loopback endpoint,
-// which is how a case reaches the vendor SDK without credentials or a network.
 func senderOver(t *testing.T, endpoint string) *sender {
 	t.Helper()
 	cfg := testConfig()
@@ -67,8 +60,6 @@ func senderOver(t *testing.T, endpoint string) *sender {
 	return newSender(cfg, client)
 }
 
-// oneResolved is the send the cases drive: a message the registry has already
-// rendered to a body.
 func oneResolved() sms.Resolved {
 	return sms.Resolved{
 		To:         "+14155550100",
@@ -83,7 +74,6 @@ func oneResolved() sms.Resolved {
 	}
 }
 
-// wireRequest is the part of the SendTextMessage body the cases read back.
 type wireRequest struct {
 	DestinationPhoneNumber       string
 	MessageBody                  string
@@ -94,14 +84,11 @@ type wireRequest struct {
 	DestinationCountryParameters map[string]string
 }
 
-// accepted answers a SendTextMessage the vendor took.
 func accepted(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/x-amz-json-1.0")
 	_, _ = io.WriteString(w, `{"MessageId":"message-42"}`)
 }
 
-// recordingServer answers every request with accepted and hands the decoded
-// request to the case.
 func recordingServer(t *testing.T, got *wireRequest) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -122,9 +109,8 @@ func recordingServer(t *testing.T, got *wireRequest) *httptest.Server {
 	}))
 }
 
-// TestTheRequestCarriesTheBodyIdentityAndMessageType holds the SendTextMessage
-// shape: the destination, the rendered body, the chosen identity and the vendor's
-// message type for a verification message.
+// TestTheRequestCarriesTheBodyIdentityAndMessageType holds the SendTextMessage shape: the
+// destination, the rendered body, the chosen identity and the vendor's verification message type.
 func TestTheRequestCarriesTheBodyIdentityAndMessageType(t *testing.T) {
 	var got wireRequest
 	server := recordingServer(t, &got)
@@ -159,8 +145,7 @@ func TestTheRequestCarriesTheBodyIdentityAndMessageType(t *testing.T) {
 	}
 }
 
-// TestTheMessageTypeFollowsTheKind holds the kind mapping: verification and
-// notification are transactional, marketing is promotional.
+// TestTheMessageTypeFollowsTheKind checks that verification and notification are transactional and marketing is promotional.
 func TestTheMessageTypeFollowsTheKind(t *testing.T) {
 	for _, c := range []struct {
 		kind sms.Kind
@@ -187,8 +172,8 @@ func TestTheMessageTypeFollowsTheKind(t *testing.T) {
 	}
 }
 
-// TestTheLifetimeBecomesTimeToLive holds that a requested lifetime is carried in
-// whole seconds, and that no lifetime leaves the field to the vendor's default.
+// TestTheLifetimeBecomesTimeToLive checks that a lifetime is carried in whole
+// seconds and that no lifetime leaves the field to the vendor's default.
 func TestTheLifetimeBecomesTimeToLive(t *testing.T) {
 	t.Run("a lifetime", func(t *testing.T) {
 		var got wireRequest
@@ -235,9 +220,8 @@ func TestTheLifetimeBecomesTimeToLive(t *testing.T) {
 	})
 }
 
-// TestAnIndianDestinationCarriesTheDLTParameters holds the target-country
-// parameters: the template's IN_TEMPLATE_ID and the identity's IN_ENTITY_ID, and
-// nothing for a destination outside India.
+// TestAnIndianDestinationCarriesTheDLTParameters checks that an Indian destination carries the
+// template's IN_TEMPLATE_ID and the identity's IN_ENTITY_ID, and no other destination does.
 func TestAnIndianDestinationCarriesTheDLTParameters(t *testing.T) {
 	var got wireRequest
 	server := recordingServer(t, &got)
@@ -259,8 +243,8 @@ func TestAnIndianDestinationCarriesTheDLTParameters(t *testing.T) {
 	}
 }
 
-// TestTheChosenIdentityCarriesItsOwnParameters holds that naming an identity sends
-// from that identity's value and its attributes, not the default's.
+// TestTheChosenIdentityCarriesItsOwnParameters checks that naming an identity
+// sends from that identity's value and attributes, not the default's.
 func TestTheChosenIdentityCarriesItsOwnParameters(t *testing.T) {
 	var got wireRequest
 	server := recordingServer(t, &got)
@@ -282,8 +266,7 @@ func TestTheChosenIdentityCarriesItsOwnParameters(t *testing.T) {
 	}
 }
 
-// TestTheConfigurationSetIsCarriedWhenConfigured holds that a configured
-// configuration set is filed under with every send.
+// TestTheConfigurationSetIsCarriedWhenConfigured checks that a configured configuration set is filed under with every send.
 func TestTheConfigurationSetIsCarriedWhenConfigured(t *testing.T) {
 	var got wireRequest
 	server := recordingServer(t, &got)
@@ -304,9 +287,7 @@ func TestTheConfigurationSetIsCarriedWhenConfigured(t *testing.T) {
 	}
 }
 
-// TestAnUnknownOriginatorIsRejectedWithoutAVendorCall holds that a message naming
-// an identity this deployment does not have is a caller defect, refused before
-// the carrier is reached.
+// TestAnUnknownOriginatorIsRejectedWithoutAVendorCall checks that an undeclared identity is refused before the carrier is reached.
 func TestAnUnknownOriginatorIsRejectedWithoutAVendorCall(t *testing.T) {
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -326,10 +307,8 @@ func TestAnUnknownOriginatorIsRejectedWithoutAVendorCall(t *testing.T) {
 	}
 }
 
-// TestAnIdentityThatDoesNotCoverTheDestinationIsUnroutable holds the coverage
-// check on the one destination this carrier derives a country for: an identity
-// that lists countries but not India is a deployment gap, refused before the
-// carrier is reached.
+// TestAnIdentityThatDoesNotCoverTheDestinationIsUnroutable checks that an identity listing
+// countries but not India refuses an Indian destination before the carrier.
 func TestAnIdentityThatDoesNotCoverTheDestinationIsUnroutable(t *testing.T) {
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -364,7 +343,6 @@ func TestAnIdentityThatDoesNotCoverTheDestinationIsUnroutable(t *testing.T) {
 	}
 }
 
-// errorServer answers every request with one vendor exception.
 func errorServer(kind, message string, status int) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/x-amz-json-1.0")
@@ -374,7 +352,7 @@ func errorServer(kind, message string, status int) *httptest.Server {
 	}))
 }
 
-// TestTheExceptionTableIsTheDesigns holds the per-exception classification: the
+// TestTheExceptionTableIsTheDesigns checks the per-exception classification: the
 // vendor's exception type, and nothing about its text, decides the sentinel.
 func TestTheExceptionTableIsTheDesigns(t *testing.T) {
 	for _, c := range []struct {
@@ -403,9 +381,8 @@ func TestTheExceptionTableIsTheDesigns(t *testing.T) {
 	}
 }
 
-// TestAnUnlistedExceptionIsUncertain holds the fail-closed direction: an exception
-// type the table does not name, a server failure and a transport failure are all
-// uncertain, never a definite throttle or refusal.
+// TestAnUnlistedExceptionIsUncertain checks that an unlisted exception type, a
+// server failure and a transport failure are all uncertain.
 func TestAnUnlistedExceptionIsUncertain(t *testing.T) {
 	for name, server := range map[string]*httptest.Server{
 		"an unlisted exception": errorServer("SomethingNobodyListed", "no", http.StatusBadRequest),
@@ -425,12 +402,9 @@ func TestAnUnlistedExceptionIsUncertain(t *testing.T) {
 	}
 }
 
-// TestATransportFailureIsUncertain holds that a call that did not complete — a
-// network error and a timeout alike — falls to the uncertain sentinel, the
-// direction which never resends a message the carrier may already hold.
+// TestATransportFailureIsUncertain checks that a call that did not complete falls to the uncertain sentinel.
 func TestATransportFailureIsUncertain(t *testing.T) {
 	t.Run("a network error", func(t *testing.T) {
-		// A port nothing listens on: the dial fails inside the SDK.
 		_, err := senderOver(t, "http://127.0.0.1:1").Send(t.Context(), oneResolved())
 		if !errors.Is(err, sms.ErrUncertain) {
 			t.Fatalf("Send answered %v, want the uncertain sentinel", err)
@@ -455,9 +429,7 @@ func TestATransportFailureIsUncertain(t *testing.T) {
 	})
 }
 
-// TestACancelledContextDoesNotReachTheCarrier holds that the adapter passes the
-// caller's context to the vendor call: a send whose context is already ended is
-// refused without the endpoint being reached.
+// TestACancelledContextDoesNotReachTheCarrier checks that an ended context is refused without the endpoint being reached.
 func TestACancelledContextDoesNotReachTheCarrier(t *testing.T) {
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -477,15 +449,12 @@ func TestACancelledContextDoesNotReachTheCarrier(t *testing.T) {
 	}
 }
 
-// TestTheCarrierIsCalledExactlyOnceEvenWhenItFails holds the no-retry rule: the
-// vendor interface is not idempotent, so a failing call is never made again,
-// neither by this module nor by the SDK's own retry, which is forced to one
-// attempt.
+// TestTheCarrierIsCalledExactlyOnceEvenWhenItFails checks that a failing call is
+// never made again, neither by this module nor by the SDK retry.
 func TestTheCarrierIsCalledExactlyOnceEvenWhenItFails(t *testing.T) {
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		atomic.AddInt32(&calls, 1)
-		// A server error, the shape the SDK's retry would have picked up.
 		w.Header().Set("Content-Type", "application/x-amz-json-1.0")
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = io.WriteString(w, `{"__type":"InternalServerException","Message":"no"}`)
@@ -500,11 +469,8 @@ func TestTheCarrierIsCalledExactlyOnceEvenWhenItFails(t *testing.T) {
 	}
 }
 
-// TestTheBodyAndParametersReachNoErrorText holds that neither the message body nor
-// a parameter value reaches the text of a failure, even when the vendor echoes
-// them back in its own message. The access key is never carried into the request
-// body; the secret is checked too, since the signing header is the only place it
-// appears.
+// TestTheBodyAndParametersReachNoErrorText checks that neither the message body nor a
+// parameter value reaches the text of a failure, even when the vendor echoes them back.
 func TestTheBodyAndParametersReachNoErrorText(t *testing.T) {
 	const code = "135790"
 	echoed := "the body your code is " + code + " and the key " + testAccessKeySecret + " were rejected"
@@ -522,8 +488,8 @@ func TestTheBodyAndParametersReachNoErrorText(t *testing.T) {
 	}
 }
 
-// TestOneIdentifierReachesTheCarrierOnce holds the dedupe: one identifier reaches
-// the carrier once, and a second call is answered with the first call's outcome.
+// TestOneIdentifierReachesTheCarrierOnce checks the dedupe: one identifier reaches the
+// carrier once, and a second call is answered with the first call's outcome.
 func TestOneIdentifierReachesTheCarrierOnce(t *testing.T) {
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -547,8 +513,7 @@ func TestOneIdentifierReachesTheCarrierOnce(t *testing.T) {
 	}
 }
 
-// TestDistinctIdentifiersEachReachTheCarrier holds that a resend, which builds a
-// new challenge and so a new identifier, is not held back by the one before it.
+// TestDistinctIdentifiersEachReachTheCarrier checks that a resend, with a new identifier, is not held back by the one before it.
 func TestDistinctIdentifiersEachReachTheCarrier(t *testing.T) {
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -570,8 +535,8 @@ func TestDistinctIdentifiersEachReachTheCarrier(t *testing.T) {
 	}
 }
 
-// TestConcurrentCallsForOneIdentifierReachTheCarrierOnce holds that calls for one
-// identifier that arrive together still reach the carrier once.
+// TestConcurrentCallsForOneIdentifierReachTheCarrierOnce checks that calls for
+// one identifier arriving together still reach the carrier once.
 func TestConcurrentCallsForOneIdentifierReachTheCarrierOnce(t *testing.T) {
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -597,9 +562,8 @@ func TestConcurrentCallsForOneIdentifierReachTheCarrierOnce(t *testing.T) {
 	}
 }
 
-// TestADeclarationRendersItsBodyAndSends holds the whole path a body carrier
-// takes: a declaration rendered by the registry becomes the MessageBody, and the
-// parameter values appear nowhere but there.
+// TestADeclarationRendersItsBodyAndSends checks that a declaration rendered by the registry
+// becomes the MessageBody and the parameter values appear nowhere but there.
 func TestADeclarationRendersItsBodyAndSends(t *testing.T) {
 	declaration, err := sms.NewDeclaration(map[string]sms.TemplateSpec{
 		"authn.code.login": {

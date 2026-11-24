@@ -11,18 +11,12 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// The template type this carrier files a submitted template under. The vendor's
-// own note on AddSmsTemplateRequest.SmsType names the mapping: 1 marketing, 2
-// notification, 3 verification.
 const (
 	smsTypeMarketing    = 1
 	smsTypeNotification = 2
 	smsTypeVerification = 3
 )
 
-// The review states the vendor reports on a template, from its own note on
-// DescribeTemplateListStatus.StatusCode: 0 approved and in force, 1 under review,
-// 2 approved but not yet in force, -1 turned down.
 const (
 	statusApproved           = 0
 	statusUnderReview        = 1
@@ -30,13 +24,9 @@ const (
 	statusRejected           = -1
 )
 
-// Offer hands a template to the vendor for review and answers the vendor's
-// number for it.
-//
-// The submission body is written with the seam's named placeholders and this
-// vendor reviews a positional body, so the body is rewritten before it goes out.
-// The vendor reviews asynchronously, so the number that comes back is a template
-// the review of which is still pending; its state is read later through Approval.
+// Offer hands a template to the vendor for review and answers the vendor's number
+// for it. The body is rewritten from named placeholders to the positional ones
+// this vendor reviews.
 func (s *sender) Offer(ctx context.Context, submission sms.Submission) (string, error) {
 	content, err := positional(submission.Content, submission.Params)
 	if err != nil {
@@ -66,17 +56,9 @@ func (s *sender) Offer(ctx context.Context, submission sms.Submission) (string, 
 	return *response.Response.AddTemplateStatus.TemplateId, nil
 }
 
-// Approval reads the vendor's review state for one template number.
-//
-// The number is the vendor's own, and the registry holds it as a string; a value
-// that is not a number is a caller defect that reached no vendor call, so it is
-// refused as ErrRejected.
-//
-// The identifier is looked up one at a time on purpose: the request's
-// TemplateIdSet reads as a filter only while it is non-empty, and an empty set
-// makes the vendor page through every template it holds instead of answering
-// that it holds none. A response that names the identifier nowhere means the
-// vendor no longer holds the template, which this seam reports as withdrawn.
+// Approval reads the vendor's review state for one template number. The identifier
+// is looked up one at a time because an empty TemplateIdSet pages through every
+// template; a response naming the number nowhere means withdrawn.
 func (s *sender) Approval(ctx context.Context, code string) (sms.Approval, error) {
 	number, err := parseTemplateNumber(code)
 	if err != nil {
@@ -113,15 +95,6 @@ func (s *sender) Retire(ctx context.Context, code string) error {
 	return nil
 }
 
-// approvalOf maps one vendor review status to a state of this package's
-// vocabulary.
-//
-// A status of 2 is approved but not yet in force, and the vendor's own note says
-// only a status of 0 may be used to send. It is reported as pending, so that a
-// send waits for it rather than going out under a template the vendor will not
-// accept yet. A status this code does not name is uncertain: the vendor's
-// numbering may have grown a value, and guessing its meaning is worse than
-// saying so.
 func approvalOf(status *tc.DescribeTemplateListStatus) (sms.Approval, error) {
 	if status.StatusCode == nil {
 		return sms.Approval{}, fmt.Errorf("%w: %s answered with no review status", sms.ErrUncertain, ModuleName)
@@ -139,7 +112,6 @@ func approvalOf(status *tc.DescribeTemplateListStatus) (sms.Approval, error) {
 	}
 }
 
-// parseTemplateNumber reads a template number the registry holds as a string.
 func parseTemplateNumber(code string) (uint64, error) {
 	number, err := strconv.ParseUint(code, 10, 64)
 	if err != nil {
@@ -148,7 +120,6 @@ func parseTemplateNumber(code string) (uint64, error) {
 	return number, nil
 }
 
-// smsTypeOf maps a template's kind to the vendor's template type.
 func smsTypeOf(kind sms.Kind) (uint64, error) {
 	switch kind {
 	case sms.KindMarketing:
@@ -163,20 +134,11 @@ func smsTypeOf(kind sms.Kind) (uint64, error) {
 	}
 }
 
-// namedPlaceholder matches a ${name} placeholder in a submission body.
 var namedPlaceholder = regexp.MustCompile(`\$\{([^}]*)\}`)
 
-// positional rewrites a submission body from the seam's named placeholders into
-// the positional ones this vendor's reviewed bodies use: each ${name} becomes
-// {1}, {2}, … numbered by the order of the declared parameter names.
-//
-// A parameter declared twice is refused, because one ${name} would then stand for
-// two slots and there is no way to tell which the author meant. A placeholder
-// naming a parameter the submission does not declare is refused, because the
-// vendor would be handed a slot whose meaning was never stated. A declared
-// parameter the body never uses is allowed: it means only that the reviewed body
-// has fewer slots than the submission lists, and nothing here can tell whether
-// that is the author's intent.
+// positional rewrites a submission body from ${name} placeholders to the
+// positional {1}, {2}, … the vendor reviews, numbered by the declared parameter
+// order.
 func positional(content string, params []string) (string, error) {
 	slot := make(map[string]int, len(params))
 	for i, name := range params {
@@ -206,7 +168,6 @@ func positional(content string, params []string) (string, error) {
 	return rewritten, nil
 }
 
-// stringValue reads a string the vendor may have left absent.
 func stringValue(p *string) string {
 	if p == nil {
 		return ""

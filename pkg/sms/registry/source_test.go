@@ -11,13 +11,8 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// TestARuntimeRowWhoseNameTheConfigurationAlsoHoldsStopsTheLoad pins the one
-// moment the two sources can meet. Every write refuses a name the configuration
-// holds, but a name can be registered first and written into the configuration
-// afterwards, and the restart that follows is the first time anything holds
-// both. Carried as two records under one name, the runtime one could not be
-// removed — Remove refuses a configured name — so the collision has to be
-// refused where it is seen.
+// TestARuntimeRowWhoseNameTheConfigurationAlsoHoldsStopsTheLoad checks that a
+// runtime row whose name the configuration also holds fails the load.
 func TestARuntimeRowWhoseNameTheConfigurationAlsoHoldsStopsTheLoad(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, database db.Database, _ string) {
 		cfg := settingsOf(t, map[string]sms.TemplateSpec{
@@ -37,18 +32,12 @@ func TestARuntimeRowWhoseNameTheConfigurationAlsoHoldsStopsTheLoad(t *testing.T)
 	})
 }
 
-// TestOfferRefusesAHeldLanguageWithoutReachingTheVendorOnAStaleSnapshot pins
-// that the conflicts are decided against the table and not only against this
-// replica's snapshot. A replica that missed a change event serves a stale set
-// for as long as it runs, and the vendor call is the step that cannot be taken
-// back: a submission this process will decline must not leave a template behind
-// at the vendor.
+// TestOfferRefusesAHeldLanguageWithoutReachingTheVendorOnAStaleSnapshot checks that a conflict is
+// decided against the table, not only the stale snapshot, before the vendor is reached.
 func TestOfferRefusesAHeldLanguageWithoutReachingTheVendorOnAStaleSnapshot(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, database db.Database, _ string) {
 		provider := newProvider()
 		r := newRig(t, database, provider, settingsOf(t, nil, time.Minute))
-		// The state Init leaves, and then a row another replica wrote that this
-		// one never heard about.
 		r.load()
 		r.plant("promo", []string{"code"}, map[string]string{"zh-CN": "SMS_9"},
 			map[string]sms.Approval{"zh-CN": {State: sms.ApprovalApproved}}, true, base)
