@@ -477,6 +477,33 @@ describe('the account menus', () => {
     expect(new Set(header)).toEqual(new Set(sidebar))
   })
 
+  it('marks the page behind an open menu inert, on either surface', async () => {
+    window.history.replaceState({}, '', '/')
+    const user = userEvent.setup()
+    const { container } = renderDemoApp({
+      session: createTestSession(authenticatedSnapshot()),
+    })
+
+    for (const surface of ACCOUNT_MENU_SURFACES) {
+      await user.click(await screen.findByTestId(surface.trigger))
+      const menu = await screen.findByRole('menu')
+
+      // The page behind the menu is inert, so a Tab from the menu cannot
+      // land on a control the viewer cannot see.
+      await waitFor(() => expect(container).toHaveAttribute('inert'))
+      // The menu's own portal is outside that sweep.
+      expect(menu.closest('[inert]')).toBeNull()
+
+      await user.keyboard('{Escape}')
+      await waitFor(() =>
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument(),
+      )
+      // The attribute comes off in the closing commit, before MUI restores
+      // focus to the trigger, which sits in the background.
+      await waitFor(() => expect(container).not.toHaveAttribute('inert'))
+    }
+  })
+
   for (const surface of ACCOUNT_MENU_SURFACES) {
     it(`navigates every entry from the ${surface.name} menu`, async () => {
       const user = userEvent.setup()
