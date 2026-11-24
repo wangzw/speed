@@ -14,9 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// engine mounts the module's closed route table on a real gin engine, the way
-// the entry point does, so a case can send a request through the routes() wiring
-// rather than call a handler directly.
 func (r *rig) engine() *gin.Engine {
 	r.t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -27,15 +24,11 @@ func (r *rig) engine() *gin.Engine {
 	return e
 }
 
-// send issues one request through the mounted engine with the identity the
-// options build.
 func (r *rig) send(e *gin.Engine, method, target string, opts ...authntest.Option) *httptest.ResponseRecorder {
 	r.t.Helper()
 	return r.sendBody(e, method, target, nil, opts...)
 }
 
-// sendBody issues one request through the mounted engine with a JSON body and
-// the identity the options build.
 func (r *rig) sendBody(e *gin.Engine, method, target string, body any, opts ...authntest.Option) *httptest.ResponseRecorder {
 	r.t.Helper()
 	var reader io.Reader
@@ -56,9 +49,7 @@ func (r *rig) sendBody(e *gin.Engine, method, target string, body any, opts ...a
 	return w
 }
 
-// TestEachReadRouteIsWiredToItsOwnHandler holds the route table's
-// path-to-handler wiring: each read sent through the mounted table answers
-// the view its path names and no other.
+// TestEachReadRouteIsWiredToItsOwnHandler checks that each read route is wired to its own handler.
 func TestEachReadRouteIsWiredToItsOwnHandler(t *testing.T) {
 	r := newRig(t, authz.PermissionRoleRead)
 	r.manager.roles = []authz.RoleRecord{{Tenant: "t1", Role: "editor"}}
@@ -91,8 +82,7 @@ func TestEachReadRouteIsWiredToItsOwnHandler(t *testing.T) {
 	}
 }
 
-// TestThePermissionsReadRouteIsWired holds the catalog route through the mounted
-// table: it answers the permissions view at its path and no other.
+// TestThePermissionsReadRouteIsWired checks that the permissions read route is wired.
 func TestThePermissionsReadRouteIsWired(t *testing.T) {
 	r := newRig(t, authz.PermissionRoleRead)
 	e := r.engine()
@@ -105,9 +95,7 @@ func TestThePermissionsReadRouteIsWired(t *testing.T) {
 	}
 }
 
-// TestEveryWriteRouteAsksForRoleManage holds the write side of the route
-// table's permission mapping: every write sent through the mounted table
-// asks the guard for authz.role.manage.
+// TestEveryWriteRouteAsksForRoleManage checks that every write route asks for role manage.
 func TestEveryWriteRouteAsksForRoleManage(t *testing.T) {
 	cases := map[string]struct {
 		method string

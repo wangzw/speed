@@ -16,9 +16,6 @@ const (
 	acme  = "acme"
 )
 
-// probeModule requires the two capabilities a guarded assembly supplies, so a
-// drive that resolves them holds the skeleton to wiring a real registry and not
-// to a list of stand-ins the case passed around by hand.
 func probeModule() core.Module {
 	return core.Module{
 		Name: "probe",
@@ -29,8 +26,7 @@ func probeModule() core.Module {
 	}
 }
 
-// TestRegistryResolvesTheStubCapabilities drives an assembly to Init and
-// asks it for the two capabilities the probe requires.
+// TestRegistryResolvesTheStubCapabilities checks that registry resolves the stub capabilities.
 func TestRegistryResolvesTheStubCapabilities(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	enforcer.Answer(func(authz.Query) bool { return true })
@@ -76,10 +72,7 @@ func TestRegistryResolvesTheStubCapabilities(t *testing.T) {
 	}
 }
 
-// TestRegistryFailsWithoutAStandIn holds that the skeleton does not supply a
-// capability on its own: a required capability with no stand-in fails the
-// drive, which is what a host that left the deliverer out of its command
-// gets.
+// TestRegistryFailsWithoutAStandIn checks that registry fails without a stand in.
 func TestRegistryFailsWithoutAStandIn(t *testing.T) {
 	reg := authztest.Registry(t, `{}`, probeModule())
 	err := reg.Drive(context.Background(), core.Drive{
@@ -91,8 +84,7 @@ func TestRegistryFailsWithoutAStandIn(t *testing.T) {
 	}
 }
 
-// TestEnforcerDeniesUntilAnAnswerIsSet holds the fail-closed default: a
-// fresh Enforcer refuses, and so does one whose Answer was given nil.
+// TestEnforcerDeniesUntilAnAnswerIsSet checks that enforcer denies until an answer is set.
 func TestEnforcerDeniesUntilAnAnswerIsSet(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -115,8 +107,7 @@ func TestEnforcerDeniesUntilAnAnswerIsSet(t *testing.T) {
 	}
 }
 
-// TestEnforcerAnswersFromTheRecordedFunction holds that the recorded function
-// decides each query, so a case can allow some subjects and deny others.
+// TestEnforcerAnswersFromTheRecordedFunction checks that enforcer answers from the recorded function.
 func TestEnforcerAnswersFromTheRecordedFunction(t *testing.T) {
 	e := authztest.NewEnforcer()
 	e.Answer(func(q authz.Query) bool { return q.Subject == alice })
@@ -135,9 +126,7 @@ func TestEnforcerAnswersFromTheRecordedFunction(t *testing.T) {
 	}
 }
 
-// TestEnforcerFailingIsAnErrorAndNotADenial holds the direction the design
-// fixes: an unavailable engine answers with the error and no permission, never a
-// denial, so the caller reads it as a 503.
+// TestEnforcerFailingIsAnErrorAndNotADenial checks that enforcer failing is an error and not a denial.
 func TestEnforcerFailingIsAnErrorAndNotADenial(t *testing.T) {
 	boom := errors.New("engine down")
 	e := authztest.NewEnforcer()
@@ -155,9 +144,7 @@ func TestEnforcerFailingIsAnErrorAndNotADenial(t *testing.T) {
 	}
 }
 
-// TestCatalogDeclaresWhatItWasGivenAndNothingElse holds both directions of the
-// declaration: what was given is held, what was not is not, and the returned
-// slice is a copy the caller's edits do not reach through.
+// TestCatalogDeclaresWhatItWasGivenAndNothingElse checks that catalog declares what it was given and nothing else.
 func TestCatalogDeclaresWhatItWasGivenAndNothingElse(t *testing.T) {
 	c := authztest.NewCatalog(authz.PermissionRoleRead, authz.PermissionTenantAccess)
 
@@ -182,10 +169,7 @@ func TestCatalogDeclaresWhatItWasGivenAndNothingElse(t *testing.T) {
 	}
 }
 
-// TestCatalogAnswersTheMetadataItWasGiven holds the fixture's metadata surface:
-// a declared permission carries what a case gave it, a declared permission
-// without metadata answers the zero value and true, and an undeclared one
-// answers false.
+// TestCatalogAnswersTheMetadataItWasGiven checks that catalog answers the metadata it was given.
 func TestCatalogAnswersTheMetadataItWasGiven(t *testing.T) {
 	c := authztest.NewCatalog(authz.PermissionTenantRoleManage, authz.PermissionRoleRead)
 	c.DeclareMetadata(authz.PermissionTenantRoleManage, authz.PermissionMeta{Group: "authorization", Dangerous: true})
@@ -203,8 +187,7 @@ func TestCatalogAnswersTheMetadataItWasGiven(t *testing.T) {
 	}
 }
 
-// TestGateRecordsDeclarations holds that a declaration is read back as the
-// kind it was made: a required permission, or open, and never both.
+// TestGateRecordsDeclarations checks that gate records declarations.
 func TestGateRecordsDeclarations(t *testing.T) {
 	g := authztest.NewGate()
 	g.Require("GET", "/accounts", authz.PermissionAccountRead)
@@ -246,9 +229,7 @@ func TestGateRecordsDeclarations(t *testing.T) {
 	}
 }
 
-// TestGateListsRequirementsInOrder holds the whole-declaration read: only the
-// routes that require a permission, in method then path order, so a case can
-// assert what a module registered at Init against the set it meant.
+// TestGateListsRequirementsInOrder checks that gate lists requirements in order.
 func TestGateListsRequirementsInOrder(t *testing.T) {
 	g := authztest.NewGate()
 	g.Require("POST", "/accounts", authz.PermissionAccountCreate)

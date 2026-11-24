@@ -12,12 +12,7 @@ import (
 	"github.com/vislake/speed/pkg/internal/dbtest"
 )
 
-// The migration files are the schema the module ships, and these cases run the
-// files themselves rather than a copy written out in the test. What the
-// deciding process relies on is asserted: three tables, the tenant column
-// leading each key, and a tenant column that may not be empty.
-
-// The SQLite migration builds the three tenant-keyed tables.
+// TestTheSqliteMigrationBuildsTheTenantKeyedTables checks that the SQLite migration builds the tenant keyed tables.
 func TestTheSqliteMigrationBuildsTheTenantKeyedTables(t *testing.T) {
 	handle := dbtest.SQLite(t, filepath.Join(t.TempDir(), "authz.db"), nil).DB()
 	applyMigration(t, handle, "sqlite/0001_authz_policy.sql")
@@ -37,10 +32,7 @@ func TestTheSqliteMigrationBuildsTheTenantKeyedTables(t *testing.T) {
 	assertEmptyTenantRefused(t, handle)
 }
 
-// The second SQLite migration withdraws every copy of the platform
-// administrator role outside the platform domain: the role exists only in
-// the system tenant's domain, and an upgraded database still carries a copy
-// in every tenant domain that predates that rule.
+// TestTheSqliteMigrationWithdrawsThePlatformAdministratorOutsideTheSystemDomain checks that the SQLite migration withdraws the platform administrator outside the system domain.
 func TestTheSqliteMigrationWithdrawsThePlatformAdministratorOutsideTheSystemDomain(t *testing.T) {
 	handle := dbtest.SQLite(t, filepath.Join(t.TempDir(), "authz.db"), nil).DB()
 	applyMigration(t, handle, "sqlite/0001_authz_policy.sql")
@@ -52,8 +44,7 @@ func TestTheSqliteMigrationWithdrawsThePlatformAdministratorOutsideTheSystemDoma
 	assertPlatformAdministratorWithdrawn(t, handle)
 }
 
-// The third SQLite migration adds the role's free-text description and the
-// (tenant, role, account) index the role-usage read pages by.
+// TestTheSqliteRoleDescriptionMigrationAddsTheDescriptionAndRoleBindingIndex checks that the SQLite role description migration adds the description and role binding index.
 func TestTheSqliteRoleDescriptionMigrationAddsTheDescriptionAndRoleBindingIndex(t *testing.T) {
 	handle := dbtest.SQLite(t, filepath.Join(t.TempDir(), "authz.db"), nil).DB()
 	applyMigration(t, handle, "sqlite/0001_authz_policy.sql")
@@ -97,11 +88,6 @@ func TestTheSqliteRoleDescriptionMigrationAddsTheDescriptionAndRoleBindingIndex(
 	}
 }
 
-// seedTenantAdministrationRows writes one platform-administrator role, grant and
-// binding into the platform domain and into every named business tenant, plus a
-// tenant-administrator set per domain that the migration must leave alone. The
-// rows go in through the migration's own tables: no manager validation stands
-// between the case and the shape an upgraded database holds.
 func seedTenantAdministrationRows(t *testing.T, handle *gorm.DB, platform string, tenants ...string) {
 	t.Helper()
 	now := time.Now().UTC()
@@ -133,10 +119,6 @@ func seedTenantAdministrationRows(t *testing.T, handle *gorm.DB, platform string
 	}
 }
 
-// assertPlatformAdministratorWithdrawn holds the result both a first and a
-// second application of the migration must produce: no platform-administrator
-// role, grant or binding outside the platform domain, and every other row as it
-// was.
 func assertPlatformAdministratorWithdrawn(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	for _, c := range []struct {
@@ -163,10 +145,6 @@ func assertPlatformAdministratorWithdrawn(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// assertTenantLeadsTheKey reads the table's primary-key order and holds it to
-// the tenant column leading. The migration is the only place the key is stated,
-// so this is what keeps a key that named a non-tenant column first from
-// reaching the tables the deciding process reads.
 func assertTenantLeadsTheKey(t *testing.T, handle *gorm.DB, table string) {
 	t.Helper()
 	var columns []struct {
@@ -187,10 +165,6 @@ func assertTenantLeadsTheKey(t *testing.T, handle *gorm.DB, table string) {
 	}
 }
 
-// assertIndexesExist holds that the migration built each named index, which the
-// design's 表与迁移 lists: the deciding queries read by (tenant, resource,
-// action) and by (tenant, role). countSQL is a dialect's one-name query; each
-// name is put to it.
 func assertIndexesExist(t *testing.T, handle *gorm.DB, countSQL string, names ...string) {
 	t.Helper()
 	for _, name := range names {
@@ -204,8 +178,6 @@ func assertIndexesExist(t *testing.T, handle *gorm.DB, countSQL string, names ..
 	}
 }
 
-// assertColumnType holds a SQLite column to its declared type, which the design
-// fixes per dialect: SQLite's DATETIME.
 func assertColumnType(t *testing.T, handle *gorm.DB, table, column, want string) {
 	t.Helper()
 	var columns []struct {
@@ -226,14 +198,6 @@ func assertColumnType(t *testing.T, handle *gorm.DB, table, column, want string)
 	t.Errorf("%s has no column %s", table, column)
 }
 
-// assertTenantKeyedIsolation writes rows that are identical but for the tenant
-// into each table and holds that they stay separate.
-//
-// With the tenant column leading the key the role, the account and a role's
-// (resource, action) are each not unique on their own, so a second tenant's
-// write lands as its own row. A key that named only the non-tenant column would
-// make that write collide with the first tenant's row and rewrite its tenant,
-// with no other tenant named in the statement to refuse.
 func assertTenantKeyedIsolation(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	now := time.Now().UTC()
@@ -271,7 +235,6 @@ func assertTenantKeyedIsolation(t *testing.T, handle *gorm.DB) {
 		}
 	}
 
-	// A write aimed at one tenant's row leaves the other tenant's untouched.
 	if err := handle.Exec("UPDATE authz_roles SET description_key = ? WHERE tenant_id = ? AND role = ?",
 		"updated", "acme", "roleA").Error; err != nil {
 		t.Fatalf("updating acme's role: %v", err)
@@ -303,9 +266,6 @@ func assertTenantKeyedIsolation(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// assertEmptyTenantRefused holds each table to its non-empty tenant column: a
-// row belonging to no tenant would reach no tenant's decision while the
-// cross-tenant mark let it through.
 func assertEmptyTenantRefused(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	now := time.Now().UTC()

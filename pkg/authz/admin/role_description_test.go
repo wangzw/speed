@@ -10,9 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// listRoles drives the role list route and returns its views as the JSON
-// objects a client reads, so a case holds the wire contract and not the Go
-// struct that happens to produce it.
 func listRoles(t *testing.T, r *rig) []map[string]any {
 	t.Helper()
 	w := r.serve(readRoute(r.p, roleListOperation.Handle(r.p.handleRoleList)), http.MethodGet,
@@ -32,9 +29,7 @@ func listRoles(t *testing.T, r *rig) []map[string]any {
 	return body.Roles
 }
 
-// TestTheRoleListViewDescribesEachRole holds the role view's description:
-// the operator's free text on a role the management surface created, and the
-// rendered description of a builtin role's key.
+// TestTheRoleListViewDescribesEachRole checks that the role list view describes each role.
 func TestTheRoleListViewDescribesEachRole(t *testing.T) {
 	r := newRig(t)
 	r.manager.roles = []authz.RoleRecord{
@@ -85,10 +80,7 @@ func TestTheRoleListViewDescribesEachRole(t *testing.T) {
 	}
 }
 
-// TestABuiltinDescriptionFallsBackToItsKeyWithoutALocalizer holds the localizer
-// being optional: with none assembled the builtin role's description is the key
-// itself, the i18n engine's own fallback, and never an empty string that would
-// read as "no description".
+// TestABuiltinDescriptionFallsBackToItsKeyWithoutALocalizer checks that a builtin description falls back to its key without a localizer.
 func TestABuiltinDescriptionFallsBackToItsKeyWithoutALocalizer(t *testing.T) {
 	r := newRig(t)
 	r.manager.roles = []authz.RoleRecord{
@@ -100,9 +92,7 @@ func TestABuiltinDescriptionFallsBackToItsKeyWithoutALocalizer(t *testing.T) {
 	}
 }
 
-// TestPutRoleStoresTheFreeTextDescription holds the write: the body's
-// description reaches the manager as the record's Description, and the stored
-// key stays empty because the request no longer carries one.
+// TestPutRoleStoresTheFreeTextDescription checks that put role stores the free text description.
 func TestPutRoleStoresTheFreeTextDescription(t *testing.T) {
 	r := newRig(t)
 	w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/system/tenants/t1/roles/ops",
@@ -123,9 +113,7 @@ func TestPutRoleStoresTheFreeTextDescription(t *testing.T) {
 	}
 }
 
-// TestPutRoleIgnoresTheRemovedDescriptionKey holds the removal: the request
-// no longer declares description_key, so a client that still sends it
-// reaches nothing.
+// TestPutRoleIgnoresTheRemovedDescriptionKey checks that put role ignores the removed description key.
 func TestPutRoleIgnoresTheRemovedDescriptionKey(t *testing.T) {
 	r := newRig(t)
 	w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/system/tenants/t1/roles/ops",
@@ -143,9 +131,7 @@ func TestPutRoleIgnoresTheRemovedDescriptionKey(t *testing.T) {
 	}
 }
 
-// TestAnExplicitEmptyDescriptionClearsTheText holds the presence rule: a body
-// that carries description as an explicit empty string clears the free text,
-// rather than being treated as absent.
+// TestAnExplicitEmptyDescriptionClearsTheText checks that an explicit empty description clears the text.
 func TestAnExplicitEmptyDescriptionClearsTheText(t *testing.T) {
 	r := newRig(t)
 	w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/system/tenants/t1/roles/ops",
@@ -162,9 +148,7 @@ func TestAnExplicitEmptyDescriptionClearsTheText(t *testing.T) {
 	}
 }
 
-// TestPutRoleRefusesAnOverlongDescription holds the bound: a description longer
-// than authz.RoleDescriptionMax characters is a 400 before the audit and the
-// manager, and one exactly at the bound is written.
+// TestPutRoleRefusesAnOverlongDescription checks that PutRole refuses an overlong description.
 func TestPutRoleRefusesAnOverlongDescription(t *testing.T) {
 	t.Run("over the bound", func(t *testing.T) {
 		r := newRig(t)
@@ -196,10 +180,7 @@ func TestPutRoleRefusesAnOverlongDescription(t *testing.T) {
 	})
 }
 
-// TestTheRoleWritePrescreenKeepsTheDescription holds the prescreen: the
-// description member is part of the declared body, so it survives the member
-// filtering, and a non-string value is the module's own bad-request answer
-// rather than reaching the entry point's untyped refusal.
+// TestTheRoleWritePrescreenKeepsTheDescription checks that the role write prescreen keeps the description.
 func TestTheRoleWritePrescreenKeepsTheDescription(t *testing.T) {
 	r := newRig(t)
 	w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/system/tenants/t1/roles/ops",

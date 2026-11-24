@@ -12,9 +12,7 @@ import (
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
-// The PostgreSQL migration builds the same tables and holds the same keying,
-// so a suite that ran on SQLite alone would not leave the engine the module is
-// deployed against untested.
+// TestThePostgresMigrationBuildsTheTenantKeyedTables checks that the postgres migration builds the tenant keyed tables.
 func TestThePostgresMigrationBuildsTheTenantKeyedTables(t *testing.T) {
 	handle := dbtest.Postgres(t, pgtest.Acquire(t), nil).DB()
 	applyMigration(t, handle, "postgres/0001_authz_policy.sql")
@@ -34,9 +32,7 @@ func TestThePostgresMigrationBuildsTheTenantKeyedTables(t *testing.T) {
 	assertEmptyTenantRefused(t, handle)
 }
 
-// The second PostgreSQL migration is the same data migration as the SQLite one,
-// so the deployment dialect is held to it as well rather than only the SQLite
-// copy the ordinary suite runs.
+// TestThePostgresMigrationWithdrawsThePlatformAdministratorOutsideTheSystemDomain checks that the postgres migration withdraws the platform administrator outside the system domain.
 func TestThePostgresMigrationWithdrawsThePlatformAdministratorOutsideTheSystemDomain(t *testing.T) {
 	handle := dbtest.Postgres(t, pgtest.Acquire(t), nil).DB()
 	applyMigration(t, handle, "postgres/0001_authz_policy.sql")
@@ -48,9 +44,7 @@ func TestThePostgresMigrationWithdrawsThePlatformAdministratorOutsideTheSystemDo
 	assertPlatformAdministratorWithdrawn(t, handle)
 }
 
-// The third PostgreSQL migration is the same schema change as the SQLite one:
-// the role's free-text description, defaulting to the empty string, and the
-// (tenant, role, account) index the role-usage page reads through.
+// TestThePostgresRoleDescriptionMigrationAddsTheDescriptionAndRoleBindingIndex checks that the postgres role description migration adds the description and role binding index.
 func TestThePostgresRoleDescriptionMigrationAddsTheDescriptionAndRoleBindingIndex(t *testing.T) {
 	handle := dbtest.Postgres(t, pgtest.Acquire(t), nil).DB()
 	applyMigration(t, handle, "postgres/0001_authz_policy.sql")
@@ -83,9 +77,6 @@ func TestThePostgresRoleDescriptionMigrationAddsTheDescriptionAndRoleBindingInde
 	}
 }
 
-// assertTenantLeadsTheKeyPostgres is assertTenantLeadsTheKey for PostgreSQL,
-// whose catalog is read through information_schema rather than a PRAGMA. The
-// keying is the same claim on both dialects, so each holds it for itself.
 func assertTenantLeadsTheKeyPostgres(t *testing.T, handle *gorm.DB, table string) {
 	t.Helper()
 	var lead string
@@ -105,8 +96,6 @@ func assertTenantLeadsTheKeyPostgres(t *testing.T, handle *gorm.DB, table string
 	}
 }
 
-// assertColumnTypePostgres is assertColumnType for PostgreSQL, whose declared
-// timestamp type is TIMESTAMPTZ.
 func assertColumnTypePostgres(t *testing.T, handle *gorm.DB, table, column, want string) {
 	t.Helper()
 	var got string

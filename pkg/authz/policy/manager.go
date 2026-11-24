@@ -13,8 +13,6 @@ import (
 	tenancy "github.com/vislake/speed/pkg/tenant"
 )
 
-// The three tables' row shapes. Each embeds the tenant convention, so its
-// tenant column leads the key.
 type roleRow struct {
 	tenancy.Model
 	Role           string    `gorm:"column:role;primaryKey"`
@@ -45,15 +43,10 @@ type bindingRow struct {
 
 func (bindingRow) TableName() string { return "authz_bindings" }
 
-// crossing returns a session for statements that name their tenant themselves.
-// The cross-tenant mark lifts the filter's condition and its fill, not the
-// column, so a statement must name its tenant column explicitly.
 func (p *product) crossing(ctx context.Context) *gorm.DB {
 	return p.handle.WithContext(tenancy.CrossTenant(ctx))
 }
 
-// requireTenant refuses an empty tenant argument: a row it wrote would reach no
-// tenant's read while the cross-tenant mark lets it through.
 func requireTenant(tenant string) error {
 	if tenant == "" {
 		return fmt.Errorf("%w: the argument names no tenant, and a policy row belongs to one",
@@ -62,7 +55,6 @@ func requireTenant(tenant string) error {
 	return nil
 }
 
-// Roles returns every role of a tenant, in role order.
 func (p *product) Roles(ctx context.Context, tenant string) ([]authz.RoleRecord, error) {
 	if err := requireTenant(tenant); err != nil {
 		return nil, err
@@ -85,7 +77,6 @@ func (p *product) Roles(ctx context.Context, tenant string) ([]authz.RoleRecord,
 	return out, nil
 }
 
-// Grants returns every grant a role holds within a tenant.
 func (p *product) Grants(ctx context.Context, tenant string, role authz.Role) ([]authz.GrantRecord, error) {
 	if err := requireTenant(tenant); err != nil {
 		return nil, err
@@ -109,7 +100,6 @@ func (p *product) Grants(ctx context.Context, tenant string, role authz.Role) ([
 	return out, nil
 }
 
-// Bindings returns every binding of a tenant.
 func (p *product) Bindings(ctx context.Context, tenant string) ([]authz.Binding, error) {
 	if err := requireTenant(tenant); err != nil {
 		return nil, err
@@ -122,7 +112,6 @@ func (p *product) Bindings(ctx context.Context, tenant string) ([]authz.Binding,
 	return bindingsOf(rows), nil
 }
 
-// BindingsOf returns every binding a subject holds within a tenant.
 func (p *product) BindingsOf(ctx context.Context, tenant, account string) ([]authz.Binding, error) {
 	if err := requireTenant(tenant); err != nil {
 		return nil, err
@@ -136,9 +125,6 @@ func (p *product) BindingsOf(ctx context.Context, tenant, account string) ([]aut
 	return bindingsOf(rows), nil
 }
 
-// BindingsOfRole returns one page of the bindings one role holds within a
-// tenant, in account order. after is an exclusive account cursor; a non-positive
-// limit returns every binding after it.
 func (p *product) BindingsOfRole(ctx context.Context, tenant string, role authz.Role, after string, limit int) ([]authz.Binding, error) {
 	if err := requireTenant(tenant); err != nil {
 		return nil, err
@@ -158,8 +144,6 @@ func (p *product) BindingsOfRole(ctx context.Context, tenant string, role authz.
 	return bindingsOf(rows), nil
 }
 
-// GrantCounts returns how many grants each role holds within a tenant, from one
-// GROUP BY read. A role with no grant is absent from the map and reads as zero.
 func (p *product) GrantCounts(ctx context.Context, tenant string) (map[authz.Role]int, error) {
 	if err := requireTenant(tenant); err != nil {
 		return nil, err
@@ -196,9 +180,6 @@ func bindingsOf(rows []bindingRow) []authz.Binding {
 	return out
 }
 
-// PutRole creates or rewrites a role without the builtin mark. A record that
-// carries the mark, or an existing builtin role, is refused: MarkRoleBuiltin is
-// the one path that sets the mark.
 func (p *product) PutRole(ctx context.Context, r authz.RoleRecord) error {
 	row, err := roleRowFor(r)
 	if err != nil {
@@ -219,9 +200,6 @@ func (p *product) PutRole(ctx context.Context, r authz.RoleRecord) error {
 	return p.afterWrite(ctx)
 }
 
-// roleRowFor judges a role write's arguments and builds the row it writes. It
-// is shared by the context-taking write and the tx form, so the two refuse the
-// same records.
 func roleRowFor(r authz.RoleRecord) (roleRow, error) {
 	if err := requireTenant(r.Tenant); err != nil {
 		return roleRow{}, err
@@ -246,10 +224,6 @@ func roleRowFor(r authz.RoleRecord) (roleRow, error) {
 	return row, nil
 }
 
-// putRoleIn writes a role inside the transaction it is handed. It reports
-// whether the call changed anything: a rewrite of a row that already carries
-// the same description and description key is the same role, and a caller has
-// nothing to reload or announce for it.
 func putRoleIn(ctx context.Context, tx *gorm.DB, r authz.RoleRecord, row roleRow) (bool, error) {
 	held, found, err := roleRowState(ctx, tx, r.Tenant, r.Role)
 	if err != nil {
@@ -270,11 +244,6 @@ func putRoleIn(ctx context.Context, tx *gorm.DB, r authz.RoleRecord, row roleRow
 	return true, nil
 }
 
-// MarkRoleBuiltin freezes an existing role against the management surface: after
-// it, this manager and the management surface refuse to rewrite or delete the
-// role and to change its grants. SeedGrants still adds grants and
-// ReconcileGrants converges them. An already-builtin role is no work and no
-// error; an absent one is ErrUnknownRole.
 func (p *product) MarkRoleBuiltin(ctx context.Context, tenant string, role authz.Role) error {
 	if err := requireTenant(tenant); err != nil {
 		return err
@@ -308,11 +277,6 @@ func (p *product) MarkRoleBuiltin(ctx context.Context, tenant string, role authz
 	return p.afterWrite(ctx)
 }
 
-// DeleteRole removes a role and everything that names it: its grant and binding
-// rows go with its role row, in one transaction. The engine reads grants and
-// bindings and never the role table, so a leftover grant or binding would keep
-// deciding for a role that no longer exists. A builtin role is refused; a role
-// that is not there is no work and no error.
 func (p *product) DeleteRole(ctx context.Context, tenant string, role authz.Role) error {
 	if err := requireTenant(tenant); err != nil {
 		return err
@@ -332,8 +296,6 @@ func (p *product) DeleteRole(ctx context.Context, tenant string, role authz.Role
 	return p.afterWrite(ctx)
 }
 
-// deleteRoleIn removes a role and everything that names it inside the
-// transaction it is handed. It reports whether it removed anything.
 func deleteRoleIn(ctx context.Context, tx *gorm.DB, tenant string, role authz.Role) (bool, error) {
 	builtin, found, err := roleState(ctx, tx, tenant, role)
 	if err != nil {
@@ -360,8 +322,6 @@ func deleteRoleIn(ctx context.Context, tx *gorm.DB, tenant string, role authz.Ro
 	return true, nil
 }
 
-// PutGrant creates a grant on a role that exists in the tenant and is not
-// builtin.
 func (p *product) PutGrant(ctx context.Context, g authz.GrantRecord) error {
 	if err := requireTenant(g.Tenant); err != nil {
 		return err
@@ -382,7 +342,6 @@ func (p *product) PutGrant(ctx context.Context, g authz.GrantRecord) error {
 	return p.afterWrite(ctx)
 }
 
-// DeleteGrant removes a grant. A builtin role's grants are refused.
 func (p *product) DeleteGrant(ctx context.Context, g authz.GrantRecord) error {
 	if err := requireTenant(g.Tenant); err != nil {
 		return err
@@ -403,13 +362,6 @@ func (p *product) DeleteGrant(ctx context.Context, g authz.GrantRecord) error {
 	return p.afterWrite(ctx)
 }
 
-// SeedGrants adds grants to a role, whether or not it is builtin, and is
-// idempotent: a grant already held is not counted. The write is one transaction
-// and the role check takes the role's row lock, so a concurrent delete of the
-// role serialises against it. A grant is never removed, rewritten or
-// re-timestamped here; the set only grows. An absent role is ErrUnknownRole, an
-// empty tenant ErrTenantMismatch, and a seed that adds nothing writes and
-// publishes nothing.
 func (p *product) SeedGrants(ctx context.Context, tenant string, role authz.Role, grants []authz.Grant) (int, error) {
 	if err := requireTenant(tenant); err != nil {
 		return 0, err
@@ -429,8 +381,6 @@ func (p *product) SeedGrants(ctx context.Context, tenant string, role authz.Role
 	return added, p.afterWrite(ctx)
 }
 
-// seedGrantsIn adds the grants a role lacks inside the transaction it is
-// handed, and reports how many it added.
 func seedGrantsIn(ctx context.Context, tx *gorm.DB, tenant string, role authz.Role, grants []authz.Grant) (int, error) {
 	if _, found, err := roleState(ctx, tx, tenant, role); err != nil {
 		return 0, err
@@ -457,8 +407,6 @@ func seedGrantsIn(ctx context.Context, tx *gorm.DB, tenant string, role authz.Ro
 	return added, nil
 }
 
-// grantsHeld reports the (resource, action) pairs a role holds in a tenant,
-// read through the write's own transaction.
 func grantsHeld(ctx context.Context, tx *gorm.DB, tenant string, role authz.Role) (map[authz.Grant]struct{}, error) {
 	var rows []grantRow
 	err := tx.WithContext(tenancy.CrossTenant(ctx)).
@@ -474,9 +422,6 @@ func grantsHeld(ctx context.Context, tx *gorm.DB, tenant string, role authz.Role
 	return held, nil
 }
 
-// PutBinding binds a role that exists in the tenant to a subject. A builtin
-// role may be bound. An empty account is refused: a g line naming the empty
-// account would match the decider's empty subject.
 func (p *product) PutBinding(ctx context.Context, b authz.Binding) error {
 	if err := p.checkBinding(ctx, b); err != nil {
 		return err
@@ -496,8 +441,6 @@ func (p *product) PutBinding(ctx context.Context, b authz.Binding) error {
 	return p.afterWrite(ctx)
 }
 
-// checkBinding judges a binding write before its transaction opens: its shape,
-// and the platform domain's membership.
 func (p *product) checkBinding(ctx context.Context, b authz.Binding) error {
 	if err := requireTenant(b.Tenant); err != nil {
 		return err
@@ -512,9 +455,6 @@ func (p *product) checkBinding(ctx context.Context, b authz.Binding) error {
 	return p.requirePlatformMember(ctx, b)
 }
 
-// putBindingIn writes a binding inside the transaction it is handed. It reports
-// whether the call changed anything: binding a subject to a role it already
-// holds is no work, and a caller has nothing to reload or announce for it.
 func putBindingIn(ctx context.Context, tx *gorm.DB, b authz.Binding) (bool, error) {
 	if _, found, err := roleState(ctx, tx, b.Tenant, b.Role); err != nil {
 		return false, err
@@ -538,16 +478,7 @@ func putBindingIn(ctx context.Context, tx *gorm.DB, b authz.Binding) (bool, erro
 	return true, nil
 }
 
-// DeleteBinding removes a subject's binding to a role within a tenant. The last
-// tenant administrator of a domain is not removable. The check and the delete are
-// one transaction, and the whole removal runs under the tenant lock, taken before
-// the count and released after the commit, so concurrent removals cannot each
-// read enough bindings and together leave the domain with none. A removal naming
-// no such binding changes nothing and is not refused.
-//
-// The account-deletion cascade must not come through here: it clears bindings
-// with ClearAccountBindings, which takes no lock, because this call would
-// re-enter the lock its removal already holds and deadlock.
+// The account-deletion cascade must not come through here: it calls ClearAccountBindings, which takes no tenant lock; this call would re-enter the lock the cascade already holds and deadlock.
 func (p *product) DeleteBinding(ctx context.Context, tenant, account string, role authz.Role) error {
 	if err := requireTenant(tenant); err != nil {
 		return err
@@ -556,8 +487,7 @@ func (p *product) DeleteBinding(ctx context.Context, tenant, account string, rol
 	if err != nil {
 		return err
 	}
-	// The release is idempotent, so the deferred call covers the error paths
-	// while the explicit one gives the lock back as soon as the write commits.
+	// The release is idempotent, so the deferred call covers the error paths while the explicit one releases as soon as it can.
 	defer release()
 	rule := []string{account, string(role), tenant}
 	if err := p.write(ctx, func(tx *gorm.DB) error {
@@ -577,14 +507,7 @@ func (p *product) DeleteBinding(ctx context.Context, tenant, account string, rol
 	return p.afterWrite(ctx)
 }
 
-// ClearAccountBindings removes every binding the account holds within the tenant
-// in one statement, as the account-deletion path and the membership-removal
-// cascade. The last-tenant-administrator rule does not apply. The tenant's other
-// bindings and the account's bindings in other tenants stay, and so do the roles
-// and grants. The delete is one transaction and idempotent.
-//
-// It takes no tenant lock: both callers can run while a removal holds the tenant
-// lock, so a lock here would re-enter it and deadlock.
+// It takes no tenant lock because both callers run while a removal holds the tenant lock, and a lock here would re-enter it and deadlock.
 func (p *product) ClearAccountBindings(ctx context.Context, tenant, account string) error {
 	if err := requireTenant(tenant); err != nil {
 		return err
@@ -604,8 +527,6 @@ func (p *product) ClearAccountBindings(ctx context.Context, tenant, account stri
 	return p.afterWrite(ctx)
 }
 
-// clearAccountBindingsIn removes a subject's bindings in one tenant inside the
-// transaction it is handed, and reports whether it removed any.
 func clearAccountBindingsIn(_ context.Context, tx *gorm.DB, tenant, account string) (bool, error) {
 	result := tx.Where("tenant_id = ? AND account_id = ?", tenant, account).Delete(&bindingRow{})
 	if result.Error != nil {
@@ -615,8 +536,6 @@ func clearAccountBindingsIn(_ context.Context, tx *gorm.DB, tenant, account stri
 	return result.RowsAffected > 0, nil
 }
 
-// refuseReservedRole refuses PlatformAdminRole in any domain other than the
-// platform domain.
 func refuseReservedRole(tenant string, role authz.Role) error {
 	if role != authz.PlatformAdminRole || tenant == string(authz.PlatformDomain) {
 		return nil
@@ -625,13 +544,6 @@ func refuseReservedRole(tenant string, role authz.Role) error {
 		authz.ErrReservedRole, role, authz.PlatformDomain, tenant)
 }
 
-// requirePlatformMember checks that the account a platform administrator binding
-// names is an active member of the platform tenant. It fails closed: no checker
-// refuses the write, and a checker error is the check being unavailable, not a
-// verdict.
-//
-// It runs before the write's transaction: a call made while this module held a
-// transaction could wait for a connection the pool already handed to it.
 func (p *product) requirePlatformMember(ctx context.Context, b authz.Binding) error {
 	if b.Role != authz.PlatformAdminRole || b.Tenant != string(authz.PlatformDomain) {
 		return nil
@@ -651,10 +563,6 @@ func (p *product) requirePlatformMember(ctx context.Context, b authz.Binding) er
 	return nil
 }
 
-// refuseLastTenantAdmin refuses removing the last tenant administrator binding
-// of a domain. The read takes the rows under an exclusive lock, so another
-// removal cannot read the same count before this transaction commits. A target
-// row that is not there is no removal at all.
 func refuseLastTenantAdmin(ctx context.Context, tx *gorm.DB, tenant, account string) error {
 	rows, err := tenantAdminRows(ctx, tx, tenant, true)
 	if err != nil {
@@ -667,8 +575,6 @@ func refuseLastTenantAdmin(ctx context.Context, tx *gorm.DB, tenant, account str
 	return nil
 }
 
-// tenantAdminRows reads the tenant-administrator bindings of a domain, under an
-// exclusive lock when lock is set.
 func tenantAdminRows(ctx context.Context, db *gorm.DB, tenant string, lock bool) ([]bindingRow, error) {
 	query := db.WithContext(tenancy.CrossTenant(ctx)).
 		Where("tenant_id = ? AND role = ?", tenant, string(authz.TenantAdminRole))
@@ -682,9 +588,6 @@ func tenantAdminRows(ctx context.Context, db *gorm.DB, tenant string, lock bool)
 	return rows, nil
 }
 
-// lastTenantAdminAfterRemoval reports whether removing account's binding would
-// leave the domain with no tenant-administrator binding. A target row that is
-// not among the rows is no removal, whatever the count.
 func lastTenantAdminAfterRemoval(rows []bindingRow, account string) bool {
 	target := false
 	for _, row := range rows {
@@ -696,22 +599,10 @@ func lastTenantAdminAfterRemoval(rows []bindingRow, account string) bool {
 	return target && len(rows) == 1
 }
 
-// write runs fn inside one transaction on the cross-tenant-marked session. A
-// check and the row it guards must share the transaction and the check must take
-// the role row's lock (see roleState), otherwise a concurrent write can commit
-// between them under READ COMMITTED.
 func (p *product) write(ctx context.Context, fn func(tx *gorm.DB) error) error {
 	return p.crossing(ctx).Transaction(fn)
 }
 
-// roleState reports whether a role exists in a tenant and whether it is builtin.
-// It reads with Find over a slice, so an absent role is not gorm.ErrRecordNotFound.
-//
-// It takes the role row's exclusive lock, held until the write's transaction
-// ends, so a concurrent delete and this check serialise. Without the lock a
-// delete can commit between the check and the row it guards under READ COMMITTED,
-// leaving a grant or binding on a role that no longer exists. The clause is inert
-// where the dialect has no row locks.
 func roleState(ctx context.Context, tx *gorm.DB, tenant string, role authz.Role) (builtin, found bool, err error) {
 	row, found, err := roleRowState(ctx, tx, tenant, role)
 	if err != nil {
@@ -720,8 +611,6 @@ func roleState(ctx context.Context, tx *gorm.DB, tenant string, role authz.Role)
 	return row.Builtin, found, nil
 }
 
-// roleRowState reads the role's row, locking it for the rest of the
-// transaction. found is false when the tenant has no such role.
 func roleRowState(ctx context.Context, tx *gorm.DB, tenant string, role authz.Role) (roleRow, bool, error) {
 	var rows []roleRow
 	err := tx.WithContext(tenancy.CrossTenant(ctx)).
@@ -737,7 +626,6 @@ func roleRowState(ctx context.Context, tx *gorm.DB, tenant string, role authz.Ro
 	return rows[0], true, nil
 }
 
-// requireEditableRole refuses a write on a role that is absent or builtin.
 func requireEditableRole(ctx context.Context, tx *gorm.DB, tenant string, role authz.Role) error {
 	builtin, found, err := roleState(ctx, tx, tenant, role)
 	if err != nil {
@@ -752,8 +640,6 @@ func requireEditableRole(ctx context.Context, tx *gorm.DB, tenant string, role a
 	return nil
 }
 
-// refuseBuiltin refuses a write on a builtin role and lets an absent one
-// through, for the removal paths whose target need not exist.
 func refuseBuiltin(ctx context.Context, tx *gorm.DB, tenant string, role authz.Role) error {
 	builtin, found, err := roleState(ctx, tx, tenant, role)
 	if err != nil {
@@ -765,9 +651,7 @@ func refuseBuiltin(ctx context.Context, tx *gorm.DB, tenant string, role authz.R
 	return nil
 }
 
-// afterWrite reloads this replica's snapshot and publishes the change, in that
-// order, once the row is committed. They run on a context that is never
-// cancelled, since the row is already in the table.
+// afterWrite reloads this replica's snapshot and then publishes the change, in that order, once the row is committed.
 func (p *product) afterWrite(ctx context.Context) error {
 	after := context.WithoutCancel(ctx)
 	p.reload(after)

@@ -10,11 +10,9 @@ import (
 	"github.com/vislake/speed/pkg/authz/internal/translation"
 )
 
-// TestGrantingAPermissionOutsideTheCatalogIsRefused holds the grant write's
-// own check: a permission the catalog does not hold is a 400 and the manager
-// is not called.
+// TestGrantingAPermissionOutsideTheCatalogIsRefused checks that granting a permission outside the catalog is refused.
 func TestGrantingAPermissionOutsideTheCatalogIsRefused(t *testing.T) {
-	r := newRig(t) // the catalog declares no permission
+	r := newRig(t)
 	w := r.serve(writeRoute(r.p, grantPutOperation.Handle(r.p.handleGrantPut)), http.MethodPut,
 		"/api/v1/system/tenants/t1/roles/r1/grants/authn.account.read",
 		params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead)), nil)
@@ -29,10 +27,7 @@ func TestGrantingAPermissionOutsideTheCatalogIsRefused(t *testing.T) {
 	}
 }
 
-// TestGrantingATranslatedPermissionCallsPutGrantWithThePair holds the
-// write's translation: the permission named in the path reaches the manager
-// as the (resource, action) pair the engine matches on, alongside the tenant
-// and role from the path.
+// TestGrantingATranslatedPermissionCallsPutGrantWithThePair checks that granting a translated permission calls put grant with the pair.
 func TestGrantingATranslatedPermissionCallsPutGrantWithThePair(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	w := r.serve(writeRoute(r.p, grantPutOperation.Handle(r.p.handleGrantPut)), http.MethodPut,
@@ -59,9 +54,7 @@ func TestGrantingATranslatedPermissionCallsPutGrantWithThePair(t *testing.T) {
 	}
 }
 
-// TestAGrantOnABuiltinPositionIsRefused holds that a grant the manager
-// refuses because the role is builtin is a 409: the target exists but its
-// permissions cannot be changed.
+// TestAGrantOnABuiltinPositionIsRefused checks that a grant on a builtin position is refused.
 func TestAGrantOnABuiltinPositionIsRefused(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	r.manager.fail(authz.ErrBuiltinRole)
@@ -80,9 +73,7 @@ func TestAGrantOnABuiltinPositionIsRefused(t *testing.T) {
 	}
 }
 
-// TestDeletingAnAbsentGrantIsIdempotent holds that revoking a grant that is not
-// there is a success and not a missing-target answer: the manager's delete is
-// idempotent, so the write lands as a 204 carrying the translated pair.
+// TestDeletingAnAbsentGrantIsIdempotent checks that deleting an absent grant is idempotent.
 func TestDeletingAnAbsentGrantIsIdempotent(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	w := r.serve(writeRoute(r.p, grantDeleteOperation.Handle(r.p.handleGrantDelete)), http.MethodDelete,
@@ -102,11 +93,7 @@ func TestDeletingAnAbsentGrantIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestAWriteWritesTheMandatoryRowBeforeTheActionAndAFailedRowLinksByActionID
-// holds the grant write's audit order: the mandatory success row lands
-// before the action, so even a write the manager refuses leaves it, and the
-// failed row that closes the refusal is linked to it by the action
-// identifier.
+// TestAWriteWritesTheMandatoryRowBeforeTheActionAndAFailedRowLinksByActionID checks that a write writes the mandatory row before the action and a failed row links by action ID.
 func TestAWriteWritesTheMandatoryRowBeforeTheActionAndAFailedRowLinksByActionID(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	r.manager.fail(errors.New("the store is down"))
@@ -135,10 +122,7 @@ func TestAWriteWritesTheMandatoryRowBeforeTheActionAndAFailedRowLinksByActionID(
 	}
 }
 
-// TestAnUnauthorisedWriteReachesNoManagerAndWritesNoAudit holds that a shortfall
-// from the guard ends the write before anything else runs: the guard is asked for
-// the write's permission, and neither the manager is called nor an audit row is
-// written.
+// TestAnUnauthorisedWriteReachesNoManagerAndWritesNoAudit checks that an unauthorised write reaches no manager and writes no audit.
 func TestAnUnauthorisedWriteReachesNoManagerAndWritesNoAudit(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	r.guard.allow = false
@@ -159,8 +143,7 @@ func TestAnUnauthorisedWriteReachesNoManagerAndWritesNoAudit(t *testing.T) {
 	}
 }
 
-// TestListingGrantsAnswersTheRowsAsViews holds the grant read: it asks for
-// role.read and answers 200 with a view per grant the manager returned.
+// TestListingGrantsAnswersTheRowsAsViews checks that listing grants answers the rows as views.
 func TestListingGrantsAnswersTheRowsAsViews(t *testing.T) {
 	r := newRig(t, authz.PermissionRoleRead)
 	r.manager.grants = []authz.GrantRecord{{Tenant: "t1", Role: "r1", Resource: "account", Action: "read"}}

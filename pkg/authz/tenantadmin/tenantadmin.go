@@ -1,16 +1,4 @@
-// Package tenantadmin is the authorization capability's tenant management
-// module: it mounts the tenant-scoped permission catalog, role, grant and
-// binding routes under /api/v1/tenants/{tenant}/* and delivers no capability of
-// its own.
-//
-// It is the tenant-domain counterpart of pkg/authz/admin, reading and writing
-// the same policy tables through the same Manager and Catalog. Every route acts
-// in the tenant the path names, held to the request's resolved tenant and
-// refused on the platform domain. A route's guard wrapper asks for
-// authz.tenant.role.read on a read or authz.tenant.role.manage on a write; a
-// write then runs the registration gate, shape and anti-escalation checks, the
-// optional host WriteGuard, a mandatory audit row before the action, and the
-// manager.
+// Package tenantadmin is the authorization capability's tenant management module; it mounts the tenant-scoped permission catalog, role, grant and binding routes.
 package tenantadmin
 
 import (
@@ -38,28 +26,18 @@ const ModuleName = "authz.tenantadmin"
 // ConfigNamespace is where this module's input items are mounted.
 const ConfigNamespace = ModuleName
 
-// The configuration item this module accepts, relative to its namespace, and
-// the full path a failure names.
 const (
 	endpointsItem = "endpoints"
 	endpointsKey  = ConfigNamespace + "." + endpointsItem
 )
 
-// allEndpoints is the name that stands for every endpoint in an endpoint list.
-// This module's list refuses it.
 const allEndpoints = "*"
 
-// defaultEndpoint is the endpoint name this module's OpenAPI fragment is
-// declared against, a static name rather than a configured one.
 const defaultEndpoint = "api"
 
-// openAPIFragment is this module's OpenAPI fragment, read at build time. It is
-// generated from operations, not written by hand.
-//
 //go:embed openapi/authz.tenantadmin.json
 var openAPIFragment []byte
 
-// tenantAdminSpec is the API root this module's fragment and routes hang off.
 var tenantAdminSpec = speedhttp.Spec{
 	Endpoint: defaultEndpoint,
 	Prefix:   "api",
@@ -70,15 +48,9 @@ var tenantAdminSpec = speedhttp.Spec{
 
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// Module is the descriptor a host registers.
-//
-// The policy manager, the permission catalog, the permission reader, the
-// membership checker, the handler-internal guard, the audit capability and the
-// registration-verification read are required. The HTTP entry point, the tenant
-// administration guard, the route-declaration surface, the host write guard, the
-// message localizer, the account identity reader and the logger are taken up in
-// Init; the tenant administration guard is required there. The stance is
-// StateEnabled and never StateAuto.
+// Module is the descriptor a host registers. Its HTTP entry point, guards, route
+// declaration, write guard, localizer and identity reader are taken up in Init
+// rather than declared, and it prepares as StateEnabled and never StateAuto.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -128,14 +100,11 @@ func Module() core.Module {
 	}
 }
 
-// productOf narrows an instance to this module's product. A supplied instance of
-// another shape is left alone: this module delivers no capability.
 func productOf(instance any) (*product, bool) {
 	p, ok := instance.(*product)
 	return p, ok && p != nil
 }
 
-// product is the module's instance.
 type product struct {
 	manager      authz.Manager
 	catalog      authz.Catalog
@@ -150,9 +119,6 @@ type product struct {
 	localizer  i18n.Localizer
 	identities authz.AccountIdentityReader
 	names      authz.TenantNameResolver
-	// routeGuard is the tenant administration guard: the identity rule plus the
-	// refusal of the platform domain. Nil means the assembly delivers none, which
-	// a mount refuses.
 	routeGuard speedhttp.TenantAdminRouteGuard
 	logger     *slog.Logger
 
@@ -209,8 +175,6 @@ func newProduct(reg *core.Registry) (*product, error) {
 	}, nil
 }
 
-// optional takes up a capability whose absence is a legal assembly. Any other
-// failure to take it up ends the start.
 func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 	var zero T
 	v, err := core.Resolve[T](reg)
@@ -224,9 +188,6 @@ func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 	}
 }
 
-// wire runs in Init: it takes up the optional capabilities and the logger,
-// resolves the configured endpoints, mounts the routes, declares them open, and
-// writes the start diagnostic.
 func (p *product) wire(reg *core.Registry) error {
 	if delivered, err := core.Resolve[log.Logger](reg); err == nil {
 		p.logger = delivered.Named(ModuleName)
@@ -283,8 +244,6 @@ func (p *product) diagnose() {
 		"groups", managementGroups)
 }
 
-// schema declares this module's input items. The endpoint list takes the primary
-// source alone.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,
@@ -300,23 +259,16 @@ func schema() config.Schema {
 	}
 }
 
-// configDefaults is what this module is worth without a configuration file: the
-// API endpoint. An explicitly empty list is refused rather than mounting the
-// routes nowhere.
 var configDefaults = moduleConfig{Endpoints: []string{"api"}}
 
-// moduleConfig is the set of input items this module accepts.
 type moduleConfig struct {
 	Endpoints []string `config:"endpoints"`
 }
 
-// resolved is the configuration this module runs on.
 type resolved struct {
 	endpoints []string
 }
 
-// resolve turns decoded configuration into what the module runs on, refusing
-// what cannot be run on. A shape it cannot run on is authn.ErrInvalidConfig.
 func (c moduleConfig) resolve() (resolved, error) {
 	if len(c.Endpoints) == 0 {
 		return resolved{}, fmt.Errorf("%w: %s is empty. The tenant management routes are mounted on "+
@@ -335,9 +287,6 @@ func (c moduleConfig) resolve() (resolved, error) {
 				"them on endpoints no tenant resolution or tenant policy guard reaches",
 				authn.ErrInvalidConfig, endpointsKey, allEndpoints, i)
 		}
-		// The list is a set. The entry point holds one endpoint per name, so a
-		// name written twice would register every management route on that
-		// endpoint twice, which the route engine refuses as a conflict.
 		if _, twice := seen[name]; twice {
 			return resolved{}, fmt.Errorf("%w: %s names the endpoint %q twice, which would register "+
 				"every management route on it twice", authn.ErrInvalidConfig, endpointsKey, name)
@@ -347,7 +296,6 @@ func (c moduleConfig) resolve() (resolved, error) {
 	return resolved{endpoints: c.Endpoints}, nil
 }
 
-// readConfig decodes this module's section and validates it.
 func readConfig(reader config.Reader) (resolved, error) {
 	var cfg moduleConfig
 	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {

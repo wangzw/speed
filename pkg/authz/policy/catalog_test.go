@@ -9,9 +9,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// TestTheCentralCatalogSplitsTheAdministrationGrantSets holds the governed
-// set the process declares: the tenant-administration codes, membership
-// management and identity-provider management, and nothing else.
+// TestTheCentralCatalogSplitsTheAdministrationGrantSets checks that the central catalog splits the administration grant sets.
 func TestTheCentralCatalogSplitsTheAdministrationGrantSets(t *testing.T) {
 	reg := core.New()
 	reg.Register(Module())
@@ -56,7 +54,6 @@ func TestTheCentralCatalogSplitsTheAdministrationGrantSets(t *testing.T) {
 		t.Error("an undeclared permission answers governed")
 	}
 
-	// TenantGoverned answers a copy, as Declared does.
 	governed := catalog.TenantGoverned()
 	governed[0] = authz.Permission("mutated")
 	if catalog.TenantGoverned()[0] == authz.Permission("mutated") {
@@ -64,10 +61,7 @@ func TestTheCentralCatalogSplitsTheAdministrationGrantSets(t *testing.T) {
 	}
 }
 
-// TestTheCatalogTranslatesAPairBackToItsPermission holds the catalog's
-// reverse read: the engine matches a grant's (object, action) pair and never
-// sees the permission, so a view built from the pair names the permission a
-// client wrote it as.
+// TestTheCatalogTranslatesAPairBackToItsPermission checks that the catalog translates a pair back to its permission.
 func TestTheCatalogTranslatesAPairBackToItsPermission(t *testing.T) {
 	reg := core.New()
 	reg.Register(Module())
@@ -82,7 +76,7 @@ func TestTheCatalogTranslatesAPairBackToItsPermission(t *testing.T) {
 	for _, permission := range catalog.Declared() {
 		object, action, translated := catalog.ObjectAction(permission)
 		if !translated {
-			continue // a declared permission may carry no translation row
+			continue
 		}
 		got, found := reverse.PermissionOf(object, action)
 		if !found || got != permission {
@@ -95,9 +89,7 @@ func TestTheCatalogTranslatesAPairBackToItsPermission(t *testing.T) {
 	}
 }
 
-// TestTheGovernedPermissionsCarryTheirGovernanceMetadata holds the catalog's
-// metadata for the closed governance set: the group each permission belongs
-// to and whether granting it is dangerous.
+// TestTheGovernedPermissionsCarryTheirGovernanceMetadata checks that the governed permissions carry their governance metadata.
 func TestTheGovernedPermissionsCarryTheirGovernanceMetadata(t *testing.T) {
 	reg := core.New()
 	reg.Register(Module())
@@ -132,20 +124,15 @@ func TestTheGovernedPermissionsCarryTheirGovernanceMetadata(t *testing.T) {
 		}
 	}
 
-	// A declared permission outside the governed set carries no metadata: the
-	// zero value, and the second result true because the permission is declared.
 	if meta, ok := catalog.Metadata(authz.PermissionRoleRead); !ok || meta != (authz.PermissionMeta{}) {
 		t.Errorf("Metadata(platform role read) = %+v, %v, want the zero metadata and declared", meta, ok)
 	}
-	// An undeclared permission answers false.
 	if _, ok := catalog.Metadata("crm.undeclared"); ok {
 		t.Error("an undeclared permission answers metadata")
 	}
 }
 
-// TestTheCatalogUnionsAModulesDeclaredMetadata holds the other half of the
-// metadata contract: a module declaring a permission of its own declares its
-// metadata beside it, and the catalog carries it through the union.
+// TestTheCatalogUnionsAModulesDeclaredMetadata checks that the catalog unions a modules declared metadata.
 func TestTheCatalogUnionsAModulesDeclaredMetadata(t *testing.T) {
 	reg := core.New()
 	reg.Register(core.Module{
@@ -168,9 +155,7 @@ func TestTheCatalogUnionsAModulesDeclaredMetadata(t *testing.T) {
 	}
 }
 
-// TestACatalogRefusesAGovernedPermissionItDoesNotDeclare holds the one shape the
-// governed metadata is checked for: a module marking a permission governed
-// without listing it in its own Permissions is a startup ErrUnknownPermission.
+// TestACatalogRefusesAGovernedPermissionItDoesNotDeclare checks that a catalog refuses a governed permission it does not declare.
 func TestACatalogRefusesAGovernedPermissionItDoesNotDeclare(t *testing.T) {
 	reg := core.New()
 	reg.Register(core.Module{

@@ -9,12 +9,9 @@ import (
 	"github.com/vislake/speed/pkg/internal/openapigen"
 )
 
-// fragmentPath is this module's fragment, relative to the package directory
-// `go test` runs in.
 const fragmentPath = "openapi/authz.admin.json"
 
-// TestTheFragmentIsGeneratedFromTheDeclarations holds the embedded fragment
-// to what the declarations generate.
+// TestTheFragmentIsGeneratedFromTheDeclarations checks that the fragment is generated from the declarations.
 func TestTheFragmentIsGeneratedFromTheDeclarations(t *testing.T) {
 	generated, err := openapigen.Generate(fragmentTitle, fragmentVersion, operations)
 	if err != nil {
@@ -35,11 +32,7 @@ func TestTheFragmentIsGeneratedFromTheDeclarations(t *testing.T) {
 	}
 }
 
-// TestTheRoleWriteBodySchemaCarriesItsDescription holds the published schema
-// against the hand-written fragment it replaced: the role write's body keeps
-// its description, and the object stays open because the mounted route drops
-// the members the declaration does not describe rather than refusing them
-// — role_test.go sends a builtin member and holds that it reaches nothing.
+// TestTheRoleWriteBodySchemaCarriesItsDescription checks that the role write body schema carries its description.
 func TestTheRoleWriteBodySchemaCarriesItsDescription(t *testing.T) {
 	generated, err := openapigen.Generate(fragmentTitle, fragmentVersion, operations)
 	if err != nil {

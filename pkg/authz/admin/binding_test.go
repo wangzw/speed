@@ -8,10 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// TestListingBindingsRequiresRoleReadAndPassesThePathTenant holds the binding
-// list route: it asks the guard for authz.role.read — a read's permission, not
-// the write's — and answers the tenant named in the path by passing it, as the
-// policy domain's identifier, to the manager's Bindings.
+// TestListingBindingsRequiresRoleReadAndPassesThePathTenant checks that listing bindings requires role read and passes the path tenant.
 func TestListingBindingsRequiresRoleReadAndPassesThePathTenant(t *testing.T) {
 	r := newRig(t)
 	r.manager.bindings = []authz.Binding{{Tenant: "t1", Account: "acct-1", Role: "editor"}}
@@ -34,9 +31,7 @@ func TestListingBindingsRequiresRoleReadAndPassesThePathTenant(t *testing.T) {
 	}
 }
 
-// TestListingAnAccountsBindingsCallsBindingsOf holds that the account in the
-// path reaches the manager's BindingsOf — the method that narrows to one
-// account — and not the whole-tenant Bindings.
+// TestListingAnAccountsBindingsCallsBindingsOf checks that listing an accounts bindings calls bindings of.
 func TestListingAnAccountsBindingsCallsBindingsOf(t *testing.T) {
 	r := newRig(t)
 	r.manager.bindings = []authz.Binding{{Tenant: "t1", Account: "acct-9", Role: "editor"}}
@@ -56,9 +51,7 @@ func TestListingAnAccountsBindingsCallsBindingsOf(t *testing.T) {
 	}
 }
 
-// TestBindingAnUnknownRoleIsRefused holds that a role the tenant's role table
-// does not hold is a write-time refusal the manager reports as ErrUnknownRole,
-// and that the module maps it to a 400.
+// TestBindingAnUnknownRoleIsRefused checks that binding an unknown role is refused.
 func TestBindingAnUnknownRoleIsRefused(t *testing.T) {
 	r := newRig(t)
 	r.manager.fail(authz.ErrUnknownRole)
@@ -72,10 +65,7 @@ func TestBindingAnUnknownRoleIsRefused(t *testing.T) {
 	}
 }
 
-// TestBindingTheReservedRoleOutsideThePlatformDomainIsProtected holds that the
-// platform administrator role written in another domain is a 403 with the
-// protected code, not a 503: the role exists but may not be placed there, and a
-// dependency outage is a different answer.
+// TestBindingTheReservedRoleOutsideThePlatformDomainIsProtected checks that binding the reserved role outside the platform domain is protected.
 func TestBindingTheReservedRoleOutsideThePlatformDomainIsProtected(t *testing.T) {
 	r := newRig(t)
 	r.manager.fail(authz.ErrReservedRole)
@@ -92,11 +82,7 @@ func TestBindingTheReservedRoleOutsideThePlatformDomainIsProtected(t *testing.T)
 	}
 }
 
-// TestBindingWithAnEmptyAccountIsRefused holds that the module refuses an
-// empty account on shape, after the decision and before the manager is
-// called: a binding addresses an account, and a request that names none is a
-// 400 rather than a write the manager would refuse without a code this
-// module maps.
+// TestBindingWithAnEmptyAccountIsRefused checks that binding with an empty account is refused.
 func TestBindingWithAnEmptyAccountIsRefused(t *testing.T) {
 	r := newRig(t)
 	w := r.serve(writeRoute(r.p, bindingPutOperation.Handle(r.p.handleBindingPut)), http.MethodPut,
@@ -117,10 +103,7 @@ func TestBindingWithAnEmptyAccountIsRefused(t *testing.T) {
 	}
 }
 
-// TestRemovingABindingWithAnEmptyAccountIsRefused holds the same empty-account
-// shape refusal on the delete verb: the route addresses a binding by its
-// account, so an empty one is refused before the manager, which the case reads
-// off the manager never being called.
+// TestRemovingABindingWithAnEmptyAccountIsRefused checks that removing a binding with an empty account is refused.
 func TestRemovingABindingWithAnEmptyAccountIsRefused(t *testing.T) {
 	r := newRig(t)
 	w := r.serve(writeRoute(r.p, bindingDeleteOperation.Handle(r.p.handleBindingDelete)), http.MethodDelete,
@@ -135,10 +118,7 @@ func TestRemovingABindingWithAnEmptyAccountIsRefused(t *testing.T) {
 	}
 }
 
-// TestAnEmptyTenantOnABindingWriteIsForwardedAndRefusedAsABadRequest holds
-// that a binding write that names no tenant forwards the empty tenant
-// verbatim to the manager — the module substitutes no domain for it —
-// and maps the manager's tenant-mismatch refusal to a 400.
+// TestAnEmptyTenantOnABindingWriteIsForwardedAndRefusedAsABadRequest checks that an empty tenant on a binding write is forwarded and refused as a bad request.
 func TestAnEmptyTenantOnABindingWriteIsForwardedAndRefusedAsABadRequest(t *testing.T) {
 	r := newRig(t)
 	r.manager.fail(authz.ErrTenantMismatch)
@@ -159,8 +139,7 @@ func TestAnEmptyTenantOnABindingWriteIsForwardedAndRefusedAsABadRequest(t *testi
 	}
 }
 
-// TestABindingWriteWritesTheMandatoryRowBeforeTheActionAndAFailedRowLinksByActionID
-// holds the write path's audit order and linkage on the binding route.
+// TestABindingWriteWritesTheMandatoryRowBeforeTheActionAndAFailedRowLinksByActionID checks that a binding write writes the mandatory row before the action and a failed row links by action ID.
 func TestABindingWriteWritesTheMandatoryRowBeforeTheActionAndAFailedRowLinksByActionID(t *testing.T) {
 	t.Run("a landed write leaves the mandatory success row", func(t *testing.T) {
 		r := newRig(t)
@@ -211,10 +190,7 @@ func TestABindingWriteWritesTheMandatoryRowBeforeTheActionAndAFailedRowLinksByAc
 	})
 }
 
-// TestADenialLeavesNoAuditRowAndNoWrite holds the two refusals that precede the
-// action on the binding route: a guard denial and an anonymous request each end
-// the handler before the mandatory audit row is written and before the manager
-// is called, so neither a row nor a write is left behind.
+// TestADenialLeavesNoAuditRowAndNoWrite checks that a denial leaves no audit row and no write.
 func TestADenialLeavesNoAuditRowAndNoWrite(t *testing.T) {
 	t.Run("the guard's denial", func(t *testing.T) {
 		r := newRig(t)

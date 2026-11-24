@@ -142,6 +142,7 @@ type Manager interface {
 // MembershipChecker reports whether an account is an active member of a tenant.
 // The host supplies it.
 type MembershipChecker interface {
+	// IsMember reports whether account is an active member of tenant. An error means the membership could not be read.
 	IsMember(ctx context.Context, tenant string, account string) (bool, error)
 }
 
@@ -153,6 +154,7 @@ type MembershipChecker interface {
 // is keyed by the account string the caller passed; an account the host does not
 // know is absent from it.
 type AccountIdentityReader interface {
+	// Identities resolves the named accounts to their display name, username and active flag. An account the host does not know is absent from the result.
 	Identities(ctx context.Context, tenant string, accounts []string) (map[string]AccountIdentity, error)
 }
 

@@ -1,9 +1,4 @@
-// Package translation holds the permission-to-(object, action) mapping the
-// authorization engine matches on: the rows this capability carries for its own
-// permissions, and the union of them with every row a registered module declares
-// through authz.TranslationSpec.
-//
-// It imports the root package and nothing else under this directory.
+// Package translation holds the permission-to-(object, action) mapping the authorization engine matches on.
 package translation
 
 import (
@@ -15,13 +10,9 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// pair is one row of the translation: the object and the action the engine
-// matches on for a permission.
 type pair struct{ object, action string }
 
-// builtin is the set of rows this capability carries for its own permissions.
-// The set is never rewritten; a module that declares another permission declares
-// a row of its own through authz.TranslationSpec.
+// builtin is the set of rows this capability carries; it is never rewritten.
 var builtin = map[authz.Permission]pair{
 	authz.PermissionTenantAccess:        {object: "tenant", action: "access"},
 	authz.PermissionAccountRead:         {object: "account", action: "read"},
@@ -52,8 +43,6 @@ var builtin = map[authz.Permission]pair{
 	authz.PermissionSettingsWrite:       {object: "settings", action: "write"},
 }
 
-// process is the process's resolved translation set. Until a module resolves it
-// the set is nil, and a reader sees the built-in rows alone.
 var process atomic.Pointer[map[authz.Permission]pair]
 
 // Lookup returns the (object, action) pair a permission translates to, and

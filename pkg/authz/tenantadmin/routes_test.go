@@ -14,8 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// engine mounts the module's closed route table on a real gin engine, the way
-// the entry point does.
 func (r *rig) engine() *gin.Engine {
 	r.t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -26,14 +24,11 @@ func (r *rig) engine() *gin.Engine {
 	return e
 }
 
-// send issues one request through the mounted engine with the identity the
-// options build.
 func (r *rig) send(e *gin.Engine, method, target string, opts ...authntest.Option) *httptest.ResponseRecorder {
 	r.t.Helper()
 	return r.sendBody(e, method, target, nil, opts...)
 }
 
-// sendBody issues one request through the mounted engine with a JSON body.
 func (r *rig) sendBody(e *gin.Engine, method, target string, body any, opts ...authntest.Option) *httptest.ResponseRecorder {
 	r.t.Helper()
 	var reader io.Reader
@@ -54,8 +49,7 @@ func (r *rig) sendBody(e *gin.Engine, method, target string, body any, opts ...a
 	return w
 }
 
-// TestTheRouteTableIsTheClosedSet holds the exact (method, path) set and the
-// permission each route asks for.
+// TestTheRouteTableIsTheClosedSet checks that the route table is the closed set.
 func TestTheRouteTableIsTheClosedSet(t *testing.T) {
 	want := map[mountedRoute]authz.Permission{
 		{http.MethodGet, "/api/v1/tenants/:tenant/permissions"}:                       authz.PermissionTenantRoleRead,
@@ -88,9 +82,7 @@ func TestTheRouteTableIsTheClosedSet(t *testing.T) {
 	}
 }
 
-// TestEachReadRouteIsWiredToItsOwnHandler holds the path-to-handler wiring: each
-// read sent through the mounted table answers the view its path names and no
-// other.
+// TestEachReadRouteIsWiredToItsOwnHandler checks that each read route is wired to its own handler.
 func TestEachReadRouteIsWiredToItsOwnHandler(t *testing.T) {
 	r := newRig(t)
 	r.manager.roles = []authz.RoleRecord{{Tenant: "t1", Role: "editor"}}
@@ -123,8 +115,7 @@ func TestEachReadRouteIsWiredToItsOwnHandler(t *testing.T) {
 	}
 }
 
-// TestThePermissionsReadRouteIsWired holds the catalog route through the mounted
-// table: it answers the governed permissions at its path and no other.
+// TestThePermissionsReadRouteIsWired checks that the permissions read route is wired.
 func TestThePermissionsReadRouteIsWired(t *testing.T) {
 	r := newRig(t)
 	e := r.engine()
@@ -137,9 +128,7 @@ func TestThePermissionsReadRouteIsWired(t *testing.T) {
 	}
 }
 
-// TestEveryWriteRouteAsksForTenantRoleManage holds the write side of the route
-// table's permission mapping: every write sent through the mounted table asks
-// the guard for authz.tenant.role.manage.
+// TestEveryWriteRouteAsksForTenantRoleManage checks that every write route asks for tenant role manage.
 func TestEveryWriteRouteAsksForTenantRoleManage(t *testing.T) {
 	cases := map[string]struct {
 		method string
@@ -167,9 +156,7 @@ func TestEveryWriteRouteAsksForTenantRoleManage(t *testing.T) {
 	}
 }
 
-// TestEveryRouteDecidesInThePathTenantDomain holds the domain every route asks
-// the guard to decide in: the tenant the path names, not the platform domain and
-// not a fixed unknown domain.
+// TestEveryRouteDecidesInThePathTenantDomain checks that every route decides in the path tenant domain.
 func TestEveryRouteDecidesInThePathTenantDomain(t *testing.T) {
 	r := newRig(t)
 	w := r.send(r.engine(), http.MethodGet, "/api/v1/tenants/other/roles")

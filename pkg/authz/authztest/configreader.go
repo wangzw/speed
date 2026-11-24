@@ -11,8 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// envPrefix is an environment-variable prefix no machine carries variables
-// under, so the body is the only primary source.
 const envPrefix = "SPEEDAUTHZTEST"
 
 // ConfigReader builds the configuration reader a case hands a module under test:

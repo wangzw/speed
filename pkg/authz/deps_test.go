@@ -11,27 +11,18 @@ import (
 	"testing"
 )
 
-// The import paths the rules below are about.
 const (
 	moduleImportPath = "github.com/vislake/speed/pkg"
 	rootPath         = moduleImportPath + "/authz"
 	authztestPath    = rootPath + "/authztest"
 )
 
-// listed is what these checks read about one package: its import path and the
-// imports of its non-test files. go list reports the test files' imports
-// separately, and the rules are about production code, so those are not asked
-// for.
 type listed struct {
 	ImportPath string
 	// Imports are the imports of the package's non-test files that build here.
 	Imports []string
 }
 
-// goList lists every package of the module with go list and returns them. The
-// pattern names the module, so the listing does not depend on the directory the
-// tests run from. -e keeps a package that does not compile in the listing, with
-// its imports as the parser read them.
 func goList(t *testing.T) []listed {
 	t.Helper()
 	cmd := exec.Command("go", "list", "-e", "-json=ImportPath,Imports", moduleImportPath+"/...")
@@ -55,8 +46,6 @@ func goList(t *testing.T) []listed {
 	}
 }
 
-// goListDeps returns the import paths of path and its non-test dependency
-// closure, in go list's order.
 func goListDeps(t *testing.T, path string) []string {
 	t.Helper()
 	cmd := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}", path)
@@ -78,18 +67,11 @@ func find(pkgs []listed, path string) (listed, bool) {
 	return listed{}, false
 }
 
-// isStandard reports whether an import path is the standard library's, which is
-// the paths whose first element has no dot.
 func isStandard(path string) bool {
 	first, _, _ := strings.Cut(path, "/")
 	return !strings.Contains(first, ".")
 }
 
-// rootImportViolations is the first rule: the root package's non-test imports
-// are the standard library and nothing else. The root package is imported by
-// every consumer of a permission, so a third-party library reached from here
-// would enter all of their closures; the Casbin engine and its storage live in
-// the policy subpackage for that reason.
 func rootImportViolations(root listed) []string {
 	var out []string
 	for _, imp := range root.Imports {
@@ -102,11 +84,6 @@ func rootImportViolations(root listed) []string {
 	return out
 }
 
-// closureViolations is the second rule, read from the root package's whole
-// non-test closure rather than its direct imports: the closure holds no Casbin,
-// gin or gorm, and no subpackage of this directory. The direct-import rule
-// already keeps the closure to the standard library; this holds the named
-// libraries and the layer boundary even if the first rule is ever loosened.
 func closureViolations(deps []string) []string {
 	var out []string
 	for _, imp := range deps {
@@ -125,12 +102,6 @@ func closureViolations(deps []string) []string {
 	return out
 }
 
-// authztestViolations is the third rule: no package imports authztest in a file
-// that is not a test, except authztest itself. The compiler cannot stop
-// production code importing it, and the fixtures it hands out are for tests;
-// importing it from production code would put a test builder into a shipped
-// binary. An import from a test file is not reported: go list hands the
-// non-test imports alone, and that is exactly the split the rule is about.
 func authztestViolations(pkgs []listed) []string {
 	var out []string
 	for _, p := range pkgs {
@@ -145,8 +116,7 @@ func authztestViolations(pkgs []listed) []string {
 	return out
 }
 
-// TestTheRootPackageImportsOnlyTheStandardLibrary checks that the root package
-// and its closure import only the standard library.
+// TestTheRootPackageImportsOnlyTheStandardLibrary checks that the root package imports only the standard library.
 func TestTheRootPackageImportsOnlyTheStandardLibrary(t *testing.T) {
 	pkgs := goList(t)
 
@@ -177,8 +147,7 @@ func TestTheRootPackageImportsOnlyTheStandardLibrary(t *testing.T) {
 	}
 }
 
-// TestNoProductionCodeImportsAuthztest checks that authztest is imported from
-// tests alone across every package of the module.
+// TestNoProductionCodeImportsAuthztest checks that no production code imports authztest.
 func TestNoProductionCodeImportsAuthztest(t *testing.T) {
 	pkgs := goList(t)
 	if _, ok := find(pkgs, authztestPath); !ok {
@@ -189,8 +158,7 @@ func TestNoProductionCodeImportsAuthztest(t *testing.T) {
 	}
 }
 
-// TestTheRulesFailOnAViolation checks that each import rule reports a violating
-// import and accepts a legal one.
+// TestTheRulesFailOnAViolation checks that the rules fail on a violation.
 func TestTheRulesFailOnAViolation(t *testing.T) {
 	root := listed{ImportPath: rootPath, Imports: []string{"context", "time", "example.com/lib", rootPath + "/policy"}}
 	if got := rootImportViolations(root); !slices.Equal(got, []string{

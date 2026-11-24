@@ -10,9 +10,7 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// TestTheRoleListViewCountsActiveMembers holds the member count: it counts
-// the active accounts holding each role, leaves out an account the host does
-// not know, and reads the identities of every bound account in one batch.
+// TestTheRoleListViewCountsActiveMembers checks that the role list view counts active members.
 func TestTheRoleListViewCountsActiveMembers(t *testing.T) {
 	r := newRig(t)
 	r.manager.roles = []authz.RoleRecord{
@@ -29,7 +27,6 @@ func TestTheRoleListViewCountsActiveMembers(t *testing.T) {
 	reader.answer(map[string]authz.AccountIdentity{
 		"acct-a": {DisplayName: "Alice", Active: true},
 		"acct-b": {DisplayName: "Bob", Active: false},
-		// acct-c is unknown to the host.
 	})
 	r.withIdentities(reader)
 
@@ -53,9 +50,7 @@ func TestTheRoleListViewCountsActiveMembers(t *testing.T) {
 	}
 }
 
-// TestTheMemberCountIsNullWithoutAnIdentityReader holds the absent seam: the
-// count cannot be read, so the view publishes null and the binding count is not
-// used as a stand-in.
+// TestTheMemberCountIsNullWithoutAnIdentityReader checks that the member count is null without an identity reader.
 func TestTheMemberCountIsNullWithoutAnIdentityReader(t *testing.T) {
 	r := newRig(t)
 	r.manager.roles = []authz.RoleRecord{{Tenant: "t1", Role: "editor"}}
@@ -73,9 +68,7 @@ func TestTheMemberCountIsNullWithoutAnIdentityReader(t *testing.T) {
 	}
 }
 
-// TestARoleListWhoseIdentityReadFailsIsA503 holds the failure rule: an
-// identity read that cannot answer is a 503 with no role list, never a count
-// of zero and never an inactive set.
+// TestARoleListWhoseIdentityReadFailsIsA503 checks that a role list whose identity read fails is a 503.
 func TestARoleListWhoseIdentityReadFailsIsA503(t *testing.T) {
 	r := newRig(t)
 	r.manager.roles = []authz.RoleRecord{{Tenant: "t1", Role: "editor"}}
@@ -94,9 +87,7 @@ func TestARoleListWhoseIdentityReadFailsIsA503(t *testing.T) {
 	}
 }
 
-// TestCanManageFollowsTheCallersPlatformPermissions holds the hint: the role
-// list reads the caller's held permissions in the platform domain and
-// reports authz.role.manage.
+// TestCanManageFollowsTheCallersPlatformPermissions checks that can manage follows the callers platform permissions.
 func TestCanManageFollowsTheCallersPlatformPermissions(t *testing.T) {
 	t.Run("the read alone is false", func(t *testing.T) {
 		r := newRig(t)
@@ -128,8 +119,7 @@ func TestCanManageFollowsTheCallersPlatformPermissions(t *testing.T) {
 	})
 }
 
-// TestAnUnreadableCallerPermissionSetIsA503 holds the failure rule: a
-// permission read that cannot answer is a 503, never can_manage=false.
+// TestAnUnreadableCallerPermissionSetIsA503 checks that an unreadable caller permission set is a 503.
 func TestAnUnreadableCallerPermissionSetIsA503(t *testing.T) {
 	r := newRig(t)
 	r.manager.roles = []authz.RoleRecord{{Tenant: "t1", Role: "editor"}}
@@ -141,8 +131,6 @@ func TestAnUnreadableCallerPermissionSetIsA503(t *testing.T) {
 	}
 }
 
-// grantCountsFailingManager fails the grouped grant read the role list makes,
-// so a case holds that a failure there is mapped like any other manager failure.
 type grantCountsFailingManager struct {
 	*stubManager
 }
@@ -151,8 +139,7 @@ func (grantCountsFailingManager) GrantCounts(context.Context, string) (map[authz
 	return nil, errors.New("the grant table is down")
 }
 
-// TestAFailedGrantCountIsA503 holds the permission count's failure rule: a
-// grouped read that cannot answer is a 503 with no list, never a count of zero.
+// TestAFailedGrantCountIsA503 checks that a failed grant count is a 503.
 func TestAFailedGrantCountIsA503(t *testing.T) {
 	r := newRig(t)
 	r.p.manager = grantCountsFailingManager{stubManager: r.manager}

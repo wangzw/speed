@@ -7,8 +7,7 @@ import (
 	"testing"
 )
 
-// TestTheViewFieldSetsArePinned holds the exact JSON key set of every view
-// the management routes answer with.
+// TestTheViewFieldSetsArePinned checks that the view field sets are pinned.
 func TestTheViewFieldSetsArePinned(t *testing.T) {
 	cases := map[string]struct {
 		view any

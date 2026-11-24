@@ -1,10 +1,4 @@
-// Package authz is the interface package of the authorization capability
-// directory: the types, capability interfaces, permission constants, model
-// text and sentinel errors that the policy and enforcement subpackages and
-// every consumer of a permission share.
-//
-// This package registers no module and imports nothing but the standard
-// library.
+// Package authz is the interface package of the authorization capability: the types, capability interfaces, permission constants, model text and sentinels its consumers and implementations share.
 package authz
 
 import "time"
@@ -35,8 +29,11 @@ type Domain string
 // and not declared is a startup ErrUnknownPermission. A declared permission not
 // in the subset is platform-only.
 type PermissionSpec struct {
-	Permissions     []Permission
-	TenantGoverned  []Permission
+	// Permissions is the set of permissions this module declares.
+	Permissions []Permission
+	// TenantGoverned is the subset of Permissions a tenant administrator may govern.
+	TenantGoverned []Permission
+	// DescriptionKeys maps a declared permission to the i18n key of its description.
 	DescriptionKeys map[Permission]string
 	// Metadata is the governance metadata of the permissions this module
 	// declares: the group a management surface places one in and whether granting
@@ -50,14 +47,18 @@ type PermissionSpec struct {
 // whether granting it is dangerous. A dangerous permission is one that widens
 // the grantee's power over other accounts or over the tenant's policy.
 type PermissionMeta struct {
-	Group     string
+	// Group is the group a management surface places the permission in.
+	Group string
+	// Dangerous reports whether granting the permission widens the grantee's power over other accounts or over the tenant's policy.
 	Dangerous bool
 }
 
 // Translation is one row of the permission translation: the object and the
 // action the policy engine matches on for a permission.
 type Translation struct {
+	// Object is the object the policy engine matches on.
 	Object string
+	// Action is the action the policy engine matches on.
 	Action string
 }
 
@@ -65,6 +66,7 @@ type Translation struct {
 // it owns beyond the ones this capability carries: a row for each, naming the
 // (object, action) pair the engine matches on.
 type TranslationSpec struct {
+	// Rows maps each declared permission to the (object, action) pair the engine matches on.
 	Rows map[Permission]Translation
 }
 
@@ -72,26 +74,37 @@ type TranslationSpec struct {
 // Object within Domain. Subject is an account's key, and Domain is a tenant
 // identifier or the platform domain.
 type Query struct {
+	// Subject is the account key the question is about.
 	Subject string
-	Domain  Domain
-	Object  string
-	Action  string
+	// Domain is the tenant identifier or the platform domain the question is asked in.
+	Domain Domain
+	// Object is the object the action is applied to.
+	Object string
+	// Action is the action being asked about.
+	Action string
 }
 
 // Requirement is what one route asks for: the permission needed to reach
 // (Method, Path). A route registered with no requirement is open.
 type Requirement struct {
-	Method     string
-	Path       string
+	// Method is the HTTP method of the route.
+	Method string
+	// Path is the route's path.
+	Path string
+	// Permission is the permission needed to reach the route.
 	Permission Permission
 }
 
 // Binding is one role binding as it is read: a subject holding a role within a
 // tenant.
 type Binding struct {
-	Tenant    string
-	Account   string
-	Role      Role
+	// Tenant is the tenant the binding belongs to.
+	Tenant string
+	// Account is the account holding the role.
+	Account string
+	// Role is the role the account holds.
+	Role Role
+	// GrantedAt is when the binding was written.
 	GrantedAt time.Time
 }
 
@@ -103,12 +116,18 @@ type Binding struct {
 // the free text the management surface writes. A reader prefers the description
 // it can render.
 type RoleRecord struct {
-	Tenant         string
-	Role           Role
-	Builtin        bool
+	// Tenant is the tenant the role belongs to.
+	Tenant string
+	// Role is the role's name within the tenant.
+	Role Role
+	// Builtin marks a role the management surface may not delete or rewrite, nor change the grants of.
+	Builtin bool
+	// DescriptionKey is the i18n key a host seeds into a builtin role.
 	DescriptionKey string
-	Description    string
-	CreatedAt      time.Time
+	// Description is the free text the management surface writes.
+	Description string
+	// CreatedAt is when the role was written.
+	CreatedAt time.Time
 }
 
 // RoleDescriptionMax bounds a role's free-text description, in characters. A
@@ -119,10 +138,15 @@ const RoleDescriptionMax = 500
 // GrantRecord is one permission grant of the grant table as it is read and
 // written: a role holding a (resource, action) permission within a tenant.
 type GrantRecord struct {
-	Tenant    string
-	Role      Role
-	Resource  string
-	Action    string
+	// Tenant is the tenant the grant belongs to.
+	Tenant string
+	// Role is the role holding the grant.
+	Role Role
+	// Resource is the resource the grant matches on.
+	Resource string
+	// Action is the action the grant matches on.
+	Action string
+	// CreatedAt is when the grant was written.
 	CreatedAt time.Time
 }
 
@@ -131,15 +155,20 @@ type GrantRecord struct {
 // Reconciler.ReconcileGrants name the tenant and the role once for the whole
 // set.
 type Grant struct {
+	// Resource is the resource the grant matches on.
 	Resource string
-	Action   string
+	// Action is the action the grant matches on.
+	Action string
 }
 
 // AccountIdentity is what a host knows about one account, as the role-usage read
 // needs it: the display name and login username to show, and whether the account
 // is still active. A host that knows no username answers the empty string.
 type AccountIdentity struct {
+	// DisplayName is the account's display name to show.
 	DisplayName string
-	Username    string
-	Active      bool
+	// Username is the account's login username, empty when the host knows none.
+	Username string
+	// Active reports whether the account is still active.
+	Active bool
 }

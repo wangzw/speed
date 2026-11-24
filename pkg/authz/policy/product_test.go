@@ -11,15 +11,9 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The cases here hold the product's own seams: the unavailable-or-denial split
-// on the decision path, the model self-check at startup, the refusal to swallow
-// a resolution failure, and the platform-domain check's error.
-
-// An unloaded snapshot is unavailable, not a denial: the process cannot yet
-// answer from a policy it read, and telling the caller "denied" would report a
-// failure as a permission conclusion.
+// TestAllowedOnAnUnloadedProductIsUnavailable checks that allowed on an unloaded product is unavailable.
 func TestAllowedOnAnUnloadedProductIsUnavailable(t *testing.T) {
-	p := newProductOver(t) // begin is never called, so no snapshot is loaded
+	p := newProductOver(t)
 	allowed, err := p.Allowed(t.Context(), authz.Query{
 		Subject: "acc1", Domain: "acme", Object: "account", Action: "read",
 	})
@@ -31,8 +25,7 @@ func TestAllowedOnAnUnloadedProductIsUnavailable(t *testing.T) {
 	}
 }
 
-// A decision with a context that is already done returns the context's error
-// rather than evaluating the policy: a withdrawn request is not answered.
+// TestAllowedHonoursACancelledContext checks that allowed honours a cancelled context.
 func TestAllowedHonoursACancelledContext(t *testing.T) {
 	f := newFixture(t)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -45,10 +38,6 @@ func TestAllowedHonoursACancelledContext(t *testing.T) {
 	}
 }
 
-// brokenModelText parses but behaves other than the design states: its matcher
-// drops the policy domain's equality with the request's, so a grant in one
-// domain would reach a query in another. The self-check runs on the text the
-// process will enforce with, so a text like this must stop the startup.
 const brokenModelText = `[request_definition]
 r = sub, dom, obj, act
 [policy_definition]
@@ -61,9 +50,7 @@ e = some(where (p.eft == allow))
 m = g(r.sub, p.sub, r.dom) && r.obj == p.obj && r.act == p.act
 `
 
-// The startup runs the model self-check on the text it loaded: a text that
-// behaves other than the design states fails the startup with the same
-// disposition as an unavailable engine, rather than beginning to serve from it.
+// TestBeginSelfChecksTheModelText checks that begin self checks the model text.
 func TestBeginSelfChecksTheModelText(t *testing.T) {
 	p := newProductOver(t)
 	p.text = brokenModelText
@@ -74,9 +61,7 @@ func TestBeginSelfChecksTheModelText(t *testing.T) {
 	}
 }
 
-// optional carries out any failure that is not the absence of a provider: an
-// ambiguous provider is a real failure and must not be read as "the capability
-// is simply not here" and silently dropped.
+// TestOptionalPropagatesANonMissingError checks that optional propagates a non-missing error.
 func TestOptionalPropagatesANonMissingError(t *testing.T) {
 	reg := core.New()
 	for _, name := range []string{"stand-in.a", "stand-in.b"} {
@@ -92,7 +77,6 @@ func TestOptionalPropagatesANonMissingError(t *testing.T) {
 	}
 }
 
-// errorRosterStub is a tenant catalog whose read fails.
 type errorRosterStub struct {
 	rosterStub
 	err error
@@ -102,8 +86,7 @@ func (r errorRosterStub) Get(context.Context, tenant.ID) (tenant.Tenant, bool, e
 	return tenant.Tenant{}, false, r.err
 }
 
-// The platform-domain check carries a roster read failure out: a roster that
-// cannot be read is not "no conflict" and must not let the startup through.
+// TestCheckPlatformDomainPropagatesARosterError checks that checkPlatformDomain propagates a roster error.
 func TestCheckPlatformDomainPropagatesARosterError(t *testing.T) {
 	sentinel := errors.New("the roster is unavailable")
 	if err := checkPlatformDomain(t.Context(), errorRosterStub{err: sentinel}); !errors.Is(err, sentinel) {

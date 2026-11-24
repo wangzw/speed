@@ -17,16 +17,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The cases here need a real, multi-connection server. SQLite serialises its
-// writers on one global lock, so the interleaving that leaves an orphan row —
-// a write's role check landing before a concurrent delete commits — cannot be
-// staged on it. On PostgreSQL it can, deterministically: the delete is held open
-// on its own connection and the write is watched for the one thing that decides
-// the outcome, whether its check waits on the role the delete has locked.
-
-// newPostgresFixture is newFixture over the shared PostgreSQL server: the same
-// tables the module ships, built from the PostgreSQL migration file, with the
-// tenant filter installed.
 func newPostgresFixture(t *testing.T) *fixture {
 	t.Helper()
 	handle := dbtest.Postgres(t, pgtest.Acquire(t), nil).DB()
@@ -53,19 +43,10 @@ func newPostgresFixture(t *testing.T) *fixture {
 }
 
 const (
-	// lockWaitBudget bounds the wait for the write to reach the decisive state.
-	// The write reaches the role lock in the microseconds of one statement; the
-	// budget only stops the case hanging if it never does, and a case that saw
-	// neither completion nor the wait fails rather than passes.
 	lockWaitBudget = 10 * time.Second
-	// pollInterval is how often the case looks, the pace pollUntil also uses.
-	pollInterval = 2 * time.Millisecond
+	pollInterval   = 2 * time.Millisecond
 )
 
-// holdDeleteOfRole opens a transaction that deletes the role's rows and leaves
-// it uncommitted, so the role row is locked for the duration. It stands for a
-// DeleteRole in flight: the delete takes the role row's exclusive lock on its
-// way to removing it, and this case keeps the transaction open at that point.
 func holdDeleteOfRole(t *testing.T, f *fixture, tenant, role string) *gorm.DB {
 	t.Helper()
 	tx := f.crossing(t.Context()).Begin()
@@ -88,10 +69,6 @@ func holdDeleteOfRole(t *testing.T, f *fixture, tenant, role string) *gorm.DB {
 	return tx
 }
 
-// aWriteIsWaitingForALock reports whether a session on this database is blocked
-// on a lock. Only this case's connections exist on the database it runs on, so
-// the only thing that can be waiting is the write, held on the role the
-// concurrent delete locked.
 func aWriteIsWaitingForALock(t *testing.T, f *fixture) bool {
 	t.Helper()
 	var waiting int64
@@ -104,12 +81,6 @@ func aWriteIsWaitingForALock(t *testing.T, f *fixture) bool {
 	return waiting > 0
 }
 
-// theWriteReachedTheLock drives the write to the one of two states that decides
-// the case. It reports held=true once the write is seen waiting on the role lock
-// (its check took the lock) and held=false with the write's error once the write
-// completes first (its check took no lock). It fails if neither is reached
-// within the budget, so a write neither done nor seen waiting cannot pass as
-// correct.
 func theWriteReachedTheLock(t *testing.T, f *fixture, done <-chan error) (err error, held bool) {
 	t.Helper()
 	deadline := time.Now().Add(lockWaitBudget)
@@ -129,8 +100,6 @@ func theWriteReachedTheLock(t *testing.T, f *fixture, done <-chan error) (err er
 	}
 }
 
-// leftoversOf counts the rows of table still naming a role, the orphan the
-// engine would go on deciding with.
 func leftoversOf(t *testing.T, f *fixture, table, tenant, role string) int64 {
 	t.Helper()
 	var count int64
@@ -142,9 +111,7 @@ func leftoversOf(t *testing.T, f *fixture, table, tenant, role string) int64 {
 	return count
 }
 
-// The check a grant write makes against its role must wait out a concurrent
-// delete of that role, so the grant cannot land on a role the delete
-// removed.
+// TestPutGrantWaitsForAConcurrentDeleteOfItsRole checks that put grant waits for a concurrent delete of its role.
 func TestPutGrantWaitsForAConcurrentDeleteOfItsRole(t *testing.T) {
 	f := newPostgresFixture(t)
 	ctx := t.Context()
@@ -177,8 +144,7 @@ func TestPutGrantWaitsForAConcurrentDeleteOfItsRole(t *testing.T) {
 	}
 }
 
-// TestPutBindingWaitsForAConcurrentDeleteOfItsRole is the binding half of the
-// same guarantee: a binding must not land on a role a concurrent delete removed.
+// TestPutBindingWaitsForAConcurrentDeleteOfItsRole checks that put binding waits for a concurrent delete of its role.
 func TestPutBindingWaitsForAConcurrentDeleteOfItsRole(t *testing.T) {
 	f := newPostgresFixture(t)
 	ctx := t.Context()

@@ -10,11 +10,7 @@ import (
 	internalpolicy "github.com/vislake/speed/pkg/authz/internal/policy"
 )
 
-// TestHeldAnswersTheProductPermissions holds the subject-permission read to
-// what the policy data says through the same product the request path reads: a
-// subject holding two roles sees the union once each, sorted, another tenant's
-// grant does not appear, and a held pair no permission translates to is left
-// out.
+// TestHeldAnswersTheProductPermissions checks that held answers the product permissions.
 func TestHeldAnswersTheProductPermissions(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -59,10 +55,6 @@ func TestHeldAnswersTheProductPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Held(acme, acc1): %v", err)
 	}
-	// (role, read) loads before (session, revoke) -- the read is ordered by
-	// tenant, role, resource, action -- and their permission names sort the
-	// other way round (authn.* before authz.*), so the load order is the
-	// reverse of the answer's order and only the sort produces this result.
 	want := []authz.Permission{
 		authz.PermissionAccountRead,
 		authz.PermissionSessionRevoke,
@@ -89,10 +81,7 @@ func TestHeldAnswersTheProductPermissions(t *testing.T) {
 	}
 }
 
-// TestTheTenantAdminAnswerCarriesNoPlatformCode holds the governed split at the
-// subject-permissions read: a tenant-admin role seeded with the governed set and
-// bound in a tenant domain answers exactly that set, with no platform-only code
-// in it.
+// TestTheTenantAdminAnswerCarriesNoPlatformCode checks that the tenant admin answer carries no platform code.
 func TestTheTenantAdminAnswerCarriesNoPlatformCode(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -134,8 +123,7 @@ func TestTheTenantAdminAnswerCarriesNoPlatformCode(t *testing.T) {
 	}
 }
 
-// A read whose snapshot was never loaded is unavailable rather than an empty
-// permission set.
+// TestHeldReportsAnUnloadedSnapshotAsUnavailable checks that held reports an unloaded snapshot as unavailable.
 func TestHeldReportsAnUnloadedSnapshotAsUnavailable(t *testing.T) {
 	p := newProductOver(t)
 	if _, err := p.Held(t.Context(), "acme", "acc1"); !errors.Is(err, authz.ErrPolicyUnavailable) {
@@ -143,14 +131,9 @@ func TestHeldReportsAnUnloadedSnapshotAsUnavailable(t *testing.T) {
 	}
 }
 
-// An engine failure is unavailable the same way: a snapshot that is loaded but
-// whose engine cannot answer is a dependency that cannot answer, not an empty
-// permission set, so the sentinel classifies that path too and the engine's
-// cause stays in the error.
+// TestHeldReportsAnEngineFailureAsUnavailable checks that held reports an engine failure as unavailable.
 func TestHeldReportsAnEngineFailureAsUnavailable(t *testing.T) {
 	p := newProductOver(t)
-	// The read reaches the engine's role manager for "g", so a model without
-	// the role definition loads (the tables are empty) but fails the read.
 	broken := strings.Replace(authz.ModelText, "g = _, _, _\n", "", 1)
 	snapshot, err := internalpolicy.Load(t.Context(), p.handle, broken)
 	if err != nil {

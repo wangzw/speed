@@ -13,20 +13,8 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// The process's translation is resolved by the policy module, which these cases
-// drive directly: they hold what this module's own faces make of a module's
-// declared row — the route declaration check accepts it, the middleware decides
-// on it, and the decider refuses what no row covers. What the resolution itself
-// makes of a declared row is the translation package's business and is held
-// there.
-
-// declaredPermission is a permission of a module's own, beyond the ones this
-// capability carries.
 const declaredPermission = authz.Permission("crm.deal.read")
 
-// declaredModule builds a stand-in module that declares the given permission
-// rows of its own: the permission spec listing them and the translation spec
-// beside it, the way a business module carries both.
 func declaredModule(name string, rows map[authz.Permission]authz.Translation) core.Module {
 	keys := make([]authz.Permission, 0, len(rows))
 	for p := range rows {
@@ -42,9 +30,6 @@ func declaredModule(name string, rows map[authz.Permission]authz.Translation) co
 	}
 }
 
-// resolveDeclared installs the process's translation set over one stand-in
-// module that declares the given rows. The built-in-only set is restored when
-// the case ends, so one case's rows do not reach the next.
 func resolveDeclared(t *testing.T, rows map[authz.Permission]authz.Translation) {
 	t.Helper()
 	reg := core.New()
@@ -55,9 +40,7 @@ func resolveDeclared(t *testing.T, rows map[authz.Permission]authz.Translation) 
 	t.Cleanup(translation.Reset)
 }
 
-// A module's declared row reaches the declaration check: a route that names
-// the module's permission passes it rather than failing the startup as a
-// permission the translation cannot express.
+// TestAModuleDeclaredPermissionIsAccepted checks that a module declared permission is accepted.
 func TestAModuleDeclaredPermissionIsAccepted(t *testing.T) {
 	if _, _, ok := translation.Lookup(declaredPermission); ok {
 		t.Fatal("the built-in translation already holds the module's permission, so the case cannot show the row being added")
@@ -84,9 +67,7 @@ func TestAModuleDeclaredPermissionIsAccepted(t *testing.T) {
 	}
 }
 
-// A permission the union has no row for is refused with the union in place: the
-// declaration check refuses a route that names it, and the decider refuses an
-// action it cannot express without an error and without asking the engine.
+// TestAPermissionOutsideTheUnionIsRefused checks that a permission outside the union is refused.
 func TestAPermissionOutsideTheUnionIsRefused(t *testing.T) {
 	resolveDeclared(t, map[authz.Permission]authz.Translation{
 		declaredPermission: {Object: "deal", Action: "read"},
@@ -118,9 +99,7 @@ func TestAPermissionOutsideTheUnionIsRefused(t *testing.T) {
 	}
 }
 
-// The middleware builds its query from the union: a route that declares a
-// module's own permission is decided on the (object, action) the module
-// declared, with the account's key and the request's domain.
+// TestTheMiddlewareTranslatesAModuleDeclaredPermission checks that the middleware translates a module declared permission.
 func TestTheMiddlewareTranslatesAModuleDeclaredPermission(t *testing.T) {
 	resolveDeclared(t, map[authz.Permission]authz.Translation{
 		declaredPermission: {Object: "deal", Action: "read"},

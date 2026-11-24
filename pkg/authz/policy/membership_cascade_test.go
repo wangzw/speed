@@ -9,17 +9,12 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// The platform administrator role exists only in the platform domain, and a
-// binding to it is refused for an account that is not an active member of
-// that tenant.
+// TestRemovingASystemMembershipRevokesThePlatformDomainBindings checks that removing a system membership revokes the platform domain bindings.
 func TestRemovingASystemMembershipRevokesThePlatformDomainBindings(t *testing.T) {
 	p := newFixture(t).product
 	bus := newRecordingBus()
 	wireProduct(t, p, bus)
 
-	// acct-1 holds both platform-administrator and tenant-admin in the platform
-	// domain and a tenant-admin binding in a business tenant. acct-2 holds one
-	// platform-administrator binding that must survive.
 	seedPolicy(t, p, string(authz.PlatformDomain), string(authz.PlatformAdminRole), "acct-1", "tenant", "read")
 	seedPolicy(t, p, string(authz.PlatformDomain), string(authz.TenantAdminRole), "acct-1", "tenant", "read")
 	seedPolicy(t, p, "acme", string(authz.TenantAdminRole), "acct-1", "tenant", "read")
@@ -35,14 +30,11 @@ func TestRemovingASystemMembershipRevokesThePlatformDomainBindings(t *testing.T)
 	assertBindingCount(t, p, "acme", "acct-1", 1)
 	assertBindingCount(t, p, string(authz.PlatformDomain), "acct-2", 1)
 
-	// The second delivery of the same event is no work and no error.
 	bus.deliver(t, authn.EventMembershipChanged, removed)
 	assertBindingCount(t, p, string(authz.PlatformDomain), "acct-1", 0)
 }
 
-// Only a removal cascades, and only in the tenant the envelope names:
-// suspending the membership is a state change the account can be resumed from,
-// and a removal in a business tenant leaves every other tenant's bindings alone.
+// TestOnlyARemovalCascadesAndOnlyInItsOwnTenant checks that only a removal cascades and only in its own tenant.
 func TestOnlyARemovalCascadesAndOnlyInItsOwnTenant(t *testing.T) {
 	p := newFixture(t).product
 	bus := newRecordingBus()
@@ -66,8 +58,7 @@ func TestOnlyARemovalCascadesAndOnlyInItsOwnTenant(t *testing.T) {
 	}
 }
 
-// A payload a transport decoded arrives as a map rather than the publisher's
-// value, and the handler reads both shapes the same way.
+// TestTheCascadeReadsATransportShapedPayload checks that the cascade reads a transport shaped payload.
 func TestTheCascadeReadsATransportShapedPayload(t *testing.T) {
 	p := newFixture(t).product
 	bus := newRecordingBus()
@@ -82,8 +73,6 @@ func TestTheCascadeReadsATransportShapedPayload(t *testing.T) {
 	assertBindingCount(t, p, string(authz.PlatformDomain), "acct-1", 0)
 }
 
-// seedBinding writes one binding straight into the table, for an account whose
-// domain already holds the role the binding names.
 func seedBinding(t *testing.T, p *product, tenant, account, role string) {
 	t.Helper()
 	err := p.crossing(t.Context()).Exec(
@@ -94,7 +83,6 @@ func seedBinding(t *testing.T, p *product, tenant, account, role string) {
 	}
 }
 
-// assertBindingCount holds how many bindings one account holds in one domain.
 func assertBindingCount(t *testing.T, p *product, tenant, account string, want int64) {
 	t.Helper()
 	var got int64
@@ -109,8 +97,7 @@ func assertBindingCount(t *testing.T, p *product, tenant, account string, want i
 	}
 }
 
-// The subscription is registered when the module is wired, not when the first
-// event arrives: a bus freezes its subscription table at its start stage.
+// TestThePolicyModuleSubscribesToMembershipChanges checks that the policy module subscribes to membership changes.
 func TestThePolicyModuleSubscribesToMembershipChanges(t *testing.T) {
 	bus := newRecordingBus()
 	wireProduct(t, newFixture(t).product, bus)
@@ -119,10 +106,7 @@ func TestThePolicyModuleSubscribesToMembershipChanges(t *testing.T) {
 	}
 }
 
-// An explicit removal clears every binding the account holds in the tenant
-// it left, not only in the platform domain: a member who is removed from a
-// business tenant loses the roles that tenant gave them, while their roles
-// elsewhere stay.
+// TestRemovingAMembershipClearsEveryBindingInItsTenant checks that removing a membership clears every binding in its tenant.
 func TestRemovingAMembershipClearsEveryBindingInItsTenant(t *testing.T) {
 	p := newFixture(t).product
 	seedPolicy(t, p, "acme", "alpha", "acct-1", "account", "read")
@@ -136,17 +120,13 @@ func TestRemovingAMembershipClearsEveryBindingInItsTenant(t *testing.T) {
 	assertBindingCount(t, p, "globex", "acct-1", 1)
 	assertBindingCount(t, p, string(authz.PlatformDomain), "acct-1", 1)
 
-	// A retry, and the rejoin that follows it, start from no binding: the hook is
-	// idempotent and the membership store writes no binding back.
 	if err := p.MembershipRemoved(t.Context(), "acct-1", "acme"); err != nil {
 		t.Fatalf("the retried removal: %v", err)
 	}
 	assertBindingCount(t, p, "acme", "acct-1", 0)
 }
 
-// The membership.changed subscription is the compensation for a crash
-// between the removal's commit and the lifecycle hook, so it clears the
-// tenant the envelope names.
+// TestAMembershipRemovalEventClearsTheTenantsBindings checks that a membership removal event clears the tenants bindings.
 func TestAMembershipRemovalEventClearsTheTenantsBindings(t *testing.T) {
 	p := newFixture(t).product
 	bus := newRecordingBus()
@@ -170,7 +150,6 @@ func TestAMembershipRemovalEventClearsTheTenantsBindings(t *testing.T) {
 	assertBindingCount(t, p, "acme", "acct-1", 0)
 	assertBindingCount(t, p, "globex", "acct-1", 1)
 
-	// A second delivery of the same event is no work and no error.
 	bus.deliver(t, authn.EventMembershipChanged, removed)
 	assertBindingCount(t, p, "acme", "acct-1", 0)
 }

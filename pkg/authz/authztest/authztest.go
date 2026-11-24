@@ -1,9 +1,4 @@
-// Package authztest builds the fixtures a test of the authorization capability
-// drives: the configuration reader its modules read, a registry wired the way a
-// host wires one, and stand-ins for the capabilities a module requires.
-//
-// It imports the root package pkg/authz and never the policy or enforcement
-// subpackage; a dependency test holds it out of production code.
+// Package authztest builds the fixtures a test of the authorization capability drives.
 package authztest
 
 import (

@@ -8,9 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// TestReconcilingABuiltinTenantAdminConvergesOnlyTowardTheLists holds the
-// convergence: a missing target grant is added, a held grant the caller
-// lists as retired is removed, and a held grant in neither list stays.
+// TestReconcilingABuiltinTenantAdminConvergesOnlyTowardTheLists checks that reconciling a builtin tenant admin converges only toward the lists.
 func TestReconcilingABuiltinTenantAdminConvergesOnlyTowardTheLists(t *testing.T) {
 	p := newProductOver(t)
 	bus := newRecordingBus()
@@ -25,9 +23,9 @@ func TestReconcilingABuiltinTenantAdminConvergesOnlyTowardTheLists(t *testing.T)
 		t.Fatalf("PutRole: %v", err)
 	}
 	if _, err := p.SeedGrants(ctx, tenant, role, []authz.Grant{
-		{Resource: "account", Action: "read"},   // in the target, already held
-		{Resource: "audit", Action: "read"},     // retired, held
-		{Resource: "session", Action: "revoke"}, // in neither list
+		{Resource: "account", Action: "read"},
+		{Resource: "audit", Action: "read"},
+		{Resource: "session", Action: "revoke"},
 	}); err != nil {
 		t.Fatalf("SeedGrants: %v", err)
 	}
@@ -60,8 +58,6 @@ func TestReconcilingABuiltinTenantAdminConvergesOnlyTowardTheLists(t *testing.T)
 		t.Errorf("the role holds %+v, want %+v", got, want)
 	}
 
-	// The convergence reloaded the snapshot: the added permission decides and
-	// the retired one is gone from the subject's answers.
 	held, err := p.Held(ctx, authz.Domain(tenant), "alice")
 	if err != nil {
 		t.Fatalf("Held: %v", err)
@@ -81,8 +77,6 @@ func TestReconcilingABuiltinTenantAdminConvergesOnlyTowardTheLists(t *testing.T)
 			events[baseline:], policyChangedEventType)
 	}
 
-	// The same lists again, now that the role holds the target and not the
-	// retired grant: nothing to write and nothing to publish.
 	added, removed, err = p.ReconcileGrants(ctx, tenant, role, target, retired)
 	if err != nil {
 		t.Fatalf("the second ReconcileGrants: %v", err)
@@ -95,10 +89,7 @@ func TestReconcilingABuiltinTenantAdminConvergesOnlyTowardTheLists(t *testing.T)
 	}
 }
 
-// TestReconcilingRefusesAnythingButABuiltinTenantAdmin holds the target rules:
-// another role and a tenant-admin that is not builtin are ErrReservedRole, an
-// absent role is ErrUnknownRole and an empty tenant ErrTenantMismatch, each
-// before a row is written.
+// TestReconcilingRefusesAnythingButABuiltinTenantAdmin checks that reconciling refuses anything but a builtin tenant admin.
 func TestReconcilingRefusesAnythingButABuiltinTenantAdmin(t *testing.T) {
 	p := newProductOver(t)
 	wireProduct(t, p, nil)

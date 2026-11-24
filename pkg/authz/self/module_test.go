@@ -15,12 +15,9 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// seams satisfies the permission read without implementing it: Init resolves
-// it and stores it, and no method is called before a request arrives.
 type seams struct{ authz.SubjectPermissions }
 
-// TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters holds the fragment
-// to the route the module's own Init registers.
+// TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters checks that the declared operations are the routes the module registers.
 func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 	routecontract.Check(t, routecontract.Case{
 		Module:    Module(),
@@ -34,7 +31,6 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 	})
 }
 
-// recordingGate records every open declaration.
 type recordingGate struct {
 	opened [][2]string
 }
@@ -45,10 +41,7 @@ func (g *recordingGate) Open(method, path string) {
 }
 func (*recordingGate) Covered(string, string) bool { return false }
 
-// TestWireDeclaresTheRouteOpen holds the wiring: the module takes the
-// route-declaration surface up in Init and records the route as needing no
-// permission, so the enforcement middleware lets an authenticated request
-// through to the handler.
+// TestWireDeclaresTheRouteOpen checks that wire declares the route open.
 func TestWireDeclaresTheRouteOpen(t *testing.T) {
 	gate := &recordingGate{}
 	router := routecontract.NewRouter("api")
@@ -80,9 +73,6 @@ func TestWireDeclaresTheRouteOpen(t *testing.T) {
 	}
 }
 
-// driveInit brings the module to Init with the given stand-in modules and
-// configuration body, and returns the drive's error. The configuration module
-// and the reader are added here, so each case names only what it varies.
 func driveInit(t *testing.T, body string, modules ...core.Module) error {
 	t.Helper()
 	reader := configtest.Reader(t, body, modules...)
@@ -98,10 +88,7 @@ func driveInit(t *testing.T, body string, modules ...core.Module) error {
 	return reg.Drive(t.Context(), core.Drive{Depth: core.StageInit, Participants: names})
 }
 
-// TestNoEntryPointIsErrNoRouter holds the first start failure: a command that
-// mounts the permission read and names no entry point has nothing to mount it
-// on, and the failure names this module so the fix -- writing the entry point
-// module's name into the command -- is visible.
+// TestNoEntryPointIsErrNoRouter checks that no entry point fails with ErrNoRouter.
 func TestNoEntryPointIsErrNoRouter(t *testing.T) {
 	modules := []core.Module{
 		Module(),
@@ -119,9 +106,7 @@ func TestNoEntryPointIsErrNoRouter(t *testing.T) {
 	}
 }
 
-// TestAnUnknownEndpointIsErrUnknownEndpoint holds the second start failure: a
-// name the entry point does not declare stops the startup naming that
-// endpoint, before any route is registered.
+// TestAnUnknownEndpointIsErrUnknownEndpoint checks that an unknown endpoint fails with ErrUnknownEndpoint.
 func TestAnUnknownEndpointIsErrUnknownEndpoint(t *testing.T) {
 	router := routecontract.NewRouter("api")
 	modules := []core.Module{

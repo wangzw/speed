@@ -23,21 +23,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// The guard holds the two vocabularies together: authn.Action, the actions the
-// authentication side asks a Decider about, and authz.Permission, the
-// permission constants this capability stores. The action's string is the
-// permission's string, the one translation maps each permission to the engine's
-// (object, action) pair, and the catalog declares every permission. Both lists
-// are read from the packages' own sources, so a constant of either type added on
-// either side is seen here without a second list to keep in step.
-//
-// The guard runs from package authz_test because it imports subpackages of this
-// directory, which import the root package: an internal test of the root could
-// not import them without a cycle.
-
-// thisDir is this test file's directory, the root package pkg/authz. It is read
-// from the file's own location so that the guard reads the sources wherever go
-// test is run from.
 func thisDir(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
@@ -47,15 +32,6 @@ func thisDir(t *testing.T) string {
 	return filepath.Dir(file)
 }
 
-// declaredConsts reads the non-test Go files of dir, type-checks the package,
-// and returns every string constant whose type is the named type, keyed by the
-// constant's name. The type is read from the type checker rather than from the
-// declaration's syntax, so a constant of the type is seen whatever shape its
-// declaration takes — an explicit type, a conversion, or a value the compiler
-// folds from a longer expression. The type's own name is the filter, so a
-// constant of another type — an untagged string, a Domain — is not part of the
-// vocabulary: an untyped constant carries an untyped type and a plain string
-// carries string, and neither is the named type.
 func declaredConsts(t *testing.T, dir, typeName string) map[string]string {
 	t.Helper()
 	pkg, err := build.Default.ImportDir(dir, 0)
@@ -88,16 +64,11 @@ func declaredConsts(t *testing.T, dir, typeName string) map[string]string {
 	return found
 }
 
-// isNamedType reports whether typ is the named type typeName. An untyped
-// constant carries an untyped type and a constant of a plain string carries
-// string, so neither matches.
 func isNamedType(typ types.Type, typeName string) bool {
 	named, ok := types.Unalias(typ).(*types.Named)
 	return ok && named.Obj() != nil && named.Obj().Name() == typeName
 }
 
-// actionVocabulary reads the authn package's Action constants, and
-// permissionVocabulary the root package's Permission constants.
 func actionVocabulary(t *testing.T) map[string]string {
 	t.Helper()
 	return declaredConsts(t, filepath.Join(thisDir(t), "..", "authn"), "Action")
@@ -108,8 +79,6 @@ func permissionVocabulary(t *testing.T) map[string]string {
 	return declaredConsts(t, thisDir(t), "Permission")
 }
 
-// sortedNames gives a map's keys in order, so a failure message and a counted
-// comparison do not depend on map iteration order.
 func sortedNames(m map[string]string) []string {
 	names := make([]string, 0, len(m))
 	for name := range m {
@@ -119,14 +88,11 @@ func sortedNames(m map[string]string) []string {
 	return names
 }
 
-// TestEveryActionHasAMatchingPermission checks that authn.Action and Permission
-// are one vocabulary in both directions.
+// TestEveryActionHasAMatchingPermission checks that every action has a matching permission.
 func TestEveryActionHasAMatchingPermission(t *testing.T) {
 	actions := actionVocabulary(t)
 	permissions := permissionVocabulary(t)
 
-	// Positive controls: the reading found the packages and their constants, so
-	// the comparisons below judge something.
 	if got := actions["ActionTenantAccess"]; got != string(authn.ActionTenantAccess) {
 		t.Fatalf("the authn source declares ActionTenantAccess as %q, want %q", got, authn.ActionTenantAccess)
 	}
@@ -167,8 +133,7 @@ func TestEveryActionHasAMatchingPermission(t *testing.T) {
 	}
 }
 
-// TestTheTranslationCoversEveryPermission checks that every permission constant
-// has exactly one translation row with a non-empty object and action.
+// TestTheTranslationCoversEveryPermission checks that the translation covers every permission.
 func TestTheTranslationCoversEveryPermission(t *testing.T) {
 	permissions := permissionVocabulary(t)
 	if len(permissions) == 0 {
@@ -188,8 +153,7 @@ func TestTheTranslationCoversEveryPermission(t *testing.T) {
 	}
 }
 
-// TestTheCatalogDeclaresEveryPermission checks that the catalog declares every
-// permission constant and every module-declared permission.
+// TestTheCatalogDeclaresEveryPermission checks that the catalog declares every permission.
 func TestTheCatalogDeclaresEveryPermission(t *testing.T) {
 	permissions := permissionVocabulary(t)
 
@@ -215,7 +179,6 @@ func TestTheCatalogDeclaresEveryPermission(t *testing.T) {
 		}
 	}
 
-	// A module may declare a permission of its own beside them, and its row.
 	reg.Register(businessModule())
 	union := catalogOf(t, reg)
 	if !union[string(businessPermission)] {
@@ -228,12 +191,8 @@ func TestTheCatalogDeclaresEveryPermission(t *testing.T) {
 	}
 }
 
-// businessPermission is a permission a module declares of its own, beside the
-// ones this capability carries, and one no permission constant names.
 const businessPermission = authz.Permission("crm.deal.read")
 
-// businessModule declares businessPermission: the permission spec and the
-// translation row beside it, the way a business module carries both.
 func businessModule() core.Module {
 	return core.Module{
 		Name: "stand-in.business",
@@ -246,7 +205,6 @@ func businessModule() core.Module {
 	}
 }
 
-// catalogOf collects every permission the registry's specs declare.
 func catalogOf(_ *testing.T, reg *core.Registry) map[string]bool {
 	declared := map[string]bool{}
 	for _, resource := range core.Resources[authz.PermissionSpec](reg) {
@@ -257,16 +215,6 @@ func catalogOf(_ *testing.T, reg *core.Registry) map[string]bool {
 	return declared
 }
 
-// translated reports whether a declared permission has a translation row: a
-// built-in row for a permission constant, or a registered module's
-// TranslationSpec row for a permission of its own. It is the two sources the
-// leaves union into the process's translation.
-//
-// The built-in half is read through Builtin and never through Lookup, which
-// answers from whatever set the process last resolved: a case in this binary
-// that drove an assembly would otherwise make a permission nothing declares a
-// row for look translated, and this guard would pass over the gap it exists to
-// find.
 func translated(reg *core.Registry, permission authz.Permission) bool {
 	if slices.Contains(translation.Builtin(), permission) {
 		return true
@@ -279,8 +227,6 @@ func translated(reg *core.Registry, permission authz.Permission) bool {
 	return false
 }
 
-// sortedValues gives a set's members in order, so a failure message and a
-// counted comparison do not depend on map iteration order.
 func sortedValues(set map[string]bool) []string {
 	values := make([]string, 0, len(set))
 	for value := range set {
@@ -290,9 +236,7 @@ func sortedValues(set map[string]bool) []string {
 	return values
 }
 
-// TestTheVocabularyReadSeesWhatItIsMeantToSee checks that the vocabulary guard
-// finds every constant of the named type whatever its declaration shape and
-// ignores constants of another or no type.
+// TestTheVocabularyReadSeesWhatItIsMeantToSee checks that the vocabulary read sees what it is meant to see.
 func TestTheVocabularyReadSeesWhatItIsMeantToSee(t *testing.T) {
 	dir := t.TempDir()
 	body := `package sample

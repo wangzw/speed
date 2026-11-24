@@ -8,9 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// The endpoint list is required and takes concrete names only: a list that
-// mounted the read nowhere, an empty name, the every-endpoint name and a
-// repeated name are each refused.
+// TestTheEndpointListRefusesEveryShapeItCannotRunOn checks that the endpoint list refuses every shape it cannot run on.
 func TestTheEndpointListRefusesEveryShapeItCannotRunOn(t *testing.T) {
 	cases := map[string][]string{
 		"empty":            nil,
@@ -28,7 +26,7 @@ func TestTheEndpointListRefusesEveryShapeItCannotRunOn(t *testing.T) {
 	}
 }
 
-// A list of concrete names is what the module runs on, in the order given.
+// TestTheEndpointListKeepsConcreteNames checks that the endpoint list keeps concrete names.
 func TestTheEndpointListKeepsConcreteNames(t *testing.T) {
 	endpoints := []string{"admin", "api"}
 	got, err := (moduleConfig{Endpoints: endpoints}).resolve()

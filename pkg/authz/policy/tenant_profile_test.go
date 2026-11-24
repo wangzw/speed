@@ -9,11 +9,7 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// TestTheTenantProfilePermissionsAreDeclaredAndGoverned holds the two
-// permissions the tenant profile surface asks for to the central catalog: both
-// are declared, both are in the governed set a tenant administrator holds by
-// default, and both carry the description key an operator reads in the
-// permission picker.
+// TestTheTenantProfilePermissionsAreDeclaredAndGoverned checks that the tenant profile permissions are declared and governed.
 func TestTheTenantProfilePermissionsAreDeclaredAndGoverned(t *testing.T) {
 	spec := declaredPermissions()
 
@@ -40,8 +36,7 @@ func TestTheTenantProfilePermissionsAreDeclaredAndGoverned(t *testing.T) {
 	}
 }
 
-// TestTheTenantProfileDescriptionsExistInEveryLocale holds each description
-// key the catalog hands out to a row in each locale file.
+// TestTheTenantProfileDescriptionsExistInEveryLocale checks that the tenant profile descriptions exist in every locale.
 func TestTheTenantProfileDescriptionsExistInEveryLocale(t *testing.T) {
 	keys := []string{
 		"authz.permission.tenant-profile-read",

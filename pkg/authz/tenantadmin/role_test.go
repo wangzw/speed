@@ -13,10 +13,7 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// TestAnUnauthorisedRoleDeleteReachesNoManagerAndWritesNoAudit holds the delete
-// route's decision: the guard is asked for the write's permission, and a
-// shortfall ends the handler before the manager is called and before any audit
-// row is written.
+// TestAnUnauthorisedRoleDeleteReachesNoManagerAndWritesNoAudit checks that an unauthorised role delete reaches no manager and writes no audit.
 func TestAnUnauthorisedRoleDeleteReachesNoManagerAndWritesNoAudit(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
@@ -36,10 +33,7 @@ func TestAnUnauthorisedRoleDeleteReachesNoManagerAndWritesNoAudit(t *testing.T) 
 	}
 }
 
-// TestDeletingARoleAsksForTenantRoleManageAndLandsOneSuccessRow holds the
-// delete route's permission and its audit: it asks for
-// authz.tenant.role.manage and writes exactly one success row whose object is
-// the role, before any other answer.
+// TestDeletingARoleAsksForTenantRoleManageAndLandsOneSuccessRow checks that deleting a role asks for tenant role manage and lands one success row.
 func TestDeletingARoleAsksForTenantRoleManageAndLandsOneSuccessRow(t *testing.T) {
 	r := newRig(t)
 	w := r.serve(writeRoute(r.p, roleDeleteOperation.Handle(r.p.handleRoleDelete)), http.MethodDelete,
@@ -63,9 +57,7 @@ func TestDeletingARoleAsksForTenantRoleManageAndLandsOneSuccessRow(t *testing.T)
 	}
 }
 
-// TestARoleListWhoseManagerFailsIsMapped holds the read's failure path: a
-// manager failure is mapped by the closed answer the writes use and the answer
-// carries no list.
+// TestARoleListWhoseManagerFailsIsMapped checks that a role list whose manager fails is mapped.
 func TestARoleListWhoseManagerFailsIsMapped(t *testing.T) {
 	t.Run("a tenant mismatch is a 400", func(t *testing.T) {
 		r := newRig(t)
@@ -90,8 +82,6 @@ func TestARoleListWhoseManagerFailsIsMapped(t *testing.T) {
 	})
 }
 
-// grantCountsFailingManager fails the grouped grant read the role list makes,
-// so a case holds that a failure there is mapped like any other manager failure.
 type grantCountsFailingManager struct {
 	*stubManager
 }
@@ -100,9 +90,7 @@ func (grantCountsFailingManager) GrantCounts(context.Context, string) (map[authz
 	return nil, errors.New("the grant table is down")
 }
 
-// TestAFailedGrantCountIsA503 holds the permission count's failure rule: the
-// grouped read that fills permission_count cannot answer, so the whole list is
-// a 503 with no roles body, symmetrical with the platform surface.
+// TestAFailedGrantCountIsA503 checks that a failed grant count is a 503.
 func TestAFailedGrantCountIsA503(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleRead)
 	r.p.manager = grantCountsFailingManager{stubManager: r.manager}
@@ -117,9 +105,7 @@ func TestAFailedGrantCountIsA503(t *testing.T) {
 	}
 }
 
-// TestAnonymousRequestsAreRefusedOnEveryRoleRoute holds the caller check on the
-// role routes: each answers 401 before the guard is asked and before the manager
-// is called.
+// TestAnonymousRequestsAreRefusedOnEveryRoleRoute checks that anonymous requests are refused on every role route.
 func TestAnonymousRequestsAreRefusedOnEveryRoleRoute(t *testing.T) {
 	cases := map[string]struct {
 		handler func(*product) gin.HandlerFunc
@@ -151,9 +137,7 @@ func TestAnonymousRequestsAreRefusedOnEveryRoleRoute(t *testing.T) {
 	}
 }
 
-// TestARolePutFailureLeavesAFailedRow holds the write's failure path on the put
-// verb: a put the manager refuses leaves the mandatory success row and a failed
-// row linked to it by the action id.
+// TestARolePutFailureLeavesAFailedRow checks that a role put failure leaves a failed row.
 func TestARolePutFailureLeavesAFailedRow(t *testing.T) {
 	r := newRig(t)
 	r.manager.fail(errors.New("the store is down"))
@@ -178,8 +162,7 @@ func TestARolePutFailureLeavesAFailedRow(t *testing.T) {
 	}
 }
 
-// TestTheRoleListViewCarriesEveryField holds the role view's field mapping and
-// the UTC normalization.
+// TestTheRoleListViewCarriesEveryField checks that the role list view carries every field.
 func TestTheRoleListViewCarriesEveryField(t *testing.T) {
 	created := time.Date(2021, 6, 7, 8, 9, 10, 0, time.FixedZone("plus-one", 3600))
 	r := newRig(t)
@@ -210,8 +193,7 @@ func TestTheRoleListViewCarriesEveryField(t *testing.T) {
 	}
 }
 
-// TestARoleWriteAuditCarriesTheObjectAndDetail holds the audit row's object and
-// detail.
+// TestARoleWriteAuditCarriesTheObjectAndDetail checks that a role write audit carries the object and detail.
 func TestARoleWriteAuditCarriesTheObjectAndDetail(t *testing.T) {
 	r := newRig(t)
 	w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/tenants/t1/roles/editor",
@@ -232,8 +214,7 @@ func TestARoleWriteAuditCarriesTheObjectAndDetail(t *testing.T) {
 	}
 }
 
-// TestAMalformedRoleBodyIsRefused holds the body check: a body the handler
-// cannot read is a 400 answered before the audit row and before the manager.
+// TestAMalformedRoleBodyIsRefused checks that a malformed role body is refused.
 func TestAMalformedRoleBodyIsRefused(t *testing.T) {
 	for _, raw := range []string{`{"builtin":`, `[1, 2, 3]`, `not json at all`} {
 		t.Run(raw, func(t *testing.T) {
@@ -253,8 +234,7 @@ func TestAMalformedRoleBodyIsRefused(t *testing.T) {
 	}
 }
 
-// TestTheRoleRefusalProblemTypes holds the problem-type codes this module writes
-// for a refusal it judges.
+// TestTheRoleRefusalProblemTypes checks that the role refusal problem types.
 func TestTheRoleRefusalProblemTypes(t *testing.T) {
 	t.Run("a 400 is the bad-request code", func(t *testing.T) {
 		r := newRig(t)
@@ -282,8 +262,7 @@ func TestTheRoleRefusalProblemTypes(t *testing.T) {
 	})
 }
 
-// TestAnAnonymousRoleRequestWritesA401WithoutAType holds the shape of the
-// module's own 401.
+// TestAnAnonymousRoleRequestWritesA401WithoutAType checks that an anonymous role request writes a 401 without a type.
 func TestAnAnonymousRoleRequestWritesA401WithoutAType(t *testing.T) {
 	r := newRig(t)
 	w := r.serveAnonymous(rolePutRoute(r.p), http.MethodPut, "/api/v1/tenants/t1/roles/editor",

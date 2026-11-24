@@ -9,7 +9,6 @@ import (
 	"testing"
 )
 
-// The import paths the rules below are about.
 const (
 	moduleImportPath = "github.com/vislake/speed/pkg"
 	tenantAdminPath  = moduleImportPath + "/authz/tenantadmin"
@@ -22,14 +21,11 @@ const (
 	ginPath          = "github.com/gin-gonic/gin"
 )
 
-// listed is what these checks read about the tenantadmin package.
 type listed struct {
 	ImportPath string
 	Imports    []string
 }
 
-// tenantAdminImports lists the package with go list and returns the imports of
-// its non-test files.
 func tenantAdminImports(t *testing.T) []string {
 	t.Helper()
 	cmd := exec.Command("go", "list", "-e", "-json=ImportPath,Imports", tenantAdminPath)
@@ -49,11 +45,6 @@ func tenantAdminImports(t *testing.T) []string {
 	return p.Imports
 }
 
-// requiredImports are the packages the tenant management module takes. The
-// Manager, Catalog, SubjectPermissions, MembershipChecker, WriteGuard and the
-// record types live in the root package; the handler-internal decision API,
-// Guard, lives in the guard subpackage. The rest are the modules it consumes:
-// gin for the handlers, and the authn, http, audit, core, i18n and log modules.
 var requiredImports = []string{
 	rootPath,
 	guardPath,
@@ -66,7 +57,6 @@ var requiredImports = []string{
 	ginPath,
 }
 
-// missingImports is the presence rule.
 func missingImports(imports []string) []string {
 	var out []string
 	for _, want := range requiredImports {
@@ -80,11 +70,6 @@ func missingImports(imports []string) []string {
 	return out
 }
 
-// forbiddenImports is the exclusion rule: the package imports neither the
-// policy subpackage (nor, through it, Casbin or gorm), nor the internal library
-// packages that hold the engine and its store, nor the db module. Reaching the
-// implementation would put the engine and its store into a command that only
-// mounts the tenant management routes.
 func forbiddenImports(imports []string) []string {
 	var out []string
 	for _, imp := range imports {
@@ -103,8 +88,7 @@ func forbiddenImports(imports []string) []string {
 	return out
 }
 
-// TestTheTenantAdminImportsTheInterfaceNotTheImplementation is the executable
-// form of the packaging decision's dependency statement for this module.
+// TestTheTenantAdminImportsTheInterfaceNotTheImplementation checks that the tenant admin imports the interface not the implementation.
 func TestTheTenantAdminImportsTheInterfaceNotTheImplementation(t *testing.T) {
 	imports := tenantAdminImports(t)
 	for _, v := range missingImports(imports) {
@@ -115,7 +99,7 @@ func TestTheTenantAdminImportsTheInterfaceNotTheImplementation(t *testing.T) {
 	}
 }
 
-// TestTheListingReadsTheModule is the positive control.
+// TestTheListingReadsTheModule checks that the listing reads the module.
 func TestTheListingReadsTheModule(t *testing.T) {
 	imports := tenantAdminImports(t)
 	if len(imports) == 0 {
@@ -129,7 +113,7 @@ func TestTheListingReadsTheModule(t *testing.T) {
 	}
 }
 
-// TestTheBoundaryRulesFailOnAViolation holds each rule to be a rule.
+// TestTheBoundaryRulesFailOnAViolation checks that the boundary rules fail on a violation.
 func TestTheBoundaryRulesFailOnAViolation(t *testing.T) {
 	if got := missingImports(slices.Clone(requiredImports)); len(got) != 0 {
 		t.Errorf("the presence rule reports %q on the full set, want none", got)

@@ -1,16 +1,3 @@
-// This file drives the authorization management module through the whole chain
-// on a loopback port the operating system picks: the real entry point, the real
-// authentication gateway, the real authorization middleware and this module,
-// assembled by the real registry. The policy manager, the permission catalog,
-// the audit capability, the enforcement engine and the credential backend are
-// stand-ins.
-//
-// What only the assembled chain decides is here: the shape a refused management
-// request gets on the socket, that an allowed write reaches the manager end to
-// end, that a manager outage is a 503 and never a denial, and that an endpoint
-// the module's configuration does not name carries none of its routes. The
-// cases read the bound address off the entry point's own listening record and
-// send real requests, so nothing stands in for the router.
 package admin_test
 
 import (
@@ -45,45 +32,30 @@ import (
 	"github.com/vislake/speed/pkg/tenant/resolve"
 )
 
-// The endpoints the assembly declares. "public" carries the whole chain and the
-// management routes; "plain" is served by the entry point and named by no
-// module, which is the endpoint this module's own list leaves out.
 const (
 	publicEndpoint = "public"
 	plainEndpoint  = "plain"
 )
 
-// tenantName is the policy domain the management paths address. The module reads
-// it from the path as the domain identifier and holds no roster to look it up.
 const tenantName = "acme"
 
-// The management paths a case sends. The write path carries a natural key — the
-// role — and never an opaque row identifier.
 const (
 	permissionsPath = "/api/v1/system/permissions"
 	rolesPath       = "/api/v1/system/tenants/" + tenantName + "/roles"
 	rolePath        = rolesPath + "/editor"
 )
 
-// listeningMsg is the record the entry point writes once an endpoint's address
-// is bound. It is the only place outside the process that says which port the
-// system picked for an endpoint configured on port zero.
 const listeningMsg = "an HTTP listener is listening"
 
-// waitLimit bounds every request and every wait, so that a request or a startup
-// that never answers fails the case with a message and not the binary at the
-// global timeout.
 func waitLimit() time.Duration {
 	return coretest.Scale(60 * time.Second)
 }
 
-// reply is what a client got back.
 type reply struct {
 	status int
 	body   string
 }
 
-// problemDoc is the default response body a case reads back.
 type problemDoc struct {
 	Type   string `json:"type"`
 	Status int    `json:"status"`
@@ -99,14 +71,11 @@ func decodeProblem(t *testing.T, body string) problemDoc {
 	return p
 }
 
-// record is one log record a case reads back, with the attributes it carried.
 type record struct {
 	msg   string
 	attrs map[string]string
 }
 
-// recorder collects every record, so that the entry point's own listening record
-// — which carries the bound address — reaches the case.
 type recorder struct {
 	mu      *sync.Mutex
 	records *[]record
@@ -138,8 +107,6 @@ func (r *recorder) WithAttrs(attrs []slog.Attr) slog.Handler {
 
 func (r *recorder) WithGroup(string) slog.Handler { return r }
 
-// address returns the bound address of an endpoint, read off the entry point's
-// own listening record, or the empty string when none was written.
 func (r *recorder) address(endpoint string) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -151,22 +118,16 @@ func (r *recorder) address(endpoint string) string {
 	return ""
 }
 
-// namedLogger delivers the logging capability over one logger, so that what the
-// entry point writes reaches the case.
 type namedLogger struct{ logger *slog.Logger }
 
 func (l namedLogger) Named(string) *slog.Logger { return l.logger }
 func (namedLogger) Redaction() log.Redaction    { return noRules{} }
 
-// noRules takes the redaction registrations and masks nothing: what these cases
-// read is the records, not their masking.
 type noRules struct{}
 
 func (noRules) AddKeys(...string)              {}
 func (noRules) AddPattern(string, log.Matcher) {}
 
-// credentials is the credential backend the gateway verifies through: the bearer
-// token names the caller, and the account is the token unchanged.
 type credentials struct{}
 
 func (credentials) Name() string { return "stub" }
@@ -187,8 +148,6 @@ func (credentials) Verify(_ context.Context, c authn.Credential) authn.Verdict {
 	})
 }
 
-// managerCall is one call the stub manager recorded: the method's name and the
-// arguments that name a row, so a case can hold what the handler passed on.
 type managerCall struct {
 	op      string
 	tenant  string
@@ -196,9 +155,6 @@ type managerCall struct {
 	account string
 }
 
-// managerStub is a stand-in authz.Manager. It records every call and fails every
-// method with the same error when one is set, which is how a case drives a
-// manager outage up the handler's mapping.
 type managerStub struct {
 	mu    sync.Mutex
 	calls []managerCall
@@ -247,8 +203,6 @@ func (m *managerStub) BindingsOf(_ context.Context, tenant, account string) ([]a
 	return nil, m.errNow()
 }
 
-// RoleSubsetHeld records the judgement. This surface never asks it: the tenant
-// management surface and the invitation role judgement are its callers.
 func (m *managerStub) RoleSubsetHeld(_ context.Context, tenant string, role authz.Role,
 	_ map[authz.Permission]bool,
 ) (bool, error) {
@@ -309,7 +263,6 @@ func (m *managerStub) BindingsOfRole(_ context.Context, tenant string, role auth
 	return nil, m.errNow()
 }
 
-// auditStub keeps the rows it was asked to write and can be told to fail.
 type auditStub struct {
 	mu   sync.Mutex
 	rows []audit.Entry
@@ -331,7 +284,6 @@ func (a *auditStub) entries() []audit.Entry {
 	return append([]audit.Entry(nil), a.rows...)
 }
 
-// provide is a stand-in module delivering one capability over one instance.
 func provide(name string, token core.Token, instance any) core.Module {
 	return core.Module{
 		Name:     name,
@@ -340,9 +292,6 @@ func provide(name string, token core.Token, instance any) core.Module {
 	}
 }
 
-// subjectStub answers the caller's held permissions with the platform
-// administrator's set, so the role list on the assembled chain is read as one a
-// caller may manage. The zero value holds nothing.
 type subjectStub struct {
 	held []authz.Permission
 }
@@ -351,10 +300,6 @@ func (s subjectStub) Held(context.Context, authz.Domain, string) ([]authz.Permis
 	return append([]authz.Permission(nil), s.held...), nil
 }
 
-// signupStub answers every account's self-registration state with the state a
-// case scripts. The zero value reports SignupNone, which is what an account
-// created outside self-registration reads as, so the end-to-end cases write with
-// every account given.
 type signupStub struct {
 	authn.SignupVerification
 	state authn.SignupState
@@ -364,24 +309,14 @@ func (s signupStub) SignupStateOf(context.Context, authn.AccountID) (authn.Signu
 	return authn.SignupStatus{State: s.state}, nil
 }
 
-// assembly is one drive of the real registry to Serve, with the stand-ins a case
-// drives. A nil stand-in is replaced with a fresh one.
 type assembly struct {
 	enforcer *authztest.Enforcer
 	catalog  *authztest.Catalog
 	manager  *managerStub
 	audit    *auditStub
-	// resolve, when set, puts the real tenant resolution layer on the chain, so
-	// the request's context carries the tenant its name resolves to. It is how
-	// a case holds that a management decision is made in the platform domain and
-	// not in whatever tenant the request resolved to.
-	resolve bool
+	resolve  bool
 }
 
-// rosterStub is the tenant roster the resolution layer reads: one name maps to
-// an identifier distinct from the name, so a query built from the name and one
-// built from the identifier cannot be confused, and neither can be confused with
-// the platform domain.
 type rosterStub struct{ tenant.Catalog }
 
 func (rosterStub) ByName(_ context.Context, name string) (tenant.Tenant, bool, error) {
@@ -391,7 +326,6 @@ func (rosterStub) ByName(_ context.Context, name string) (tenant.Tenant, bool, e
 	return tenant.Tenant{}, false, nil
 }
 
-// live is what a case holds while the assembly serves.
 type live struct {
 	t         *testing.T
 	ctx       context.Context
@@ -399,8 +333,6 @@ type live struct {
 	client    *nethttp.Client
 }
 
-// send issues one request against a bound endpoint and reads the answer off the
-// socket. A non-empty body is sent as JSON.
 func (l *live) send(endpoint, method, path, body string, edits ...func(*nethttp.Request)) reply {
 	l.t.Helper()
 	address, ok := l.addresses[endpoint]
@@ -433,13 +365,8 @@ func (l *live) send(endpoint, method, path, body string, edits ...func(*nethttp.
 	return reply{status: resp.StatusCode, body: string(payload)}
 }
 
-// asAlice puts alice's bearer credential on a request, so the gateway stamps an
-// identity the management handler reads.
 func asAlice(r *nethttp.Request) { r.Header.Set("Authorization", "Bearer alice") }
 
-// serve builds the assembly with the stand-ins, drives it to Serve on loopback
-// ports the system picks, and hands the case the running endpoints. The run is
-// stopped and closed when the case returns, and it has to come back clean.
 func (a assembly) serve(t *testing.T, use func(l *live)) {
 	t.Helper()
 	gin.SetMode(gin.ReleaseMode)
@@ -523,9 +450,7 @@ func (a assembly) serve(t *testing.T, use func(l *live)) {
 				ctx:       ctx,
 				addresses: addresses,
 				client: &nethttp.Client{
-					Timeout: waitLimit(),
-					// A connection of its own per request, so no idle
-					// connection holds the drain when the assembly stops.
+					Timeout:   waitLimit(),
 					Transport: &nethttp.Transport{DisableKeepAlives: true},
 				},
 			})
@@ -537,10 +462,7 @@ func (a assembly) serve(t *testing.T, use func(l *live)) {
 	}
 }
 
-// TestADeniedManagementRequestIsTheGuards403ShapeWithoutThePermission holds
-// the refusal of a management decision on the wire: the guard's own 403 —
-// its problem type, and a detail that never names the permission the route
-// asked for.
+// TestADeniedManagementRequestIsTheGuards403ShapeWithoutThePermission checks that a denied management request is the guards 403 shape without the permission.
 func TestADeniedManagementRequestIsTheGuards403ShapeWithoutThePermission(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	assembly{enforcer: enforcer}.serve(t, func(l *live) {
@@ -565,10 +487,7 @@ func TestADeniedManagementRequestIsTheGuards403ShapeWithoutThePermission(t *test
 	})
 }
 
-// TestAnAllowedWriteReachesTheManagerEndToEnd holds the pass through the
-// whole chain: a caller the engine allows reaches the write handler, the
-// mandatory audit row lands, and the manager is called with the natural keys
-// from the path.
+// TestAnAllowedWriteReachesTheManagerEndToEnd checks that an allowed write reaches the manager end to end.
 func TestAnAllowedWriteReachesTheManagerEndToEnd(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	enforcer.Answer(func(authz.Query) bool { return true })
@@ -590,8 +509,7 @@ func TestAnAllowedWriteReachesTheManagerEndToEnd(t *testing.T) {
 	})
 }
 
-// TestAManagerOutageIsA503NotADenial holds the closed mapping on the wire: a
-// manager whose store is down is a 503 and never a 403.
+// TestAManagerOutageIsA503NotADenial checks that a manager outage is a 503 not a denial.
 func TestAManagerOutageIsA503NotADenial(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	enforcer.Answer(func(authz.Query) bool { return true })
@@ -614,9 +532,7 @@ func TestAManagerOutageIsA503NotADenial(t *testing.T) {
 	})
 }
 
-// TestAReferenceToAnEndpointOutsideTheAdminListCarriesNoRoute holds the
-// endpoint list: the management routes exist on the endpoint the module
-// names and nowhere else.
+// TestAReferenceToAnEndpointOutsideTheAdminListCarriesNoRoute checks that a reference to an endpoint outside the admin list carries no route.
 func TestAReferenceToAnEndpointOutsideTheAdminListCarriesNoRoute(t *testing.T) {
 	assembly{}.serve(t, func(l *live) {
 		configured := l.send(publicEndpoint, nethttp.MethodGet, permissionsPath, "", asAlice)
@@ -630,15 +546,11 @@ func TestAReferenceToAnEndpointOutsideTheAdminListCarriesNoRoute(t *testing.T) {
 	})
 }
 
-// withTenant puts the tenant name on the request, so the resolution layer
-// resolves it and the request's context carries the identifier it maps to.
 func withTenant(name string) func(*nethttp.Request) {
 	return func(r *nethttp.Request) { r.Header.Set("X-Tenant", name) }
 }
 
-// TestTheManagementDecisionIsMadeInThePlatformDomainNotTheResolvedTenant
-// holds the domain a management decision is made in on a chain that resolves
-// a tenant.
+// TestTheManagementDecisionIsMadeInThePlatformDomainNotTheResolvedTenant checks that the management decision is made in the platform domain not the resolved tenant.
 func TestTheManagementDecisionIsMadeInThePlatformDomainNotTheResolvedTenant(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	enforcer.Answer(func(authz.Query) bool { return true })

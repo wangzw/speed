@@ -11,11 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// TestTheCatalogRouteListsDeclaredPermissions drives GET
-// /api/v1/system/permissions over the shared rig: the set the catalog
-// declares appears in the answer verbatim, one view per permission and in
-// the order the catalog gave them, and each view carries the one field the
-// route declares and nothing else.
+// TestTheCatalogRouteListsDeclaredPermissions checks that the catalog route lists declared permissions.
 func TestTheCatalogRouteListsDeclaredPermissions(t *testing.T) {
 	declared := []authz.Permission{
 		authz.PermissionRoleRead,
@@ -49,9 +45,6 @@ func TestTheCatalogRouteListsDeclaredPermissions(t *testing.T) {
 		if named != string(want) {
 			t.Errorf("view %d names %q, want the declared permission %q in order", i, named, want)
 		}
-		// The rig assembles no message localizer, so the description is the
-		// empty string rather than the key: with nothing to render through the
-		// route makes no claim about text it does not have.
 		if raw, ok := view["description"]; !ok {
 			t.Errorf("view %d carries no description field: %+v", i, view)
 		} else {
@@ -68,8 +61,6 @@ func TestTheCatalogRouteListsDeclaredPermissions(t *testing.T) {
 	}
 }
 
-// permissionViews decodes the catalog route's answer into one map per view. The
-// members are kept raw because the view mixes text and booleans.
 func permissionViews(t *testing.T, body string) []map[string]json.RawMessage {
 	t.Helper()
 	var got struct {
@@ -81,7 +72,6 @@ func permissionViews(t *testing.T, body string) []map[string]json.RawMessage {
 	return got.Permissions
 }
 
-// viewString decodes one string member of a raw view.
 func viewString(t *testing.T, view map[string]json.RawMessage, key string) string {
 	t.Helper()
 	raw, ok := view[key]
@@ -95,7 +85,6 @@ func viewString(t *testing.T, view map[string]json.RawMessage, key string) strin
 	return value
 }
 
-// viewBool decodes one boolean member of a raw view.
 func viewBool(t *testing.T, view map[string]json.RawMessage, key string) bool {
 	t.Helper()
 	raw, ok := view[key]
@@ -109,10 +98,7 @@ func viewBool(t *testing.T, view map[string]json.RawMessage, key string) bool {
 	return value
 }
 
-// TestTheCatalogRouteRendersTheDescriptionInTheRequestLocale drives the
-// catalog route with a localizer assembled and the same request in two
-// languages: the description is the text the declaring module gave the
-// permission's key, rendered in the locale the request carries.
+// TestTheCatalogRouteRendersTheDescriptionInTheRequestLocale checks that the catalog route renders the description in the request locale.
 func TestTheCatalogRouteRendersTheDescriptionInTheRequestLocale(t *testing.T) {
 	const (
 		readKey   = "authz.permission.authz-role-read"
@@ -160,10 +146,7 @@ func TestTheCatalogRouteRendersTheDescriptionInTheRequestLocale(t *testing.T) {
 	}
 }
 
-// TestTheCatalogRouteAnswersNoDescriptionWhenThereIsNothingToRender holds
-// the fallback rule for the two cases where the route has no text: the
-// assembly carries no localizer, and the declaring module gave the
-// permission no key.
+// TestTheCatalogRouteAnswersNoDescriptionWhenThereIsNothingToRender checks that the catalog route answers no description when there is nothing to render.
 func TestTheCatalogRouteAnswersNoDescriptionWhenThereIsNothingToRender(t *testing.T) {
 	t.Run("no localizer assembled", func(t *testing.T) {
 		r := newRig(t, authz.PermissionRoleRead)
@@ -190,10 +173,7 @@ func TestTheCatalogRouteAnswersNoDescriptionWhenThereIsNothingToRender(t *testin
 	})
 }
 
-// TestTheCatalogRouteWritesBackAKeyNoCatalogCarries holds the engine's
-// fallback: a declaring module gave the permission a key, no catalogue
-// carries text for it, and the localizer writes the key itself back, so the
-// field says the text is missing rather than claiming there is none.
+// TestTheCatalogRouteWritesBackAKeyNoCatalogCarries checks that the catalog route writes back a key no catalog carries.
 func TestTheCatalogRouteWritesBackAKeyNoCatalogCarries(t *testing.T) {
 	const key = "tenant.permission.untranslated"
 	r := newRig(t, authz.PermissionTenantAccess)
@@ -209,10 +189,7 @@ func TestTheCatalogRouteWritesBackAKeyNoCatalogCarries(t *testing.T) {
 	}
 }
 
-// TestTheCatalogRouteCarriesTheMetadataAndTheCallersHeldSet holds the
-// catalog view's remaining fields: group and dangerous come from the
-// declaring module's metadata, and grantable is the caller's own held
-// permission in the platform domain.
+// TestTheCatalogRouteCarriesTheMetadataAndTheCallersHeldSet checks that the catalog route carries the metadata and the callers held set.
 func TestTheCatalogRouteCarriesTheMetadataAndTheCallersHeldSet(t *testing.T) {
 	r := newRig(t, authz.PermissionRoleRead, authz.PermissionRoleManage, authz.PermissionAccountRead)
 	r.catalog.metadata[authz.PermissionRoleRead] = authz.PermissionMeta{Group: "authorization"}
@@ -256,9 +233,7 @@ func TestTheCatalogRouteCarriesTheMetadataAndTheCallersHeldSet(t *testing.T) {
 	}
 }
 
-// TestTheCatalogRouteWhoseHeldSetCannotBeReadIsA503 holds the failure rule: a
-// held set that cannot be read is a 503, never a catalog whose every permission
-// quietly says it cannot be granted.
+// TestTheCatalogRouteWhoseHeldSetCannotBeReadIsA503 checks that the catalog route whose held set cannot be read is a 503.
 func TestTheCatalogRouteWhoseHeldSetCannotBeReadIsA503(t *testing.T) {
 	r := newRig(t, authz.PermissionRoleRead)
 	r.subject.fail(errors.New("the permission read is down"))
@@ -271,10 +246,7 @@ func TestTheCatalogRouteWhoseHeldSetCannotBeReadIsA503(t *testing.T) {
 	}
 }
 
-// TestTheCatalogRouteRequiresRoleRead holds the route's decision: the handler
-// asks the guard for authz.role.read, and a refusal ends the request before the
-// catalog is read, leaving the declared set nowhere in the answer and no
-// downstream call recorded.
+// TestTheCatalogRouteRequiresRoleRead checks that the catalog route requires role read.
 func TestTheCatalogRouteRequiresRoleRead(t *testing.T) {
 	t.Run("the route asks the guard for role.read", func(t *testing.T) {
 		r := newRig(t, authz.PermissionRoleRead)
@@ -285,8 +257,6 @@ func TestTheCatalogRouteRequiresRoleRead(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Fatalf("an allowed read answered %d, want 200", w.Code)
 		}
-		// A read ends after the decision: it calls the catalog, not the
-		// manager, and lands no mandatory audit row, which only a write carries.
 		if got := r.manager.recorded(); len(got) != 0 {
 			t.Errorf("the manager was called %v on an allowed catalog read", got)
 		}
@@ -316,11 +286,7 @@ func TestTheCatalogRouteRequiresRoleRead(t *testing.T) {
 	})
 }
 
-// TestTheCatalogRouteNamesNoOpaqueID holds that the catalog route exposes no
-// opaque identifier: its declared path carries no parameter segment, so a row
-// is never addressed by an identifier standing in a path (the way the import
-// command exposes no account parameter a caller could name), and the view names
-// each permission by the permission string itself and by no id.
+// TestTheCatalogRouteNamesNoOpaqueID checks that the catalog route names no opaque ID.
 func TestTheCatalogRouteNamesNoOpaqueID(t *testing.T) {
 	if pathPermissions != "/api/v1/system/permissions" {
 		t.Fatalf("the catalog path = %q, want the literal /api/v1/system/permissions", pathPermissions)

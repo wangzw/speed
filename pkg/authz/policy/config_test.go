@@ -9,14 +9,7 @@ import (
 	"github.com/vislake/speed/pkg/authz/authztest"
 )
 
-// The configuration cases hold the load-timeout's default and its refusal of a
-// non-positive value, and the refresh interval's default of zero and its
-// refusal of a negative value. They drive the real loader over a real body, so
-// the items read as an assembly reads them.
-
-// With no configuration the load timeout is the declared default, and a
-// non-positive value is refused: no load finishes in zero time, and a negative
-// one names no duration at all.
+// TestTheLoadTimeoutDefaultsAndRefusesNonPositive checks that the load timeout defaults and refuses non positive.
 func TestTheLoadTimeoutDefaultsAndRefusesNonPositive(t *testing.T) {
 	reader := authztest.ConfigReader(t, Module(), "{}")
 	res, err := readConfig(reader)
@@ -36,9 +29,7 @@ func TestTheLoadTimeoutDefaultsAndRefusesNonPositive(t *testing.T) {
 	}
 }
 
-// The refresh interval is configuration: with no configuration it is zero,
-// which turns the periodic reload off, and a negative value names no duration
-// and is refused.
+// TestTheRefreshIntervalDefaultsOffAndRefusesNegative checks that the refresh interval defaults off and refuses negative.
 func TestTheRefreshIntervalDefaultsOffAndRefusesNegative(t *testing.T) {
 	reader := authztest.ConfigReader(t, Module(), "{}")
 	res, err := readConfig(reader)

@@ -10,17 +10,11 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// The cases here hold the transaction-aware policy writes: they write in the
-// transaction they are handed, they return the snapshot reload for after its
-// commit, and they leave the ctx-taking writes' behaviour in place.
-
-// txAfter is one after closure a tx write handed back.
 type txAfter = func(context.Context) error
 
 var errRollback = errors.New("caller rolled back")
 
-// TestPutRoleTxWritesInTheCallersTransaction checks that PutRoleTx writes a
-// role inside the transaction the caller hands it.
+// TestPutRoleTxWritesInTheCallersTransaction checks that put role TX writes in the callers transaction.
 func TestPutRoleTxWritesInTheCallersTransaction(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -53,9 +47,6 @@ func TestPutRoleTxWritesInTheCallersTransaction(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("PutRoleTx: %v", err)
 	}
-	// Roles reads the table, so the row is visible as soon as it commits; the
-	// snapshot is what the after closure reloads, and it is exercised by the
-	// grant and binding cases below.
 	if roles, _ := f.Roles(ctx, "acme"); len(roles) != 1 {
 		t.Fatalf("the committed role write reads back as %v, want roleA", roles)
 	}
@@ -67,8 +58,7 @@ func TestPutRoleTxWritesInTheCallersTransaction(t *testing.T) {
 	}
 }
 
-// TestDeleteRoleTxWritesInTheCallersTransaction checks that DeleteRoleTx
-// writes inside the transaction the caller hands it.
+// TestDeleteRoleTxWritesInTheCallersTransaction checks that delete role TX writes in the callers transaction.
 func TestDeleteRoleTxWritesInTheCallersTransaction(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -103,8 +93,7 @@ func TestDeleteRoleTxWritesInTheCallersTransaction(t *testing.T) {
 	}
 }
 
-// TestSeedGrantsTxAndPutBindingTxWriteInTheCallersTransaction checks that
-// SeedGrantsTx and PutBindingTx both write inside the caller's transaction.
+// TestSeedGrantsTxAndPutBindingTxWriteInTheCallersTransaction checks that seed grants TX and put binding TX write in the callers transaction.
 func TestSeedGrantsTxAndPutBindingTxWriteInTheCallersTransaction(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -174,8 +163,7 @@ func TestSeedGrantsTxAndPutBindingTxWriteInTheCallersTransaction(t *testing.T) {
 	}
 }
 
-// TestClearAccountBindingsTxWritesInTheCallersTransaction checks that
-// ClearAccountBindingsTx writes inside the transaction the caller hands it.
+// TestClearAccountBindingsTxWritesInTheCallersTransaction checks that clear account bindings TX writes in the callers transaction.
 func TestClearAccountBindingsTxWritesInTheCallersTransaction(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -213,7 +201,6 @@ func TestClearAccountBindingsTxWritesInTheCallersTransaction(t *testing.T) {
 		t.Fatalf("the committed clear left %v, want none", bindings)
 	}
 
-	// A clear that removes nothing returns no after work.
 	if err := f.handle.Transaction(func(tx *gorm.DB) error {
 		empty, err := f.ClearAccountBindingsTx(ctx, tx, "acme", "acc1")
 		if err != nil {
@@ -228,9 +215,7 @@ func TestClearAccountBindingsTxWritesInTheCallersTransaction(t *testing.T) {
 	}
 }
 
-// A role rewrite that changes none of the row's fields returns no after work:
-// the doc's contract is that a write which changed nothing returns a nil
-// closure, and an idempotent rewrite is exactly that case.
+// TestPutRoleTxAnUnchangedRewriteReturnsNoAfter checks that put role TX an unchanged rewrite returns no after.
 func TestPutRoleTxAnUnchangedRewriteReturnsNoAfter(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -268,8 +253,7 @@ func TestPutRoleTxAnUnchangedRewriteReturnsNoAfter(t *testing.T) {
 	}
 }
 
-// A binding the subject already holds returns no after work; the same write
-// after a clear writes the row again and returns the closure that announces it.
+// TestPutBindingTxAnExistingBindingReturnsNoAfter checks that put binding TX an existing binding returns no after.
 func TestPutBindingTxAnExistingBindingReturnsNoAfter(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()

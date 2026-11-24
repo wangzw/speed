@@ -32,51 +32,27 @@ import (
 	"github.com/vislake/speed/pkg/tenant/resolve"
 )
 
-// The cases built on this file drive the middleware the way a request reaches
-// it: a real *gin.Context over an httptest recorder, a handler behind the layer
-// that answers 200 when the request gets through, and a reply read back. The
-// engine is a stub whose answer the case chooses and whose queries it reads
-// back. This file also carries the decider's direct cases, the descriptor and
-// middleware shape cases, the startup diagnostics, and one live case that runs
-// the real entry point on a loopback port. The dedicated assembly harness is
-// assembly_test.go and the dedicated live harness is live_test.go; the two
-// overlap this file's own registry-driven and loopback cases, kept as a second
-// channel over the same descriptor.
-
-// guardedBody is a section that satisfies the module's required endpoint list,
-// for a drive that does not care which endpoint it guards.
 const guardedBody = `{"authz":{"guard":{"endpoints":["public"]}}}`
 
-// base returns a plain context. The middleware reads the request's context, so
-// every case builds one from here.
 func base() context.Context { return context.Background() }
 
-// caller returns a context holding an identity of alice, unless an option names
-// another account, as the gateway leaves it on a request.
 func caller(t *testing.T, opts ...authntest.Option) context.Context {
 	t.Helper()
 	opts = append([]authntest.Option{authntest.WithAccount("alice")}, opts...)
 	return authntest.Context(t, base(), opts...)
 }
 
-// anonymous returns a context for a route that is exempt or optional and
-// carried no credential, as the gateway leaves it. AccessRequired with no
-// identity never reaches this layer — the gateway refuses such a request first —
-// and AccessUnknown is what a context the gateway never decided anything for
-// reads as, which a plain context builds.
 func anonymous(t *testing.T, access authn.Access) context.Context {
 	t.Helper()
 	return authntest.Anonymous(t, base(), access)
 }
 
-// record is one log record a case reads back.
 type record struct {
 	level slog.Level
 	msg   string
 	attrs map[string]string
 }
 
-// recorder is a log handler that keeps what was written.
 type recorder struct {
 	mu      *sync.Mutex
 	records *[]record
@@ -124,18 +100,14 @@ func (r *recorder) atLevel(level slog.Level) []record {
 	return out
 }
 
-// reply is what the client got back.
 type reply struct {
 	status int
 	header nethttp.Header
 	body   string
 }
 
-// reached reports whether the request got through to the handler behind the
-// layer.
 func (rp reply) reached() bool { return rp.status == nethttp.StatusOK && rp.body == "reached" }
 
-// rig is one product over a stub engine, with the request path helpers.
 type rig struct {
 	t        *testing.T
 	p        *product
@@ -143,8 +115,6 @@ type rig struct {
 	logs     *recorder
 }
 
-// newRig builds a product guarding "public" with the closed default, over an
-// engine that denies until a case says otherwise.
 func newRig(t *testing.T) *rig {
 	t.Helper()
 	gin.SetMode(gin.ReleaseMode)
@@ -170,10 +140,6 @@ func newRig(t *testing.T) *rig {
 	}
 }
 
-// send runs one request through the layer. routePath is the path bound to a
-// handler — empty to bind none, so the request matches no route — and reqPath is
-// what the request asks for. declare, when set, writes the route's declaration
-// before the request is served, the way a module's Init does.
 func (r *rig) send(ctx context.Context, method, routePath, reqPath string, declare func(g *gate)) reply {
 	r.t.Helper()
 	engine := gin.New()
@@ -195,13 +161,11 @@ func (r *rig) send(ctx context.Context, method, routePath, reqPath string, decla
 	return reply{status: rec.Code, header: rec.Header().Clone(), body: string(body)}
 }
 
-// orders runs one GET /orders through the layer with the given declaration.
 func (r *rig) orders(ctx context.Context, declare func(g *gate)) reply {
 	r.t.Helper()
 	return r.send(ctx, nethttp.MethodGet, "/orders", "/orders", declare)
 }
 
-// counts reads the decision counts by outcome name.
 func (r *rig) counts() map[string]int64 {
 	out := make(map[string]int64, outcomeCount)
 	for o := range r.p.counts {
@@ -210,8 +174,6 @@ func (r *rig) counts() map[string]int64 {
 	return out
 }
 
-// onlyCounted fails the case unless exactly one request was counted, under the
-// outcome named.
 func (r *rig) onlyCounted(want outcome) {
 	r.t.Helper()
 	got := r.counts()
@@ -224,8 +186,6 @@ func (r *rig) onlyCounted(want outcome) {
 	}
 }
 
-// loggedCause reports whether an Error line carries the given value in its error
-// attribute, which is how a case reads that a refusal emitted its diagnosis.
 func (r *rig) loggedCause(cause string) bool {
 	for _, rec := range r.logs.atLevel(slog.LevelError) {
 		if rec.attrs["error"] == cause {
@@ -235,16 +195,13 @@ func (r *rig) loggedCause(cause string) bool {
 	return false
 }
 
-// requireAccountRead declares GET /orders as needing authz.PermissionAccountRead.
 func requireAccountRead(g *gate) {
 	g.Require(nethttp.MethodGet, "/orders", authz.PermissionAccountRead)
 }
 
-// openOrders declares GET /orders open.
 func openOrders(g *gate) { g.Open(nethttp.MethodGet, "/orders") }
 
-// A request that matched no route is handed on: the entry point answers its own
-// 404 and the layer makes no decision, so nothing is counted.
+// TestAMatchedNoRouteIsHandedOn checks that a matched no route is handed on.
 func TestAMatchedNoRouteIsHandedOn(t *testing.T) {
 	r := newRig(t)
 	rp := r.send(base(), nethttp.MethodGet, "", "/missing", nil)
@@ -260,7 +217,7 @@ func TestAMatchedNoRouteIsHandedOn(t *testing.T) {
 	}
 }
 
-// An open route is let through, and the request is counted as allowed.
+// TestAnOpenRouteIsLetThrough checks that an open route is let through.
 func TestAnOpenRouteIsLetThrough(t *testing.T) {
 	r := newRig(t)
 	rp := r.orders(caller(t), openOrders)
@@ -273,8 +230,7 @@ func TestAnOpenRouteIsLetThrough(t *testing.T) {
 	r.onlyCounted(allowed)
 }
 
-// A route that requires a permission and carries an identity the engine allows
-// is let through, counted as allowed.
+// TestARequiredRouteWithAnAllowedIdentityPasses checks that a required route with an allowed identity passes.
 func TestARequiredRouteWithAnAllowedIdentityPasses(t *testing.T) {
 	r := newRig(t)
 	r.enforcer.answer = func(authz.Query) (bool, error) { return true, nil }
@@ -285,8 +241,7 @@ func TestARequiredRouteWithAnAllowedIdentityPasses(t *testing.T) {
 	r.onlyCounted(allowed)
 }
 
-// A route the engine denies is a 403 with this module's problem type, never
-// a 503.
+// TestARouteTheEngineDeniesIsA403 checks that a route the engine denies is a 403.
 func TestARouteTheEngineDeniesIsA403(t *testing.T) {
 	r := newRig(t)
 	r.enforcer.answer = func(authz.Query) (bool, error) { return false, nil }
@@ -307,8 +262,7 @@ func TestARouteTheEngineDeniesIsA403(t *testing.T) {
 	}
 }
 
-// An engine error is a 503 and never a 403, and the engine's cause reaches
-// neither the body nor a type that reads as a refusal.
+// TestAnEngineErrorIsA503 checks that an engine error is a 503.
 func TestAnEngineErrorIsA503(t *testing.T) {
 	r := newRig(t)
 	cause := errors.New("the store is down")
@@ -329,8 +283,7 @@ func TestAnEngineErrorIsA503(t *testing.T) {
 	}
 }
 
-// A route that requires identity and carries none is a 401 with the realm
-// challenge.
+// TestNoIdentityWhereItIsRequiredIsA401 checks that no identity where it is required is a 401.
 func TestNoIdentityWhereItIsRequiredIsA401(t *testing.T) {
 	r := newRig(t)
 	rp := r.orders(base(), requireAccountRead)
@@ -346,9 +299,7 @@ func TestNoIdentityWhereItIsRequiredIsA401(t *testing.T) {
 	r.onlyCounted(noIdentity)
 }
 
-// A route that requires a permission but is declared open or optional to
-// anonymous callers lets the request through: the access level the gateway
-// recorded is what tells the two no-identity cases apart.
+// TestNoIdentityOnAnOpenOrOptionalRoutePasses checks that no identity on an open or optional route passes.
 func TestNoIdentityOnAnOpenOrOptionalRoutePasses(t *testing.T) {
 	for name, access := range map[string]authn.Access{
 		"open":     authn.AccessOpen,
@@ -365,9 +316,7 @@ func TestNoIdentityOnAnOpenOrOptionalRoutePasses(t *testing.T) {
 	}
 }
 
-// A route with no declaration at all is refused under the closed default, with
-// this module's 403 and an Error line, and is let through only when the
-// disposition is open.
+// TestAnUndeclaredRouteIsRefusedByDefaultAndLetThroughWhenOpen checks that an undeclared route is refused by default and let through when open.
 func TestAnUndeclaredRouteIsRefusedByDefaultAndLetThroughWhenOpen(t *testing.T) {
 	t.Run("closed by default", func(t *testing.T) {
 		r := newRig(t)
@@ -399,9 +348,7 @@ func TestAnUndeclaredRouteIsRefusedByDefaultAndLetThroughWhenOpen(t *testing.T) 
 	})
 }
 
-// The query names the account the request is taken to be from, and the platform
-// domain when the request resolved to no tenant: an impersonation decides for
-// the impersonated account, not for the actor whose hands are on the request.
+// TestTheQueryNamesTheEffectiveAccountAndThePlatformDomain checks that the query names the effective account and the platform domain.
 func TestTheQueryNamesTheEffectiveAccountAndThePlatformDomain(t *testing.T) {
 	r := newRig(t)
 	r.enforcer.answer = func(authz.Query) (bool, error) { return true, nil }
@@ -422,8 +369,6 @@ func TestTheQueryNamesTheEffectiveAccountAndThePlatformDomain(t *testing.T) {
 	}
 }
 
-// ginContext builds a real *gin.Context over a recorder with a request carrying
-// ctx, the way a handler receives it.
 func ginContext(t *testing.T, ctx context.Context) (*gin.Context, *httptest.ResponseRecorder) {
 	t.Helper()
 	gin.SetMode(gin.ReleaseMode)
@@ -433,10 +378,7 @@ func ginContext(t *testing.T, ctx context.Context) (*gin.Context, *httptest.Resp
 	return c, rec
 }
 
-// Allowed answers the question and writes nothing: an identity the engine
-// allows is true, a request with no identity and a permission this module cannot
-// express are both refused without an error, and the engine is asked only for a
-// request that can be decided.
+// TestGuardAllowedAnswersWithoutWriting checks that guard allowed answers without writing.
 func TestGuardAllowedAnswersWithoutWriting(t *testing.T) {
 	t.Run("an allowed identity", func(t *testing.T) {
 		r := newRig(t)
@@ -474,10 +416,7 @@ func TestGuardAllowedAnswersWithoutWriting(t *testing.T) {
 	})
 }
 
-// The Guard API puts the same query the middleware would for the same
-// context: the subject is the account the request is taken to be from, the
-// (object, action) pair is the translation's row, and the domain is the
-// platform domain when the request carries no tenant.
+// TestGuardAllowedNamesTheSameQuery checks that guard allowed names the same query.
 func TestGuardAllowedNamesTheSameQuery(t *testing.T) {
 	r := newRig(t)
 	r.enforcer.answer = func(authz.Query) (bool, error) { return true, nil }
@@ -499,8 +438,7 @@ func TestGuardAllowedNamesTheSameQuery(t *testing.T) {
 	}
 }
 
-// Require writes the refusal and answers false: a denial is a 403, an outage is
-// a 503, and an allowed question writes nothing and answers true.
+// TestGuardRequireWritesTheRefusal checks that guard require writes the refusal.
 func TestGuardRequireWritesTheRefusal(t *testing.T) {
 	t.Run("a denial is a 403", func(t *testing.T) {
 		r := newRig(t)
@@ -517,9 +455,6 @@ func TestGuardRequireWritesTheRefusal(t *testing.T) {
 	t.Run("an outage is a 503", func(t *testing.T) {
 		r := newRig(t)
 		r.enforcer.answer = func(authz.Query) (bool, error) { return false, errors.New("down") }
-		// The request's context carries the recorder, as a request on the chain
-		// carries the layers' logger, so the case reads back what the refusal
-		// logged.
 		c, rec := ginContext(t, log.WithLogger(caller(t), slog.New(r.logs)))
 		if r.p.RequirePermission(c, authz.PermissionAccountRead) {
 			t.Fatal("Require allowed a question the engine could not answer")
@@ -545,10 +480,7 @@ func TestGuardRequireWritesTheRefusal(t *testing.T) {
 	})
 }
 
-// The handler API's explicit-domain form decides in the domain it is given
-// and not in the domain the request carries: a caller that names a domain of
-// its own — a management surface whose path tenant is data and not a scope
-// — is not steered by the tenant the request resolved to.
+// TestGuardRequirePermissionInDecidesInTheGivenDomain checks that guard require permission in decides in the given domain.
 func TestGuardRequirePermissionInDecidesInTheGivenDomain(t *testing.T) {
 	t.Run("the explicit domain is used", func(t *testing.T) {
 		r := newRig(t)
@@ -577,15 +509,8 @@ func TestGuardRequirePermissionInDecidesInTheGivenDomain(t *testing.T) {
 	})
 }
 
-// decisionsNameForTest is the published instrument name, written as a literal
-// and not through decisionsInstrument. The name is a stability commitment a
-// dashboard or an alert is written against, so the case finds the instrument by
-// the literal: were the constant's value to drift, the counter would be created
-// under the drifted name and this case would find nothing.
 const decisionsNameForTest = "authz.guard.decisions"
 
-// decisionCounts reads the authz.guard.decisions counter out of a collection,
-// by outcome name, with the meter name and the unit.
 func decisionCounts(rm metricdata.ResourceMetrics) (map[string]int64, string, string) {
 	for _, scope := range rm.ScopeMetrics {
 		for _, m := range scope.Metrics {
@@ -607,10 +532,7 @@ func decisionCounts(rm metricdata.ResourceMetrics) (map[string]int64, string, st
 	return nil, "", ""
 }
 
-// The decision counter reaches the metric capability: the instrument is on the
-// authz meter, each count is the number of requests that got it, every outcome
-// has a point from the first collection — the empty ones included — and Close
-// withdraws the callback.
+// TestTheDecisionCountReachesTheMetricCapability checks that the decision count reaches the metric capability.
 func TestTheDecisionCountReachesTheMetricCapability(t *testing.T) {
 	collected := sdkmetric.NewManualReader()
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(collected))
@@ -626,16 +548,13 @@ func TestTheDecisionCountReachesTheMetricCapability(t *testing.T) {
 		t.Fatalf("registering the counter: %v", err)
 	}
 
-	// One request of each outcome. The declaration table keeps what earlier
-	// requests declared, so the unguarded one asks a route nothing ever
-	// declared.
 	r.enforcer.answer = func(authz.Query) (bool, error) { return true, nil }
-	r.orders(caller(t), openOrders)                                            // allowed
-	r.orders(caller(t), func(g *gate) { requireAccountRead(g); r.gateDeny() }) // denied
-	r.orders(base(), nil)                                                      // no-identity (GET /orders still requires)
-	r.send(caller(t), nethttp.MethodGet, "/plain", "/plain", nil)              // unguarded
+	r.orders(caller(t), openOrders)
+	r.orders(caller(t), func(g *gate) { requireAccountRead(g); r.gateDeny() })
+	r.orders(base(), nil)
+	r.send(caller(t), nethttp.MethodGet, "/plain", "/plain", nil)
 	r.gateFail(errors.New("down"))
-	r.orders(caller(t), requireAccountRead) // unavailable
+	r.orders(caller(t), requireAccountRead)
 
 	var rm metricdata.ResourceMetrics
 	if err := collected.Collect(context.Background(), &rm); err != nil {
@@ -675,17 +594,13 @@ func TestTheDecisionCountReachesTheMetricCapability(t *testing.T) {
 
 const meterNameForTest = "authz"
 
-// gateDeny makes the rig's engine refuse the next request and gateFail make it
-// fail; both are helpers for the metric case, which needs one request of each
-// outcome from one rig.
 func (r *rig) gateDeny() { r.enforcer.answer = func(authz.Query) (bool, error) { return false, nil } }
 
 func (r *rig) gateFail(err error) {
 	r.enforcer.answer = func(authz.Query) (bool, error) { return false, err }
 }
 
-// The descriptor is what the design says: the module's name, what it requires,
-// what it delivers with which claims, and that its callbacks are set.
+// TestTheDescriptorIsWhatTheDesignSays checks that the descriptor is what the design says.
 func TestTheDescriptorIsWhatTheDesignSays(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ConfigNamespace != ModuleName {
@@ -721,10 +636,7 @@ func TestTheDescriptorIsWhatTheDesignSays(t *testing.T) {
 	}
 }
 
-// The module registers itself with the process registry: importing the
-// package is what puts the enforcement middleware and the decider in a
-// binary's available set, and a host writes neither the descriptor nor a
-// Register call.
+// TestTheProcessRegistryCarriesTheModule checks that the process registry carries the module.
 func TestTheProcessRegistryCarriesTheModule(t *testing.T) {
 	registered, ok := core.ProcessRegistry.Lookup(ModuleName)
 	if !ok {
@@ -735,8 +647,7 @@ func TestTheProcessRegistryCarriesTheModule(t *testing.T) {
 	}
 }
 
-// The middleware declares what the design says: the name, the anchor it stands
-// for, the authorizing stage, and the admission anchor it sits inside.
+// TestTheMiddlewareDeclaresWhatTheDesignSays checks that the middleware declares what the design says.
 func TestTheMiddlewareDeclaresWhatTheDesignSays(t *testing.T) {
 	mw := newRig(t).p.middlewareFor("public")
 	if mw.Name != ModuleName || mw.Stage != speedhttp.StageAuthorize || mw.Handler == nil {
@@ -750,10 +661,7 @@ func TestTheMiddlewareDeclaresWhatTheDesignSays(t *testing.T) {
 	}
 }
 
-// The registry delivers all three faces from one instance, holding what a
-// product built by hand cannot: that New takes the engine and the catalog up
-// from the registry the way a host's command does, and that the descriptor
-// provides the three capabilities under the names the command tree uses.
+// TestTheRegistryDeliversAllThreeFaces checks that the registry delivers all three faces.
 func TestTheRegistryDeliversAllThreeFaces(t *testing.T) {
 	reg := authztest.Registry(t, guardedBody, Module())
 	authztest.AddProvider(reg, authztest.EnforcerProvider(authztest.NewEnforcer()))
@@ -790,8 +698,7 @@ func TestTheRegistryDeliversAllThreeFaces(t *testing.T) {
 	}
 }
 
-// The module requires the engine and the catalog: a command that brings it in
-// without either fails the startup, before anything is constructed.
+// TestTheGuardNeedsAnEngineAndACatalog checks that the guard needs an engine and a catalog.
 func TestTheGuardNeedsAnEngineAndACatalog(t *testing.T) {
 	t.Run("no engine", func(t *testing.T) {
 		reg := authztest.Registry(t, guardedBody, Module())
@@ -811,8 +718,7 @@ func TestTheGuardNeedsAnEngineAndACatalog(t *testing.T) {
 	})
 }
 
-// A second provider of any of the three faces fails the startup: each is
-// delivered exclusively, and the stand-ins claim nothing.
+// TestASecondProviderOfAnyFaceFailsTheStartup checks that a second provider of any face fails the startup.
 func TestASecondProviderOfAnyFaceFailsTheStartup(t *testing.T) {
 	for name, provider := range map[string]authztest.Provider{
 		"the declaration anchor": authztest.GateProvider(authztest.NewGate()),
@@ -831,8 +737,7 @@ func TestASecondProviderOfAnyFaceFailsTheStartup(t *testing.T) {
 	}
 }
 
-// A command that guards routes and names no entry point fails wiring with
-// ErrNoRouter, naming this module.
+// TestNoEntryPointIsErrNoRouter checks that no entry point fails with ErrNoRouter.
 func TestNoEntryPointIsErrNoRouter(t *testing.T) {
 	reg := authztest.Registry(t, guardedBody, Module())
 	authztest.AddProvider(reg, authztest.EnforcerProvider(authztest.NewEnforcer()))
@@ -846,8 +751,7 @@ func TestNoEntryPointIsErrNoRouter(t *testing.T) {
 	}
 }
 
-// An undeclared disposition outside the closed set fails the startup at Prepare,
-// reading the configuration before anything is constructed.
+// TestAnIllegalUndeclaredValueFailsPrepare checks that an illegal undeclared value fails prepare.
 func TestAnIllegalUndeclaredValueFailsPrepare(t *testing.T) {
 	body := `{"authz":{"guard":{"endpoints":["public"],"undeclared":"OPEN"}}}`
 	reg := authztest.Registry(t, body, Module())
@@ -860,10 +764,7 @@ func TestAnIllegalUndeclaredValueFailsPrepare(t *testing.T) {
 	}
 }
 
-// A route that declares a permission the catalog does not hold fails the
-// startup at Start, naming the route and the permission: a route that decides on
-// a permission nothing declares is a startup failure, not a route that decides
-// nothing.
+// TestARouteOnAnUndeclaredPermissionFailsStart checks that a route on an undeclared permission fails start.
 func TestARouteOnAnUndeclaredPermissionFailsStart(t *testing.T) {
 	reg := authztest.Registry(t, guardedBody, Module())
 	authztest.AddProvider(reg, authztest.EnforcerProvider(authztest.NewEnforcer()))
@@ -894,9 +795,7 @@ func TestARouteOnAnUndeclaredPermissionFailsStart(t *testing.T) {
 	}
 }
 
-// A failed Start leaves no resolved translation installed: the set Init
-// built is given back when Start refuses the assembly, so a later assembly
-// sharing the process does not read a set this one never accepted.
+// TestAFailedStartClearsTheProcessTranslation checks that a failed start clears the process translation.
 func TestAFailedStartClearsTheProcessTranslation(t *testing.T) {
 	translator := declaredModule("stand-in.translator", map[authz.Permission]authz.Translation{
 		declaredPermission: {Object: "deal", Action: "read"},
@@ -931,8 +830,6 @@ func TestAFailedStartClearsTheProcessTranslation(t *testing.T) {
 	}
 }
 
-// registrantModule declares GET /orders as needing a permission the policy
-// stand-in does not hold, the way a module writes its routes from its own Init.
 var registrantModule = core.Module{
 	Name:     "stand-in.registrant",
 	Requires: []core.Requirement{{Token: (*speedhttp.Router)(nil)}},
@@ -947,8 +844,6 @@ var registrantModule = core.Module{
 	},
 }
 
-// guardStub is a second implementation of the handler API for the exclusivity
-// cases.
 type guardStub struct{}
 
 func (guardStub) Allowed(*gin.Context, authz.Permission) (bool, error)  { return false, nil }
@@ -957,36 +852,28 @@ func (guardStub) RequirePermissionIn(*gin.Context, authz.Permission, authz.Domai
 	return false
 }
 
-// routerStub stands for an entry point module: an endpoint whose registrations
-// are dropped, so wiring succeeds without a listener.
 type routerStub struct{}
 
 func (routerStub) Endpoint(string) (speedhttp.Endpoint, error) { return endpointStub{}, nil }
 func (routerStub) Endpoints() []string                         { return []string{"public"} }
 
-// endpointStub accepts registrations and does nothing with them.
 type endpointStub struct{}
 
 func (endpointStub) Route(string, string, ...gin.HandlerFunc) {}
 func (endpointStub) Use(speedhttp.Middleware)                 {}
 func (endpointStub) Accepting() bool                          { return true }
 
-// logStub delivers the logging capability over one logger.
 type logStub struct{ logger *slog.Logger }
 
 func (l logStub) Named(string) *slog.Logger { return l.logger }
 func (logStub) Redaction() log.Redaction    { return noRules{} }
 
-// noRules takes the redaction registrations and masks nothing.
 type noRules struct{}
 
 func (noRules) AddKeys(...string)              {}
 func (noRules) AddPattern(string, log.Matcher) {}
 
-// The startup diagnostics name the guarded endpoints and the undeclared
-// disposition, and the open disposition — the one configuration that lets an
-// undeclared route through — is written at Warn, so an assembly that switched
-// the enforcement off has a line saying so.
+// TestStartupWritesTheGuardedEndpointsAndWarnsWhenOpen checks that startup writes the guarded endpoints and warns when open.
 func TestStartupWritesTheGuardedEndpointsAndWarnsWhenOpen(t *testing.T) {
 	drive := func(t *testing.T, undeclared string) []record {
 		t.Helper()
@@ -1055,25 +942,16 @@ func TestStartupWritesTheGuardedEndpointsAndWarnsWhenOpen(t *testing.T) {
 	})
 }
 
-// waitLimit bounds every wait in the live case, so a startup that never reaches
-// Serve fails the case with a message rather than the binary at the global
-// timeout.
 func waitLimit() time.Duration {
 	return coretest.Scale(60 * time.Second)
 }
 
-// liveBody is the configuration the live assembly loads: one endpoint, the
-// resolution layer guarding it with the header extractor, and this module
-// guarding the same endpoint.
 const liveBody = `{
 	"http": {"listeners": {"public": {"address": "127.0.0.1:0"}}, "endpoints": {"public": {"listener": "public"}}},
 	"tenant": {"resolve": {"endpoints": ["public"], "extractor": "header"}},
 	"authz": {"guard": {"endpoints": ["public"]}}
 }`
 
-// rosterStub is the tenant roster, with the name a request carries mapped to a
-// distinct identifier, so that a query built from the name and one built from
-// the identifier cannot be confused.
 type rosterStub struct{ tenant.Catalog }
 
 func (rosterStub) ByName(_ context.Context, name string) (tenant.Tenant, bool, error) {
@@ -1083,10 +961,6 @@ func (rosterStub) ByName(_ context.Context, name string) (tenant.Tenant, bool, e
 	return tenant.Tenant{}, false, nil
 }
 
-// identifyModule is a stand-in for the gateway: it injects an identity into
-// every request on the endpoint, the way the real gateway does, so that the
-// request this layer decides carries the identity and access level its branches
-// read.
 func identifyModule(t *testing.T) core.Module {
 	opts := []authntest.Option{
 		authntest.WithAccount("alice"),
@@ -1118,9 +992,6 @@ func identifyModule(t *testing.T) core.Module {
 	}
 }
 
-// liveRegistrant registers GET /orders and declares it as needing
-// authz.PermissionAccountRead, the way a module writes its routes from its own
-// Init.
 var liveRegistrant = core.Module{
 	Name: "stand-in.registrant",
 	Requires: []core.Requirement{
@@ -1147,9 +1018,7 @@ var liveRegistrant = core.Module{
 	},
 }
 
-// TestTheQueryNamesTheTenantIdentifierOnTheChain checks that the guard's query
-// names the tenant identifier the roster maps the request's name to, not the
-// name, and the account whose hands are on the request.
+// TestTheQueryNamesTheTenantIdentifierOnTheChain checks that the query names the tenant identifier on the chain.
 func TestTheQueryNamesTheTenantIdentifierOnTheChain(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	enforcer := authztest.NewEnforcer()

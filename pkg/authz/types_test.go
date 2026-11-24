@@ -6,8 +6,7 @@ import (
 	"testing"
 )
 
-// TestModelTextIsThePublishedModel checks that the model text matches the design
-// character for character.
+// TestModelTextIsThePublishedModel checks that model text is the published model.
 func TestModelTextIsThePublishedModel(t *testing.T) {
 	const want = `[request_definition]
 r = sub, dom, obj, act
@@ -25,8 +24,6 @@ m = g(r.sub, p.sub, r.dom) && r.dom == p.dom && r.obj == p.obj && r.act == p.act
 	}
 }
 
-// structFields renders the fields of a struct value as "Name Type" in
-// declaration order.
 func structFields(t *testing.T, v any) []string {
 	t.Helper()
 	rt := reflect.TypeOf(v)
@@ -41,8 +38,6 @@ func structFields(t *testing.T, v any) []string {
 	return out
 }
 
-// interfaceMethods renders the methods of an interface type as "Name Signature",
-// in the order reflection reports them, which is by name.
 func interfaceMethods(t *testing.T, v any) []string {
 	t.Helper()
 	rt := reflect.TypeOf(v).Elem()
@@ -57,8 +52,7 @@ func interfaceMethods(t *testing.T, v any) []string {
 	return out
 }
 
-// TestTheSharedTypesHoldTheirFields checks that every shared type keeps its
-// exact field set and field types.
+// TestTheSharedTypesHoldTheirFields checks that the shared types hold their fields.
 func TestTheSharedTypesHoldTheirFields(t *testing.T) {
 	cases := []struct {
 		name string
@@ -123,8 +117,7 @@ func TestTheSharedTypesHoldTheirFields(t *testing.T) {
 	}
 }
 
-// TestTheCapabilityInterfacesHoldTheirMethodSets checks that every capability
-// interface keeps its exact method set and signatures.
+// TestTheCapabilityInterfacesHoldTheirMethodSets checks that the capability interfaces hold their method sets.
 func TestTheCapabilityInterfacesHoldTheirMethodSets(t *testing.T) {
 	cases := []struct {
 		name string

@@ -8,10 +8,7 @@ import (
 	"testing"
 )
 
-// TestTheEmbeddedRoleCatalogCarriesOneKeySetForEveryLocale holds the role
-// catalog to the two builtin description keys the host seeds, in every
-// locale: one missing entry would render a builtin role as its key, and an
-// extra entry is text nothing can ask for.
+// TestTheEmbeddedRoleCatalogCarriesOneKeySetForEveryLocale checks that the embedded role catalog carries one key set for every locale.
 func TestTheEmbeddedRoleCatalogCarriesOneKeySetForEveryLocale(t *testing.T) {
 	want := []string{
 		"authz.role.platformAdmin",

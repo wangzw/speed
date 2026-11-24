@@ -10,11 +10,8 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// descriptionPrefix is the namespace every permission's description key is built
-// under.
 const descriptionPrefix = "authz.permission."
 
-// The permission groups a management surface groups the catalog by.
 const (
 	groupAuthorization = "authorization"
 	groupMembership    = "membership"
@@ -23,13 +20,8 @@ const (
 	groupProfile       = "profile"
 )
 
-// permissions is the spec this module declares: every permission of the
-// capability directory. The word-table guard holds this list to the root
-// package's constants.
 var permissions = declaredPermissions()
 
-// declaredPermissions builds the spec: the permission list, a description key
-// for each, and the governed set with its metadata.
 func declaredPermissions() authz.PermissionSpec {
 	list := []authz.Permission{
 		authz.PermissionAccountRead,
@@ -65,8 +57,6 @@ func declaredPermissions() authz.PermissionSpec {
 	for _, p := range list {
 		keys[p] = descriptionPrefix + replacer.Replace(string(p))
 	}
-	// The governed set: the permissions with a tenant-scoped endpoint that a
-	// tenant administrator may hold and grant.
 	governed := []authz.Permission{
 		authz.PermissionTenantRoleRead,
 		authz.PermissionTenantRoleManage,
@@ -77,7 +67,6 @@ func declaredPermissions() authz.PermissionSpec {
 		authz.PermissionMembershipManage,
 		authz.PermissionIDPManage,
 	}
-	// The governance metadata of the governed set.
 	metadata := map[authz.Permission]authz.PermissionMeta{
 		authz.PermissionTenantRoleRead:      {Group: groupAuthorization},
 		authz.PermissionTenantRoleManage:    {Group: groupAuthorization, Dangerous: true},
@@ -96,8 +85,6 @@ func declaredPermissions() authz.PermissionSpec {
 	}
 }
 
-// catalog is the permission catalog: the set of permissions the registered
-// modules declare, built once in New and read-only afterwards.
 type catalog struct {
 	declared    []authz.Permission
 	set         map[authz.Permission]bool
@@ -105,14 +92,10 @@ type catalog struct {
 	metadata    map[authz.Permission]authz.PermissionMeta
 	governed    []authz.Permission
 	governedSet map[authz.Permission]bool
-	// reverse maps an (object, action) pair back to its permission. The
-	// translation's rows are unique, so the reverse is a function.
+	// reverse maps an (object, action) pair to its permission; translation rows are unique.
 	reverse map[[2]string]authz.Permission
 }
 
-// buildCatalog collects every module's PermissionSpec and unions them. A module
-// that marks a permission governed without declaring it is refused with
-// ErrUnknownPermission.
 func buildCatalog(reg *core.Registry) (*catalog, error) {
 	specs := core.Resources[authz.PermissionSpec](reg)
 	c := &catalog{
@@ -152,8 +135,6 @@ func buildCatalog(reg *core.Registry) (*catalog, error) {
 	return c, nil
 }
 
-// indexReverse rebuilds the pair-to-permission map from the process's
-// translation.
 func (c *catalog) indexReverse() {
 	reverse := make(map[[2]string]authz.Permission, len(c.declared))
 	for _, p := range c.declared {
@@ -166,41 +147,31 @@ func (c *catalog) indexReverse() {
 	c.reverse = reverse
 }
 
-// PermissionOf returns the permission a held (object, action) pair translates
-// to, and whether any declared permission translates to it at all.
 func (c *catalog) PermissionOf(object, action string) (authz.Permission, bool) {
 	p, ok := c.reverse[[2]string{object, action}]
 	return p, ok
 }
 
-// Declared returns every declared permission, as a copy.
 func (c *catalog) Declared() []authz.Permission {
 	out := make([]authz.Permission, len(c.declared))
 	copy(out, c.declared)
 	return out
 }
 
-// Has reports whether p is declared.
 func (c *catalog) Has(p authz.Permission) bool { return c.set[p] }
 
-// TenantGoverned returns the governed set in permission-name order, as a copy.
 func (c *catalog) TenantGoverned() []authz.Permission {
 	out := make([]authz.Permission, len(c.governed))
 	copy(out, c.governed)
 	return out
 }
 
-// Governed reports whether p is a declared permission in the governed set.
 func (c *catalog) Governed(p authz.Permission) bool { return c.governedSet[p] && c.set[p] }
 
-// ObjectAction returns the (object, action) pair a permission translates to,
-// read from the process's translation.
 func (c *catalog) ObjectAction(p authz.Permission) (object, action string, ok bool) {
 	return translation.Lookup(p)
 }
 
-// DescriptionKey returns the i18n key of p's description, and whether p is
-// declared at all.
 func (c *catalog) DescriptionKey(p authz.Permission) (string, bool) {
 	if !c.set[p] {
 		return "", false
@@ -208,8 +179,6 @@ func (c *catalog) DescriptionKey(p authz.Permission) (string, bool) {
 	return c.keys[p], true
 }
 
-// Metadata returns the governance metadata of p, and whether p is declared at
-// all. A declared permission whose module supplied none answers the zero value.
 func (c *catalog) Metadata(p authz.Permission) (authz.PermissionMeta, bool) {
 	if !c.set[p] {
 		return authz.PermissionMeta{}, false

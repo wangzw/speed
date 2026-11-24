@@ -39,19 +39,15 @@ type TxManager interface {
 
 var _ TxManager = (*product)(nil)
 
-// crossingTx marks the transaction's statements as naming their own tenant, the
-// way crossing marks a session of the product's own handle.
 func crossingTx(ctx context.Context, tx *gorm.DB) *gorm.DB {
 	return tx.WithContext(tenancy.CrossTenant(ctx))
 }
 
-// afterWriteTx is the work a tx write hands back: the snapshot reload and the
-// change event, in that order, once the caller's transaction has committed.
+// afterWriteTx is the work a tx write hands back: the snapshot reload and the change event, in that order, once the caller commits.
 func (p *product) afterWriteTx() func(context.Context) error {
 	return func(ctx context.Context) error { return p.afterWrite(ctx) }
 }
 
-// PutRoleTx implements TxManager.
 func (p *product) PutRoleTx(ctx context.Context, tx *gorm.DB, r authz.RoleRecord) (func(context.Context) error, error) {
 	row, err := roleRowFor(r)
 	if err != nil {
@@ -67,7 +63,6 @@ func (p *product) PutRoleTx(ctx context.Context, tx *gorm.DB, r authz.RoleRecord
 	return p.afterWriteTx(), nil
 }
 
-// DeleteRoleTx implements TxManager.
 func (p *product) DeleteRoleTx(ctx context.Context, tx *gorm.DB, tenant string, role authz.Role) (func(context.Context) error, error) {
 	if err := requireTenant(tenant); err != nil {
 		return nil, err
@@ -82,7 +77,6 @@ func (p *product) DeleteRoleTx(ctx context.Context, tx *gorm.DB, tenant string, 
 	return p.afterWriteTx(), nil
 }
 
-// SeedGrantsTx implements TxManager.
 func (p *product) SeedGrantsTx(ctx context.Context, tx *gorm.DB, tenant string, role authz.Role, grants []authz.Grant) (int, func(context.Context) error, error) {
 	if err := requireTenant(tenant); err != nil {
 		return 0, nil, err
@@ -97,7 +91,6 @@ func (p *product) SeedGrantsTx(ctx context.Context, tx *gorm.DB, tenant string, 
 	return added, p.afterWriteTx(), nil
 }
 
-// PutBindingTx implements TxManager.
 func (p *product) PutBindingTx(ctx context.Context, tx *gorm.DB, b authz.Binding) (func(context.Context) error, error) {
 	if err := p.checkBinding(ctx, b); err != nil {
 		return nil, err
@@ -112,7 +105,6 @@ func (p *product) PutBindingTx(ctx context.Context, tx *gorm.DB, b authz.Binding
 	return p.afterWriteTx(), nil
 }
 
-// ClearAccountBindingsTx implements TxManager.
 func (p *product) ClearAccountBindingsTx(ctx context.Context, tx *gorm.DB, tenant, account string) (func(context.Context) error, error) {
 	if err := requireTenant(tenant); err != nil {
 		return nil, err
@@ -127,7 +119,6 @@ func (p *product) ClearAccountBindingsTx(ctx context.Context, tx *gorm.DB, tenan
 	return p.afterWriteTx(), nil
 }
 
-// DeleteTenantPolicyTx implements TxManager.
 func (p *product) DeleteTenantPolicyTx(ctx context.Context, tx *gorm.DB, tenant string) (func(context.Context) error, error) {
 	if err := requireTenant(tenant); err != nil {
 		return nil, err

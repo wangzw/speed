@@ -11,8 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
-// postgresDDL is the policy tables' DDL for PostgreSQL, which differs from the
-// SQLite one only in the timestamp type, as the migrations do.
 var postgresDDL = []string{
 	`CREATE TABLE authz_roles (
 		tenant_id       TEXT NOT NULL CHECK (tenant_id <> ''),
@@ -38,10 +36,6 @@ var postgresDDL = []string{
 	`CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role)`,
 }
 
-// The adapter is exercised on PostgreSQL as well in an integration run, over a
-// database of the case's own on the server the compose stack brings up:
-// Acquire fails the case when that server does not answer rather than skipping
-// it.
 func init() {
 	allDialects = append(allDialects, func() dialect {
 		return dialect{

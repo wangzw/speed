@@ -6,8 +6,6 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// handleGrantList answers GET /api/v1/tenants/:tenant/roles/:role/grants: every
-// permission grant the role holds.
 func (p *product) handleGrantList(ctx context.Context, in roleInput) (grantListBody, error) {
 	grants, err := p.manager.Grants(ctx, in.Tenant, authz.Role(in.Role))
 	if err != nil {
@@ -24,12 +22,6 @@ func (p *product) handleGrantList(ctx context.Context, in roleInput) (grantListB
 	return grantListBody{Grants: views}, nil
 }
 
-// handleGrantPut answers PUT
-// /api/v1/tenants/:tenant/roles/:role/grants/:permission: it grants a governed
-// permission to a role. Before the host write guard, the audit and the manager
-// it checks that the role is not reserved, the permission is governed, the
-// translation has a row for it, and the caller holds it. A held set that cannot
-// be read is a 503.
 func (p *product) handleGrantPut(ctx context.Context, in grantInput) (struct{}, error) {
 	role := authz.Role(in.Role)
 	permission := authz.Permission(in.Permission)
@@ -74,10 +66,6 @@ func (p *product) handleGrantPut(ctx context.Context, in grantInput) (struct{}, 
 	return struct{}{}, nil
 }
 
-// handleGrantDelete answers DELETE
-// /api/v1/tenants/:tenant/roles/:role/grants/:permission: it revokes a
-// permission from a role. The governed-set rule belongs to the grant write and
-// not to the revoke: a permission that has left the set can still be removed.
 func (p *product) handleGrantDelete(ctx context.Context, in grantInput) (struct{}, error) {
 	role := authz.Role(in.Role)
 	permission := authz.Permission(in.Permission)

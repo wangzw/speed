@@ -10,9 +10,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// The lock the host supplies is the one the binding delete takes: wiring a
-// TenantLock into the assembly replaces the product's in-process default, and
-// holding it blocks the delete.
+// TestTheSuppliedTenantLockIsTheOneTheBindingDeleteTakes checks that the supplied tenant lock is the one the binding delete takes.
 func TestTheSuppliedTenantLockIsTheOneTheBindingDeleteTakes(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -48,9 +46,7 @@ func TestTheSuppliedTenantLockIsTheOneTheBindingDeleteTakes(t *testing.T) {
 	}
 }
 
-// A binding delete is one of the two paths that decide the tenant's
-// tenant-administrator floor, and it must take the same tenant lock an
-// explicit membership removal holds.
+// TestABindingDeleteWaitsForTheMembershipRemovalLock checks that a binding delete waits for the membership removal lock.
 func TestABindingDeleteWaitsForTheMembershipRemovalLock(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -74,9 +70,6 @@ func TestABindingDeleteWaitsForTheMembershipRemovalLock(t *testing.T) {
 		t.Fatalf("the binding delete ran while the removal lock was held: %+v", got)
 	}
 
-	// The membership removal's cascade clears the departing account's bindings
-	// without taking the lock again, which is what keeps it from re-entering the
-	// lock its removal already holds.
 	if err = f.ClearAccountBindings(ctx, "acme", "acct-1"); err != nil {
 		t.Fatalf("clearing the departing account's bindings: %v", err)
 	}

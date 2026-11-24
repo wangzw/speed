@@ -11,9 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// writeRouteCase is one management write and the kind the guard must be told it
-// is. Every write route is here, so a route that skips the seam or names the
-// wrong kind is a case that fails rather than a route nobody covers.
 type writeRouteCase struct {
 	name   string
 	op     authz.WriteOp
@@ -24,8 +21,6 @@ type writeRouteCase struct {
 	body   any
 }
 
-// writeRouteCases builds one write route of each kind. The grant routes need a
-// permission the catalog holds and the translation has a row for.
 func writeRouteCases() []writeRouteCase {
 	const (
 		rolePutTarget    = "/api/v1/system/tenants/t1/roles/r1"
@@ -76,10 +71,7 @@ func writeRouteCases() []writeRouteCase {
 	}
 }
 
-// TestEveryWriteConsultsTheWriteGuard holds the seam's range and its vocabulary:
-// each role, grant and binding write asks the guard once about the tenant the
-// path names, with the kind the route writes, and a permit lets the write reach
-// the manager.
+// TestEveryWriteConsultsTheWriteGuard checks that every write consults the write guard.
 func TestEveryWriteConsultsTheWriteGuard(t *testing.T) {
 	for _, c := range writeRouteCases() {
 		t.Run(c.name, func(t *testing.T) {
@@ -102,9 +94,7 @@ func TestEveryWriteConsultsTheWriteGuard(t *testing.T) {
 	}
 }
 
-// TestADeniedWriteIsRefusedBeforeTheAuditAndTheManager holds the deny direction:
-// the route answers 403 with the capability's protected type and neither lands a
-// mandatory audit row nor reaches the manager.
+// TestADeniedWriteIsRefusedBeforeTheAuditAndTheManager checks that a denied write is refused before the audit and the manager.
 func TestADeniedWriteIsRefusedBeforeTheAuditAndTheManager(t *testing.T) {
 	for _, c := range writeRouteCases() {
 		t.Run(c.name, func(t *testing.T) {
@@ -127,8 +117,7 @@ func TestADeniedWriteIsRefusedBeforeTheAuditAndTheManager(t *testing.T) {
 	}
 }
 
-// TestAWriteGuardThatCannotAnswerIsA503 holds the failure direction: an answer
-// that cannot be read is never a permit, and it is a 503 rather than a denial.
+// TestAWriteGuardThatCannotAnswerIsA503 checks that a write guard that cannot answer is a 503.
 func TestAWriteGuardThatCannotAnswerIsA503(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	r.writeGuard.fail(errors.New("the guard's store is down"))
@@ -145,8 +134,7 @@ func TestAWriteGuardThatCannotAnswerIsA503(t *testing.T) {
 	}
 }
 
-// TestReadsDoNotConsultTheWriteGuard holds the seam's direction: it protects
-// writes, so a read is never asked about.
+// TestReadsDoNotConsultTheWriteGuard checks that reads do not consult the write guard.
 func TestReadsDoNotConsultTheWriteGuard(t *testing.T) {
 	r := newRig(t)
 	reads := []struct {
@@ -173,8 +161,7 @@ func TestReadsDoNotConsultTheWriteGuard(t *testing.T) {
 	}
 }
 
-// TestTheWriteGuardIsOptional holds the seam's absence: an assembly that
-// delivers none writes as the module did before the seam existed.
+// TestTheWriteGuardIsOptional checks that the write guard is optional.
 func TestTheWriteGuardIsOptional(t *testing.T) {
 	r := newRig(t)
 	r.p.writeGuard = nil
@@ -188,9 +175,7 @@ func TestTheWriteGuardIsOptional(t *testing.T) {
 	}
 }
 
-// TestTheWriteGuardIsTakenUpFromTheAssembly holds the wiring: a guard the
-// assembly delivers is what Init puts on the product, and an assembly without
-// one leaves the seam absent rather than failing the startup.
+// TestTheWriteGuardIsTakenUpFromTheAssembly checks that the write guard is taken up from the assembly.
 func TestTheWriteGuardIsTakenUpFromTheAssembly(t *testing.T) {
 	t.Run("a delivered guard is taken up", func(t *testing.T) {
 		guard := &stubWriteGuard{}
@@ -216,8 +201,7 @@ func TestTheWriteGuardIsTakenUpFromTheAssembly(t *testing.T) {
 	})
 }
 
-// TestTheWriteGuardIsAskedAfterTheShapeChecks holds the ordering the design
-// states: a request the route refuses on shape never reaches the seam.
+// TestTheWriteGuardIsAskedAfterTheShapeChecks checks that the write guard is asked after the shape checks.
 func TestTheWriteGuardIsAskedAfterTheShapeChecks(t *testing.T) {
 	t.Run("an undeclared grant permission", func(t *testing.T) {
 		r := newRig(t)

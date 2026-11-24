@@ -12,9 +12,7 @@ import (
 	"github.com/vislake/speed/pkg/authz/internal/translation"
 )
 
-// TestAnUnauthorisedGrantDeleteReachesNoManagerAndWritesNoAudit holds the
-// grant delete route's decision: the guard is asked for role.manage and a
-// shortfall ends the handler before the manager and before any audit row.
+// TestAnUnauthorisedGrantDeleteReachesNoManagerAndWritesNoAudit checks that an unauthorised grant delete reaches no manager and writes no audit.
 func TestAnUnauthorisedGrantDeleteReachesNoManagerAndWritesNoAudit(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	r.guard.allow = false
@@ -35,9 +33,7 @@ func TestAnUnauthorisedGrantDeleteReachesNoManagerAndWritesNoAudit(t *testing.T)
 	}
 }
 
-// TestDeletingAGrantAsksForRoleManageAndLandsOneSuccessRow checks that deleting
-// a grant demands role.manage and lands exactly one success audit row naming
-// the permission.
+// TestDeletingAGrantAsksForRoleManageAndLandsOneSuccessRow checks that deleting a grant asks for role manage and lands one success row.
 func TestDeletingAGrantAsksForRoleManageAndLandsOneSuccessRow(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	w := r.serve(writeRoute(r.p, grantDeleteOperation.Handle(r.p.handleGrantDelete)), http.MethodDelete,
@@ -67,10 +63,7 @@ func TestDeletingAGrantAsksForRoleManageAndLandsOneSuccessRow(t *testing.T) {
 	}
 }
 
-// TestDeletingAGrantWhoseActionFailsLinksAFailedRow holds the delete's audit
-// order: the mandatory row lands before the manager, so a delete the manager
-// refuses leaves both the success row and a failed row linked by the action
-// id.
+// TestDeletingAGrantWhoseActionFailsLinksAFailedRow checks that deleting a grant whose action fails links a failed row.
 func TestDeletingAGrantWhoseActionFailsLinksAFailedRow(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	r.manager.fail(errors.New("the store is down"))
@@ -96,9 +89,7 @@ func TestDeletingAGrantWhoseActionFailsLinksAFailedRow(t *testing.T) {
 	}
 }
 
-// TestADeleteTheManagerRefusesIsMapped holds the delete route's error
-// mapping: a builtin role the manager refuses is a 409, and a store failure
-// is a 503.
+// TestADeleteTheManagerRefusesIsMapped checks that a delete the manager refuses is mapped.
 func TestADeleteTheManagerRefusesIsMapped(t *testing.T) {
 	t.Run("a builtin role is a 409", func(t *testing.T) {
 		r := newRig(t, authz.PermissionAccountRead)
@@ -125,8 +116,7 @@ func TestADeleteTheManagerRefusesIsMapped(t *testing.T) {
 	})
 }
 
-// TestDeletingAGrantWithoutATranslationRowIsRefused holds the delete route's
-// translation guard.
+// TestDeletingAGrantWithoutATranslationRowIsRefused checks that deleting a grant without a translation row is refused.
 func TestDeletingAGrantWithoutATranslationRowIsRefused(t *testing.T) {
 	r := newRig(t, authz.Permission("authn.unknown.thing"))
 	w := r.serve(writeRoute(r.p, grantDeleteOperation.Handle(r.p.handleGrantDelete)), http.MethodDelete,
@@ -140,12 +130,9 @@ func TestDeletingAGrantWithoutATranslationRowIsRefused(t *testing.T) {
 	}
 }
 
-// TestDeletingAGrantDoesNotConsultTheCatalog holds the delete route's
-// deliberate omission of the catalog check: a permission can be revoked even
-// after it is no longer declared, because the delete translates without
-// asking the catalog.
+// TestDeletingAGrantDoesNotConsultTheCatalog checks that deleting a grant does not consult the catalog.
 func TestDeletingAGrantDoesNotConsultTheCatalog(t *testing.T) {
-	r := newRig(t) // the catalog declares nothing
+	r := newRig(t)
 	w := r.serve(writeRoute(r.p, grantDeleteOperation.Handle(r.p.handleGrantDelete)), http.MethodDelete,
 		"/api/v1/system/tenants/t1/roles/r1/grants/authn.account.read",
 		params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead)), nil)
@@ -161,8 +148,7 @@ func TestDeletingAGrantDoesNotConsultTheCatalog(t *testing.T) {
 	}
 }
 
-// TestAListingGrantsWhoseManagerFailsIsMapped holds the grant read's failure
-// path: a manager outage is a 503, not a 200 with an empty body.
+// TestAListingGrantsWhoseManagerFailsIsMapped checks that a listing grants whose manager fails is mapped.
 func TestAListingGrantsWhoseManagerFailsIsMapped(t *testing.T) {
 	r := newRig(t, authz.PermissionRoleRead)
 	r.manager.fail(errors.New("the store is down"))
@@ -177,9 +163,7 @@ func TestAListingGrantsWhoseManagerFailsIsMapped(t *testing.T) {
 	}
 }
 
-// TestTheGrantListViewCarriesEveryField holds the grant list's response
-// shape: the answer's outer key is grants, it carries one view per row, and
-// each view's fields are the tenant, the role, the resource and the action.
+// TestTheGrantListViewCarriesEveryField checks that the grant list view carries every field.
 func TestTheGrantListViewCarriesEveryField(t *testing.T) {
 	r := newRig(t, authz.PermissionRoleRead)
 	r.manager.grants = []authz.GrantRecord{{Tenant: "t1", Role: "r1", Resource: "account", Action: "read"}}
@@ -202,11 +186,7 @@ func TestTheGrantListViewCarriesEveryField(t *testing.T) {
 	}
 }
 
-// TestGrantingASecondPermissionUsesItsOwnTranslation holds that the write
-// translates each permission by the shared table and does not hardcode one pair:
-// a second permission whose translation differs from the first must reach the
-// manager as its own pair, so an implementation that hardcoded the first pair
-// fails the second.
+// TestGrantingASecondPermissionUsesItsOwnTranslation checks that granting a second permission uses its own translation.
 func TestGrantingASecondPermissionUsesItsOwnTranslation(t *testing.T) {
 	object, action, ok := translation.Lookup(authz.PermissionSessionRead)
 	if !ok {
@@ -229,9 +209,7 @@ func TestGrantingASecondPermissionUsesItsOwnTranslation(t *testing.T) {
 	}
 }
 
-// TestTheGrantPutMandatoryRowCarriesTheObjectAndDetail holds the put audit
-// row's object and detail: the object is the permission and the detail names
-// the tenant, the role and the permission.
+// TestTheGrantPutMandatoryRowCarriesTheObjectAndDetail checks that the grant put mandatory row carries the object and detail.
 func TestTheGrantPutMandatoryRowCarriesTheObjectAndDetail(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	w := r.serve(writeRoute(r.p, grantPutOperation.Handle(r.p.handleGrantPut)), http.MethodPut,
@@ -253,12 +231,9 @@ func TestTheGrantPutMandatoryRowCarriesTheObjectAndDetail(t *testing.T) {
 	}
 }
 
-// TestGrantingAPermissionTheTranslationLacksIsRefused holds the write's second
-// shape guard: a permission the catalog declares but the translation has no row
-// for is a 400 before the manager, so the write never reaches the manager with
-// an empty pair.
+// TestGrantingAPermissionTheTranslationLacksIsRefused checks that granting a permission the translation lacks is refused.
 func TestGrantingAPermissionTheTranslationLacksIsRefused(t *testing.T) {
-	r := newRig(t, authz.Permission("vendor.custom.read")) // declared, but absent from the translation
+	r := newRig(t, authz.Permission("vendor.custom.read"))
 	w := r.serve(writeRoute(r.p, grantPutOperation.Handle(r.p.handleGrantPut)), http.MethodPut,
 		"/api/v1/system/tenants/t1/roles/r1/grants/vendor.custom.read",
 		params("tenant", "t1", "role", "r1", "permission", "vendor.custom.read"), nil)
@@ -270,9 +245,7 @@ func TestGrantingAPermissionTheTranslationLacksIsRefused(t *testing.T) {
 	}
 }
 
-// TestAnonymousRequestsAreRefusedOnEveryGrantRoute holds the caller check on
-// the grant routes: each answers 401 before the guard is asked and before
-// the manager is called.
+// TestAnonymousRequestsAreRefusedOnEveryGrantRoute checks that anonymous requests are refused on every grant route.
 func TestAnonymousRequestsAreRefusedOnEveryGrantRoute(t *testing.T) {
 	cases := map[string]struct {
 		handler func(*product) gin.HandlerFunc
@@ -303,10 +276,7 @@ func TestAnonymousRequestsAreRefusedOnEveryGrantRoute(t *testing.T) {
 	}
 }
 
-// TestTheGrantViewCarriesThePermissionCode holds the platform management face's
-// grant view: a grant in the permission vocabulary comes back with its
-// permission code, while a pair no declared permission translates to comes back
-// with an empty permission and the pair itself.
+// TestTheGrantViewCarriesThePermissionCode checks that the grant view carries the permission code.
 func TestTheGrantViewCarriesThePermissionCode(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	object, action, ok := translation.Lookup(authz.PermissionAccountRead)

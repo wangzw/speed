@@ -21,6 +21,7 @@ import (
 // removal holds takes one pooled connection and its transaction another, so N
 // concurrent removals of one tenant need at least 2N+1 connections.
 type TenantLock interface {
+	// Lock takes tenant's lock and returns the idempotent function that releases it. An error means the lock could not be taken.
 	Lock(ctx context.Context, tenant string) (release func(), err error)
 }
 

@@ -17,8 +17,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// stubPermissions is the subject-permission read keyed by domain, recording
-// every domain a case asked about. A domain it holds no entry for is empty.
 type stubPermissions struct {
 	mu       sync.Mutex
 	byDomain map[authz.Domain][]authz.Permission
@@ -48,7 +46,6 @@ func (s *stubPermissions) domains() []authz.Domain {
 	return append([]authz.Domain(nil), s.asked...)
 }
 
-// newRig builds the module over the stub, with one endpoint configured.
 func newRig(permissions *stubPermissions) *product {
 	return &product{
 		permissions: permissions,
@@ -57,7 +54,6 @@ func newRig(permissions *stubPermissions) *product {
 	}
 }
 
-// serve calls one handler over a real *gin.Context carrying ctx.
 func serve(t *testing.T, handler gin.HandlerFunc, ctx context.Context) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -70,13 +66,10 @@ func serve(t *testing.T, handler gin.HandlerFunc, ctx context.Context) *httptest
 	return w
 }
 
-// mounted is the handler the route is mounted with: the identity check in front
-// of the declared handler, bound to the endpoint's realm.
 func mounted(p *product) gin.HandlerFunc {
 	return withRealm("public", p.requireIdentity(permissionsOperation.Handle(p.handlePermissions)))
 }
 
-// decode reads the 200 body.
 func decode(t *testing.T, w *httptest.ResponseRecorder) permissionsBody {
 	t.Helper()
 	var body permissionsBody
@@ -86,9 +79,7 @@ func decode(t *testing.T, w *httptest.ResponseRecorder) permissionsBody {
 	return body
 }
 
-// TestTheReadAnswersPlatformAndTenantPermissions holds the answer to both
-// domains: the platform list for the platform domain and the tenant list for
-// the tenant the request resolved to.
+// TestTheReadAnswersPlatformAndTenantPermissions checks that the read answers platform and tenant permissions.
 func TestTheReadAnswersPlatformAndTenantPermissions(t *testing.T) {
 	stub := &stubPermissions{byDomain: map[authz.Domain][]authz.Permission{
 		authz.PlatformDomain: {authz.PermissionAccountRead},
@@ -110,8 +101,7 @@ func TestTheReadAnswersPlatformAndTenantPermissions(t *testing.T) {
 	}
 }
 
-// TestAnotherTenantsGrantDoesNotAppear holds the read to the tenant the request
-// resolved to: a grant held in another domain is not answered under this one.
+// TestAnotherTenantsGrantDoesNotAppear checks that another tenants grant does not appear.
 func TestAnotherTenantsGrantDoesNotAppear(t *testing.T) {
 	stub := &stubPermissions{byDomain: map[authz.Domain][]authz.Permission{
 		"acme":   {authz.PermissionRoleRead},
@@ -139,9 +129,7 @@ func TestAnotherTenantsGrantDoesNotAppear(t *testing.T) {
 	}
 }
 
-// TestNoTenantLeavesTheTenantListEmpty holds the absent-tenant case: the
-// platform list is still answered and the tenant list is an empty list, not the
-// platform list under another name and not null.
+// TestNoTenantLeavesTheTenantListEmpty checks that no tenant leaves the tenant list empty.
 func TestNoTenantLeavesTheTenantListEmpty(t *testing.T) {
 	stub := &stubPermissions{byDomain: map[authz.Domain][]authz.Permission{
 		authz.PlatformDomain: {authz.PermissionAccountRead},
@@ -166,9 +154,7 @@ func TestNoTenantLeavesTheTenantListEmpty(t *testing.T) {
 	}
 }
 
-// TestAnonymousIsRefusedWithTheGatewayChallenge holds the no-identity fallback:
-// the mounted route answers the same 401 the authenticated surfaces answer, and
-// nothing is read from the policy.
+// TestAnonymousIsRefusedWithTheGatewayChallenge checks that anonymous is refused with the gateway challenge.
 func TestAnonymousIsRefusedWithTheGatewayChallenge(t *testing.T) {
 	stub := &stubPermissions{}
 	p := newRig(stub)
@@ -186,8 +172,7 @@ func TestAnonymousIsRefusedWithTheGatewayChallenge(t *testing.T) {
 	}
 }
 
-// TestAnUnreadablePolicyIsA503 holds an outage apart from an empty set: the
-// read that cannot answer is a 503, and the cause never reaches the body.
+// TestAnUnreadablePolicyIsA503 checks that an unreadable policy is a 503.
 func TestAnUnreadablePolicyIsA503(t *testing.T) {
 	stub := &stubPermissions{err: errors.New("the store is down")}
 	p := newRig(stub)
@@ -199,9 +184,7 @@ func TestAnUnreadablePolicyIsA503(t *testing.T) {
 	}
 }
 
-// An impersonating caller is answered for the account the request is taken to
-// be from: the read asks about the impersonated account, never the actor whose
-// hands are on the request.
+// TestTheReadAsksForTheEffectiveAccount checks that the read asks for the effective account.
 func TestTheReadAsksForTheEffectiveAccount(t *testing.T) {
 	stub := &stubPermissions{byDomain: map[authz.Domain][]authz.Permission{}}
 	p := newRig(stub)

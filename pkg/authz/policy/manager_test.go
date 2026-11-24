@@ -10,10 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// The cases here drive the management surface over the real policy tables: the
-// read shapes and their per-tenant scoping, and the writes' refusals and
-// effects. Each asserts a property a wrong implementation would not hold.
-
 func mustPutRole(t *testing.T, ctx context.Context, f *fixture, tenant, role string) {
 	t.Helper()
 	if err := f.PutRole(ctx, authz.RoleRecord{Tenant: tenant, Role: authz.Role(role), DescriptionKey: "k"}); err != nil {
@@ -35,8 +31,7 @@ func mustPutBinding(t *testing.T, ctx context.Context, f *fixture, tenant, accou
 	}
 }
 
-// Grants returns a role's grants within its tenant and no other's, with the
-// fields mapped the way the table holds them.
+// TestGrantsScopesToOneTenantRole checks that grants scopes to one tenant role.
 func TestGrantsScopesToOneTenantRole(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -60,8 +55,6 @@ func TestGrantsScopesToOneTenantRole(t *testing.T) {
 		if g.Tenant != "acme" || g.Role != "roleA" {
 			t.Errorf("a grant reads back as %+v, want tenant acme role roleA", g)
 		}
-		// The resource and the action are the row's own columns: swapping them
-		// would put the action in the resource field.
 		byObject[g.Resource] = g
 	}
 	if g, ok := byObject["account"]; !ok || g.Action != "read" {
@@ -71,14 +64,12 @@ func TestGrantsScopesToOneTenantRole(t *testing.T) {
 		t.Errorf("the session grant reads back as %+v, want resource session action revoke", byObject["session"])
 	}
 
-	// Another tenant's same-named role is not reached, and neither is a
-	// different role of the same tenant.
 	if other, err := f.Grants(ctx, "globex", "roleA"); err != nil || len(other) != 1 || other[0].Resource != "settings" {
 		t.Errorf("Grants(globex, roleA) = %v, %v, want only that tenant's grant", other, err)
 	}
 }
 
-// Bindings lists one tenant's bindings and no other's.
+// TestBindingsListsOneTenant checks that Bindings lists one tenant.
 func TestBindingsListsOneTenant(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -106,8 +97,7 @@ func TestBindingsListsOneTenant(t *testing.T) {
 	}
 }
 
-// BindingsOf holds a subject's bindings to the named tenant: the same subject
-// bound in two tenants reads back one row per tenant, not both.
+// TestBindingsOfScopesToOneTenant checks that bindings of scopes to one tenant.
 func TestBindingsOfScopesToOneTenant(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -125,8 +115,7 @@ func TestBindingsOfScopesToOneTenant(t *testing.T) {
 	}
 }
 
-// PutRole carries the role's free-text description and its rewrite updates
-// it.
+// TestPutRoleWritesAndRewritesTheDescription checks that put role writes and rewrites the description.
 func TestPutRoleWritesAndRewritesTheDescription(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -160,7 +149,7 @@ func TestPutRoleWritesAndRewritesTheDescription(t *testing.T) {
 	}
 }
 
-// GrantCounts counts each role's grants in one tenant in one grouped read.
+// TestGrantCountsCountsEachRolesGrantsInOneTenant checks that grant counts counts each roles grants in one tenant.
 func TestGrantCountsCountsEachRolesGrantsInOneTenant(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -194,8 +183,7 @@ func TestGrantCountsCountsEachRolesGrantsInOneTenant(t *testing.T) {
 	}
 }
 
-// BindingsOfRole lists one role's bindings in one tenant, in account order,
-// with an exclusive account cursor and a page size.
+// TestBindingsOfRoleFiltersAndPagesByAccount checks that bindings of role filters and pages by account.
 func TestBindingsOfRoleFiltersAndPagesByAccount(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -252,10 +240,7 @@ func TestBindingsOfRoleFiltersAndPagesByAccount(t *testing.T) {
 	}
 }
 
-// ClearAccountBindings is the host's account-deletion path: it removes every
-// binding the account holds within one tenant, including a tenant-admin binding
-// DeleteBinding would refuse as the last one, and leaves another account's
-// bindings in that tenant and the same account's rows in another tenant alone.
+// TestClearAccountBindingsClearsOneAccountWithinOneTenant checks that clear account bindings clears one account within one tenant.
 func TestClearAccountBindingsClearsOneAccountWithinOneTenant(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -283,8 +268,7 @@ func TestClearAccountBindingsClearsOneAccountWithinOneTenant(t *testing.T) {
 	}
 }
 
-// Deleting a role revokes it: its grants and bindings go with its row, so
-// the account it was bound to stops being allowed.
+// TestDeleteRoleRevokesItsGrantsAndBindings checks that delete role revokes its grants and bindings.
 func TestDeleteRoleRevokesItsGrantsAndBindings(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -313,8 +297,7 @@ func TestDeleteRoleRevokesItsGrantsAndBindings(t *testing.T) {
 	}
 }
 
-// Deleting a role removes only that tenant's role: another tenant's same-named
-// role and its grants and bindings stay.
+// TestDeleteRoleLeavesAnotherTenantsRole checks that delete role leaves another tenants role.
 func TestDeleteRoleLeavesAnotherTenantsRole(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -337,8 +320,7 @@ func TestDeleteRoleLeavesAnotherTenantsRole(t *testing.T) {
 	}
 }
 
-// Deleting a role that is not there is no work and no error: the removal is
-// idempotent.
+// TestDeleteRoleOfAnUnknownRoleIsNoWork checks that delete role of an unknown role is no work.
 func TestDeleteRoleOfAnUnknownRoleIsNoWork(t *testing.T) {
 	f := newFixture(t)
 	if err := f.DeleteRole(t.Context(), "acme", "ghost"); err != nil {
@@ -346,8 +328,7 @@ func TestDeleteRoleOfAnUnknownRoleIsNoWork(t *testing.T) {
 	}
 }
 
-// Deleting a grant removes the row it names and stops deciding, for a role that
-// is not builtin.
+// TestDeleteGrantRemovesTheRow checks that delete grant removes the row.
 func TestDeleteGrantRemovesTheRow(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -372,8 +353,7 @@ func TestDeleteGrantRemovesTheRow(t *testing.T) {
 	}
 }
 
-// Rewriting a role that is not builtin replaces its description: PutRole is
-// create-or-rewrite, not create-only.
+// TestPutRoleRewritesANonBuiltinRole checks that put role rewrites a non builtin role.
 func TestPutRoleRewritesANonBuiltinRole(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -395,9 +375,7 @@ func TestPutRoleRewritesANonBuiltinRole(t *testing.T) {
 	}
 }
 
-// A grant and a binding are create-or-keep, not create-only: writing the
-// same rule twice names the same row, and the second write is a no-op rather
-// than a duplicate-key failure.
+// TestPutGrantAndPutBindingAreIdempotent checks that put grant and put binding are idempotent.
 func TestPutGrantAndPutBindingAreIdempotent(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -426,8 +404,7 @@ func TestPutGrantAndPutBindingAreIdempotent(t *testing.T) {
 	}
 }
 
-// A role written with no creation time gets one, so a later read never sees a
-// zero timestamp.
+// TestPutRoleFillsCreatedAt checks that put role fills created at.
 func TestPutRoleFillsCreatedAt(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -441,9 +418,7 @@ func TestPutRoleFillsCreatedAt(t *testing.T) {
 	}
 }
 
-// A binding that names no account is refused: an empty subject is the zero
-// identity's key, and a binding for it would decide for whoever arrives with
-// no identity.
+// TestPutBindingRefusesAnEmptyAccount checks that PutBinding refuses an empty account.
 func TestPutBindingRefusesAnEmptyAccount(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -457,8 +432,7 @@ func TestPutBindingRefusesAnEmptyAccount(t *testing.T) {
 	}
 }
 
-// Every read and write refuses an empty tenant: a row belonging to no tenant
-// reaches no tenant's decision while the cross-tenant mark lets it through.
+// TestEveryMethodRefusesAnEmptyTenant checks that every method refuses an empty tenant.
 func TestEveryMethodRefusesAnEmptyTenant(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -491,8 +465,7 @@ func TestEveryMethodRefusesAnEmptyTenant(t *testing.T) {
 	}
 }
 
-// The lifecycle hooks that hold no policy are no-ops: they return nil for any
-// input and change nothing.
+// TestLifecycleHooksThatHoldNoPolicyAreNoOps checks that lifecycle hooks that hold no policy are no ops.
 func TestLifecycleHooksThatHoldNoPolicyAreNoOps(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()

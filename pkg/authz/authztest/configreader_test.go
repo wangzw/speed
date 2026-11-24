@@ -25,9 +25,7 @@ func configProbeModule(name, namespace string) core.Module {
 	}
 }
 
-// TestConfigReaderServesTheLoadersValues holds that the reader is the real
-// loader's: a value in the body reaches a module that declared the item, and
-// a value the body leaves out reads as the declared default.
+// TestConfigReaderServesTheLoadersValues checks that config reader serves the loaders values.
 func TestConfigReaderServesTheLoadersValues(t *testing.T) {
 	reader := authztest.ConfigReader(t, configProbeModule("probe", "probe"), `{"probe": {"greeting": "hello"}}`)
 	var got probeConfig
@@ -48,8 +46,7 @@ func TestConfigReaderServesTheLoadersValues(t *testing.T) {
 	}
 }
 
-// TestConfigReaderAllServesEachModuleItsOwnSection holds the several-module
-// form: two modules read two sections of one body.
+// TestConfigReaderAllServesEachModuleItsOwnSection checks that config reader all serves each module its own section.
 func TestConfigReaderAllServesEachModuleItsOwnSection(t *testing.T) {
 	reader := authztest.ConfigReaderAll(t,
 		`{"one": {"greeting": "a"}, "two": {"greeting": "b"}}`,
@@ -65,9 +62,6 @@ func TestConfigReaderAllServesEachModuleItsOwnSection(t *testing.T) {
 	}
 }
 
-// loadFailure stands in for the handle a case gave ConfigReader, so that a body
-// the loader refuses can be observed as the failure ConfigReader reports without
-// failing the test that drives it.
 type loadFailure struct {
 	testing.TB
 	failed bool
@@ -77,8 +71,7 @@ func (l *loadFailure) Helper() {}
 
 func (l *loadFailure) Fatalf(string, ...any) { l.failed = true }
 
-// TestConfigReaderFailsTheCaseOnABodyTheLoaderRefuses holds that a malformed
-// body is a failure of the case and not a reader that silently serves defaults.
+// TestConfigReaderFailsTheCaseOnABodyTheLoaderRefuses checks that config reader fails the case on a body the loader refuses.
 func TestConfigReaderFailsTheCaseOnABodyTheLoaderRefuses(t *testing.T) {
 	l := &loadFailure{TB: t}
 	authztest.ConfigReader(l, configProbeModule("probe", "probe"), `{not json`)

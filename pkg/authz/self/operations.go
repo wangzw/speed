@@ -6,18 +6,13 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The fragment's info section.
 const (
 	fragmentTitle   = "authz.self"
 	fragmentVersion = "1.0.0"
 )
 
-// pathPermissionsFragment is the route relative to the module's API root.
 const pathPermissionsFragment = "/authz/me/permissions"
 
-// permissionsBody is the 200 answer: the permission names the caller holds in
-// each domain. Both lists are always present, sorted, and empty rather than
-// absent when the caller holds none.
 type permissionsBody = struct {
 	_ struct{} `description:"The permissions the calling principal holds in the two policy domains."`
 
@@ -25,7 +20,6 @@ type permissionsBody = struct {
 	Tenant   []string `json:"tenant" required:"true" description:"The permission names the principal holds in the tenant the request resolved to, sorted ascending. Empty when the request resolved no tenant, or the principal holds none there."`
 }
 
-// permissionsOperation declares GET /authz/me/permissions.
 var permissionsOperation = speedhttp.NewOperation[struct{}, permissionsBody](
 	"authz.self.permissions",
 	http.MethodGet,
@@ -49,7 +43,6 @@ var permissionsOperation = speedhttp.NewOperation[struct{}, permissionsBody](
 	},
 )
 
-// operations is this module's declaration of the API it serves.
 var operations = speedhttp.Operations{
 	permissionsOperation,
 }

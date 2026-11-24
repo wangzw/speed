@@ -7,18 +7,13 @@ import (
 	"testing"
 )
 
-// The import paths the rule below is about: the root package authztest builds
-// its stubs against, and the two subpackages that import authztest from their
-// own tests.
 const (
 	authzRootPath = "github.com/vislake/speed/pkg/authz"
 	policyPath    = authzRootPath + "/policy"
 	guardPath     = authzRootPath + "/guard"
 )
 
-// TestAuthztestImportsTheRootPackageAlone is the executable form of the
-// packaging limit: authztest's non-test imports are the packages the fixture
-// needs and never the policy or enforcement subpackage.
+// TestAuthztestImportsTheRootPackageAlone checks that authztest imports the root package alone.
 func TestAuthztestImportsTheRootPackageAlone(t *testing.T) {
 	imports := packageImports(t, ".")
 	if !contains(imports, authzRootPath) {
@@ -31,10 +26,7 @@ func TestAuthztestImportsTheRootPackageAlone(t *testing.T) {
 	}
 }
 
-// TestTheSubpackageRuleFailsOnAForbiddenImport holds the rule to be a rule and
-// not a check that accepts anything: an import of the policy or the enforcement
-// subpackage, or of a package under either, is reported, while an import of the
-// root package or of another package the fixture uses is not.
+// TestTheSubpackageRuleFailsOnAForbiddenImport checks that the subpackage rule fails on a forbidden import.
 func TestTheSubpackageRuleFailsOnAForbiddenImport(t *testing.T) {
 	got := subpackageViolations([]string{authzRootPath, policyPath, guardPath + "/internal", "context"})
 	want := []string{policyPath, guardPath + "/internal"}
@@ -51,8 +43,6 @@ func TestTheSubpackageRuleFailsOnAForbiddenImport(t *testing.T) {
 	}
 }
 
-// subpackageViolations reports the imports that name the policy or enforcement
-// subpackage, or a package under either.
 func subpackageViolations(imports []string) []string {
 	var out []string
 	for _, imp := range imports {
@@ -75,7 +65,6 @@ func contains(list []string, want string) bool {
 	return false
 }
 
-// listed is what this check reads of go list's output for one package.
 type listed struct {
 	ImportPath string
 	// Imports are the imports of the package's non-test files. go list reports
@@ -84,9 +73,6 @@ type listed struct {
 	Imports []string
 }
 
-// packageImports lists a package with go list and returns its non-test imports.
-// The package's own directory is the working directory go test runs this file
-// from, so a relative pattern reaches this package.
 func packageImports(t *testing.T, pattern string) []string {
 	t.Helper()
 	cmd := exec.Command("go", "list", "-e", "-json=ImportPath,Imports", pattern)

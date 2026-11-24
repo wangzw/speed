@@ -14,23 +14,14 @@ import (
 	"github.com/vislake/speed/pkg/authz/internal/translation"
 )
 
-// forbiddenDetailForTest is the 403's reason class written as a literal and not
-// through forbiddenDetail, so a case reads back the value a dashboard is written
-// against rather than the constant under test.
 const forbiddenDetailForTest = "forbidden"
 
-// writtenReply is what one write-out put on the wire: the status, the headers
-// and the body, read off an httptest recorder.
 type writtenReply struct {
 	status int
 	header nethttp.Header
 	body   []byte
 }
 
-// assertAbsent fails the case if token appears in the body or in any header
-// value. A write-out is kept clear of the permission a route asked for and of
-// the cause of an outage, and a header is as much a place to leak either as the
-// body is.
 func (rp writtenReply) assertAbsent(t *testing.T, token string) {
 	t.Helper()
 	if strings.Contains(string(rp.body), token) {
@@ -45,9 +36,6 @@ func (rp writtenReply) assertAbsent(t *testing.T, token string) {
 	}
 }
 
-// capture runs one write-out the way a middleware reaches it: a real
-// *gin.Context over an httptest recorder, with the request the answer is written
-// for, and the recorder keeps the response.
 func capture(t *testing.T, write func(c *gin.Context)) writtenReply {
 	t.Helper()
 	gin.SetMode(gin.ReleaseMode)
@@ -58,7 +46,6 @@ func capture(t *testing.T, write func(c *gin.Context)) writtenReply {
 	return writtenReply{status: rec.Code, header: rec.Header().Clone(), body: rec.Body.Bytes()}
 }
 
-// problemDoc is the default response body the cases read back.
 type problemDoc struct {
 	Type   string `json:"type"`
 	Status int    `json:"status"`
@@ -74,11 +61,7 @@ func decodeProblem(t *testing.T, body []byte) problemDoc {
 	return p
 }
 
-// TestAForbiddenWriteIsA403WithTheModuleType holds the shape of both 403s: a
-// policy denial and an undeclared route are written the same way, with the
-// module's problem type and the status the outcome set states, and the
-// detail is the class of the refusal alone — non-empty, the same for both
-// permissions, and naming no permission of the vocabulary.
+// TestAForbiddenWriteIsA403WithTheModuleType checks that a forbidden write is a 403 with the module type.
 func TestAForbiddenWriteIsA403WithTheModuleType(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -105,9 +88,6 @@ func TestAForbiddenWriteIsA403WithTheModuleType(t *testing.T) {
 			if body.Detail == "" {
 				t.Error("the detail is empty: the reason class is unstated")
 			}
-			// The detail is the reason class, pinned to its literal value and not
-			// read back through forbiddenDetail, so a change to the constant's
-			// value fails the case; and it names no permission of the vocabulary.
 			if body.Detail != forbiddenDetailForTest {
 				t.Errorf("detail = %q, want the reason class %q", body.Detail, forbiddenDetailForTest)
 			}
@@ -128,9 +108,7 @@ func TestAForbiddenWriteIsA403WithTheModuleType(t *testing.T) {
 	}
 }
 
-// TestAnUnavailableWriteIsA503 holds that an outage is a 503 and not a denial,
-// and that the cause reaches neither the body nor any response header nor a type
-// that reads as a refusal.
+// TestAnUnavailableWriteIsA503 checks that an unavailable write is a 503.
 func TestAnUnavailableWriteIsA503(t *testing.T) {
 	cause := errors.New("the engine is down")
 	rp := capture(t, func(c *gin.Context) { unavailable(c, outage, cause) })
@@ -144,8 +122,6 @@ func TestAnUnavailableWriteIsA503(t *testing.T) {
 	if body.Type == typePrefix+forbiddenCode {
 		t.Errorf("the outage is written as a denial: type = %q", body.Type)
 	}
-	// The 503 carries no detail: the reason class is the 403's, and the outage
-	// answer says nothing it could name a permission or a dependency in.
 	if body.Detail != "" {
 		t.Errorf("the outage detail is %q, want none", body.Detail)
 	}
@@ -157,9 +133,7 @@ func TestAnUnavailableWriteIsA503(t *testing.T) {
 	}
 }
 
-// TestANoIdentityWriteMirrorsAdmission holds the 401 of a request with no
-// identity where one is required: the same realm challenge the admission layer
-// writes, and no problem type of this module's on the body.
+// TestANoIdentityWriteMirrorsAdmission checks that a no identity write mirrors admission.
 func TestANoIdentityWriteMirrorsAdmission(t *testing.T) {
 	rp := capture(t, func(c *gin.Context) { noIdentity401(c, noIdentity, "main") })
 	if rp.status != nethttp.StatusUnauthorized {
@@ -177,9 +151,7 @@ func TestANoIdentityWriteMirrorsAdmission(t *testing.T) {
 	}
 }
 
-// TestTheRealmChallengeNeverEndsTheHeaderField holds the realm against a value
-// that would end the header field: the quotes are escaped and the line ending is
-// dropped, so the challenge stays one field value.
+// TestTheRealmChallengeNeverEndsTheHeaderField checks that the realm challenge never ends the header field.
 func TestTheRealmChallengeNeverEndsTheHeaderField(t *testing.T) {
 	if got := quoteRealm("pub\"lic\\\r\nx"); got != `pub\"lic\\x` {
 		t.Errorf("quoteRealm escaped to %q", got)
@@ -190,9 +162,7 @@ func TestTheRealmChallengeNeverEndsTheHeaderField(t *testing.T) {
 	}
 }
 
-// TestTheOutcomeNamesAreTheClosedDesignSet holds the metric attribute values to
-// the design's closed set: every member is named, none is renamed, and no name
-// stands for two outcomes.
+// TestTheOutcomeNamesAreTheClosedDesignSet checks that the outcome names are the closed design set.
 func TestTheOutcomeNamesAreTheClosedDesignSet(t *testing.T) {
 	want := map[string]bool{
 		"allowed": true, "denied": true, "unguarded": true, "unavailable": true, "no-identity": true,
@@ -213,9 +183,7 @@ func TestTheOutcomeNamesAreTheClosedDesignSet(t *testing.T) {
 	}
 }
 
-// TestTheOutcomeStatusIsTheClosedSet holds the refusal codes to the closed
-// set: 403 for a denial or an undeclared route, 401 for a missing identity,
-// 503 for an outage, and 200 for the one that passes.
+// TestTheOutcomeStatusIsTheClosedSet checks that the outcome status is the closed set.
 func TestTheOutcomeStatusIsTheClosedSet(t *testing.T) {
 	want := map[outcome]int{
 		allowed:    nethttp.StatusOK,
@@ -239,8 +207,7 @@ func TestTheOutcomeStatusIsTheClosedSet(t *testing.T) {
 	}
 }
 
-// TestOnlyAnAllowedOutcomePasses holds that the request goes on only for the one
-// allowing outcome.
+// TestOnlyAnAllowedOutcomePasses checks that only an allowed outcome passes.
 func TestOnlyAnAllowedOutcomePasses(t *testing.T) {
 	for o := outcome(0); o < outcomeCount; o++ {
 		if got, want := o.passes(), o == allowed; got != want {
@@ -249,10 +216,7 @@ func TestOnlyAnAllowedOutcomePasses(t *testing.T) {
 	}
 }
 
-// TestTheDecisionKeepsThePermissionAndCauseOutOfTheResponse holds the write-out
-// against the values a decision carries beyond the outcome: neither the
-// permission a denied route asked for nor the cause of an outage reaches the
-// caller.
+// TestTheDecisionKeepsThePermissionAndCauseOutOfTheResponse checks that the decision keeps the permission and cause out of the response.
 func TestTheDecisionKeepsThePermissionAndCauseOutOfTheResponse(t *testing.T) {
 	d := decision{
 		outcome:    denied,

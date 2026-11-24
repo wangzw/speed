@@ -12,14 +12,11 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// writeRouteNames lists the write routes in a fixed order, so a failing case is
-// readable and the whole surface is covered.
 var writeRouteNames = []string{
 	"the role write", "the role delete", "the grant write",
 	"the grant delete", "the binding write", "the binding delete",
 }
 
-// writeRoutes is every write route, each bound the way the module mounts it.
 func writeRoutes(p *product) map[string]struct {
 	handler gin.HandlerFunc
 	method  string
@@ -66,15 +63,12 @@ func writeRoutes(p *product) map[string]struct {
 	}
 }
 
-// newGateRig builds a rig whose catalog holds the permissions every write route
-// names and whose manager answers every write.
 func newGateRig(t *testing.T) *rig {
 	t.Helper()
 	return newRig(t, authz.PermissionTenantRoleRead)
 }
 
-// TestAWriteFromAnUnverifiedRegistrationIsRefusedBeforeAnythingRuns holds the
-// registration gate on the whole write surface.
+// TestAWriteFromAnUnverifiedRegistrationIsRefusedBeforeAnythingRuns checks that a write from an unverified registration is refused before anything runs.
 func TestAWriteFromAnUnverifiedRegistrationIsRefusedBeforeAnythingRuns(t *testing.T) {
 	for _, name := range writeRouteNames {
 		t.Run(name, func(t *testing.T) {
@@ -102,7 +96,7 @@ func TestAWriteFromAnUnverifiedRegistrationIsRefusedBeforeAnythingRuns(t *testin
 	}
 }
 
-// TestAReadIsNotGated holds that the registration gate covers writes alone.
+// TestAReadIsNotGated checks that a read is not gated.
 func TestAReadIsNotGated(t *testing.T) {
 	r := newGateRig(t)
 	r.signup.answer(authn.SignupPending, nil)
@@ -120,8 +114,7 @@ func TestAReadIsNotGated(t *testing.T) {
 	}
 }
 
-// TestAVerifiedOrGivenAccountWrites holds the exemption of an account that
-// proved an email address and of one created outside self-registration.
+// TestAVerifiedOrGivenAccountWrites checks that a verified or given account writes.
 func TestAVerifiedOrGivenAccountWrites(t *testing.T) {
 	for name, state := range map[string]authn.SignupState{
 		"verified": authn.SignupVerified,
@@ -144,8 +137,7 @@ func TestAVerifiedOrGivenAccountWrites(t *testing.T) {
 	}
 }
 
-// TestAServiceAccountAndAStaticSubjectAreExempt holds the two callers the gate
-// never consults.
+// TestAServiceAccountAndAStaticSubjectAreExempt checks that a service account and a static subject are exempt.
 func TestAServiceAccountAndAStaticSubjectAreExempt(t *testing.T) {
 	t.Run("a service account", func(t *testing.T) {
 		r := newGateRig(t)
@@ -180,7 +172,7 @@ func TestAServiceAccountAndAStaticSubjectAreExempt(t *testing.T) {
 	})
 }
 
-// TestAnUnreadableSignupStateIs503 holds the failure direction.
+// TestAnUnreadableSignupStateIs503 checks that an unreadable signup state is a 503.
 func TestAnUnreadableSignupStateIs503(t *testing.T) {
 	r := newGateRig(t)
 	r.signup.answer(authn.SignupNone, errors.New("the database is down"))
@@ -199,9 +191,7 @@ func TestAnUnreadableSignupStateIs503(t *testing.T) {
 	}
 }
 
-// TestTheRegistrationGatePrecedesThePermissionDecision holds the order: a
-// pending caller that would also be refused by the guard is answered
-// contact-required, and the guard is never asked.
+// TestTheRegistrationGatePrecedesThePermissionDecision checks that the registration gate precedes the permission decision.
 func TestTheRegistrationGatePrecedesThePermissionDecision(t *testing.T) {
 	for name, script := range map[string]func(*rig){
 		"no permission": func(r *rig) { r.guard.allow = false },
@@ -228,7 +218,7 @@ func TestTheRegistrationGatePrecedesThePermissionDecision(t *testing.T) {
 	}
 }
 
-// TestAnAccountWithNoSignupRecordWrites holds the sentinel's direction.
+// TestAnAccountWithNoSignupRecordWrites checks that an account with no signup record writes.
 func TestAnAccountWithNoSignupRecordWrites(t *testing.T) {
 	r := newGateRig(t)
 	r.signup.answer(authn.SignupNone, authn.ErrAccountNotFound)
@@ -247,7 +237,7 @@ func TestAnAccountWithNoSignupRecordWrites(t *testing.T) {
 	}
 }
 
-// TestTheReadRoutesAreNotGated covers every read route of the surface.
+// TestTheReadRoutesAreNotGated checks that the read routes are not gated.
 func TestTheReadRoutesAreNotGated(t *testing.T) {
 	for _, route := range []struct {
 		name   string
@@ -277,7 +267,7 @@ func TestTheReadRoutesAreNotGated(t *testing.T) {
 	}
 }
 
-// TestTheGateRefusesBeforeTheBodyShape holds the order over the role write.
+// TestTheGateRefusesBeforeTheBodyShape checks that the gate refuses before the body shape.
 func TestTheGateRefusesBeforeTheBodyShape(t *testing.T) {
 	r := newGateRig(t)
 	r.signup.answer(authn.SignupPending, nil)
@@ -292,8 +282,7 @@ func TestTheGateRefusesBeforeTheBodyShape(t *testing.T) {
 	}
 }
 
-// TestTheGateReadsTheActorNotTheImpersonationTarget holds the subject of the
-// read: under an impersonation the state is the operator's (the actor).
+// TestTheGateReadsTheActorNotTheImpersonationTarget checks that the gate reads the actor not the impersonation target.
 func TestTheGateReadsTheActorNotTheImpersonationTarget(t *testing.T) {
 	r := newGateRig(t)
 	r.signup.answer(authn.SignupPending, nil)

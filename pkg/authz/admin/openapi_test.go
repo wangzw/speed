@@ -11,9 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/internal/routecontract"
 )
 
-// seams satisfies the capabilities this module holds without implementing any
-// of them: Init resolves each and stores it, and no method is called on one
-// before a request arrives.
 type seams struct {
 	authz.Manager
 	authz.Catalog
@@ -23,10 +20,7 @@ type seams struct {
 	authn.SignupVerification
 }
 
-// TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters holds the one
-// thing the OpenAPI fragment and the registrations have to agree on: the
-// fragment is the only source a generated client is built from, and the
-// design leaves the two free to drift with no failure signal at run time.
+// TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters checks that the declared operations are the routes the module registers.
 func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 	routecontract.Check(t, routecontract.Case{
 		Module:    Module(),

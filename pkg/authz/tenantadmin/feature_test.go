@@ -6,8 +6,7 @@ import (
 	"github.com/vislake/speed/pkg/feature"
 )
 
-// TestTheModuleDeclaresTheTenantAdminFeature holds the declaration the frontend
-// gates the tenant management surface on: one static Spec with the exact name.
+// TestTheModuleDeclaresTheTenantAdminFeature checks that the module declares the tenant admin feature.
 func TestTheModuleDeclaresTheTenantAdminFeature(t *testing.T) {
 	want := feature.Spec{Name: "authz.tenantadmin"}
 	var got []feature.Spec

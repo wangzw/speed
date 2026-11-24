@@ -5,9 +5,6 @@ import (
 	"log/slog"
 )
 
-// nameOf answers the name a tenant identifier is addressed by. With no resolver
-// it answers the empty string: the identifier is internal and never stands in for
-// the name.
 func (p *product) nameOf(ctx context.Context, id string) (string, error) {
 	if p.names == nil {
 		return "", nil

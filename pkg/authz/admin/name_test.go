@@ -7,9 +7,7 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// TestThePolicyViewsNameTheName holds the role, grant and binding views to the
-// name: the policy store keys rows by the identifier, and a client reads the
-// name it addresses the tenant by.
+// TestThePolicyViewsNameTheName checks that the policy views name the name.
 func TestThePolicyViewsNameTheName(t *testing.T) {
 	p := &product{}
 	role := p.roleViewOf(context.Background(), authz.RoleRecord{Tenant: "t1", Role: "editor"}, 0, nil, false, "acme")

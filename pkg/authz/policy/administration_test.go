@@ -9,13 +9,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// The cases here hold the two administration roles' domain constraints, the
-// membership check a platform administrator binding requires, and the last
-// tenant administrator a domain may not lose. Each is a write-side property the
-// manager owns because it reads no actor.
-
-// membershipStub records the questions a case asks it and answers the one the
-// case set.
 type membershipStub struct {
 	calls  []struct{ tenant, account string }
 	member bool
@@ -27,12 +20,9 @@ func (m *membershipStub) IsMember(_ context.Context, tenant, account string) (bo
 	return m.member, m.err
 }
 
-// platform is the reserved platform domain as the manager receives it.
 const platform = string(authz.PlatformDomain)
 
-// TestPutRoleRefusesThePlatformAdministratorRoleOutsideThePlatformDomain holds
-// that the role exists in one domain only: a role written into another tenant
-// is refused before it is created, and the platform domain accepts it.
+// TestPutRoleRefusesThePlatformAdministratorRoleOutsideThePlatformDomain checks that PutRole refuses the platform administrator role outside the platform domain.
 func TestPutRoleRefusesThePlatformAdministratorRoleOutsideThePlatformDomain(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -56,8 +46,7 @@ func TestPutRoleRefusesThePlatformAdministratorRoleOutsideThePlatformDomain(t *t
 	}
 }
 
-// TestPutBindingRefusesThePlatformAdministratorRoleOutsideThePlatformDomain
-// holds the same closure on the binding path.
+// TestPutBindingRefusesThePlatformAdministratorRoleOutsideThePlatformDomain checks that PutBinding refuses the platform administrator role outside the platform domain.
 func TestPutBindingRefusesThePlatformAdministratorRoleOutsideThePlatformDomain(t *testing.T) {
 	f := newFixture(t)
 
@@ -74,9 +63,7 @@ func TestPutBindingRefusesThePlatformAdministratorRoleOutsideThePlatformDomain(t
 	}
 }
 
-// TestTheTenantAdministratorRoleBelongsToEveryDomain holds that the role the
-// system tenant shares with every other tenant carries no domain restriction:
-// the platform domain and a business tenant both accept it.
+// TestTheTenantAdministratorRoleBelongsToEveryDomain checks that the tenant administrator role belongs to every domain.
 func TestTheTenantAdministratorRoleBelongsToEveryDomain(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -85,9 +72,7 @@ func TestTheTenantAdministratorRoleBelongsToEveryDomain(t *testing.T) {
 	mustPutRole(t, ctx, f, "acme", string(authz.TenantAdminRole))
 }
 
-// TestPutBindingOfThePlatformAdministratorNeedsAMembershipChecker holds that
-// the check fails closed: an assembly with no MembershipChecker refuses the
-// write with ErrMissingMembershipChecker rather than binding the account.
+// TestPutBindingOfThePlatformAdministratorNeedsAMembershipChecker checks that put binding of the platform administrator needs a membership checker.
 func TestPutBindingOfThePlatformAdministratorNeedsAMembershipChecker(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -106,9 +91,7 @@ func TestPutBindingOfThePlatformAdministratorNeedsAMembershipChecker(t *testing.
 	}
 }
 
-// TestPutBindingOfThePlatformAdministratorChecksMembership holds the check
-// itself: the checker is asked about the account in the platform domain, an
-// active member is bound, and a non-member is refused with nothing written.
+// TestPutBindingOfThePlatformAdministratorChecksMembership checks that put binding of the platform administrator checks membership.
 func TestPutBindingOfThePlatformAdministratorChecksMembership(t *testing.T) {
 	t.Run("an active member is bound", func(t *testing.T) {
 		f := newFixture(t)
@@ -157,9 +140,7 @@ func TestPutBindingOfThePlatformAdministratorChecksMembership(t *testing.T) {
 	})
 }
 
-// TestOtherBindingsDoNotConsultTheMembershipChecker holds the check's scope: a
-// tenant administrator binding outside the platform domain, and any other role,
-// are written without it.
+// TestOtherBindingsDoNotConsultTheMembershipChecker checks that other bindings do not consult the membership checker.
 func TestOtherBindingsDoNotConsultTheMembershipChecker(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -173,9 +154,7 @@ func TestOtherBindingsDoNotConsultTheMembershipChecker(t *testing.T) {
 	}
 }
 
-// TestTheManagerTakesUpAMembershipCheckerOptionally holds the wiring: a checker
-// the assembly delivers is what PutBinding consults, so the check is a property
-// of the assembly and not only of a value a case set.
+// TestTheManagerTakesUpAMembershipCheckerOptionally checks that the manager takes up a membership checker optionally.
 func TestTheManagerTakesUpAMembershipCheckerOptionally(t *testing.T) {
 	p := newProductOver(t)
 	ctx := t.Context()
@@ -202,9 +181,7 @@ func TestTheManagerTakesUpAMembershipCheckerOptionally(t *testing.T) {
 	}
 }
 
-// TestDeletingTheLastTenantAdministratorBindingIsRefused holds the write-side
-// floor: the last tenant administrator of a domain stays bound, and the refusal
-// leaves the row in place.
+// TestDeletingTheLastTenantAdministratorBindingIsRefused checks that deleting the last tenant administrator binding is refused.
 func TestDeletingTheLastTenantAdministratorBindingIsRefused(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -224,8 +201,7 @@ func TestDeletingTheLastTenantAdministratorBindingIsRefused(t *testing.T) {
 	}
 }
 
-// TestDeletingATenantAdministratorBindingLeavesTheOthers holds the floor is on
-// the domain, not on each row: one of two may go, and the second then may not.
+// TestDeletingATenantAdministratorBindingLeavesTheOthers checks that deleting a tenant administrator binding leaves the others.
 func TestDeletingATenantAdministratorBindingLeavesTheOthers(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -248,8 +224,7 @@ func TestDeletingATenantAdministratorBindingLeavesTheOthers(t *testing.T) {
 	}
 }
 
-// TestDeletingTheLastBindingOfAnotherRoleIsAllowed holds the floor's scope: it
-// is the tenant administrator role that may not reach zero, not every role.
+// TestDeletingTheLastBindingOfAnotherRoleIsAllowed checks that deleting the last binding of another role is allowed.
 func TestDeletingTheLastBindingOfAnotherRoleIsAllowed(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -261,7 +236,6 @@ func TestDeletingTheLastBindingOfAnotherRoleIsAllowed(t *testing.T) {
 	}
 }
 
-// bindingsOf reads an account's bindings and fails the case on an error.
 func (f *fixture) bindingsOf(t *testing.T, tenant, account string) []authz.Binding {
 	t.Helper()
 	bindings, err := f.BindingsOf(t.Context(), tenant, account)

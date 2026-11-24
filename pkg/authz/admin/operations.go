@@ -6,14 +6,11 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The fragment's info section.
 const (
 	fragmentTitle   = "authz.admin"
 	fragmentVersion = "1.0.0"
 )
 
-// The routes as the fragment writes them, relative to the API root the module's
-// Spec declares.
 const (
 	pathPermissionsFragment = "/permissions"
 
@@ -26,46 +23,32 @@ const (
 	pathBindingFragment   = "/tenants/:tenant/bindings/:account/:role"
 )
 
-// tenantInput is the request of a route that acts on one tenant's policy data.
 type tenantInput struct {
 	Tenant string `path:"tenant" description:"The tenant's name whose policy data the route acts on. The platform name layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain."`
 }
 
-// roleInput is the request of a route that acts on one role of a tenant.
 type roleInput struct {
 	Tenant string `path:"tenant" description:"The tenant's name whose policy data the route acts on. The platform name layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain."`
 	Role   string `path:"role" description:"The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."`
 }
 
-// grantInput is the request of a route that acts on one grant.
 type grantInput struct {
 	Tenant     string `path:"tenant" description:"The tenant's name whose policy data the route acts on. The platform name layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain."`
 	Role       string `path:"role" description:"The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."`
 	Permission string `path:"permission" description:"The permission name as the catalog declares it, for example authz.role.read. It is translated to its (resource, action) pair before the write."`
 }
 
-// tenantAccountInput is the request of the read that lists one account's
-// bindings within a tenant.
 type tenantAccountInput struct {
 	Tenant  string `path:"tenant" description:"The tenant's name whose policy data the route acts on. The platform name layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain."`
 	Account string `path:"account" description:"The account identifier the binding is addressed by."`
 }
 
-// bindingInput is the request of a route that acts on one binding: an account
-// holding a role within a tenant.
 type bindingInput struct {
 	Tenant  string `path:"tenant" description:"The tenant's name whose policy data the route acts on. The platform name layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain."`
 	Account string `path:"account" description:"The account identifier the binding is addressed by."`
 	Role    string `path:"role" description:"The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."`
 }
 
-// roleWriteInput is the request of a role write: the role named in the path and
-// its description in the body. The builtin mark is not writable here; a member
-// sent under that name reaches nothing.
-//
-// The blank field opens the object: the route's body prescreen drops members the
-// declaration does not describe, so the schema must not claim a refusal the
-// route does not make.
 type roleWriteInput struct {
 	_ struct{} `additionalProperties:"true" description:"The body of a role write: the role's description. The builtin mark is not part of the body; a member sent under that name reaches nothing."`
 
@@ -75,39 +58,31 @@ type roleWriteInput struct {
 	Description *string `json:"description" description:"The role's free-text description, at most 500 characters. Absent leaves the stored text as it is; an explicit empty string clears it; an over-long value is a 400."`
 }
 
-// The success bodies. Each is an alias of an anonymous struct, so the fragment
-// publishes the wrapper inline rather than as a component of its own.
 type (
-	// permissionListBody is the 200 answer of the catalog read.
 	permissionListBody = struct {
 		_ struct{} `description:"The catalog's declared permissions."`
 
 		Permissions []AuthzAdminPermissionView `json:"permissions" required:"true" description:"Every declared permission, one view each; not sorted."`
 	}
 
-	// roleListBody is the 200 answer of a role list.
 	roleListBody = struct {
 		_ struct{} `description:"The tenant's roles."`
 
 		Roles []AuthzAdminRoleView `json:"roles" required:"true" description:"Every role of the tenant, ordered by role name."`
 	}
 
-	// grantListBody is the 200 answer of a grant list.
 	grantListBody = struct {
 		_ struct{} `description:"The role's grants."`
 
 		Grants []AuthzAdminGrantView `json:"grants" required:"true" description:"Every grant the role holds, ordered by resource and then action."`
 	}
 
-	// bindingListBody is the 200 answer of a tenant's binding list.
 	bindingListBody = struct {
 		_ struct{} `description:"The tenant's bindings."`
 
 		Bindings []AuthzAdminBindingView `json:"bindings" required:"true" description:"Every binding of the tenant, ordered by account and then role."`
 	}
 
-	// accountBindingListBody is the 200 answer of the read that lists one
-	// account's bindings within a tenant.
 	accountBindingListBody = struct {
 		_ struct{} `description:"The account's bindings within the tenant."`
 
@@ -115,7 +90,6 @@ type (
 	}
 )
 
-// permissionListOperation declares GET /permissions.
 var permissionListOperation = speedhttp.NewOperation[struct{}, permissionListBody](
 	"authz.admin.permissions.list",
 	http.MethodGet,
@@ -139,7 +113,6 @@ var permissionListOperation = speedhttp.NewOperation[struct{}, permissionListBod
 	},
 )
 
-// roleListOperation declares GET /tenants/:tenant/roles.
 var roleListOperation = speedhttp.NewOperation[tenantInput, roleListBody](
 	"authz.admin.roles.list",
 	http.MethodGet,
@@ -165,7 +138,6 @@ var roleListOperation = speedhttp.NewOperation[tenantInput, roleListBody](
 	},
 )
 
-// rolePutOperation declares PUT /tenants/:tenant/roles/:role.
 var rolePutOperation = speedhttp.NewOperation[roleWriteInput, struct{}](
 	"authz.admin.roles.put",
 	http.MethodPut,
@@ -195,7 +167,6 @@ var rolePutOperation = speedhttp.NewOperation[roleWriteInput, struct{}](
 	},
 )
 
-// roleDeleteOperation declares DELETE /tenants/:tenant/roles/:role.
 var roleDeleteOperation = speedhttp.NewOperation[roleInput, struct{}](
 	"authz.admin.roles.delete",
 	http.MethodDelete,
@@ -220,7 +191,6 @@ var roleDeleteOperation = speedhttp.NewOperation[roleInput, struct{}](
 	},
 )
 
-// grantListOperation declares GET /tenants/:tenant/roles/:role/grants.
 var grantListOperation = speedhttp.NewOperation[roleInput, grantListBody](
 	"authz.admin.grants.list",
 	http.MethodGet,
@@ -244,8 +214,6 @@ var grantListOperation = speedhttp.NewOperation[roleInput, grantListBody](
 	},
 )
 
-// grantPutOperation declares PUT
-// /tenants/:tenant/roles/:role/grants/:permission.
 var grantPutOperation = speedhttp.NewOperation[grantInput, struct{}](
 	"authz.admin.grants.put",
 	http.MethodPut,
@@ -275,8 +243,6 @@ var grantPutOperation = speedhttp.NewOperation[grantInput, struct{}](
 	},
 )
 
-// grantDeleteOperation declares DELETE
-// /tenants/:tenant/roles/:role/grants/:permission.
 var grantDeleteOperation = speedhttp.NewOperation[grantInput, struct{}](
 	"authz.admin.grants.delete",
 	http.MethodDelete,
@@ -305,7 +271,6 @@ var grantDeleteOperation = speedhttp.NewOperation[grantInput, struct{}](
 	},
 )
 
-// bindingListOperation declares GET /tenants/:tenant/bindings.
 var bindingListOperation = speedhttp.NewOperation[tenantInput, bindingListBody](
 	"authz.admin.bindings.list",
 	http.MethodGet,
@@ -328,7 +293,6 @@ var bindingListOperation = speedhttp.NewOperation[tenantInput, bindingListBody](
 	},
 )
 
-// bindingOfOperation declares GET /tenants/:tenant/bindings/:account.
 var bindingOfOperation = speedhttp.NewOperation[tenantAccountInput, accountBindingListBody](
 	"authz.admin.bindings.of",
 	http.MethodGet,
@@ -352,7 +316,6 @@ var bindingOfOperation = speedhttp.NewOperation[tenantAccountInput, accountBindi
 	},
 )
 
-// bindingPutOperation declares PUT /tenants/:tenant/bindings/:account/:role.
 var bindingPutOperation = speedhttp.NewOperation[bindingInput, struct{}](
 	"authz.admin.bindings.put",
 	http.MethodPut,
@@ -378,8 +341,6 @@ var bindingPutOperation = speedhttp.NewOperation[bindingInput, struct{}](
 	},
 )
 
-// bindingDeleteOperation declares DELETE
-// /tenants/:tenant/bindings/:account/:role.
 var bindingDeleteOperation = speedhttp.NewOperation[bindingInput, struct{}](
 	"authz.admin.bindings.delete",
 	http.MethodDelete,
@@ -405,7 +366,6 @@ var bindingDeleteOperation = speedhttp.NewOperation[bindingInput, struct{}](
 	},
 )
 
-// operations is this module's declaration of the API it serves.
 var operations = speedhttp.Operations{
 	permissionListOperation,
 	roleListOperation,

@@ -23,14 +23,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The cases here drive the real descriptors through a real registry: the
-// configuration module with a reader the real loader produced, the policy
-// module, the guard module, and stand-ins for the capabilities they take. What
-// they hold is what a handle built by hand cannot: which callback runs which
-// step, and that the two modules resolve each other's capabilities.
-
-// dbStandIn delivers the database capability over a handle the database module
-// opened, so that the policy module reaches what an assembly hands it.
 type dbStandIn struct {
 	name string
 	base db.Database
@@ -44,14 +36,11 @@ func (d dbStandIn) module() core.Module {
 	}
 }
 
-// supply registers a stand-in module and supplies its instance.
 func supply(reg *core.Registry, name string, token core.Token, instance any) {
 	reg.Register(core.Module{Name: name, Provides: []core.Provision{{Token: token}}})
 	reg.Supply(instance, name)
 }
 
-// createTables creates the three policy tables on a handle the database module
-// delivered.
 func createTables(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	for _, statement := range []string{
@@ -75,12 +64,8 @@ func createTables(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// routerBody satisfies the guard module's required endpoint list, so a drive
-// that only needs the module to wire reaches Init.
 const routerBody = `{"authz":{"guard":{"endpoints":["public"]}}}`
 
-// assembly builds a registry holding the policy and guard modules and the
-// stand-ins they need.
 func assembly(t *testing.T, roster tenant.Catalog) (*core.Registry, db.Database, []string) {
 	t.Helper()
 	database := dbtest.SQLite(t, filepath.Join(t.TempDir(), "authz.db"), nil)
@@ -97,9 +82,6 @@ func assembly(t *testing.T, roster tenant.Catalog) (*core.Registry, db.Database,
 	reg.Register(guardModule)
 	stand := dbStandIn{name: "stand-in.database", base: database}
 	reg.Register(stand.module())
-	// The guard module takes the entry point up at Init; the stand-in declares
-	// the endpoint the configuration guards, so the module wires without a
-	// listener.
 	supply(reg, "stand-in.router", (*speedhttp.Router)(nil), routerStub{})
 
 	names := []string{policy.ModuleName, guard.ModuleName, stand.name, "stand-in.router"}
@@ -110,22 +92,17 @@ func assembly(t *testing.T, roster tenant.Catalog) (*core.Registry, db.Database,
 	return reg, database, names
 }
 
-// routerStub stands for an entry point module: one endpoint whose registrations
-// are dropped, so wiring succeeds without a listener.
 type routerStub struct{}
 
 func (routerStub) Endpoint(string) (speedhttp.Endpoint, error) { return endpointStub{}, nil }
 func (routerStub) Endpoints() []string                         { return []string{"public"} }
 
-// endpointStub accepts registrations and does nothing with them.
 type endpointStub struct{}
 
 func (endpointStub) Route(string, string, ...gin.HandlerFunc) {}
 func (endpointStub) Use(speedhttp.Middleware)                 {}
 func (endpointStub) Accepting() bool                          { return true }
 
-// identity builds the identity the authentication fixture would have left on a
-// request, for a decision's actor.
 func identity(t *testing.T) authn.Identity {
 	t.Helper()
 	ctx := authntest.Context(t, t.Context(), authntest.WithAccount("acc1"))
@@ -136,7 +113,6 @@ func identity(t *testing.T) authn.Identity {
 	return id
 }
 
-// rosterStub carries a fixed set of identifiers.
 type rosterStub struct{ ids map[tenant.ID]bool }
 
 func (r rosterStub) Get(_ context.Context, id tenant.ID) (tenant.Tenant, bool, error) {
@@ -170,10 +146,7 @@ func (rosterStub) EnterRegistered(context.Context, tenant.ID) (context.Context, 
 	return nil, nil
 }
 
-// A role, its grant and a binding written through the manager decide the guard
-// module's decider, driven through the real registry: the two modules resolve
-// each other's capabilities and the seam answers from the policy the manager
-// wrote.
+// TestTheRegistryWiresPolicyAndGuard checks that the registry wires policy and guard.
 func TestTheRegistryWiresPolicyAndGuard(t *testing.T) {
 	reg, _, names := assembly(t, nil)
 
@@ -208,7 +181,6 @@ func TestTheRegistryWiresPolicyAndGuard(t *testing.T) {
 			if !allow {
 				t.Errorf("the decider refused a granted action")
 			}
-			// A different tenant's query is refused: the policy is scoped.
 			denied, err := decider.Decide(ctx, authn.Decision{
 				Action: authn.ActionAccountRead, Actor: id, Tenant: "globex", Target: "acc1",
 			})
@@ -226,7 +198,7 @@ func TestTheRegistryWiresPolicyAndGuard(t *testing.T) {
 	}
 }
 
-// A roster with no tenant carrying the platform domain stops the startup.
+// TestTheStartupRefusesARosterWithoutThePlatformDomain checks that the startup refuses a roster without the platform domain.
 func TestTheStartupRefusesARosterWithoutThePlatformDomain(t *testing.T) {
 	reg, _, names := assembly(t, rosterStub{ids: map[tenant.ID]bool{"acme": true}})
 	err := reg.Drive(t.Context(), core.Drive{
@@ -239,7 +211,7 @@ func TestTheStartupRefusesARosterWithoutThePlatformDomain(t *testing.T) {
 	}
 }
 
-// A roster that carries the platform domain passes the startup check.
+// TestTheStartupAcceptsARosterCarryingThePlatformDomain checks that the startup accepts a roster carrying the platform domain.
 func TestTheStartupAcceptsARosterCarryingThePlatformDomain(t *testing.T) {
 	reg, _, names := assembly(t, rosterStub{ids: map[tenant.ID]bool{
 		"acme": true, tenant.ID(authz.PlatformDomain): true,
@@ -254,11 +226,7 @@ func TestTheStartupAcceptsARosterCarryingThePlatformDomain(t *testing.T) {
 	}
 }
 
-// A command that writes policy data in a permission's name reaches the
-// translation without the enforcement module and without an HTTP entry
-// point: the catalog this module delivers answers the (object, action) pair
-// a permission translates to, for a permission the capability carries and
-// for one a module declared of its own.
+// TestTheCatalogTranslatesWithoutTheGuardModule checks that the catalog translates without the guard module.
 func TestTheCatalogTranslatesWithoutTheGuardModule(t *testing.T) {
 	declared := authz.Permission("crm.deal.read")
 	const declaredKey = "crm.permission.deal-read"
@@ -313,9 +281,6 @@ func TestTheCatalogTranslatesWithoutTheGuardModule(t *testing.T) {
 						"want (%q, %q, true)", tc.permission, object, action, ok, tc.object, tc.action)
 				}
 			}
-			// The key a declaring module gave a permission reaches a caller
-			// through the interface, not only through the concrete catalog: the
-			// management surface renders a description from it.
 			if key, ok := catalog.DescriptionKey(declared); !ok || key != declaredKey {
 				t.Errorf("DescriptionKey(%q) = (%q, %t) through the catalog interface, want (%q, true)",
 					declared, key, ok, declaredKey)

@@ -2,8 +2,7 @@ package authz
 
 import "testing"
 
-// TestPermissionConstantsHoldTheirPublishedValues checks that every permission
-// constant and the platform domain hold their published strings.
+// TestPermissionConstantsHoldTheirPublishedValues checks that permission constants hold their published values.
 func TestPermissionConstantsHoldTheirPublishedValues(t *testing.T) {
 	permissions := []struct {
 		name string
@@ -44,8 +43,6 @@ func TestPermissionConstantsHoldTheirPublishedValues(t *testing.T) {
 		}
 	}
 
-	// Two constants that publish one string would align with one action and
-	// hide the other, so the values are distinct.
 	seen := map[string]string{}
 	for _, c := range permissions {
 		if other, dup := seen[string(c.got)]; dup {
@@ -59,8 +56,7 @@ func TestPermissionConstantsHoldTheirPublishedValues(t *testing.T) {
 	}
 }
 
-// TestAdministrationRoleNamesHoldTheirPublishedValues checks that the two
-// administration roles hold the names the design publishes.
+// TestAdministrationRoleNamesHoldTheirPublishedValues checks that administration role names hold their published values.
 func TestAdministrationRoleNamesHoldTheirPublishedValues(t *testing.T) {
 	if PlatformAdminRole != Role("platform-admin") {
 		t.Errorf("PlatformAdminRole is %q, want %q", PlatformAdminRole, "platform-admin")

@@ -9,8 +9,6 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// grantedPairs returns the (resource, action) pairs of the grants a role holds,
-// sorted so that a case compares sets and not row order.
 func grantedPairs(t *testing.T, f *fixture, tenant string, role authz.Role) []authz.Grant {
 	t.Helper()
 	held, err := f.Grants(t.Context(), tenant, role)
@@ -30,13 +28,9 @@ func grantedPairs(t *testing.T, f *fixture, tenant string, role authz.Role) []au
 	return pairs
 }
 
-// Seeding adds a grant the role does not hold, including on a builtin role,
-// and a repeated seed adds nothing.
+// TestSeedingGrowsABuiltinRolesGrantsAndTheManagerStaysRefused checks that seeding grows a builtin roles grants and the manager stays refused.
 func TestSeedingGrowsABuiltinRolesGrantsAndTheManagerStaysRefused(t *testing.T) {
 	f := newFixture(t)
-	// Binding the platform administrator role in the platform domain requires a
-	// membership check; this case is about the seeding surface, so the fixture
-	// vouches for the account.
 	f.membership = &membershipStub{member: true}
 	ctx := t.Context()
 	const tenant = "system"
@@ -49,13 +43,10 @@ func TestSeedingGrowsABuiltinRolesGrantsAndTheManagerStaysRefused(t *testing.T) 
 	if err := f.MarkRoleBuiltin(ctx, tenant, role); err != nil {
 		t.Fatalf("MarkRoleBuiltin: %v", err)
 	}
-	// The binding lands before the seed, so the decision below observes the
-	// seed's own reload and not a later write's.
 	if err := f.PutBinding(ctx, authz.Binding{Tenant: tenant, Account: "alice", Role: role}); err != nil {
 		t.Fatalf("PutBinding: %v", err)
 	}
 
-	// The permission a module declared after the mark is seeded in.
 	added, err := f.SeedGrants(ctx, tenant, role, []authz.Grant{
 		{Resource: "deal", Action: "read"},
 	})
@@ -66,7 +57,6 @@ func TestSeedingGrowsABuiltinRolesGrantsAndTheManagerStaysRefused(t *testing.T) 
 		t.Errorf("SeedGrants added %d, want one", added)
 	}
 
-	// A second run over the grown set writes nothing.
 	added, err = f.SeedGrants(ctx, tenant, role, []authz.Grant{
 		{Resource: "account", Action: "read"},
 		{Resource: "deal", Action: "read"},
@@ -86,7 +76,6 @@ func TestSeedingGrowsABuiltinRolesGrantsAndTheManagerStaysRefused(t *testing.T) 
 		t.Errorf("the role holds %+v, want %+v", got, want)
 	}
 
-	// The seeded grant decides: the seed reloaded the snapshot.
 	allowed, err := f.Allowed(ctx, authz.Query{
 		Subject: "alice", Domain: authz.Domain(tenant), Object: "deal", Action: "read",
 	})
@@ -97,8 +86,6 @@ func TestSeedingGrowsABuiltinRolesGrantsAndTheManagerStaysRefused(t *testing.T) 
 		t.Error("the seeded grant does not decide; the snapshot was not reloaded")
 	}
 
-	// The manager refuses the same writes on the builtin role, so the
-	// management surface cannot use them to add, change or remove a grant.
 	refused := []struct {
 		name string
 		call func() error
@@ -130,7 +117,7 @@ func TestSeedingGrowsABuiltinRolesGrantsAndTheManagerStaysRefused(t *testing.T) 
 	}
 }
 
-// Seeding names a role that has to exist, and a tenant.
+// TestSeedingRefusesAnUnknownRoleAndAnEmptyTenant checks that seeding refuses an unknown role and an empty tenant.
 func TestSeedingRefusesAnUnknownRoleAndAnEmptyTenant(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()

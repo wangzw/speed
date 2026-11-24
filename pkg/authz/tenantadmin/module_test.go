@@ -15,7 +15,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// TestTheDescriptorNamesWhatItRequiresAndDelivers holds the descriptor's shape.
+// TestTheDescriptorNamesWhatItRequiresAndDelivers checks that the descriptor names what it requires and delivers.
 func TestTheDescriptorNamesWhatItRequiresAndDelivers(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "authz.tenantadmin" {
@@ -48,8 +48,7 @@ func TestTheDescriptorNamesWhatItRequiresAndDelivers(t *testing.T) {
 	}
 }
 
-// TestTheDescriptorDoesNotTakeASeederOrAReconciler holds the wall the design
-// states: the tenant management module never holds either seeding surface.
+// TestTheDescriptorDoesNotTakeASeederOrAReconciler checks that the descriptor does not take a seeder or a reconciler.
 func TestTheDescriptorDoesNotTakeASeederOrAReconciler(t *testing.T) {
 	for _, r := range Module().Requires {
 		switch r.Token {
@@ -59,7 +58,7 @@ func TestTheDescriptorDoesNotTakeASeederOrAReconciler(t *testing.T) {
 	}
 }
 
-// TestPrepareStatesEnabled holds the stance.
+// TestPrepareStatesEnabled checks that Prepare states enabled.
 func TestPrepareStatesEnabled(t *testing.T) {
 	module := Module()
 	reader := authntest.ConfigReader(t, module, `{"authz": {"tenantadmin": {"endpoints": ["api"]}}}`)
@@ -76,15 +75,14 @@ func TestPrepareStatesEnabled(t *testing.T) {
 	}
 }
 
-// TestImportingThePackageRegistersTheModuleWithTheProcess holds the init.
+// TestImportingThePackageRegistersTheModuleWithTheProcess checks that importing the package registers the module with the process.
 func TestImportingThePackageRegistersTheModuleWithTheProcess(t *testing.T) {
 	if _, ok := core.ProcessRegistry.Lookup(ModuleName); !ok {
 		t.Fatalf("the process registry holds no module named %s", ModuleName)
 	}
 }
 
-// TestAGuardOutageIsA503 holds that an outage from the guard is answered as the
-// guard wrote it and nothing else runs.
+// TestAGuardOutageIsA503 checks that a guard outage is a 503.
 func TestAGuardOutageIsA503(t *testing.T) {
 	r := newRig(t)
 	r.guard.err = errors.New("the engine is unavailable")
@@ -101,7 +99,7 @@ func TestAGuardOutageIsA503(t *testing.T) {
 	}
 }
 
-// TestTheMandatoryAuditLandsBeforeTheWrite holds the write path's order.
+// TestTheMandatoryAuditLandsBeforeTheWrite checks that the mandatory audit lands before the write.
 func TestTheMandatoryAuditLandsBeforeTheWrite(t *testing.T) {
 	t.Run("a landing row precedes the write", func(t *testing.T) {
 		r := newRig(t)
@@ -132,8 +130,7 @@ func TestTheMandatoryAuditLandsBeforeTheWrite(t *testing.T) {
 	})
 }
 
-// TestTheFailureToAnswerMapping holds the closed mapping from a manager failure
-// to its answer.
+// TestTheFailureToAnswerMapping checks that the failure to answer mapping.
 func TestTheFailureToAnswerMapping(t *testing.T) {
 	for name, tc := range map[string]struct {
 		err      error
@@ -167,7 +164,7 @@ func TestTheFailureToAnswerMapping(t *testing.T) {
 	}
 }
 
-// TestAnAnonymousCallerGetsA401 holds the no-identity answer's shape.
+// TestAnAnonymousCallerGetsA401 checks that an anonymous caller gets a 401.
 func TestAnAnonymousCallerGetsA401(t *testing.T) {
 	r := newRig(t)
 	w := r.serveAnonymous(rolePutRoute(r.p), http.MethodPut, "/api/v1/tenants/t1/roles/r1",
@@ -189,8 +186,7 @@ func TestAnAnonymousCallerGetsA401(t *testing.T) {
 	}
 }
 
-// TestTheCatalogRouteExposesNoOpaqueID holds that the catalog path carries no
-// parameter segment beyond the tenant.
+// TestTheCatalogRouteExposesNoOpaqueID checks that the catalog route exposes no opaque ID.
 func TestTheCatalogRouteExposesNoOpaqueID(t *testing.T) {
 	if pathPermissions != "/api/v1/tenants/:tenant/permissions" {
 		t.Fatalf("the catalog path = %q, want the literal /api/v1/tenants/:tenant/permissions", pathPermissions)

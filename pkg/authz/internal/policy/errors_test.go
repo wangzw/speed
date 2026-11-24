@@ -10,10 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// brokenMatcherModel parses, so an enforcer over it is built, but its matcher
-// calls a function the model defines nowhere, so every evaluation of it fails.
-// It is how a decision reaches the engine's failure path; the model the process
-// enforces with is the root package's and has no such clause.
 const brokenMatcherModel = `[request_definition]
 r = sub, dom, obj, act
 [policy_definition]
@@ -26,8 +22,7 @@ e = some(where (p.eft == allow))
 m = noSuchFunc(r.sub) && r.dom == p.dom
 `
 
-// A decision whose matcher cannot run is a failure, not a denial and not a
-// permission.
+// TestAllowedCarriesTheEnginesFailure checks that allowed carries the engine's failure.
 func TestAllowedCarriesTheEnginesFailure(t *testing.T) {
 	m, err := casbinmodel.NewModelFromString(brokenMatcherModel)
 	if err != nil {
@@ -48,8 +43,7 @@ func TestAllowedCarriesTheEnginesFailure(t *testing.T) {
 	}
 }
 
-// A model text that does not parse is refused at load, with the parse
-// failure carried out and no snapshot beside it.
+// TestLoadRefusesAMalformedModel checks that load refuses a malformed model.
 func TestLoadRefusesAMalformedModel(t *testing.T) {
 	snapshot, err := Load(t.Context(), openHandle(t), "this is not a model")
 	if err == nil {
@@ -60,8 +54,7 @@ func TestLoadRefusesAMalformedModel(t *testing.T) {
 	}
 }
 
-// A self-check whose fixtures cannot run reports every one of them and
-// refuses the text.
+// TestSelfCheckRefusesAModelItCannotRun checks that selfCheck refuses a model it cannot run.
 func TestSelfCheckRefusesAModelItCannotRun(t *testing.T) {
 	err := SelfCheck("this is not a model")
 	if err == nil {

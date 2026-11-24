@@ -1,6 +1,4 @@
-// Package persist is the thin adapter the policy engine stores its policy
-// through. It implements Casbin's persist.Adapter, converting between the rules
-// the engine matches on and the rows of authz_grants and authz_bindings.
+// Package persist is the thin adapter the policy engine stores its policy through, converting between the engine's rules and the policy tables.
 package persist
 
 import (

@@ -9,13 +9,11 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// TestTheCatalogRouteListsOnlyTheGovernedSet holds the catalog read's
-// defining rule: it lists Catalog.TenantGoverned() and never
-// Catalog.Declared().
+// TestTheCatalogRouteListsOnlyTheGovernedSet checks that the catalog route lists only the governed set.
 func TestTheCatalogRouteListsOnlyTheGovernedSet(t *testing.T) {
 	governed := []authz.Permission{authz.PermissionTenantRoleRead, authz.PermissionTenantRoleManage}
 	declared := append(append([]authz.Permission(nil), governed...), authz.PermissionAccountRead)
-	r := newRig(t, declared...) // newRig governs the tenant role codes among them
+	r := newRig(t, declared...)
 	w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet,
 		"/api/v1/tenants/t1/permissions", params("tenant", "t1"), nil)
 	if w.Code != http.StatusOK {
@@ -50,8 +48,6 @@ func TestTheCatalogRouteListsOnlyTheGovernedSet(t *testing.T) {
 	}
 }
 
-// permissionViews decodes the catalog route's answer into one map per view. The
-// members are kept raw because the view mixes text, booleans and integers.
 func permissionViews(t *testing.T, body string) []map[string]json.RawMessage {
 	t.Helper()
 	var got struct {
@@ -63,8 +59,7 @@ func permissionViews(t *testing.T, body string) []map[string]json.RawMessage {
 	return got.Permissions
 }
 
-// TestTheCatalogRouteRendersTheDescriptionInTheRequestLocale drives the catalog
-// route with a localizer assembled and the same request in two languages.
+// TestTheCatalogRouteRendersTheDescriptionInTheRequestLocale checks that the catalog route renders the description in the request locale.
 func TestTheCatalogRouteRendersTheDescriptionInTheRequestLocale(t *testing.T) {
 	const (
 		readKey   = "authz.permission.authz-tenant-role-read"
@@ -107,8 +102,7 @@ func TestTheCatalogRouteRendersTheDescriptionInTheRequestLocale(t *testing.T) {
 	}
 }
 
-// TestTheCatalogRouteAnswersNoDescriptionWhenThereIsNothingToRender holds the
-// fallback rule for the two cases where the route has no text.
+// TestTheCatalogRouteAnswersNoDescriptionWhenThereIsNothingToRender checks that the catalog route answers no description when there is nothing to render.
 func TestTheCatalogRouteAnswersNoDescriptionWhenThereIsNothingToRender(t *testing.T) {
 	t.Run("no localizer assembled", func(t *testing.T) {
 		r := newRig(t, authz.PermissionTenantRoleRead)
@@ -132,7 +126,7 @@ func TestTheCatalogRouteAnswersNoDescriptionWhenThereIsNothingToRender(t *testin
 	})
 }
 
-// TestTheCatalogRouteWritesBackAKeyNoCatalogCarries holds the engine's fallback.
+// TestTheCatalogRouteWritesBackAKeyNoCatalogCarries checks that the catalog route writes back a key no catalog carries.
 func TestTheCatalogRouteWritesBackAKeyNoCatalogCarries(t *testing.T) {
 	const key = "tenant.permission.untranslated"
 	r := newRig(t, authz.PermissionTenantRoleRead)
@@ -146,7 +140,7 @@ func TestTheCatalogRouteWritesBackAKeyNoCatalogCarries(t *testing.T) {
 	}
 }
 
-// TestTheCatalogRouteRequiresTenantRoleRead holds the route's decision.
+// TestTheCatalogRouteRequiresTenantRoleRead checks that the catalog route requires tenant role read.
 func TestTheCatalogRouteRequiresTenantRoleRead(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleRead)
 	w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet,
@@ -165,8 +159,7 @@ func TestTheCatalogRouteRequiresTenantRoleRead(t *testing.T) {
 	}
 }
 
-// TestTheViewsExposeNoOpaqueID holds that each view's JSON key set is exactly
-// the design's natural-key set, with no opaque identifier.
+// TestTheViewsExposeNoOpaqueID checks that the views expose no opaque ID.
 func TestTheViewsExposeNoOpaqueID(t *testing.T) {
 	cases := map[string]struct {
 		view any

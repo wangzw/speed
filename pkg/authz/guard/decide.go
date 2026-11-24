@@ -8,16 +8,6 @@ import (
 	"github.com/vislake/speed/pkg/authz/internal/translation"
 )
 
-// Decide implements authn.Decider.
-//
-// The subject is the actor's accountability key and the domain is the tenant the
-// decision names, or the platform domain when it names none. The three
-// impersonation actions decide in the platform domain whatever tenant the
-// decision names; an action with no row in the translation is refused without
-// an error. authn.tenant.access is the one action with a platform-domain
-// fallback: a query that does not match in the tenant's own domain is put again
-// in the platform domain before it is denied. An engine error is returned as it
-// stands and is neither a denial nor a permission.
 func (p *product) Decide(ctx context.Context, d authn.Decision) (bool, error) {
 	object, action, ok := translation.Lookup(authz.Permission(d.Action))
 	if !ok {
@@ -54,8 +44,6 @@ func (p *product) Decide(ctx context.Context, d authn.Decision) (bool, error) {
 	return true, nil
 }
 
-// platformCapability reports whether an action is a platform capability, whose
-// decision is made in the platform domain whatever tenant it names.
 func platformCapability(action authn.Action) bool {
 	switch action {
 	case authn.ActionImpersonateStart, authn.ActionImpersonationRead, authn.ActionImpersonationRevoke:
@@ -64,8 +52,6 @@ func platformCapability(action authn.Action) bool {
 	return false
 }
 
-// targetHoldsPlatformPermission reports whether an impersonation target holds
-// any platform-domain permission. An account that holds one is never a target.
 func (p *product) targetHoldsPlatformPermission(ctx context.Context, target string) (bool, error) {
 	if p.permissions == nil {
 		return false, nil
