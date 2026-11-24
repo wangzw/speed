@@ -15,9 +15,6 @@ import (
 	"time"
 )
 
-// replyLoss is how the fake server below loses the reply to the command under
-// test: by closing the connection once the command has arrived, or by never
-// answering it.
 type replyLoss int
 
 const (
@@ -25,10 +22,6 @@ const (
 	neverAnswer
 )
 
-// lossyServer speaks just enough of the Redis protocol for Connect to succeed —
-// it answers PING and refuses every handshake command with an error reply,
-// which the client reads as a server without them — and it loses the reply to
-// every command named target. It counts how many times target reached it.
 type lossyServer struct {
 	listener net.Listener
 	target   string
@@ -88,11 +81,6 @@ func (s *lossyServer) handle(conn net.Conn) {
 			if s.loss == dropTheConnection {
 				return
 			}
-			// Keep the connection open and say nothing: the client's read
-			// deadline is what ends the wait, exactly as for a reply that
-			// was lost in the network. Draining the connection until the
-			// client gives up keeps this handler from answering anything
-			// pipelined behind the command.
 			_, _ = io.Copy(io.Discard, r)
 			return
 		default:
@@ -101,7 +89,6 @@ func (s *lossyServer) handle(conn net.Conn) {
 	}
 }
 
-// readCommand reads one command the client sent: an array of bulk strings.
 func readCommand(r *bufio.Reader) ([]string, error) {
 	header, err := r.ReadString('\n')
 	if err != nil {
@@ -133,17 +120,8 @@ func readCommand(r *bufio.Reader) ([]string, error) {
 	return args, nil
 }
 
-// TestACommandWhoseReplyIsLostIsNotSentAgain pins the rule that the client
-// Connect builds does not retry. A command whose reply never arrived may well
-// have run on the server, and sending it again runs it twice: an increment
-// counts twice and returns the doubled value as though nothing had happened, a
-// compare-and-swap that won re-runs, finds its own value and reports that it
-// lost, and an appended stream entry is appended again. Only the caller knows
-// whether an operation is safe to repeat, so the failure has to reach it after
-// the first attempt.
-//
-// Both ways a reply goes missing are covered: the connection closing after the
-// command was written, and the reply not arriving within the read timeout.
+// TestACommandWhoseReplyIsLostIsNotSentAgain pins the rule that the client Connect builds does not
+// retry.
 func TestACommandWhoseReplyIsLostIsNotSentAgain(t *testing.T) {
 	for name, loss := range map[string]replyLoss{
 		"the connection drops":    dropTheConnection,

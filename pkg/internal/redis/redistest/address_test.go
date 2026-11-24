@@ -2,8 +2,8 @@ package redistest
 
 import "testing"
 
-// TestAddressFallsBackToTheComposeStack holds the address to the value the
-// fixture documents when no deployment has pointed it elsewhere.
+// TestAddressFallsBackToTheComposeStack holds the address to the value the fixture documents when
+// no deployment has pointed it elsewhere.
 func TestAddressFallsBackToTheComposeStack(t *testing.T) {
 	t.Setenv("SPEED_TEST_REDIS_ADDR", "")
 
@@ -12,9 +12,7 @@ func TestAddressFallsBackToTheComposeStack(t *testing.T) {
 	}
 }
 
-// TestAddressFollowsTheEnvironment holds the fixture to reading the address
-// when it is used: a case that sets the variable must reach the server it
-// named, not the one the package saw at start-up.
+// TestAddressFollowsTheEnvironment checks that address reads SPEED_TEST_REDIS_ADDR when it is set.
 func TestAddressFollowsTheEnvironment(t *testing.T) {
 	const pointed = "127.0.0.1:16379"
 	t.Setenv("SPEED_TEST_REDIS_ADDR", pointed)
