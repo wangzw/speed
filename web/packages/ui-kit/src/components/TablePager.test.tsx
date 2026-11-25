@@ -6,6 +6,7 @@
 
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import userEvent from '@testing-library/user-event'
 import { fireEvent, screen } from '@testing-library/react'
 import { zhCN as muiZhCN } from '@mui/material/locale'
 import { renderWithProviders } from '../../test-utils/render.js'
@@ -284,6 +285,56 @@ describe('TablePager', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Jump' }))
     assertUnavailable(next)
     assertUnavailable(previous)
+  })
+
+  it('forgets the direction record when the rows-per-page value changes, and keeps the selector focused', async () => {
+    function RowsPerPageHarness() {
+      const [current, setCurrent] = useState({
+        page: 1,
+        rowsPerPage: 2,
+        reading: false,
+      })
+      return (
+        <TablePager
+          page={current.page}
+          rowsPerPage={current.rowsPerPage}
+          count={6}
+          rowsPerPageOptions={[2, 3]}
+          reading={current.reading}
+          onPageChange={(page) =>
+            setCurrent((previous) => ({ ...previous, page, reading: true }))
+          }
+          onRowsPerPageChange={(rowsPerPage) =>
+            // The host resets the page, as most hosts do on a size change.
+            setCurrent((previous) => ({
+              ...previous,
+              rowsPerPage,
+              page: 0,
+              reading: true,
+            }))
+          }
+        />
+      )
+    }
+
+    renderWithProviders(<RowsPerPageHarness />)
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: PREVIOUS_LABEL }))
+    expect(
+      screen.getByRole('button', { name: PREVIOUS_LABEL }),
+    ).toHaveAttribute('aria-busy', 'true')
+
+    const selector = screen.getByRole('combobox')
+    await user.click(selector)
+    await user.click(screen.getByRole('option', { name: '3' }))
+
+    for (const name of [PREVIOUS_LABEL, NEXT_LABEL]) {
+      const direction = screen.getByRole('button', { name })
+      expect(direction).toHaveAttribute('aria-disabled', 'true')
+      expect(direction).not.toHaveAttribute('aria-busy')
+    }
+    expect(selector).toHaveFocus()
   })
 
   it('marks previous unavailable on the first page while next still fires', () => {

@@ -122,11 +122,11 @@ function PagerActions({
  * read, or one the caller refuses, leaves the next read external. The record
  * does not distinguish scopes: a caller whose filter or tenant change resets
  * the page to 0 renders the footer with that scope as its React key, so the
- * read after the change counts as started elsewhere. Through `DataTable`, key
- * the table by a scope only when a control outside the table changes that
- * scope; the table's own filtering or sorting must not be the key, because
- * each change remounts the focused control, and the record still spans scopes
- * in that case.
+ * read after the change counts as started elsewhere. A change to
+ * `rowsPerPage` drops the record. `DataTable` keys the footer it renders by
+ * its own filter value and sort, so a change to either remounts only the
+ * footer; a host keys the whole table by a scope that a control outside the
+ * table changes, since the footer is out of its reach.
  */
 export function TablePager({
   page,
@@ -161,6 +161,12 @@ export function TablePager({
       setStartedRead(null)
     }
   })
+
+  // A rows-per-page change usually resets the page, where the read of the new
+  // scope can still land on the page the record names.
+  useEffect(() => {
+    setStartedRead(null)
+  }, [rowsPerPage])
 
   // A read the caller started elsewhere names no direction, so both
   // directions are then unavailable.

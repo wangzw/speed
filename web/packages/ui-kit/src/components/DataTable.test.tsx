@@ -27,7 +27,11 @@ import {
   PRIMARY_COLUMN_MAX_WIDTH,
   primaryColumnMaxWidthSx,
 } from './DataTable.js'
-import type { DataTableColumn, DataTableProps } from './DataTable.js'
+import type {
+  DataTableColumn,
+  DataTableProps,
+  DataTableSort,
+} from './DataTable.js'
 
 interface Member {
   id: number
@@ -806,6 +810,112 @@ describe('DataTable', () => {
     fireEvent.mouseDown(utils.getByRole('combobox'))
     fireEvent.click(utils.getByRole('option', { name: '5' }))
     expect(onRowsPerPageChange).toHaveBeenLastCalledWith(5)
+  })
+
+  describe("pager scope (the table's own filter and sort)", () => {
+    function ScopedPagerHarness() {
+      const [state, setState] = useState<{
+        page: number
+        reading: boolean
+        filter: string
+        sort: DataTableSort | null
+      }>({ page: 1, reading: false, filter: '', sort: null })
+      return (
+        <DataTable
+          rows={MEMBERS}
+          columns={BASE_COLUMNS}
+          rowKey={keyOf}
+          filter={{
+            value: state.filter,
+            onValueChange: (value) =>
+              setState((previous) => ({
+                ...previous,
+                filter: value,
+                page: 0,
+                reading: true,
+              })),
+          }}
+          sort={state.sort}
+          onSortChange={(sort) =>
+            setState((previous) => ({
+              ...previous,
+              sort,
+              page: 0,
+              reading: true,
+            }))
+          }
+          pagination={{
+            page: state.page,
+            rowsPerPage: 2,
+            count: 6,
+            rowsPerPageOptions: [2, 6],
+            reading: state.reading,
+            onPageChange: (page) =>
+              setState((previous) => ({ ...previous, page, reading: true })),
+            onRowsPerPageChange: () => undefined,
+          }}
+        />
+      )
+    }
+
+    it('drops the page record when the built-in filter changes, and keeps the input focused', async () => {
+      const utils = renderWithProviders(<ScopedPagerHarness />, {
+        language: 'en-US',
+      })
+      const user = userEvent.setup()
+      const input = utils.getByLabelText(enUS.dataTable.filterLabel)
+
+      await user.click(
+        utils.getByRole('button', { name: 'Go to previous page' }),
+      )
+      const started = utils.getByRole('button', {
+        name: 'Go to previous page',
+      })
+      expect(started).toHaveAttribute('aria-busy', 'true')
+      expect(started).toHaveFocus()
+
+      await user.type(input, 'x')
+
+      for (const name of ['Go to previous page', 'Go to next page']) {
+        const direction = utils.getByRole('button', { name })
+        expect(direction).toBeInTheDocument()
+        expect(direction).toHaveAttribute('aria-disabled', 'true')
+        expect(direction).not.toHaveAttribute('aria-busy')
+      }
+      expect(input).toHaveFocus()
+      expect(input).toHaveValue('x')
+    })
+
+    it('drops the page record when the built-in sort changes, and keeps the header focused', async () => {
+      const utils = renderWithProviders(<ScopedPagerHarness />, {
+        language: 'en-US',
+      })
+      const user = userEvent.setup()
+
+      await user.click(
+        utils.getByRole('button', { name: 'Go to previous page' }),
+      )
+      const started = utils.getByRole('button', {
+        name: 'Go to previous page',
+      })
+      expect(started).toHaveAttribute('aria-busy', 'true')
+      expect(started).toHaveFocus()
+
+      const header = utils.getByRole('button', { name: 'Name' })
+      await user.click(header)
+
+      for (const name of ['Go to previous page', 'Go to next page']) {
+        const direction = utils.getByRole('button', { name })
+        expect(direction).toBeInTheDocument()
+        expect(direction).toHaveAttribute('aria-disabled', 'true')
+        expect(direction).not.toHaveAttribute('aria-busy')
+      }
+      expect(header).toHaveFocus()
+      expect(utils.getByRole('columnheader', { name: 'Name' })).toHaveAttribute(
+        'aria-sort',
+        'ascending',
+      )
+    })
   })
 
   it('re-renders loading, footer and checkbox text in the new language', async () => {
