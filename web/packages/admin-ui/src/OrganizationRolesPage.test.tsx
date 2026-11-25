@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { waitForCondition } from '@speed/test-utils/wait'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { attachSession } from '@speed/auth-core'
@@ -1132,6 +1133,105 @@ describe('the role usage section', () => {
       screen.getByRole('button', { name: zhCN.common.pager.previous }),
     )
     expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
+  })
+
+  it('drops the previous mark when the selected role resets the usage pager', async () => {
+    const user = userEvent.setup()
+    const OTHER_ROLE = role({
+      role: 'beta',
+      description: 'Another role.',
+      member_count: 1,
+    })
+    const auditorPageZero = deferred<AdminTenantRoleBindingPage>()
+    const otherPageZero = deferred<AdminTenantRoleBindingPage>()
+    let hangAuditorPageZero = false
+    let hangOtherPageZero = false
+    const { backend } = scripted({
+      listTenantRoles: () => Promise.resolve([ROLE_AUDITOR, OTHER_ROLE]),
+      listTenantRoleBindings: (_tenant, roleName, params) => {
+        if (roleName === ROLE_AUDITOR.role) {
+          if (params?.after === 'acc-2') {
+            return Promise.resolve(PAGE_TWO)
+          }
+          return hangAuditorPageZero
+            ? auditorPageZero.promise
+            : Promise.resolve(PAGE_ONE)
+        }
+        return hangOtherPageZero
+          ? otherPageZero.promise
+          : Promise.resolve(PAGE_ONE)
+      },
+    })
+    renderRolesPage(backend)
+
+    const pagerButton = (name: string): HTMLElement =>
+      screen.getByRole('button', { name })
+    await selectRole(user, ROLE_AUDITOR.role)
+    await screen.findByText('Ada Lovelace')
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.next)).not.toHaveAttribute(
+        'aria-disabled',
+      ),
+    )
+
+    // Read the other role's first page once, so its cached page keeps the
+    // pager mounted while a later read of that page hangs.
+    await selectRole(user, OTHER_ROLE.role)
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.next)).not.toHaveAttribute(
+        'aria-disabled',
+      ),
+    )
+    await selectRole(user, ROLE_AUDITOR.role)
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.next)).not.toHaveAttribute(
+        'aria-disabled',
+      ),
+    )
+
+    await user.click(pagerButton(zhCN.common.pager.next))
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.previous)).not.toHaveAttribute(
+        'aria-disabled',
+      ),
+    )
+    hangAuditorPageZero = true
+    await user.click(pagerButton(zhCN.common.pager.previous))
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.previous)).toHaveAttribute(
+        'aria-busy',
+        'true',
+      ),
+    )
+    expect(pagerButton(zhCN.common.pager.previous)).toHaveFocus()
+
+    // The role change resets the page to 0 while that read still hangs; the
+    // new read belongs to the role, not to the previous move.
+    hangOtherPageZero = true
+    await selectRole(user, OTHER_ROLE.role)
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.next)).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      ),
+    )
+    expect(pagerButton(zhCN.common.pager.previous)).not.toHaveAttribute(
+      'aria-busy',
+      'true',
+    )
+    expect(pagerButton(zhCN.common.pager.previous)).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    expect(pagerButton(zhCN.common.pager.next)).not.toHaveAttribute(
+      'aria-busy',
+      'true',
+    )
+
+    await act(async () => {
+      otherPageZero.resolve(PAGE_ONE)
+      auditorPageZero.resolve(PAGE_ONE)
+    })
   })
 
   it('links to the members page filtered to the role when the caller may manage memberships', async () => {

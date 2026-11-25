@@ -1256,6 +1256,335 @@ describe('InvitationsPage', () => {
     }
   })
 
+  it('drops the previous mark when a tenant switch resets the invitation pager', async () => {
+    const user = userEvent.setup()
+    const globex = tenantFixture({
+      name: 'globex',
+      display_name: 'Globex',
+      status: 'active',
+    })
+    const acmePageZero = deferred<AdminInvitationPage>()
+    const globexPageZero = deferred<AdminInvitationPage>()
+    let hangAcmePageZero = false
+    let hangGlobexPageZero = false
+    const listInvitations = vi.fn(
+      (
+        tenant: string,
+        params?: Parameters<AdminOperations['useInvitations']>[1],
+      ) => {
+        if (tenant === 'globex') {
+          return hangGlobexPageZero
+            ? globexPageZero.promise
+            : Promise.resolve({
+                invitations: [
+                  invitation({ id: 'inv-globex', email: 'gina@globex.example' }),
+                ],
+                next_cursor: 'globex-next',
+              })
+        }
+        return params?.after === 'acme-next'
+          ? Promise.resolve({
+              invitations: [
+                invitation({ id: 'inv-2', email: 'grace@example.com' }),
+              ],
+              next_cursor: '',
+            })
+          : hangAcmePageZero
+            ? acmePageZero.promise
+            : Promise.resolve({
+                invitations: [invitation()],
+                next_cursor: 'acme-next',
+              })
+      },
+    )
+    const operations = withTenant({
+      listTenants: () => Promise.resolve([TENANT, globex]),
+      listInvitations,
+      listMembers: () => Promise.resolve([]),
+    })
+    renderWithProviders(<InvitationsPage defaultTenant="acme" />, {
+      operations,
+    })
+
+    const inviteSection = section(zhCN.invitations.section.title)
+    const pagerButton = (name: string): HTMLElement =>
+      within(inviteSection).getByRole('button', { name })
+    await within(inviteSection).findByText('ada@example.com')
+
+    // Read Globex's first page once, so its cached page keeps the pager
+    // mounted while a later read of that page hangs.
+    await user.click(screen.getByLabelText(zhCN.common.tenant))
+    await user.click(await screen.findByRole('option', { name: 'Globex' }))
+    await within(inviteSection).findByText('gina@globex.example')
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.next)).not.toHaveAttribute(
+        'aria-disabled',
+      ),
+    )
+    await user.click(screen.getByLabelText(zhCN.common.tenant))
+    await user.click(await screen.findByRole('option', { name: 'Acme' }))
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.next)).not.toHaveAttribute(
+        'aria-disabled',
+      ),
+    )
+
+    await user.click(pagerButton(zhCN.common.pager.next))
+    await within(inviteSection).findByText('grace@example.com')
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.previous)).not.toHaveAttribute(
+        'aria-disabled',
+      ),
+    )
+    hangAcmePageZero = true
+    await user.click(pagerButton(zhCN.common.pager.previous))
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.previous)).toHaveAttribute(
+        'aria-busy',
+        'true',
+      ),
+    )
+    expect(pagerButton(zhCN.common.pager.previous)).toHaveFocus()
+
+    // The tenant switch resets the page to 0 while that read still hangs; the
+    // new read belongs to the tenant, not to the previous move.
+    hangGlobexPageZero = true
+    await user.click(screen.getByLabelText(zhCN.common.tenant))
+    await user.click(await screen.findByRole('option', { name: 'Globex' }))
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.next)).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      ),
+    )
+    expect(pagerButton(zhCN.common.pager.previous)).not.toHaveAttribute(
+      'aria-busy',
+      'true',
+    )
+    expect(pagerButton(zhCN.common.pager.previous)).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    expect(pagerButton(zhCN.common.pager.next)).not.toHaveAttribute(
+      'aria-busy',
+      'true',
+    )
+
+    await act(async () => {
+      globexPageZero.resolve({ invitations: [], next_cursor: '' })
+      acmePageZero.resolve({ invitations: [], next_cursor: '' })
+    })
+  })
+
+  it('drops the previous mark when a status filter resets the invitation pager', async () => {
+    const user = userEvent.setup()
+    const pageZero = deferred<AdminInvitationPage>()
+    const acceptedPageZero = deferred<AdminInvitationPage>()
+    let hangPageZero = false
+    const listInvitations = vi.fn(
+      (
+        _tenant: string,
+        params?: Parameters<AdminOperations['useInvitations']>[1],
+      ) => {
+        if (params?.status === 'accepted') {
+          return acceptedPageZero.promise
+        }
+        return params?.after === 'acme-next'
+          ? Promise.resolve({
+              invitations: [
+                invitation({ id: 'inv-2', email: 'grace@example.com' }),
+              ],
+              next_cursor: '',
+            })
+          : hangPageZero
+            ? pageZero.promise
+            : Promise.resolve({
+                invitations: [invitation()],
+                next_cursor: 'acme-next',
+              })
+      },
+    )
+    const operations = withTenant({
+      listInvitations,
+      listMembers: () => Promise.resolve([]),
+    })
+    renderWithProviders(<InvitationsPage defaultTenant="acme" />, {
+      operations,
+    })
+
+    const inviteSection = section(zhCN.invitations.section.title)
+    const pagerButton = (name: string): HTMLElement =>
+      within(inviteSection).getByRole('button', { name })
+    await within(inviteSection).findByText('ada@example.com')
+
+    await user.click(pagerButton(zhCN.common.pager.next))
+    await within(inviteSection).findByText('grace@example.com')
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.previous)).not.toHaveAttribute(
+        'aria-disabled',
+      ),
+    )
+    hangPageZero = true
+    await user.click(pagerButton(zhCN.common.pager.previous))
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.previous)).toHaveAttribute(
+        'aria-busy',
+        'true',
+      ),
+    )
+    expect(pagerButton(zhCN.common.pager.previous)).toHaveFocus()
+
+    // The filter change resets the page to 0 while that read still hangs; the
+    // new read belongs to the filter, not to the previous move.
+    await user.click(screen.getByLabelText(zhCN.invitations.filter.label))
+    await user.click(
+      await screen.findByRole('option', {
+        name: zhCN.invitations.status.accepted,
+      }),
+    )
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.next)).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      ),
+    )
+    expect(pagerButton(zhCN.common.pager.previous)).not.toHaveAttribute(
+      'aria-busy',
+      'true',
+    )
+    expect(pagerButton(zhCN.common.pager.previous)).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    expect(pagerButton(zhCN.common.pager.next)).not.toHaveAttribute(
+      'aria-busy',
+      'true',
+    )
+
+    await act(async () => {
+      acceptedPageZero.resolve({ invitations: [], next_cursor: '' })
+      pageZero.resolve({ invitations: [], next_cursor: '' })
+    })
+  })
+
+  it('drops the previous mark when a tenant switch resets the member pager', async () => {
+    const user = userEvent.setup()
+    const globex = tenantFixture({
+      name: 'globex',
+      display_name: 'Globex',
+      status: 'active',
+    })
+    const acmePageZero = deferred<AdminMemberPage>()
+    const globexPageZero = deferred<AdminMemberPage>()
+    let hangAcmePageZero = false
+    let hangGlobexPageZero = false
+    const listMembers = vi.fn(
+      (tenant: string, params?: Parameters<AdminOperations['useMembers']>[1]) => {
+        if (tenant === 'globex') {
+          return hangGlobexPageZero
+            ? globexPageZero.promise
+            : Promise.resolve({
+                members: [
+                  member({ account: 'acc-g', display_name: 'Globex Member' }),
+                ],
+                next_cursor: 'globex-mem-next',
+              })
+        }
+        return params?.after === 'acme-mem-next'
+          ? Promise.resolve({
+              members: [
+                member({ account: 'acc-2', display_name: 'Grace Member' }),
+              ],
+              next_cursor: '',
+            })
+          : hangAcmePageZero
+            ? acmePageZero.promise
+            : Promise.resolve({
+                members: [
+                  member({ account: 'acc-1', display_name: 'Acme Member' }),
+                ],
+                next_cursor: 'acme-mem-next',
+              })
+      },
+    )
+    const operations = withTenant({
+      listTenants: () => Promise.resolve([TENANT, globex]),
+      listInvitations: () =>
+        Promise.resolve({ invitations: [], next_cursor: '' }),
+      listMembers,
+    })
+    renderWithProviders(<InvitationsPage defaultTenant="acme" />, {
+      operations,
+    })
+
+    const memberSection = section(zhCN.members.title)
+    const pagerButton = (name: string): HTMLElement =>
+      within(memberSection).getByRole('button', { name })
+    await within(memberSection).findByText('Acme Member')
+
+    // Read Globex's first page once, so its cached page keeps the pager
+    // mounted while a later read of that page hangs.
+    await user.click(screen.getByLabelText(zhCN.common.tenant))
+    await user.click(await screen.findByRole('option', { name: 'Globex' }))
+    await within(memberSection).findByText('Globex Member')
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.next)).not.toHaveAttribute(
+        'aria-disabled',
+      ),
+    )
+    await user.click(screen.getByLabelText(zhCN.common.tenant))
+    await user.click(await screen.findByRole('option', { name: 'Acme' }))
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.next)).not.toHaveAttribute(
+        'aria-disabled',
+      ),
+    )
+
+    await user.click(pagerButton(zhCN.common.pager.next))
+    await within(memberSection).findByText('Grace Member')
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.previous)).not.toHaveAttribute(
+        'aria-disabled',
+      ),
+    )
+    hangAcmePageZero = true
+    await user.click(pagerButton(zhCN.common.pager.previous))
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.previous)).toHaveAttribute(
+        'aria-busy',
+        'true',
+      ),
+    )
+    expect(pagerButton(zhCN.common.pager.previous)).toHaveFocus()
+
+    hangGlobexPageZero = true
+    await user.click(screen.getByLabelText(zhCN.common.tenant))
+    await user.click(await screen.findByRole('option', { name: 'Globex' }))
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.next)).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      ),
+    )
+    expect(pagerButton(zhCN.common.pager.previous)).not.toHaveAttribute(
+      'aria-busy',
+      'true',
+    )
+    expect(pagerButton(zhCN.common.pager.previous)).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    expect(pagerButton(zhCN.common.pager.next)).not.toHaveAttribute(
+      'aria-busy',
+      'true',
+    )
+
+    await act(async () => {
+      globexPageZero.resolve({ members: [], next_cursor: '' })
+      acmePageZero.resolve({ members: [], next_cursor: '' })
+    })
+  })
+
   it('filters the invitation list by status and returns to the first page', async () => {
     const user = userEvent.setup()
     const listInvitations = vi.fn(

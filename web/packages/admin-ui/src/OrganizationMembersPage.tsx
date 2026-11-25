@@ -1091,6 +1091,11 @@ export function OrganizationMembersPage({
           </AdminAsyncSection>
           {memberRows !== undefined && (
             <CursorPager
+              key={JSON.stringify([
+                tenant,
+                debouncedMemberSearch,
+                roleFilter,
+              ])}
               page={memberPage}
               hasNext={memberNextCursor !== ''}
               busy={membersFeedback.pending}
@@ -1391,6 +1396,7 @@ export function OrganizationMembersPage({
         </AdminAsyncSection>
         {invitationRows !== undefined && (
           <CursorPager
+            key={JSON.stringify([tenant, statusFilter])}
             page={invitationPage}
             hasNext={invitationNextCursor !== ''}
             busy={invitationFeedback.pending}

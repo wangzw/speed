@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { CONFIRM_ARM_LOCKOUT_MS } from '@speed/ui-kit'
 import { AccountsPage } from './AccountsPage.js'
 import { adminOperations } from './operations.js'
-import type { AdminAccount } from './operations.js'
+import type { AdminAccount, AdminAccountPage } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { bindAdminRequest } from '../test-utils/request-rig.js'
 import {
@@ -28,6 +28,17 @@ import {
   CONFIRM_LABEL,
 } from '../test-utils/accounts-page.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
+
+function deferred<T>(): {
+  readonly promise: Promise<T>
+  readonly resolve: (value: T) => void
+} {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
 
 describe('AccountsPage', () => {
   it('marks the page behind the status filter menu inert', async () => {
@@ -563,6 +574,96 @@ describe('AccountsPage', () => {
       identifier_kind: 'username',
       display_name_prefix: 'Gr',
       limit: 100,
+    })
+  })
+
+  it('drops the previous mark when a filter resets the pager', async () => {
+    const user = userEvent.setup()
+    const pageZero = deferred<AdminAccountPage>()
+    const filteredPageZero = deferred<AdminAccountPage>()
+    let hangPageZero = false
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listAccounts: (params) => {
+          if (params?.display_name_prefix === 'Gr') {
+            return filteredPageZero.promise
+          }
+          if (params?.after === 'cursor-1') {
+            return Promise.resolve({
+              accounts: [
+                accountFixture({ id: 'acc-2', display_name: 'Grace Hopper' }),
+              ],
+              next_cursor: '',
+            })
+          }
+          return hangPageZero
+            ? pageZero.promise
+            : Promise.resolve({
+                accounts: [
+                  accountFixture({ id: 'acc-1', display_name: 'Ada Lovelace' }),
+                ],
+                next_cursor: 'cursor-1',
+              })
+        },
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
+
+    const pagerButton = (name: string): HTMLElement =>
+      screen.getByRole('button', { name })
+
+    await user.click(pagerButton(NEXT_PAGE_LABEL))
+    expect(await screen.findByText('Grace Hopper')).toBeInTheDocument()
+    await waitForCondition(() =>
+      expect(pagerButton(PREVIOUS_PAGE_LABEL)).not.toHaveAttribute(
+        'aria-disabled',
+      ),
+    )
+    hangPageZero = true
+    await user.click(pagerButton(PREVIOUS_PAGE_LABEL))
+    await waitForCondition(() =>
+      expect(pagerButton(PREVIOUS_PAGE_LABEL)).toHaveAttribute(
+        'aria-busy',
+        'true',
+      ),
+    )
+    expect(pagerButton(PREVIOUS_PAGE_LABEL)).toHaveFocus()
+
+    // The search applies a new filter while that read still hangs; the new
+    // read belongs to the filter, not to the previous move.
+    await user.type(
+      screen.getByLabelText(zhCN.accounts.displayNamePrefixLabel),
+      'Gr',
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.accounts.search }))
+    await waitForCondition(() =>
+      expect(pagerButton(NEXT_PAGE_LABEL)).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      ),
+    )
+    expect(pagerButton(PREVIOUS_PAGE_LABEL)).not.toHaveAttribute(
+      'aria-busy',
+      'true',
+    )
+    expect(pagerButton(PREVIOUS_PAGE_LABEL)).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    expect(pagerButton(NEXT_PAGE_LABEL)).not.toHaveAttribute(
+      'aria-busy',
+      'true',
+    )
+
+    await act(async () => {
+      filteredPageZero.resolve({ accounts: [], next_cursor: '' })
+      pageZero.resolve({
+        accounts: [
+          accountFixture({ id: 'acc-1', display_name: 'Ada Lovelace' }),
+        ],
+        next_cursor: 'cursor-1',
+      })
     })
   })
 

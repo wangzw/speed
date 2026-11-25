@@ -3,6 +3,8 @@
  *
  * A direction stays focusable while its own read runs; a write in flight
  * makes both unavailable, because a page change would read an unsettled cursor.
+ * The control cannot tell which scope a read belongs to, so a caller whose
+ * scope change resets the page renders it with that scope as its React key.
  */
 
 import { useEffect, useState } from 'react'
