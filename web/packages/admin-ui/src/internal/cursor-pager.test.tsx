@@ -119,6 +119,88 @@ describe('CursorPager', () => {
     expect(previous).toHaveFocus()
   })
 
+  it('treats a refresh after a move that started no read as external', async () => {
+    const user = userEvent.setup()
+    function Harness() {
+      const [state, setState] = useState({ page: 2, reading: false })
+      return (
+        <>
+          <CursorPager
+            page={state.page}
+            hasNext
+            reading={state.reading}
+            onPrevious={() =>
+              setState((current) => ({ page: current.page - 1, reading: false }))
+            }
+            onNext={() =>
+              setState((current) => ({ page: current.page + 1, reading: false }))
+            }
+          />
+          <button
+            type="button"
+            onClick={() => setState((current) => ({ ...current, reading: true }))}
+          >
+            Refresh
+          </button>
+        </>
+      )
+    }
+    renderWithProviders(<Harness />)
+
+    await user.click(screen.getByRole('button', { name: ZH.pager.previous }))
+    expect(screen.getByText('第 2 页')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Refresh' }))
+
+    const { previous, next } = directions()
+    expect(previous).not.toHaveAttribute('aria-busy')
+    expect(next).not.toHaveAttribute('aria-busy')
+    expect(previous).toHaveAttribute('aria-disabled', 'true')
+    expect(next).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('treats a read after a refused move as external', async () => {
+    const user = userEvent.setup()
+    function Harness() {
+      const [state, setState] = useState({ page: 1, reading: false })
+      return (
+        <>
+          <CursorPager
+            page={state.page}
+            hasNext
+            reading={state.reading}
+            onPrevious={() =>
+              setState((current) => ({
+                page: current.page - 1,
+                reading: true,
+              }))
+            }
+            onNext={() => undefined}
+          />
+          <button type="button" onClick={() => setState({ page: 2, reading: true })}>
+            Jump
+          </button>
+        </>
+      )
+    }
+    renderWithProviders(<Harness />)
+
+    await user.click(screen.getByRole('button', { name: ZH.pager.next }))
+
+    const afterRefusal = directions()
+    expect(screen.getByText('第 2 页')).toBeInTheDocument()
+    expect(afterRefusal.previous).not.toHaveAttribute('aria-disabled')
+    expect(afterRefusal.next).not.toHaveAttribute('aria-disabled')
+
+    await user.click(screen.getByRole('button', { name: 'Jump' }))
+
+    const { previous, next } = directions()
+    expect(previous).not.toHaveAttribute('aria-busy')
+    expect(next).not.toHaveAttribute('aria-busy')
+    expect(previous).toHaveAttribute('aria-disabled', 'true')
+    expect(next).toHaveAttribute('aria-disabled', 'true')
+  })
+
   it('makes both directions unavailable while a read nobody started here runs', () => {
     renderWithProviders(
       <CursorPager page={1} hasNext reading onPrevious={() => undefined} onNext={() => undefined} />,

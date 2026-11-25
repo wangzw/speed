@@ -42,11 +42,23 @@ export function CursorPager({
   const { t } = useAdminUiTranslation()
   const [startedRead, setStartedRead] = useState<StartedRead | null>(null)
 
+  // A move that starts no read (a cached page) never sets `reading`, so the
+  // record would survive it and make a later refresh's read look like this
+  // direction's.
   useEffect(() => {
     if (!reading) {
       setStartedRead(null)
     }
-  }, [reading])
+  }, [reading, page])
+
+  // A refused move changes neither `page` nor `reading`, so the effect above
+  // never drops the record and a later external read on that page would look
+  // like this direction's; the refusal shows only in a render.
+  useEffect(() => {
+    if (startedRead !== null && !reading && page !== startedRead.page) {
+      setStartedRead(null)
+    }
+  })
 
   if (page === 0 && !hasNext) {
     return null
