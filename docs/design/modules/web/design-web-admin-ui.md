@@ -428,7 +428,7 @@ graph TD
 | 组织上下文 | `OrganizationAdminProviderProps` | 当前租户、组织操作束、会话、特性判定、路由表、面包屑、邀请链接构造器、受保护角色、租户更新回调（`onTenantUpdated`）与离任回调（`onOrganizationLeft`）；只安装上下文，不渲染 DOM |
 | 组织操作束 | `OrganizationAdminOperations` | 租户作用域的读钩子与写 mutation：邀请与成员、SSO、设置、角色、权限、授予与绑定，组织资料的读写（`useTenantProfile`、`useTenantProfileWrite`），以及所有者转移请求、待处理读取、取消与组织删除（`useTenantOwnerPending`、`useTenantOwnerRequest`、`useTenantOwnerCancel`、`useTenantOwnerDelete`），全部落在 `/api/v1/tenants/{tenant}/...`；读键以租户标识为最外层段 |
 | 组织操作束的发布 | `OrganizationAdminOperationsProvider` | `OrganizationAdminProvider` 挂载它把操作束交给页面；页面经 `useOrganizationAdminOperations` 取用，没有挂载时取出厂绑定 |
-| 游标翻页 | `CursorPager` | 成员表与邀请表共用的上一页／下一页控件；页码从 1 起显示，单页时不渲染；写入在途时两个方向都呈不可用，下一页读在途时被激活的方向带 `aria-busy`、另一方向呈不可用，两个方向都保持可聚焦（见 ui-kit“写入的反馈”）。它与 ui-kit 的 `TablePager` 遵循同一套状态规则；用它的是无总数、无行数下拉的游标列表，两者不合并。`TablePager` 会清掉一次不发起读的移动所留下的方向记录，`CursorPager` 尚无这一修复：该记录会留到下一次读，使本由筛选或刷新发起的读被当成该方向发起 |
+| 游标翻页 | `CursorPager` | 成员表、邀请表与角色使用情况表共用的上一页／下一页控件；页码从 1 起显示，单页时不渲染；写入在途时两个方向都呈不可用，下一页读在途时被激活的方向带 `aria-busy`、另一方向呈不可用，两个方向都保持可聚焦（见 ui-kit“写入的反馈”）。它与 ui-kit 的 `TablePager` 遵循同一套状态规则；用它的是无总数、无行数下拉的游标列表，两者不合并。两者都只在一次移动的读进行期间记住被激活的方向：移动不发起读（缓存页）或被调用方拒绝时记录随即清空，之后由筛选或刷新发起的读按别处发起处理，两个方向都不可用 |
 | 邀请观察态 | `invitationStatusOf` | 由存量状态与期限推出 `pending／expired／accepted／revoked`；期限解析不出时保留 `pending` |
 | 邀请投递结果 | `email_delivery` | 签发应答里的 `sent／failed／not_configured`，与一次性链接并列渲染；失败不改变邀请已成立 |
 | 面包屑 | `PageHeaderBreadcrumb` | 组织管理面的面包屑上下文值；页头优先渲染它，缺席时回退到页面自己的平台面包屑 |
