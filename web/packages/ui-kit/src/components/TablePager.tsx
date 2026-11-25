@@ -119,7 +119,14 @@ function PagerActions({
  * other unavailable; a read started elsewhere makes both unavailable; a
  * list boundary makes that direction unavailable. A direction is remembered
  * only across a move whose read is in flight, so a page move that starts no
- * read, or one the caller refuses, leaves the next read external.
+ * read, or one the caller refuses, leaves the next read external. The record
+ * does not distinguish scopes: a caller whose filter or tenant change resets
+ * the page to 0 renders the footer with that scope as its React key, so the
+ * read after the change counts as started elsewhere. Through `DataTable`, key
+ * the table by a scope only when a control outside the table changes that
+ * scope; the table's own filtering or sorting must not be the key, because
+ * each change remounts the focused control, and the record still spans scopes
+ * in that case.
  */
 export function TablePager({
   page,
