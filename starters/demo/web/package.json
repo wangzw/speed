@@ -33,7 +33,7 @@
     "@speed/tenancy-ui": "^0.0.1",
     "@speed/theme-presets": "^0.0.1",
     "@speed/ui-kit": "^0.0.1",
-    "@tanstack/react-query": "^5.108.1",
+    "@tanstack/react-query": "^5.108.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-hook-form": "^7.92.0",
