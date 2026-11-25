@@ -154,6 +154,7 @@ import type {
   TenantTransferView,
 } from '@speed/api-sdk'
 import { errorCodeOf } from '@speed/ui-kit'
+import { keepPreviousPageWithinTenant } from './internal/keep-previous-page.js'
 import { useAdminUiTranslation } from './internal/translation.js'
 import type { AdminTenantRole } from './organization-operations.js'
 import { profileWriteOf } from './TenantProfileFields.js'
@@ -1578,12 +1579,21 @@ export const adminOperations: AdminOperations = {
     })
   },
 
-  useInvitations: (tenant, params) =>
-    useQuery({
-      ...getAuthnInviteListQueryOptions(tenant, params),
+  useInvitations: (tenant, params) => {
+    const options = getAuthnInviteListQueryOptions(tenant, params)
+    return useQuery({
+      ...options,
       select: (page) => page,
+      // The page envelope is the answer (the caller needs the cursor); keeping
+      // the previous rows avoids a skeleton on every keystroke and page step.
+      // The endpoint path at slot 0 carries the tenant.
+      placeholderData: keepPreviousPageWithinTenant<AdminInvitationPage>(
+        options.queryKey,
+        0,
+      ),
       enabled: tenant !== '',
-    }),
+    })
+  },
 
   useIssueInvitation: () => {
     const queryClient = useQueryClient()
@@ -1644,14 +1654,20 @@ export const adminOperations: AdminOperations = {
       enabled: tenant !== '',
     }),
 
-  useMembers: (tenant, params) =>
-    useQuery({
-      ...getAuthnAdminMembersListQueryOptions(tenant, params),
+  useMembers: (tenant, params) => {
+    const options = getAuthnAdminMembersListQueryOptions(tenant, params)
+    return useQuery({
+      ...options,
       // The page envelope is the answer (the caller needs the cursor); keeping
       // the previous rows avoids a skeleton on every keystroke and page step.
-      placeholderData: keepPreviousData,
+      // The endpoint path at slot 0 carries the tenant.
+      placeholderData: keepPreviousPageWithinTenant<AdminMemberPage>(
+        options.queryKey,
+        0,
+      ),
       enabled: tenant !== '',
-    }),
+    })
+  },
 
   useRemoveMember: () => {
     const queryClient = useQueryClient()
