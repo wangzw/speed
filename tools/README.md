@@ -158,6 +158,49 @@ addresses for the Makefile to export. The root `Makefile` reaches it through
 `make deps-up`, `make deps-down` and the integration legs. Its suite is
 `test_backends.py`, which `make tools-test` runs as well.
 
+## Trimming the Go build cache
+
+`trim_go_cache.py` is not a gate either. A CI job that restores a Go build
+cache and then saves it stores the restored entries back along with the
+objects the run added, so every save grows the store. This script deletes
+the restored entries the run did not use, keeping the entries the run used
+and the outputs they record, so the save holds only this run's entries and
+their outputs:
+
+```
+python3 tools/trim_go_cache.py --cache-dir <directory> --started <Unix seconds> [--now <Unix seconds>]
+```
+
+It deletes the same shapes Go's own `trimSubdir` deletes — the entries named
+`-a` or `-d` in the 256 two-hex subdirectories, a directory entry removed
+whole — but against this run's cutoff rather than Go's five-day limit: an
+entry goes when its mtime is older than the start minus an hour. The hour is
+Go's own refresh interval: it updates an entry's mtime on use at most once
+an hour, so an entry this run used can read as an hour old. An output entry
+(`-d`) also stays when a kept action entry (`-a`) records its output ID,
+whatever its own mtime: Go's `copyFile` leaves an existing output's mtime
+alone, so a fresh `-a` can name a `-d` that reads old. Everything else
+(`README`, `trim.txt`, `testexpire.txt`, `fuzz/`, any other file) is left
+alone. `--now` exists for the suite; the default is the system clock. Exit
+codes: 0 done, with the deleted and kept entry counts and bytes printed; 2
+refused with nothing changed, when `--cache-dir` or `--started` is missing,
+when the timestamp is not an integer or later than now, when the directory
+does not exist, or when it carries no `README` whose first line is Go's
+(which keeps a GOMODCACHE or a repository root from being trimmed by
+mistake); any other non-zero value means an error, and an error while
+collecting the entries (scanning a subdirectory, stating an entry or reading
+an `-a`) stops before anything is deleted, while an error removing one entry
+is reported and the rest are still handled.
+
+The workflows call it; `make repo-check` does not, and its name does not
+start with `check_`, so no gate picks it up. Its suite,
+`test_trim_go_cache.py`, runs with `make tools-test`. One of its cases drives
+the real Go toolchain: it builds two stdlib-only modules, ages every cache
+entry, rebuilds one, trims, and requires that module to compile nothing on
+the next build while the other module's own entry is gone. That case is what
+holds the hour above to Go's behaviour; a release that changed when mtimes
+are refreshed would fail it.
+
 ## The scripts
 
 `check_toolchain.py` — fails when a version pinned in the root
