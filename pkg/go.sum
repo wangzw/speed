@@ -363,8 +363,8 @@ github.com/swaggest/openapi-go v0.2.61/go.mod h1:786CwSwleh1IorB0nfwYGESWf83JgQh
 github.com/swaggest/refl v1.4.0 h1:CftOSdTqRqs100xpFOT/Rifss5xBV/CT0S/FN60Xe9k=
 github.com/swaggest/refl v1.4.0/go.mod h1:4uUVFVfPJ0NSX9FPwMPspeHos9wPFlCMGoPRllUbpvA=
 github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.172/go.mod h1:r5r4xbfxSaeR04b166HGsBa/R4U3SueirEUpXGuw+Q0=
-github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.215 h1:a8pgdIJV/awnQf7CprgrSLderGvJ04ECaeFNZWbmaxQ=
-github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.215/go.mod h1:r5r4xbfxSaeR04b166HGsBa/R4U3SueirEUpXGuw+Q0=
+github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.217 h1:5V3KjfAFG+SIKNW/qVOQ42neoB0kTvwYjGk1Dut74Dc=
+github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.217/go.mod h1:r5r4xbfxSaeR04b166HGsBa/R4U3SueirEUpXGuw+Q0=
 github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms v1.3.172 h1:8YBaibwP8YXcYP+4qdgoqIwNULYNt5/AyVP7t3J3hCA=
 github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms v1.3.172/go.mod h1:eLllmEVIjbeQpcXHpd/68caL4/EgHBbHruRCmExcv+M=
 github.com/tinylib/msgp v1.6.4 h1:mOwYbyYDLPj35mkA2BjjYejgJk9BuHxDdvRnb6v2ZcQ=

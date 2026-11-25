@@ -37,7 +37,7 @@ require (
 	github.com/spf13/viper v1.21.0
 	github.com/swaggest/jsonschema-go v0.3.79
 	github.com/swaggest/openapi-go v0.2.61
-	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.215
+	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.217
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms v1.3.172
 	github.com/twilio/twilio-go v1.33.1
 	github.com/wneessen/go-mail v0.8.2
