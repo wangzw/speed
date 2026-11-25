@@ -6,7 +6,6 @@
 import { createContext, useContext } from 'react'
 import type { ReactNode } from 'react'
 import {
-  keepPreviousData,
   useMutation,
   useQuery,
   useQueryClient,
@@ -81,11 +80,14 @@ import type {
 } from '@speed/api-sdk'
 import { tenantQueryKey } from '@speed/auth-core'
 import { errorCodeOf } from '@speed/ui-kit'
+import { keepPreviousPageWithinTenant } from './internal/keep-previous-page.js'
 import type {
   AdminClaimSsoDomainInput,
   AdminCreateSsoProviderInput,
+  AdminInvitationPage,
   AdminInvitationRef,
   AdminIssueInvitationInput,
+  AdminMemberPage,
   AdminMemberRef,
   AdminOperations,
   AdminSetMemberSSOExemptInput,
@@ -354,10 +356,18 @@ export interface OrganizationAdminOperations
 export const organizationAdminOperations: OrganizationAdminOperations = {
   useInvitations: (tenant, params) => {
     const options = getAuthnInviteListQueryOptions(tenant, params)
+    const queryKey = tenantQueryKey(tenant, ...options.queryKey)
     return useQuery({
       ...options,
-      queryKey: tenantQueryKey(tenant, ...options.queryKey),
+      queryKey,
       select: (page) => page,
+      // The envelope carries the next cursor; the previous page stays on screen
+      // while a search or page change runs, so the table does not collapse.
+      // The tenant leads the key.
+      placeholderData: keepPreviousPageWithinTenant<AdminInvitationPage>(
+        queryKey,
+        0,
+      ),
       enabled: tenant !== '',
     })
   },
@@ -404,12 +414,17 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
 
   useMembers: (tenant, params) => {
     const options = getAuthnAdminMembersListQueryOptions(tenant, params)
+    const queryKey = tenantQueryKey(tenant, ...options.queryKey)
     return useQuery({
       ...options,
-      queryKey: tenantQueryKey(tenant, ...options.queryKey),
+      queryKey,
       // The envelope carries the next cursor; the previous page stays on screen
       // while a search or page change runs, so the table does not collapse.
-      placeholderData: keepPreviousData,
+      // The tenant leads the key.
+      placeholderData: keepPreviousPageWithinTenant<AdminMemberPage>(
+        queryKey,
+        0,
+      ),
       enabled: tenant !== '',
     })
   },

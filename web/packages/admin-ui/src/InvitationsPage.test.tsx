@@ -9,6 +9,7 @@ import { InvitationsPage } from './InvitationsPage.js'
 import { adminOperations } from './operations.js'
 import type {
   AdminAccount,
+  AdminInvitationPage,
   AdminIssueInvitationInput,
   AdminMember,
   AdminMemberPage,
@@ -1003,6 +1004,60 @@ describe('InvitationsPage', () => {
     }
   })
 
+  it('drops the previous tenant rows while the switched tenant reads', async () => {
+    const user = userEvent.setup()
+    const globex = tenantFixture({ name: 'globex', display_name: 'Globex', status: 'active' })
+    const globexInvitations = deferred<AdminInvitationPage>()
+    const globexMembers = deferred<AdminMemberPage>()
+    const listInvitations = vi.fn((tenant: string) =>
+      tenant === 'globex'
+        ? globexInvitations.promise
+        : Promise.resolve({
+            invitations: [invitation({ email: 'ada@acme.example' })],
+            next_cursor: '',
+          }),
+    )
+    const listMembers = vi.fn((tenant: string) =>
+      tenant === 'globex'
+        ? globexMembers.promise
+        : Promise.resolve([
+            member({ account: 'acc-acme', display_name: 'Acme Member' }),
+          ]),
+    )
+    const operations = withTenant({
+      listTenants: () => Promise.resolve([TENANT, globex]),
+      listInvitations,
+      listMembers,
+    })
+    renderWithProviders(<InvitationsPage defaultTenant="acme" />, {
+      operations,
+    })
+
+    const inviteSection = section(zhCN.invitations.section.title)
+    const memberSection = section(zhCN.members.title)
+    await within(inviteSection).findByText('ada@acme.example')
+    await within(memberSection).findByText('Acme Member')
+
+    await user.click(screen.getByLabelText(zhCN.common.tenant))
+    await user.click(await screen.findByRole('option', { name: 'Globex' }))
+
+    await waitForCondition(() => {
+      expect(
+        listInvitations.mock.calls.some(([tenant]) => tenant === 'globex'),
+      ).toBe(true)
+      expect(
+        listMembers.mock.calls.some(([tenant]) => tenant === 'globex'),
+      ).toBe(true)
+    })
+    expect(within(inviteSection).queryByText('ada@acme.example')).toBeNull()
+    expect(within(memberSection).queryByText('Acme Member')).toBeNull()
+
+    await act(async () => {
+      globexInvitations.resolve({ invitations: [], next_cursor: '' })
+      globexMembers.resolve({ members: [], next_cursor: '' })
+    })
+  })
+
   it('pages the invitation list through every invitation', async () => {
     const user = userEvent.setup()
     const listInvitations = vi.fn(
@@ -1045,6 +1100,50 @@ describe('InvitationsPage', () => {
       'acme',
       expect.objectContaining({ after: 'invitations-cursor-2' }),
     )
+  })
+
+  it('marks the invitation pager busy while its page read is in flight', async () => {
+    const user = userEvent.setup()
+    const nextRead = deferred<AdminInvitationPage>()
+    const listInvitations = vi.fn(
+      (
+        _tenant: string,
+        params?: Parameters<AdminOperations['useInvitations']>[1],
+      ) =>
+        params?.after === 'invitations-cursor-2'
+          ? nextRead.promise
+          : Promise.resolve({
+              invitations: [invitation()],
+              next_cursor: 'invitations-cursor-2',
+            }),
+    )
+    const operations = withTenant({ listInvitations })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+
+    const inviteSection = section(zhCN.invitations.section.title)
+    await within(inviteSection).findByText('ada@example.com')
+    const next = within(inviteSection).getByRole('button', {
+      name: zhCN.common.pager.next,
+    })
+    const previous = within(inviteSection).getByRole('button', {
+      name: zhCN.common.pager.previous,
+    })
+    await user.click(next)
+    await waitForCondition(() => {
+      expect(next).toHaveAttribute('aria-busy', 'true')
+    })
+    expect(previous).toHaveAttribute('aria-disabled', 'true')
+
+    await act(async () => {
+      nextRead.resolve({
+        invitations: [invitation({ id: 'inv-2', email: 'grace@example.com' })],
+        next_cursor: '',
+      })
+    })
+    expect(
+      await within(inviteSection).findByText('grace@example.com'),
+    ).toBeInTheDocument()
   })
 
   it('returns the invitation list to the first page with an empty cursor', async () => {

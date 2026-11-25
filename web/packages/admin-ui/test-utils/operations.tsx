@@ -101,6 +101,7 @@ import type {
   AdminTenantWriteRoleInput,
   OrganizationAdminOperations,
 } from '../src/organization-operations.js'
+import { keepPreviousPageWithinTenant } from '../src/internal/keep-previous-page.js'
 import { tenantQueryKey } from '@speed/auth-core'
 
 /** The scripted backend the operations bundle calls, grouped by surface. */
@@ -1022,20 +1023,27 @@ export function createAdminOperations(
       })
     },
 
-    useInvitations: (tenant: string, params) =>
-      useQuery({
-        // Page parameters key the read too, so a filter change is a new read; a
-        // caller that passes none keeps the bare key the platform page uses.
-        queryKey:
-          params === undefined
-            ? invitationsKey(tenant)
-            : [...invitationsKey(tenant), params],
+    useInvitations: (tenant: string, params) => {
+      // Page parameters key the read too, so a filter change is a new read; a
+      // caller that passes none keeps the bare key the platform page uses.
+      const queryKey =
+        params === undefined
+          ? invitationsKey(tenant)
+          : [...invitationsKey(tenant), params]
+      return useQuery({
+        queryKey,
         queryFn: () =>
           params === undefined
             ? backend.listInvitations(tenant)
             : backend.listInvitations(tenant, params),
+        // The tenant is the key's third element.
+        placeholderData: keepPreviousPageWithinTenant<AdminInvitationPage>(
+          queryKey,
+          2,
+        ),
         enabled: tenant !== '',
-      }),
+      })
+    },
     useIssueInvitation: () => {
       const client = useQueryClient()
       return useMutation({
@@ -1068,18 +1076,24 @@ export function createAdminOperations(
     },
 
 
-    useMembers: (tenant, params) =>
-      useQuery({
-        queryKey: [...membersKey(tenant), params ?? null],
+    useMembers: (tenant, params) => {
+      const queryKey = [...membersKey(tenant), params ?? null]
+      return useQuery({
+        queryKey,
         queryFn: async (): Promise<AdminMemberPage> => {
           const answer = await backend.listMembers(tenant, params)
           return 'members' in answer
             ? answer
             : { members: [...answer], next_cursor: '' }
         },
-        placeholderData: keepPreviousData,
+        // The tenant is the key's third element.
+        placeholderData: keepPreviousPageWithinTenant<AdminMemberPage>(
+          queryKey,
+          2,
+        ),
         enabled: tenant !== '',
-      }),
+      })
+    },
     useRemoveMember: () => {
       const client = useQueryClient()
       return useMutation({

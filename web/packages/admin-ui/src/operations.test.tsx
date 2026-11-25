@@ -1,7 +1,8 @@
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { restoreRealTimers } from '@speed/test-utils/timers'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, renderHook, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { getAuthnAdminAccountsSessionsQueryKey } from '@speed/api-sdk'
@@ -10,6 +11,12 @@ import {
   adminOperations,
   settingKeyRest,
   useAdminOperations,
+} from './operations.js'
+import type {
+  AdminInvitation,
+  AdminInvitationPage,
+  AdminMember,
+  AdminMemberPage,
 } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { bindAdminRequest } from '../test-utils/request-rig.js'
@@ -996,5 +1003,174 @@ describe('adminOperations write invalidation', () => {
       expect(reads('/api/v1/system/auth/accounts/acc-1/sessions')).toBeGreaterThan(1)
     })
     expect(reads('/api/v1/system/auth/accounts/acc-2/sessions')).toBe(1)
+  })
+})
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+
+function memberRow(overrides: Partial<AdminMember> = {}): AdminMember {
+  return {
+    tenant: 'acme',
+    account: 'acc-1',
+    display_name: 'Ada Lovelace',
+    username: 'ada',
+    active: true,
+    joined_at: '2026-01-01T00:00:00Z',
+    roles: [],
+    source: 'admin',
+    sso_exempt: false,
+    ...overrides,
+  }
+}
+
+function invitationRow(
+  overrides: Partial<AdminInvitation> = {},
+): AdminInvitation {
+  return {
+    tenant: 'acme',
+    id: 'inv-1',
+    email: 'ada@example.com',
+    status: 'pending',
+    state: 'pending',
+    invited_by: 'staff-1',
+    expires_at: '2099-01-01T00:00:00Z',
+    accepted_at: null,
+    created_at: '2026-01-01T00:00:00Z',
+    revoked_at: null,
+    last_sent_at: '2026-01-01T00:00:00Z',
+    send_count: 1,
+    ...overrides,
+  }
+}
+
+function pagerWrapper(queryClient: QueryClient) {
+  return function Wrapper({ children }: { readonly children: ReactNode }) {
+    return (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+  }
+}
+
+function freshQueryClient(): QueryClient {
+  return new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+}
+
+describe('the platform member and invitation reads keep a page within one tenant', () => {
+  it('keeps the previous page while the next page of the same tenant reads', async () => {
+    const nextMembers = deferred<AdminMemberPage>()
+    const nextInvitations = deferred<AdminInvitationPage>()
+    const calls = bindAdminRequest((call) => {
+      if (call.path === '/api/v1/tenants/acme/members') {
+        return call.query?.after === undefined
+          ? { members: [memberRow()], next_cursor: 'members-2' }
+          : nextMembers.promise
+      }
+      if (call.path === '/api/v1/tenants/acme/invitations') {
+        return call.query?.after === undefined
+          ? { invitations: [invitationRow()], next_cursor: 'invitations-2' }
+          : nextInvitations.promise
+      }
+      throw new Error(`unexpected request: ${call.method} ${call.path}`)
+    })
+    const { result, rerender } = renderHook(
+      ({ after }: { readonly after: string | undefined }) => ({
+        members: adminOperations.useMembers(
+          'acme',
+          after === undefined ? undefined : { after },
+        ),
+        invitations: adminOperations.useInvitations(
+          'acme',
+          after === undefined ? undefined : { after },
+        ),
+      }),
+      {
+        initialProps: { after: undefined as string | undefined },
+        wrapper: pagerWrapper(freshQueryClient()),
+      },
+    )
+    await waitFor(() => {
+      expect(result.current.members.data).toBeDefined()
+      expect(result.current.invitations.data).toBeDefined()
+    })
+    const previousMembers = result.current.members.data
+    const previousInvitations = result.current.invitations.data
+
+    rerender({ after: 'next-page' })
+    await waitFor(() => {
+      expect(calls.some((call) => call.query?.after === 'next-page')).toBe(true)
+    })
+    expect(result.current.members.data).toEqual(previousMembers)
+    expect(result.current.members.isPlaceholderData).toBe(true)
+    expect(result.current.invitations.data).toEqual(previousInvitations)
+    expect(result.current.invitations.isPlaceholderData).toBe(true)
+
+    await act(async () => {
+      nextMembers.resolve({
+        members: [memberRow({ account: 'acc-2' })],
+        next_cursor: '',
+      })
+      nextInvitations.resolve({ invitations: [], next_cursor: '' })
+    })
+  })
+
+  it('drops the previous tenant page while the switched tenant reads', async () => {
+    const globexMembers = deferred<AdminMemberPage>()
+    const globexInvitations = deferred<AdminInvitationPage>()
+    const calls = bindAdminRequest((call) => {
+      if (call.path === '/api/v1/tenants/acme/members') {
+        return { members: [memberRow()], next_cursor: '' }
+      }
+      if (call.path === '/api/v1/tenants/acme/invitations') {
+        return { invitations: [invitationRow()], next_cursor: '' }
+      }
+      if (call.path === '/api/v1/tenants/globex/members') {
+        return globexMembers.promise
+      }
+      if (call.path === '/api/v1/tenants/globex/invitations') {
+        return globexInvitations.promise
+      }
+      throw new Error(`unexpected request: ${call.method} ${call.path}`)
+    })
+    const { result, rerender } = renderHook(
+      ({ tenant }: { readonly tenant: string }) => ({
+        members: adminOperations.useMembers(tenant),
+        invitations: adminOperations.useInvitations(tenant),
+      }),
+      {
+        initialProps: { tenant: 'acme' },
+        wrapper: pagerWrapper(freshQueryClient()),
+      },
+    )
+    await waitFor(() => {
+      expect(result.current.members.data).toBeDefined()
+      expect(result.current.invitations.data).toBeDefined()
+    })
+
+    rerender({ tenant: 'globex' })
+    await waitFor(() => {
+      expect(
+        calls.some((call) => call.path === '/api/v1/tenants/globex/members'),
+      ).toBe(true)
+      expect(
+        calls.some((call) => call.path === '/api/v1/tenants/globex/invitations'),
+      ).toBe(true)
+    })
+    expect(result.current.members.data).toBeUndefined()
+    expect(result.current.members.isPlaceholderData).toBe(false)
+    expect(result.current.invitations.data).toBeUndefined()
+    expect(result.current.invitations.isPlaceholderData).toBe(false)
+
+    await act(async () => {
+      globexMembers.resolve({ members: [], next_cursor: '' })
+      globexInvitations.resolve({ invitations: [], next_cursor: '' })
+    })
   })
 })
