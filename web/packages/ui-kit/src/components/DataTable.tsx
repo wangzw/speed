@@ -206,6 +206,17 @@ function flip(direction: DataTableSortDirection): DataTableSortDirection {
   return direction === 'asc' ? 'desc' : 'asc'
 }
 
+function pagerScopeKey(
+  filter: DataTableFilter | undefined,
+  sort: DataTableSort | null | undefined,
+): string {
+  return JSON.stringify([
+    filter?.value ?? null,
+    sort?.columnId ?? null,
+    sort?.direction ?? null,
+  ])
+}
+
 /**
  * The primary-identity column's width cap, answering to the table's own
  * container: 160px below `md`, 200px from `md` up.
@@ -700,7 +711,13 @@ export function DataTable<T>({
           </TableBody>
         </Table>
       </TableContainer>
-      {pagination !== undefined && <TablePager {...pagination} />}
+      {pagination !== undefined && (
+        // The footer cannot see the scope; the table's own filter and sort are
+        // the scope. Leave page, rowsPerPage and reading out of the key: a
+        // direction key changes page and reading, and the focused rows-per-page
+        // dropdown changes rowsPerPage. Including them remounts the footer.
+        <TablePager key={pagerScopeKey(filter, sort)} {...pagination} />
+      )}
     </Box>
   )
 }
