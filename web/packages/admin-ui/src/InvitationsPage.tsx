@@ -1136,6 +1136,7 @@ export function InvitationsPage({
             </AdminAsyncSection>
             {invitationRows !== undefined && (
               <CursorPager
+                key={JSON.stringify([tenant, statusFilter])}
                 page={invitationPage}
                 hasNext={invitationHasNext}
                 busy={invitationFeedback.pending}
@@ -1202,6 +1203,7 @@ export function InvitationsPage({
               </AdminAsyncSection>
               {memberRows !== undefined && (
                 <CursorPager
+                  key={tenant}
                   page={memberPage}
                   hasNext={memberHasNext}
                   busy={membersFeedback.pending}

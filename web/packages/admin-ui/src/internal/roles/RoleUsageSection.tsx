@@ -173,6 +173,7 @@ export function RoleUsageSection({
             )}
           </AdminAsyncSection>
           <CursorPager
+            key={role.role}
             page={page}
             hasNext={nextCursor !== ''}
             busy={busy}

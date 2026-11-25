@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { restoreRealTimers } from '@speed/test-utils/timers'
+import { waitForCondition } from '@speed/test-utils/wait'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { attachSession } from '@speed/auth-core'
@@ -451,6 +452,14 @@ function rowOf(target: string | HTMLElement): HTMLElement {
     throw new Error(`no row for ${String(target)}`)
   }
   return row
+}
+
+function section(name: string): HTMLElement {
+  const element = screen.getByRole('heading', { name }).closest('section')
+  if (element === null) {
+    throw new Error(`no section headed ${name}`)
+  }
+  return element as HTMLElement
 }
 
 function invitationRowsInOrder(): HTMLElement[] {
@@ -1121,6 +1130,85 @@ describe('the role filter', () => {
     expect(
       screen.getByText(zhCN.common.pager.page.replace('{{page}}', '1')),
     ).toBeInTheDocument()
+  })
+
+  it('drops the previous mark when the role filter resets the member pager', async () => {
+    const user = userEvent.setup()
+    const pageZero = deferred<AdminMemberPage>()
+    const filteredPageZero = deferred<AdminMemberPage>()
+    let hangPageZero = false
+    const { backend } = scripted({
+      listMembers: (_tenant, params) => {
+        if (params?.role === ROLE_OPERATOR.role) {
+          return filteredPageZero.promise
+        }
+        return params?.after === 'acc-1'
+          ? Promise.resolve({ members: [BOB], next_cursor: '' })
+          : hangPageZero
+            ? pageZero.promise
+            : Promise.resolve({ members: [ADA], next_cursor: 'acc-1' })
+      },
+      listInvitations: () =>
+        Promise.resolve({
+          invitations: [PENDING_INVITATION],
+          next_cursor: '',
+        }),
+    })
+    renderPage(backend)
+
+    const memberSection = section(zhCN.members.title)
+    const pagerButton = (name: string): HTMLElement =>
+      within(memberSection).getByRole('button', { name })
+    await within(memberSection).findByText(ADA.display_name)
+
+    await user.click(pagerButton(zhCN.common.pager.next))
+    await within(memberSection).findByText(BOB.display_name)
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.previous)).not.toHaveAttribute(
+        'aria-disabled',
+      ),
+    )
+    hangPageZero = true
+    await user.click(pagerButton(zhCN.common.pager.previous))
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.previous)).toHaveAttribute(
+        'aria-busy',
+        'true',
+      ),
+    )
+    expect(pagerButton(zhCN.common.pager.previous)).toHaveFocus()
+
+    // The role filter resets the page to 0 while that read still hangs; the
+    // new read belongs to the filter, not to the previous move.
+    await user.click(
+      screen.getByRole('combobox', { name: zhCN.members.filter.roleLabel }),
+    )
+    await user.click(
+      await screen.findByRole('option', { name: ROLE_OPERATOR.role }),
+    )
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.next)).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      ),
+    )
+    expect(pagerButton(zhCN.common.pager.previous)).not.toHaveAttribute(
+      'aria-busy',
+      'true',
+    )
+    expect(pagerButton(zhCN.common.pager.previous)).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    expect(pagerButton(zhCN.common.pager.next)).not.toHaveAttribute(
+      'aria-busy',
+      'true',
+    )
+
+    await act(async () => {
+      filteredPageZero.resolve({ members: [ADA], next_cursor: '' })
+      pageZero.resolve({ members: [ADA], next_cursor: 'acc-1' })
+    })
   })
 })
 
@@ -3237,6 +3325,92 @@ describe('the invitation section', () => {
     expect(
       await screen.findByText(ACCEPTED_INVITATION.email),
     ).toBeInTheDocument()
+  })
+
+  it('drops the previous mark when the status filter resets the invitation pager', async () => {
+    const user = userEvent.setup()
+    const pageZero = deferred<AdminInvitationPage>()
+    const acceptedPageZero = deferred<AdminInvitationPage>()
+    let hangPageZero = false
+    const { backend } = scripted({
+      listMembers: () => Promise.resolve({ members: [ADA], next_cursor: '' }),
+      listInvitations: (_tenant, params) => {
+        if (params?.status === 'accepted') {
+          return acceptedPageZero.promise
+        }
+        return params?.after === 'inv-pending'
+          ? Promise.resolve({
+              invitations: [ACCEPTED_INVITATION],
+              next_cursor: '',
+            })
+          : hangPageZero
+            ? pageZero.promise
+            : Promise.resolve({
+                invitations: [PENDING_INVITATION],
+                next_cursor: 'inv-pending',
+              })
+      },
+    })
+    renderPage(backend)
+
+    const inviteSection = section(zhCN.invitations.section.title)
+    const pagerButton = (name: string): HTMLElement =>
+      within(inviteSection).getByRole('button', { name })
+    await within(inviteSection).findByText(PENDING_INVITATION.email)
+
+    await user.click(pagerButton(zhCN.common.pager.next))
+    await within(inviteSection).findByText(ACCEPTED_INVITATION.email)
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.previous)).not.toHaveAttribute(
+        'aria-disabled',
+      ),
+    )
+    hangPageZero = true
+    await user.click(pagerButton(zhCN.common.pager.previous))
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.previous)).toHaveAttribute(
+        'aria-busy',
+        'true',
+      ),
+    )
+    expect(pagerButton(zhCN.common.pager.previous)).toHaveFocus()
+
+    // The status filter resets the page to 0 while that read still hangs; the
+    // new read belongs to the filter, not to the previous move.
+    await user.click(
+      screen.getByRole('combobox', { name: zhCN.invitations.filter.label }),
+    )
+    await user.click(
+      await screen.findByRole('option', {
+        name: zhCN.invitations.status.accepted,
+      }),
+    )
+    await waitForCondition(() =>
+      expect(pagerButton(zhCN.common.pager.next)).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      ),
+    )
+    expect(pagerButton(zhCN.common.pager.previous)).not.toHaveAttribute(
+      'aria-busy',
+      'true',
+    )
+    expect(pagerButton(zhCN.common.pager.previous)).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    expect(pagerButton(zhCN.common.pager.next)).not.toHaveAttribute(
+      'aria-busy',
+      'true',
+    )
+
+    await act(async () => {
+      acceptedPageZero.resolve({ invitations: [], next_cursor: '' })
+      pageZero.resolve({
+        invitations: [PENDING_INVITATION],
+        next_cursor: 'inv-pending',
+      })
+    })
   })
 })
 

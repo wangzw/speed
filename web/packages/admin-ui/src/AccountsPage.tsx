@@ -252,6 +252,11 @@ export function AccountsPage({
     [identifier, identifierKind, displayName, status, accountKind, cursor],
   )
   const accounts = operations.useAccounts(accountParams)
+  // Keyed by the applied filters so a filter change drops the recorded
+  // direction; the cursor and page size stay out of the key.
+  const pagerScope = JSON.stringify(accountParams, (field, value) =>
+    field === 'after' || field === 'limit' ? undefined : value,
+  )
 
   function changePage(nextPage: number): void {
     if (listWrite.pending) {
@@ -1020,6 +1025,7 @@ export function AccountsPage({
           started the page read survives a pending, failed or empty page. */}
       <Box sx={{ mt: 2 }}>
         <TablePager
+          key={pagerScope}
           count={-1}
           page={page}
           rowsPerPage={ACCOUNTS_PAGE_SIZE}
