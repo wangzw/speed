@@ -89,8 +89,11 @@ jobs:
       - name: Resolve the Go cache directories
         id: go-cache
         run: |
-          echo "modcache=$(go env GOMODCACHE)" >> "${GITHUB_OUTPUT}"
-          echo "buildcache=$(go env GOCACHE)" >> "${GITHUB_OUTPUT}"
+          {
+            echo "modcache=$(go env GOMODCACHE)"
+            echo "buildcache=$(go env GOCACHE)"
+            echo "started=$(date +%s)"
+          } >> "${GITHUB_OUTPUT}"
 
       - name: Restore the Go caches
         id: go-cache-restore
@@ -106,6 +109,17 @@ jobs:
 
       - name: Run the Go build and unit tests
         run: make build test
+
+      - name: Trim the Go build cache to this run's entries
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache-restore.outcome == 'success' && steps.go-cache-restore.outputs.cache-hit != 'true'
+        env:
+          STARTED: ${{ steps.go-cache.outputs.started }}
+          GOCACHE_DIR: ${{ steps.go-cache.outputs.buildcache }}
+          GOMODCACHE_DIR: ${{ steps.go-cache.outputs.modcache }}
+        run: |
+          du -sh "${GOCACHE_DIR}" "${GOMODCACHE_DIR}"
+          python tools/trim_go_cache.py --cache-dir "${GOCACHE_DIR}" --started "${STARTED}"
+          du -sh "${GOCACHE_DIR}" "${GOMODCACHE_DIR}"
 
       - name: Save the Go caches
         if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache-restore.outcome == 'success' && steps.go-cache-restore.outputs.cache-hit != 'true'
@@ -132,8 +146,11 @@ jobs:
       - name: Resolve the Go cache directories
         id: go-cache
         run: |
-          echo "modcache=$(go env GOMODCACHE)" >> "${GITHUB_OUTPUT}"
-          echo "buildcache=$(go env GOCACHE)" >> "${GITHUB_OUTPUT}"
+          {
+            echo "modcache=$(go env GOMODCACHE)"
+            echo "buildcache=$(go env GOCACHE)"
+            echo "started=$(date +%s)"
+          } >> "${GITHUB_OUTPUT}"
 
       - name: Restore the Go caches
         id: go-cache-restore
@@ -153,6 +170,17 @@ jobs:
 
       - name: Run the pkg race detector
         run: make test-race MODULES=./pkg
+
+      - name: Trim the Go build cache to this run's entries
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache-restore.outcome == 'success' && steps.go-cache-restore.outputs.cache-hit != 'true'
+        env:
+          STARTED: ${{ steps.go-cache.outputs.started }}
+          GOCACHE_DIR: ${{ steps.go-cache.outputs.buildcache }}
+          GOMODCACHE_DIR: ${{ steps.go-cache.outputs.modcache }}
+        run: |
+          du -sh "${GOCACHE_DIR}" "${GOMODCACHE_DIR}"
+          python tools/trim_go_cache.py --cache-dir "${GOCACHE_DIR}" --started "${STARTED}"
+          du -sh "${GOCACHE_DIR}" "${GOMODCACHE_DIR}"
 
       - name: Save the pkg race build outputs
         if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache-restore.outcome == 'success' && steps.go-cache-restore.outputs.cache-hit != 'true'
@@ -179,8 +207,11 @@ jobs:
       - name: Resolve the Go cache directories
         id: go-cache
         run: |
-          echo "modcache=$(go env GOMODCACHE)" >> "${GITHUB_OUTPUT}"
-          echo "buildcache=$(go env GOCACHE)" >> "${GITHUB_OUTPUT}"
+          {
+            echo "modcache=$(go env GOMODCACHE)"
+            echo "buildcache=$(go env GOCACHE)"
+            echo "started=$(date +%s)"
+          } >> "${GITHUB_OUTPUT}"
 
       - name: Restore the Go caches
         id: go-cache-restore
@@ -197,6 +228,17 @@ jobs:
 
       - name: Run the demo server race detector
         run: make test-race MODULES=./starters/demo/server
+
+      - name: Trim the Go build cache to this run's entries
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache-restore.outcome == 'success' && steps.go-cache-restore.outputs.cache-hit != 'true'
+        env:
+          STARTED: ${{ steps.go-cache.outputs.started }}
+          GOCACHE_DIR: ${{ steps.go-cache.outputs.buildcache }}
+          GOMODCACHE_DIR: ${{ steps.go-cache.outputs.modcache }}
+        run: |
+          du -sh "${GOCACHE_DIR}" "${GOMODCACHE_DIR}"
+          python tools/trim_go_cache.py --cache-dir "${GOCACHE_DIR}" --started "${STARTED}"
+          du -sh "${GOCACHE_DIR}" "${GOMODCACHE_DIR}"
 
       - name: Save the demo server race build outputs
         if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache-restore.outcome == 'success' && steps.go-cache-restore.outputs.cache-hit != 'true'
