@@ -574,7 +574,11 @@ export function OrganizationMembersPage({
   }
 
   const nextInvitationPage = () => {
-    if (invitationNextCursor === '' || invitationFeedback.pending) {
+    if (
+      invitationNextCursor === '' ||
+      invitationFeedback.pending ||
+      invitations.isFetching
+    ) {
       return
     }
     const next = invitationNextCursor
@@ -587,7 +591,11 @@ export function OrganizationMembersPage({
     })
   }
   const previousInvitationPage = () => {
-    if (invitationPage === 0 || invitationFeedback.pending) {
+    if (
+      invitationPage === 0 ||
+      invitationFeedback.pending ||
+      invitations.isFetching
+    ) {
       return
     }
     setInvitationCursorState((previous) => {
@@ -1386,6 +1394,7 @@ export function OrganizationMembersPage({
             page={invitationPage}
             hasNext={invitationNextCursor !== ''}
             busy={invitationFeedback.pending}
+            reading={invitations.isFetching}
             onPrevious={previousInvitationPage}
             onNext={nextInvitationPage}
           />

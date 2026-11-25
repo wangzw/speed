@@ -15,6 +15,7 @@ import { OrganizationMembersPage } from './OrganizationMembersPage.js'
 import { SEARCH_DEBOUNCE_MS } from './internal/use-debounced-value.js'
 import type {
   AdminInvitation,
+  AdminInvitationPage,
   AdminIssuedInvitation,
   AdminMember,
   AdminMemberPage,
@@ -3197,6 +3198,45 @@ describe('the invitation section', () => {
       status: 'pending',
       after: 'inv-pending',
     })
+  })
+
+  it('marks the invitation pager busy during its page read', async () => {
+    const user = userEvent.setup()
+    const nextRead = deferred<AdminInvitationPage>()
+    const { backend, recorder } = scripted({
+      listInvitations: (_tenant, params) => {
+        recorder.invitationParams.push(params)
+        if (params?.after === 'inv-pending') {
+          return nextRead.promise
+        }
+        return Promise.resolve({
+          invitations: [PENDING_INVITATION],
+          next_cursor: 'inv-pending',
+        })
+      },
+    })
+    renderPage(backend)
+    await screen.findByText(PENDING_INVITATION.email)
+
+    const next = screen.getByRole('button', { name: zhCN.common.pager.next })
+    const previous = screen.getByRole('button', {
+      name: zhCN.common.pager.previous,
+    })
+    await user.click(next)
+    await waitFor(() => {
+      expect(next).toHaveAttribute('aria-busy', 'true')
+    })
+    expect(previous).toHaveAttribute('aria-disabled', 'true')
+
+    await act(async () => {
+      nextRead.resolve({
+        invitations: [ACCEPTED_INVITATION],
+        next_cursor: '',
+      })
+    })
+    expect(
+      await screen.findByText(ACCEPTED_INVITATION.email),
+    ).toBeInTheDocument()
   })
 })
 
