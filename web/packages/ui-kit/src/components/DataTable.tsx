@@ -141,7 +141,8 @@ export interface DataTablePagination {
   readonly unavailable?: boolean
   /**
    * A page read is in flight: the direction that started it is busy, the
-   * other unavailable; a read started elsewhere makes both unavailable.
+   * other unavailable; a read started elsewhere makes both unavailable. See
+   * `TablePager` for the scope key a caller supplies.
    */
   readonly reading?: boolean
 }
